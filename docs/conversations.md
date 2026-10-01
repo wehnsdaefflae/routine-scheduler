@@ -158,7 +158,8 @@ Two things follow from this that are worth knowing:
   how only when you want it. Hover any message — yours, a reply, even a single step inside a work
   fold — and a **↩ refer-to** button primes the composer with it, messenger-reply style: your next
   message leads with a quoted `> re …` line the agent reads naturally, and the sent bubble shows the
-  reference as a compact quote chip (✕ on the chip drops it before sending).
+  reference as a compact quote chip (✕ on the chip drops it before sending). A reply's corner also
+  carries ⧉ copy, ⑂ branch from here, ⟲ rewind to here and ⚑ flag as refusal (below).
 - **Right — artifacts + state.** The deliverables the agent produces, a live state-graph card, and
   a **files** card — which files the run read / wrote / edited, per-path counts straight from the
   transcript (subtasks and your slash commands included). Also folds to a rail so the chat gets the
@@ -302,6 +303,48 @@ The hand-back does not wake the parent — its next reply picks the message up. 
 own conversation and can hand back again later; a second hand-back replaces the same artefact
 folder. Nothing you did not put in `artifacts/` crosses over, and the parent's transcript is never
 rewritten.
+
+## Flagging a refusal (⚑)
+
+When a reply declines what you asked, you can have it **redone on the conversation's
+uncensored model** — which then carries the conversation (operator decision 2026-10-01). Every
+reply carries a **⚑ flag as refusal** control beside ⟲ rewind and ⑂ branch, the engine's own
+failure replies included: a provider's safety classifier refusing a turn on every model in the
+fallback chain ends as one.
+
+Clicking it opens a warning gate first, and the gate says exactly what will happen:
+
+- **This reply and every reply after it are discarded** — archived beside the transcript
+  (`runs/<ts>/rewind-<ts>.jsonl`, the same archive a ⟲ rewind writes), reversible by hand.
+- **The message that produced it is re-sent**, verbatim — the gate quotes it — the way a
+  typed message travels, attachments included.
+- **The uncensored model answers it, and becomes this conversation's main model from now on**
+  (`models.main` in its config; the other roles stay as they are). When the conversation has no
+  uncensored model, the gate offers the model catalog — the list the model line offers — and
+  the pick becomes both its uncensored and its main model; confirm stays disabled until you
+  choose one.
+- **Actions already taken after that point are NOT undone** — files written, messages sent,
+  commits made stay as they are.
+
+Which message is re-sent: whatever you sent before that reply's first step — usually the one
+message you typed. A message you sent while the reply was working came after it began and is
+discarded with it. The **first** reply's message is the conversation's first message, so
+flagging the first reply cuts the conversation back to its very start and re-sends that message
+(it then appears twice in the chat: once as the opening, once as the re-send). A reply that no
+message opened — one that carried on after an interruption on its own — has nothing to re-send
+and cannot be flagged.
+
+Like a rewind, a flag needs a **settled** conversation: mid-reply it refuses and says so.
+
+The flag stays **on the record**: a ⚑ line stands in the chat where it happened, naming the
+discarded reply's turn, the model that wrote it and the model that took over (the engine
+records it as a `refusal` transcript event, seam `operator`). The model never reads that line —
+it reads only your message.
+
+This is the one path on which the uncensored model **answers and acts**, because you decided
+it, reply by reply. The automatic refusal handling is unchanged and keeps the uncensored model a
+*honeypot*: a refusal the engine detects on its own only has its trigger isolated and delivered
+there as evidence, never an answer (see the **Endpoints** guide, *Refusal clarification*).
 
 ## Working on a project
 

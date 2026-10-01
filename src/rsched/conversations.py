@@ -90,6 +90,10 @@ def fallback_title(text: str) -> str:
     return line[:60] + ("…" if len(line) > 60 else "")
 
 
+#: How an attachment block opens — written by `attachment_note`, found again by `attachment_rels`.
+_ATTACHED = "[attached files "
+
+
 def attachment_note(paths: list[str]) -> str:
     """The block appended to a message (or instruction.md) that carries file attachments.
     Paths are relative to the conversation dir; the model reads text with read_file and SEES
@@ -104,10 +108,27 @@ def attachment_note(paths: list[str]) -> str:
     if not paths:
         return ""
     lines = "\n".join(f"- {p}" for p in paths)
-    return ("\n\n[attached files — read text with read_file; SEE images/PDFs with the "
+    return (f"\n\n{_ATTACHED}— read text with read_file; SEE images/PDFs with the "
             "view_image action (shown to you directly when this model is multimodal, else "
             "described for you automatically); spreadsheets via a fitting util]\n"
             f"{lines}")
+
+
+def attachment_rels(text: str) -> list[str]:
+    """The paths the LAST `attachment_note` block in `text` lists — its inverse. A message
+    re-sent from the transcript carries its rels on the event; the conversation's FIRST
+    message lives in instruction.md, whose rels nothing else records, so the refusal flag
+    (web/api_refusal_flag) reads them back from the block itself.
+    """
+    _, found, block = text.rpartition(_ATTACHED)
+    if not found:
+        return []
+    rels = []
+    for line in block.splitlines()[1:]:
+        if not line.startswith("- "):
+            break
+        rels.append(line[2:].strip())
+    return rels
 
 
 def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> str:

@@ -50,7 +50,8 @@ Two design rules explain most of the system's shape:
   the named list first, then each entry's own fallbacks), with a
   cooldown so a flapping provider isn't hammered. Each routine picks its models by name —
   `main` (the loop, and every child run by default), `tool_call` (the `llm` action and the
-  engine's own subcalls) and an optional `uncensored` refusal-clarification harness — or falls
+  engine's own subcalls) and an optional `uncensored` refusal-clarification harness (in a
+  conversation, also the model a reply you flag ⚑ as a refusal is handed to) — or falls
   back to the one **system model**. A model can be
   **multimodal**: it views images and PDFs natively
   (default on for Anthropic/Claude models, a per-model toggle for OpenAI-compatible vision

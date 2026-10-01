@@ -3,6 +3,7 @@
 // Esc or an overlay click cancels), promise-based so call sites stay one line:
 //   if (!(await confirmDialog("Delete X?"))) return;
 //   const name = await promptDialog("new tag"); if (name == null) return;
+//   const pick = await chooseDialog("Hand over to?", select); if (pick == null) return;
 //
 // `openModal` is the shell under both, and under every other console modal (dirpicker.js, the
 // lane editors in lanemanage.js), so what makes an overlay a DIALOG is written once: the role
@@ -58,7 +59,7 @@ export function openModal(panel, { label, focus, onCancel, scrimCancels = true }
   };
 }
 
-function modal({ message, input = null, confirmLabel, danger }) {
+function modal({ message, input = null, confirmLabel, danger, required = false }) {
   return new Promise((resolve) => {
     const cancelValue = input ? null : false;
     const ok = el("button", { class: danger ? "btn danger armed" : "btn primary" }, confirmLabel);
@@ -67,7 +68,15 @@ function modal({ message, input = null, confirmLabel, danger }) {
     const panel = el("div", { class: "panel" }, msg, input,
       el("div", { class: "row mt", style: "justify-content:flex-end; gap:8px" }, cancel, ok));
     const done = (value) => { close(); resolve(value); };
-    ok.onclick = () => done(input ? input.value.trim() : true);
+    // A REQUIRED answer keeps the confirm disabled until there is one. The guard sits in the
+    // handler too: Enter calls it directly, and a disabled button only stops a click.
+    if (required) {
+      const sync = () => { ok.disabled = !input.value.trim(); };
+      sync();
+      input.addEventListener("change", sync);
+      input.addEventListener("input", sync);
+    }
+    ok.onclick = () => { if (!ok.disabled) done(input ? input.value.trim() : true); };
     cancel.onclick = () => done(cancelValue);
     // Enter confirms from the input or the dialog itself; a focused BUTTON keeps its own Enter.
     // Taking it for "confirm" everywhere meant Enter on the focused cancel button ran the
@@ -83,6 +92,13 @@ function modal({ message, input = null, confirmLabel, danger }) {
 /** Themed confirm(): resolves true/false. Destructive by default (red confirm). */
 export function confirmDialog(message, { confirmLabel = "confirm", danger = true } = {}) {
   return modal({ message, confirmLabel, danger });
+}
+
+/** Themed confirm() that needs ONE choice first: `select` (a <select> whose empty option
+ *  means "not chosen yet") rides under the message, the confirm stays disabled until a value
+ *  is chosen, and the promise resolves that value — or null on cancel. */
+export function chooseDialog(message, select, { confirmLabel = "confirm", danger = true } = {}) {
+  return modal({ message, input: select, confirmLabel, danger, required: true });
 }
 
 /** Themed prompt(): resolves the trimmed string, or null on cancel. */

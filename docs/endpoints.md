@@ -48,7 +48,8 @@ OpenAI chat-completions dialect, cloud or local.
    work: routine creation and workflow generation) by picking a catalog model, and per
    routine the model roles — **main** (the orchestrator loop; spawned children run it by
    default, and a call may override per child), **tool_call** (the `llm` action), and the
-   optional **uncensored** (the refusal-clarification harness — see below) — on the
+   optional **uncensored** (the refusal-clarification harness — see below — and, in a
+   conversation, the model a reply flagged ⚑ as a refusal is handed to) — on the
    routine's page, each a catalog model name.
    main/tool_call fall back to the system model when left unset; **uncensored has no
    fallback** — leave it unset and refusals are still flagged + isolated, but no fragment
@@ -469,6 +470,12 @@ any actually-uncensored model is ever in the loop. Nothing it produces is execut
 returned as an answer, or allowed to become a turn's action — the earlier behaviour
 (re-issue the whole refused prompt/turn to it and use the reply) is retired.
 
+That rule binds the AUTOMATIC process below, where nobody decided anything. A person can
+decide otherwise for one conversation reply: **⚑ flag as refusal** (operator decision
+2026-10-01, see the **Conversations** guide) discards the reply and everything after it,
+re-sends the message that produced it, and makes the conversation's uncensored model its
+MAIN model from then on — the one path on which that model answers and acts.
+
 When a model refuses, the engine runs the **refusal-clarification process**
 (`engine/refusal.py`), at both seams — the `llm` action and the agent turn loop
 (children run the same loop and are covered identically):
@@ -477,7 +484,11 @@ When a model refuses, the engine runs the **refusal-clarification process**
    (`stop_reason: "refusal"` / `"content_filter"`, see *Failover & cooldowns* above) is
    authoritative. A free-text decline is judged by an LLM classification subcall on the
    tool_call model (schema'd verdict); the legacy marker list survives only as a zero-cost
-   fast path that can CONFIRM an obvious opener — it never decides "not a refusal".
+   fast path that can CONFIRM an obvious opener — it never decides "not a refusal", and a
+   marker counts only inside the reply's OPENING SENTENCE (operator, 2026-10-01). "Here's
+   the summary; I can't provide the 2025 figures" opens with an answer, so the marker
+   decides nothing there: a free-text reply goes on to the classifier, and an `ok`/`partial`
+   finish — which the fast path judges alone — stands as the reply it is.
 2. **Flag.** A first-class `refusal` transcript event records the seam, the refusing
    model, and the refusal message — the explicit signal the clarification hangs off, and
    what the transcript UI renders.

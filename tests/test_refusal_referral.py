@@ -95,6 +95,35 @@ def test_not_going_to_opener_confirmed_by_fast_path():
     assert tool.calls == 0                       # the fast path never asked it
 
 
+def test_a_decline_phrase_after_the_opening_sentence_decides_nothing():
+    # operator, 2026-10-01: a phrase is decisive only when the reply OPENS with it. A reply
+    # that answers and then names one thing it could not supply used to count as a refusal
+    # outright — the marker sat inside the first 200 characters — so an ok finish carrying
+    # it was intercepted and re-driven instead of reaching the reader.
+    paywalled = ("Here's the summary; I can't provide the 2025 figures because the source "
+                 "is paywalled.")
+    for answer in (paywalled,
+                   "Here is the report. I can't provide the raw logs, they rotated away.",
+                   "Found it:\nI cannot create the chart here, so the CSV is attached."):
+        assert refusal.looks_like_refusal(answer) is False, answer
+    # a miss still decides nothing: the classifier call is what rules on it
+    tool = _ScriptedEndpoint([_c(parsed={"refusal": False})])
+    assert refusal.is_refusal(_ctx(_Registry(tool)), paywalled) is False
+    assert tool.calls == 1
+
+
+def test_a_decline_phrase_inside_the_opening_sentence_still_confirms_at_zero_cost():
+    for decline in ("I'm sorry, but I can't help with that request.",
+                    "Unfortunately, I cannot provide instructions for that.",
+                    "**I can't help with that.** Here is what I can do instead: …",
+                    "I understand why you ask, but I won't help with this one.\n\nInstead…"):
+        assert refusal.looks_like_refusal(decline) is True, decline
+    tool = _ScriptedEndpoint([_c(parsed={"refusal": False})])   # a verdict that would deny
+    assert refusal.is_refusal(_ctx(_Registry(tool)),
+                              "Unfortunately, I cannot provide that.") is True
+    assert tool.calls == 0                       # the fast path never asked it
+
+
 def test_classification_decides_what_markers_miss():
     # the reliability a marker list cannot give (operator, 2026-08-22): no marker matches
     # this decline, the schema'd verdict still catches it — and clears a genuine answer.

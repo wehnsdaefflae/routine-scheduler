@@ -13,7 +13,8 @@ and classifier refusals alike):
 
 1. DETECT — reliably, not by regex (operator, 2026-08-22): a provider classifier stop
    (completion.REFUSAL_STOPS) is authoritative; a FREE-TEXT reply is judged by
-   `is_refusal` — the marker fast-path may CONFIRM an obvious opener at zero cost, but
+   `is_refusal` — the marker fast-path may CONFIRM an obvious opener at zero cost, and a
+   marker decides only inside the reply's OPENING SENTENCE (operator, 2026-10-01), but
    only an LLM classification subcall (tool_call model, schema'd verdict) may decide the
    non-obvious cases either way.
 2. FLAG — `clarify_refusal` records a first-class `refusal` transcript event naming the
@@ -35,14 +36,26 @@ and classifier refusals alike):
 The calling seam then proceeds on its NORMAL path (schema retry, failover chain, or
 returning the refusal to the orchestrator as its observation) — clarification records,
 it never substitutes an answer.
+
+That honeypot rule binds this AUTOMATIC path, where nobody decided anything. There is
+exactly one path on which the uncensored model ANSWERS and ACTS, and a person opens it, by
+the operator's decision of 2026-10-01: the conversation reply flagged ⚑ as a refusal
+(web/api_refusal_flag). Behind a warning gate the reply and everything after it are
+archived, the message that produced it is re-sent, and the conversation's uncensored model
+becomes its MAIN model from then on. `record_operator_flag` writes that seam's `refusal`
+event (`where: "operator"`) as the re-sent message is delivered — no isolation and no
+harness delivery: the operator already said what the refusal was.
 """
 
 from __future__ import annotations
 
+import re
+
 from ..endpoints import EndpointError
 
-#: Decline openers that CONFIRM a refusal at zero cost (precision-only fast path).
-#: Never used to deny: a reply missing every marker goes to the LLM classification.
+#: Decline openers that CONFIRM a refusal at zero cost (precision-only fast path), and only
+#: inside the reply's OPENING SENTENCE (`_opening_sentence`). Never used to deny: a reply
+#: missing every marker goes to the LLM classification.
 REFUSAL_MARKERS = (
     "i can't help with that", "i cannot help with that",
     "i can't assist with that", "i cannot assist with that",
@@ -66,6 +79,13 @@ REFUSAL_MARKERS = (
 _TASK_CAP = 4000       # task chars shown to the isolation subcall
 _REPLY_CAP = 1200      # reply chars shown to the classification subcall
 _FRAGMENT_CAP = 500    # isolated-fragment / harness-reply chars kept in the record
+_HEAD_CAP = 200        # reply chars the marker fast path reads its opening sentence from
+
+#: Where a reply's opening sentence ends: a sentence or clause stop followed by whitespace
+#: (or the end), or a line break. The semicolon and the colon count because they are where
+#: an answer hands over to its caveat — "Here's the summary; I can't provide the 2025
+#: figures" opens with the summary, not with a decline.
+_OPENING_STOP = re.compile(r"[.!?;:](?=\s|$)|\n")
 
 CLASSIFY_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["refusal"],
@@ -93,12 +113,28 @@ ISOLATION_SCHEMA = {
 }
 
 
+def _opening_sentence(text: str) -> str:
+    """The reply's first non-empty sentence, lower-cased — the only span a marker decides on.
+    Read from the reply's first `_HEAD_CAP` characters, so a run-on opener is cut there.
+    """
+    head = (text or "").strip()[:_HEAD_CAP].lower()
+    return next((part.strip() for part in _OPENING_STOP.split(head) if part.strip()), "")
+
+
 def looks_like_refusal(text: str) -> bool:
-    """The zero-cost fast path: does the reply's HEAD open with a known decline marker?
+    """The zero-cost fast path: does the reply OPEN with a known decline marker?
+
+    A marker is decisive only inside the reply's opening sentence (operator, 2026-10-01). It
+    used to count anywhere in the first 200 characters, so a reply that ANSWERED and then
+    named one thing it could not supply — "Here's the summary; I can't provide the 2025
+    figures because the source is paywalled" — was a refusal outright; and an ok/partial
+    finish is judged by this path alone (degrade._intercept_refusal_finish), so such a reply
+    was intercepted and re-driven instead of reaching the reader.
+
     A hit is a refusal; a miss decides NOTHING (that is `is_refusal`'s classify call).
     """
-    head = (text or "").strip().lower()[:200]
-    return bool(head) and any(m in head for m in REFUSAL_MARKERS)
+    first = _opening_sentence(text)
+    return bool(first) and any(m in first for m in REFUSAL_MARKERS)
 
 
 def is_refusal(ctx, text: str) -> bool:
@@ -143,6 +179,24 @@ def is_refusal(ctx, text: str) -> bool:
     ctx.add_usage(completion.usage)
     parsed = completion.parsed
     return isinstance(parsed, dict) and parsed.get("refusal") is True
+
+
+def record_operator_flag(ctx, flag: dict) -> None:
+    """Record the OPERATOR seam's refusal: a conversation reply the operator flagged (⚑,
+    web/api_refusal_flag), discarded, and had re-answered by the model that now carries the
+    conversation. Called as the re-sent message is delivered (control.inject_user_message),
+    so the event stands where it happened — just before that message — and the engine stays
+    the transcript's only writer. Only the keys this seam defines are kept: the flag rode an
+    inbox file, and an event is a contract its readers parse.
+    """
+    turn = flag.get("turn")
+    record: dict = {"where": "operator", "turn": turn if isinstance(turn, int) else None,
+                    "model": str(flag.get("model") or ""),
+                    "takeover_model": str(flag.get("takeover_model") or ""),
+                    "message": str(flag.get("message") or "").strip()[:_FRAGMENT_CAP]}
+    if flag.get("archive"):
+        record["archive"] = str(flag["archive"])
+    ctx.transcript.event("refusal", record)
 
 
 def clarify_refusal(ctx, *, task: str, refusal: str, where: str, model: str = "") -> dict:

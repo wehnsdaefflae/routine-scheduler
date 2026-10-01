@@ -261,6 +261,27 @@ def test_refusal_worded_ok_status_finish_is_intercepted(make_routine):
     assert main.calls == 2
 
 
+def test_an_ok_finish_that_answers_first_is_not_intercepted_for_a_later_caveat(make_routine):
+    """An ok/partial finish is judged by the marker fast path ALONE, so a false positive there
+    costs the reader the reply: it was intercepted, flagged and re-driven. A phrase decides
+    only when the reply OPENS with it (operator, 2026-10-01) — this summary opens with the
+    answer, and the decline phrase is a caveat about one figure it could not get.
+    """
+    answered = Completion(
+        text="", usage={"in": 1, "out": 1},
+        parsed={"kind": "finish", "status": "ok", "say": "done",
+                "summary": "Here's the summary; I can't provide the 2025 figures because "
+                           "the source is paywalled."})
+    main = _FakeEndpoint([answered])
+    tool = _FakeEndpoint([ISOLATED])                  # would isolate — must never be asked
+    unc = _FakeEndpoint([PRETEND])
+    loop = _loop(make_routine, _FakeRegistry(main, unc, tool, main_name="caveat-ep"))
+    action, _ = next_action(loop)
+    assert action is not None and action["kind"] == "finish" and action["status"] == "ok"
+    assert _refusal_events(loop) == []
+    assert tool.calls == 0 and unc.calls == 0 and main.calls == 1
+
+
 def test_an_honest_ok_finish_never_buys_a_classification(make_routine):
     """A finish is always JUDGED, but only a declared failure is worth a round trip.
     Every ordinary ending used to pay a `refusal · classify reply` subcall on its way out
