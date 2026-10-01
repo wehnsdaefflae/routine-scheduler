@@ -241,6 +241,9 @@ def test_recipe_sizes(tmp_path):
     (d / "stages" / "one.md").write_text("y" * 50, encoding="utf-8")
     (d / "tuning.yaml").write_text("z" * 10, encoding="utf-8")
     (s.routines_home / "not-a-routine").mkdir()          # no routine.yaml → skipped
+    # a revision in flight: `paths.atomic_write` stages it as a dot-file beside its target,
+    # which is not recipe and must not count it twice
+    (d / "stages" / ".one.md.k2j4x8.tmp").write_text("y" * 55, encoding="utf-8")
     out = recipe_sizes(s)
     assert out["trend_days"] == 30
     assert out["by_routine"] == {"alpha": {"chars": 160, "chars_baseline": None}}

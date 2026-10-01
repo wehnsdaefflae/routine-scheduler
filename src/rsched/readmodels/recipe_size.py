@@ -30,13 +30,22 @@ TREND_DAYS = 30
 
 
 def _current_chars(routine_dir: Path) -> int:
+    """The recipe's live size. A dot-file under `stages/` is not recipe: `paths.atomic_write`
+    stages every write as `.<name>.<rand>.tmp` beside its target, so a revision in flight was
+    counted twice — and a file can vanish between the listing and its stat, which must not
+    fail the Stats call.
+    """
     total = 0
     for spec in RECIPE_PATHSPECS:
         p = routine_dir / spec
-        if p.is_file():
-            total += p.stat().st_size
-        elif p.is_dir():
-            total += sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+        files = [p] if p.is_file() else list(p.rglob("*")) if p.is_dir() else []
+        for f in files:
+            if f.name.startswith("."):
+                continue
+            try:
+                total += f.stat().st_size if f.is_file() else 0
+            except OSError:
+                continue
     return total
 
 
