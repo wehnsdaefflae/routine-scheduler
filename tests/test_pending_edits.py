@@ -35,6 +35,72 @@ def test_replay_records_failure_and_drops_file(tmp_path):
     assert (rdir / "stages" / "ok.md").read_text() == "good"
 
 
+def _routine(tmp_path, yaml_text: str = "enabled: true\n"):
+    rdir = tmp_path / "routines" / "r"
+    (rdir / "stages").mkdir(parents=True)
+    (rdir / "routine.yaml").write_text(yaml_text, encoding="utf-8")
+    return rdir
+
+
+@pytest.mark.parametrize("broken", ["triggers: [never closed\n", "- a list\n- not a mapping\n"])
+def test_a_routine_yaml_that_does_not_load_fails_one_edit_and_wedges_nothing(tmp_path, broken):
+    """routine.yaml can be broken under a live run — by hand, or by the run's own `shell` or
+    script, which the action-layer seal cannot stop (CLAUDE.md). The trigger appliers read it
+    raw: the YAMLError (or the AttributeError of a non-mapping) escaped `apply_pending` AND
+    the reap, with the edit still spooled — so the same edit failed at every later run's end
+    and every edit queued behind it, of any kind, never applied."""
+    rdir = _routine(tmp_path, broken)
+    pending_edits.queue(tmp_path, "r", "trigger_create",
+                        {"entry": {"id": "t1", "type": "webhook", "token": "x"}})
+    pending_edits.queue(tmp_path, "r", "file", {"path": "stages/next.md", "content": "next"})
+
+    rows = pending_edits.apply_pending(rdir, tmp_path, "r")
+
+    assert [r["ok"] for r in rows] == [False, True]
+    assert "routine.yaml" in rows[0]["error"]
+    assert pending_edits.pending_count(tmp_path, "r") == 0, "the bad edit is dropped, not respooled"
+    assert (rdir / "stages" / "next.md").read_text(encoding="utf-8") == "next"
+    assert (rdir / "routine.yaml").read_text(encoding="utf-8") == broken, "never rewritten"
+
+
+def test_a_replayed_file_edit_lands_atomically(tmp_path):
+    """The endpoint writes an idle routine's file through `atomic_write`; the replay of the
+    same edit wrote it in place, so a scan or a starting run could read half a recipe. An
+    atomic write replaces the file (a new inode); an in-place write reuses the old one."""
+    rdir = _routine(tmp_path)
+    recipe = rdir / "main.md"
+    recipe.write_text("old recipe\n", encoding="utf-8")
+    before = recipe.stat().st_ino
+    pending_edits.queue(tmp_path, "r", "file", {"path": "main.md", "content": "new recipe\n"})
+
+    rows = pending_edits.apply_pending(rdir, tmp_path, "r")
+
+    assert rows[0]["ok"] is True
+    assert recipe.read_text(encoding="utf-8") == "new recipe\n"
+    assert recipe.stat().st_ino != before, "written in place, not swapped in whole"
+
+
+def test_the_trigger_appliers_round_trip(tmp_path):
+    """create → retune → delete through the shared read/write pair, and a second report
+    trigger slipping in while queued is skipped rather than duplicated."""
+    rdir = _routine(tmp_path, "enabled: true\ntriggers:\n- {id: rep1, type: report}\n")
+    pending_edits.queue(tmp_path, "r", "trigger_create", {"entry": {"id": "rep2", "type": "report"}})
+    pending_edits.queue(tmp_path, "r", "trigger_create", {"entry": {"id": "hk", "type": "webhook"}})
+    pending_edits.queue(tmp_path, "r", "trigger_update",
+                        {"trigger_id": "hk", "fields": {"cooldown_s": 60}})
+    pending_edits.queue(tmp_path, "r", "trigger_delete", {"trigger_id": "rep1"})
+    pending_edits.queue(tmp_path, "r", "trigger_delete", {"trigger_id": "gone"})
+
+    rows = pending_edits.apply_pending(rdir, tmp_path, "r")
+
+    assert all(r["ok"] for r in rows)
+    assert rows[0]["result"]["skipped"] and rows[4]["result"]["skipped"]
+    import yaml
+    saved = yaml.safe_load((rdir / "routine.yaml").read_text(encoding="utf-8"))
+    assert saved == {"enabled": True, "triggers": [{"id": "hk", "type": "webhook",
+                                                    "cooldown_s": 60}]}
+
+
 def test_replay_empty_spool_is_noop(tmp_path):
     assert pending_edits.apply_pending(tmp_path / "r", tmp_path, "r") == []
 

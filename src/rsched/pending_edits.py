@@ -12,16 +12,18 @@ Ownership mirrors triggers.py's event spool (and restart.request, the background
 .requests/ idiom): the WEB layer only RECORDS a pending edit — one JSON file per edit
 under `<routines_home>/.control/pending-edits/<slug>/pe-*.json` (atomic, chronologically
 sortable) — and the DAEMON replays them in order at the reap that always follows a
-finish (daemon/runner.Runner._reap), so the git write happens single-writer, off the
+finish (daemon/runner_reap.reap), so the git write happens single-writer, off the
 run. Only NON-destructive config/file edits queue: destructive ops (archive, conversation
 teardown) keep their hard 409, because "apply this deletion after the run" is not a safe
 default.
 
-The appliers here are the ONE implementation both paths use: an endpoint applies an edit
-directly when the routine is idle, and `apply_pending` replays the SAME applier at reap —
-so a queued edit and an immediate edit have identical effect. Appliers take a routine_dir
-and the edit's typed payload and never touch FastAPI, so the daemon can import this
-module (web imports daemon, never the reverse).
+Each applier here must have the same effect on disk as the endpoint's own idle-path edit
+(the closure each endpoint hands `web/routines_common.queue_or_apply`), so a queued edit and
+an immediate edit land identically: the same atomic write, the same commit. The two are still
+separate code — the endpoint's closure adds the web-only steps (a scheduler rescan, the F337
+live-run signal), which a reap-time replay has no run to send. Appliers take a routine_dir and
+the edit's typed payload and never touch FastAPI, so the daemon can import this module (web
+imports daemon, never the reverse).
 """
 
 from __future__ import annotations
@@ -30,9 +32,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from . import libgit, recipes, spool
 from .ids import now_iso
-from .paths import atomic_write_yaml, read_json, read_yaml, resolve_rel
+from .paths import atomic_write, atomic_write_yaml, read_json, read_yaml, resolve_rel
 
 # Edit kinds that may be queued. Keep in sync with APPLIERS below and the web endpoints
 # that queue them; a kind with no applier is rejected at queue time (fail closed).
@@ -45,13 +49,13 @@ MAX_PENDING_EDITS = 64   # spool cap per routine — past it the web rejects wit
 # `routines_home` is the instance whose health stream hears about a commit that did not land.
 
 def apply_file(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
-    """Write one of the routine's own files (main.md, a stage module, state, or
-    routine.yaml) and commit it — the replay of put_routine_file.
+    """Write one of the routine's own files (main.md, a stage module, a script, a note) and
+    commit it — the replay of put_routine_file, and atomic like it: a scheduler scan or a
+    starting run reads the old recipe or the new one, never half of it. (The endpoint refused
+    the files it does not own — routine.yaml among them — before anything was queued.)
     """
     rel = str(payload["path"])
-    p = resolve_rel(routine_dir, rel)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(str(payload.get("content", "")), encoding="utf-8")
+    atomic_write(resolve_rel(routine_dir, rel), str(payload.get("content", "")))
     libgit.commit(routine_dir, f"edit {rel} via web (queued mid-run)",
                   routines_home=routines_home)
     return {"path": rel}
@@ -65,22 +69,42 @@ def apply_recipe_revert(routine_dir: Path, payload: dict, routines_home: Path) -
                                  routines_home=routines_home)
 
 
+def _read_triggers(routine_dir: Path) -> tuple[dict, list[dict]]:
+    """routine.yaml and its trigger entries — the read half of every trigger applier.
+
+    A file that does not parse (ValueError) or parses to something other than a mapping
+    (TypeError) fails THIS edit: `apply_pending` records it and drops it. Raw, a YAMLError
+    escaped the replay (and the reap around it) with the edit still spooled, so every later
+    run's end failed on the same file and every edit queued behind it never applied.
+    """
+    try:
+        raw = read_yaml(routine_dir / "routine.yaml", {})
+    except yaml.YAMLError as exc:
+        raise ValueError(f"routine.yaml does not parse: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise TypeError("routine.yaml is not a mapping")
+    return raw, [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
+
+
+def _write_triggers(routine_dir: Path, raw: dict, entries: list[dict], message: str,
+                    routines_home: Path) -> None:
+    raw["triggers"] = entries
+    atomic_write_yaml(routine_dir / "routine.yaml", raw)
+    libgit.commit(routine_dir, f"{message} via web (queued mid-run)",
+                  routines_home=routines_home)
+
+
 def apply_trigger_create(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
     """Append a server-built trigger entry to routine.yaml. The entry (with its token/id)
     was built at request time so the URL could be returned then; the applier only lands it.
     """
     entry = dict(payload["entry"])
-    path = routine_dir / "routine.yaml"
-    raw = read_yaml(path, {})
-    entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
+    raw, entries = _read_triggers(routine_dir)
     # a report trigger is unique per routine — if one slipped in meanwhile, keep the first
     if entry.get("type") == "report" and any(t.get("type") == "report" for t in entries):
         return {"skipped": "a report trigger already exists", "id": entry.get("id")}
-    entries.append(entry)
-    raw["triggers"] = entries
-    atomic_write_yaml(path, raw)
-    libgit.commit(routine_dir, f"add trigger {entry.get('id')} via web (queued mid-run)",
-                  routines_home=routines_home)
+    _write_triggers(routine_dir, raw, [*entries, entry], f"add trigger {entry.get('id')}",
+                    routines_home)
     return {"id": entry.get("id")}
 
 
@@ -88,33 +112,23 @@ def apply_trigger_update(routine_dir: Path, payload: dict, routines_home: Path) 
     """Retune a live trigger's fields (cooldown/day-cap) in place."""
     trigger_id = str(payload["trigger_id"])
     fields = dict(payload.get("fields") or {})
-    path = routine_dir / "routine.yaml"
-    raw = read_yaml(path, {})
-    entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
+    raw, entries = _read_triggers(routine_dir)
     target = next((t for t in entries if str(t.get("id")) == trigger_id), None)
     if target is None:
         return {"skipped": f"no trigger {trigger_id!r}", "id": trigger_id}
     target.update(fields)
-    raw["triggers"] = entries
-    atomic_write_yaml(path, raw)
-    libgit.commit(routine_dir, f"retune trigger {trigger_id} via web (queued mid-run)",
-                  routines_home=routines_home)
+    _write_triggers(routine_dir, raw, entries, f"retune trigger {trigger_id}", routines_home)
     return {"id": trigger_id}
 
 
 def apply_trigger_delete(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
     """Remove a trigger by id."""
     trigger_id = str(payload["trigger_id"])
-    path = routine_dir / "routine.yaml"
-    raw = read_yaml(path, {})
-    entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
+    raw, entries = _read_triggers(routine_dir)
     kept = [t for t in entries if str(t.get("id")) != trigger_id]
     if len(kept) == len(entries):
         return {"skipped": f"no trigger {trigger_id!r}", "id": trigger_id}
-    raw["triggers"] = kept
-    atomic_write_yaml(path, raw)
-    libgit.commit(routine_dir, f"remove trigger {trigger_id} via web (queued mid-run)",
-                  routines_home=routines_home)
+    _write_triggers(routine_dir, raw, kept, f"remove trigger {trigger_id}", routines_home)
     return {"id": trigger_id}
 
 
@@ -155,10 +169,11 @@ def queue(routines_home: Path, slug: str, kind: str, payload: dict[str, Any]) ->
 
 def apply_pending(routine_dir: Path, routines_home: Path, slug: str) -> list[dict]:
     """Replay every queued edit for `slug`, oldest first, dropping each file as it is
-    applied. Called from the daemon reap after a CLEAN finish — no run is active, so the
-    git index is uncontended. A single edit that raises is RECORDED (surfaced, not
-    swallowed) and its file dropped so one bad edit can't wedge the queue; the rest still
-    apply. Returns one result row per edit for the caller to log.
+    applied. Called from the daemon reap after the run ends, in ANY terminal state (a config
+    edit does not depend on the run's success) — no run is active, so the git index is
+    uncontended. A single edit that raises is RECORDED (surfaced, not swallowed) and its file
+    dropped so one bad edit can't wedge the queue; the rest still apply. Returns one result
+    row per edit for the caller to log.
     """
     results: list[dict] = []
     for path in pending(routines_home, slug):
@@ -175,7 +190,7 @@ def apply_pending(routine_dir: Path, routines_home: Path, slug: str) -> list[dic
             row["result"] = applier(routine_dir, dict(rec.get("payload") or {}),
                                     routines_home)
             row["ok"] = True
-        except (KeyError, ValueError, OSError, recipes.RecipeError) as exc:
+        except (KeyError, TypeError, ValueError, OSError, recipes.RecipeError) as exc:
             row["ok"] = False
             row["error"] = f"{type(exc).__name__}: {exc}"
         results.append(row)
