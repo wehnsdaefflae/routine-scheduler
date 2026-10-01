@@ -18,7 +18,8 @@
 // closed fold is a change nobody accepts on purpose. The rarely needed sections sit behind the
 // group's own "more" menu, whose summary is a one-line digest of what is inside.
 
-import { el, flash as flashNode, openFolds, storage } from "/static/util.js";
+import { el, storage } from "/static/util.js";
+import { flash as flashNode, openFolds } from "/static/landing.js";
 import { describe } from "/static/components/settings-digest.js";
 
 const asList = (keys) => (Array.isArray(keys) ? keys : [keys]);

@@ -1,12 +1,12 @@
-"""util.js's DOM helpers, evaluated as pure functions in the browser's ESM context.
+"""The console's DOM helpers, evaluated as pure functions in the browser's ESM context.
 
-`el()` promises it has no HTML pathway, so a string handed to it can never become markup. One
-attribute name broke that: an `on*` key whose value was not a function fell through to
-setAttribute, and a string there IS an inline handler the browser compiles as script — under
+util.js `el()` promises it has no HTML pathway, so a string handed to it can never become
+markup. One attribute name broke that: an `on*` key whose value was not a function fell through
+to setAttribute, and a string there IS an inline handler the browser compiles as script — under
 any case, since HTML lowercases attribute names. It is refused now.
 
-`openFolds` and `flash` are the two moves of every landing journey (a ref link, a settings
-field, a setup fix, the side TOC), each of which used to write them out by hand.
+landing.js `openFolds` and `flash` are the two moves of every landing journey (a ref link, a
+settings field, a setup fix, the side TOC), each of which used to write them out by hand.
 """
 
 from __future__ import annotations
@@ -46,14 +46,16 @@ def test_el_refuses_an_inline_handler_string(ui, ui_page):
 def test_a_landing_opens_every_fold_above_and_flashes_once(ui, ui_page):
     ui_page.goto(ui.url)
     ui_page.wait_for_selector(".topbar")
-    out = ui_page.evaluate("""() => import('/static/util.js').then(async (m) => {
+    out = ui_page.evaluate("""() => Promise.all([import('/static/util.js'),
+                                                  import('/static/landing.js')])
+      .then(async ([m, landing]) => {
         const inner = m.el('details', {}, m.el('summary', {}, 'in'), m.el('p', {}, 'target'));
         const outer = m.el('details', {}, m.el('summary', {}, 'out'), inner);
         const aside = m.el('details', {}, m.el('summary', {}, 'aside'));
         document.body.append(m.el('div', {}, outer, aside));
         const target = inner.querySelector('p');
-        m.openFolds(target);
-        m.flash(target);
+        landing.openFolds(target);
+        landing.flash(target);
         const lit = target.classList.contains('ref-flash');
         await new Promise((r) => setTimeout(r, 2700));
         return { outer: outer.open, inner: inner.open, aside: aside.open, lit,

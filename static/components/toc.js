@@ -12,7 +12,8 @@
 // either way, so base.css hides it there and the page is read top-to-bottom. Skipped on views
 // that carry their own page-level rail.
 
-import { el, openFolds } from "/static/util.js";
+import { el } from "/static/util.js";
+import { openFolds } from "/static/landing.js";
 
 export function mountToc(box) {
   // Views with their own page-level rail don't get a second one. The routine page's

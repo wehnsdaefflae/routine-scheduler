@@ -6,7 +6,7 @@
 // decisions) — on arbitrary text a bare "D1" is a false positive. `R` and not `B` for bug
 // reports: the user's own reviewer-backlog items are written B<n> and would mislink.
 
-import { flash } from "/static/util.js";
+import { flash } from "/static/landing.js";
 
 // Unbounded digits: the R namespace passes R10000, and a capped pattern left every id past it
 // as plain text.

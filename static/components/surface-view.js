@@ -29,7 +29,8 @@
 
 import { api } from "/static/api.js";
 import { LABEL } from "/static/components/setupcheck.js";
-import { el, flash, openFolds } from "/static/util.js";
+import { el } from "/static/util.js";
+import { flash, openFolds } from "/static/landing.js";
 
 function sourceKey(node) {
   const src = node.source || {};
@@ -160,7 +161,7 @@ function inViewport(node) {
   return r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight;
 }
 
-// The landing half, shaped after `reflinks.focusRef` — scroll centred, then util.js `flash`.
+// The landing half, shaped after `reflinks.focusRef` — scroll centred, then landing.js `flash`.
 // It cannot BE focusRef: that one addresses item cards by `ref-<id>`; these
 // anchors are the section headings' own `sec-*` ids. `focus` addresses ONE control inside the
 // panel — the ability card carrying the dial, the exposure row carrying the select. The section
