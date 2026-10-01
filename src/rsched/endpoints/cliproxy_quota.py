@@ -11,7 +11,9 @@ import json
 import httpx
 
 from ..config import EndpointConfig
+from .anthropic_api import API_VERSION
 from .base import EndpointError
+from .cliproxy_mgmt import auth_files, file_provider
 from .cliproxy_mgmt import client as _client
 from .subscription_quota import normalize
 
@@ -19,9 +21,8 @@ ENDPOINT = "https://api.anthropic.com/api/oauth/usage"
 MANAGE_URL = "https://claude.ai/settings/usage"
 
 
-def _account(files: list, selected: str) -> str:
-    accounts = [row for row in files if isinstance(row, dict)
-                and row.get("provider", row.get("type")) == "claude"
+def _account(files: list[dict], selected: str) -> str:
+    accounts = [row for row in files if file_provider(row) == "claude"
                 and not row.get("disabled") and row.get("auth_index")]
     if selected:
         accounts = [row for row in accounts if str(row["auth_index"]) == selected]
@@ -37,19 +38,11 @@ def read_quota(cfg: EndpointConfig, *, timeout: int = 15) -> dict:
     try:
         client, url = _client(cfg, timeout)
         with client:
-            response = client.get(f"{url}/auth-files")
-            if response.status_code != 200:
-                raise EndpointError(f"Proxy management HTTP {response.status_code}; check the "
-                                    "management key and management access configuration.")
-            listing = response.json()
-            files = listing.get("files") if isinstance(listing, dict) else None
-            if not isinstance(files, list):
-                raise EndpointError("Proxy account listing has an unrecognised format.")
-            auth_index = _account(files, cfg.quota_auth_index)
+            auth_index = _account(auth_files(client, url), cfg.quota_auth_index)
             response = client.post(f"{url}/api-call", json={
                 "auth_index": auth_index, "method": "GET", "url": ENDPOINT,
                 "header": {"Authorization": "Bearer $TOKEN$",
-                           "anthropic-version": "2023-06-01",
+                           "anthropic-version": API_VERSION,
                            "anthropic-beta": "oauth-2025-04-20"},
             })
             if response.status_code != 200:

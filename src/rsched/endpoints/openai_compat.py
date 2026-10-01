@@ -321,7 +321,7 @@ class OpenAICompatEndpoint:
         usage = data.get("usage") or {}
         # Implicit prompt caching (OpenAI/OpenRouter/DeepSeek-style): cached_tokens arrives
         # as a SUBSET of prompt_tokens on this API — subtract it so "in" is fresh input
-        # only, the same cached-kept-OUT-of-"in" convention the other two adapters report
+        # only, the same cached-kept-OUT-of-"in" convention the anthropic adapter reports
         # (token budgets keep their meaning; cache hit rates stay visible per run).
         details = usage.get("prompt_tokens_details") or {}
         cached = int(details.get("cached_tokens") or 0)

@@ -125,13 +125,9 @@ def set_sink(sink) -> None:
         _open.clear()      # a new sink observes a new process's calls, never the old one's
 
 
-def get_sink():
-    return _sink
-
-
 def note_started(rec: dict) -> None:
-    """Register a `started` record as an OPEN call. Called by the wrapper; exposed because a
-    sidecar replayer (and the tests) need to describe a call that started outside this process.
+    """Register a `started` record as an OPEN call. Called by the wrapper; public because the
+    tests describe calls the wrapper never started (a daemon thread killed mid-call).
     """
     cid = rec.get("id")
     if cid:
@@ -185,10 +181,6 @@ class InstrumentedEndpoint:
     @property
     def name(self) -> str:
         return self._inner.name
-
-    @property
-    def context_tokens(self) -> int:
-        return self._inner.context_tokens
 
     def __getattr__(self, item):
         # adapter-specific attributes fall through to the wrapped endpoint. Guard `_inner`

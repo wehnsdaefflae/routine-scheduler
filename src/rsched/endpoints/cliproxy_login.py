@@ -26,7 +26,7 @@ import httpx
 
 from ..config import EndpointConfig
 from .base import EndpointError
-from .cliproxy_mgmt import LABEL, LOGIN_PROVIDER
+from .cliproxy_mgmt import LABEL, LOGIN_PROVIDER, auth_files, file_provider, management_error
 from .cliproxy_mgmt import client as _client
 
 # login-route provider name → card label (the auth-file names are cliproxy_mgmt's)
@@ -37,11 +37,6 @@ STATUS_POLL_S = 20        # how long `complete` waits for the proxy's token exch
 # a JSON fragment or a sentence never matches, a leaked credential always does
 TOKEN_WORD = re.compile(r"[A-Za-z0-9._~+/=-]{40,}")
 UNREACHABLE = "Could not reach the proxy's management API; check connectivity and proxy health."
-
-
-def _management_error(status_code: int) -> EndpointError:
-    return EndpointError(f"Proxy management HTTP {status_code}; check the management key "
-                         "and management access configuration.")
 
 
 def _one_line(text: object, limit: int = 160) -> str:
@@ -59,7 +54,7 @@ def _account_view(f: dict) -> dict:
     field the proxy adds tomorrow cannot reach the console.
     """
     return {"name": str(f.get("name") or f.get("id") or ""),
-            "provider": str(f.get("provider") or f.get("type") or ""),
+            "provider": file_provider(f),
             "label": str(f.get("label") or f.get("email") or f.get("account") or ""),
             "status": str(f.get("status") or ""),
             "status_message": _one_line(f.get("status_message")),
@@ -80,14 +75,7 @@ def accounts(cfg: EndpointConfig, providers=frozenset(), *, timeout: int = 15) -
     try:
         client, url = _client(cfg, timeout)
         with client:
-            response = client.get(f"{url}/auth-files")
-            if response.status_code != 200:
-                raise _management_error(response.status_code)
-            listing = response.json()
-            files = listing.get("files") if isinstance(listing, dict) else None
-            if not isinstance(files, list):
-                raise EndpointError("Proxy account listing has an unrecognised format.")
-        rows = [_account_view(f) for f in files if isinstance(f, dict)]
+            rows = [_account_view(f) for f in auth_files(client, url)]
         if wanted:
             rows = [r for r in rows if r["provider"] in wanted]
         offered = sorted(wanted or LOGIN_PROVIDER)
@@ -111,7 +99,7 @@ def start(cfg: EndpointConfig, provider: str, *, timeout: int = 15) -> dict:
         with client:
             response = client.get(f"{url}/{provider}-auth-url", params={"is_webui": "true"})
             if response.status_code != 200:
-                raise _management_error(response.status_code)
+                raise management_error(response.status_code)
             reply = response.json()
         if (not isinstance(reply, dict) or reply.get("status") != "ok"
                 or not reply.get("url") or not reply.get("state")):

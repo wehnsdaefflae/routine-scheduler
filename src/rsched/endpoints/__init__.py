@@ -1,9 +1,9 @@
 """Endpoint registry: config name → adapter instance, plus role resolution.
 
-The scheduler's engine IS the harness. Endpoints are model TRANSPORTS only: raw
-chat-completion APIs (OpenAI-compatible, Anthropic Messages), plus the Claude Code CLI in
-fully stripped print mode (`--tools ""`, our system prompt replacing its own, no settings/
-MCP/session) — a subscription-billed completion function, never an agent loop.
+The scheduler's engine IS the harness. Endpoints are model TRANSPORTS only: two raw
+chat-completion wires (OpenAI-compatible, Anthropic Messages) — a completion function, never
+an agent loop. A Claude subscription is the Anthropic wire pointed at a proxy that owns the
+login (docs/claude-proxy-cutover.md).
 """
 
 from __future__ import annotations

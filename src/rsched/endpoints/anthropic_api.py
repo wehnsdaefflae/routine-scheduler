@@ -38,7 +38,6 @@ from .base import (
     PDF_MIME,
     Completion,
     Message,
-    anthropic_usage,
     json_or_raise,
     post_json,
     raise_for_status,
@@ -61,6 +60,20 @@ _DROPPABLE = (
     ("temperature", ("temperature",)),
     ("tool_choice", ("tool_choice",)),
 )
+
+
+def _usage(raw: dict) -> dict:
+    """The Messages API's usage block → our usage dict. `input_tokens` EXCLUDES cache traffic
+    on this API; cache reads/writes are surfaced as `cached_in` / `cache_write`, kept OUT of
+    "in" so token budgets keep their meaning.
+    """
+    usage = {"in": int(raw.get("input_tokens") or 0),
+             "out": int(raw.get("output_tokens") or 0)}
+    if raw.get("cache_read_input_tokens"):
+        usage["cached_in"] = int(raw["cache_read_input_tokens"])
+    if raw.get("cache_creation_input_tokens"):
+        usage["cache_write"] = int(raw["cache_creation_input_tokens"])
+    return usage
 
 
 def merge_consecutive(messages: list[Message]) -> list[Message]:
@@ -187,7 +200,6 @@ class AnthropicEndpoint:
         self.api_key = cfg.api_key
         self.key_env_file = cfg.key_env_file
         self.key_var = cfg.key_var
-        self.context_tokens = cfg.context_tokens
         self.temperature = cfg.temperature
 
     def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
@@ -273,7 +285,7 @@ class AnthropicEndpoint:
         return Completion(
             text="\n".join(texts),
             parsed=parsed if isinstance(parsed, dict) else None,
-            usage=anthropic_usage(data.get("usage") or {}),  # reads ~0.1x, writes ~1.25x
+            usage=_usage(data.get("usage") or {}),  # reads ~0.1x, writes ~1.25x
             stop_reason=str(data.get("stop_reason") or ""),
             stop_details=details if isinstance(details, dict) else {},
         )

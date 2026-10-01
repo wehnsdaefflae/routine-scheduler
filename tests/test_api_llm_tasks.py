@@ -3,7 +3,7 @@ boot and after an SSE reconnect. Also asserts the daemon sink is installed for t
 
 import pytest
 
-from rsched.endpoints.instrument import get_sink
+from rsched.endpoints import instrument
 from rsched.llm_tasks import DaemonSink
 
 
@@ -18,7 +18,7 @@ def test_requires_auth(client):
 
 def test_daemon_sink_installed_during_app_life(client):
     # the lifespan wires the process-global sink so instrumented complete() calls are observed
-    assert isinstance(get_sink(), DaemonSink)
+    assert isinstance(instrument._sink, DaemonSink)
 
 
 def test_empty_snapshot(client):
