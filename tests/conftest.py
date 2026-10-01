@@ -236,7 +236,7 @@ class ScriptedEndpoint:
         return supports_media_type(media_type, multimodal=multimodal, pdf=True)
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
-                 timeout=600, session=None, temperature=None, cacheable=True):
+                 timeout=600, temperature=None, cacheable=True):
         from rsched.engine import refusal as _refusal
         if schema is _refusal.CLASSIFY_SCHEMA or schema is _refusal.ISOLATION_SCHEMA:
             # The refusal-clarification subcalls (engine/refusal.py) ride the same
@@ -253,8 +253,7 @@ class ScriptedEndpoint:
         system = messages[0]["content"] if messages else ""
         with self.lock:
             self.calls.append({"messages": [dict(m) for m in messages], "model": model,
-                               "schema": schema, "session": session,
-                               "max_tokens": max_tokens, "effort": effort,
+                               "schema": schema, "max_tokens": max_tokens, "effort": effort,
                                "cacheable": cacheable})
             item = None
             for i, entry in enumerate(self.replies):
@@ -467,7 +466,8 @@ def wait_(n=None, all_=False, timeout_s=None, say="Waiting for children."):
 
 class FakeRunner:
     """Runner double: records fire/resume, marks the slug active, returns the run id.
-    active_states/recover_orphans satisfy the scheduler protocol as no-ops."""
+    active_states satisfies the scheduler's restart check as a no-op (orphan recovery is
+    `runner_reap.recover_orphans(runner, …)`, a function over the runner, not a method)."""
 
     def __init__(self, *, ts: str = "20260717-120000"):
         self.fired: list[tuple[str, str]] = []
@@ -482,9 +482,6 @@ class FakeRunner:
 
     def active_states(self):
         return []
-
-    def recover_orphans(self, catalog):
-        return 0
 
     async def fire(self, cfg, *, reason="schedule", brief="") -> str:
         self.fired.append((cfg.slug, reason))
@@ -539,8 +536,8 @@ def mk_run(routine_dir: Path, ts: str, state: str, *, turn: int = 3, pid: int | 
         st["updated"] = updated
     atomic_write_json(run_dir / "status.json", st)
     if summary:
-        (run_dir / "result.md").write_text(summary)
+        (run_dir / "result.md").write_text(summary, encoding="utf-8")
     if transcript is not None:
         (run_dir / "transcript.jsonl").write_text(
-            "".join(json.dumps(e) + "\n" for e in transcript))
+            "".join(json.dumps(e) + "\n" for e in transcript), encoding="utf-8")
     return run_dir
