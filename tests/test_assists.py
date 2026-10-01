@@ -127,6 +127,16 @@ def test_the_seed_rules_that_declare_assists_are_valid():
 
 
 
+def test_a_hand_broken_fire_count_never_fails_the_turn(tmp_path):
+    """The tally is best-effort — a failed count must never fail the turn that fired. Only the
+    write was guarded: a count that does not parse raised from the read, mid-observation."""
+    assist = normalize_assists(_assist(), rule="fix-the-cause")[0][0]
+    lib.state_path(tmp_path).parent.mkdir(parents=True)
+    lib.state_path(tmp_path).write_text(json.dumps({assist.key: "many"}), encoding="utf-8")
+    assert lib.record_fire(tmp_path, assist) == 1
+    assert lib.record_fire(tmp_path, assist) == 2
+
+
 def test_only_the_rules_a_routine_holds_contribute(tmp_path):
     rules = tmp_path / "rules"
     rules.mkdir()

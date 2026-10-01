@@ -211,7 +211,10 @@ def record_fire(routine_dir: Path, assist: Assist) -> int:
     path = state_path(routine_dir)
     raw = read_json(path, {})
     counts = raw if isinstance(raw, dict) else {}
-    n = int(counts.get(assist.key) or 0) + 1
+    try:
+        n = int(counts.get(assist.key) or 0) + 1
+    except (TypeError, ValueError):
+        n = 1        # a count a hand edit broke starts over rather than failing the turn
     counts[assist.key] = n
     try:
         atomic_write_json(path, dict(sorted(counts.items())))
