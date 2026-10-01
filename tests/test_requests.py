@@ -668,6 +668,32 @@ def test_capabilities_digest_teaches_once_grants_and_tombstones(make_routine, tm
     assert "fs-write:/tmp/granted" in digest
 
 
+def test_capabilities_digest_names_write_rule_with_its_own_dial(make_routine, tmp_path):
+    """Every emittable gated kind a run holds is named on the capabilities line — write_rule
+    was not, so a routine holding only rule-authoring read "(none beyond the base kinds)", and
+    nothing said which approval its writes would wait on."""
+    from rsched import utils_lib
+    from rsched.config import ServerConfig, load_routine
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.capabilities import capabilities_digest
+    from rsched.engine.run_context import RunContext
+    from rsched.engine.transcript import Transcript
+
+    d = make_routine(slug="ruler")
+    cfg, _ = load_routine(d)
+    server = ServerConfig()
+    server.libraries_home = tmp_path / "lib"
+    utils_lib.ensure_library(server.libraries_home)
+    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts=TS,
+                     run_dir=d / "runs" / TS, transcript=Transcript(tmp_path / "t3.jsonl"),
+                     budgets=Budgets.from_config(cfg.budgets))
+    ctx.grants = GrantPolicy(actions=frozenset({"write_rule"}), rule_confirm="creations")
+    digest = capabilities_digest(ctx)
+    assert "write_rule (author or revise a general rule" in digest
+    assert "NEW rules need approval, revisions do not" in digest
+    assert "none beyond the base kinds" not in digest
+
+
 def test_a_mid_leg_write_recipe_grant_actually_unlocks_the_recipe():
     """D135/F498: the engine OFFERS `action:write_recipe` as a run-scoped grant and tells the
     run it is usable now, but `recipe_unlocked` was derived once at leg setup from static

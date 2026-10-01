@@ -255,6 +255,15 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         if g.allows_kind("remove_util"):
             cap_bits.append("remove_util (delete a global util the library no longer needs; "
                             "refused while another util still calls it)")
+        if g.allows_kind("write_rule"):
+            # Named like the other emittable gated kinds, with its OWN approval dial: left out,
+            # a routine holding only rule-authoring read "(none beyond the base kinds)".
+            cap_bits.append("write_rule (author or revise a general rule in the shared library "
+                            "— a revision reaches every routine holding the rule; " + {
+                                "always": "every write needs the user's approval",
+                                "creations": "NEW rules need approval, revisions do not",
+                                "never": "no approval asked",
+                            }[g.rule_confirm] + ")")
         if g.allows_kind("shell"):
             cap_bits.append("shell (run an ad-hoc command on the host — the ESCAPE HATCH "
                             "around the util library; hold it, use it for the one-off, and "
