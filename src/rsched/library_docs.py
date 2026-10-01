@@ -44,12 +44,9 @@ def parse_lenient(text: str) -> tuple[dict, str]:
         return {}, text
 
 
-_parse = parse_lenient   # module-internal alias (call sites below predate the export)
-
-
 def doc_body(raw: str) -> str:
     """The document text without frontmatter — what the UI shows and prompts inline."""
-    return _parse(raw)[1]
+    return parse_lenient(raw)[1]
 
 
 def ensure_dir(home: Path) -> None:
@@ -66,8 +63,8 @@ EFFECT_FIELDS = ("with", "without", "when")
 
 
 def _effect(raw: object) -> dict[str, str]:
-    """`{on, off, when}` as strings — missing keys read as empty rather than absent, so the
-    page renders the gap instead of a hole and the linter is the thing that fails on it.
+    """`{with, without, when}` as strings — missing keys read as empty rather than absent, so
+    the page renders the gap instead of a hole and the linter is the thing that fails on it.
     """
     src = raw if isinstance(raw, dict) else {}
     return {k: str(src.get(k) or "").strip() for k in EFFECT_FIELDS}
@@ -82,7 +79,7 @@ def list_docs(home: Path) -> list[dict]:
     out = []
     for path in sorted(home.glob("*.md")):
         text = path.read_text(encoding="utf-8")
-        meta, _ = _parse(text)
+        meta, _ = parse_lenient(text)
         m = DOC_RE.search(text)
         out.append({"slug": path.stem,
                     "summary": (m.group("summary").strip() if m else ""),
@@ -116,7 +113,11 @@ def _title(slug: str) -> str:
 
 
 def slugs(home: Path) -> list[str]:
-    return [d["slug"] for d in list_docs(home)]
+    """Every doc's slug — the filename stems `list_docs` lists, in its order, without parsing
+    a single file: callers only ask which docs exist, and a parse of every frontmatter (its
+    requires and assists normalized) per call bought them nothing.
+    """
+    return [p.stem for p in sorted(home.glob("*.md"))] if home.is_dir() else []
 
 
 def read_doc(home: Path, slug: str) -> str | None:

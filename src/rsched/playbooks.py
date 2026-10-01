@@ -22,6 +22,7 @@ from pathlib import Path
 import yaml
 
 from .ids import is_slug
+from .library_docs import parse_lenient
 from .paths import atomic_write
 
 MAIN = "MAIN.md"
@@ -46,11 +47,6 @@ def _playbook_dir(home: Path, slug: str) -> Path | None:
     return playbooks_dir(home) / slug if is_slug(slug) else None
 
 
-def _parse(text: str) -> tuple[dict, str]:
-    from .library_docs import parse_lenient
-    return parse_lenient(text)
-
-
 def _safe_detail_name(name: str) -> str:
     """A traversal-proof `<kebab>.md` detail filename."""
     stem = re.sub(r"[^a-z0-9-]+", "-", str(name).lower().removesuffix(".md")).strip("-") or "detail"
@@ -71,7 +67,7 @@ def list_playbooks(home: Path) -> list[dict]:
         main = sub / MAIN
         if not main.is_file():
             continue
-        meta, _ = _parse(main.read_text(encoding="utf-8"))
+        meta, _ = parse_lenient(main.read_text(encoding="utf-8"))
         when = str(meta.get("when") or "").strip()
         details = sorted(p.name for p in sub.glob("*.md") if p.name != MAIN)
         out.append({"slug": sub.name,
@@ -97,7 +93,7 @@ def read_playbook(home: Path, slug: str) -> dict | None:
     if sub is None or not (sub / MAIN).is_file():
         return None
     text = (sub / MAIN).read_text(encoding="utf-8")
-    meta, body = _parse(text)
+    meta, body = parse_lenient(text)
     details = {p.name: p.read_text(encoding="utf-8")
                for p in sorted(sub.glob("*.md")) if p.name != MAIN}
     return {"slug": slug, "content": text, "body": body.strip(), "meta": meta, "details": details}

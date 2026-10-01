@@ -180,7 +180,8 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     # F339: the composer may choose them PRE-START, so the rules reply #1 boots with — named in
     # its digest beside when each applies — are the ones the person picked.
     wanted = CONVERSATION_RULES if rules is None else rules
-    active_rules = [r for r in wanted if r in set(library_docs.slugs(server.rules_home))]
+    available_rules = set(library_docs.slugs(server.rules_home))
+    active_rules = [r for r in wanted if r in available_rules]
     commit = head_commit(server.libraries_home)
     main_meta = {"name": title, "slug": slug,
                  "materialized_from": {"slug": CONVERSE_WORKFLOW, "commit": commit,
