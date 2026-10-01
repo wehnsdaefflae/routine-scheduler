@@ -106,13 +106,29 @@ def canonical(eid: str) -> str:
     return f"{parsed[0]}:{parsed[1]}"
 
 
-def never_grantable_fs(path: str | Path) -> bool:
-    """True when the path lies in (or contains) a credential store no grant may open."""
+def _spellings(path: str | Path) -> set[Path]:
+    """The path as written (expanded) and as the kernel opens it (symlinks resolved).
+
+    Both, because a grant is compiled into a Landlock rule by OPENING the root
+    (`landlock.py`), which follows symlinks: a root at `/tmp/x` linking to `~/.ssh` mounts
+    `~/.ssh`. A loop or an unreadable component yields only the written form — such a root
+    cannot be opened, so it mounts nothing to guard.
+    """
     p = expand(path)
-    for guarded in (expand(g) for g in NEVER_GRANTABLE):
-        if p == guarded or p in guarded.parents or guarded in p.parents:
-            return True
-    return False
+    try:
+        return {p, p.resolve()}
+    except (OSError, RuntimeError):
+        return {p}
+
+
+def never_grantable_fs(path: str | Path) -> bool:
+    """True when the path lies in (or contains) a credential store no grant may open —
+    compared as written AND as resolved, on both sides: a symlink to a store (or a store
+    that is itself a symlink) is the store.
+    """
+    guarded = {g for store in NEVER_GRANTABLE for g in _spellings(store)}
+    return any(p == g or p in g.parents or g in p.parents
+               for p in _spellings(path) for g in guarded)
 
 
 #: Why a guarded root is refused, in the ONE wording every enforcer uses — the PATCH that

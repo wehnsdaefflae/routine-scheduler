@@ -48,6 +48,43 @@ def test_never_grantable_fs_guards_the_credential_stores():
     assert not entities.never_grantable_fs("~/projects/site")
 
 
+def test_a_symlink_to_a_credential_store_is_the_store(tmp_path, monkeypatch):
+    """A granted root becomes a Landlock rule by OPENING it, and opening follows symlinks —
+    so a root at `/tmp/x` linking to `~/.ssh` mounts `~/.ssh`. `/tmp` is writable inside every
+    jail: a util could plant the link and the run request the innocuous-looking path. The guard
+    compared spellings only, and passed it."""
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    (home / "projects").mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    planted = tmp_path / "jail-tmp"
+    planted.mkdir()
+    (planted / "x").symlink_to(home / ".ssh")
+    (planted / "up").symlink_to(home)                       # CONTAINS the stores
+    (planted / "fine").symlink_to(home / "projects")
+    assert entities.never_grantable_fs(planted / "x")
+    assert entities.never_grantable_fs(planted / "x" / "id_ed25519")
+    assert entities.never_grantable_fs(planted / "up")
+    assert not entities.never_grantable_fs(planted / "fine")
+    assert entities.guarded_roots([str(planted / "x"), str(planted / "fine")]) == \
+        [str(planted / "x")]
+
+
+def test_a_credential_store_that_is_itself_a_symlink_is_guarded_at_its_target(
+        tmp_path, monkeypatch):
+    """The other side of the same comparison: `~/.credentials` living on another volume
+    behind a link is opened at the target, so the target is what may not be granted."""
+    home = tmp_path / "home"
+    home.mkdir()
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (home / ".credentials").symlink_to(vault)
+    monkeypatch.setenv("HOME", str(home))
+    assert entities.never_grantable_fs(vault)
+    assert entities.never_grantable_fs(vault / "token.json")
+    assert not entities.never_grantable_fs(tmp_path / "elsewhere")
+
+
 def test_is_resource_separates_the_classes():
     assert entities.is_resource("secret:FOO")
     assert entities.is_resource("fs-write:/tmp/x")
