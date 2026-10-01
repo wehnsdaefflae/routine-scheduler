@@ -26,9 +26,11 @@ MAX_TASKS = 1000         # hard cap on retained tasks (drop oldest terminal firs
 #: A task prunes only once `done_at` is set, and only a finished/failed record or `close_process`
 #: sets it — so a call whose owning process never closes was retained for the DAEMON'S LIFETIME
 #: (F572: six abandoned `Compaction · archival` tasks visible in one conversation's panel, with
-#: the group row rendering them as `0/24`). The ceiling is the backstop for every path that does
-#: not, or cannot, report back: well above the slowest real call — archival itself waits 180-600s
-#: — so it never reaps live work, and far below "forever".
+#: the group row rendering them as `0/24`). A caller that gives a call up ON PURPOSE says why
+#: through the ordinary channel — `endpoints/instrument.abandon_open_calls` writes the call's
+#: `failed` record, which `ingest` folds like any other. The ceiling is the backstop for every
+#: path that does not, or cannot, report back: well above the slowest real call — archival
+#: itself waits 180-600s — so it never reaps live work, and far below "forever".
 MAX_RUNNING_S = 3600.0
 
 _STATUS = {"started": "running", "finished": "done", "failed": "error"}
@@ -85,26 +87,6 @@ class TaskCenter:
         self.tasks[tid] = entry
         self._prune()
         self.bus.publish({"event": "llm_task", "status": entry["status"], **rec})
-
-    def abandon_task(self, tid: str, *, reason: str) -> None:
-        """Record that an in-flight call was GIVEN UP ON, by the caller that gave up on it.
-
-        The age backstop in `_prune` catches a stuck task eventually, but a caller that abandons
-        a call on purpose already knows the cause, and the cause is what a reader needs: the
-        difference between "this timed out" and "the run ended before its archive finished" is
-        invisible once both have merely aged out. `engine/archival.py` abandons an in-flight
-        archival thread by design at run end, and until this existed the task it left behind
-        stayed `running` forever (F572).
-
-        A no-op for an unknown or already-terminal task: abandoning must never invent a task
-        nor overwrite an outcome the call itself reported.
-        """
-        entry = self.tasks.get(tid)
-        if entry is None or entry.get("status") in ("done", "error"):
-            return
-        entry.update(status="error", error=reason, done_at=time.monotonic())
-        self._prune()
-        self.bus.publish({"event": "llm_task", "status": "error", "id": tid, "error": reason})
 
     # --- reconcile snapshot --------------------------------------------------
     def snapshot(self) -> dict:
