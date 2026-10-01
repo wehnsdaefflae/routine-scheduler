@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from rsched import reminders
 from rsched.engine.actionschema import BRIEF_FIELD, KINDS, canon
 
 SOURCE = Path(__file__).resolve().parents[1] / "util-seed/utils/reminder-census/main.py"
@@ -28,6 +29,14 @@ def census():
 
 def test_its_identifying_fields_are_the_engines(census):
     assert census.BRIEF_FIELD == BRIEF_FIELD
+
+
+def test_its_labels_and_match_window_are_the_engines(census):
+    """The census replays a reminder over the same first MATCH_TARGET_CHARS of an action the
+    engine matches, and tallies the engine's label vocabulary — a drift in either reports a
+    live reminder as dead, or drops a label the runs are giving."""
+    assert census.LABELS == reminders.LABELS
+    assert census.MATCH_TARGET_CHARS == reminders.MATCH_TARGET_CHARS
 
 
 @pytest.mark.parametrize("kind", sorted(KINDS))
