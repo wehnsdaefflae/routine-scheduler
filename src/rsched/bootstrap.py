@@ -73,7 +73,8 @@ ADOPT_PERMISSIONS: list[str] = []
 _ADOPTED_MARKER = ".permissions-adopted.json"
 
 
-def _ensure_library_permission(permissions_home: Path, slug: str) -> str | None:
+def _ensure_library_permission(permissions_home: Path, slug: str,
+                               routines_home: Path) -> str | None:
     """An existing library repo predates a new seed permission (seed_libraries only runs at
     repo creation): copy the repo seed in — never overwriting — and commit, so the permission
     exists as the grants authority. Returns the library copy's content, or None.
@@ -86,7 +87,7 @@ def _ensure_library_permission(permissions_home: Path, slug: str) -> str | None:
         return None
     shutil.copy(src, dst)
     libgit.commit(permissions_home.parent, f"seed new default permission: {slug}",
-                  paths=[f"{permissions_home.name}/{slug}.md"])
+                  routines_home=routines_home, paths=[f"{permissions_home.name}/{slug}.md"])
     return dst.read_text(encoding="utf-8")
 
 
@@ -105,7 +106,7 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
     for slug in ADOPT_PERMISSIONS:
         if slug in done:
             continue
-        if _ensure_library_permission(permissions_home, slug) is None:
+        if _ensure_library_permission(permissions_home, slug, routines_home) is None:
             continue
         for rdir in sorted(routines_home.iterdir()):
             if rdir.name.startswith(".") or not (rdir / "routine.yaml").is_file():
@@ -126,7 +127,8 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
                 _merge_caps(raw["capabilities"], slug,
                             read_library_requires(permissions_home))
             atomic_write_yaml(rdir / "routine.yaml", raw)
-            libgit.commit(rdir, f"adopt default permission: {slug}")
+            libgit.commit(rdir, f"adopt default permission: {slug}",
+                          routines_home=routines_home)
             touched += 1
         newly_done.add(slug)
     if newly_done:
@@ -183,7 +185,8 @@ def seed_libraries(home: Path) -> None:
     if not (home / ".git").is_dir():
         libgit.init_repo(home, first_commit="seed library repo")
     else:
-        libgit.commit(home, "seed library repo")
+        # install-time seeding runs before any instance exists: no health stream to file in
+        libgit.commit(home, "seed library repo", routines_home=None)
         libgit.install_push_hook(home)
 
 
@@ -198,7 +201,7 @@ SEED_DOC_KINDS = (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.m
                   ("patterns", "*.yaml"), ("reminders", "*.md"))
 
 
-def sync_seed_library_docs(libraries_home: Path) -> int:
+def sync_seed_library_docs(libraries_home: Path, *, routines_home: Path) -> int:
     """Install seed workflows/rules/permissions/patterns MISSING from the live library (runs at
     every daemon boot, like sync_seed_utils). seed_libraries only runs at repo creation, so a
     pattern or rule added to library-seed/ later — e.g. the `converse` workflow the
@@ -242,11 +245,11 @@ def sync_seed_library_docs(libraries_home: Path) -> int:
         log.warning("seed-sync: installed new library doc(s): %s", ", ".join(installed))
         libgit.commit(libraries_home,
                       f"seed-sync: install new library doc(s): {', '.join(installed)}",
-                      paths=installed)
+                      routines_home=routines_home, paths=installed)
     return len(installed)
 
 
-def adopt_library_edits(libraries_home: Path) -> bool:
+def adopt_library_edits(libraries_home: Path, *, routines_home: Path) -> bool:
     """Commit whatever OUT-OF-BAND edits the live library repo is carrying (runs at every
     daemon boot, after the seed syncs). Every managed write path commits what it writes
     (write_util / write_rule, the web save endpoints, seed-sync) — but a conversation
@@ -265,10 +268,11 @@ def adopt_library_edits(libraries_home: Path) -> bool:
     if r.returncode != 0 or not r.stdout.strip():
         return False
     log.warning("boot: adopting out-of-band library edit(s):\n%s", r.stdout.strip())
-    return libgit.commit(libraries_home, "boot: adopt out-of-band library edits")
+    return libgit.commit(libraries_home, "boot: adopt out-of-band library edits",
+                         routines_home=routines_home).status == "committed"
 
 
-def sync_seed_utils(libraries_home: Path) -> int:
+def sync_seed_utils(libraries_home: Path, *, routines_home: Path) -> int:
     """Install seed utils MISSING from the live util library (runs at every daemon boot).
     Bootstrap seeds utils only once, so a util added to util-seed/ after an instance was
     created never reached it — a permission could point at a util that doesn't exist
@@ -298,5 +302,5 @@ def sync_seed_utils(libraries_home: Path) -> int:
         log.warning("seed-sync: installed new seed util(s): %s", ", ".join(installed))
         libgit.commit(libraries_home,
                       f"seed-sync: install new seed util(s): {', '.join(installed)}",
-                      paths=[f"utils/{n}" for n in installed])
+                      routines_home=routines_home, paths=[f"utils/{n}" for n in installed])
     return len(installed)

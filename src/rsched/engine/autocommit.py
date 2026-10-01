@@ -1,8 +1,9 @@
-"""Autocommit the routine's working directory at run end (best-effort).
+"""Autocommit the routine's working directory at run end.
 
 Routines never run git themselves, so the engine owns version control of their state/outputs.
-This is a best-effort operation: failures are silently ignored so they never block
-the run's finish.
+A commit that does not land never blocks the run's finish. It is never silent either:
+`libgit.commit` logs it and files a `commit_failed` health event carrying this run's id. The
+files stay on disk, so the next run's autocommit takes them.
 """
 
 from __future__ import annotations
@@ -88,13 +89,14 @@ def _newly_oversize(routines_home: Path, routine: str,
 
 def autocommit(routine_dir: Path, message: str, *, routines_home: Path | None = None,
                run_id: str = "") -> None:
-    """Commit the routine's working dir at run end (best-effort), through the shared
-    `libgit.commit` (F285/F318 — this module once re-implemented it verbatim): its
+    """Commit the routine's working dir at run end, through the shared `libgit.commit`
+    (F285/F318 — this module once re-implemented it verbatim): its
     per-repo lock means a cross-routine writer committing this same dir concurrently
     — the routine-improver's `git-sync` of a target that is mid-run — takes turns with
     this autocommit instead of colliding on `index.lock` (the `git-sync` util flocks the
-    same file), and its identity flags keep the neutral author even in a routine repo
-    that never persisted git config.
+    same file), its identity flags keep the neutral author even in a routine repo that
+    never persisted git config, and a commit that does not land is filed against `run_id`
+    in `routines_home`'s health stream.
 
     Files over OVERSIZE_BYTES are excluded from the stage and each one is reported as an
     `oversize_state_file` health event (when `routines_home` is known) the first time it
@@ -104,7 +106,8 @@ def autocommit(routine_dir: Path, message: str, *, routines_home: Path | None = 
     if not (routine_dir / ".git").is_dir():
         return
     big = oversize_files(routine_dir)
-    commit(routine_dir, message, exclude=[rel for rel, _size in big])
+    commit(routine_dir, message, routines_home=routines_home, run_id=run_id,
+           exclude=[rel for rel, _size in big])
     if big and routines_home is not None:
         for rel, size in _newly_oversize(routines_home, routine_dir.name, big):
             log_health_event(routines_home, "oversize_state_file",

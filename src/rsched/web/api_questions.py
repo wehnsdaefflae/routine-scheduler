@@ -146,7 +146,7 @@ def _decide_request(request: Request, match: dict, routine_dir,
     if decision.endswith("_forever"):
         out.update(grants_apply.apply_forever(request.app.state.server, routine_dir,
                                               req_ids, decision))
-        _git_commit(routine_dir, f"grant decision via web ({decision}: "
+        _git_commit(request, routine_dir, f"grant decision via web ({decision}: "
                                  f"{', '.join(req_ids)})")
         request.app.state.scheduler.rescan()
     elif decision == "allow_now":

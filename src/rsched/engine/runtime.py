@@ -187,7 +187,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     # for unversioned dirs (conversations). Lands in status.json + the usage record.
     from ..recipes import current_recipe_commit
 
-    ctx.recipe_commit = current_recipe_commit(routine_dir)
+    ctx.recipe_commit = current_recipe_commit(routine_dir, routines_home=server.routines_home)
     if not resume_from:
         _ensure_decomposed(routine_dir, cfg, server)   # workflow + instruction → main.md, if needed
     body, prov, allowed_tools = load_workflow(routine_dir, cfg)

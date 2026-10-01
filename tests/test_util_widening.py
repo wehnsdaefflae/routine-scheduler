@@ -24,7 +24,8 @@ def test_widening_names_what_is_new():
 
 
 def _loop(home, confirm):
-    ctx = SimpleNamespace(server=SimpleNamespace(libraries_home=home, libraries_remote=""),
+    ctx = SimpleNamespace(server=SimpleNamespace(libraries_home=home, libraries_remote="",
+                                                 routines_home=None),
                           depth=0, routine=SimpleNamespace(dir=home, slug="r"),
                           grants=GrantPolicy(actions=frozenset({"write_util", "revise_util"}),
                                              confirm=confirm),

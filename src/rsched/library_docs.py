@@ -128,12 +128,13 @@ def write_doc(home: Path, slug: str, content: str) -> None:
     atomic_write(home / f"{slug}.md", content)
 
 
-def git_commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:
+def git_commit(home: Path, message: str, *, routines_home: Path | None,
+               paths: Sequence[str] | None = None) -> libgit.Commit:
     """Commit a doc change under the shared library-repo lock (see libgit.commit); `paths`
     (relative to `home`, e.g. `<slug>.md`) scopes the stage so a concurrent writer's commit
-    can't sweep it.
+    can't sweep it. A failure is filed in `routines_home`'s health stream.
     """
-    return libgit.commit(home, message, paths=paths)
+    return libgit.commit(home, message, routines_home=routines_home, paths=paths)
 
 
 def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[dict]:

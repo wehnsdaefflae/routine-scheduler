@@ -7,7 +7,8 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"util_killed"
         |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
-        |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"scheduler_tick_error",
+        |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"scheduler_tick_error"
+        |"commit_failed"|"git_lock_cleared",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -34,6 +35,22 @@ because it exceeds `engine/autocommit.OVERSIZE_BYTES` (detail names path and siz
 file stays on disk and the run's work is untouched; what it never becomes is a git blob
 in a repo the instance mirrors and pushes — one 223 MB inventory once blocked every
 library push for days, and the mirror repo's history had to be rewritten to drop it.
+
+commit_failed: a commit into a repo the instance versions did not land (`libgit.commit`) — a
+routine's run-end autocommit, a web edit, a boot seed sync, a migration, the recipe snapshot.
+routine = the repo's directory name (a routine's slug; the library's own directory name for the
+library), run_id = the run whose autocommit it was, else empty. Carries `repo`, `step` (add ·
+commit) and, when git's index lock stood in the way, `lock_age_s`; detail says why the lock was
+kept (`gitlock.IndexLock.kept_because`). The files stay on disk and the next commit that lands
+takes them, so nothing is lost; what is lost until then is the history. Before this event a
+stale lock made EVERY later commit in that repo fail the same silent way: on 2026-09-30 the
+migration record said 0 failed while two routines' edits sat staged under one.
+
+git_lock_cleared: a provably stale `index.lock` was removed before a write (`gitlock` — the
+commit lock was held, no git process worked in the repo, the lock was empty and older than
+`gitlock.STALE_AFTER_S`). Carries `repo` and `lock_age_s`. Nothing failed, so it is not blocked
+work; a run of them is something killing git mid-write — the disk stalling, the OOM killer, a
+container stopped mid-commit.
 
 util_killed: a child command the engine ran — a util, a routine `script` or a `shell`
 command — was stopped by a SIGNAL (engine/executor). Carries `kind` (util · script ·

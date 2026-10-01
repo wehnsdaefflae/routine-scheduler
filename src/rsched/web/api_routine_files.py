@@ -117,7 +117,7 @@ def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict
         p = resolve_rel(info.cfg.dir, body.path)
         p.parent.mkdir(parents=True, exist_ok=True)
         atomic_write(p, body.content)
-        _git_commit(info.cfg.dir, f"edit {body.path} via web")
+        _git_commit(request, info.cfg.dir, f"edit {body.path} via web")
         return {"ok": True}
 
     # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast

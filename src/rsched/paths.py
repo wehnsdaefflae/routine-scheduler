@@ -165,8 +165,9 @@ def file_lock(lock_path: str | Path, *, timeout: float = 30.0,
               poll: float = 0.05) -> Iterator[bool]:
     """Advisory exclusive lock across processes via `fcntl.flock`. Yields True once held,
     or False if `timeout` elapsed without acquiring — in which case the caller proceeds
-    BEST-EFFORT (a stale/hung holder must never deadlock a commit; git's own 30s subprocess
-    timeout bounds the wait regardless). The lock file itself is never written or committed.
+    BEST-EFFORT (a stale/hung holder must never deadlock a commit; libgit's own subprocess
+    timeout bounds the wait regardless) — and `libgit.writing` then removes no git index lock,
+    since the holder may be mid-commit. The lock file itself is never written or committed.
     """
     lock_path = Path(lock_path)
     lock_path.parent.mkdir(parents=True, exist_ok=True)

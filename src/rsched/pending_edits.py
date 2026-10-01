@@ -41,9 +41,10 @@ QUEUEABLE_KINDS = ("file", "recipe_revert", "trigger_create", "trigger_update",
 MAX_PENDING_EDITS = 64   # spool cap per routine — past it the web rejects with 429
 
 
-# -- appliers: pure (routine_dir, payload) -> result dict; raise on invalid ------------
+# -- appliers: (routine_dir, payload, routines_home) -> result dict; raise on invalid ----
+# `routines_home` is the instance whose health stream hears about a commit that did not land.
 
-def apply_file(routine_dir: Path, payload: dict) -> dict:
+def apply_file(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
     """Write one of the routine's own files (main.md, a stage module, state, or
     routine.yaml) and commit it — the replay of put_routine_file.
     """
@@ -51,18 +52,20 @@ def apply_file(routine_dir: Path, payload: dict) -> dict:
     p = resolve_rel(routine_dir, rel)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(str(payload.get("content", "")), encoding="utf-8")
-    libgit.commit(routine_dir, f"edit {rel} via web (queued mid-run)")
+    libgit.commit(routine_dir, f"edit {rel} via web (queued mid-run)",
+                  routines_home=routines_home)
     return {"path": rel}
 
 
-def apply_recipe_revert(routine_dir: Path, payload: dict) -> dict:
+def apply_recipe_revert(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
     """Roll the recipe back to before a commit — the replay of revert_recipe. Delegates
     to the same recipes.revert_recipe the endpoint uses (it self-commits under the lock).
     """
-    return recipes.revert_recipe(routine_dir, str(payload["commit"]))
+    return recipes.revert_recipe(routine_dir, str(payload["commit"]),
+                                 routines_home=routines_home)
 
 
-def apply_trigger_create(routine_dir: Path, payload: dict) -> dict:
+def apply_trigger_create(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
     """Append a server-built trigger entry to routine.yaml. The entry (with its token/id)
     was built at request time so the URL could be returned then; the applier only lands it.
     """
@@ -76,11 +79,12 @@ def apply_trigger_create(routine_dir: Path, payload: dict) -> dict:
     entries.append(entry)
     raw["triggers"] = entries
     atomic_write_yaml(path, raw)
-    libgit.commit(routine_dir, f"add trigger {entry.get('id')} via web (queued mid-run)")
+    libgit.commit(routine_dir, f"add trigger {entry.get('id')} via web (queued mid-run)",
+                  routines_home=routines_home)
     return {"id": entry.get("id")}
 
 
-def apply_trigger_update(routine_dir: Path, payload: dict) -> dict:
+def apply_trigger_update(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
     """Retune a live trigger's fields (cooldown/day-cap) in place."""
     trigger_id = str(payload["trigger_id"])
     fields = dict(payload.get("fields") or {})
@@ -93,11 +97,12 @@ def apply_trigger_update(routine_dir: Path, payload: dict) -> dict:
     target.update(fields)
     raw["triggers"] = entries
     atomic_write_yaml(path, raw)
-    libgit.commit(routine_dir, f"retune trigger {trigger_id} via web (queued mid-run)")
+    libgit.commit(routine_dir, f"retune trigger {trigger_id} via web (queued mid-run)",
+                  routines_home=routines_home)
     return {"id": trigger_id}
 
 
-def apply_trigger_delete(routine_dir: Path, payload: dict) -> dict:
+def apply_trigger_delete(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
     """Remove a trigger by id."""
     trigger_id = str(payload["trigger_id"])
     path = routine_dir / "routine.yaml"
@@ -108,11 +113,12 @@ def apply_trigger_delete(routine_dir: Path, payload: dict) -> dict:
         return {"skipped": f"no trigger {trigger_id!r}", "id": trigger_id}
     raw["triggers"] = kept
     atomic_write_yaml(path, raw)
-    libgit.commit(routine_dir, f"remove trigger {trigger_id} via web (queued mid-run)")
+    libgit.commit(routine_dir, f"remove trigger {trigger_id} via web (queued mid-run)",
+                  routines_home=routines_home)
     return {"id": trigger_id}
 
 
-APPLIERS: dict[str, Callable[[Path, dict], dict]] = {
+APPLIERS: dict[str, Callable[[Path, dict, Path], dict]] = {
     "file": apply_file,
     "recipe_revert": apply_recipe_revert,
     "trigger_create": apply_trigger_create,
@@ -166,7 +172,8 @@ def apply_pending(routine_dir: Path, routines_home: Path, slug: str) -> list[dic
         try:
             if applier is None:
                 raise ValueError(f"unknown edit kind {kind!r}")
-            row["result"] = applier(routine_dir, dict(rec.get("payload") or {}))
+            row["result"] = applier(routine_dir, dict(rec.get("payload") or {}),
+                                    routines_home)
             row["ok"] = True
         except (KeyError, ValueError, OSError, recipes.RecipeError) as exc:
             row["ok"] = False

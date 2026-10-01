@@ -32,7 +32,7 @@ def save_playbook(request: Request, slug: str) -> dict:
     main_text, details = playbook_distill.materialize(pb)
     playbooks.write_playbook(home, pb["slug"], main=main_text, details=details)
     library.git_commit(home, f"save playbook {pb['slug']} (from conversation {slug})",
-                       paths=[f"playbooks/{pb['slug']}"])
+                       routines_home=server.routines_home, paths=[f"playbooks/{pb['slug']}"])
     return {"ok": True, "slug": pb["slug"], "title": pb["title"], "when": pb["when"],
             "axis": pb["axis"]}
 
@@ -63,5 +63,5 @@ def update_playbook(request: Request, slug: str) -> dict:
     main_text, details = playbook_distill.materialize(pb)
     playbooks.write_playbook(home, bound, main=main_text, details=details)
     library.git_commit(home, f"update playbook {bound} (from conversation {slug})",
-                       paths=[f"playbooks/{bound}"])
+                       routines_home=server.routines_home, paths=[f"playbooks/{bound}"])
     return {"ok": True, "slug": bound, "title": pb["title"], "axis": pb["axis"]}

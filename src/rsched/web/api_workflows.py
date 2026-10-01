@@ -199,7 +199,8 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
         raise HTTPException(422, "; ".join(problems))
     _require_digest(request, kind, slug, content, body.impact_digest)
     library_docs.write_doc(home, slug, content.rstrip() + "\n")
-    library_docs.git_commit(home, f"edit {kind[:-1]} {slug} via web", paths=[f"{slug}.md"])
+    library_docs.git_commit(home, f"edit {kind[:-1]} {slug} via web", paths=[f"{slug}.md"],
+                            routines_home=request.app.state.server.routines_home)
     return {"ok": True}
 
 
@@ -226,7 +227,8 @@ def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
     if not path.is_file():
         raise HTTPException(404, f"no {kind[:-1]} {slug!r}")
     path.unlink()
-    library_docs.git_commit(home, f"delete {kind[:-1]} {slug} via web", paths=[f"{slug}.md"])
+    library_docs.git_commit(home, f"delete {kind[:-1]} {slug} via web", paths=[f"{slug}.md"],
+                            routines_home=request.app.state.server.routines_home)
     return {"ok": True}
 
 
@@ -251,7 +253,7 @@ def delete_global_reminder(request: Request, rid: str) -> dict:
         raise HTTPException(404, f"no curated reminder {rid!r}")
     reminders.delete_global(server.reminders_home, rid)
     libgit.commit(server.libraries_home, f"delete curated reminder {rid} via web",
-                  paths=[reminders.global_rel(rid)])
+                  routines_home=server.routines_home, paths=[reminders.global_rel(rid)])
     return {"ok": True}
 
 
@@ -266,7 +268,7 @@ def delete_util(request: Request, name: str) -> dict:
         raise HTTPException(404, f"no util {name!r}")
     utils_lib.remove_util_file(server.libraries_home, name)   # atomic rename-aside + delete
     utils_lib.git_commit(server.libraries_home, f"delete util {name} via web",
-                         paths=[f"utils/{name}"])
+                         routines_home=server.routines_home, paths=[f"utils/{name}"])
     return {"ok": True}
 
 
@@ -302,7 +304,8 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
                                     policy=sandbox.base_policy(server))
     if not ok:
         raise HTTPException(422, f"selftest failed (not committed):\n{output[:800]}")
-    utils_lib.git_commit(server.libraries_home, f"revise {name} via web", paths=[f"utils/{name}"])
+    utils_lib.git_commit(server.libraries_home, f"revise {name} via web",
+                         routines_home=server.routines_home, paths=[f"utils/{name}"])
     return {"ok": True}
 
 
@@ -334,7 +337,8 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
         raise HTTPException(422, "; ".join(problems))
     rel = f"workflows/{slug}.py"
     atomic_write(home / rel, body.content.rstrip() + "\n")
-    library.git_commit(home, f"edit {rel} via web", paths=[rel])
+    library.git_commit(home, f"edit {rel} via web", routines_home=server.routines_home,
+                       paths=[rel])
     return {"ok": True, "head": library.head_commit(home)}
 
 
@@ -361,6 +365,7 @@ def delete_workflow(request: Request, slug: str) -> dict:
         raise HTTPException(404, f"no workflow {slug!r}")
     path.unlink()
     library.git_commit(home, f"delete workflows/{slug}.py via web",
-                       paths=[f"workflows/{slug}.py"])
+                       paths=[f"workflows/{slug}.py"],
+                       routines_home=request.app.state.server.routines_home)
     return {"ok": True, "head": library.head_commit(home)}
 

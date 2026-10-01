@@ -38,31 +38,31 @@ def repo(tmp_path):
 def test_unversioned_dir_degrades(tmp_path):
     d = tmp_path / "conv"
     d.mkdir()
-    assert current_recipe_commit(d) is None
+    assert current_recipe_commit(d, routines_home=None) is None
     assert recipe_log(d) == []
     with pytest.raises(RecipeError, match="no git history"):
-        revert_recipe(d, "abc123")
+        revert_recipe(d, "abc123", routines_home=None)
 
 
 def test_recipe_commit_ignores_state_noise(repo):
     """The version key is the last RECIPE-touching commit: the engine's run-end state
     autocommits move HEAD every run but must not open a new health bucket."""
-    v1 = current_recipe_commit(repo)
+    v1 = current_recipe_commit(repo, routines_home=None)
     assert v1 == _git(repo, "rev-parse", "HEAD")
     (repo / "state" / "notes.md").write_text("more notes\n", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "gitr:20260702-070000: ok")   # a run's autocommit
     assert _git(repo, "rev-parse", "HEAD") != v1
-    assert current_recipe_commit(repo) == v1                  # bucket unchanged
+    assert current_recipe_commit(repo, routines_home=None) == v1                  # bucket unchanged
 
 
 def test_dirty_recipe_snapshotted_recipe_only(repo):
     """The improver's uncommitted recipe edit is committed at the NEXT run's start as a
     recipe-only snapshot — state dirt stays out of it (and stays dirty)."""
-    v1 = current_recipe_commit(repo)
+    v1 = current_recipe_commit(repo, routines_home=None)
     (repo / "stages" / "scan.md").write_text("# scan v2\n", encoding="utf-8")
     (repo / "state" / "notes.md").write_text("dirty state\n", encoding="utf-8")
-    v2 = current_recipe_commit(repo)
+    v2 = current_recipe_commit(repo, routines_home=None)
     assert v2 != v1
     shown = _git(repo, "show", "--name-only", "--format=%s", v2)
     assert "recipe: pre-run snapshot" in shown
@@ -79,7 +79,7 @@ def test_recipe_log_series(repo):
          date="2026-07-05T10:00:00+00:00")
     log = recipe_log(repo)
     assert [e["subject"] for e in log] == ["recipe: sharpen the scan stage", "scaffold"]
-    assert log[0]["commit"] == current_recipe_commit(repo)
+    assert log[0]["commit"] == current_recipe_commit(repo, routines_home=None)
     assert log[0]["date"].startswith("2026-07-05")
     assert log[0]["short"] and log[0]["commit"].startswith(log[0]["short"])
 
@@ -93,9 +93,9 @@ def test_revert_restores_pre_change_recipe_only(repo):
     (repo / "routine.yaml").write_text("slug: gitr\nenabled: true\n", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "recipe: v2 + config edit")
-    bad = current_recipe_commit(repo)
+    bad = current_recipe_commit(repo, routines_home=None)
 
-    result = revert_recipe(repo, bad)
+    result = revert_recipe(repo, bad, routines_home=None)
     assert result["reverted"] == bad
     assert (repo / "main.md").read_text(encoding="utf-8") == "# main v1\n"
     assert not (repo / "stages" / "extra.md").exists()
@@ -103,32 +103,53 @@ def test_revert_restores_pre_change_recipe_only(repo):
     assert "enabled: true" in (repo / "routine.yaml").read_text(encoding="utf-8")
     assert (repo / "state" / "notes.md").read_text(encoding="utf-8") == "notes\n"
     # the revert IS the new recipe version — health tracking continues from it
-    assert current_recipe_commit(repo) == result["new_commit"]
+    assert current_recipe_commit(repo, routines_home=None) == result["new_commit"]
     assert recipe_log(repo)[0]["subject"].startswith("recipe: revert to pre-")
 
 
 def test_revert_guards(repo):
     root = _git(repo, "rev-parse", "HEAD")
     with pytest.raises(RecipeError, match="unknown commit"):
-        revert_recipe(repo, "0000000000000000000000000000000000000000")
+        revert_recipe(repo, "0000000000000000000000000000000000000000", routines_home=None)
     with pytest.raises(RecipeError, match="not a commit hash"):
-        revert_recipe(repo, "HEAD^{}")
+        revert_recipe(repo, "HEAD^{}", routines_home=None)
     with pytest.raises(RecipeError, match="first commit"):
-        revert_recipe(repo, root)
+        revert_recipe(repo, root, routines_home=None)
     (repo / "state" / "notes.md").write_text("x\n", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "state only")
     with pytest.raises(RecipeError, match="touched no recipe file"):
-        revert_recipe(repo, _git(repo, "rev-parse", "HEAD"))
+        revert_recipe(repo, _git(repo, "rev-parse", "HEAD"), routines_home=None)
 
 
 def test_revert_when_already_matching_is_refused(repo):
     (repo / "main.md").write_text("# main v2\n", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "recipe: v2")
-    bad = current_recipe_commit(repo)
-    revert_recipe(repo, bad)
+    bad = current_recipe_commit(repo, routines_home=None)
+    revert_recipe(repo, bad, routines_home=None)
     # reverting the ORIGINAL change again: the recipe already matches its pre-state
     with pytest.raises(RecipeError, match="already matches"):
-        revert_recipe(repo, bad)
+        revert_recipe(repo, bad, routines_home=None)
     assert (repo / "main.md").read_text(encoding="utf-8") == "# main v1\n"
+
+
+def test_a_snapshot_that_cannot_land_answers_none_not_the_older_version(repo):
+    """A fresh index lock (not provably stale) stops the pre-run snapshot. Answering the last
+    committed version would attribute the run to a recipe no longer on disk."""
+    (repo / "stages" / "scan.md").write_text("# scan v2\n", encoding="utf-8")
+    (repo / ".git" / "index.lock").write_bytes(b"")
+    assert current_recipe_commit(repo, routines_home=None) is None
+
+
+def test_a_revert_refuses_while_an_index_lock_is_in_the_way(repo):
+    """Every step of the revert writes the index, so each would fail — and the empty commit at
+    the end used to read as "the recipe already matches". It refuses first, naming the lock."""
+    (repo / "main.md").write_text("# main v2\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "recipe: v2")
+    bad = current_recipe_commit(repo, routines_home=None)
+    (repo / ".git" / "index.lock").write_bytes(b"")
+    with pytest.raises(RecipeError, match="index lock"):
+        revert_recipe(repo, bad, routines_home=None)
+    assert (repo / "main.md").read_text(encoding="utf-8") == "# main v2\n"

@@ -145,15 +145,16 @@ def permission_layers_detail(server, cfg, *,
     return permissions, capabilities
 
 
-def _git_commit(routine_dir: Path, message: str) -> None:
+def _git_commit(request: Request, routine_dir: Path, message: str) -> None:
     """Commit a web-side routine-dir edit under the SAME per-repo lock the engine's
     autocommit takes (libgit) — a rule change is allowed during a LIVE run and used to
-    race the engine on git's index, the loser failing silently.
+    race the engine on git's index, the loser failing silently. A commit that does not land
+    is filed in the instance's health stream (`libgit.commit`).
     """
     if not (routine_dir / ".git").exists():
         return
     from ..libgit import commit
-    commit(routine_dir, message)
+    commit(routine_dir, message, routines_home=_state(request).server.routines_home)
 
 
 def write_routine_config(request: Request, info: registry.RoutineInfo, raw: dict, *,
@@ -176,7 +177,7 @@ def write_routine_config(request: Request, info: registry.RoutineInfo, raw: dict
     defaults to nothing to send, which is correct for a purely NEXT_RUN edit.
     """
     atomic_write_yaml(info.cfg.dir / "routine.yaml", raw)
-    _git_commit(info.cfg.dir, message)
+    _git_commit(request, info.cfg.dir, message)
     _state(request).scheduler.rescan()
     return signal_config_change(info, fields, values or {})
 

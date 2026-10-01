@@ -2,12 +2,12 @@
 the console reads it through.
 
 The stream had fourteen writers and no reader inside the product: the nightly audit recipe
-opens the file over ssh, and nothing a person clicks in the console showed a line of it. Six
-of those events say the same thing — something DUE did not happen — and they are precisely
-the ones nothing else surfaces: a refused fire leaves no run, a stopped chain leaves no
-member run, a capped trigger leaves a dark routine. A failure has a run page; a fire that
-never happened has nothing at all, which is how F316's week of missed lane fires passed with
-zero signal.
+opens the file over ssh; nothing a person clicks in the console showed a line of it.
+`BLOCKED_EVENTS` are the ones that say the same thing — something DUE did not happen — and
+they are precisely the ones nothing else surfaces: a refused fire leaves no run, a stopped
+chain leaves no member run, a capped trigger leaves a dark routine, a commit that did not land
+leaves files no history holds. A failure has a run page; a fire that never happened has
+nothing at all, which is how F316's week of missed lane fires passed with zero signal.
 
 `blocked_fleet` is that fold: one row per (event, subject) with a count and the newest
 detail, so "what is the fleet not doing" is answered by a fetch instead of by ssh.
@@ -45,6 +45,8 @@ BLOCKED_EVENTS: dict[str, str] = {
     "lane_chain_member_skipped": "a chain named a member that is not a routine in any home",
     "scheduler_tick_error": "a scheduler tick raised — whatever that tick owed is late",
     "trigger_capped": "a trigger hit its daily cap: the routine is dark until the cap resets",
+    "commit_failed": "a commit into a versioned repo did not land — the files are on disk and "
+                     "out of its history until a later commit takes them",
 }
 
 #: Partial finishes, split by whether a budget forced them (health_events.py's own

@@ -469,7 +469,9 @@ and the capabilities digest's catalog listing):
   `OVERSIZE_BYTES` (20 MB) and files an `oversize_state_file` health event per file: the routine
   repo is mirrored into the library and PUSHED, and one 223 MB inventory a run wrote to `state/`
   blocked every library push for days (the mirror's history had to be rewritten to drop it). The
-  file itself is untouched — only the commit skips it.
+  file itself is untouched — only the commit skips it. A run-end commit that does not land files
+  `commit_failed` against the run and leaves the files for the next run's commit (Git writes,
+  below).
 - `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here; a message's **`via`**
   is a CLOSED set, `engine/inbox.VIAS`, validated by the one writer `inbox.file_message`, and it
   is not a label but the SWITCH that decides when the message is consumed, whether the post-finish
@@ -993,11 +995,11 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   SINGLE-FLIGHT per key (0.340.0: a burst of identical requests — every open tab refetching one
   endpoint on a bus event — computes once while the rest wait and re-read), `readmodels/usage_stream`
   is the ONE parser of workflow-usage.jsonl and `readmodels/health_stream` the ONE parser of
-  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the six events
-  that mean WORK THAT WAS DUE DID NOT HAPPEN — `fire_refused`, `lane_fire_refused`,
-  `lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped` —
-  one row per (event, subject) with a count and the newest detail, because each of them produces
-  NO run and so can reach no run page, Items row or Stats slice) — a read-model is a pure
+  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the eight
+  events that mean WORK THAT WAS DUE DID NOT HAPPEN — `fire_refused`, `lane_fire_refused`,
+  `lane_fire_paused`, `lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error`,
+  `trigger_capped`, `commit_failed` — one row per (event, subject) with a count and the newest
+  detail, because none of them can reach a run page, Items row or Stats slice) — a read-model is a pure
   derivation, deletable state, never a writer. The Decisions read model (`web/decisions_read.py` — what `/api/questions`, the
   badge, the tab-open notifier and Web Push all read) is memoized per home on the same fingerprint
   over the catalog's own sources (the home listing, every `routine.yaml`, every `questions/pending`
@@ -1296,6 +1298,65 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   committed code (`uv run` re-syncs deps); under Docker `restart: unless-stopped` does, and its
   restart manager gives up after ONE failed start — so verify every bind source exists before
   dropping the sentinel. Orphaned runs claiming to be alive are closed out at boot.
+
+## Git writes (libgit.py, gitlock.py)
+
+Every repo the instance versions — the library and each routine's own — is written through
+`libgit`: `commit()` for one stage-and-commit, `writing()` for a multi-step write (the recipe
+revert's `rm` + `checkout` + `commit`). Git takes `<gitdir>/index.lock` for every write of the
+index. A process that dies holding it leaves the file behind; from then on every WRITE in
+that repo fails while every read keeps working, so nothing notices. On 2026-09-30 the `/home` disk
+stalled two I/O commands during the settings-patterns migration; the commits in `self-audit` and
+`sprind` ran past their timeout. Both repos were left with an empty lock: the edits staged,
+the record saying `failed: {}`, and every later autocommit in either repo bound to fail the same
+silent way. Three rules close that, each where it happened:
+
+- **A timeout TERMINATES git and never kills it outright.** Git deletes its lockfiles in its own
+  SIGTERM handler and cannot after SIGKILL, which is what `subprocess.run` sends at its timeout.
+  `libgit.git` runs git in its own process group; a call that outlives its timeout (30 s)
+  gets SIGTERM to the group and SIGKILL only after `_TERM_GRACE` (30 s). The grace is sized to
+  the disk: `/home` is a USB-attached SSD whose bridge aborts a stalled command at the 30 s SCSI
+  timeout. A git blocked in that I/O runs its handler only once the I/O returns.
+- **A read never takes the index lock.** Every call runs with `GIT_OPTIONAL_LOCKS=0`, so a
+  `git status` stops writing a refreshed index back: a reader can neither leave a lock behind
+  nor make a concurrent writer fail on its live one. The hold check's `status` in the operator's
+  own project repos (`engine/assist_predicates`) goes through `libgit.git` for the same reason.
+- **A commit that does not land says so.** `commit()` returns a `Commit` — `committed`, `clean`
+  (nothing to commit), `unversioned` (no repo), or `failed` with the step, git's own words and
+  the index lock in the way — and files a failure as a `commit_failed` health event, which the
+  blocked-work fold shows (docs/run-analytics.md). Clean and failed are told apart by what in
+  the commit's scope still differs from HEAD once git has answered, never by parsing git's
+  localized messages. `routines_home` — whose health stream hears about it — is a REQUIRED
+  argument, so every call site decides; only install-time seeding and a repo's first commit pass
+  None. A migration that commits per routine records a commit that did not land under `failed`
+  (`migrate_settings_patterns`).
+
+**A stale lock is removed automatically — only when PROVABLY stale** (`gitlock`). The other
+choice was to leave every lock to a person behind a one-click remedy. It was rejected because
+the person would judge with less than the code knows. Inside the container the code sees every
+process that could hold the lock except a git run outside it, which the person clicking cannot
+see either — and waiting costs a failed commit per run in that repo until someone looks. The
+proof is four conditions, all required, checked while `writing()` holds the repo's commit lock:
+
+1. the commit lock is held, so no cooperative writer (daemon, engine run, web layer, the
+   `git-sync` util) is between its `add` and its `commit`;
+2. no git process visible here works in the repo — none has its working directory, a `-C`, a
+   `--git-dir`, a `--work-tree` or a `GIT_DIR` inside it — and a git whose working directory
+   cannot be read (another uid's) counts as one that does;
+3. the lock is EMPTY. An interactive `git commit -a` writes the new index into its lock and
+   keeps it while its editor is open, the one legitimate long hold; a lock with content is a
+   person's to judge and is never removed here;
+4. it is older than `gitlock.STALE_AFTER_S`, ten minutes: the margin for the holder no scan can
+   see, a git on the host outside the container or over the sshfs mount from another machine.
+   Each git call of an rsched commit ends within its timeout plus its grace, one minute.
+
+A lock that fails any condition stays. The commit that met it fails visibly with the reason it
+was kept; the next commit after the lock turns ten minutes old removes it. The removal
+re-checks the file's inode, mtime and size, so a lock replaced after its inspection is never the
+one deleted. A removal is filed as `git_lock_cleared` — a run of those is something killing git
+mid-write (a stalling disk, the OOM killer, a container stopped mid-commit). A repo no rsched
+commit writes — the scheduler's own checkout, a worktree a session made — is outside this path:
+its stale lock is found by whoever next writes there, as before.
 
 ## Observing the daemon
 

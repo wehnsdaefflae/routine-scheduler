@@ -278,6 +278,7 @@ def save_as_pattern(request: Request, slug: str, body: SaveAsBody) -> dict:
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     libgit.commit(server.libraries_home, f"new settings pattern {new_slug} from {slug} via web",
+                  routines_home=server.routines_home,
                   paths=[f"{store.SUBDIR}/{new_slug}.yaml"])
     apply_updates(request, info, {"pattern": new_slug},
                   message=f"follow new settings pattern {new_slug} via web")
@@ -325,5 +326,5 @@ def delete_pattern(request: Request, slug: str) -> dict:
         released.append(follower)
     store.delete(server.libraries_home, slug)
     libgit.commit(server.libraries_home, f"delete settings pattern {slug} via web",
-                  paths=[f"{store.SUBDIR}/{slug}.yaml"])
+                  routines_home=server.routines_home, paths=[f"{store.SUBDIR}/{slug}.yaml"])
     return {"ok": True, "released": released}

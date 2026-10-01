@@ -166,6 +166,21 @@ def test_domains_end_and_stranded_notes_arrive(instance):
     assert sum("fixed" in m for m in inbox) == 1
 
 
+def test_a_commit_that_did_not_land_is_recorded_as_failed(instance):
+    """The first run of this migration recorded `failed: {}` while two routines' edits sat
+    staged under a stale index lock. A routine migrated on disk and not in its history is a
+    failure the record names."""
+    from rsched import libgit
+
+    rdir = instance.routines_home / "ards"
+    libgit.init_repo(rdir)
+    (rdir / ".git" / "index.lock").write_bytes(b"")      # fresh: kept, so the commit fails
+    record = mig.run_migration(instance)
+    assert record["routines"]["ards"]["commit"] == "failed"
+    assert record["failed"]["ards"].startswith("migrated, but the commit did not land: git add")
+    assert mig.LIBRARY not in record["failed"]
+
+
 def test_a_second_boot_changes_nothing(instance):
     mig.run_migration(instance)
     before = (instance.routines_home / "ards" / "routine.yaml").read_text()

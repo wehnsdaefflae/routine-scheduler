@@ -217,11 +217,13 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. Six health events record the opposite —
-`fire_refused`, `lane_fire_refused`, `lane_chain_stopped`, `lane_chain_member_skipped`,
-`scheduler_tick_error`, `trigger_capped` — and each of them produces no run, so no run
-page, no Items row and no Stats slice can carry it. They had fourteen writers and no
-reader inside the product: the nightly audit opened `.control/health-events.jsonl` over
+Everything above measures runs that HAPPENED. Eight health events record the opposite —
+`fire_refused`, `lane_fire_refused`, `lane_fire_paused`, `lane_chain_stopped`,
+`lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped` and `commit_failed`
+— and no run page, Items row or Stats slice can carry any of them: the first seven produce
+no run at all; a commit that did not land happens after a run's finish is written, or
+outside any run (a web edit, a boot seed sync, a migration). They had fourteen writers and
+no reader inside the product: the nightly audit opened `.control/health-events.jsonl` over
 ssh and the console showed none of it, which is how F316's week of missed lane fires
 passed with zero signal.
 
@@ -230,8 +232,10 @@ passed with zero signal.
 `first_ts`, `last_ts` and the NEWEST `detail`, newest first, plus `vocabulary` — what each
 event name means — so a console renders a label it was not compiled with. `subject` is the
 event's own `routine` field: a routine slug for a refused fire or a capped trigger, an
-opaque LANE ID for the three lane events (resolve it against the lane store, never by
-reading a prefix), empty for a scheduler tick. `total: 0` is the healthy reading.
+opaque LANE ID for a lane's refused, paused or stopped fire (resolve it against the lane
+store, never by reading a prefix), the repo's directory name for a commit that did not land
+(a routine's slug, or the library's own directory), empty for a scheduler tick. `total: 0`
+is the healthy reading.
 
 Both folds are memoized on the stream's stat fingerprint with single-flight misses: this
 rides a bus-event refresh path, and an un-memoized parse per request is what starved the

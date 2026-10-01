@@ -286,7 +286,8 @@ def revert_recipe(request: Request, slug: str, body: RevertBody) -> dict:
 
     def _apply() -> dict:
         try:
-            result = do_revert(info.cfg.dir, body.commit)
+            result = do_revert(info.cfg.dir, body.commit,
+                               routines_home=_state(request).server.routines_home)
         except RecipeError as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"ok": True, **result}

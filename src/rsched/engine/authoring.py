@@ -163,7 +163,7 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
         return {"kind": "write_util", "name": name, "created": creating,
                 "selftest_ok": False, "reverted": True, "output": output}
     utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}",
-                         paths=[f"utils/{name}"])
+                         routines_home=ctx.server.routines_home, paths=[f"utils/{name}"])
     return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
 
 
@@ -265,7 +265,7 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     library_docs.write_doc(home, name, content)
     library_docs.git_commit(ctx.server.libraries_home,
                             f"{'author' if creating else 'revise'} rule {name}",
-                            paths=[f"rules/{name}.md"])
+                            routines_home=ctx.server.routines_home, paths=[f"rules/{name}.md"])
     return {"kind": "write_rule", "name": name, "created": creating, "written": True,
             "holders": holders}
 
@@ -322,5 +322,6 @@ def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
         if not is_approval(ask["answer"]):
             return {"kind": "remove_util", "name": name, "declined": True}
     utils_lib.remove_util_file(home, name)
-    utils_lib.git_commit(home, f"remove {name}", paths=[f"utils/{name}"])
+    utils_lib.git_commit(home, f"remove {name}", routines_home=ctx.server.routines_home,
+                         paths=[f"utils/{name}"])
     return {"kind": "remove_util", "name": name, "removed": True}

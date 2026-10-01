@@ -1,7 +1,10 @@
 """One-shot boot migration to SETTINGS PATTERNS — MIGRATION(expires=2026-10-20).
 
 Runs once at daemon boot (before the library seed sync) and records what it did in
-`.control/migrations/settings-patterns.json`; while that record exists it does nothing. In order:
+`.control/migrations/settings-patterns.json`; while that record exists it does nothing. A
+routine — or the library — whose converted files did not reach its git history is recorded
+under `failed` too, with the reason (`libgit.Commit.describe`): the first run wrote `failed: {}`
+while two routines' edits sat staged under a stale index lock. In order:
 
 1. **The library.** The sixteen general rules and seventeen permission docs replace the old
    sets (retired files deleted, rewritten ones overwritten — the seed sync alone never
@@ -53,6 +56,8 @@ from .paths import atomic_write, atomic_write_json, atomic_write_yaml, read_json
 log = logging.getLogger("rsched.migrate_settings_patterns")
 
 RECORD = Path(".control") / "migrations" / "settings-patterns.json"
+#: The `failed` key the library's own commit is recorded under — never a routine slug.
+LIBRARY = "(library)"
 BACKUPS = Path(".control") / "migrations" / "settings-patterns-backup"
 CONTRACT = Path(__file__).with_name("migrate_settings_patterns_contract.md")
 MESSAGE = "check the changes i recommend."
@@ -68,17 +73,22 @@ def run_migration(server) -> dict:
     from .grants import read_library_requires
     from .patterns import store
 
-    record: dict = {"started": now_iso(),
-                    "library": _library(Path(server.libraries_home)), "routines": {},
-                    "failed": {}}
+    record: dict = {"started": now_iso(), "routines": {}, "failed": {}}
+    record["library"], landed = _library(Path(server.libraries_home), home)
+    if landed.failed:
+        record["failed"][LIBRARY] = f"converted, but {landed.describe()}"
     requires = read_library_requires(Path(server.permissions_home))
     patterns = {p["slug"]: p for p in store.list_all(Path(server.libraries_home))}
     for slug, spec in ROUTINES.items():
         try:
-            record["routines"][slug] = _routine(home, slug, spec, patterns, requires)
+            done, landed = _routine(home, slug, spec, patterns, requires)
+            record["routines"][slug] = done
         except Exception as exc:
             log.exception("settings-patterns: %s failed", slug)
             record["failed"][slug] = f"{type(exc).__name__}: {exc}"
+            continue
+        if landed.failed:   # migrated on disk but not in its history: a person must look
+            record["failed"][slug] = f"migrated, but {landed.describe()}"
     record["conversations"] = _conversations(Path(server.conversations_home), requires)
     record.update(end_domains(home))
     record_path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,7 +101,7 @@ def run_migration(server) -> dict:
 # ---------------------------------------------------------------------------------- library
 
 
-def _library(lib: Path) -> list[str]:
+def _library(lib: Path, routines_home: Path) -> tuple[list[str], libgit.Commit]:
     from .bootstrap import repo_root
 
     seed = repo_root() / "library-seed"
@@ -131,23 +141,25 @@ def _library(lib: Path) -> list[str]:
     if kit.is_dir() and CONTRACT.is_file():
         atomic_write(kit / "CONTRACT.md", CONTRACT.read_text(encoding="utf-8"))
         changed.append("web/steward/CONTRACT.md")
-    if changed and (lib / ".git").is_dir():
-        libgit.commit(lib, "settings patterns: sixteen rules, seventeen permissions, twelve "
-                           "workflows, fourteen patterns; templates retired")
-    return changed
+    if not changed:
+        return changed, libgit.Commit("clean")
+    return changed, libgit.commit(lib, "settings patterns: sixteen rules, seventeen "
+                                       "permissions, twelve workflows, fourteen patterns; "
+                                       "templates retired", routines_home=routines_home)
 
 
 # ---------------------------------------------------------------------------------- routines
 
 
-def _routine(home: Path, slug: str, spec: dict, patterns: dict, requires: dict) -> dict:
+def _routine(home: Path, slug: str, spec: dict, patterns: dict,
+             requires: dict) -> tuple[dict, libgit.Commit]:
     from .config import load_routine
     from .grants import floor_capabilities
 
     rdir = home / slug
     path = rdir / "routine.yaml"
     if not path.is_file():
-        return {"skipped": "no routine.yaml"}
+        return {"skipped": "no routine.yaml"}, libgit.Commit("clean")
     backup = home / BACKUPS / f"{slug}.yaml"
     backup.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(path, backup)
@@ -212,9 +224,11 @@ def _routine(home: Path, slug: str, spec: dict, patterns: dict, requires: dict) 
             (rdir / rel).unlink()
             touched.append(f"-{rel}")
     drafted = _draft(home, slug, raw, spec)
-    libgit.commit(rdir, f"settings pattern: follows {spec['pattern']}")
+    landed = libgit.commit(rdir, f"settings pattern: follows {spec['pattern']}",
+                           routines_home=home)
     return {"pattern": spec["pattern"], "problems": problems, "files": touched,
-            "drafted": drafted, **({"goal": goal_notes} if goal_notes else {})}
+            "drafted": drafted, "commit": landed.status,
+            **({"goal": goal_notes} if goal_notes else {})}, landed
 
 
 def _edit(values, drop, add, *, keep_order: bool = False) -> list:

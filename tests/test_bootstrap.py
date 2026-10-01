@@ -107,11 +107,11 @@ def test_sync_seed_utils_installs_missing_never_overwrites(tmp_path, monkeypatch
     (lib / "utils" / "oldutil").mkdir(parents=True)
     (lib / "utils" / "oldutil" / "main.py").write_text("# locally modified\n", encoding="utf-8")
     monkeypatch.setattr(bootstrap, "repo_root", lambda: fake_repo)
-    assert bootstrap.sync_seed_utils(lib) == 1
+    assert bootstrap.sync_seed_utils(lib, routines_home=tmp_path) == 1
     assert (lib / "utils" / "newutil" / "main.py").read_text(encoding="utf-8") == "# seed newutil\n"
     assert (lib / "utils" / "oldutil" / "main.py").read_text(encoding="utf-8") == "# locally modified\n"
     # second boot: nothing new, nothing touched
-    assert bootstrap.sync_seed_utils(lib) == 0
+    assert bootstrap.sync_seed_utils(lib, routines_home=tmp_path) == 0
 
 
 def test_sync_seed_utils_no_library_yet(tmp_path, monkeypatch):
@@ -120,7 +120,7 @@ def test_sync_seed_utils_no_library_yet(tmp_path, monkeypatch):
     fake_repo = tmp_path / "repo"
     (fake_repo / "util-seed" / "utils" / "x").mkdir(parents=True)
     monkeypatch.setattr(bootstrap, "repo_root", lambda: fake_repo)
-    assert bootstrap.sync_seed_utils(tmp_path / "nolib") == 0
+    assert bootstrap.sync_seed_utils(tmp_path / "nolib", routines_home=tmp_path) == 0
 
 
 def test_adopt_library_edits_commits_out_of_band_writes(tmp_path):
@@ -134,13 +134,13 @@ def test_adopt_library_edits_commits_out_of_band_writes(tmp_path):
     (home / "rules").mkdir(parents=True)
     (home / "rules" / "seeded.md").write_text("# rule: seeded — x\n", encoding="utf-8")
     libgit.init_repo(home, first_commit="seed library repo")
-    assert adopt_library_edits(home) is False           # clean repo → nothing to adopt
+    assert adopt_library_edits(home, routines_home=tmp_path) is False           # clean repo → nothing to adopt
     (home / "rules" / "loose.md").write_text("# rule: loose — y\n", encoding="utf-8")
     (home / "rules" / "seeded.md").write_text("# rule: seeded — edited\n", encoding="utf-8")
-    assert adopt_library_edits(home) is True            # untracked + modified both adopted
+    assert adopt_library_edits(home, routines_home=tmp_path) is True            # untracked + modified both adopted
     assert libgit.git(home, "status", "--porcelain").stdout.strip() == ""
-    assert adopt_library_edits(home) is False           # idempotent on the next boot
-    assert adopt_library_edits(tmp_path / "nogit") is False   # no repo → no-op
+    assert adopt_library_edits(home, routines_home=tmp_path) is False           # idempotent on the next boot
+    assert adopt_library_edits(tmp_path / "nogit", routines_home=tmp_path) is False   # no repo → no-op
 
 
 def test_adopt_raises_the_actions_the_doc_requires_and_keeps_the_settings(make_routine,

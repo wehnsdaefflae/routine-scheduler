@@ -18,7 +18,6 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -122,8 +121,7 @@ def ensure_library(home: Path, *, remote: str = "") -> None:
         return
     home.parent.mkdir(parents=True, exist_ok=True)
     if remote and not home.exists():
-        r = subprocess.run(["git", "clone", "--quiet", remote, str(home)],
-                           capture_output=True, text=True, timeout=120, check=False)
+        r = libgit.git(home.parent, "clone", "--quiet", remote, str(home), timeout=120)
         if r.returncode == 0:
             for key, val in libgit.IDENTITY_PAIRS:
                 libgit.git(home, "config", key, val)
@@ -324,9 +322,11 @@ def was_deleted(home: Path, name: str) -> bool:
     return libgit.path_was_deleted(home, f"utils/{name}/main.py")
 
 
-def git_commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:
+def git_commit(home: Path, message: str, *, routines_home: Path | None,
+               paths: Sequence[str] | None = None) -> libgit.Commit:
     """Commit library changes under the shared repo lock (see libgit.commit). `paths` scopes
     the stage to the util(s) this call touched so a concurrent writer's commit can't sweep
-    them — write_util / remove_util pass `utils/<name>`.
+    them — write_util / remove_util pass `utils/<name>`. A failure is filed in
+    `routines_home`'s health stream.
     """
-    return libgit.commit(home, message, paths=paths)
+    return libgit.commit(home, message, routines_home=routines_home, paths=paths)

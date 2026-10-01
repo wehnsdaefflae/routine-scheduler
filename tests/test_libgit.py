@@ -1,5 +1,6 @@
 """Concurrency safety for the shared library repo: the scoped-add anti-sweep, the per-repo
-lock path, the advisory file lock, and mode-preserving atomic writes.
+lock path, the advisory file lock, and mode-preserving atomic writes. What a commit answers
+when git's index lock is in the way is tests/test_git_locks.py.
 """
 
 from __future__ import annotations
@@ -28,11 +29,11 @@ def test_commit_scoped_add_does_not_sweep_sibling(tmp_path):
     (tmp_path / "playbooks" / "brief").mkdir(parents=True)
     (tmp_path / "playbooks" / "brief" / "MAIN.md").write_text("# b\n", encoding="utf-8")
 
-    assert libgit.commit(tmp_path, "add playbook", paths=["playbooks/brief"]) is True
+    assert libgit.commit(tmp_path, "add playbook", paths=["playbooks/brief"], routines_home=None).status == "committed"
     assert _head_files(tmp_path) == ["playbooks/brief/MAIN.md"]        # A's util NOT swept in
     assert "utils/adder/main.py" in _git(tmp_path, "status", "--porcelain", "-uall")
 
-    assert libgit.commit(tmp_path, "add util", paths=["utils/adder"]) is True
+    assert libgit.commit(tmp_path, "add util", paths=["utils/adder"], routines_home=None).status == "committed"
     assert _head_files(tmp_path) == ["utils/adder/main.py"]
 
 
@@ -42,10 +43,10 @@ def test_commit_scoped_add_stages_a_deletion(tmp_path):
     d = tmp_path / "utils" / "gone"
     d.mkdir(parents=True)
     (d / "main.py").write_text("# x\n", encoding="utf-8")
-    libgit.commit(tmp_path, "add", paths=["utils/gone"])
+    libgit.commit(tmp_path, "add", paths=["utils/gone"], routines_home=None)
     (d / "main.py").unlink()
     d.rmdir()
-    assert libgit.commit(tmp_path, "remove", paths=["utils/gone"]) is True
+    assert libgit.commit(tmp_path, "remove", paths=["utils/gone"], routines_home=None).status == "committed"
     assert _head_files(tmp_path) == ["utils/gone/main.py"]             # the deletion
 
 
@@ -53,7 +54,7 @@ def test_commit_unscoped_stages_everything(tmp_path):
     utils_lib.ensure_library(tmp_path)
     (tmp_path / "one.txt").write_text("1\n", encoding="utf-8")
     (tmp_path / "two.txt").write_text("2\n", encoding="utf-8")
-    assert libgit.commit(tmp_path, "both") is True
+    assert libgit.commit(tmp_path, "both", routines_home=None).status == "committed"
     assert set(_head_files(tmp_path)) == {"one.txt", "two.txt"}
 
 
@@ -63,14 +64,20 @@ def test_commit_exclude_leaves_a_path_unstaged(tmp_path):
     _init_repo(tmp_path)
     (tmp_path / "keep.txt").write_text("k", encoding="utf-8")
     (tmp_path / "big.bin").write_text("b" * 10, encoding="utf-8")
-    assert libgit.commit(tmp_path, "first", exclude=["big.bin"]) is True
+    assert libgit.commit(tmp_path, "first", exclude=["big.bin"], routines_home=None).status == "committed"
     assert _head_files(tmp_path) == ["keep.txt"]
     assert "big.bin" in _git(tmp_path, "status", "--porcelain")   # still untracked
 
 
-def test_commit_nothing_to_commit_returns_false(tmp_path):
-    utils_lib.ensure_library(tmp_path)
-    assert libgit.commit(tmp_path, "empty", paths=["utils/nope"]) is False
+def test_commit_says_clean_and_unversioned_apart_from_failed(tmp_path):
+    """Nothing to commit and no repo at all are answers, not failures: a path that never
+    existed stages nothing; a directory outside any repo has no history to write."""
+    utils_lib.ensure_library(tmp_path / "lib")
+    assert libgit.commit(tmp_path / "lib", "empty", paths=["utils/nope"],
+                         routines_home=None).status == "clean"
+    assert libgit.commit(tmp_path / "lib", "again", routines_home=None).status == "clean"
+    (tmp_path / "loose").mkdir()
+    assert libgit.commit(tmp_path / "loose", "x", routines_home=None).status == "unversioned"
 
 
 def test_repo_lock_path_targets_the_git_dir(tmp_path):
@@ -115,7 +122,7 @@ def test_recipe_snapshot_takes_the_repo_lock(tmp_path):
 
     _init_repo(tmp_path)
     (tmp_path / "main.md").write_text("# recipe\n", encoding="utf-8")   # a dirty recipe file
-    assert current_recipe_commit(tmp_path)                             # snapshotted into a commit
+    assert current_recipe_commit(tmp_path, routines_home=None)                             # snapshotted into a commit
     assert (tmp_path / ".git" / "rsched-commit.lock").exists()
 
 
@@ -139,7 +146,7 @@ def test_commit_supplies_neutral_identity_without_repo_config(tmp_path, monkeypa
     home.mkdir()
     libgit.git(home, "init", "-q", "-b", "main")     # deliberately NO identity config
     (home / "f.txt").write_text("x", encoding="utf-8")
-    assert libgit.commit(home, "first") is True
+    assert libgit.commit(home, "first", routines_home=None).status == "committed"
     r = libgit.git(home, "log", "-1", "--format=%an <%ae>")
     assert r.stdout.strip() == "routine-scheduler <noreply@routine-scheduler.local>"
 

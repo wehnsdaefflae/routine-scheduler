@@ -67,7 +67,7 @@ def apply_rule_edit(request: Request, routine_dir: Path, body: RulesBody,
     if not added and not removed:
         return {"ok": True, "added": [], "removed": [],
                 "rules": rules_mod.current_rules(routine_dir)}
-    _git_commit(routine_dir, f"rules via web (+{len(added)}/-{len(removed)})")
+    _git_commit(request, routine_dir, f"rules via web (+{len(added)}/-{len(removed)})")
     if active_run_dir is not None:
         from .routines_common import merge_control
         signal: dict = {}

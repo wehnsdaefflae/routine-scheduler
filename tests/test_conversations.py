@@ -902,14 +902,14 @@ def test_sync_seed_library_docs(tmp_path):
     (lib / "workflows").mkdir(parents=True)
     (lib / "rules").mkdir()
     (lib / "rules" / "ask-policy.md").write_text("local edit — must survive")
-    n = sync_seed_library_docs(lib)
+    n = sync_seed_library_docs(lib, routines_home=tmp_path)
     assert n > 0
     assert (lib / "workflows" / "converse.py").exists()
     assert (lib / "rules" / "git-checkpoint.md").exists()
     assert (lib / "rules" / "ask-policy.md").read_text() == "local edit — must survive"
     for seed in sorted((repo_root() / "library-seed" / "patterns").glob("*.yaml")):
         assert (lib / "patterns" / seed.name).exists()               # patterns top up too
-    assert sync_seed_library_docs(lib) == 0                          # idempotent
+    assert sync_seed_library_docs(lib, routines_home=tmp_path) == 0                          # idempotent
 
 
 def test_sync_seed_library_docs_tolerates_a_seed_kind_with_no_directory(tmp_path, monkeypatch):
@@ -923,7 +923,7 @@ def test_sync_seed_library_docs_tolerates_a_seed_kind_with_no_directory(tmp_path
     monkeypatch.setattr(bootstrap_mod, "repo_root", lambda: seed)
     lib = tmp_path / "lib"
     lib.mkdir()
-    assert bootstrap_mod.sync_seed_library_docs(lib) == 1
+    assert bootstrap_mod.sync_seed_library_docs(lib, routines_home=tmp_path) == 1
     assert (lib / "rules" / "only.md").exists()
     assert not (lib / "patterns").exists()
 
@@ -938,14 +938,14 @@ def test_sync_seed_library_docs_never_resurrects_a_deleted_doc(tmp_path):
 
     lib = tmp_path / "lib"
     utils_lib.ensure_library(lib)
-    assert sync_seed_library_docs(lib) > 0
-    libgit.commit(lib, "seed")
+    assert sync_seed_library_docs(lib, routines_home=tmp_path) > 0
+    libgit.commit(lib, "seed", routines_home=None)
 
     (lib / "rules" / "git-checkpoint.md").unlink()
     libgit.commit(lib, "delete rules/git-checkpoint.md via web",
-                  paths=["rules/git-checkpoint.md"])
+                  paths=["rules/git-checkpoint.md"], routines_home=None)
 
-    assert sync_seed_library_docs(lib) == 0
+    assert sync_seed_library_docs(lib, routines_home=tmp_path) == 0
     assert not (lib / "rules" / "git-checkpoint.md").exists()
 
 

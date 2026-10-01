@@ -290,7 +290,7 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
                                      f"(expected one of {DELIBERATION_LEVELS})")
         write_tuning(info.cfg.dir, {"deliberation": level})
         if not updates:
-            _git_commit(info.cfg.dir, "tuning.yaml edit via web (deliberation)")
+            _git_commit(request, info.cfg.dir, "tuning.yaml edit via web (deliberation)")
             _state(request).scheduler.rescan()
             live = signal_config_change(info, ["deliberation"], {"deliberation": level})
             return {"ok": True, "updated": ["deliberation"],

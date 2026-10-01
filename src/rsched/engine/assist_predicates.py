@@ -197,13 +197,16 @@ def _dirty(repo) -> bool:
     """Does this working tree hold changes its HEAD cannot restore? A clean tree IS an undo
     point — 54 of the old hold's 102 fires were repos clean at HEAD, each overridden, so the
     run had learned to click past the one hold that guards an irreversible write. A tree git
-    cannot read is treated as dirty: this is the hold that must not miss.
+    cannot read is treated as dirty: this is the hold that must not miss. It asks through
+    `libgit.git`, whose reads never take the index lock — this status runs in the operator's
+    own project repos, where a lock left behind would stop the operator's next commit.
     """
     import subprocess
 
+    from .. import libgit
+
     try:
-        out = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"],
-                             capture_output=True, text=True, timeout=10, check=False)
+        out = libgit.git(repo, "status", "--porcelain", timeout=10)
     except (OSError, subprocess.SubprocessError):
         return True
     return out.returncode != 0 or bool(out.stdout.strip())

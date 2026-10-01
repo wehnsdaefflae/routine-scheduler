@@ -15,6 +15,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.370.0] — 2026-09-30
+
+### Fixed — a git call that runs out of time no longer leaves a stale index lock; a commit that does not land says so
+
+items: operator (2026-09-30), found after 0.369.0's boot
+
+**What happened.** During 0.369.0's boot-time migration the `/home` disk (a USB-attached SSD
+whose bridge aborts a stalled command at the 30 s SCSI timeout) stalled twice. `libgit.git` ran
+every call through `subprocess.run(timeout=30)`, which ends a late call with SIGKILL. The
+migration's `git commit` in `self-audit` and `sprind` was killed mid-refresh. Git deletes its
+`index.lock` only in its SIGTERM handler, so each repo kept an empty one: every write there
+failed from then on while every read worked. `libgit.commit` answered that with False exactly as
+it answered a clean tree. No caller read the answer — the migration record said `failed: {}`
+while both routines' edits sat staged. Every later autocommit in either repo would have failed
+the same silent way. Docs: docs/architecture.md, "Git writes".
+
+- **A timeout terminates git.** `libgit.git` runs git in its own process group with no stdin;
+  a call that outlives its timeout gets SIGTERM to the group (git deletes its lockfiles) and
+  SIGKILL only 30 s later. The hold check's `status` in project repos, the source-repo push and
+  the library clone go through `libgit.git` now too, each with its own `timeout=`.
+- **A read never takes the index lock.** Every libgit call runs with `GIT_OPTIONAL_LOCKS=0`, so
+  `git status` no longer writes a refreshed index back.
+- **A commit says what happened.** `libgit.commit` returns a `Commit` — `committed`, `clean`,
+  `unversioned` or `failed` with the step, git's own words and the index lock in the way. Clean
+  and failed are told apart by what in scope still differs from HEAD, never by git's localized
+  messages. A failure is logged and filed as the new `commit_failed` health event, which the
+  blocked-work fold (`/api/health/blocked`) carries. `routines_home` is a REQUIRED argument of
+  `libgit.commit`, of the three library commit wrappers, of the boot seed syncs and of the
+  recipe helpers, so every call site decides where a failure lands.
+- **A provably stale lock is removed** before the write (`gitlock`): only while the commit lock
+  is held, no visible git process works in the repo, the lock is empty and it is over ten
+  minutes old. The removal is filed as the new `git_lock_cleared` health event. A lock that
+  fails any condition stays; the commit fails naming why. The decision against a one-click
+  remedy and its reasoning are in the architecture doc.
+- **What commits per routine names a commit that did not land.** The settings-patterns
+  migration records such a routine — or the library, as `(library)` — under `failed`. The
+  pre-run recipe snapshot that cannot land answers no recipe version instead of the older one;
+  a web revert refuses up front on a lock in the way instead of reporting "the recipe already
+  matches".
+
 ## [0.369.1] — 2026-09-30
 
 ### Fixed — the Help tab rebuilds again; a drift record leaves when its gap closes

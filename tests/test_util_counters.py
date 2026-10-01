@@ -184,7 +184,7 @@ def test_recipe_commit_stamped_from_git(make_routine, scripted):
                         *args], capture_output=True, check=True, env=os.environ)
     from rsched.recipes import current_recipe_commit
 
-    expected = current_recipe_commit(d)
+    expected = current_recipe_commit(d, routines_home=None)
     assert expected
     server = ServerConfig()
     server.routines_home = d.parent
@@ -197,7 +197,7 @@ def test_recipe_commit_stamped_from_git(make_routine, scripted):
                      .read_text(encoding="utf-8").splitlines()[-1])
     assert rec["recipe_commit"] == expected
     # the run's own autocommit changed HEAD, not the recipe version
-    assert current_recipe_commit(d) == expected
+    assert current_recipe_commit(d, routines_home=None) == expected
 
 
 # ---- F182: a resumed leg must report cumulative elapsed, not a reset clock --------------

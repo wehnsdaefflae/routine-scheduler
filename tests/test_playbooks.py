@@ -151,9 +151,9 @@ def test_sync_installs_playbook_subfolders(tmp_path):
     lib = tmp_path / "lib"
     (lib / "workflows").mkdir(parents=True)
     (lib / "rules").mkdir()
-    sync_seed_library_docs(lib)
+    sync_seed_library_docs(lib, routines_home=tmp_path)
     assert (lib / "playbooks" / "research-and-report" / "MAIN.md").exists()
-    assert sync_seed_library_docs(lib) == 0                       # idempotent — never re-copies
+    assert sync_seed_library_docs(lib, routines_home=tmp_path) == 0                       # idempotent — never re-copies
 
 
 # ---- distill + revise ---------------------------------------------------------------------------

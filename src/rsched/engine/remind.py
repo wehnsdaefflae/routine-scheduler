@@ -419,4 +419,5 @@ def _commit(loop, message: str, reminder: Reminder) -> None:
     from .. import libgit
 
     libgit.commit(loop.ctx.server.libraries_home, message,
+                  routines_home=loop.ctx.server.routines_home,
                   paths=[store.global_rel(reminder.id)])

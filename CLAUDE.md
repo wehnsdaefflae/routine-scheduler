@@ -467,6 +467,17 @@ by a test, by the engine, or by a past incident.
   spawner is using. A spawner whose config was never loaded from a file is refused before a
   process exists. Never give either flag a default — the fallback is `~`, i.e. production,
   and a tmp-homed test once spent real money and real ledger rows there.
+- **Git is never SIGKILLed; a commit always says what happened** (docs/architecture.md,
+  "Git writes"). Git deletes its `index.lock` in its SIGTERM handler only, so `libgit.git`
+  runs it in its own process group and ends a timed-out call with SIGTERM first — the
+  `subprocess.run` timeout's SIGKILL is what left empty locks in two routine repos on
+  2026-09-30, after which every write there failed while reads worked. A new git call goes
+  through `libgit.git` (with `timeout=` when it needs another), never a `subprocess.run` of
+  its own — the two that cannot are named in its docstring.
+  `libgit.commit` returns a `Commit` (committed · clean · unversioned · failed) and files a
+  failure as `commit_failed`; its `routines_home` is REQUIRED so every call site decides
+  where that lands. A lock is removed only when `gitlock` proves it stale — never widen
+  those four conditions to clear a lock faster.
 - **The setup surface answers "what does this routine still need?" — including WHEN it runs.**
   `readmodels/surface.py` JOINS the effective config against the library's `requires:`/`expects:`,
   the util headers, the live stores and the lane store; the ROWS come from `surface_needs`,

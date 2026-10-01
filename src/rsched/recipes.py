@@ -26,13 +26,11 @@ import subprocess
 from pathlib import Path
 
 from .grants import RECIPE_PREFIXES
-from .paths import file_lock, repo_lock_path
 
 # git pathspecs for the recipe set — RECIPE_PREFIXES minus the dir-prefix slashes
 RECIPE_PATHSPECS: tuple[str, ...] = tuple(p.rstrip("/") for p in RECIPE_PREFIXES)
 
 from . import libgit  # noqa: E402 — one git plumbing home
-from .libgit import IDENTITY_FLAGS as _GIT_IDENTITY  # noqa: E402 — one identity home
 
 
 class RecipeError(Exception):
@@ -55,23 +53,25 @@ def _matchable_specs(routine_dir: Path) -> list[str]:
             or libgit.git(routine_dir, "cat-file", "-e", f"HEAD:{spec}").returncode == 0]
 
 
-def current_recipe_commit(routine_dir: Path) -> str | None:
+def current_recipe_commit(routine_dir: Path, *, routines_home: Path | None) -> str | None:
     """The commit hash of the routine's current recipe version, or None (no git — a
     conversation, a clarify workspace — or no recipe-touching commit yet). Dirty recipe
     files are snapshotted into a recipe-only commit first (see the module docstring),
-    so the returned commit always matches what is on disk. Best-effort: any git failure
-    returns None rather than blocking a run start.
+    so the returned commit always matches what is on disk — and a snapshot that did not
+    land answers None, never the older version it would misattribute the run to (the
+    failure itself is filed in `routines_home`'s health stream). Best-effort: any git
+    failure returns None rather than blocking a run start.
     """
     if not (routine_dir / ".git").is_dir():
         return None
     try:
-        if _recipe_paths_dirty(routine_dir) and (specs := _matchable_specs(routine_dir)):
-            # Under the per-repo lock: the improver may be committing this same target dir
-            # via git-sync at this instant (this snapshot runs at the target's run start).
-            with file_lock(repo_lock_path(routine_dir)):
-                libgit.git(routine_dir, "add", "-A", "--", *specs)
-                libgit.git(routine_dir, *_GIT_IDENTITY, "commit", "-qm", "recipe: pre-run snapshot",
-                     "--", *specs)
+        specs = _matchable_specs(routine_dir) if _recipe_paths_dirty(routine_dir) else []
+        # Under the per-repo lock (libgit.commit): the improver may be committing this same
+        # target dir via git-sync at this instant (this snapshot runs at the target's run
+        # start). `only` keeps the snapshot recipe-only whatever else is staged.
+        if specs and libgit.commit(routine_dir, "recipe: pre-run snapshot",
+                                   routines_home=routines_home, paths=specs, only=True).failed:
+            return None
         r = libgit.git(routine_dir, "log", "-1", "--format=%H", "--", *RECIPE_PATHSPECS)
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -100,12 +100,14 @@ def recipe_log(routine_dir: Path, limit: int = 50) -> list[dict]:
     return out
 
 
-def revert_recipe(routine_dir: Path, commit: str) -> dict:
+def revert_recipe(routine_dir: Path, commit: str, *, routines_home: Path | None) -> dict:
     """Roll the recipe files back to their state just BEFORE `commit` (i.e. to
     `<commit>^`) and commit ONLY those paths. Raises RecipeError when the request can't
-    be honored: no git, unknown commit, a commit that touched no recipe file, or the
-    routine's first commit (nothing before it). Only main.md / stages/ /
-    tuning.yaml are staged and committed — routine.yaml and state files are untouched.
+    be honored: no git, unknown commit, a commit that touched no recipe file, the
+    routine's first commit (nothing before it), or a repo git cannot write — an index lock
+    in the way, or a commit that did not land (filed in `routines_home`'s health stream).
+    Only main.md / stages/ / tuning.yaml are staged and committed — routine.yaml and state
+    files are untouched.
     """
     if not (routine_dir / ".git").is_dir():
         raise RecipeError("this dir has no git history (conversations are unversioned)")
@@ -127,8 +129,13 @@ def revert_recipe(routine_dir: Path, commit: str) -> dict:
         # checkout with check=False skips paths absent in the parent (e.g. no tuning.yaml
         # yet) — the staged removal keeps those deleted, which is exactly the parent state.
         # Under the per-repo lock (like autocommit / the pre-run snapshot / the git-sync util),
-        # so this multi-step restore is not interleaved with another writer of this dir.
-        with file_lock(repo_lock_path(routine_dir)):
+        # so this multi-step restore is not interleaved with another writer of this dir. An
+        # index lock that must stay refuses the revert BEFORE any step touches the index:
+        # every step would fail — the empty commit at the end then read as "already matches".
+        with libgit.writing(routine_dir, routines_home=routines_home) as writer:
+            if writer.blocking is not None:
+                raise RecipeError(f"git cannot write this routine's repo: the index lock "
+                                  f"{writer.blocking.describe()} is in the way ({writer.kept})")
             libgit.git(routine_dir, "rm", "-rq", "--ignore-unmatch", "--", *RECIPE_PATHSPECS)
             for spec in RECIPE_PATHSPECS:
                 libgit.git(routine_dir, "checkout", f"{ref}^", "--", spec)
@@ -136,11 +143,14 @@ def revert_recipe(routine_dir: Path, commit: str) -> dict:
             # holds a file the revert deletes, so its deletion is committed too)
             specs = _matchable_specs(routine_dir)
             msg = f"recipe: revert to pre-{parent.stdout.strip() or ref[:9]} (web)"
-            committed = libgit.git(routine_dir, *_GIT_IDENTITY, "commit", "-qm", msg, "--", *specs)
-            if committed.returncode != 0:
-                # nothing to commit — the working recipe already matches the pre-change state
+            landed = writer.commit(msg, paths=specs, only=True, stage=False)
+            if landed.status != "committed":
+                # nothing to commit — the working recipe already matches the pre-change state —
+                # or a commit that did not land: either way the recipe goes back to HEAD
                 libgit.git(routine_dir, "checkout", "HEAD", "--", *specs)
-                raise RecipeError("the recipe already matches the state before that commit")
+                raise RecipeError(
+                    f"the revert did not land: {landed.describe()}" if landed.failed
+                    else "the recipe already matches the state before that commit")
             new = libgit.git(routine_dir, "log", "-1", "--format=%H", "--", *RECIPE_PATHSPECS)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RecipeError(f"git failed: {exc}") from exc

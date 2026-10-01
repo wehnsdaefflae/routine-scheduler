@@ -36,9 +36,11 @@ def cmd_daemon(_args) -> int:
     run_migration(server)
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
-    sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
-    sync_seed_library_docs(server.libraries_home)  # workflows/rules/permissions added since, too
-    adopt_library_edits(server.libraries_home)  # out-of-band writes (user/conversation) get history
+    # utils added to util-seed since bootstrap, then workflows/rules/permissions added since too,
+    # then out-of-band writes (user/conversation) get history
+    sync_seed_utils(server.libraries_home, routines_home=server.routines_home)
+    sync_seed_library_docs(server.libraries_home, routines_home=server.routines_home)
+    adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

@@ -1,5 +1,5 @@
-"""The fleet's blocked-work endpoint: the health stream's six "this did not happen" events,
-served to the console.
+"""The fleet's blocked-work endpoint: the health stream's "this did not happen" events
+(`health_stream.BLOCKED_EVENTS`), served to the console.
 
 Separate from `/api/stats` on purpose. Stats answers "what did the fleet spend"; this answers
 "what did the fleet owe and not deliver", and those have different sources (the health stream,

@@ -40,8 +40,10 @@ def set_source_remote(request: Request, body: RemoteBody) -> dict:
         set_url = libgit.git(home, "remote", "set-url", "origin", body.remote)
         if set_url.returncode != 0:                     # no origin yet → add it
             libgit.git(home, "remote", "add", "origin", body.remote)
-        push = subprocess.run(["git", "-C", str(home), "push", "-u", "origin", "HEAD"],
-                              capture_output=True, text=True, timeout=60, check=False)
+        try:
+            push = libgit.git(home, "push", "-u", "origin", "HEAD", timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {**result, "push_error": f"push did not finish: {exc}"[:200]}
         result["pushed"] = push.returncode == 0
         if push.returncode != 0:
             result["push_error"] = push.stderr.strip()[:200]
