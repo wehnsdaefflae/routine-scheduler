@@ -238,16 +238,19 @@ table.list tr.disabled-row td { opacity: 0.55; }
   background: color-mix(in srgb, var(--err-dim) 60%, var(--deck));
 }
 /* exit 2 — the CALL was wrong, so the util never ran: not a failure of the work, a failure to
-   ask for it. Same weight as an error, different hue, because the repair is in the arguments. */
+   ask for it. Same weight as an error, different hue, because the repair is in the arguments —
+   and the hue is WARN, not summons: the run repairs its own call, so nothing waits on a person
+   (coral is reserved for that, base.css). */
 .obs-usage > summary {
-  border-left-color: var(--summons); color: var(--summons);
-  background: color-mix(in srgb, var(--summons-dim) 60%, var(--deck));
+  border-left-color: var(--warn); color: var(--warn);
+  background: color-mix(in srgb, var(--warn-dim) 60%, var(--deck));
 }
 /* exit 124 — the deadline killed it, so NOTHING is known about the work. Dashed, like the
-   refusal row above: an absence of a verdict, not a verdict. */
+   refusal row above: an absence of a verdict, not a verdict. Warn as well — a deadline is the
+   run's to plan around, not a person's to answer. */
 .obs-timeout > summary {
-  border-left: 3px dashed var(--summons); color: var(--summons);
-  background: color-mix(in srgb, var(--summons-dim) 40%, var(--deck));
+  border-left: 3px dashed var(--warn); color: var(--warn);
+  background: color-mix(in srgb, var(--warn-dim) 40%, var(--deck));
 }
 .obs-refused > summary {
   border-left: 3px dashed var(--err); color: var(--err);

@@ -98,3 +98,40 @@ def test_a_usage_error_is_distinguishable_from_a_failure(ui, ui_page):
     colours = ui_page.evaluate("""() => [...document.querySelectorAll(
         '#states .obs-collapse > summary')].map((s) => getComputedStyle(s).color)""")
     assert colours[0] != colours[1], "a usage error and a failure must not look identical"
+
+
+def test_a_malformed_call_and_a_timeout_read_in_the_warning_colour(ui, ui_page):
+    """Both rows were drawn in SUMMONS — coral, the colour the console reserves for what waits
+    on a PERSON — while neither waits on anyone: the run repairs its own arguments, and a
+    deadline is the run's to plan around. The operator: "use the warning colour instead".
+    Asserted as RENDERED colour against the tokens themselves, in both themes."""
+    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.wait_for_selector("h1")
+    ui_page.evaluate(_FIXTURE, [
+        {"kind": "util", "name": "json", "exit": 2, "stderr": "usage: gu json ..."},
+        {"kind": "util", "name": "remote", "exit": 124, "stderr": "timed out"},
+    ])
+    read = """() => {
+      const token = (name) => {
+        const p = document.createElement('span');
+        p.style.color = `var(${name})`;
+        document.body.append(p);
+        const c = getComputedStyle(p).color;
+        p.remove();
+        return c;
+      };
+      const rows = [...document.querySelectorAll('#states .obs-collapse > summary')]
+        .map((s) => getComputedStyle(s));
+      return { rows: rows.map((c) => ({ colour: c.color, edge: c.borderLeftColor,
+                                       style: c.borderLeftStyle })),
+               warn: token('--warn'), summons: token('--summons') };
+    }"""
+    for theme in ("dark", "light"):
+        ui_page.evaluate("(t) => document.documentElement.setAttribute('data-theme', t)", theme)
+        got = ui_page.evaluate(read)
+        assert got["warn"] != got["summons"], "the fixture cannot tell the two tokens apart"
+        usage, timeout = got["rows"]
+        for name, row in (("usage", usage), ("timeout", timeout)):
+            assert row["colour"] == got["warn"], f"{theme}: the {name} row is {row['colour']}"
+            assert row["edge"] == got["warn"], f"{theme}: the {name} row's edge is {row['edge']}"
+        assert (usage["style"], timeout["style"]) == ("solid", "dashed"), got["rows"]

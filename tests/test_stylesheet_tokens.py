@@ -64,6 +64,23 @@ def test_every_token_a_rule_asks_for_is_defined():
     assert not used - defined, f"tokens asked for and defined nowhere: {sorted(used - defined)}"
 
 
+def test_an_action_rows_outcome_never_wears_summons():
+    """SUMMONS (coral) is what waits on a PERSON (base.css head). An action row's outcome is
+    history, and the two that are not failures of the work — a malformed call (exit 2), a
+    deadline that killed it (exit 124) — are the RUN's to repair: neither waits on anyone. They
+    read in the warning colour, and keep the edge that tells them apart: solid for a call that
+    was answered, dashed for one that never got a verdict."""
+    rows = {sel: body for sel, body in _rules(VIEWS) if sel.startswith(".obs-")}
+    usage, timeout = rows.get(".obs-usage > summary"), rows.get(".obs-timeout > summary")
+    assert usage and timeout, "views.css lost the usage/timeout row rules"
+    worn = [sel for sel, body in rows.items() if "--summons" in body]
+    assert not worn, f"an action row's outcome wears SUMMONS, which waits on a person: {worn}"
+    for sel, body in ((".obs-usage", usage), (".obs-timeout", timeout)):
+        assert "var(--warn)" in body and "var(--warn-dim)" in body, (
+            f"{sel} is not in the warning colour: {body.strip()}")
+    assert "dashed" in timeout and "dashed" not in usage, "the solid/dashed edges swapped or merged"
+
+
 def test_type_comes_from_the_three_type_tokens():
     for name, css in (("base.css", BASE), ("views.css", VIEWS)):
         for sel, body in _rules(css):
