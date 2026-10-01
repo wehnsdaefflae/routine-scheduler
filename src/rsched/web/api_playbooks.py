@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import playbooks
+from ..ids import is_slug
 from ..readmodels import library_reads
 from ..workflows import library
 from ..workflows.lint import lint_playbook_text
@@ -22,6 +23,19 @@ def _home(request: Request):
     if not home.is_dir():
         raise HTTPException(503, f"library not found at {home} — run deploy/install.sh")
     return home
+
+
+def _slug(slug: str) -> str:
+    """The playbook a URL segment names — or a 404 when it cannot name one.
+
+    The slug is joined onto `playbooks/`, so a segment the slug alphabet does not allow is a
+    PATH: `..` is the library root and `.` the playbooks dir itself, and DELETE rmtree'd
+    whichever it was handed. Every playbook is created under `ids.slugify`, so a slug that
+    fails `is_slug` names nothing that exists.
+    """
+    if not is_slug(slug):
+        raise HTTPException(404, f"no playbook {slug!r}")
+    return slug
 
 
 @router.get("/playbooks")
@@ -43,7 +57,7 @@ def list_playbooks(request: Request) -> dict:
 @router.get("/playbooks/{slug}")
 def playbook_detail(request: Request, slug: str) -> dict:
     home = _home(request)
-    pb = playbooks.read_playbook(home, slug)
+    pb = playbooks.read_playbook(home, _slug(slug))
     if pb is None:
         raise HTTPException(404, f"no playbook {slug!r}")
     return {"slug": slug, "content": pb["content"], "details": sorted(pb["details"]),
@@ -52,7 +66,7 @@ def playbook_detail(request: Request, slug: str) -> dict:
 
 @router.get("/playbooks/{slug}/detail/{name}")
 def playbook_detail_file(request: Request, slug: str, name: str) -> dict:
-    body = playbooks.read_detail(_home(request), slug, name)
+    body = playbooks.read_detail(_home(request), _slug(slug), name)
     if body is None:
         raise HTTPException(404, f"no detail file {name!r} in playbook {slug!r}")
     return {"slug": slug, "name": name, "content": body}
@@ -68,7 +82,7 @@ def put_playbook(request: Request, slug: str, body: PlaybookBody) -> dict:
     are managed by the Update-playbook distillation, not hand-edited here.
     """
     home = _home(request)
-    if playbooks.read_playbook(home, slug) is None:
+    if playbooks.read_playbook(home, _slug(slug)) is None:
         raise HTTPException(404, f"no playbook {slug!r}")
     problems = lint_playbook_text(body.content, filename=f"{slug}/MAIN.md")
     if problems:
@@ -82,7 +96,7 @@ def put_playbook(request: Request, slug: str, body: PlaybookBody) -> dict:
 @router.delete("/playbooks/{slug}")
 def delete_playbook(request: Request, slug: str) -> dict:
     home = _home(request)
-    if not playbooks.delete_playbook(home, slug):
+    if not playbooks.delete_playbook(home, _slug(slug)):
         raise HTTPException(404, f"no playbook {slug!r}")
     library.git_commit(home, f"delete playbook {slug} via web", paths=[f"playbooks/{slug}"],
                        routines_home=request.app.state.server.routines_home)

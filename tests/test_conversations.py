@@ -559,6 +559,34 @@ def test_patch_folder_access_lists(client):
     assert raw["fs_write_roots"] == []
 
 
+def test_a_conversation_is_never_granted_a_credential_store(client):
+    """SEC-1 for the conversation home. The routine PATCH refuses the never-grantable stores;
+    a conversation is routine-shaped, its replies run the same utils in the same jail, and
+    both of its grant edges — the composer and the header panel, roots AND the workdir that
+    is write root #1 — accepted `~/.ssh` or the instance config dir as a live root."""
+    import json
+
+    c, server = client
+    store = "~/.config/routine-scheduler"
+    for field, value in (("fs_read_roots", json.dumps(["~/datasets", store])),
+                         ("fs_write_roots", json.dumps(["~/.ssh"])),
+                         ("workdir", "~/.credentials")):
+        r = c.post("/api/conversations", data={"text": "x", field: value})
+        assert r.status_code == 400, (field, r.text)
+        assert "credential store" in r.json()["detail"]
+    assert not list(server.conversations_home.glob("*/routine.yaml"))   # nothing landed
+
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    path = server.conversations_home / slug / "routine.yaml"
+    before = path.read_text()
+    for body in ({"fs_read_roots": ["~/datasets", store]}, {"fs_write_roots": ["~/.ssh"]},
+                 {"workdir": "~"}):           # a root CONTAINING a store is one too
+        r = c.patch(f"/api/conversations/{slug}", json=body)
+        assert r.status_code == 400, (body, r.text)
+        assert "credential store" in r.json()["detail"]
+    assert path.read_text() == before
+
+
 def _tiny_window_model(server, name="tiny"):
     """A catalog model whose max output tokens alone fill its window (65_536 chars ≈
     16_384 tokens = the default output reservation) — the class the harness cannot run."""

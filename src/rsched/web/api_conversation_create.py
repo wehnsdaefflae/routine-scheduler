@@ -26,6 +26,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from .. import conversations as conv_mod
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, load_routine
 from ..paths import atomic_write_json
+from .api_conversation_config import granted_roots
 from .api_routine_edit import (
     PermissionsBody,
     resolve_permission_layers,
@@ -46,11 +47,10 @@ _autolabel_tasks: set[asyncio.Task] = set()   # strong refs for fire-and-forget 
 def _parse_roots(raw: str, field: str) -> list[str]:
     """The composer's folder-access fields (D70): a JSON string array of server paths.
     Each must be absolute (or ~-anchored — the canonical form live configs carry);
-    existence is NOT required, matching the routine page's roots editor. Returns the
-    cleaned list; raises 400 on anything else.
+    existence is NOT required, matching the routine page's roots editor. A credential store
+    is refused exactly as the header panel refuses it (`granted_roots`). Returns the cleaned
+    list; raises 400 on anything else.
     """
-    import json
-
     if not raw.strip():
         return []
     try:
@@ -67,7 +67,7 @@ def _parse_roots(raw: str, field: str) -> list[str]:
                 400, f"{field}: {v!r} is not an absolute path (use /abs/path or ~/path)")
         if p not in roots:
             roots.append(p)
-    return roots
+    return granted_roots(field, roots)
 
 
 def _parse_rules(server, raw: str) -> list[str] | None:
@@ -76,8 +76,6 @@ def _parse_rules(server, raw: str) -> list[str] | None:
     library, so a typo cannot quietly produce a conversation holding a rule that has no
     prose — the tail would name a practice nobody wrote.
     """
-    import json
-
     from ..readmodels import library_reads
 
     if not raw.strip():
@@ -102,12 +100,11 @@ def _parse_rules(server, raw: str) -> list[str] | None:
 
 
 def _parse_connections(raw: str) -> dict[str, str] | None:
-    """The composer's connections field (F339): a JSON {provider: account} map, validated
-    the same way the routine PATCH validates one — an unknown provider, or an account that
-    is not actually connected, is a 400 rather than a binding that fails at first use.
+    """The composer's connections field (F339): a JSON {provider: account} map. Stricter than
+    the PATCH (`config_fields.validate_connections` lets a routine bind ahead of connecting):
+    reply #1 fires on create, so an unknown provider or an account that is not connected YET
+    is a 400 here rather than a binding that fails on the very first reply.
     """
-    import json
-
     from ..oauth import store as oauth_store
     from ..oauth.providers import PROVIDERS
 
@@ -220,6 +217,9 @@ async def create_conversation(request: Request, *,  # noqa: PLR0913 — one Form
         active_perms, caps_override = resolve_permission_layers(server, body, {})
     # D70: folder access granted on the composer, applied to the config BEFORE the engine
     # boots — reply #1 already runs with it (the mid-run grant path stays for later changes).
+    # The workdir is write root #1, so it is a grant like the lists.
+    if workdir.strip():
+        granted_roots("workdir", [workdir.strip()])
     read_roots = _parse_roots(fs_read_roots, "fs_read_roots")
     write_roots = _parse_roots(fs_write_roots, "fs_write_roots")
     # F339: rules and connections are pre-start choices too: reply #1 boots with the rules

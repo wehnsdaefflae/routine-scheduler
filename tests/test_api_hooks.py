@@ -68,6 +68,45 @@ def test_hook_generic_404_for_slug_token_and_disabled(api_client, make_routine):
     assert triggers.pending_events(tmp / "routines", "testr") == []
 
 
+def test_hook_non_ascii_token_is_the_same_404(api_client, make_routine):
+    """`secrets.compare_digest` refuses a str with non-ASCII characters by RAISING, so a URL
+    token like `%C3%A9` turned the one unauthenticated route into a 500 — a traceback in the
+    log per request, and a different answer than the 404 every other bad token gets."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _add_trigger(tmp, "testr")
+    bare = TestClient(c.app)
+    wrong = bare.post(f"/api/hooks/testr/{'x' * 32}", content=b"x")
+    for slug in ("testr", "ghost"):           # with candidates, and on the equalised path
+        r = bare.post(f"/api/hooks/{slug}/%C3%A9t%C3%A9", content=b"x")
+        assert r.status_code == 404 and r.json() == wrong.json()
+    assert triggers.pending_events(tmp / "routines", "testr") == []
+
+
+def test_hook_walks_the_catalog_off_the_event_loop(api_client, make_routine, monkeypatch):
+    """The ingest is async (it streams the body) and unauthenticated, and answering it walks
+    every routine's config and run index. On the event loop that walk stalled every SSE stream
+    and async route for as long as anyone cared to POST garbage at /api/hooks."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _add_trigger(tmp, "testr")
+    real, on_loop = registry.scan, []
+
+    def spy(*args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(registry, "scan", spy)
+    bare = TestClient(c.app)
+    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"x").status_code == 202
+    assert bare.post(f"/api/hooks/ghost/{TOK}", content=b"x").status_code == 404
+    assert on_loop == [False, False]
+
+
 def test_hook_payload_size_cap(api_client, make_routine):
     c, tmp = api_client
     make_routine(slug="testr")

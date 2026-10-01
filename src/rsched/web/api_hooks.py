@@ -17,6 +17,7 @@ CRUD the routine page uses) rides the normal authed include like every other mod
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import time
@@ -55,15 +56,20 @@ def _reject(status: int, slug: str, client: str, reason: str, detail: str) -> No
 def _match_webhook(info: registry.RoutineInfo | None, token: str) -> dict | None:
     """Constant-time token match over the slug's webhook triggers: every candidate is
     compared (no early exit), and a slug with no candidates burns one comparison too.
+
+    Bytes on both sides, as `require_auth` compares the bearer: given a `str`,
+    `compare_digest` RAISES on a non-ASCII character, and the token is whatever the caller
+    put in the URL — `%C3%A9` was a 500 instead of the 404 every other wrong token gets.
     """
     candidates = ([t for t in info.cfg.triggers if t.get("type") == "webhook"]
                   if info is not None else [])
+    presented = token.encode()
     matched: dict | None = None
     for t in candidates:
-        if secrets.compare_digest(str(t.get("token") or ""), token):
+        if secrets.compare_digest(str(t.get("token") or "").encode(), presented):
             matched = t
     if not candidates:
-        secrets.compare_digest(_DUMMY_TOKEN, token)
+        secrets.compare_digest(_DUMMY_TOKEN.encode(), presented)
     return matched
 
 
@@ -110,7 +116,11 @@ async def receive_hook(request: Request, slug: str, token: str) -> dict:
     if body is None:
         # streamed past the cap (a missing/lying content-length can't sneak a huge body in)
         _reject(413, slug, client, "streamed body over cap", "payload too large")
-    info = registry.scan(server).get(slug)
+    # The whole catalog, on purpose — a per-slug lookup would answer a known slug faster than
+    # an unknown one, and timing would say what the 404 refuses to. In a worker thread,
+    # because this handler is async and nobody has authenticated yet: on the event loop, every
+    # garbage POST stalled each SSE stream and async route for the length of the walk.
+    info = (await asyncio.to_thread(registry.scan, server)).get(slug)
     trigger = _match_webhook(info, token)
     if info is None or trigger is None or not info.cfg.enabled:
         # one generic answer for unknown slug / wrong token / disabled — no oracle
