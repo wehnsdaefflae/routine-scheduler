@@ -114,8 +114,38 @@ def test_sync_seed_utils_installs_missing_never_overwrites(tmp_path, monkeypatch
     assert bootstrap.sync_seed_utils(lib, routines_home=tmp_path) == 0
 
 
+def test_a_fresh_containers_first_boot_seeds_utils_and_docs(tmp_path, monkeypatch):
+    """A container has no install step: its library is an EMPTY bind mount at first boot. The
+    seed util sync only installs into an existing utils/, and the repo used to be created by
+    the web lifespan — after the syncs had run — so a new deploy started with docs but no
+    utils, and first got them at its second boot. The daemon's boot creates the repo first."""
+    from types import SimpleNamespace
+
+    from rsched import cli_daemon
+
+    lib = tmp_path / "lib"
+    lib.mkdir()                                            # what a fresh bind mount leaves
+    server = SimpleNamespace(libraries_home=lib, libraries_remote="", bind="127.0.0.1",
+                             port=8321, routines_home=tmp_path / "routines",
+                             permissions_home=lib / "permissions")
+    server.routines_home.mkdir()
+    monkeypatch.setattr(bootstrap, "ensure_config", lambda: False)
+    monkeypatch.setattr(cli_daemon, "load_server_config", lambda: (server, []))
+    monkeypatch.setattr("rsched.migrate_settings_patterns.run_migration", lambda s: {})
+    monkeypatch.setattr("rsched.web.app.create_app", lambda s: None)
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+
+    assert cli_daemon.cmd_daemon(None) == 0
+    assert (lib / ".git").is_dir()
+    assert (lib / "utils" / "remote" / "main.py").is_file()       # utils at the FIRST boot
+    assert list((lib / "rules").glob("*.md"))
+    from rsched import libgit
+    assert libgit.git(lib, "status", "--porcelain").stdout.strip() == ""   # all committed
+
+
 def test_sync_seed_utils_no_library_yet(tmp_path, monkeypatch):
-    """Before seed_libraries has created utils/, the sync is a silent no-op."""
+    """Before the library exists (the daemon's boot creates it first), the sync is a silent
+    no-op."""
     from rsched import bootstrap
     fake_repo = tmp_path / "repo"
     (fake_repo / "util-seed" / "utils" / "x").mkdir(parents=True)

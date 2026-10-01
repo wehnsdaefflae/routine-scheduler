@@ -1,7 +1,10 @@
-"""First-boot bootstrap for a fresh (container) deploy. A host install runs deploy/install.sh; the
-container has no install step, so the daemon + Settings do the equivalent: generate a config with a
-random token if none exists (a fresh deploy must never serve an OPEN API), and seed a library from
-the built-in defaults when the user chooses to create a new repo.
+"""First-boot bootstrap for a fresh deploy, and the top-ups every boot runs. A host install runs
+deploy/install.sh, which seeds the library whole (`seed_libraries`); a container has no install
+step, so the daemon's boot (rsched.cli_daemon) does the equivalent: generate a config with fresh
+tokens if none exists (a fresh deploy must never serve an OPEN API), create the library repo
+(utils_lib.ensure_library), then install every seed util and doc it lacks (`sync_seed_utils`,
+`sync_seed_library_docs`) — add-only, which is also how a seed added later reaches an existing
+instance.
 """
 from __future__ import annotations
 
@@ -198,44 +201,43 @@ def _merge_caps(caps: dict, slug: str, lib: dict) -> None:
     caps.update(capabilities_for([slug], lib, base=caps))
 
 
+#: The flat library doc kinds, with the glob that finds them — what `seed_libraries` lays down
+#: and the boot sync tops up, ONE list so an install and a running instance cannot disagree
+#: about what the library holds. `patterns` is here because a settings PATTERN is read LIVE —
+#: by creation, the routine page and the recommender (docs/patterns.md) — so one that only ever
+#: landed when the repo was first created would mean a pattern added to the seed later reaches
+#: no existing instance at all. `reminders` carries only its README — the curated cautions
+#: themselves are written by runs, under approval — but the DIRECTORY has to exist and be
+#: tracked, or the store is invisible in the repo until the first write and the Library tab
+#: has nothing to list.
+SEED_DOC_KINDS = (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.md"),
+                  ("patterns", "*.yaml"), ("reminders", "*.md"))
+
+
 def seed_libraries(home: Path) -> None:
-    """Populate an empty library repo (workflows/ + rules/ + permissions/ + patterns/ +
-    reminders/ + utils/) from the built-in seeds + git-init it (matches deploy/install.sh).
-    The `gu` dispatcher is installed by utils_lib.ensure_library on first use.
+    """Populate an empty library repo from the built-in seeds + git-init it — what
+    deploy/install.sh calls, so a host install starts with the library whole: every
+    SEED_DOC_KINDS kind, the playbooks/ subfolders and utils/. The `gu` dispatcher is installed
+    by utils_lib.ensure_library on first use.
     """
-    root = repo_root()
+    seed = repo_root() / "library-seed"
     home.mkdir(parents=True, exist_ok=True)
-    if (root / "library-seed" / "workflows").is_dir():
-        shutil.copytree(root / "library-seed" / "workflows", home / "workflows", dirs_exist_ok=True)
-    for kind, pattern in (("rules", "*.md"), ("permissions", "*.md"), ("patterns", "*.yaml"),
-                          ("reminders", "*.md")):
+    for kind, pattern in SEED_DOC_KINDS:
         (home / kind).mkdir(exist_ok=True)
-        if (root / "library-seed" / kind).is_dir():
-            for f in sorted((root / "library-seed" / kind).glob(pattern)):
-                shutil.copy(f, home / kind / f.name)
-    # playbooks are subfolders (MAIN.md + detail files), so copy the whole tree
-    if (root / "library-seed" / "playbooks").is_dir():
-        shutil.copytree(root / "library-seed" / "playbooks", home / "playbooks", dirs_exist_ok=True)
-    (home / "utils").mkdir(exist_ok=True)
-    if (root / "util-seed" / "utils").is_dir():
-        shutil.copytree(root / "util-seed" / "utils", home / "utils", dirs_exist_ok=True)
+        for f in sorted((seed / kind).glob(pattern)):
+            shutil.copy(f, home / kind / f.name)
+    # playbooks are subfolders (MAIN.md + detail files) and utils are directories: whole trees
+    for src, dest in ((seed / "playbooks", home / "playbooks"),
+                      (repo_root() / "util-seed" / "utils", home / "utils")):
+        dest.mkdir(exist_ok=True)
+        if src.is_dir():
+            shutil.copytree(src, dest, dirs_exist_ok=True)
     if not (home / ".git").is_dir():
         libgit.init_repo(home, first_commit="seed library repo")
     else:
         # install-time seeding runs before any instance exists: no health stream to file in
         libgit.commit(home, "seed library repo", routines_home=None)
         libgit.install_push_hook(home)
-
-
-#: The flat library doc kinds the boot sync tops up, with the glob that finds them.
-#: `patterns` is here because a settings PATTERN is read LIVE — by creation, the routine page
-#: and the recommender (docs/patterns.md) — so one that only ever landed when the repo was first
-#: created would mean a pattern added to the seed later reaches no existing instance at all.
-#: `reminders` carries only its README — the curated cautions themselves are written by
-#: runs, under approval — but the DIRECTORY has to exist and be tracked, or the store is
-#: invisible in the repo until the first write and the Library tab has nothing to list.
-SEED_DOC_KINDS = (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.md"),
-                  ("patterns", "*.yaml"), ("reminders", "*.md"))
 
 
 def sync_seed_library_docs(libraries_home: Path, *, routines_home: Path) -> int:
@@ -320,7 +322,7 @@ def sync_seed_utils(libraries_home: Path, *, routines_home: Path) -> int:
     src = repo_root() / "util-seed" / "utils"
     dest = libraries_home / "utils"
     if not src.is_dir() or not dest.is_dir():
-        return 0   # fresh deploys get everything via seed_libraries instead
+        return 0   # no library yet — the daemon's boot creates it (ensure_library) before this
     from . import utils_lib
 
     installed = []

@@ -1,8 +1,8 @@
 """`rsched daemon` — the boot sequence systemd actually runs.
 
 Split out of `cli.py` (F393). This is not one command among many: it is the ordered boot of a
-live instance — config bootstrap, permission adoption, library sync, then the web
-app and scheduler. The ORDER is load-bearing and commented as such, which is exactly why it does
+live instance — config bootstrap, permission adoption, library creation and sync, then the
+web app and scheduler. The ORDER is load-bearing and commented as such, which is exactly why it does
 not belong inside a dispatcher that otherwise just parses argv.
 """
 
@@ -28,6 +28,7 @@ def cmd_daemon(_args) -> int:
         sync_seed_library_docs,
         sync_seed_utils,
     )
+    from .utils_lib import ensure_library
     ensure_config()   # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
     # MIGRATION(expires=2026-10-20): routines onto settings patterns, BEFORE the seed sync and
@@ -36,6 +37,16 @@ def cmd_daemon(_args) -> int:
     run_migration(server)
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
+    # The library repo exists BEFORE the syncs fill it. A container has no install step and its
+    # library is an empty bind mount at first boot; the util sync installs only into an
+    # existing utils/, and the repo used to be created by the web lifespan after these ran — so
+    # a new deploy started without a single util until its second boot. Idempotent, and
+    # never fatal, exactly as in the lifespan.
+    try:
+        ensure_library(server.libraries_home, remote=server.libraries_remote)
+    except Exception as exc:
+        logging.getLogger("rsched").warning("library bootstrap %s: %s",
+                                            server.libraries_home, exc)
     # utils added to util-seed since bootstrap, then workflows/rules/permissions added since too,
     # then out-of-band writes (user/conversation) get history
     sync_seed_utils(server.libraries_home, routines_home=server.routines_home)
