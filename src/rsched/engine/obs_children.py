@@ -51,6 +51,11 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
         if obs.get("already_finished"):
             return (f"OBSERVATION (kill): sub-workflow {obs['n']} had already finished "
                     f"({obs['status']}).")
+        if obs.get("status") == "stopping":
+            # It was told to stop and has not yet (a model call no abort interrupts) — saying
+            # "terminated" here claimed an exit that had not happened.
+            return (f"OBSERVATION (kill): sub-workflow {obs['n']} was told to stop and is "
+                    "still winding down — its exit is announced like any other when it lands.")
         return f"OBSERVATION (kill): sub-workflow {obs['n']} terminated ({obs.get('status')})."
     if kind == "wait":
         if obs.get("error"):
@@ -60,12 +65,12 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
             noun = child.mode_shout(str(f.get("mode") or ""))
             # F338: name the deliverables the engine copied up. The WAIT is one of the two
             # paths that report a child's exit (the turn-boundary announcement is the other),
-            # and which one wins is a timing race — so both must say where the files landed,
-            # or a parent that happened to be waiting never learns.
-            got = (" Collected from the child into your artifacts/: "
-                   + ", ".join(f["collected"]) if f.get("collected") else "")
+            # and which one wins is a timing race — so both say where the files landed, in
+            # the ONE spelling, or a parent reads two wordings of one hand-back.
+            got = child.handback_paths_line(tuple(f.get("collected") or ()))
             parts.append(f"{noun} {f['n']} {f['label']!r} FINISHED "
-                         f"(status {f['status']}, {f['turns']} turns):\n{f['summary']}{got}")
+                         f"(status {f['status']}, {f['turns']} turns):\n{f['summary']}"
+                         + (f"\n{got}" if got else ""))
         if obs.get("interrupted_by_user"):
             parts.append("Wait PAUSED — a user message just arrived (delivered next). Handle "
                          "it, then `wait` again for the still-running child(ren) "

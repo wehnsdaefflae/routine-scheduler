@@ -146,6 +146,8 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # A blocking ask answered with "ask back": the user's own words ARE the observation
         # (obs_admin) — it fell through to the plain deferred line, and the model never saw them
         "the user replied WITHOUT deciding",
+        # A kill that has not landed yet must not read as a termination (obs_children)
+        "still winding down",
         # SHARED STORES: the harness contract of a run whose write roots include a shared store
         # names each store, who else shares it and its collision contract — and the hub line
         "SHARED STORES (read+write roots you share with other routines",

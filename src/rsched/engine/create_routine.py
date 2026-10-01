@@ -61,6 +61,11 @@ DEFAULT_WORKFLOW = "general-task"
 #: ago, so the confirming call is the answer to that choice.
 GENERATE_SLUG = "generate"
 
+#: Below this many tokens left in the reply's budget, drafting the picked pattern (≈2
+#: full-context system-model calls, plus its lint repair) is refused rather than started — a
+#: draft that tips the reply over its budget leaves neither the pattern nor the routine.
+GEN_FLOOR_TOKENS = 20_000
+
 #: Where a conversation's pending routine draft lives (relative to the conversation dir).
 #: ONE draft per conversation: a new slug simply replaces the old draft — the flow is a
 #: linear chat, not a queue.
@@ -108,13 +113,11 @@ def _generate_pattern(ctx: RunContext, slug: str, name: str, instruction: str) -
     """Draft the fitted pattern the user picked. Returns its library slug, or an observation
     dict when it could not be drafted.
 
-    Never falls back to a catalog pattern on failure, the way a subtask does: a subtask that
-    cannot generate has nobody to tell and a job to get on with, whereas here the user chose
-    `generate` OVER every catalog entry — quietly building on one of them would materialize
-    the option they rejected, under the name they approved.
+    Never falls back on failure, the way a child run falls back to the builtin body when its
+    pattern is unavailable: a child has nobody to tell and a job to get on with, whereas here
+    the user chose `generate` OVER every catalog entry — quietly building on one of them would
+    materialize the option they rejected, under the name they approved.
     """
-    from .subruns import GEN_FLOOR_TOKENS
-
     def refused(reason: str) -> dict:
         return {"kind": "create_routine", "slug": slug, "workflow": GENERATE_SLUG,
                 "rejected": True, "reason": reason}
