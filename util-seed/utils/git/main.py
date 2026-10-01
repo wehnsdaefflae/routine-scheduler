@@ -20,37 +20,167 @@ net: outbound
 fs: roots
 secrets: (none)
 
-Mechanical merge of the five former utils — git-clone, git-log, git-restore, git-sync,
-git-inspect —
-into one verb dispatcher. Each subcommand's logic is preserved VERBATIM below under a
-namespaced section; module-level helpers were renamed ONLY where two sources collided
-(`run` -> `_log_run`/`_restore_run`/`_sync_run`, etc.). The leading verb is stripped
-before each subcommand's parser, so every subcommand's flags behave byte-identically
-to the original util. `git selftest` / `git --selftest` runs all four originals'
-selftests in sequence (offline; git works against local temp repos); each subcommand
-still accepts its own `--selftest` too.
+One verb dispatcher over what were five utils (git-clone, git-log, git-restore, git-sync,
+git-inspect). The leading verb is stripped before that verb's own parser, and every git
+command any verb runs goes through ONE runner, `_git`: a call that outlives its timeout — or
+this util being ended — is TERMINATED with its hooks (SIGTERM to its process group, SIGKILL
+only `TERM_GRACE_S` later), because git deletes the `index.lock` it holds in its SIGTERM
+handler and nowhere else. A caller-supplied URL or revision is passed after `--` /
+`--end-of-options`, so git can never read it as an option. `git selftest` / `git --selftest`
+runs every verb's selftest in sequence (offline; git works against local temp repos); each
+verb still accepts its own `--selftest` too.
 """
 
 import argparse
 import fcntl
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
-USAGE = """usage: gu git <clone|log|restore|sync|inspect> …
-  git clone URL TARGET_DIR [--depth N] [--json]
-  git log <repo> [--since <ref>] [--max <n>] [--path <pathspec>] [--json]
-           (aliases: --repo <repo>, --since-commit <ref>, --limit <n>, --file <pathspec>)
-  git restore REPO_PATH [FILE ...] [--json]
-  git sync REPO_PATH [-m MESSAGE] [--no-push] [--no-pull] [--on-conflict abort|hold]
-           [--continue] [--abort-rebase] [--json]
-  git inspect REPO [--path PATH] [--json]
-  git selftest   (same as: git --selftest)"""
+#: What a bad invocation prints: the docstring's own usage block, so the two cannot drift.
+USAGE = __doc__[__doc__.index("usage:"):__doc__.index("\ntags:")]
+
+#: One git call's deadline, unless the call names its own (a clone gets CLONE_TIMEOUT_S; the
+#: read-only `log` and `inspect` keep none and live within the deadline of the util call).
+GIT_TIMEOUT_S = 60
+CLONE_TIMEOUT_S = 300
+#: Between SIGTERM and SIGKILL for a git call being ended — the scheduler's own grace
+#: (`rsched.procgroup.TERM_GRACE_S`), which a uv script cannot import. Git cleans up only in
+#: its SIGTERM handler: the SIGKILL `subprocess.run` sends at its timeout left an empty
+#: `index.lock` that failed every later write in two routine repos on 2026-09-30
+#: (docs/architecture.md, "Git writes"), and the disk under `/home` stalls one I/O for up to
+#: thirty seconds, so a git blocked in it runs that handler only once the I/O returns.
+TERM_GRACE_S = 30
+#: The process groups of the git calls in flight: whom a SIGTERM to this util is handed on to.
+_IN_FLIGHT: set[int] = set()
+
+
+def _end_group(proc: subprocess.Popen) -> None:
+    """End the process group `proc` leads the way `rsched.procgroup.terminate` does: SIGTERM to
+    every member, up to TERM_GRACE_S for ALL of them to exit (a hook's children too, not just
+    git), SIGKILL for whatever is left. The leader is reaped either way."""
+    with suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGTERM)
+    deadline = time.monotonic() + TERM_GRACE_S
+    while True:
+        proc.poll()                    # reap the leader first: its zombie answers for the group
+        try:
+            os.killpg(proc.pid, 0)
+        except ProcessLookupError:
+            return
+        if time.monotonic() >= deadline:
+            with suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            return
+        time.sleep(0.05)
+
+
+def _hand_on_sigterm(signum, _frame):
+    """The scheduler ends this util — its call's deadline, or the run's abort — by SIGTERM to
+    the util's process group, which a git call's own group does not share. Pass it on, then
+    leave the way SIGTERM would have: `_git` ends the group (and waits for it) on the way out."""
+    for pgid in list(_IN_FLIGHT):
+        with suppress(ProcessLookupError):
+            os.killpg(pgid, signal.SIGTERM)
+    raise SystemExit(128 + signum)
+
+
+def _git(repo, *args: str, timeout: float | None = GIT_TIMEOUT_S,
+         check: bool = False) -> subprocess.CompletedProcess:
+    """Run `git -C repo ARGS` (no `-C` when `repo` is None: a clone) — the one git invoker here.
+
+    Git runs as the leader of a process group of its own, so ending it reaches the hook it is
+    waiting on and that hook's children too; a call that outlives `timeout` is ended through
+    `_end_group` and raises subprocess.TimeoutExpired, as subprocess.run did — but only once
+    the group has stopped, and never by a SIGKILL git gets no chance to clean up after. A
+    SIGTERM to this util reaches the group through `_hand_on_sigterm` (installed by `main`).
+
+    Every call reads with `GIT_OPTIONAL_LOCKS=0`, so a read (`status`) never takes the index
+    lock and can neither leave one behind nor fail a concurrent writer's commit — the rule
+    libgit keeps for the scheduler's own repos. `core.quotePath=false` reports a path as the
+    file's own name instead of C-quoted octal (`"Gr\\303\\266\\303\\237e.txt"`), since a caller
+    acts on the paths it is given back.
+    """
+    cmd = ["git", "-c", "core.quotePath=false",
+           *(["-C", str(repo)] if repo is not None else []), *args]
+    with subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, start_new_session=True,
+                          env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"}) as proc:
+        _IN_FLIGHT.add(proc.pid)
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except BaseException:          # its own timeout, or this util being ended
+            _end_group(proc)
+            raise
+        finally:
+            _IN_FLIGHT.discard(proc.pid)
+    done = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+    if check:
+        done.check_returncode()
+    return done
+
+
+def _runner_selftest() -> int:
+    """A git call that outlives its timeout is TERMINATED with its hook, never killed outright:
+    `commit -a` holds the index lock while its pre-commit hook outlasts a one-second timeout.
+    Once `_git` raises, the lock must be gone — the SIGKILL `subprocess.run` sent there left
+    it behind and the next commit failed on it — and so must the hook's own child, which a
+    signal to git alone leaves running with no deadline at all."""
+    def alive(pid: int) -> bool:
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+                return fh.read().rsplit(")", 1)[1].split()[0] != "Z"
+        except OSError:
+            return False
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        _git(repo, "init", "-q")
+        (repo / "f.txt").write_text("x\n")
+        _git(repo, "add", "-A")
+        _git(repo, *_FALLBACK_IDENTITY, "commit", "-qm", "base")
+        hook = repo / ".git" / "hooks" / "pre-commit"
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text(f"#!/bin/sh\nsleep 30 &\necho $! > {tmp}/hook-child.pid\nwait\n")
+        hook.chmod(0o755)
+        (repo / "f.txt").write_text("y\n")
+        started = time.monotonic()
+        try:
+            _git(repo, *_FALLBACK_IDENTITY, "commit", "-a", "-qm", "slow", timeout=1)
+            raise AssertionError("a hook outliving the timeout must make the call raise")
+        except subprocess.TimeoutExpired:
+            pass
+        assert time.monotonic() - started < TERM_GRACE_S, "git outlived its SIGTERM"
+        assert not (repo / ".git" / "index.lock").exists(), "a timed-out git left index.lock"
+        child = int(Path(tmp, "hook-child.pid").read_text())
+        assert not alive(child), "the hook's child outlived the call it belonged to"
+        nxt = _git(repo, *_FALLBACK_IDENTITY, "commit", "-a", "-qm", "next", "--no-verify")
+        assert nxt.returncode == 0, nxt.stderr
+        # ...and when THIS util is ended — the scheduler's SIGTERM to the util's own group —
+        # the git call's group is ended with it instead of running on with no deadline at all
+        (repo / "hook-child.pid").unlink()
+        (repo / "f.txt").write_text("z\n")
+        util = subprocess.Popen([sys.executable, os.path.abspath(__file__), "sync", tmp,
+                                 "--no-pull", "--no-push"], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+        deadline = time.monotonic() + 20
+        while not (repo / "hook-child.pid").exists():
+            assert util.poll() is None and time.monotonic() < deadline, "the hook never ran"
+            time.sleep(0.05)
+        os.killpg(util.pid, signal.SIGTERM)
+        assert util.wait(timeout=TERM_GRACE_S) == 128 + signal.SIGTERM, util.returncode
+        child = int(Path(tmp, "hook-child.pid").read_text())
+        assert not alive(child), "a git call outlived the util that was ended"
+    print("selftest: ok", file=sys.stderr)
+    return 0
 
 
 # ============================================================ clone (ex git-clone) ===
@@ -60,26 +190,20 @@ def run_clone(url: str, target: str, depth: int = 0) -> dict:
     if target_path.exists() and any(target_path.iterdir()):
         raise ValueError(f"target directory exists and is not empty: {target_path}")
     target_path.mkdir(parents=True, exist_ok=True)
-    cmd = ["git", "clone", "--quiet"]
-    if depth:
-        cmd += ["--depth", str(depth)]
-    cmd += [url, str(target_path)]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    # `--` before the two caller-supplied words: a URL like `--config=core.sshCommand=…` was
+    # otherwise an OPTION, and git ran that command on the next `host:path` it reached.
+    depth_args = ["--depth", str(depth)] if depth else []
+    r = _git(None, "clone", "--quiet", *depth_args, "--", url, str(target_path),
+             timeout=CLONE_TIMEOUT_S)
     if r.returncode != 0:
         raise RuntimeError((r.stderr or r.stdout).strip()[:500])
-    head = subprocess.run(
-        ["git", "-C", str(target_path), "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True, text=True, timeout=60,
-    )
-    files = subprocess.run(
-        ["git", "-C", str(target_path), "ls-files"],
-        capture_output=True, text=True, timeout=60,
-    )
+    head = _git(target_path, "rev-parse", "--abbrev-ref", "HEAD")
+    files = _git(target_path, "ls-files", "-z")
     return {
         "url": url,
         "target": str(target_path),
         "branch": head.stdout.strip() or "HEAD",
-        "files": len(files.stdout.splitlines()),
+        "files": len([f for f in files.stdout.split("\0") if f]),
         "ok": True,
     }
 
@@ -107,6 +231,19 @@ def _clone_selftest() -> int:
             raise AssertionError("should refuse non-empty target")
         except ValueError:
             pass
+        # a URL that LOOKS like an option is a URL: before `--`, this one set core.sshCommand
+        # and git ran it against the scp-style target `evil:repo` (a relative dir, hence chdir)
+        marker = Path(tmp) / "option-injected"
+        cwd = os.getcwd()
+        os.chdir(tmp)
+        try:
+            run_clone(f"--config=core.sshCommand=touch {marker}", "evil:repo")
+            raise AssertionError("a URL that is not a repository must fail")
+        except RuntimeError:
+            pass
+        finally:
+            os.chdir(cwd)
+        assert not marker.exists(), "a dash-prefixed URL was parsed as a git option"
     print("selftest: ok", file=sys.stderr)
     return 0
 
@@ -141,25 +278,20 @@ _log_USAGE = ("gu git log <repo> [--since <ref>] [--max <n>] [--path <pathspec>]
               "   (aliases: --repo <repo>, --since-commit <ref>, --limit <n>, --file <pathspec>)")
 
 
-def _log_git(repo, args):
-    return subprocess.run(
-        ["git", "-C", repo] + args,
-        capture_output=True, text=True,
-    )
-
-
 def _log_run(repo, since=None, max_n=20, paths=None):
-    # Build the revision range / limit.
+    # Build the revision range / limit. The caller's ref goes after `--end-of-options`: a
+    # `--since=--output=FILE` was otherwise git's own --output and wrote the log to FILE.
     log_args = ["log", "--numstat", "--date=short",
                 "--pretty=format:@@COMMIT@@%H%x1f%an%x1f%ad%x1f%s"]
+    if not since:
+        log_args.append(f"-n{max_n}")
+    log_args.append("--end-of-options")
     if since:
         log_args.append(f"{since}..HEAD")
-    else:
-        log_args.append(f"-n{max_n}")
     if paths:
         log_args.append("--")
         log_args.extend(paths)
-    r = _log_git(repo, log_args)
+    r = _git(repo, *log_args, timeout=None)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip() or "git log failed")
 
@@ -217,30 +349,37 @@ def build_parser():
 
 
 def _log_selftest() -> int:
-    # extracted VERBATIM from git-log's original main() --selftest branch
-    import tempfile, os
-    d = tempfile.mkdtemp()
-    subprocess.run(["git", "-C", d, "init", "-q"], check=True)
-    subprocess.run(["git", "-C", d, "config", "user.email", "t@t"], check=True)
-    subprocess.run(["git", "-C", d, "config", "user.name", "t"], check=True)
-    with open(os.path.join(d, "a.txt"), "w") as f:
-        f.write("hello\nworld\n")
-    subprocess.run(["git", "-C", d, "add", "."], check=True)
-    subprocess.run(["git", "-C", d, "commit", "-q", "-m", "first"], check=True)
-    with open(os.path.join(d, "b.txt"), "w") as f:
-        f.write("second file\n")
-    subprocess.run(["git", "-C", d, "add", "."], check=True)
-    subprocess.run(["git", "-C", d, "commit", "-q", "-m", "second"], check=True)
-    res = _log_run(d, max_n=5)
-    assert res["count"] == 2, res
-    assert res["commits"][0]["subject"] == "second"
-    assert any(f["path"] == "a.txt" for f in res["commits"][1]["files"])
-    # --path filters to commits touching that path only
-    res_p = _log_run(d, max_n=5, paths=["a.txt"])
-    assert res_p["count"] == 1 and res_p["commits"][0]["subject"] == "first", res_p
-    # glob pathspec works
-    res_g = _log_run(d, max_n=5, paths=["b.*"])
-    assert res_g["count"] == 1 and res_g["commits"][0]["subject"] == "second", res_g
+    with tempfile.TemporaryDirectory() as d:
+        for args in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):
+            subprocess.run(["git", "-C", d, *args], check=True)
+        for name, text, subject in (("a.txt", "hello\nworld\n", "first"),
+                                    ("b.txt", "second file\n", "second")):
+            Path(d, name).write_text(text)
+            subprocess.run(["git", "-C", d, "add", "."], check=True)
+            subprocess.run(["git", "-C", d, "commit", "-q", "-m", subject], check=True)
+        res = _log_run(d, max_n=5)
+        assert res["count"] == 2, res
+        assert res["commits"][0]["subject"] == "second"
+        assert any(f["path"] == "a.txt" for f in res["commits"][1]["files"])
+        # --path filters to commits touching that path only
+        res_p = _log_run(d, max_n=5, paths=["a.txt"])
+        assert res_p["count"] == 1 and res_p["commits"][0]["subject"] == "first", res_p
+        # glob pathspec works
+        res_g = _log_run(d, max_n=5, paths=["b.*"])
+        assert res_g["count"] == 1 and res_g["commits"][0]["subject"] == "second", res_g
+        # --since lists what came after the ref, with or without a pathspec
+        first = res["commits"][1]["hash"]
+        res_s = _log_run(d, since=first)
+        assert [c["subject"] for c in res_s["commits"]] == ["second"], res_s
+        assert _log_run(d, since=first, paths=["a.txt"])["count"] == 0
+        # ...and a ref that LOOKS like an option is a (bad) ref, never git's own --output
+        written = os.path.join(d, "log-out")
+        try:
+            _log_run(d, since=f"--output={written}")
+            raise AssertionError("a dash-prefixed ref must be refused as a revision")
+        except RuntimeError:
+            pass
+        assert not any(n.startswith("log-out") for n in os.listdir(d)), "--since became an option"
     # the flag aliases resolve to the same inputs as the canonical forms
     ns = build_parser().parse_args(["--repo", "/x", "--since-commit", "abc"])
     assert (ns.repo or ns.repo_flag) == "/x", ns
@@ -268,12 +407,12 @@ def _log_main(argv: list[str]) -> int:
     paths = (args.path or []) + (args.file_paths or [])
     if not repo:
         print(f"error: repo required\nusage: {_log_USAGE}", file=sys.stderr)
-        sys.exit(2)
+        return 2
     try:
         res = _log_run(repo, since=since, max_n=max_n, paths=paths or None)
     except Exception as e:
         print(f"error: {e}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     if args.json:
         print(json.dumps(res, indent=2))
@@ -288,46 +427,77 @@ def _log_main(argv: list[str]) -> int:
         print("\nchurn hot-spots:")
         for h in res["hotspots"]:
             print(f"  {h['churn']:6d}  {h['path']}")
+    return 0
 
 
 # ========================================================== restore (ex git-restore) ===
 
-_restore_IDENTITY = ["-c", "user.name=routine-scheduler", "-c", "user.email=noreply@routine-scheduler.local"]
-
-
-def _restore_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=60)
-
-
-def _within(repo: Path, path: Path) -> bool:
+def _within(root: Path, path: Path) -> bool:
+    """Whether `path` itself LIVES under `root`. Only its directory is resolved: an untracked
+    symlink inside the repo is the repo's to delete (the link, never its target), while `..`
+    or a symlinked directory leading out of the repo is not."""
     try:
-        path.resolve().relative_to(repo.resolve())
+        (path.parent.resolve() / path.name).relative_to(root.resolve())
         return True
     except ValueError:
         return False
 
 
 def _restore_run(repo_path: str, files: list[str] | None = None) -> dict:
+    """Return the repo, or the named FILES, to HEAD — in the index AND the working tree.
+
+    Staged and unstaged edits alike: `checkout -- .` used to restore the working tree from the
+    INDEX, so an edit `git sync` had staged before its commit was refused survived the restore
+    that reported it gone. A NAMED path that HEAD lacks is removed — a staged addition from the
+    index and the disk, an untracked file from the disk — never one outside the repo or inside
+    its `.git`. With no FILE, every path HEAD has is restored and nothing else is touched.
+
+    Every refusal git (or the guard) gives is reported under `errors`, and `ok` is False then:
+    git's exit codes were thrown away, so a restore stopped by an `index.lock` read as done.
+    """
     repo = Path(repo_path).expanduser()
     if not (repo / ".git").is_dir():
         raise ValueError(f"{repo} is not a git repository")
+    if _git(repo, "rev-parse", "--verify", "--quiet", "HEAD").returncode != 0:
+        raise ValueError(f"{repo} has no commit yet — there is no HEAD to restore to")
     restored: list[str] = []
     removed: list[str] = []
-    if files:
-        for f in files:
-            tracked = _restore_git(repo, "ls-files", "--error-unmatch", "--", f).returncode == 0
-            if tracked:
-                _restore_git(repo, "checkout", "HEAD", "--", f)
-                restored.append(f)
+    errors: list[dict] = []
+
+    def failed(path: str, why: str) -> None:
+        errors.append({"path": path, "error": why.strip()[:300]})
+
+    for f in files or []:
+        # Known = in the index or in HEAD (a staged deletion is still HEAD's to bring back).
+        if _git(repo, "ls-files", "--error-unmatch", "--with-tree=HEAD", "--", f).returncode == 0:
+            r = _git(repo, "restore", "--source=HEAD", "--staged", "--worktree", "--", f)
+            if r.returncode != 0:
+                failed(f, r.stderr or r.stdout)
             else:
-                p = repo / f
-                if p.exists() and _within(repo, p):   # only ever delete inside the repo
-                    p.unlink()
-                    removed.append(f)
-    else:
-        _restore_git(repo, "checkout", "--", ".")             # all modified tracked files → HEAD
-        restored.append(".")
-    return {"repo": str(repo), "restored": restored, "removed": removed}
+                (restored if os.path.lexists(repo / f) else removed).append(f)
+            continue
+        p = repo / f
+        if not os.path.lexists(p):
+            continue                      # nothing there and git knows nothing of it
+        if not _within(repo, p) or _within(repo / ".git", p):
+            failed(f, "outside the repository's working tree — not deleted")
+        elif p.is_dir() and not p.is_symlink():
+            failed(f, "an untracked directory — name the files to delete")
+        else:
+            p.unlink()
+            removed.append(f)
+    if not files:
+        # --overlay: every path HEAD has goes back to HEAD, and nothing HEAD lacks is removed
+        r = _git(repo, "restore", "--source=HEAD", "--staged", "--worktree", "--overlay",
+                 "--", ".")
+        if r.returncode != 0:
+            failed(".", r.stderr or r.stdout)
+        else:
+            restored.append(".")
+    result = {"repo": str(repo), "restored": restored, "removed": removed, "ok": not errors}
+    if errors:
+        result["errors"] = errors
+    return result
 
 
 def _restore_selftest() -> int:
@@ -335,9 +505,14 @@ def _restore_selftest() -> int:
         repo = Path(tmp) / "r"
         repo.mkdir()
         subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        try:
+            _restore_run(str(repo))
+            raise AssertionError("a repo with no commit has no HEAD to restore to")
+        except ValueError:
+            pass
         (repo / "keep.py").write_text("original\n")
-        _restore_git(repo, "add", "-A")
-        _restore_git(repo, *_restore_IDENTITY, "commit", "-qm", "base")
+        _git(repo, "add", "-A")
+        _git(repo, *_FALLBACK_IDENTITY, "commit", "-qm", "base")
         # modify a tracked file and create a new untracked one, then revert both by name
         (repo / "keep.py").write_text("BROKEN EDIT\n")
         (repo / "new_module.py").write_text("created by the routine\n")
@@ -345,11 +520,34 @@ def _restore_selftest() -> int:
         assert (repo / "keep.py").read_text() == "original\n", "tracked file not restored"
         assert not (repo / "new_module.py").exists(), "untracked file not removed"
         assert result["restored"] == ["keep.py"] and result["removed"] == ["new_module.py"], result
-        # a path-escape attempt is refused (stays inside the repo)
+        assert result["ok"] is True and "errors" not in result, result
+        # a path-escape attempt is refused (stays inside the repo), and SAYS so
         outside = Path(tmp) / "outside.txt"
         outside.write_text("safe")
-        _restore_run(str(repo), files=["../outside.txt"])
+        escaped = _restore_run(str(repo), files=["../outside.txt"])
         assert outside.exists(), "git-restore escaped the repo"
+        assert escaped["ok"] is False and escaped["errors"][0]["path"] == "../outside.txt"
+        # ...and git's own state is never "an untracked file" to delete
+        assert _restore_run(str(repo), files=[".git/HEAD"])["ok"] is False
+        assert (repo / ".git" / "HEAD").is_file(), "restore deleted the repository's HEAD"
+        # STAGED edits go back to HEAD too — what a hook-refused `git sync` leaves behind
+        (repo / "keep.py").write_text("staged edit\n")
+        (repo / "added.py").write_text("staged addition\n")
+        _git(repo, "add", "-A")
+        whole = _restore_run(str(repo))
+        assert (repo / "keep.py").read_text() == "original\n", "a staged edit survived restore"
+        assert whole == {"repo": str(repo), "restored": ["."], "removed": [], "ok": True}, whole
+        assert (repo / "added.py").exists(), "the whole-repo restore removes nothing HEAD lacks"
+        named = _restore_run(str(repo), files=["added.py"])
+        assert named["removed"] == ["added.py"] and not (repo / "added.py").exists(), named
+        assert not _git(repo, "status", "--porcelain").stdout.strip(), "index not back at HEAD"
+        # a restore git REFUSES is a failure, never a silent "restored"
+        (repo / "keep.py").write_text("edit\n")
+        (repo / ".git" / "index.lock").write_text("")
+        locked = _restore_run(str(repo), files=["keep.py"])
+        assert locked["ok"] is False and locked["restored"] == [], locked
+        assert "index.lock" in locked["errors"][0]["error"], locked
+        (repo / ".git" / "index.lock").unlink()
     print("selftest: ok", file=sys.stderr)
     return 0
 
@@ -357,7 +555,9 @@ def _restore_selftest() -> int:
 def _restore_main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(prog="gu git restore", description="Discard uncommitted edits, restoring HEAD.")
     p.add_argument("repo_path", nargs="?", help="path to the git repo")
-    p.add_argument("files", nargs="*", help="specific paths to restore (default: all modified tracked files)")
+    p.add_argument("files", nargs="*",
+                   help="specific paths to restore, staged or not; one HEAD lacks is deleted "
+                        "(default: every path HEAD has, and nothing else)")
     p.add_argument("--json", action="store_true")
     p.add_argument("--selftest", action="store_true")
     args = p.parse_args(argv)
@@ -371,8 +571,10 @@ def _restore_main(argv: list[str]) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(result) if args.json else
-          f"restored={result['restored']} removed={result['removed']}")
-    return 0
+          f"restored={result['restored']} removed={result['removed']} ok={result['ok']}")
+    for err in result.get("errors", []):
+        print(f"error: {err['path']}: {err['error']}", file=sys.stderr)
+    return 0 if result["ok"] else 1
 
 
 # ================================================================ sync (ex git-sync) ===
@@ -390,7 +592,10 @@ def _restore_main(argv: list[str]) -> int:
 #:
 #: The fallback is unchanged and still matters: a repo naming no author at all would fail the
 #: commit outright ("Please tell me who you are"), so an identity is always supplied — it is
-#: simply no longer imposed on repos that have one.
+#: simply no longer imposed on repos that have one. That holds for EVERY git call that writes
+#: a commit, the rebase of `pull --rebase` included: replaying the local commits rewrites their
+#: COMMITTER, and the pull kept passing this fallback unconditionally after the commit had
+#: stopped, so each synced commit read "<owner> authored, routine-scheduler committed".
 _FALLBACK_IDENTITY = ["-c", "user.name=routine-scheduler", "-c", "user.email=noreply@routine-scheduler.local"]
 
 
@@ -401,27 +606,18 @@ def _identity_for(repo: Path) -> list[str]:
     (repo, then global, then system) rather than only what is written in this repo's file.
     """
     try:
-        name = subprocess.run(["git", "-C", str(repo), "config", "--get", "user.name"],
-                              capture_output=True, text=True, timeout=30).stdout.strip()
-        email = subprocess.run(["git", "-C", str(repo), "config", "--get", "user.email"],
-                               capture_output=True, text=True, timeout=30).stdout.strip()
+        name = _git(repo, "config", "--get", "user.name").stdout.strip()
+        email = _git(repo, "config", "--get", "user.email").stdout.strip()
     except Exception:
         return list(_FALLBACK_IDENTITY)
     return [] if (name and email) else list(_FALLBACK_IDENTITY)
 
 
-#: Kept as a module-level name because the selftests and older call sites reference it; it is
-#: the fallback, never an override of a configured author.
-_sync_IDENTITY = _FALLBACK_IDENTITY
 # `rebase --continue` opens an EDITOR to let a human amend the replayed commit's message.
 # There is no editor in the engine's container ("Terminal is dumb, but EDITOR unset"), so the
 # rebase would stall half-finished. `core.editor=true` accepts the existing message unchanged,
 # which is what a machine wants: the message came from the commit being replayed.
 NO_EDITOR = ["-c", "core.editor=true"]
-
-
-def _sync_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=60)
 
 
 @contextmanager
@@ -462,8 +658,9 @@ def _repo_lock(repo: Path, timeout: float = 30.0):
 # a base stage or an ours/theirs stage.
 def _conflicts(repo: Path) -> list[dict]:
     """Every unmerged path with its conflict kind, from the index rather than from parsing
-    git's prose (which is localized and changes between versions)."""
-    out = _sync_git(repo, "ls-files", "-u").stdout.splitlines()
+    git's prose (which is localized and changes between versions). NUL-separated (`-z`), so a
+    path comes back exactly as the file is named — the caller opens it to resolve it."""
+    out = _git(repo, "ls-files", "-u", "-z").stdout.split("\0")
     stages: dict[str, set[int]] = {}
     for line in out:
         # "<mode> <sha> <stage>\t<path>"
@@ -484,7 +681,7 @@ def _conflicts(repo: Path) -> list[dict]:
 
 
 def _rebase_in_progress(repo: Path) -> bool:
-    git_dir = Path(_sync_git(repo, "rev-parse", "--git-dir").stdout.strip() or ".git")
+    git_dir = Path(_git(repo, "rev-parse", "--git-dir").stdout.strip() or ".git")
     if not git_dir.is_absolute():
         git_dir = repo / git_dir
     return (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists()
@@ -497,12 +694,12 @@ def _rescue_tag(repo: Path, branch: str) -> str:
     the remote's changes, that commit is still reachable from this tag. Cheap insurance
     against the failure this util cannot otherwise undo.
     """
-    remote_tip = _sync_git(repo, "rev-parse", f"origin/{branch}").stdout.strip()
+    remote_tip = _git(repo, "rev-parse", f"origin/{branch}").stdout.strip()
     if not remote_tip:
         return ""
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     tag = f"git-sync-pre-rebase/{branch}/{stamp}"
-    _sync_git(repo, "tag", "-f", tag, remote_tip)
+    _git(repo, "tag", "-f", tag, remote_tip)
     return tag
 
 
@@ -517,18 +714,18 @@ def finish_rebase(repo_path: str, push: bool = True) -> dict:
     repo = Path(repo_path).expanduser()
     if not _rebase_in_progress(repo):
         return {"repo": str(repo), "ok": False, "error": "no rebase in progress"}
-    branch = (_sync_git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-              or _sync_git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main")
+    branch = (_git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+              or _git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main")
     with _repo_lock(repo):
-        _sync_git(repo, "add", "-A")
-        r = _sync_git(repo, *_identity_for(repo), *NO_EDITOR, "rebase", "--continue")
+        _git(repo, "add", "-A")
+        r = _git(repo, *_identity_for(repo), *NO_EDITOR, "rebase", "--continue")
         if r.returncode != 0:
             return {"repo": str(repo), "ok": False, "rebase_in_progress": True,
                     "conflicts": _conflicts(repo),
                     "error": (r.stderr or r.stdout).strip()[:300]}
     result: dict = {"repo": str(repo), "rebase_in_progress": False, "resolved": True}
-    if push and _sync_git(repo, "remote").stdout.strip():
-        pr = _sync_git(repo, "push", "origin", branch)
+    if push and _git(repo, "remote").stdout.strip():
+        pr = _git(repo, "push", "origin", branch)
         result["pushed"] = pr.returncode == 0
         if pr.returncode != 0:
             result["push_error"] = (pr.stderr or pr.stdout).strip()[:300]
@@ -543,7 +740,7 @@ def abort_rebase(repo_path: str) -> dict:
         return {"repo": str(repo), "ok": True, "aborted": False,
                 "note": "no rebase in progress"}
     with _repo_lock(repo):
-        r = _sync_git(repo, "rebase", "--abort")
+        r = _git(repo, "rebase", "--abort")
     return {"repo": str(repo), "ok": r.returncode == 0, "aborted": r.returncode == 0}
 
 
@@ -557,14 +754,15 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
         raise ValueError(f"{repo} is not a git repository")
     # The index-touching steps (add, commit, rebase) run under the shared per-repo lock so a
     # routine autocommitting THIS dir at the same instant takes turns instead of colliding.
+    identity = _identity_for(repo)          # the commit's author AND the rebase's committer
     with _repo_lock(repo):
-        _sync_git(repo, "add", "-A")
-        status = _sync_git(repo, "status", "--porcelain").stdout.strip()
+        _git(repo, "add", "-A")
+        status = _git(repo, "status", "--porcelain").stdout.strip()
         committed = False
         commit_error = ""
         if status:
             msg = message or "sync"
-            r = _sync_git(repo, *_identity_for(repo), "commit", "-qm", msg)
+            r = _git(repo, *identity, "commit", "-qm", msg)
             committed = r.returncode == 0
             if not committed:
                 # **A REFUSED COMMIT IS A FAILURE AND MUST SAY SO (2026-09-11).** This
@@ -575,8 +773,8 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
                 # unrecorded while the run believed it had landed. The hook's own text is
                 # the only thing that says what to change, so it travels with the result.
                 commit_error = (r.stderr or r.stdout).strip()[:500]
-        has_remote = bool(_sync_git(repo, "remote").stdout.strip())
-        branch = _sync_git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main"
+        has_remote = bool(_git(repo, "remote").stdout.strip())
+        branch = _git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main"
         pulled = False
         pull_attempted = False
         pull_error = ""
@@ -585,9 +783,9 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
         if pull and has_remote:
             # rebase local work on remote; abort cleanly on conflict rather than leave a mess
             pull_attempted = True
-            _sync_git(repo, "fetch", "--quiet", "origin", branch)
+            _git(repo, "fetch", "--quiet", "origin", branch)
             rescue = _rescue_tag(repo, branch)
-            r = _sync_git(repo, *_sync_IDENTITY, "pull", "--rebase", "--quiet", "origin", branch)
+            r = _git(repo, *identity, "pull", "--rebase", "--quiet", "origin", branch)
             pulled = r.returncode == 0
             if not pulled:
                 pull_error = (r.stderr or r.stdout).strip()[:300]
@@ -596,7 +794,7 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
                     # moment the conflicted content is reachable to read and resolve.
                     held = _conflicts(repo)
                 else:
-                    _sync_git(repo, "rebase", "--abort")
+                    _git(repo, "rebase", "--abort")
     if held:
         # a held rebase means HEAD is mid-replay — pushing now would publish a partial state
         return {"repo": str(repo), "committed": committed, "had_changes": bool(status),
@@ -608,7 +806,7 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
     push_error = ""
     if push and has_remote:
         push_attempted = True
-        r = _sync_git(repo, "push", "origin", branch)
+        r = _git(repo, "push", "origin", branch)
         pushed = r.returncode == 0
         if not pushed:
             push_error = (r.stderr or r.stdout).strip()[:300]
@@ -655,8 +853,37 @@ def _sync_selftest() -> int:
         assert third["push_attempted"] is True and third["pushed"] is False, third
         assert third["ok"] is False and third.get("push_error"), third
         _selftest_conflicts(Path(tmp))
+        _selftest_hook_refusal(Path(tmp))
+        _selftest_identity(Path(tmp))
     print("selftest: ok", file=sys.stderr)
     return 0
+
+
+def _selftest_identity(tmp: Path) -> None:
+    """A repo that names its own author keeps it through the WHOLE sync — the commit, and the
+    rebase `pull --rebase` replays that commit with, whose committer the fallback identity
+    used to overwrite."""
+    def git(repo, *a):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True)
+
+    bare = tmp / "owned.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+    mine, theirs = tmp / "mine", tmp / "theirs"
+    subprocess.run(["git", "clone", "-q", str(bare), str(mine)], check=True)
+    git(mine, "config", "user.name", "Repo Owner")
+    git(mine, "config", "user.email", "owner@example.com")
+    (mine / "one.txt").write_text("1\n")
+    assert _sync_run(str(mine), message="base", push=True, pull=False)["ok"]
+    subprocess.run(["git", "clone", "-q", str(bare), str(theirs)], check=True)
+    (theirs / "two.txt").write_text("2\n")
+    assert _sync_run(str(theirs), message="theirs", push=True, pull=False)["ok"]
+    (mine / "three.txt").write_text("3\n")
+    res = _sync_run(str(mine), message="mine", push=False, pull=True)
+    assert res["ok"] and res["pulled"], res
+    log = git(mine, "log", "-2", "--format=%s|%an <%ae>|%cn <%ce>").stdout.splitlines()
+    owner = "Repo Owner <owner@example.com>"
+    assert log[0] == f"mine|{owner}|{owner}", ("the rebase re-signed the commit", log)
+    assert log[1].startswith("theirs|"), ("the local commit was not replayed on top", log)
 
 
 def _selftest_hook_refusal(tmp: Path) -> None:
@@ -717,22 +944,27 @@ def _selftest_conflicts(tmp: Path) -> None:
     subprocess.run(["git", "clone", "-q", str(bare), str(a)], check=True)
     (a / "shared.txt").write_text("base\n")
     (a / "doomed.txt").write_text("original\n")
+    (a / "Größe.txt").write_text("base\n")
     _sync_run(str(a), message="base", push=True, pull=False)
     subprocess.run(["git", "clone", "-q", str(bare), str(b)], check=True)
 
-    # B (the "remote" side) edits both files and publishes
+    # B (the "remote" side) edits every file and publishes
     (b / "shared.txt").write_text("from-remote\n")
     (b / "doomed.txt").write_text("improved-remotely\n")
+    (b / "Größe.txt").write_text("from-remote\n")
     _sync_run(str(b), message="remote work", push=True, pull=False)
 
-    # A edits the same line of one and DELETES the other — one conflict of each kind
+    # A edits the same line of two and DELETES the third — one conflict of each kind, and
+    # one whose name git would C-quote (`"Gr\303\266\303\237e.txt"`) without -z
     (a / "shared.txt").write_text("from-local\n")
     (a / "doomed.txt").unlink()
+    (a / "Größe.txt").write_text("from-local\n")
     res = _sync_run(str(a), message="local work", push=True, pull=True, on_conflict="hold")
     assert res["rebase_in_progress"] is True, res
     kinds = {c["path"]: c["kind"] for c in res["conflicts"]}
     assert kinds.get("shared.txt") == "both-modified", kinds
     assert kinds.get("doomed.txt") == "modify-delete", kinds
+    assert kinds.get("Größe.txt") == "both-modified", ("a conflict path the caller can open", kinds)
     assert res["rescue_tag"], res
     # the rescue tag must pin the REMOTE tip, so B's work survives any resolution
     tagged = git(a, "rev-parse", res["rescue_tag"]).stdout.strip()
@@ -748,6 +980,7 @@ def _selftest_conflicts(tmp: Path) -> None:
     assert res["rebase_in_progress"] is True, res
     (a / "shared.txt").write_text("merged-by-hand\n")      # what a caller would write
     (a / "doomed.txt").write_text("improved-remotely\n")   # keep the remote's version
+    (a / "Größe.txt").write_text("merged-by-hand\n")
     done = finish_rebase(str(a), push=True)
     assert done["ok"] and done["resolved"], done
     assert not _rebase_in_progress(a)
@@ -828,22 +1061,19 @@ def _sync_main(argv: list[str]) -> int:
     return 0
 
 
-# ================================================================ dispatcher ===
-
 # ======================================================= inspect (ex git-inspect) ===
-# Transplanted VERBATIM from git-inspect, which has been REMOVED from the registry:
-# everything that reads or writes a git repo is one catalog entry.
+# Everything that reads or writes a git repo is one catalog entry.
 
 def inspect_repo(repo, path=None) -> dict:
     """Read-only repository state: HEAD, short status, full textual diff, untracked."""
     def git(*args):
-        return subprocess.run(["git", "-C", str(repo), *args], check=True,
-                              capture_output=True, text=True).stdout
+        return _git(repo, *args, timeout=None, check=True).stdout
     paths = ["--", path] if path else []
+    untracked = git("ls-files", "--others", "--exclude-standard", "-z")
     return {"head": git("rev-parse", "HEAD").strip(),
             "status": git("status", "--short"),
             "diff": git("diff", "HEAD", "--no-ext-diff", *paths),
-            "untracked": git("ls-files", "--others", "--exclude-standard").splitlines()}
+            "untracked": [p for p in untracked.split("\0") if p]}
 
 
 def _inspect_main(argv: list[str]) -> int:
@@ -906,18 +1136,21 @@ def _inspect_selftest() -> int:
 
 
 def _selftest_all() -> int:
-    """`git selftest` / `git --selftest`: run ALL four originals' selftests in sequence
-    (all offline — git works against local temp repos). One line per source; exit 0
-    only if every one passes. Each original selftest's test cases are preserved exactly;
-    their own "selftest: ok" stderr line is captured so exactly one line per source is
-    printed here (on failure the captured stderr is echoed)."""
+    """`git selftest` / `git --selftest`: run every verb's selftest in sequence (all offline —
+    git works against local temp repos). One line per verb; exit 0 only if every one passes.
+    Each verb's own "selftest: ok" stderr line is captured so exactly one line per verb is
+    printed here; on a failure the captured stderr and the traceback are echoed."""
     import io
+    import traceback
     from contextlib import redirect_stderr
     cases = (
-        ("clone", _clone_selftest, "local bare-repo clone + non-empty-target refusal"),
-        ("log", _log_selftest, "history + pathspec filter + flag aliases"),
-        ("restore", _restore_selftest, "tracked restore + untracked delete + path-escape guard"),
-        ("sync", _sync_selftest, "2-clone conflict cases (hold/continue/abort + classifier)"),
+        ("runner", _runner_selftest, "a timed-out git is terminated and leaves no index.lock"),
+        ("clone", _clone_selftest, "local bare-repo clone + non-empty target + option-like URL"),
+        ("log", _log_selftest, "history + pathspec + --since + option-like ref + flag aliases"),
+        ("restore", _restore_selftest,
+         "tracked/staged/untracked restore + refusals reported + path-escape and .git guards"),
+        ("sync", _sync_selftest,
+         "2-clone conflict cases (hold/continue/abort + classifier) + hook refusal + identity"),
         ("inspect", _inspect_selftest, "temp-repo status/untracked + tracked diff + pathspec"),
     )
     ok = True
@@ -936,36 +1169,24 @@ def _selftest_all() -> int:
             print(f"selftest FAIL: {name} ({exc})")
             if captured.getvalue():
                 sys.stderr.write(captured.getvalue())
+            traceback.print_exc()
     return 0 if ok else 1
 
 
+#: verb → its main(argv), handed everything after the verb
+VERBS = {"clone": _clone_main, "log": _log_main, "restore": _restore_main,
+         "sync": _sync_main, "inspect": _inspect_main}
+
+
 def main() -> int:
+    signal.signal(signal.SIGTERM, _hand_on_sigterm)
     argv = sys.argv[1:]
-    if argv and argv[0] == "--selftest":
+    if argv[:1] in (["--selftest"], ["selftest"]):
         return _selftest_all()
-    if not argv:
+    if not argv or argv[0] not in VERBS:
         print(USAGE, file=sys.stderr)
         return 2
-    verb, rest = argv[0], argv[1:]
-    if verb == "selftest":
-        return _selftest_all()
-    if verb == "clone":
-        rc = _clone_main(rest)
-        return rc if isinstance(rc, int) else 0
-    if verb == "log":
-        rc = _log_main(rest)
-        return rc if isinstance(rc, int) else 0
-    if verb == "restore":
-        rc = _restore_main(rest)
-        return rc if isinstance(rc, int) else 0
-    if verb == "sync":
-        rc = _sync_main(rest)
-        return rc if isinstance(rc, int) else 0
-    if verb == "inspect":
-        rc = _inspect_main(rest)
-        return rc if isinstance(rc, int) else 0
-    print(USAGE, file=sys.stderr)
-    return 2
+    return VERBS[argv[0]](argv[1:])
 
 
 if __name__ == "__main__":
