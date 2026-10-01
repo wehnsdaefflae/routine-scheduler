@@ -151,13 +151,16 @@ def digest(routine_dir: Path, limit: int = 8) -> str:
     base = routine_dir / OUTPUTS_DIR
     if not base.is_dir():
         return ""
+    # Newest by when it was WRITTEN: a reverse sort of the paths put `t9-…` above `t10-…`, so a
+    # run with more than `limit` spills showed its oldest ones and left the newest out.
     try:
-        files = sorted((p for p in base.rglob("*") if p.is_file()), reverse=True)
+        files = sorted(((p.stat(), p) for p in base.rglob("*") if p.is_file()),
+                       key=lambda sp: (sp[0].st_mtime_ns, str(sp[1])), reverse=True)
     except OSError:
         return ""
     if not files:
         return ""
-    rows = [f"- {p.relative_to(routine_dir)} ({p.stat().st_size}B)" for p in files[:limit]]
+    rows = [f"- {p.relative_to(routine_dir)} ({st.st_size}B)" for st, p in files[:limit]]
     more = (f"\n[... {len(files) - limit} older ones — the last {KEEP_RUNS} runs are kept]"
             if len(files) > limit else "")
     return (f"{OUTPUTS_DIR}/ (util output too large for the observation that carried it, saved "

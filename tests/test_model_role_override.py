@@ -165,6 +165,22 @@ def test_list_models_reports_roles_and_catalog():
     assert obs["models"][0]["fallbacks"] == []
 
 
+def test_list_models_reports_an_unresolvable_uncensored_role_instead_of_raising():
+    """main and tool_call each surface a resolution failure as their own error row; the
+    uncensored role resolved unguarded, so naming a model the catalog no longer carries made
+    the always-available discovery action raise — and an exception there ends the RUN."""
+    from rsched.endpoints.base import EndpointError
+    from rsched.engine.llmaction import do_list_models
+
+    class _GoneUncensored(_Registry):
+        def for_uncensored(self, models):
+            raise EndpointError("model 'retired' is not in the catalog")
+
+    obs = do_list_models(_ctx(_GoneUncensored()))
+    assert obs["roles"]["uncensored"] == {"error": "model 'retired' is not in the catalog"}
+    assert obs["roles"]["main"]["model"] == "main-model"
+
+
 class _EmptyEp(_Ep):
     """An endpoint that returns a zero-length completion with no error — R1611's shape."""
 

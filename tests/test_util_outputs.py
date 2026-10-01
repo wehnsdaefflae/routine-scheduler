@@ -143,6 +143,22 @@ def test_digest_carries_earlier_runs_spills(make_routine):
     assert "rather than re-running the util" in digest
 
 
+def test_digest_lists_the_newest_spills_first(make_routine):
+    """A reverse sort of the PATHS put `t9-…` above `t10-…`, so a run with more spills than
+    the digest shows listed its oldest and dropped the newest."""
+    import os
+
+    ctx = _ctx(make_routine)
+    for turn in range(1, 13):
+        ctx.turn = turn
+        pointer = outputs.spill(ctx, "fetch", BIG, "", out_truncated=True, err_truncated=False)
+        stamp = 1_700_000_000 + turn                      # written in turn order
+        os.utime(ctx.routine.dir / pointer["stdout"], (stamp, stamp))
+    shown = [ln.split("/")[-1].split(" ")[0]
+             for ln in outputs.digest(ctx.routine.dir).splitlines() if ln.startswith("- ")]
+    assert shown == [f"t{t}-fetch.out" for t in range(12, 4, -1)]
+
+
 def test_spill_never_raises(tmp_path):
     """A failed spill must not fail the turn — the truncated observation still carries the
     head and the tail."""
