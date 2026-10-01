@@ -4,9 +4,10 @@
 //   if (!(await confirmDialog("Delete X?"))) return;
 //   const name = await promptDialog("new tag"); if (name == null) return;
 //
-// `openModal` is the shell under both, and under every other console modal (dirpicker.js), so
-// what makes an overlay a DIALOG is written once: the role and its name, focus moved in on open,
-// trapped while open and given back on close, Escape and a click on the scrim to cancel.
+// `openModal` is the shell under both, and under every other console modal (dirpicker.js, the
+// lane editors in lanemanage.js), so what makes an overlay a DIALOG is written once: the role
+// and its name, focus moved in on open, trapped while open and given back on close, Escape and
+// (unless the caller opts out) a click on the scrim to cancel.
 
 import { el } from "/static/util.js";
 
@@ -17,9 +18,10 @@ let labels = 0;
  * Mount `panel` as a modal dialog and return its close(), which removes it and gives focus back
  * to whatever held it before. `label` is the element that names the dialog (its question or
  * title), `focus` the control that takes focus on open, `onCancel` what Escape and a click on the
- * scrim do.
+ * scrim do. `scrimCancels: false` keeps a stray click on the scrim from cancelling — for an
+ * editor holding half-made changes (lanemanage.js), where Escape and its close button stay.
  */
-export function openModal(panel, { label, focus, onCancel }) {
+export function openModal(panel, { label, focus, onCancel, scrimCancels = true }) {
   const opener = document.activeElement;
   if (label) {
     label.id ||= `modal-label-${++labels}`;
@@ -44,7 +46,10 @@ export function openModal(panel, { label, focus, onCancel }) {
                             : (i === -1 || i === stops.length - 1 ? 0 : i + 1);
     stops[next].focus();
   });
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) onCancel(); });
+  if (scrimCancels) overlay.addEventListener("click", (e) => { if (e.target === overlay) onCancel(); });
+  // A scrim that does not cancel must not take the focus either: the click would drop it on
+  // <body>, outside the overlay, where Escape and the Tab trap above can no longer see it.
+  else overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) e.preventDefault(); });
   document.body.append(overlay);
   (focus || panel).focus();
   return () => {

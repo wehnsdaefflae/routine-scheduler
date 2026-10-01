@@ -585,7 +585,7 @@ def test_artifact_row_shows_time_and_deletes(ui, ui_page):
     art.mkdir(exist_ok=True)
     (art / "notes.md").write_text("# n", encoding="utf-8")
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-150000")
-    row = ui_page.locator(".art-item")
+    row = ui_page.locator(".art-row")
     expect(row).to_have_count(1)
     expect(row.locator(".art-time")).not_to_be_empty()
     row.hover()

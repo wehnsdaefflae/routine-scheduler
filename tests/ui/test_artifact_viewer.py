@@ -48,7 +48,7 @@ def test_the_viewer_shows_the_artifact_picked_last(ui, ui_page):
     ui_page.wait_for_timeout(600)
     expect(name).to_have_text("fast.md")
     expect(ui_page.locator(".art-viewer .prose")).to_have_text("the fast one")
-    expect(ui_page.locator(".art-item.on")).to_contain_text("fast.md")
+    expect(ui_page.locator(".art-row.on")).to_contain_text("fast.md")
 
 
 def test_a_json_artifact_that_does_not_parse_still_shows_its_text(ui, ui_page):

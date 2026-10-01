@@ -164,10 +164,13 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
       // one line per artifact — the viewer below is the star, the list just navigates.
       // The update time is VISIBLE (user order 2026-08-14): an artifact is re-written in
       // place across turns, and "which version is this" must not hide in a tooltip.
-      const del = el("span", {
-        class: "art-del", title: `delete ${it.name}`, role: "button",
-        onclick: async (ev) => {
-          ev.stopPropagation();
+      // Two SIBLING buttons in a row. The delete used to be a span INSIDE the open button —
+      // interactive content nested in interactive content, which a keyboard never reached
+      // and a screen reader announced as part of the open control's name.
+      const del = el("button", {
+        type: "button", class: "art-del", title: `delete ${it.name}`,
+        "aria-label": `delete ${it.name}`,
+        onclick: async () => {
           // dialog.js is the console's replacement for every native confirm()/prompt(), and
           // toast for every alert(): a native alert blocks the main thread and its text never
           // reaches trace.js's error telemetry, so a failed delete was invisible to the
@@ -183,13 +186,13 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
             toast(`could not delete: ${err.message}`, 4000, { error: true });
           }
         } }, "🗑");
-      listBox.append(el("button",
-        { class: `art-item${openPath === it.path ? " on" : ""}`, onclick: () => open(it),
-          title: `${it.name} · ${size}` },
-        el("span", { class: "art-ico" }, ICON(ext)),
-        el("span", { class: "art-name" }, it.name),
-        el("span", { class: "art-time faint small" }, relTime(new Date(it.mtime * 1000))),
-        el("span", { class: "faint small", style: "flex:none" }, size),
+      listBox.append(el("div", { class: `art-row${openPath === it.path ? " on" : ""}` },
+        el("button", { type: "button", class: "art-item", onclick: () => open(it),
+                       title: `${it.name} · ${size}` },
+          el("span", { class: "art-ico" }, ICON(ext)),
+          el("span", { class: "art-name" }, it.name),
+          el("span", { class: "art-time faint small" }, relTime(new Date(it.mtime * 1000))),
+          el("span", { class: "faint small", style: "flex:none" }, size)),
         del));
     }
   }

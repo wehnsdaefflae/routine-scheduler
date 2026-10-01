@@ -20,7 +20,7 @@
 // offer only unclaimed routines — a choice whose only possible outcome is a 400 is not one.
 
 import { api } from "/static/api.js";
-import { confirmDialog } from "/static/components/dialog.js";
+import { confirmDialog, openModal } from "/static/components/dialog.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { el, toast, toastError as err } from "/static/util.js";
 
@@ -114,22 +114,23 @@ export function lanesToolbar(data, { reload }) {
 
 // ---- the overlay editors ---------------------------------------------------------------------
 
+// dialog.js's openModal is the shell, as for every console modal: named by its title, focus
+// moved in on open (the caller then focuses its first field), trapped while open and given
+// back to the opener on close, Escape to close. No scrim-click close: an accidental click must
+// not discard half-edited state.
 function overlay(title, body, { onClose }) {
-  const close = el("button", { class: "btn small ghost", "data-lane-editor-close": "" }, "✕ close");
-  const wrap = el("div", { class: "modal-overlay" },
-    el("div", { class: "panel", role: "dialog", "aria-modal": "true",
-      style: "min-width:min(560px,92vw);max-width:92vw;max-height:88vh;overflow:auto" },
-      el("div", { class: "row", style: "justify-content:space-between;align-items:center" },
-        el("strong", {}, title), close),
-      body));
-  const done = () => { wrap.remove(); onClose?.(); };
-  close.onclick = done;
-  // no overlay-click close: an accidental click must not discard half-edited state
-  wrap.onkeydown = (e) => { if (e.key === "Escape") { e.preventDefault(); done(); } };
-  document.body.append(wrap);
-  // A modal takes the focus — the Escape above reaches it only from inside, and the button that
-  // opened it sits in the table behind it. The caller focuses its first field once it is built.
-  close.focus();
+  const closeBtn = el("button", { class: "btn small ghost", "data-lane-editor-close": "" }, "✕ close");
+  const heading = el("strong", {}, title);
+  const panel = el("div", { class: "panel",
+    style: "min-width:min(560px,92vw);max-width:92vw;max-height:88vh;overflow:auto" },
+    el("div", { class: "row", style: "justify-content:space-between;align-items:center" },
+      heading, closeBtn),
+    body);
+  let shut = () => {};
+  let open = true;
+  const done = () => { if (!open) return; open = false; shut(); onClose?.(); };
+  closeBtn.onclick = done;
+  shut = openModal(panel, { label: heading, focus: closeBtn, onCancel: done, scrimCancels: false });
   return { close: done };
 }
 

@@ -205,7 +205,7 @@ def test_fs_root_directory_picker(ui, ui_page):
     expect(picker).to_be_visible(timeout=5_000)
     # jump to the fixture home and descend into its routines/ dir, then select it
     picker.locator("input.code").fill(str(ui.tmp))
-    picker.locator("button:has-text('go')").click()
+    picker.get_by_role("button", name="go", exact=True).click()
     picker.locator(".dp-row", has_text="routines").click()
     picker.get_by_text("select this folder").click()
 
@@ -234,7 +234,7 @@ def test_the_folder_picker_keeps_its_height_whatever_the_folder_holds(ui, ui_pag
     heights = []
     for folder, rows in (("few", 1), ("many", 41)):
         picker.locator("input.code").fill(str(ui.tmp / folder))
-        picker.locator("button:has-text('go')").click()
+        picker.get_by_role("button", name="go", exact=True).click()
         # the daemon answers with the RESOLVED path, which may sit behind a symlinked /tmp
         expect(picker.locator("input.code")).to_have_value(re.compile(f"/{folder}$"))
         expect(listing.locator(".dp-row")).to_have_count(rows)    # ".." and its folders
