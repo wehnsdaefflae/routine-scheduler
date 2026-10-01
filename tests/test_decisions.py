@@ -614,19 +614,19 @@ def test_a_config_patch_the_apply_would_refuse_is_refused_at_filing():
     keys and the Decisions page rendered an apply button that answered 422 — a decision the
     operator could read and not take. The gate runs where the record is written.
     """
-    from rsched.engine.interact import _config_patch_shape
+    from rsched.engine.config_bridge import patch_shape
 
-    bad = _config_patch_shape({"filesystem": {"read": ["/home/mark/git-repos/routine-scheduler"]}})
+    bad = patch_shape({"filesystem": {"read": ["/home/mark/git-repos/routine-scheduler"]}})
     assert "filesystem" in bad
     assert "fs_read_roots" in bad and "fs_write_roots" in bad   # it teaches the right keys
 
     # the routing keys are not fields, and a real patch passes untouched
-    assert _config_patch_shape({"routine": "suedlink-wlf", "budgets": {"max_turns": 120}}) == ""
-    assert _config_patch_shape({"fs_read_roots": ["/srv/x"]}) == ""
-    assert _config_patch_shape({}) == ""
-    assert _config_patch_shape(None) == ""
+    assert patch_shape({"routine": "suedlink-wlf", "budgets": {"max_turns": 120}}) == ""
+    assert patch_shape({"fs_read_roots": ["/srv/x"]}) == ""
+    assert patch_shape({}) == ""
+    assert patch_shape(None) == ""
     # a key no routine PATCH takes is named as such
-    assert "routine config" in _config_patch_shape({"config": {}})
+    assert "routine config" in patch_shape({"config": {}})
 
 
 def test_the_config_patch_gate_speaks_the_surface_it_applies_to():
@@ -634,20 +634,20 @@ def test_the_config_patch_gate_speaks_the_surface_it_applies_to():
     `PATCH /api/conversations/…`: two models, two vocabularies. Judged against their union,
     `title` passed on a routine proposal and `schedule` on a conversation's — each a 422 on the
     operator's click, the dead button this gate exists to prevent."""
-    from rsched.engine.interact import _config_patch_shape
+    from rsched.engine.config_bridge import patch_shape
     from rsched.web.api_conversation_config import ConversationPatch
     from rsched.web.api_routine_patch import RoutinePatch
 
     for field in RoutinePatch.model_fields:
-        assert _config_patch_shape({field: "whatever"}) == "", f"{field} is routine config"
+        assert patch_shape({field: "whatever"}) == "", f"{field} is routine config"
     for field in ConversationPatch.model_fields:
-        assert _config_patch_shape({field: "x"}, conversation=True) == "", f"{field} (conv)"
+        assert patch_shape({field: "x"}, conversation=True) == "", f"{field} (conv)"
     for field in ("title", "workdir", "workflow"):
-        assert "routine config" in _config_patch_shape({field: "x"}), field
+        assert "routine config" in patch_shape({field: "x"}), field
     for field in ("schedule", "permissions", "rules", "enabled"):
-        assert "conversation config" in _config_patch_shape({field: "x"}, conversation=True)
+        assert "conversation config" in patch_shape({field: "x"}, conversation=True)
     # a resolved ROUTINE target is proposing that routine's config, whoever asked
-    assert _config_patch_shape({"schedule": {}}, "suedlink-wlf", conversation=True) == ""
+    assert patch_shape({"schedule": {}}, "suedlink-wlf", conversation=True) == ""
 
 
 def test_a_decision_filed_into_a_conversation_is_judged_as_conversation_config(tmp_path):
@@ -707,12 +707,12 @@ def test_a_conversation_names_a_routine_by_the_routines_home(tmp_path):
     """Resolved under the asker's own home, a conversation's proposal for a routine was refused
     — or, when the slug matched another conversation, it reached the Decisions page, which
     posted it to /api/routines/<the asking conversation>: a 404."""
-    from rsched.engine.interact import _config_target
+    from rsched.engine.config_bridge import patch_target
 
     ctx = _asker(tmp_path, "conversations", "c1", "target")
     _asker(tmp_path, "conversations", "c2")          # a conversation is not a routine target
-    assert _config_target(ctx, {"routine": "target"}, conversation=True) == ("target", "")
-    err = _config_target(ctx, {"routine": "c2"}, conversation=True)[1]
+    assert patch_target(ctx, {"routine": "target"}, conversation=True) == ("target", "")
+    err = patch_target(ctx, {"routine": "c2"}, conversation=True)[1]
     assert "no such routine" in err
     assert str(tmp_path / "routines") in err
 
@@ -723,12 +723,12 @@ def test_naming_yourself_is_yourself_only_for_a_routine(tmp_path):
     dir, so its root decides — and its targets resolve like any other asker's."""
     from types import SimpleNamespace
 
-    from rsched.engine.interact import _config_target
+    from rsched.engine.config_bridge import patch_target
 
     routine = _asker(tmp_path, "routines", "shared", "shared", "target")
-    assert _config_target(routine, {"routine": "shared"}) == ("", "")
+    assert patch_target(routine, {"routine": "shared"}) == ("", "")
     conv = _asker(tmp_path, "conversations", "shared")
-    assert _config_target(conv, {"routine": "shared"}, conversation=True) == ("shared", "")
+    assert patch_target(conv, {"routine": "shared"}, conversation=True) == ("shared", "")
     routine.routine = SimpleNamespace(dir=routine.root_routine_dir / "runs" / "t" / "sub" / "1",
                                       slug="shared-1")
-    assert _config_target(routine, {"routine": "target"}) == ("target", "")
+    assert patch_target(routine, {"routine": "target"}) == ("target", "")

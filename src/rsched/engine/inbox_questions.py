@@ -216,7 +216,7 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
         record["config_patch"] = config_patch
     if config_target:
         # D123/F458: the patch is for ANOTHER routine. Resolved and validated in
-        # engine/interact.py at ask time, so the Decisions page can PATCH this slug
+        # engine/config_bridge.py at ask time, so the Decisions page can PATCH this slug
         # directly; absent means the patch is for the asking routine.
         record["config_target"] = config_target
     if request:

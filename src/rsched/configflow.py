@@ -80,7 +80,7 @@ ADOPTABLE = tuple(f for f, (half, _) in CLASSIFICATION.items() if half == LIVE)
 
 #: The PATCH vocabulary of each surface a decision's `config_patch` is applied to — exactly the
 #: fields of `RoutinePatch` (`PATCH /api/routines/…`) and of `ConversationPatch`
-#: (`PATCH /api/conversations/…`). `engine/interact.py` refuses a key outside the surface the
+#: (`PATCH /api/conversations/…`). `engine/config_bridge.py` refuses a key outside the surface the
 #: apply will PATCH, on the turn that files the ask. CLASSIFICATION is no substitute: it is the
 #: union of both surfaces, so a routine proposal naming `title` passed the filing check and 422d
 #: on the operator's click. The engine may not import the web layer, which is why the two sets

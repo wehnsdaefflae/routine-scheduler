@@ -2,8 +2,9 @@
 
 Library authoring moved to `authoring.py`, the secret-exposure gate to `secretgate.py` and
 the two handlers that merely RODE this file — `schedule_run` and `report` — to
-`admin_handlers.py` (F393): four responsibilities had accumulated in one file. What is left
-is one — turning a run's need for a human into a decision record and back into an answer.
+`admin_handlers.py` (F393): four responsibilities had accumulated in one file; the
+`config_patch` filing check followed to `config_bridge.py`. What is left is one — turning a
+run's need for a human into a decision record and back into an answer.
 
 EVERY kind of required user feedback funnels into the same decision record
 (inbox.file_question): plain asks and util approvals, deferred and blocking. A blocking
@@ -18,10 +19,9 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from ..ids import question_id
-from . import availability, inbox, requests, runkind
+from . import availability, config_bridge, inbox, requests, runkind
 from .control import RunAborted
 
 # Natural affirmatives count: approval answers arrive as free text, and "Do it. The mail
@@ -119,86 +119,6 @@ def _free_qid(ctx) -> str:
     return qid
 
 
-def _config_patch_shape(patch: dict | None, target: str = "", *,
-                        conversation: bool = False) -> str:
-    """Refuse a `config_patch` whose KEYS the apply route would reject, at the moment it is
-    filed rather than when the operator clicks.
-
-    The target was already checked above; the BODY was not, so a run could invent a shape and
-    the record reached the Decisions page wearing an apply button that 422s. Measured
-    2026-09-23: a proposed filesystem grant arrived as `{"filesystem": {"read": [...]}}`, the
-    apply answered `filesystem: Extra inputs are not permitted`, and the operator had a
-    decision he could read and not take — the one state a decision surface must never be in.
-
-    The keys are judged in the vocabulary of the surface the apply will PATCH: `RoutinePatch`
-    for a routine, `ConversationPatch` for a conversation's proposal about itself
-    (`conversation`, from `runkind.lands_in_conversation`). Judged against their union — the
-    classification table — a routine proposal naming `title` passed here, as did a
-    conversation's naming `schedule`; each was a 422 on the click. `configflow` spells both
-    sets out and `tests/test_configflow.py` pins them to the models, so this can never drift
-    behind the endpoint it stands in for. Routing keys are not fields; an empty patch is left
-    to the caller above.
-    """
-    if not patch:
-        return ""
-    from ..configflow import CONVERSATION_PATCH_FIELDS, ROUTINE_PATCH_FIELDS
-    # `_config_target` has already run and POPPED the routing key, so the surface is read from
-    # the target it resolved, never from the body — which no longer says
-    if conversation and not target:
-        # the asker's own conversation; a resolved routine target is judged as a routine
-        known, surface = set(CONVERSATION_PATCH_FIELDS), "conversation config"
-    else:
-        known, surface = set(ROUTINE_PATCH_FIELDS) | {"routine"}, "routine config"
-    stray = sorted(k for k in patch if k not in known)
-    if not stray:
-        return ""
-    return (f"config_patch key(s) {', '.join(repr(k) for k in stray)} are not {surface} — the "
-            f"apply would refuse them and the user would be left with a decision he can read "
-            f"and not take. The body IS the PATCH body, so filesystem roots are "
-            f"`fs_read_roots` and `fs_write_roots` (flat lists of paths), not a nested object. "
-            f"Valid keys here: {', '.join(sorted(known))}.")
-
-
-def _config_target(ctx, cpatch: dict | None, *,
-                   conversation: bool = False) -> tuple[str, str]:
-    """What a `config_patch` is FOR — its own asker unless the patch names another routine.
-
-    Returns `(target, error)`. `target` is `""` when the patch is for the asker itself.
-
-    D123/F458. A run proposes a config change it cannot make itself; the Decisions page applies
-    it. Before 0.326.0 that apply was hardwired to the ASKING routine, so config-optimizer —
-    whose whole job is per-routine config — could not land a single change on a target: its
-    suedlink-wlf budget proposal rewrote config-optimizer's own budgets and reported success
-    (R1343, R1407). The slug rides INSIDE the patch as `routine`, which keeps `config_patch`
-    one object in the action schema, and is popped here so the remaining keys stay a clean
-    PATCH body the endpoint's `extra="forbid"` accepts.
-
-    Resolution happens at this seam, not at apply time, because an unresolvable target must
-    never reach the user wearing a working button. A name matching no installed routine is
-    refused on the turn that asked. Falling back to the asker is the defect itself and is never
-    done.
-
-    The target resolves against the ROUTINES home whoever asks, because that is where routines
-    live. Resolved under the asker's own home — a conversation's is the conversations home —
-    every routine a conversation named was refused; a slug that matched another conversation
-    reached the Decisions page, which posted the patch to `/api/routines/<the asking
-    conversation>`: a 404. A `routine` naming the asker means the asker itself only when the
-    asker IS a routine (`conversation`: the record lands in a conversation,
-    `runkind.lands_in_conversation`).
-    """
-    if not cpatch:
-        return "", ""
-    want = str(cpatch.pop("routine", "") or "").strip()
-    if not want or (want == ctx.root_routine_dir.name and not conversation):
-        return "", ""
-    home = Path(ctx.server.routines_home)
-    if not (home / want / "routine.yaml").exists():
-        return "", (f"config_patch routine {want!r}: no such routine under {home} — the "
-                    "target must name an installed routine by its slug, as the Routines "
-                    "page lists it. Omit `routine` to propose the change for yourself.")
-    return want, ""
-
-
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
     ctx = loop.ctx
     # EVERY write of this decision record — the first filing and each re-filing that leaves it
@@ -222,14 +142,11 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # D123/F458: the patch may name ANOTHER routine as its target. Until 0.326.0 the apply
     # button always PATCHed the ASKING routine, so a config-optimizer proposal for suedlink-wlf
     # silently rewrote config-optimizer's own budgets and reported success (R1343, R1407). The
-    # target is resolved HERE, at the seam that writes the durable record, so a slug naming no
-    # routine can never reach the Decisions page wearing an apply button. An unresolvable
-    # target is refused loudly rather than falling back to the asker — a silent fallback is
-    # precisely the defect.
-    conversation = runkind.lands_in_conversation(ctx)
-    ctarget, cterr = _config_target(ctx, cpatch, conversation=conversation)
-    if not cterr:
-        cterr = _config_patch_shape(cpatch, ctarget, conversation=conversation)
+    # target — and the body's keys — are checked HERE, at the seam that writes the durable
+    # record, so a patch the apply would refuse can never reach the Decisions page wearing an
+    # apply button. An unresolvable target is refused loudly rather than falling back to the
+    # asker — a silent fallback is precisely the defect.
+    ctarget, cterr = config_bridge.resolve(ctx, cpatch)
     if cterr:
         return {"kind": "ask_user", "error": cterr}
     # A typed access request (entities.py) rides the same record; the Decisions page

@@ -1178,7 +1178,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   mechanism. The table is the UNION of both models, so it is not what a decision's
   `config_patch` is checked against: `configflow.ROUTINE_PATCH_FIELDS` and
   `CONVERSATION_PATCH_FIELDS` are each model's exact field set (pinned one-to-one by the same
-  test file); `engine/interact._config_patch_shape` refuses, on the turn the ask is filed,
+  test file); `engine/config_bridge.patch_shape` refuses, on the turn the ask is filed,
   any key outside the surface the apply will PATCH — a conversation's own proposal (the record
   lands in a conversation) against `ConversationPatch`, everything else against `RoutinePatch`.
   Both PATCH handlers call `routines_common.signal_config_change`, which writes a
