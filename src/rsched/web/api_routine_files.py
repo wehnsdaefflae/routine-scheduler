@@ -82,10 +82,11 @@ class RoutineFileBody(BaseModel):
 NOT_EDITABLE_HERE: tuple[tuple[str, str], ...] = (
     ("routine.yaml", "PATCH /api/routines/{slug}"),
     ("state/finish-line.json", "PUT /api/routines/{slug}/finish-line"),
-    # The engine owns `.memory/INDEX.md` (compaction._build_index) and nothing else under
-    # `.memory/` — so INDEX.md is the line, not the tree. Refusing the whole tree would take
-    # away the operator's only surface for a memory note and offer nothing in its place.
-    (".memory/INDEX.md", "the engine (compaction writes the archive index)"),
+    # The engine owns `.memory/INDEX.md` (engine/memops.py rebuilds it from each memory_write's
+    # `about`) and nothing else under `.memory/` — so INDEX.md is the line, not the tree.
+    # Refusing the whole tree would take away the operator's only surface for a memory note and
+    # offer nothing in its place.
+    (".memory/INDEX.md", "the engine (memory_write keeps it, one line per note's `about`)"),
     (".git/", "git"),
     ("runs/", "the engine"),
     ("inbox/", "the message endpoints"),

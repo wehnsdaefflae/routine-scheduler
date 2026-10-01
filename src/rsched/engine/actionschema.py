@@ -517,7 +517,8 @@ def canon(action: dict) -> str:
         shell: rm -rf build/          the command IS the action; a `command=` label adds nothing
         read_file paths=a.md,b.md     `read_file` carries a LIST (`paths`), not the singular field
         write_file path=state/x.json  every other kind names its field, so the string says what
-        finish                        it is; a kind with no identifying field is just itself
+                                      it is (`finish status=ok` too)
+        subruns                       a kind with no identifying field is just itself
 
     Untruncated on purpose: a caller needing a width applies its own. Matching a pre-truncated
     string would silently change what a regex can see as an action's arguments grow.

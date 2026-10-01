@@ -35,13 +35,13 @@ from .window import _override_window, compact_if_needed, note_prompt_size
 
 MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 
-# Refusal-shaped stop reasons across provider vocabularies: anthropic and the claude CLI
-# report a safety-classifier decline as stop_reason "refusal" (HTTP 200, content usually
-# empty, stop_details carrying {category, explanation}); openai-compatible providers mark
-# the same class of decline with finish_reason "content_filter" (or the adapter promotes
-# the spec's `message.refusal` field to "refusal"). Handled BEFORE the empty-completion
-# branch: re-sending a refused prompt to the same model usually earns another refusal, so
-# a refusal is never blind-retried — see _handle_refusal (R5).
+# Refusal-shaped stop reasons across provider vocabularies: the anthropic API (and the
+# subscription proxy that speaks it) reports a safety-classifier decline as stop_reason
+# "refusal" (HTTP 200, content usually empty, stop_details carrying {category, explanation});
+# openai-compatible providers mark the same class of decline with finish_reason
+# "content_filter" (or the adapter promotes the spec's `message.refusal` field to "refusal").
+# Handled BEFORE the empty-completion branch: re-sending a refused prompt to the same model
+# usually earns another refusal, so a refusal is never blind-retried — see _handle_refusal (R5).
 REFUSAL_STOPS = frozenset({"refusal", "content_filter"})
 
 

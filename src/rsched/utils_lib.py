@@ -37,10 +37,6 @@ USAGE_ERROR_EXIT = 2
 # cap only stops a runaway printer from ballooning engine memory.
 OUTPUT_CAP = 1_000_000
 
-# `["gu", "<sibling>"]` exec sites in util code — the one home for this pattern
-# (header_problems flags undeclared calls with it; bootstrap's header migration repairs
-# them with the same regex, so the two can never drift).
-
 DISPATCHER = '''#!/usr/bin/env python3
 """gu — run a global util: `gu <name> [args...]`, or `gu list`. Utils call each other
 through this dispatcher (this directory is on PATH when a util runs)."""

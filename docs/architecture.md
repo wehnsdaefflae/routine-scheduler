@@ -94,11 +94,11 @@ the limits (single-writer status.json preserved).
   rewrite the list in place:
   compaction (below), schema-retry debris cleanup, and the media fallback (a failed image turn's
   tail message is rewritten text-only) — each invalidates the provider cache once, by design.
-- **Compaction archives context to a navigable on-disk history** (`history.archive_middle`): when
+- **Compaction archives context to a navigable on-disk history** (`compaction.archive_middle`): when
   the prompt exceeds ~60% of the resolved model's `context_tokens` — ~80% once cache hits are observed
   (compaction rewrites the prefix and invalidates the cache, so carried context is cheaper than
   re-archiving) — the middle turns are elided by the deterministic one-line digest
-  (`history.maybe_compact`) and that same middle is reorganized into markdown files (~≤100 lines
+  (`compaction.maybe_compact`) and that same middle is reorganized into markdown files (~≤100 lines
   each) under `runs/<ts>/history/` + `INDEX.md`. ONE fit test (`compaction.archival_fits`, which reserves the
   archival prompt, the history schema and the model's own output) decides every candidate in
   order — the configured compaction model, then the routine's `tool_call` model (machine work
@@ -341,7 +341,7 @@ to collide or to be spelled by convention. A scoped secret is owned by its routi
 implicitly exposed to its runs, invisible to every other routine, and SHADOWING a central
 value of the same name (it rides `exec_env._extra_secrets`, which wins the `_child_env`
 merge). The exposure gate therefore subtracts a routine's own names before deciding anything
-(`interact._own_secrets`), and CAPABILITIES lists the two sets apart so a run never spends a
+(`secretgate._own_secrets`), and CAPABILITIES lists the two sets apart so a run never spends a
 turn requesting what it already holds. Both scopes stay under the declared-only rule. Write
 surface: Settings → Secrets for the central store, the routine page's *Own secrets* section
 (`web/api_routine_secrets.py`) for the scoped one — values write-only in both, names only on
@@ -370,7 +370,7 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
   for long GPU work — a setsid process group, killable; `--notify-webhook <the routine's own
   trigger URL>` lets the job ping the routine on completion instead of polling) / `push`·`pull`
   (SFTP) / `scan-host` · `test`. Host keys pinned; a mismatch refuses.
-- **Engine injection** mirrors OAuth: `executor._machine_env(ctx)` (merged with `_connection_env`
+- **Engine injection** mirrors OAuth: `exec_env._machine_env(ctx)` (merged with `_connection_env`
   in `_extra_secrets`) passes the two vars to `run_util` as `extra_secrets`, under the SAME
   declared-var gate — a key reaches a util iff the routine binds the machine AND the util declares
   the var. Bound machines are NAMED in the prompt's CAPABILITIES section (`capabilities_digest`),
@@ -602,8 +602,10 @@ and the capabilities digest's catalog listing):
   (filed to `questions/pending/`, surfaced in a later run's state digest). An ask may carry
   `request: "<entity-id>"` — a typed ACCESS REQUEST (entities.py; docs/rules-permissions.md's
   grant model): the record then settles ONLY on one of the typed allow/deny × now/forever
-  decisions (plus *allow once* for turn-action classes, spent by the next dispatched matching
-  action and then revoked — D65; the Decisions page's buttons; free text is held, D38),
+  decisions (plus *allow once* for the once-grantable classes, `entities.ONCE_CLASSES`: a
+  turn-action class is spent by the next dispatched matching action (D65), a secret or an fs
+  root by the next action that RECEIVES it (D76), then revoked; the Decisions page's buttons;
+  free text is held, D38),
   forever-decisions are applied
   to routine.yaml by the WEB at click time (`web/grants_apply.py` — the engine never writes
   config), and every decision seeds the run's in-memory overlay (`engine/requests.py`) at
@@ -678,7 +680,7 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   the model has handed the turn back (an authored finish) and the resuming message ONLY runs
   commands (`loop.leg_commands` and not `leg_prose`, boot sets `leg_after_authored`), the loop's
   command-only gate ends the leg after boot with NO model turn and NO reply
-  (`loop._exit_commands_only` — no finish event, result.md untouched, status→finished); the next
+  (`loopend.exit_commands_only` — no finish event, result.md untouched, status→finished); the next
   PROSE message hands the turn over and the model replies, seeing the command results replayed. A
   run with its OWN work (a scheduled routine fire, crash recovery mid-workflow) has no authored
   hand-back, so it always proceeds and a command there is injected context. Loop-control kinds are
@@ -952,7 +954,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   `calls:` (sibling utils exec'd via `gu` — drives transitive secret/net resolution), `tags:`,
   `secrets: NAME,…`, `net: outbound|none`, `fs: roots|none|rw <path>|ro <path>` — the docstring is the ONLY machine-read surface;
   comment-form declarations above it are invisible), and a `--selftest` the engine runs before
-  saving. `write_util` is gated twice: `utils_lib.header_problems` rejects a missing `tags:`/`net:`
+  saving. `write_util` is gated twice: `utils_header.header_problems` rejects a missing `tags:`/`net:`
   line or a credential env var the code reads but `secrets:` doesn't declare (the Settings page can
   only prompt for declared secrets), then the selftest; approval rides the routine's write_util
   `confirm:` capability level. A header rejection is reported AS one — its own observation head
