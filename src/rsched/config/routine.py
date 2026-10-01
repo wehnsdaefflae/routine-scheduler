@@ -32,6 +32,7 @@ from .base import (
     HomePath,
     _Config,
     _known_tz,
+    _problem_lines,
     _validate_lenient,
     default_tz,
 )
@@ -200,42 +201,35 @@ class RoutineConfig(_Config):
             return []
         return [str(t).strip() for t in v if str(t).strip()] if isinstance(v, list) else v
 
+    @classmethod
+    def _default_of(cls, field: str | None) -> object:
+        """A field's own default — what an absent or unusable value reads as."""
+        factory = cast("Callable[[], object]", cls.model_fields[str(field)].default_factory)
+        return factory()
+
     @field_validator("fs_read_roots", "fs_write_roots", "models", "connections", "triggers",
                      "machines", mode="before")
     @classmethod
     def _none_as_absent(cls, v: object, info: ValidationInfo) -> object:
         # a bare `key:` (YAML null) reads as the FIELD'S OWN empty default ([] or {})
-        if v is not None or info.field_name is None:
-            return v
-        factory = cast("Callable[[], object]",
-                       cls.model_fields[info.field_name].default_factory)
-        return factory()
+        return cls._default_of(info.field_name) if v is None else v
 
     @field_validator("budgets", mode="before")
     @classmethod
     def _merged_over_defaults(cls, v: object) -> object:
         return {**DEFAULT_BUDGETS, **v} if isinstance(v, dict) else v
 
-    @field_validator("permissions", mode="before")
+    @field_validator("permissions", "rules", mode="before")
     @classmethod
-    def _default_unless_list(cls, v: object) -> object:
-        return [str(f) for f in v] if isinstance(v, list) else list(DEFAULT_PERMISSIONS)
-
-    @field_validator("rules", mode="before")
-    @classmethod
-    def _rules_default_unless_list(cls, v: object) -> object:
-        # an explicit list wins ([] = practises nothing); absent/garbage → the defaults
-        return [str(f) for f in v] if isinstance(v, list) else list(DEFAULT_RULES)
+    def _default_unless_list(cls, v: object, info: ValidationInfo) -> object:
+        # an explicit list wins ([] = holds none); absent/garbage → the field's defaults
+        return [str(f) for f in v] if isinstance(v, list) else cls._default_of(info.field_name)
 
     @field_validator("capabilities", mode="before")
     @classmethod
     def _default_unless_mapping(cls, v: object) -> object:
         # an explicit mapping wins ({} = everything gated off); anything else → defaults
-        if isinstance(v, dict):
-            return v
-        factory = cast("Callable[[], object]",
-                       cls.model_fields["capabilities"].default_factory)
-        return factory()
+        return v if isinstance(v, dict) else cls._default_of("capabilities")
 
 
 TUNING_FILE = "tuning.yaml"
@@ -301,8 +295,6 @@ def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
     atomic_write_yaml(path, raw)
 
 
-
-
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     """Parse <dir>/routine.yaml — the whole of the routine's config: nothing is layered under
     it, so what the file says is what the routine is. Returns (config, problems); invalid
@@ -340,7 +332,7 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     try:
         gate = RunGateConfig.model_validate(raw.get("run_gate", {}))
     except ValidationError as exc:
-        return None, [*problems, f"run_gate: {exc}"]
+        return None, [*problems, *_problem_lines(exc, ("run_gate",))]
     cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems)
     if cfg is None:
         if gate.enabled:

@@ -106,6 +106,9 @@ KEY_VAR_DEFAULTS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"
 # answer — a provider's small default can swallow the content entirely. Settings flags
 # models still riding this fallback so the real per-model limit gets configured.
 DEFAULT_MODEL_MAX_TOKENS = 16_384
+# The context window an endpoint lends a catalog model that neither sets one nor has one
+# discovered from its provider (endpoints/limits.py) — the floor of that precedence chain.
+DEFAULT_CONTEXT_TOKENS = 25_000
 
 # YAML-friendly coercions: a bare `key:` (null) reads as the empty string; path strings
 # expand `~` and $VARS.
@@ -157,6 +160,19 @@ def _pop(data: dict, loc: tuple) -> None:
         node.pop(loc[-1], None)
 
 
+def _problem_lines(exc: ValidationError, prefix: tuple[str, ...] = ()) -> list[str]:
+    """One `<where>: <what>` line per validation error — the shape of every loader problem.
+    A message that already names its own place (the gate kit's `run_gate.checks[0]: …`) is
+    not prefixed with it a second time.
+    """
+    out: list[str] = []
+    for err in exc.errors():
+        where = ".".join(str(p) for p in (*prefix, *err["loc"])) or "(root)"
+        msg = err["msg"].removeprefix("Value error, ")
+        out.append(msg if msg.startswith(where) else f"{where}: {msg}")
+    return out
+
+
 def _validate_lenient(model: type[_Config], data: dict, problems: list[str]):
     """model_validate that degrades per key: report every invalid key, drop it (or its
     parent, when a required subfield is missing) and retry so the rest still loads.
@@ -165,10 +181,9 @@ def _validate_lenient(model: type[_Config], data: dict, problems: list[str]):
         try:
             return model.model_validate(data)
         except ValidationError as exc:
+            if round_no == 0:  # later rounds only see errors derived from a drop
+                problems.extend(_problem_lines(exc))
             for err in exc.errors():
-                if round_no == 0:  # later rounds only see errors derived from a drop
-                    where = ".".join(str(p) for p in err["loc"]) or "(root)"
-                    problems.append(f"{where}: {err['msg'].removeprefix('Value error, ')}")
                 loc = err["loc"][:-1] if err["type"] == "missing" else err["loc"]
                 if not loc:
                     return None

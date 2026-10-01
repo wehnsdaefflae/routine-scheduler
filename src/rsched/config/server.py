@@ -20,7 +20,7 @@ class ServerConfig(_Config):
     """
 
     bind: str = "127.0.0.1"
-    port: int = 8321
+    port: int = Field(8321, ge=1, le=65535)
     token: BlankableStr = ""
     # R94 (operator decision 2026-08-05: ENFORCE): the second bearer tier. The primary
     # `token` is the human/web credential (everything); `routine_token` is what the engine
@@ -63,8 +63,9 @@ class ServerConfig(_Config):
     # host's networking (here, an opened Tailscale port). Empty = the console shows no
     # browser screen, which is the honest state for an instance that never published one.
     browser_view_url: BlankableStr = ""
-    max_concurrent_runs: int = 2
-    registry_rescan_s: int = 30
+    # The run semaphore's size: 0 would start no run ever, and a negative one cannot be built.
+    max_concurrent_runs: int = Field(2, ge=1)
+    registry_rescan_s: int = Field(30, ge=1)
     # Util-subprocess sandbox mode (docs/sandboxing.md): every util runs inside a Landlock
     # filesystem/network jail derived from the run's permissions. "permissive" (default)
     # engages the jail whenever the kernel supports it and warns + runs unsandboxed when
@@ -110,7 +111,6 @@ class ServerConfig(_Config):
         return reminders_home(self.libraries_home)
 
 
-
 def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str]]:
     path = path or config_file()
     problems: list[str] = []
@@ -135,8 +135,7 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
     # its default with ZERO trace (a misspelled `endpints:` = every endpoint gone).
     # Surface unknown top-level keys AND unknown per-entry keys as problem lines.
     problems.extend(f"{key}: unknown config.yaml key — check the spelling (ignored)"
-                    for key in sorted(set(raw) - set(ServerConfig.model_fields))
-                    if isinstance(raw, dict))
+                    for key in sorted(set(raw) - set(ServerConfig.model_fields)))
     for section, cls in (("endpoints", EndpointConfig), ("models", ModelConfig),
                          ("machines", MachineConfig)):
         entries = raw.get(section)

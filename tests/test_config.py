@@ -92,6 +92,20 @@ def test_server_bad_keys_degrade_per_key(tmp_path):
     assert server.system_model == "m" and server.models["m"].endpoint == "good"
 
 
+def test_server_bounds_hold_for_a_hand_edited_file(tmp_path):
+    """The bounds the settings page enforces hold at load too: `max_concurrent_runs: 0` sized
+    the run semaphore at zero (no run ever started, no problem reported) and a negative value
+    raised out of the daemon's boot; a port outside 1–65535 cannot be bound."""
+    server, problems = _load_server(tmp_path, {
+        "max_concurrent_runs": 0, "registry_rescan_s": -5, "port": 70000,
+        "machines": {"gpu": {"host": "h", "user": "u", "port": 0}}})
+    text = " | ".join(problems)
+    for key in ("max_concurrent_runs", "registry_rescan_s", "port", "machines.gpu.port"):
+        assert key in text, key
+    assert (server.max_concurrent_runs, server.registry_rescan_s, server.port) == (2, 30, 8321)
+    assert server.machines["gpu"].port == 22
+
+
 def test_server_unknown_system_model_and_model_endpoint_flagged(tmp_path):
     # system_model must name a catalog model; a catalog model's endpoint must be configured
     server, problems = _load_server(tmp_path, {
@@ -241,6 +255,18 @@ def test_a_host_zone_zoneinfo_cannot_load_defaults_to_utc(tmp_path, monkeypatch)
     monkeypatch.setenv("TZ", "Not/A_Zone")
     cfg, problems = load_routine(_mk_routine(tmp_path, {"description": "x"}))
     assert problems == [] and cfg.tz == "UTC"
+
+
+def test_a_rejected_gate_reads_like_every_other_problem_line(tmp_path):
+    """`where: what`, one line per problem — not pydantic's multi-line dump with the input's
+    repr and a documentation URL, which is what the routine page and `rsched validate` showed."""
+    d = _mk_routine(tmp_path, {"description": "x", "run_gate": {
+        "enabled": True, "timeout_s": 999, "checks": [{"kind": "nope"}]}})
+    cfg, problems = load_routine(d)
+    assert cfg is None
+    assert "run_gate.timeout_s: Input should be less than or equal to 300" in problems
+    assert any(p.startswith("run_gate.checks[0]: unknown kind 'nope'") for p in problems)
+    assert not any("\n" in p or "errors.pydantic.dev" in p for p in problems)
 
 
 def test_routine_empty_description_flagged(tmp_path):

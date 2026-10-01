@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from .base import (
+    DEFAULT_CONTEXT_TOKENS,
     DEFAULT_MODEL_MAX_TOKENS,
     KEY_VAR_DEFAULTS,
     BlankableStr,
@@ -38,7 +39,7 @@ class EndpointConfig(_Config):
     # A per-MODEL value still wins over both: that is an operator sizing this model down.
     # Per-model attributes live on ModelConfig — one endpoint serves many models with different
     # windows, vision support, and sampling. context_tokens is the full input + output token window.
-    context_tokens: int = 25_000
+    context_tokens: int = DEFAULT_CONTEXT_TOKENS
     temperature: float | None = None
     max_tokens: int | None = None   # None → DEFAULT_MODEL_MAX_TOKENS at resolve time
     # openai kind only: merged verbatim into every request body. This is where aggregator
@@ -97,7 +98,7 @@ class ModelRef:
     model: str
     effort: str | None = None
     multimodal: bool = False
-    context_tokens: int = 25_000
+    context_tokens: int = DEFAULT_CONTEXT_TOKENS
     temperature: float | None = None
     max_tokens: int = DEFAULT_MODEL_MAX_TOKENS
     name: str = ""
@@ -115,7 +116,7 @@ class MachineConfig(_Config):
     name: str = ""          # filled from the `machines:` mapping key
     host: str               # hostname or IP the run connects to
     user: str               # ssh login user
-    port: int = 22
+    port: int = Field(22, ge=1, le=65535)
     key_var: BlankableStr = ""      # Secrets-store key NAME holding the private key (PEM)
     # The server's pinned host key line ("ssh-ed25519 AAAA…"), verified strictly at connect
     # (no TOFU in a headless run). Empty → the `remote` util refuses to connect; scan it in
