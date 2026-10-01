@@ -1,13 +1,18 @@
-// Configurable SVG charts for the Stats tab — dependency-free, dark-theme.
-// The categorical palette is validated (lightness band, chroma, CVD separation,
-// contrast) against the panel surface #101720; fixed assignment order, never cycled:
-// series beyond the sixth fold into a gray "other". Colors follow the ENTITY (a key
-// keeps its color when the range filter changes), text wears text tokens only.
+// Configurable SVG charts for the Stats tab — dependency-free, both themes.
+// The categorical palette is base.css's --series-1..6 / --series-other tokens, each defined
+// per theme and validated (lightness band, chroma, CVD separation, contrast) against that
+// theme's plates; fixed assignment order, never cycled: series beyond the sixth fold into a
+// gray "other". Colors follow the ENTITY (a key keeps its color when the range filter
+// changes), text wears text tokens only. A colour is handed out as a `var()` reference, so an
+// SVG fill and an inline swatch both follow a theme switch without a re-render.
 
 import { el, fmtNum, fmtUsd, svgEl } from "/static/util.js";
 
-const SERIES_COLORS = ["#cc7f1f", "#3d8fe0", "#219e8e", "#a86fd1", "#d16a92", "#7fa03f"];
-const OTHER_COLOR = "#56697e";
+// spelled out, not built from a template: tests/test_stylesheet_tokens.py checks every var()
+// a module asks for against the tokens base.css defines
+const SERIES_COLORS = ["var(--series-1)", "var(--series-2)", "var(--series-3)",
+                       "var(--series-4)", "var(--series-5)", "var(--series-6)"];
+const OTHER_COLOR = "var(--series-other)";
 
 // Stable color IDENTITY for a routine: hash the slug into the palette so it keeps its color
 // across reorders / additions (an index-based pick reshuffles everyone). One color per routine
