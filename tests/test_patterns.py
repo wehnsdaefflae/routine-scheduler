@@ -88,6 +88,33 @@ def test_a_pattern_file_that_is_no_pattern_is_named_by_lint_and_breaks_no_listin
     assert "kebab-case" in found["patterns/Bad Name.yaml"][0]
 
 
+def test_a_pattern_never_grants_a_credential_store(tmp_path):
+    """Creation copies a pattern's folder grants into the new routine past the PATCH guard that
+    refuses one by hand — the seed instance-auditor pattern once handed the console's config dir
+    to every routine made from it. A pattern naming a store is a problem the lint reports, a
+    "Save as new pattern" refuses, and creation writes without that root."""
+    from rsched.patterns import apply
+    from rsched.workflows.lint import lint_patterns
+
+    lib = tmp_path / "lib"
+    risky = {"fs_read_roots": ["~/.ssh", "~/notes"], "fs_write_roots": ["~/.credentials/x"],
+             "keep_runs": 20}
+    with pytest.raises(ValueError, match="credential store"):
+        store.create(lib, "auditor", pattern_doc(**risky))
+    store.home(lib).mkdir(parents=True)        # a library copy that predates the check
+    (store.home(lib) / "auditor.yaml").write_text(
+        "title: Auditor\nsummary: s\nworkflow: w\nsettings:\n  fs_read_roots: [~/.ssh, ~/notes]\n"
+        "  fs_write_roots: [~/.credentials/x]\n", encoding="utf-8")
+    found = lint_patterns(lib, [], [])["patterns/auditor.yaml"]
+    assert [f for f in found if "credential store" in f] == [
+        ("patterns/auditor.yaml: settings.fs_read_roots: ~/.ssh is a credential store — a "
+         "pattern never grants one"),
+        ("patterns/auditor.yaml: settings.fs_write_roots: ~/.credentials/x is a credential "
+         "store — a pattern never grants one")]
+    out = apply.routine_yaml(store.read(lib, "auditor")["settings"], tz="UTC")
+    assert out["fs_read_roots"] == ["~/notes"] and out["fs_write_roots"] == []
+
+
 def test_a_routine_yaml_that_does_not_parse_follows_nothing(tmp_path):
     home = tmp_path / "routines"
     for slug, text in (("good", "pattern: watcher\n"), ("bad", "pattern: [watcher\n")):

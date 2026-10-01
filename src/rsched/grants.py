@@ -177,10 +177,16 @@ def normalize_expects(raw: object, *, label: str = "expects") -> tuple[dict, lis
                 problems.append(f"{label}.{cls}: entries must be non-empty strings")
                 continue
             name = item.strip()
-            if name != "*" and parse_entity(f"{cls}:{name}") is None:
-                problems.append(f"{label}.{cls}: {name!r} is not a valid {cls} entity name "
-                                f"(or use '*' for 'at least one')")
-                continue
+            if name != "*":
+                parsed = parse_entity(f"{cls}:{name}")
+                if parsed is None:
+                    problems.append(f"{label}.{cls}: {name!r} is not a valid {cls} entity "
+                                    "name (or use '*' for 'at least one')")
+                    continue
+                # the canonical spelling — an fs root `~`-expanded — because it is compared
+                # with a routine's own roots, which are stored expanded; a library doc shipped
+                # to every instance can only name a home as `~`
+                name = parsed[1]
             if name not in keep:
                 keep.append(name)
         if keep:

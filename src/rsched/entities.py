@@ -59,10 +59,13 @@ ONCE_CLASSES = TURN_ACTION_CLASSES | frozenset({"secret", "fs-read", "fs-write"}
 TRUE_ROW_CLASSES = frozenset({"secret"})
 # fs paths that are never grantable, whatever the user clicks: the instance's credential
 # stores (docs/sandboxing.md keeps them invisible even to fully-granted utils). Enforced at
-# THREE points, because one was not enough — a run's access REQUEST (engine/availability.py),
-# the config PATCH (web/api_routine_patch.py) and the config LOADER (config/routine.py, which
-# REPORTS one already in a file rather than dropping it: a root a routine has been running on
-# for months disappears from under its next run otherwise).
+# every door a grant comes through, because one was not enough — a run's access REQUEST
+# (engine/availability.py); every config edge, routine and conversation alike
+# (web/config_fields.validate_roots); a settings PATTERN, whose roots creation copies
+# (patterns/store.problems, patterns/apply.routine_yaml); the jail assembler, for a root that
+# reaches a store only through a link planted after approval (sandbox.wrap); and the config
+# LOADER (config/routine.py, which REPORTS one already in a file rather than dropping it: a
+# root a routine has been running on for months disappears from under its next run otherwise).
 NEVER_GRANTABLE = ("~/.config/routine-scheduler", "~/.credentials", "~/.ssh")
 
 _LEVELS = {"runs": ("last", "all"), "reminders": ("local", "global")}

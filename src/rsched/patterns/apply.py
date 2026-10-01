@@ -18,8 +18,10 @@ def routine_yaml(settings: dict, *, tz: str) -> dict:
 
     An `ask_first` field (`grants`) is never written here: a pattern deciding which secrets a
     routine receives would be a pattern granting them, so creation proposes it as a pending
-    change instead (`recommend.at_creation`).
+    change instead (`recommend.at_creation`). Nor is a folder grant naming a credential store,
+    which no pattern may carry (`store.problems` names it; this is where it would land).
     """
+    from ..entities import guarded_roots
     from ..schedule import friendly_to_cron
 
     out: dict = {}
@@ -36,6 +38,10 @@ def routine_yaml(settings: dict, *, tz: str) -> dict:
                 "fs_read_roots", "fs_write_roots", "connections", "machines", "models", "tags"):
         if key in settings:
             out[renamed.get(key, key)] = settings[key]
+    for key in ("fs_read_roots", "fs_write_roots"):
+        if key in out:
+            stores = set(guarded_roots(out[key]))
+            out[key] = [root for root in out[key] if str(root) not in stores]
     if "keep_runs" in settings:
         out["retention"] = {"keep_runs": int(settings["keep_runs"])}
     return out

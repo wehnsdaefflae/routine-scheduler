@@ -77,7 +77,10 @@ floor keeps them on. `expects:` is the optional counterpart — entities the ins
 It exists because the necessary edge was the only one the system could see. Publishing to the
 Steward hub presumes READ access to the shared kit — the contract lives there; `read_file`
 is confined to granted roots — which no capability can express. So `steward-publishing` says
-`expects: {fs-read: ["…/web/steward"]}` and the setup surface shows the gap before the run.
+`expects: {fs-read: ["~/…/web/steward"]}` and the setup surface shows the gap before the run.
+A filesystem name is read in its canonical spelling, `~` expanded (`grants.normalize_expects`),
+because it is compared with the routine's own roots, which are stored that way — and a doc
+shipped to every instance can name a home no other way.
 
 Two rules keep it from turning into a second `requires:`:
 
@@ -702,10 +705,13 @@ The same question applies to the three fs paths that are never grantable at all
 (`entities.NEVER_GRANTABLE`: the instance config dir, `~/.credentials`, `~/.ssh`). They are
 refused at the runtime ask, refused at every edge where an operator MAKES a grant (the routine
 PATCH, the conversation PATCH and create form — one enforcer, `config_fields.validate_roots`,
-which also refuses a non-absolute root), and REPORTED by the loader for a
+which also refuses a non-absolute root), never carried by a settings PATTERN (creation copies a
+pattern's roots past that edge, so the library lint names such a pattern, "Save as new pattern"
+refuses one, and creation leaves the root out — `patterns/store.problems`,
+`patterns/apply.routine_yaml`), and REPORTED by the loader for a
 file that already lists one — that last one deliberately does not drop the root, because a
 routine that has legitimately been reading it would otherwise fail its next run with nothing
-naming the cause. All three compare a root as written AND as resolved
+naming the cause. Every one of them compares a root as written AND as resolved
 (`entities.never_grantable_fs`): the jail opens a root to build its rule, opening follows
 symlinks, so a link into a store — `/tmp` is writable in every jail — is the store.
 
