@@ -12,19 +12,8 @@ from playwright.sync_api import expect
 from rsched import reports
 
 from .conftest import until
+from .helpers import unfold, visible_toast
 
-
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu.
-
-    The page ships with only its two leading groups open (views/routine-config.js): seven open at
-    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
-    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
-    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
-    here.
-    """
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def test_messages_inbox_compose_edit_withdraw(ui, ui_page):
     """The Messages section's inbox folder is the routine-bound home for a note the next
@@ -36,7 +25,7 @@ def test_messages_inbox_compose_edit_withdraw(ui, ui_page):
     expect(box).to_be_visible()
     box.fill("re-check the freelance portals after the login fix")
     ui_page.get_by_role("button", name="queue for the next run").click()
-    expect(_toast(ui_page)).to_contain_text("next run reads it")
+    expect(visible_toast(ui_page)).to_contain_text("next run reads it")
 
     inbox = ui.routine_dir("uir") / "inbox"
     card = ui_page.locator(".msg-item.inbox", has_text="re-check the freelance portals")
@@ -105,16 +94,12 @@ def test_messages_folders_and_outbox_retract(ui, ui_page, make_routine):
     expect(out).to_contain_text("please fix it")
     out.locator("button", has_text="retract").click()
     ui_page.locator(".modal-overlay button", has_text="retract").click()
-    expect(_toast(ui_page)).to_contain_text("retracted")
+    expect(visible_toast(ui_page)).to_contain_text("retracted")
     expect(ui_page.locator(".msg-item.outbox")).to_have_count(0)
     expect(ui_page.locator(".msg-tabs .tag", has_text="outbox · 0")).to_be_visible()
     assert not (peer / "inbox" / f"msg-rep-{rid}.json").exists()
     rows = {r["id"]: r for r in reports.read_reports(reports.reports_path(ui.routines))}
     assert rows[rid]["retracted"]["ts"]
-
-
-def _toast(page):
-    return page.locator("#toast:not([hidden])")
 
 
 def test_own_secrets_set_shadow_and_remove(ui, ui_page):
@@ -126,13 +111,13 @@ def test_own_secrets_set_shadow_and_remove(ui, ui_page):
 
     secrets.set_secret("SFTP_USER", "the-shared-one")
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Own secrets')")
 
     ui_page.locator("[data-own-secret-key]").fill("SFTP_USER")
     ui_page.locator("[data-own-secret-value]").fill("mine-only")
     ui_page.locator("[data-own-secret-set]").click()
-    expect(_toast(ui_page)).to_contain_text("SFTP_USER saved")
+    expect(visible_toast(ui_page)).to_contain_text("SFTP_USER saved")
 
     row = ui_page.locator('[data-own-secret="SFTP_USER"]')
     expect(row).to_be_visible()
@@ -141,7 +126,7 @@ def test_own_secrets_set_shadow_and_remove(ui, ui_page):
     assert secrets.load_secrets()["SFTP_USER"] == "the-shared-one"     # central untouched
 
     row.get_by_role("button", name="remove").click()
-    expect(_toast(ui_page)).to_contain_text("SFTP_USER removed")
+    expect(visible_toast(ui_page)).to_contain_text("SFTP_USER removed")
     expect(ui_page.locator('[data-own-secret="SFTP_USER"]')).to_have_count(0)
     assert secrets.load_routine_secrets("uir") == {}
 
@@ -153,7 +138,7 @@ def test_an_own_secret_is_set_and_removed_once_per_press(ui, ui_page):
     from rsched import secrets
 
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Own secrets')")
     sent = []
 
@@ -174,7 +159,7 @@ def test_an_own_secret_is_set_and_removed_once_per_press(ui, ui_page):
     ui_page.wait_for_timeout(500)
     assert sent == ["PUT", "DELETE"], f"two presses each, sent {sent}"
     assert secrets.load_routine_secrets("uir") == {}
-    expect(_toast(ui_page)).to_contain_text("ONCE_ONLY removed")
+    expect(visible_toast(ui_page)).to_contain_text("ONCE_ONLY removed")
 
 
 def test_sections_side_toc(ui, ui_page):
@@ -184,7 +169,7 @@ def test_sections_side_toc(ui, ui_page):
     a 13 000px page most needs it and where the old right-margin rail had nothing."""
     ui_page.set_viewport_size({"width": 1425, "height": 950})
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Filesystem roots')")
     toc = ui_page.locator(".side-toc")
     expect(toc).to_be_visible()
@@ -206,7 +191,7 @@ def test_description_editor_is_multiline(ui, ui_page):
     """msg-2 (2026-09-03): the editable routine-description field is a multi-line <textarea>,
     not a single-line <input> — so the operator can write more than one line of summary."""
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Description')")
     section = ui_page.locator("h2:has-text('Description')").locator(
         "xpath=following-sibling::div[contains(@class,'panel')][1]")
@@ -224,7 +209,7 @@ def test_fs_root_directory_picker(ui, ui_page):
     to a server directory and selecting it adds it as a root — to the draft, saved by the
     page's one accept. The write list is named for what it grants: read-write roots."""
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Filesystem roots')")
     # the free-text "one path per line" textarea is gone
     assert ui_page.locator("textarea[placeholder*='one path per line']").count() == 0
@@ -258,7 +243,7 @@ def test_the_folder_picker_keeps_its_height_whatever_the_folder_holds(ui, ui_pag
         (ui.tmp / "many" / f"folder-{i:02d}").mkdir(parents=True)
     (ui.tmp / "few").mkdir()
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.locator("#sec-fs-roots + .panel button:has-text('add directory')").first.click()
     picker = ui_page.locator(".dirpicker")
     listing = picker.locator(".dirpicker-list")
@@ -312,7 +297,7 @@ def test_a_slow_recipe_file_never_lands_over_the_one_picked_after_it(ui, ui_page
             route.continue_()
     ui_page.route("**/api/routines/uir/file?*", hold_main)
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     nav = ui_page.locator(".recipe-navcol")
     nav.locator(".rn-file", has_text="main").click()
     until(lambda: held, what="the held main.md read", page=ui_page)
@@ -340,7 +325,7 @@ def test_a_recipe_save_is_one_request_however_often_it_is_pressed(ui, ui_page):
             route.continue_()
     ui_page.route("**/api/routines/uir/file", hold_put)
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.locator(".recipe-navcol .rn-file", has_text="main").click()
     ui_page.locator(".recipe-editorcol textarea").fill("# Main\n\nrevised\n")
     save = ui_page.locator(".recipe-editorcol button", has_text="save")
@@ -348,7 +333,7 @@ def test_a_recipe_save_is_one_request_however_often_it_is_pressed(ui, ui_page):
     until(lambda: puts, what="the save's PUT", page=ui_page)
     expect(save).to_be_disabled()              # a second press cannot send a second write
     puts[0].continue_()
-    expect(_toast(ui_page)).to_contain_text("main.md saved")
+    expect(visible_toast(ui_page)).to_contain_text("main.md saved")
     expect(save).to_be_enabled()
     assert len(puts) == 1
 
@@ -368,7 +353,7 @@ def test_weekly_schedule_day_set_roundtrips(ui, ui_page, make_routine):
     chips.nth(3).check()                          # Wednesday
     chips.nth(5).check()                          # Friday
     ui_page.locator(".accept-bar [data-accept]").click()
-    expect(_toast(ui_page)).to_contain_text("accepted")
+    expect(visible_toast(ui_page)).to_contain_text("accepted")
 
     ui_page.goto(f"{ui.url}#/routine/wkly")
     ui_page.wait_for_selector(".day-chip input")
@@ -384,7 +369,7 @@ def test_the_hub_tab_saves_as_identity(ui, ui_page):
     """The Steward-hub heading lives in the identity group beside the name: the accept writes
     it through the ordinary PATCH, trimmed. An empty field removes the key again."""
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     group = ui_page.locator(".rgroup", has=ui_page.locator(
         ".rgroup-title", has_text="Identity & recipe"))
     expect(group.locator("h2", has_text="Hub tab")).to_have_count(1)
@@ -392,7 +377,7 @@ def test_the_hub_tab_saves_as_identity(ui, ui_page):
     field = ui_page.locator("[data-hub-tab]")
     field.fill("  FAU ")
     ui_page.locator(".accept-bar [data-accept]").click()
-    expect(_toast(ui_page)).to_contain_text("accepted")
+    expect(visible_toast(ui_page)).to_contain_text("accepted")
     path = ui.routine_dir("uir") / "routine.yaml"
     until(lambda: yaml.safe_load(path.read_text(encoding="utf-8")).get("hub_tab") == "FAU",
           what="the hub tab save")
@@ -427,7 +412,7 @@ def test_output_compression_is_not_a_setting(ui, ui_page):
     """Lossless output compression is engine behaviour, not a per-routine decision — the page
     offers no control for it."""
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("#sec-models")
     expect(ui_page.get_by_label("Output compression", exact=True)).to_have_count(0)
 
@@ -471,7 +456,7 @@ def test_archiving_a_publisher_names_what_it_leaves_behind(ui, ui_page, make_rou
     ui_page.locator(".modal-overlay").get_by_role(
         "button", name="archive", exact=True).click()
 
-    toast = _toast(ui_page)
+    toast = visible_toast(ui_page)
     expect(toast).to_be_visible()
     expect(toast).to_contain_text("steward hub")
     # WHERE it is, not merely that something is left: a residue nobody can find is a residue
@@ -496,7 +481,7 @@ def test_archiving_names_every_surface_it_leaves_behind(ui, ui_page):
     ui_page.goto(f"{ui.url}#/routine/uir")
     ui_page.get_by_role("button", name="archive").click()
     ui_page.locator(".modal-overlay").get_by_role("button", name="archive", exact=True).click()
-    toast = _toast(ui_page)
+    toast = visible_toast(ui_page)
     expect(toast).to_contain_text("status page")
     expect(toast).to_contain_text("steward hub")
 
@@ -522,7 +507,7 @@ def test_every_explanation_on_the_page_shares_one_measure(ui, ui_page):
     1 350px in one place and 450px in the other on one screen."""
     ui_page.set_viewport_size({"width": 1425, "height": 950})
     ui_page.goto(f"{ui.url}#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Budgets')")
     widths = ui_page.locator(".set-desc").evaluate_all(
         "els => els.map(e => e.getBoundingClientRect().width)")

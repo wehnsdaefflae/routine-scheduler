@@ -17,22 +17,16 @@ from __future__ import annotations
 
 from playwright.sync_api import expect
 
+from .helpers import start_conversation
+
 # The stub runner resumes a terminal conversation to this ts (tests/ui/conftest.py). Seeding
 # the conversation's only run dir at the same ts is what makes the resume land on the run the
 # view is already following — which is what the real Runner does for every conversation.
 RESUMED_TS = "20260715-120001"
 
 
-def _start_conversation(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Plan the trip.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    return ui_page.url.rsplit("/", 1)[-1]
-
-
 def test_a_send_resumes_the_tail_instead_of_remounting_the_view(ui, ui_page):
-    slug = _start_conversation(ui, ui_page)
+    slug, _conv_dir = start_conversation(ui, ui_page, "Plan the trip.")
     ui.seed_run(slug, RESUMED_TS, "finished", home=ui.conversations,
                 summary="here is the plan")
     ui_page.reload()

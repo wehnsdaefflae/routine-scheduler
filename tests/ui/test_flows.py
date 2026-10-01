@@ -12,23 +12,7 @@ import yaml
 from playwright.sync_api import expect
 
 from .conftest import until
-
-
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu.
-
-    The page ships with only its two leading groups open (views/routine-config.js): seven open at
-    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
-    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
-    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
-    here.
-    """
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
-
-def _toast(page):
-    return page.locator("#toast:not([hidden])")
-
+from .helpers import confirm_modal, start_conversation, unfold, visible_toast
 
 # ---- 1. Decisions answer flow ------------------------------------------------------------
 
@@ -45,7 +29,7 @@ def test_decisions_answer_flow(ui, ui_page):
     # F189: clicking an option button SUBMITS that option one-click (free-text answering
     # stays possible — covered by the blocking-question flow below)
     card.get_by_role("button", name="1 · red").click()
-    expect(_toast(ui_page)).to_contain_text("answered")
+    expect(visible_toast(ui_page)).to_contain_text("answered")
     expect(card.locator(".chip.ok")).to_contain_text("answered · queued")
     answer = json.loads(
         (ui.routine_dir("uir") / "inbox" / "answer-q-color.json").read_text(encoding="utf-8"))
@@ -62,7 +46,7 @@ def test_decisions_blocking_question_from_live_run(ui, ui_page):
     expect(card).to_contain_text("Ship it?")
     card.locator('textarea[data-persist="answer-q-go"]').fill("yes — ship")
     card.get_by_role("button", name="answer").click()
-    expect(_toast(ui_page)).to_contain_text("answered — the run resumes")
+    expect(visible_toast(ui_page)).to_contain_text("answered — the run resumes")
     answer = json.loads(
         (ui.routine_dir("uir") / "inbox" / "answer-q-go.json").read_text(encoding="utf-8"))
     assert answer["text"] == "yes — ship"
@@ -80,7 +64,7 @@ def test_decisions_snooze_and_defer(ui, ui_page):
     # snooze the deferred one → it leaves the inbox and waits under the Snoozed filter
     card = ui_page.locator(".question-item", has_text="weekly digest")
     card.locator("select").select_option("60")
-    expect(_toast(ui_page)).to_contain_text("snoozed")
+    expect(visible_toast(ui_page)).to_contain_text("snoozed")
     expect(ui_page.locator(".question-item", has_text="weekly digest")).to_have_count(0)
     record = json.loads((ui.routine_dir("uir") / "questions" / "pending" / "q-snz.json")
                         .read_text(encoding="utf-8"))
@@ -89,13 +73,13 @@ def test_decisions_snooze_and_defer(ui, ui_page):
     snoozed = ui_page.locator(".question-item", has_text="weekly digest")
     expect(snoozed.locator(".chip.meta", has_text="snoozed")).to_be_visible()
     snoozed.get_by_role("button", name="unsnooze").click()
-    expect(_toast(ui_page)).to_contain_text("back in the inbox")
+    expect(visible_toast(ui_page)).to_contain_text("back in the inbox")
 
     # defer the blocking one → the release marker lands in the inbox, the card settles
     ui_page.get_by_role("button", name="All · 2").click()
     blocking = ui_page.locator(".question-item", has_text="Overwrite the export?")
     blocking.get_by_role("button", name="defer to next run").click()
-    expect(_toast(ui_page)).to_contain_text("deferred")
+    expect(visible_toast(ui_page)).to_contain_text("deferred")
     marker = json.loads((ui.routine_dir("uir") / "inbox" / "answer-q-blk.json")
                         .read_text(encoding="utf-8"))
     assert marker["defer"] is True
@@ -169,7 +153,7 @@ def test_decisions_arrow_keys_survive_a_repaint_during_an_answer(ui, ui_page):
         "window.dispatchEvent(new CustomEvent('rsched-bus', {detail: {event: 'run_state'}}))")
     expect(ui_page.locator(".answer-input[data-old]")).to_have_count(0)   # repainted
     held[0].continue_()
-    expect(_toast(ui_page)).to_contain_text("answered")
+    expect(visible_toast(ui_page)).to_contain_text("answered")
 
     ui_page.locator('textarea[data-persist="answer-q-a"]').focus()
     ui_page.keyboard.press("ArrowDown")
@@ -313,7 +297,7 @@ def test_run_view_question_form(ui, ui_page):
     expect(box).to_contain_text("without an answer: a")
     box.locator("textarea").fill("thinking out loud: why not both?")
     box.get_by_role("button", name="ask back").click()
-    expect(_toast(ui_page)).to_contain_text("the model will reply and re-ask")
+    expect(visible_toast(ui_page)).to_contain_text("the model will reply and re-ask")
     answer = json.loads(
         (ui.routine_dir("uir") / "inbox" / "answer-q-rv.json").read_text(encoding="utf-8"))
     assert answer["intermediate"] is True
@@ -345,7 +329,7 @@ def test_answering_an_already_resolved_question_settles_gently(ui, ui_page):
     box = ui_page.locator(".panel.warn", has_text="Which path?")
     box.get_by_role("button", name="a", exact=True).click()   # one-click option submit
     # the benign notice appears and it is NOT an error toast
-    toast = _toast(ui_page)
+    toast = visible_toast(ui_page)
     expect(toast).to_contain_text("already answered elsewhere")
     expect(toast).not_to_have_class(re.compile(r"\berr\b"))
     # the card settled (the host cleared it) — the actionable option button is gone
@@ -390,7 +374,7 @@ def test_run_view_message_modes(ui, ui_page):
         {"name": "shot.png", "mimeType": "image/png", "buffer": b"\x89PNG fake"})
     expect(ui_page.locator(".attach-chip")).to_contain_text("shot.png")
     ui_page.get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_be_visible()
+    expect(visible_toast(ui_page)).to_be_visible()
     inbox = ui.routine_dir("uir") / "inbox"
     assert any("mid-run note" in m.read_text(encoding="utf-8")
                for m in inbox.glob("msg-*.json"))
@@ -429,7 +413,7 @@ def test_run_view_message_modes(ui, ui_page):
     ui_page.set_viewport_size({"width": 1280, "height": 900})   # restore for the rest
     ui_page.locator('textarea[placeholder^="message…"]').fill("continue please")
     ui_page.get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_contain_text("continue the conversation")
+    expect(visible_toast(ui_page)).to_contain_text("continue the conversation")
     assert any("continue please" in m.read_text(encoding="utf-8")
                for m in inbox.glob("msg-*.json"))
 
@@ -451,7 +435,7 @@ def test_run_view_composer_draft_persists_and_clears_on_send(ui, ui_page):
     # sending clears the input
     composer.fill("mid-run note to send")
     ui_page.get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_be_visible()
+    expect(visible_toast(ui_page)).to_be_visible()
     expect(composer).to_have_value("")
 
 
@@ -570,7 +554,7 @@ def test_run_view_deliberation_relevel(ui, ui_page):
     slider = ui_page.locator('.delib input[type="range"]')
     slider.focus()
     slider.press("ArrowRight")                        # standard → deliberate
-    expect(_toast(ui_page)).to_contain_text("takes effect next turn")
+    expect(visible_toast(ui_page)).to_contain_text("takes effect next turn")
     ctrl = json.loads((run_dir / "control.json").read_text(encoding="utf-8"))
     assert ctrl["set_deliberation"]["level"] == "deliberate"
     assert ctrl["set_deliberation"]["ts"]
@@ -592,7 +576,7 @@ def test_artifact_row_shows_time_and_deletes(ui, ui_page):
     row.locator(".art-del").click()
     # components/dialog.js, not window.confirm: no native dialog handler is installed here, so
     # a call site falling back to confirm() would block the page and fail this test.
-    _confirm_modal(ui_page, "delete")
+    confirm_modal(ui_page, "delete")
     expect(ui_page.locator(".art-item")).to_have_count(0)
     assert not (art / "notes.md").exists()
 
@@ -709,7 +693,7 @@ def test_run_transcript_story_and_refer(ui, ui_page):
     # run's input always continues THIS run — there is no queue mode to select).
     ui_page.locator('textarea[placeholder^="message…"]').fill("dig into that result")
     ui_page.get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_contain_text("continue the conversation")
+    expect(visible_toast(ui_page)).to_contain_text("continue the conversation")
     expect(ref).to_be_hidden()                      # sent — the chip clears
     sent = [json.loads(m.read_text(encoding="utf-8"))
             for m in (ui.routine_dir("uir") / "inbox").glob("msg-*.json")]
@@ -742,7 +726,7 @@ def test_conversation_composer(ui, ui_page):
     # a follow-up lands in the inbox and wakes the conversation through the runner
     ui_page.locator(".conv-composer textarea").fill("also include the gym")
     ui_page.locator(".conv-composer").get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_be_visible()
+    expect(visible_toast(ui_page)).to_be_visible()
     # The composer clears the textarea and the server persists the inbox file only AFTER the
     # apiUpload round-trip resolves; a toast alone (any lingering toast satisfies to_be_visible
     # under xdist load) is NOT proof the send landed. Poll for the file itself — the standing
@@ -846,7 +830,7 @@ def test_conversation_slash_commands(ui, ui_page):
     # stays with the user (no reply handed to the model — a plain message would say "waking")
     composer_input.fill("/read_file instruction.md")
     ui_page.locator(".conv-composer").get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_contain_text("you keep the turn")
+    expect(visible_toast(ui_page)).to_contain_text("you keep the turn")
     flagged = [json.loads(m.read_text(encoding="utf-8"))
                for m in (ui.conversations / slug / "inbox").glob("msg-*.json")]
     command = next(d for d in flagged if d.get("command"))
@@ -872,7 +856,7 @@ def test_conversation_deliberation_slider(ui, ui_page):
     slider = ui_page.locator('.delib input[type="range"]')
     slider.focus()
     slider.press("ArrowLeft")                         # deliberate → standard
-    expect(_toast(ui_page)).to_contain_text("deliberation: standard")
+    expect(visible_toast(ui_page)).to_contain_text("deliberation: standard")
     tuning = yaml.safe_load((conv_dir / "tuning.yaml").read_text(encoding="utf-8"))
     assert tuning["deliberation"] == "standard"
     raw = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8"))
@@ -900,7 +884,7 @@ def test_conversation_refer_to_message(ui, ui_page):
     ui_page.locator(".msg.user .refer-btn").first.click()
     ui_page.locator(".conv-composer textarea").fill("start with the papers")
     ui_page.locator(".conv-composer").get_by_role("button", name="send", exact=True).click()
-    expect(_toast(ui_page)).to_be_visible()
+    expect(visible_toast(ui_page)).to_be_visible()
     messages = list((ui.conversations / slug / "inbox").glob("msg-*.json"))
     assert len(messages) == 1
     # exact match matters: multipart encodes newlines CRLF and the API must canonicalize
@@ -917,7 +901,7 @@ def test_routine_page_saves(ui, ui_page):
     """Every control on the routine page edits ONE draft; the accept bar's one button sends it
     all. The page never reloads to show what landed."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.evaluate("window.__no_reload = true")
     desc = ui_page.locator('textarea[placeholder^="what this routine does"]')
     expect(desc).to_have_value("A test routine.")
@@ -950,7 +934,7 @@ def test_routine_page_saves(ui, ui_page):
     assert "tags" not in yaml.safe_load(
         (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
     bar.locator("[data-accept]").click()
-    expect(_toast(ui_page)).to_contain_text("accepted")
+    expect(visible_toast(ui_page)).to_contain_text("accepted")
     until(lambda: yaml.safe_load((ui.routine_dir("uir") / "routine.yaml")
                                  .read_text(encoding="utf-8")).get("tags") == ["nightly"],
           what="the accepted draft")
@@ -985,7 +969,7 @@ def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
     example help, and conduct-permission / practice-module rows expand to the FULL
     library doc (the same prose the run's prompt receives)."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     perm_panel = ui_page.locator("#sec-permissions + .panel")
     # capability rows explain themselves with examples (bare kind/util names told nothing).
     # The help rides the card of the doc that REQUIRES the capability, so it is asserted on
@@ -1085,7 +1069,7 @@ def test_library_delete_flows(ui, ui_page):
     # a rule deletes through the themed dialog; the reload lands on the bare list
     ui_page.get_by_role("link", name="ask-policy", exact=True).click()
     editor_panel.get_by_role("button", name="delete").click()
-    _confirm_modal(ui_page, "delete")
+    confirm_modal(ui_page, "delete")
     expect(ui_page.get_by_role("link", name="ask-policy", exact=True)).to_have_count(0)
     assert not (ui.tmp / "library" / "rules" / "ask-policy.md").exists()
     assert "#/library" in ui_page.url and "rule/" not in ui_page.url
@@ -1093,7 +1077,7 @@ def test_library_delete_flows(ui, ui_page):
     # a util deletes the same way (whole dir, git-recoverable)
     ui_page.get_by_role("link", name="dir-tree", exact=True).click()
     editor_panel.get_by_role("button", name="delete").click()
-    _confirm_modal(ui_page, "delete")
+    confirm_modal(ui_page, "delete")
     expect(ui_page.get_by_role("link", name="dir-tree", exact=True)).to_have_count(0)
     assert not (ui.tmp / "library" / "utils" / "dir-tree").exists()
 
@@ -1116,12 +1100,6 @@ def test_library_delete_flows(ui, ui_page):
 
 def _server_yaml(ui) -> dict:
     return yaml.safe_load((ui.tmp / "config.yaml").read_text(encoding="utf-8"))
-
-
-def _confirm_modal(page, label):
-    """Answer the themed confirm dialog (components/dialog.js) — native dialogs are gone;
-    one appearing anywhere would block and fail the test, which is the point."""
-    page.locator(".modal-overlay").get_by_role("button", name=label, exact=True).click()
 
 
 def test_settings_endpoints_crud(ui, ui_page):
@@ -1198,16 +1176,16 @@ def test_settings_endpoints_crud(ui, ui_page):
     model_card = ui_page.locator(".panel",
                                  has=ui_page.locator("strong", has_text="llama")).last
     model_card.get_by_role("button", name="delete").click()
-    _confirm_modal(ui_page, "cancel")            # cancelling keeps the model
+    confirm_modal(ui_page, "cancel")             # cancelling keeps the model
     expect(ui_page.locator("strong", has_text="llama").first).to_be_visible()
     assert "llama" in _server_yaml(ui)["models"]
     model_card.get_by_role("button", name="delete").click()
-    _confirm_modal(ui_page, "delete")
+    confirm_modal(ui_page, "delete")
     expect(ui_page.locator("strong", has_text="llama")).to_have_count(0)
     endpoint_card = ui_page.locator(".panel",
                                     has=ui_page.locator("strong", has_text="vllm")).first
     endpoint_card.get_by_role("button", name="delete").click()
-    _confirm_modal(ui_page, "delete")
+    confirm_modal(ui_page, "delete")
     expect(ui_page.locator("strong", has_text="vllm")).to_have_count(0)
     cfg = _server_yaml(ui)
     assert "vllm" not in (cfg.get("endpoints") or {})
@@ -1804,7 +1782,7 @@ def test_routine_page_rule_picker_binds_a_general_rule(ui, ui_page):
     cfg["rules"] = ["ask-policy"]
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     panel = ui_page.locator("#sec-general-rules + .panel")
     expect(panel.locator(".rulepicker")).to_be_visible()
     row = panel.locator('.avail-row[data-rule="evidence-discipline"]')
@@ -1813,14 +1791,14 @@ def test_routine_page_rule_picker_binds_a_general_rule(ui, ui_page):
     expect(row).to_have_class(re.compile(r"\bpending\b"))       # staged, marked where it sits
     expect(panel.get_by_role("button", name="apply")).to_have_count(0)   # the page accepts
     ui_page.locator(".accept-bar [data-accept]").click()
-    expect(_toast(ui_page)).to_contain_text("accepted")
+    expect(visible_toast(ui_page)).to_contain_text("accepted")
     until(lambda: "evidence-discipline" in yaml.safe_load(
         path.read_text(encoding="utf-8"))["rules"], what="the accepted rule")
     assert not (rdir / "rules").exists()               # one copy only: the library's
     assert "evidence-discipline" not in (rdir / "main.md").read_text(encoding="utf-8")
 
     ui_page.reload()                                   # the tick survives a fresh settings read
-    _unfold(ui_page)
+    unfold(ui_page)
     reloaded = ui_page.locator("#sec-general-rules + .panel")
     # a bound rule leaves the catalogue and reads as something the routine practises
     expect(reloaded.locator('.rule-bound[data-rule="evidence-discipline"]')).to_be_visible()
@@ -1832,11 +1810,7 @@ def test_conversation_header_rule_picker(ui, ui_page):
     conversation shifts topic mid-thread. Binding a rule records the slug and the shared
     endpoint applies it to every reply from here on."""
     import yaml
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Help me restyle the landing page.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    conv_dir = ui.conversations / ui_page.url.rsplit("/", 1)[-1]
+    _slug, conv_dir = start_conversation(ui, ui_page, "Help me restyle the landing page.")
 
     # `.conv-caps > summary`, the hook the other browser tests use: the panel nests a disclosure
     # per permission requirement, so a descendant `summary` no longer names one element.
@@ -1849,7 +1823,7 @@ def test_conversation_header_rule_picker(ui, ui_page):
     expect(row).to_be_visible()
     row.locator('input[type="checkbox"]').check()
     picker.get_by_role("button", name="apply").click()
-    expect(_toast(ui_page)).to_contain_text("rules updated")
+    expect(visible_toast(ui_page)).to_contain_text("rules updated")
     held = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8"))["rules"]
     assert "interface-craft" in held
 
@@ -1894,7 +1868,7 @@ def test_run_page_blocking_question_shows_option_buttons(ui, ui_page):
     panel = ui_page.locator(".panel.warn", has_text="Pick a lane?")
     expect(panel.locator(".answer-opts button")).to_have_count(2)
     panel.get_by_role("button", name="fast", exact=True).click()
-    expect(_toast(ui_page)).to_contain_text("answer sent")
+    expect(visible_toast(ui_page)).to_contain_text("answer sent")
     until((ui.routine_dir("uir") / "inbox" / "answer-q-opt.json").exists)
     answer = json.loads((ui.routine_dir("uir") / "inbox" / "answer-q-opt.json")
                         .read_text(encoding="utf-8"))
@@ -1931,7 +1905,7 @@ def test_secret_exposure_panel_refreshes_on_decision(ui, ui_page):
     ui.seed_question("uir", "q-sec", "Expose secret FOO_TOKEN to routine 'uir'?",
                      mode="blocking", options=["approve", "decline"])
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     expect(ui_page.locator(".panel", has_text="no secrets in the store yet")).to_be_visible()
 
     # the grant lands in routine.yaml (as the web decision handler persists it) …
@@ -2048,7 +2022,7 @@ def test_conversation_header_folder_access_edit(ui, ui_page):
     dlg.get_by_role("button", name="select this folder").click()
     expect(ui_page.locator(".root-row", has_text=str(extra))).to_be_visible()
     ui_page.get_by_role("button", name="save folder access").click()
-    expect(_toast(ui_page)).to_contain_text("folder access saved")
+    expect(visible_toast(ui_page)).to_contain_text("folder access saved")
     cfg = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
     assert str(extra) in cfg["fs_write_roots"]
     assert cfg.get("fs_read_roots") == []             # the read editor was left empty

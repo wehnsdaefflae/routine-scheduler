@@ -14,19 +14,14 @@ from playwright.sync_api import expect
 
 from rsched.paths import atomic_write_json
 
+from .helpers import start_conversation
+
+ASK = "Drive a browser for me."
+
 # a 1x1 transparent PNG, byte-for-byte
 PNG = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
     "0000000d4944415478da63f8ffff3f0300050001a5f645400000000049454e44ae426082")
-
-
-def _start_conversation(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Drive a browser for me.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    slug = ui_page.url.rsplit("/", 1)[-1]
-    return slug, ui.conversations / slug
 
 
 def _write_handle(conv_dir, *, port: int, pid: int = 999_999_999) -> None:
@@ -43,7 +38,7 @@ def test_browser_section_renders_and_close_clears_session(ui, ui_page):
     """With a live-looking handle (a really-listening port) the rail grows a 'browser'
     section: url line, screenshot, and a ✕ that hits the stop endpoint — after which the
     handle is gone and the section hides again."""
-    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _slug, conv_dir = start_conversation(ui, ui_page, ASK)
     cap = ui_page.locator(".conv-view .rail-cap", has_text="browser")
     expect(cap).to_be_hidden()   # no session yet
 
@@ -81,7 +76,7 @@ def test_a_refused_cancel_is_an_error_toast(ui, ui_page):
     """A refusal on the rail's ✕ is a FAILURE toast (red, and traced as UI friction), never the
     plain one a success prints — the two looked identical, so a cancel that did nothing read as
     one that worked."""
-    slug, _conv_dir = _start_conversation(ui, ui_page)
+    slug, _conv_dir = start_conversation(ui, ui_page, ASK)
     row = [{"taskid": "t1", "state": "running", "label": "crawl the archive", "summary": ""}]
     ui_page.route(f"**/api/conversations/{slug}/background", lambda route: route.fulfill(
         status=200, content_type="application/json", body=json.dumps(row)))
@@ -98,7 +93,7 @@ def test_rail_sections_collapse_and_persist(ui, ui_page):
     sticks in localStorage across a full reload, and clicking again reopens it. R341: the
     key is `rail:<name>` (not `convrail:`) because the run view renders the SAME component
     — a fold meant in one view is meant in the other."""
-    _start_conversation(ui, ui_page)
+    start_conversation(ui, ui_page, ASK)
     cap = ui_page.locator(".conv-view .rail-cap", has_text="state").first
     graph = ui_page.locator(".stategraph")
     expect(graph).to_be_visible()
@@ -119,7 +114,7 @@ def test_a_conversation_has_no_goal_panel_and_no_compression_dial(ui, ui_page):
     """A conversation's spine is the plan it writes itself — no finish line, no Done when — so
     its rail carries no goal section; and lossless output compression is engine behaviour, not
     a dial on its header."""
-    _start_conversation(ui, ui_page)
+    start_conversation(ui, ui_page, ASK)
     expect(ui_page.locator(".conv-view .rail-cap", has_text="state").first).to_be_visible()
     expect(ui_page.locator('.conv-view .rail-cap[data-rail="goal"]')).to_have_count(0)
     expect(ui_page.get_by_label("Output compression", exact=True)).to_have_count(0)
@@ -163,7 +158,7 @@ def test_a_conversation_waiting_on_you_wears_the_summons_colour(ui, ui_page):
     `waiting_user` chip, the transcript's question row, the decisions badge. The conversation
     list's state dot and the chat's question bubble still wore amber, the retired palette's
     catch-all, so a conversation that needed you looked like one that was merely paused."""
-    slug, conv_dir = _start_conversation(ui, ui_page)
+    slug, conv_dir = start_conversation(ui, ui_page, ASK)
     question = {"qid": "q-1", "mode": "blocking", "question": "Option A or option B?",
                 "options": ["A", "B"], "type": "text", "asked": "20260827-100000"}
     run_dir = conv_dir / "runs" / "20260827-100000"

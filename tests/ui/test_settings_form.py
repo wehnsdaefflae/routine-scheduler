@@ -23,22 +23,12 @@ from playwright.sync_api import expect
 from rsched.paths import atomic_write_json
 
 from .conftest import until
+from .helpers import configure, stored_config, visible_toast
 
 DRAFT = "check the changes i recommend."
 # a field's two marks, asserted by name — the order a class list is built in is nobody's claim
 CHANGED = re.compile(r"\bsf-changed\b")
 OVERRIDE = re.compile(r"\bsf-override\b")
-
-
-def _stored(ui, slug="uir") -> dict:
-    return yaml.safe_load((ui.routines / slug / "routine.yaml").read_text(encoding="utf-8"))
-
-
-def _configure(ui, slug="uir", **over) -> None:
-    path = ui.routines / slug / "routine.yaml"
-    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    cfg.update(over)
-    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
 
 def _group(page, title):
@@ -58,10 +48,6 @@ def _field(page, key):
 
 def _accept_bar(page):
     return page.locator(".accept-bar")
-
-
-def _toast(page):
-    return page.locator("#toast:not([hidden])")
 
 
 def _seed_draft(ui, changes, *, message=DRAFT, reason="", pattern=None, slug="uir"):
@@ -96,14 +82,14 @@ def test_a_change_is_marked_where_it_sits_and_accepted_with_one_button(ui, ui_pa
     bar = _accept_bar(ui_page)
     expect(bar).to_be_visible()
     expect(bar.locator("[data-accept-count]")).to_have_text("1 change")
-    assert (_stored(ui).get("retention") or {}).get("keep_runs") != 12   # nothing written yet
+    assert (stored_config(ui).get("retention") or {}).get("keep_runs") != 12  # nothing written yet
 
     with ui_page.expect_request(lambda r: r.method == "POST"
                                 and r.url.endswith("/api/routines/uir/settings")) as sent:
         bar.locator("[data-accept]").click()
     assert sent.value.post_data_json["changes"] == {"keep_runs": 12}
-    expect(_toast(ui_page)).to_contain_text("accepted")
-    until(lambda: (_stored(ui).get("retention") or {}).get("keep_runs") == 12,
+    expect(visible_toast(ui_page)).to_contain_text("accepted")
+    until(lambda: (stored_config(ui).get("retention") or {}).get("keep_runs") == 12,
           what="the accepted retention")
     expect(bar).to_be_hidden()
     expect(ui_page.locator(".sf-field.sf-changed")).to_have_count(0)
@@ -126,7 +112,7 @@ def test_revert_and_discard_put_the_saved_value_back(ui, ui_page):
     _accept_bar(ui_page).locator("[data-discard]").click()
     expect(_accept_bar(ui_page)).to_be_hidden()
     expect(ui_page.locator("[data-hub-tab]")).to_have_value("")
-    assert "hub_tab" not in _stored(ui)
+    assert "hub_tab" not in stored_config(ui)
 
 
 def test_a_proposal_opens_the_settings_with_its_message_and_its_values(ui, ui_page):
@@ -149,7 +135,7 @@ def test_a_proposal_opens_the_settings_with_its_message_and_its_values(ui, ui_pa
     expect(field.locator("input[data-keep-runs]")).to_have_value("45")
     expect(field).to_have_class(CHANGED)
     expect(field.locator(".sf-why")).to_have_text("a daily routine keeps six weeks")
-    assert (_stored(ui).get("retention") or {}).get("keep_runs") != 45   # proposed, not applied
+    assert (stored_config(ui).get("retention") or {}).get("keep_runs") != 45  # proposed, not applied
 
     banner.locator("[data-discard-proposal]").click()
     expect(banner).to_be_hidden()
@@ -163,8 +149,8 @@ def test_accepting_a_proposal_applies_it_and_clears_it(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     expect(_accept_bar(ui_page).locator("[data-accept-count]")).to_have_text("2 changes")
     _accept_bar(ui_page).locator("[data-accept]").click()
-    until(lambda: _stored(ui).get("tags") == ["mail"], what="the accepted proposal")
-    assert _stored(ui)["retention"]["keep_runs"] == 45
+    until(lambda: stored_config(ui).get("tags") == ["mail"], what="the accepted proposal")
+    assert stored_config(ui)["retention"]["keep_runs"] == 45
     expect(ui_page.locator("[data-draft-banner]")).to_be_hidden()
     until(lambda: not path.exists(), what="the proposal file to go")
 
@@ -173,7 +159,7 @@ def test_an_override_names_the_patterns_value_and_goes_back_in_one_click(ui, ui_
     """A routine FOLLOWING a pattern whose saved value departs from it: the field is marked as an
     override with the pattern's own value beside it; "use the pattern's value" puts that value
     in the draft — a change like any other, applied by the accept."""
-    _configure(ui, pattern="daily-operator")
+    configure(ui, pattern="daily-operator")
     ui_page.goto(f"{ui.url}/#/routine/uir")
     bar = ui_page.locator("[data-pattern-bar]")
     expect(bar.locator(".pb-title")).to_have_text("Daily operator")
@@ -195,7 +181,7 @@ def test_an_override_names_the_patterns_value_and_goes_back_in_one_click(ui, ui_
     expect(field.locator(".sf-back")).to_contain_text("matches the pattern once accepted")
 
     _accept_bar(ui_page).locator("[data-accept]").click()
-    until(lambda: _stored(ui)["budgets"]["max_turns"] == 100, what="the pattern's budgets")
+    until(lambda: stored_config(ui)["budgets"]["max_turns"] == 100, what="the pattern's budgets")
     expect(field).not_to_have_class(re.compile(r"sf-(changed|override)"))
     expect(bar.locator("[data-overrides]")).to_have_attribute("data-overrides", str(overrides - 1))
 
@@ -221,8 +207,9 @@ def test_save_as_new_pattern_is_offered_only_for_values_no_pattern_carries(ui, u
     form.locator("[data-pattern-title]").fill("Mail steward")
     form.locator("[data-pattern-summary]").fill("Reads the mailbox every morning and sorts it.")
     form.locator("[data-pattern-save]").click()
-    expect(_toast(ui_page)).to_contain_text("Mail steward")
-    until(lambda: _stored(ui).get("pattern") == "mail-steward", what="the routine following it")
+    expect(visible_toast(ui_page)).to_contain_text("Mail steward")
+    until(lambda: stored_config(ui).get("pattern") == "mail-steward",
+          what="the routine following it")
     doc = yaml.safe_load((ui.server_cfg.libraries_home / "patterns" / "mail-steward.yaml")
                          .read_text(encoding="utf-8"))
     assert doc["summary"] == "Reads the mailbox every morning and sorts it."
@@ -238,7 +225,8 @@ def test_save_as_new_pattern_is_offered_only_for_values_no_pattern_carries(ui, u
     keep.fill("7")
     keep.press("Tab")
     _accept_bar(ui_page).locator("[data-accept]").click()
-    until(lambda: (_stored(ui).get("retention") or {}).get("keep_runs") == 7, what="the accept")
+    until(lambda: (stored_config(ui).get("retention") or {}).get("keep_runs") == 7,
+          what="the accept")
     expect(save).to_be_enabled()
 
 
@@ -255,10 +243,10 @@ def test_following_another_pattern_only_proposes_its_values(ui, ui_page):
     banner = ui_page.locator("[data-draft-banner]")
     expect(banner.locator(".db-message")).to_contain_text("follow Watcher")
     expect(ui_page.locator("[data-pattern-switch]")).to_contain_text("follows Watcher")
-    assert "pattern" not in _stored(ui)                  # proposed, not written
+    assert "pattern" not in stored_config(ui)            # proposed, not written
 
     _accept_bar(ui_page).locator("[data-accept]").click()
-    until(lambda: _stored(ui).get("pattern") == "watcher", what="the pattern switch")
+    until(lambda: stored_config(ui).get("pattern") == "watcher", what="the pattern switch")
     expect(ui_page.locator("[data-pattern-bar] .pb-title")).to_have_text("Watcher")
     expect(ui_page.locator("[data-draft-banner]")).to_be_hidden()
     expect(_accept_bar(ui_page)).to_be_hidden()
@@ -292,7 +280,7 @@ def test_recommend_works_in_the_background_and_lands_as_a_proposal(ui, ui_page, 
     field = _field(ui_page, "keep_runs")
     expect(field.locator("input[data-keep-runs]")).to_have_value("14")
     expect(field.locator(".sf-why")).to_have_text("it runs every other day")
-    assert (_stored(ui).get("retention") or {}).get("keep_runs") != 14
+    assert (stored_config(ui).get("retention") or {}).get("keep_runs") != 14
     draft = json.loads((ui.routines / ".control" / "settings-drafts" / "uir.json")
                        .read_text(encoding="utf-8"))
     assert draft["message"] == DRAFT
@@ -300,7 +288,7 @@ def test_recommend_works_in_the_background_and_lands_as_a_proposal(ui, ui_page, 
 
 def test_the_pattern_leads_the_settings_and_says_when_it_is_gone(ui, ui_page):
     """No pattern, a pattern, a deleted pattern: the bar says which, above every group."""
-    _configure(ui, pattern="gone-pattern")
+    configure(ui, pattern="gone-pattern")
     ui_page.goto(f"{ui.url}/#/routine/uir")
     bar = ui_page.locator("[data-pattern-bar]")
     expect(bar.locator(".pb-title")).to_have_text("its pattern was deleted")

@@ -17,20 +17,10 @@ from __future__ import annotations
 
 from playwright.sync_api import expect
 
+from .helpers import start_conversation, unfold
 
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu.
 
-    The page ships with only its two leading groups open (views/routine-config.js): seven open at
-    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
-    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
-    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
-    here.
-    """
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
-
-def _rail_var(ui_page, name: str) -> str:
+def _root_var(ui_page, name: str) -> str:
     return ui_page.evaluate(
         f"() => getComputedStyle(document.documentElement).getPropertyValue('{name}').trim()")
 
@@ -40,7 +30,7 @@ def test_the_nav_rail_can_be_dragged_wider_and_the_width_persists(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")
     grip = ui_page.locator(".sb-grip.rail")
     expect(grip).to_be_visible()
-    assert _rail_var(ui_page, "--rail-w-set") == "212px"      # the shipped default
+    assert _root_var(ui_page, "--rail-w-set") == "212px"      # the shipped default
 
     box = grip.bounding_box()
     cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
@@ -49,7 +39,7 @@ def test_the_nav_rail_can_be_dragged_wider_and_the_width_persists(ui, ui_page):
     ui_page.mouse.move(cx + 70, cy, steps=8)                  # drag the border to the right
     ui_page.mouse.up()
 
-    set_w = int(_rail_var(ui_page, "--rail-w-set").replace("px", ""))
+    set_w = int(_root_var(ui_page, "--rail-w-set").replace("px", ""))
     assert 260 <= set_w <= 300, set_w                         # ~212 + 70, clamped to max 340
     saved = ui_page.evaluate("() => localStorage.getItem('rsched_sb_rail_w')")
     assert saved and abs(int(saved) - set_w) <= 1, saved      # the drag persisted the width
@@ -57,7 +47,7 @@ def test_the_nav_rail_can_be_dragged_wider_and_the_width_persists(ui, ui_page):
     # a reload restores the stored width before the rail is used again
     ui_page.reload()
     expect(ui_page.locator(".sb-grip.rail")).to_be_visible()
-    assert _rail_var(ui_page, "--rail-w-set") == f"{saved}px"
+    assert _root_var(ui_page, "--rail-w-set") == f"{saved}px"
 
 
 def test_clicking_the_grip_hides_then_shows_the_nav_rail(ui, ui_page):
@@ -65,12 +55,12 @@ def test_clicking_the_grip_hides_then_shows_the_nav_rail(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")
     grip = ui_page.locator(".sb-grip.rail")
     expect(grip).to_be_visible()
-    assert _rail_var(ui_page, "--rail-w") != "0px"            # visible to begin with
+    assert _root_var(ui_page, "--rail-w") != "0px"            # visible to begin with
 
     grip.click()                                             # a click (no drag) hides the rail
     assert ui_page.evaluate(
         "() => document.documentElement.classList.contains('sb-hidden-rail')") is True
-    assert _rail_var(ui_page, "--rail-w") == "0px"           # the workspace reclaims the width
+    assert _root_var(ui_page, "--rail-w") == "0px"           # the workspace reclaims the width
     assert ui_page.evaluate("() => localStorage.getItem('rsched_sb_rail_hidden')") == "1"
     # the grip stays on-screen as the re-show target even while the rail is hidden
     expect(grip).to_be_visible()
@@ -78,21 +68,16 @@ def test_clicking_the_grip_hides_then_shows_the_nav_rail(ui, ui_page):
     grip.click()                                            # click again shows it
     assert ui_page.evaluate(
         "() => document.documentElement.classList.contains('sb-hidden-rail')") is False
-    assert _rail_var(ui_page, "--rail-w") != "0px"
+    assert _root_var(ui_page, "--rail-w") != "0px"
     assert ui_page.evaluate("() => localStorage.getItem('rsched_sb_rail_hidden')") == "0"
 
 
 # ---- surface 2: the routine page's recipe file-tree column --------------------------------
 
-def _root_var(ui_page, name: str) -> str:
-    return ui_page.evaluate(
-        f"() => getComputedStyle(document.documentElement).getPropertyValue('{name}').trim()")
-
-
 def test_the_recipe_file_tree_resizes_hides_and_leaves_the_gutter_alone(ui, ui_page):
     ui_page.set_viewport_size({"width": 1400, "height": 900})
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     grip = ui_page.locator(".sb-grip.pagenav")
     expect(grip).to_be_visible()
     navcol = ui_page.locator(".recipe-navcol")
@@ -137,10 +122,7 @@ def test_the_recipe_file_tree_resizes_hides_and_leaves_the_gutter_alone(ui, ui_p
 def _open_conversation(ui, ui_page):
     """A conversation of its own: on the LIST subpage the right rail is `[hidden]`, so both
     rails only exist together once one is open."""
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Resize my rails.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
+    start_conversation(ui, ui_page, "Resize my rails.")
 
 
 def test_both_conversation_rails_resize_and_hide_independently(ui, ui_page):

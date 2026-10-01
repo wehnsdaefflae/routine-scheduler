@@ -24,6 +24,7 @@ from rsched import lanes
 from rsched.config import EndpointConfig
 from rsched.endpoints import cliproxy_login, cliproxy_quota
 
+from .helpers import start_conversation
 from .test_mobile_nav import LONG_TOKEN, PHONE
 
 DESKTOP = {"width": 1400, "height": 900}
@@ -43,11 +44,7 @@ def _doc_width(page) -> int:
 def _start_conversation(ui, ui_page) -> str:
     """One conversation, made the way a person makes one (the composer posts and routes)."""
     ui_page.set_viewport_size(DESKTOP)
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Look at the console on a phone.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    return ui_page.url.rsplit("/", 1)[-1]
+    return start_conversation(ui, ui_page, "Look at the console on a phone.")[0]
 
 
 def test_a_dropdown_cannot_widen_a_conversation_on_a_phone(ui, ui_page):

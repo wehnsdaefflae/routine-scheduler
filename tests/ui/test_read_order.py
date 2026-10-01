@@ -17,6 +17,7 @@ import json
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import start_conversation
 
 
 def _hold_first(page, matches, *, fetch=True):
@@ -117,10 +118,7 @@ def test_a_slow_sidebar_read_does_not_bring_back_an_old_title(ui, ui_page):
     """The conversation list reloads on a 20 s timer, on run events and after a rename. A read
     begun before the rename could land after the one that showed it, and the sidebar went back
     to the old title until the next refresh."""
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Plan the trip.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
+    start_conversation(ui, ui_page, "Plan the trip.")
     row = ui_page.locator(".conv-item.on .conv-title")
     expect(row).not_to_have_text("")
     old = row.inner_text()

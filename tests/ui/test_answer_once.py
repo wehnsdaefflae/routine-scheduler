@@ -14,18 +14,9 @@ import re
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import hold_requests
 
 ANSWER = re.compile(r"/api/questions/q-color/answer$")
-
-
-def _hold_answers(page):
-    held = []
-
-    def hold(route):        # Playwright wraps a Python function, never a bound builtin
-        held.append(route)
-
-    page.route(ANSWER, hold)
-    return held
 
 
 def test_a_double_clicked_option_sends_one_answer(ui, ui_page):
@@ -34,7 +25,7 @@ def test_a_double_clicked_option_sends_one_answer(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item")
     expect(card).to_be_visible()
-    held = _hold_answers(ui_page)
+    held = hold_requests(ui_page, ANSWER)
 
     card.get_by_role("button", name="1 · red").dblclick()
     until(lambda: held, what="the answer POST", page=ui_page)
@@ -51,7 +42,7 @@ def test_enter_pressed_twice_sends_one_answer(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/questions")
     box = ui_page.locator('textarea[data-persist="answer-q-color"]')
     expect(box).to_be_visible()
-    held = _hold_answers(ui_page)
+    held = hold_requests(ui_page, ANSWER)
 
     box.fill("teal")
     box.press("Enter")

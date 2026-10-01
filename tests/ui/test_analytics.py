@@ -8,25 +8,7 @@ import subprocess
 
 from playwright.sync_api import expect
 
-
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu.
-
-    The page ships with only its two leading groups open (views/routine-config.js): seven open at
-    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
-    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
-    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
-    here.
-    """
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
-
-def _toast(page):
-    return page.locator("#toast:not([hidden])")
-
-
-def _confirm_modal(page, label):
-    page.locator(".modal-overlay").get_by_role("button", name=label, exact=True).click()
+from .helpers import confirm_modal, unfold, visible_toast
 
 
 def _git(d, *args, date="2026-07-01T10:00:00+00:00"):
@@ -49,7 +31,7 @@ def _stream(ui, records):
 def test_recipe_health_untracked_note(ui, ui_page):
     """The fixture routine has no git history — the card says so instead of pretending."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     expect(ui_page.get_by_text("recipe versions aren't tracked")).to_be_visible()
 
 
@@ -77,7 +59,7 @@ def test_recipe_health_buckets_regression_and_rollback(ui, ui_page):
     ])
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     banner = ui_page.locator(".panel.err", has_text="possible regression")
     expect(banner).to_contain_text("recipe: sharpen the scan")
     expect(banner).to_contain_text("fail rate jumped")
@@ -85,8 +67,8 @@ def test_recipe_health_buckets_regression_and_rollback(ui, ui_page):
     expect(ui_page.locator("tr", has_text="scaffold")).to_contain_text("date-mapped")
 
     ui_page.get_by_role("button", name="↩ roll back this change").click()
-    _confirm_modal(ui_page, "roll back")
-    expect(_toast(ui_page)).to_contain_text("recipe rolled back")
+    confirm_modal(ui_page, "roll back")
+    expect(visible_toast(ui_page)).to_contain_text("recipe rolled back")
     assert (d / "main.md").read_text(encoding="utf-8") == "# recipe v1\n"
     # the revert is itself the new current version — the card re-rendered onto it
     expect(ui_page.locator("tr", has_text="recipe: revert to pre-")).to_contain_text("current")
@@ -217,7 +199,7 @@ def test_cautions_table_shows_the_tallies_and_deletes_a_local_reminder(ui, ui_pa
     atomic_write_json(d / "state" / "assists.json", {"git-checkpoint:pre-action": 4})
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     expect(ui_page.get_by_text("it overwrites the destination")).to_be_visible()
     expect(ui_page.locator('td[title="git-checkpoint:pre-action"]')).to_be_visible()
 

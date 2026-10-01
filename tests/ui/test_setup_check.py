@@ -5,24 +5,14 @@ import frontmatter
 import yaml
 from playwright.sync_api import expect
 
+from .helpers import unfold
+
 
 def _effect(home, slug: str) -> dict:
     """A library doc's `effect:` block — what its toggle must say — read from the doc itself,
     so these tests pin the RENDERING of whatever the library says, not one wording of it."""
     return frontmatter.load(str(home / f"{slug}.md")).metadata["effect"]
 
-
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu.
-
-    The page ships with only its two leading groups open (views/routine-config.js): seven open at
-    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
-    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
-    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
-    here.
-    """
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def _hold_util(ui, slug: str, name: str, *, secrets: str = "(none)", fs: str = "none") -> None:
     """Give the fixture routine a reserved util whose header declares something it lacks."""
@@ -122,7 +112,7 @@ def test_a_resolved_need_appears_inside_the_ability_that_owns_it(ui_page, ui):
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     card = ui_page.locator('.ability[data-ability="messaging-discord"]')
     card.wait_for(state="visible")
     # the capability it requires AND the store that capability turned out to need, together
@@ -139,7 +129,7 @@ def test_an_ability_that_is_off_is_a_catalogue_row_not_an_alarm(ui_page, ui):
     dots. Rendering its requirements as unmet painted the page red for things that were merely
     not switched on — which said the opposite of the truth."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     row = ui_page.locator('.avail-row[data-ability="shell"]')
     row.wait_for(state="visible")
     assert row.locator("input[type=checkbox]").is_checked() is False
@@ -178,7 +168,7 @@ def test_a_card_verdict_is_a_badge_in_its_state_colour(ui_page, ui):
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     fails = ui_page.locator('.ability[data-ability="needs-shell"] .pill')
     asks = ui_page.locator('.ability[data-ability="wants-machine"] .pill')
     expect(fails).to_have_text("will fail")
@@ -207,7 +197,7 @@ def test_a_toggle_states_both_sides_and_when_to_hold_it(ui, ui_page):
     decision it actually asks: is this one for THIS routine?
     """
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Permissions & capabilities')")
 
     # util-authoring is held by default (config.base.DEFAULT_PERMISSIONS)
@@ -236,7 +226,7 @@ def test_a_rule_toggle_states_both_sides_too(ui, ui_page):
     """Same three fields on the rules panel — a rule's on/off difference is the one thing the
     principle prose never states, because it is written as if it always applies."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('General rules')")
     effect = _effect(ui.server_cfg.rules_home, "ask-policy")
     bound = ui_page.locator('.rule-bound[data-rule="ask-policy"] [data-effect="ask-policy"]')
@@ -267,7 +257,7 @@ def test_no_effect_row_overflows_the_box_it_is_in(ui, ui_page):
     """
     ui_page.set_viewport_size({"width": 1400, "height": 1000})
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('General rules')")
     ui_page.wait_for_selector(".effect-side")
     # The rules panel paints after the abilities one, and `.effect-side` belongs to both — so
@@ -316,7 +306,7 @@ def test_cards_keep_real_columns_on_a_phone_viewport(ui, ui_page):
     """
     ui_page.set_viewport_size({"width": 390, "height": 844})
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Permissions & capabilities')")
 
     # a held ability's stack row: its entity id must get a real column, not the 9px dot column.

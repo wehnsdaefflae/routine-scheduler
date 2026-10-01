@@ -17,6 +17,7 @@ from playwright.sync_api import expect
 from rsched.paths import atomic_write_json
 
 from .conftest import until
+from .helpers import start_conversation
 
 TS = "20261001-090000"
 REPLY2_TS = "2026-10-01T09:05:00+00:00"
@@ -45,12 +46,7 @@ EVENTS = [
 def _conversation(ui, ui_page, *, uncensored: str | None = "m", events=EVENTS,
                   state: str = "finished"):
     """A started conversation with a finished two-reply run, the second reply a refusal."""
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Draft the letter.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    slug = ui_page.url.rsplit("/", 1)[-1]
-    conv_dir = ui.conversations / slug
+    slug, conv_dir = start_conversation(ui, ui_page, "Draft the letter.")
     raw = yaml.safe_load((conv_dir / "routine.yaml").read_text())
     raw["models"] = {"main": "m", **({"uncensored": uncensored} if uncensored else {})}
     (conv_dir / "routine.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")

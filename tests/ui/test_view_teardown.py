@@ -14,19 +14,16 @@ outlives its view fails here whatever arms it.
 
 from __future__ import annotations
 
+import re
+
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import start_conversation, watch_requests
 
 QUIET_MS = 4500      # > the tree poll (3 s) and the activity feed's (4 s)
 STATUS_QUIET_MS = 6500   # three of the restart watch's 2 s polls, against at most one lamp read
-
-
-def _watch(page):
-    """Collect every /api request path from now on. Returns the list (it keeps filling)."""
-    seen: list[str] = []
-    page.on("request", lambda r: seen.append(r.url) if "/api/" in r.url else None)
-    return seen
+API = re.compile("/api/")    # every request the console makes to the daemon
 
 
 def _leave(page):
@@ -46,7 +43,7 @@ def test_run_view_stops_its_task_tree_poll(ui, ui_page):
     ui_page.wait_for_timeout(3500)          # let at least one poll round happen while mounted
     _leave(ui_page)
 
-    after = _watch(ui_page)
+    after = watch_requests(ui_page, API)
     ui_page.wait_for_timeout(QUIET_MS)
     tree = [u for u in after if "/tree" in u]
     assert not tree, f"the task-tree poll outlived the run view: {tree}"
@@ -60,7 +57,7 @@ def test_leaving_a_run_silences_every_run_scoped_request(ui, ui_page):
     expect(ui_page.locator(".tasktree")).to_be_visible()
     _leave(ui_page)
 
-    after = _watch(ui_page)
+    after = watch_requests(ui_page, API)
     ui_page.wait_for_timeout(QUIET_MS)
     leaked = [u for u in after if "/api/" in u and "20260714-070000" in u]
     assert not leaked, f"requests for a run nobody is looking at: {leaked}"
@@ -71,7 +68,7 @@ def test_a_missing_run_does_not_keep_polling_for_itself(ui, ui_page):
     and used to return no teardown at all, so the rail it had already mounted kept asking for
     the missing run's task tree every three seconds while that page stood, and its duration
     clock ticked on for the rest of the tab's life."""
-    after = _watch(ui_page)
+    after = watch_requests(ui_page, API)
     ui_page.goto(f"{ui.url}/#/run/uir:20200101-000000")
     expect(ui_page.locator("#view")).to_contain_text("Run not found")
     ui_page.wait_for_timeout(QUIET_MS)
@@ -130,11 +127,7 @@ def test_leaving_right_after_a_send_does_not_remount_the_conversation(ui, ui_pag
     """A send that wakes a DIFFERENT run remounts the conversation 700 ms later. Left inside
     that window, the remount ran anyway — into a view already torn down, arming a live tail
     (an SSE socket), two rail pollers and a scroll listener that nothing would ever stop."""
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Plan the trip.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    slug = ui_page.url.rsplit("/", 1)[-1]
+    slug, _conv_dir = start_conversation(ui, ui_page, "Plan the trip.")
     # the run the view follows is NOT the one the stub runner resumes into, so the send takes
     # the fresh-run remount branch rather than re-attaching the tail in place
     ui.seed_run(slug, "20260714-070000", "finished", home=ui.conversations, summary="done")
@@ -146,7 +139,7 @@ def test_leaving_right_after_a_send_does_not_remount_the_conversation(ui, ui_pag
     expect(ui_page.locator(".msg.user.pending")).to_be_visible()
     _leave(ui_page)
 
-    after = _watch(ui_page)
+    after = watch_requests(ui_page, API)
     ui_page.wait_for_timeout(1500)       # past the 700 ms remount
     leaked = [u for u in after if slug in u]
     assert not leaked, f"the torn-down conversation remounted itself: {leaked}"
@@ -163,7 +156,7 @@ def test_leaving_mid_search_leaves_the_next_page_alone(ui, ui_page, make_routine
     search.fill("thing")
     _leave(ui_page)
 
-    after = _watch(ui_page)
+    after = watch_requests(ui_page, API)
     ui_page.wait_for_timeout(800)
     assert "search=" not in ui_page.url and "status=" not in ui_page.url, ui_page.url
     items = [u for u in after if "/api/items" in u]
@@ -225,7 +218,7 @@ def test_collapsing_the_activity_section_stops_its_poll(ui, ui_page):
     panel.locator("summary").click()                       # closed again
     expect(panel).not_to_have_attribute("open", "")
 
-    after = _watch(ui_page)
+    after = watch_requests(ui_page, API)
     ui_page.wait_for_timeout(QUIET_MS)
     # the dashboard's own load() asks for /api/routines on a bus tick; the feed's signature is
     # the 300-run window, which nothing else on the page requests
@@ -248,7 +241,7 @@ def test_leaving_settings_stops_the_restart_watch(ui, ui_page):
     expect(ui_page.locator("#view")).to_contain_text("restart is already requested")
     _leave(ui_page)
 
-    after = _watch(ui_page)
+    after = watch_requests(ui_page, API)
     ui_page.wait_for_timeout(STATUS_QUIET_MS)
     polls = [u for u in after if u.endswith("/api/status")]
     # one may be the daemon lamp's own 30 s backstop landing inside the window; the watch's
@@ -273,7 +266,7 @@ def test_a_pending_file_card_refresh_dies_with_its_card(ui, ui_page):
     expect(ui_page.locator(".filelist")).to_have_count(1)
     ui_page.wait_for_timeout(500)                     # its own first read is out and back
 
-    after = _watch(ui_page)
+    after = watch_requests(ui_page, API)
     ui_page.evaluate("() => { window.__card.files.poke(); window.__card.box.remove(); }")
     ui_page.wait_for_timeout(2500)                    # > the 1.5 s coalescing window
     files = [u for u in after if u.endswith("/files")]
@@ -298,7 +291,7 @@ def test_a_task_tree_stopped_before_its_first_read_lands_stays_stopped(ui, ui_pa
     })""")
     until(lambda: held, what="the first tree read to be asked for", page=ui_page)
     ui_page.evaluate("window.__tree.stop()")
-    after = _watch(ui_page)
+    after = watch_requests(ui_page, API)
     held[0].continue_()
     ui_page.wait_for_timeout(QUIET_MS)
     tree = [u for u in after if u.endswith("/tree")]

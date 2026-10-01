@@ -12,19 +12,8 @@ from rsched.oauth import store
 from rsched.oauth.store import Connection
 
 from .conftest import until
+from .helpers import unfold
 
-
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu.
-
-    The page ships with only its two leading groups open (views/routine-config.js): seven open at
-    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
-    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
-    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
-    here.
-    """
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def test_connections_card(ui, ui_page, monkeypatch):
     monkeypatch.setattr(store, "connections_path", lambda: ui.tmp / "connections.json")
@@ -65,7 +54,7 @@ def test_routine_connection_binding(ui, ui_page, monkeypatch):
     store.set_connection(Connection(provider="notion", account="acme", access_token="AT"))
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     row = ui_page.locator('[data-conn-row="notion"]')
     row.wait_for()
     row.locator("select").select_option("acme")

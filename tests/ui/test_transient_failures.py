@@ -13,12 +13,7 @@ import re
 
 from playwright.sync_api import expect
 
-
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu (the page ships
-    with only its two leading groups open — views/routine-config.js)."""
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
+from .helpers import unfold
 
 
 def _fails_once(page, pattern):
@@ -40,7 +35,7 @@ def _fails_once(page, pattern):
 def test_a_failed_doc_read_is_asked_again_on_the_next_open(ui, ui_page):
     _fails_once(ui_page, re.compile(r"/api/library/permissions/[^/?]+$"))
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     card = ui_page.locator('#sec-permissions + .panel .ability[data-ability="util-authoring"]')
     toggle = card.get_by_role("button", name="full description")
     body = card.locator(".doc-expand-body")

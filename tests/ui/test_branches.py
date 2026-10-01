@@ -12,6 +12,9 @@ from playwright.sync_api import expect
 from rsched.paths import atomic_write_json
 
 from .conftest import TOKEN
+from .helpers import start_conversation
+
+ASK = "Weigh the two options."
 
 # header + one complete turn + a later turn that must NOT reach the branch
 EVENTS = [
@@ -24,15 +27,6 @@ EVENTS = [
      "payload": {"kind": "write_file", "say": "AFTER-THE-FORK", "path": "state/late.md"}},
     {"type": "observation", "turn": 2, "payload": {"kind": "write_file", "ok": True}},
 ]
-
-
-def _start_conversation(ui, ui_page, text="Weigh the two options."):
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill(text)
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    slug = ui_page.url.rsplit("/", 1)[-1]
-    return slug, ui.conversations / slug
 
 
 def _finished_run(conv_dir, ts="20260827-100000"):
@@ -62,7 +56,7 @@ def _fork_at(ui_page):
 
 
 def test_branch_button_forks_and_opens_the_branch_with_its_lineage(ui, ui_page):
-    slug, conv_dir = _start_conversation(ui, ui_page)
+    slug, conv_dir = start_conversation(ui, ui_page, ASK)
     _finished_run(conv_dir)
     ui_page.reload()
 
@@ -86,7 +80,7 @@ def test_branch_button_forks_and_opens_the_branch_with_its_lineage(ui, ui_page):
 
 
 def test_parent_lists_its_branches_and_has_no_hand_back(ui, ui_page):
-    slug, conv_dir = _start_conversation(ui, ui_page)
+    slug, conv_dir = start_conversation(ui, ui_page, ASK)
     _finished_run(conv_dir)
     ui_page.reload()
     _fork_at(ui_page)
@@ -103,7 +97,7 @@ def test_parent_lists_its_branches_and_has_no_hand_back(ui, ui_page):
 
 
 def test_hand_back_delivers_summary_and_artifacts_to_the_parent(ui, ui_page):
-    slug, conv_dir = _start_conversation(ui, ui_page)
+    slug, conv_dir = start_conversation(ui, ui_page, ASK)
     _finished_run(conv_dir)
     ui_page.reload()
     _fork_at(ui_page)
@@ -130,7 +124,7 @@ def test_hand_back_delivers_summary_and_artifacts_to_the_parent(ui, ui_page):
 
 def test_branch_refuses_while_a_reply_is_live(ui, ui_page):
     """The fork point must be a settled turn; mid-reply the transcript is still growing."""
-    slug, conv_dir = _start_conversation(ui, ui_page)
+    slug, conv_dir = start_conversation(ui, ui_page, ASK)
     _finished_run(conv_dir)
     atomic_write_json(conv_dir / "runs" / "20260827-100000" / "status.json",
                       {"state": "running", "turn": 2})
@@ -158,7 +152,7 @@ def test_a_reply_carries_a_branch_from_here_control_that_needs_no_turn_number(ui
     implied by which one was clicked. The header entry point has since been removed (D113):
     forking is a per-message act, never a typed turn number.
     """
-    slug, conv_dir = _start_conversation(ui, ui_page)
+    slug, conv_dir = start_conversation(ui, ui_page, ASK)
     run_dir = conv_dir / "runs" / "20260827-100000"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "transcript.jsonl").write_text(
@@ -188,7 +182,7 @@ def test_a_user_message_carries_no_fork_control(ui, ui_page):
     """Only a REPLY is a turn boundary. A user message sits between turns, so offering a fork
     on it would have to invent a fork point — the API refuses one that is not in the transcript.
     """
-    _slug, conv_dir = _start_conversation(ui, ui_page, text="Weigh the two options.")
+    _slug, conv_dir = start_conversation(ui, ui_page, ASK)
     run_dir = conv_dir / "runs" / "20260827-100000"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "transcript.jsonl").write_text(
@@ -207,7 +201,7 @@ def test_a_reply_carries_a_rewind_to_here_control_that_posts_the_reply_turn(ui, 
     is its own turn. Clicking it confirms, then POSTs /rewind with that turn (the server-side
     truncate + re-open is covered in test_api.py::test_rewind_run_endpoint).
     """
-    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _slug, conv_dir = start_conversation(ui, ui_page, ASK)
     run_dir = conv_dir / "runs" / "20260827-100000"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "transcript.jsonl").write_text(
@@ -241,7 +235,7 @@ def test_the_reply_corner_controls_show_at_rest_where_nothing_can_hover(ui, ui_p
     ⟲ rewind are the same family in the same corner and were left out: on a phone they stayed
     at opacity 0 and still took a tap, so a touch on a reply's corner could fork the
     conversation (no confirm) through a control nobody could see. ⚑ flag joined the family."""
-    slug, conv_dir = _start_conversation(ui, ui_page)
+    slug, conv_dir = start_conversation(ui, ui_page, ASK)
     run_dir = conv_dir / "runs" / "20260827-100000"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "transcript.jsonl").write_text(
@@ -268,7 +262,7 @@ def test_agent_reply_can_target_an_earlier_message(ui, ui_page):
     """D117 (operator msg-8): the agent's reply may target an earlier message — a finish event
     carrying `reply_to` renders a ↩ reference chip above the reply, exactly the way a user's own
     reply-to-a-message renders (`.reply-ref`)."""
-    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _slug, conv_dir = start_conversation(ui, ui_page, ASK)
     run_dir = conv_dir / "runs" / "20260827-100000"
     run_dir.mkdir(parents=True, exist_ok=True)
     events = [*EVENTS,

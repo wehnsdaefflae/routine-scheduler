@@ -21,6 +21,7 @@ from playwright.sync_api import expect
 from rsched.paths import atomic_write_json
 
 from .conftest import until
+from .helpers import accept
 
 CHANGED = re.compile(r"\bsf-changed\b")
 
@@ -42,10 +43,6 @@ def _section(page, anchor):
     panel = page.locator(f"#{anchor} + .panel")
     expect(panel).to_be_visible()
     return panel
-
-
-def _accept(page):
-    page.locator(".accept-bar [data-accept]").click()
 
 
 def test_no_finish_line_says_what_one_would_do(ui, ui_page):
@@ -72,7 +69,7 @@ def test_an_outcome_the_run_proves_is_a_setting_like_any_other(ui, ui_page):
     expect(ui_page.locator('.sf-field[data-field="finish_line"]')).to_have_class(CHANGED)
     assert not _finish_line(ui)                                  # a draft until accepted
 
-    _accept(ui_page)
+    accept(ui_page)
     until(lambda: _finish_line(ui).get("outcomes"), what="the accepted finish line")
     [outcome] = _finish_line(ui)["outcomes"]
     assert outcome["text"] == "the grant application is submitted"
@@ -95,7 +92,7 @@ def test_only_you_judge_an_outcome_of_yours_and_the_date_stops_it_either_way(ui,
     until_input.fill("2031-01-31")
     expect(panel.locator(".fl-until .fl-then")).to_contain_text(
         "scheduling stops whatever the outcomes say and you get a card")
-    _accept(ui_page)
+    accept(ui_page)
     until(lambda: _finish_line(ui).get("until") == "2031-01-31", what="the end date")
     assert _finish_line(ui)["outcomes"][0]["status"] == "met"
 
@@ -111,7 +108,7 @@ def test_a_date_outcome_needs_its_date(ui, ui_page):
     expect(row.locator(".fl-problem")).to_have_count(0)
     expect(row.locator(".fl-then")).to_contain_text("2031-03-01 arrives")
     expect(row.locator(".fl-then")).to_contain_text("the calendar decides")
-    _accept(ui_page)
+    accept(ui_page)
     until(lambda: _finish_line(ui).get("outcomes"), what="the date outcome")
     assert _finish_line(ui)["outcomes"][0]["date"] == "2031-03-01"
 
