@@ -22,10 +22,10 @@ exactly as every hand parser did.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from ..health_events import WORKFLOW_USAGE_FILE
+from ..paths import read_jsonl
 from . import memo
 
 #: A leg's own spend — summed across a run's legs. Every other field is the newest leg's.
@@ -42,25 +42,7 @@ def usage_records(routines_home: Path) -> list[dict]:
     """All records — one per LEG — oldest first. Missing file → []."""
     path = stream_path(routines_home)
 
-    def parse() -> list[dict]:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            return []
-        out: list[dict] = []
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(rec, dict):
-                out.append(rec)
-        return out
-
-    return memo.memoized_shared(f"usage-stream:{path}", [path], parse)
+    return memo.memoized_shared(f"usage-stream:{path}", [path], lambda: read_jsonl(path))
 
 
 def usage_runs(routines_home: Path) -> list[dict]:

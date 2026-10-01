@@ -667,6 +667,13 @@ by a test, by the engine, or by a past incident.
   does: nearly every YAML read here is the first half of a read-modify-write of `routine.yaml`,
   and a default returned for an unparseable file would rewrite the user's hand-broken config FROM
   that default. The loaders that must turn a broken file into a problem STRING catch around it.
+  An APPEND-ONLY stream (the report ledger, the health and usage streams, the admin audit, the
+  UI traces) is the other cross-process shape, and it has its own pair: `paths.append_jsonl`
+  (the rows in ONE `write(2)` on an O_APPEND descriptor — a buffered handle splits a long line
+  where another process's line can land) and `paths.read_jsonl`/`jsonl_records`, which split on
+  the newline byte alone (`str.splitlines` also breaks on U+2028, which these streams keep raw)
+  and skip a torn or non-object row without hiding the rest. The engine's own transcript writer
+  and the gate kit (a standalone script that cannot import the package) keep their own.
 - `static/` is no-build vanilla-JS ES modules (no bundler, no node, no external assets). Keep it
   that way. The design system is `base.css` ("watchfloor"): colour is STATE, and the palette turns
   on one distinction — SIGNAL (cyan) is the machine working and is the interactive colour, SUMMONS

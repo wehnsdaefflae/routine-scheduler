@@ -196,10 +196,10 @@ Best-effort: I/O errors are silently swallowed so logging never blocks the daemo
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from .ids import now_iso
+from .paths import append_jsonl
 
 HEALTH_EVENTS_FILE = "health-events.jsonl"
 WORKFLOW_USAGE_FILE = "workflow-usage.jsonl"
@@ -217,18 +217,15 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
 
     Best-effort: silently ignores I/O errors so logging never blocks the daemon or engine.
     """
-    path = Path(routines_home) / ".control" / HEALTH_EVENTS_FILE
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "ts": now_iso(),
-                "event": event,
-                "routine": routine,
-                "run_id": run_id,
-                "detail": detail[:500],
-                **{k: v for k, v in fields.items() if v is not None},
-            }) + "\n")
+        append_jsonl(Path(routines_home) / ".control" / HEALTH_EVENTS_FILE, {
+            "ts": now_iso(),
+            "event": event,
+            "routine": routine,
+            "run_id": run_id,
+            "detail": detail[:500],
+            **{k: v for k, v in fields.items() if v is not None},
+        })
     except OSError:
         pass
 
@@ -259,26 +256,23 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
     outcome counts and estimated saving (RunContext.compression_stats), the durable source
     of the Stats tab's per-routine roll-up.
     """
-    path = Path(routines_home) / ".control" / WORKFLOW_USAGE_FILE
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "ts": now_iso(),
-                "routine": routine,
-                "run_id": run_id,
-                "workflow": workflow or "(unknown)",
-                "depth": depth,
-                "status": status,
-                "turns": turns,
-                "tokens": tokens,
-                "cost": round(cost, 6),
-                "referrals": referrals,
-                "recipe_commit": recipe_commit,
-                "library_commit": library_commit,
-                "utils": utils or {},
-                "asks_deferred": asks_deferred,
-                "compression": compression or {},
-            }) + "\n")
+        append_jsonl(Path(routines_home) / ".control" / WORKFLOW_USAGE_FILE, {
+            "ts": now_iso(),
+            "routine": routine,
+            "run_id": run_id,
+            "workflow": workflow or "(unknown)",
+            "depth": depth,
+            "status": status,
+            "turns": turns,
+            "tokens": tokens,
+            "cost": round(cost, 6),
+            "referrals": referrals,
+            "recipe_commit": recipe_commit,
+            "library_commit": library_commit,
+            "utils": utils or {},
+            "asks_deferred": asks_deferred,
+            "compression": compression or {},
+        })
     except OSError:
         pass

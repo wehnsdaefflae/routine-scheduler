@@ -208,6 +208,20 @@ def test_runs_since_counts_other_routines_only(tmp_path, routine):
     assert kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(2)))["decision"] == "run"
 
 
+def test_runs_since_skips_a_row_that_is_not_an_object(tmp_path, routine):
+    """A hand-trimmed or torn usage stream can hold a line that is JSON but not an object; it
+    is one bad row, and the other routines' runs around it still count."""
+    usage = tmp_path / ".control" / "workflow-usage.jsonl"
+    usage.parent.mkdir()
+    usage.write_text('[1, 2]\n"text"\n'
+                     + json.dumps({"routine": "other", "ts": NOW.isoformat()}) + "\n")
+    check = [{"kind": "runs_since", "min_runs": 1}]
+    out = kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(2)))
+    # "run" because the run was COUNTED — a crash on the bad row also reads as work, which is
+    # what made the miscount invisible
+    assert out["decision"] == "run" and "1 run(s) of other routines" in one(out)["reason"]
+
+
 def test_weekdays(tmp_path, routine):
     today = NOW.weekday()
     due = [{"kind": "weekdays", "days": [today]}]

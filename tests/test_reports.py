@@ -541,3 +541,16 @@ def test_discard_undelivered_report_clears_an_orphan(tmp_path):
         discard_undelivered_report(home, "R2")
     with pytest.raises(LookupError):
         discard_undelivered_report(home, "R404")
+
+
+def test_a_report_whose_text_holds_a_line_separator_is_still_one_row(tmp_path):
+    """The ledger keeps non-ASCII as written, so U+2028 (a line separator to `str.splitlines`)
+    sits raw inside a row; read with splitlines, the report fell apart into two unparseable
+    halves and vanished from triage — and from `next_id`, which could then hand its id out
+    again."""
+    loop, home = _loop(tmp_path)
+    handle_report(loop, {"title": "pasted from a PDF", "detail": "line one\u2028line two"})
+    handle_report(loop, {"title": "the next one"})
+    rows = _rows(home)
+    assert [r["id"] for r in rows] == ["R1", "R2"]
+    assert rows[0]["detail"] == "line one\u2028line two"

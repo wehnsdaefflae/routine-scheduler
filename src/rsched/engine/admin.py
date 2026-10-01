@@ -28,13 +28,12 @@ bypass is auditable and never silent.
 
 from __future__ import annotations
 
-import json
 import os
 import secrets
 from pathlib import Path
 
 from ..ids import now_iso
-from ..paths import atomic_write_json, read_json
+from ..paths import append_jsonl, atomic_write_json, read_json
 
 ADMIN_MARKER = "admin.json"
 ADMIN_TOKEN_ENV = "RSCHED_ADMIN_TOKEN"  # noqa: S105 — an env-var NAME, not a secret value
@@ -84,15 +83,8 @@ def log_admin_action(routines_home: Path, *, run_id: str, kind: str, brief: str 
     so the capability bypass is never silent. Best-effort — an I/O error never blocks the run
     (mirrors health_events.log_health_event).
     """
-    path = Path(routines_home) / ".control" / ADMIN_AUDIT_FILE
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "ts": now_iso(),
-                "run_id": run_id,
-                "kind": kind,
-                "brief": brief[:200],
-            }) + "\n")
+        append_jsonl(Path(routines_home) / ".control" / ADMIN_AUDIT_FILE,
+                     {"ts": now_iso(), "run_id": run_id, "kind": kind, "brief": brief[:200]})
     except OSError:
         pass

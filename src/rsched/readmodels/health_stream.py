@@ -31,12 +31,12 @@ order.
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ..config import ServerConfig
 from ..health_events import HEALTH_EVENTS_FILE
+from ..paths import read_jsonl
 from . import memo
 from .stamps import instant
 
@@ -83,24 +83,7 @@ def health_records(routines_home: Path) -> list[dict]:
     """
     path = stream_path(routines_home)
 
-    def parse() -> list[dict]:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            return []
-        out: list[dict] = []
-        for line in text.splitlines():
-            if not line.strip():
-                continue
-            try:
-                rec = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(rec, dict):
-                out.append(rec)
-        return out
-
-    return memo.memoized_shared(f"health-stream:{path}", [path], parse)
+    return memo.memoized_shared(f"health-stream:{path}", [path], lambda: read_jsonl(path))
 
 
 def _stamped(routines_home: Path) -> list[tuple[datetime, dict]]:

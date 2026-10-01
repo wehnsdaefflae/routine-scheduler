@@ -81,6 +81,64 @@ def read_json(path: str | Path, default: object = None) -> object:
         return default
 
 
+def append_jsonl(path: str | Path, *rows: object) -> None:
+    """Append `rows` to the JSON-lines stream at `path` — the ONE writer of the system's
+    append-only streams (the report ledger, the health and usage streams, the admin audit,
+    the UI traces, a reaped run's closing transcript event).
+
+    The rows go out in ONE `write(2)` on an O_APPEND descriptor, the unit Linux appends whole:
+    every stream has several processes appending at once (the daemon and each engine), and a
+    buffered text-mode handle hands a line longer than its buffer to the kernel in pieces that
+    another writer's line can land between. Non-ASCII stays as written; every reader splits
+    on the newline byte alone (`jsonl_records`), never `str.splitlines`, which also breaks on
+    U+2028.
+    Raises OSError like any write: best-effort callers catch it where the stream is optional.
+    """
+    data = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows).encode()
+    if not data:
+        return
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        view = memoryview(data)
+        while view:                      # a regular file takes it whole; never assume it
+            view = view[os.write(fd, view):]
+    finally:
+        os.close(fd)
+
+
+def jsonl_records(text: str) -> list[dict]:
+    """The JSON objects of a JSON-lines stream, in order — the ONE reader `append_jsonl` pairs
+    with. A blank line, a torn tail, a line that does not parse and a line that parses to
+    something other than an object are all skipped: these streams are hand-trimmed, restored
+    and appended to by processes that can die mid-line, and one bad row must never hide the
+    rest. Splits on the newline byte only, for the reason `append_jsonl` gives.
+    """
+    out: list[dict] = []
+    for line in text.split("\n"):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            out.append(row)
+    return out
+
+
+def read_jsonl(path: str | Path) -> list[dict]:
+    """`jsonl_records` of the file at `path`; a missing or unreadable file reads as empty.
+    Decoded leniently: a writer that died inside a multi-byte character leaves bytes that
+    spoil only its own line, never the whole stream.
+    """
+    try:
+        return jsonl_records(Path(path).read_bytes().decode("utf-8", errors="replace"))
+    except OSError:
+        return []
+
+
 def atomic_write_yaml(path: str | Path, obj: object) -> Path:
     """Serialize `obj` as YAML and atomic_write it — the ONE writer for every YAML file this
     system owns (routine.yaml, tuning.yaml, config.yaml).

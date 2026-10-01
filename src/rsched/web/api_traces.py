@@ -11,11 +11,12 @@ on write.
 from __future__ import annotations
 
 import datetime as dt
-import json
 import logging
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
+
+from ..paths import append_jsonl
 
 log = logging.getLogger("rsched.traces")
 router = APIRouter(tags=["traces"])
@@ -52,28 +53,25 @@ def _prune(d) -> None:
 def _append(server, records: list[dict]) -> int:
     """Append vetted trace records to today's day file; returns the count written."""
     now = dt.datetime.now(dt.UTC)
-    lines = [json.dumps({
+    rows = [{
         "ts": now.isoformat(timespec="seconds"),
         "kind": str(r.get("kind", ""))[:MAX_FIELD],
         "view": str(r.get("view", ""))[:MAX_FIELD],
         "target": str(r.get("target", ""))[:MAX_FIELD],
         "detail": str(r.get("detail", ""))[:MAX_FIELD],
-    }, ensure_ascii=False) for r in records]
-    if not lines:
+    } for r in records]
+    if not rows:
         return 0
     d = traces_dir(server)
-    d.mkdir(parents=True, exist_ok=True)
-    day_file = d / f"{now.strftime('%Y%m%d')}.jsonl"
     try:
-        with day_file.open("a", encoding="utf-8") as fh:
-            fh.write("\n".join(lines) + "\n")
+        append_jsonl(d / f"{now.strftime('%Y%m%d')}.jsonl", *rows)
         _prune(d)
     except OSError as exc:
         # Tracing must never take its caller down, but a dead trace store shouldn't be
         # silent either — and the count must be honest.
         log.warning("ui-trace write failed: %s", exc)
         return 0
-    return len(lines)
+    return len(rows)
 
 
 def record_server_trace(server, *, kind: str, target: str = "", detail: str = "",

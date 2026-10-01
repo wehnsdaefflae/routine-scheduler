@@ -61,14 +61,13 @@ message the user writes to the target's inbox in their own voice (docs/messages.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from .engine import inbox
 from .ids import now_iso
-from .paths import file_lock
+from .paths import append_jsonl, file_lock, read_jsonl
 from .report_threads import OPEN_THREAD_CAP, ThreadCapError, open_threads, supersedable
 
 REPORTS_FILE = "reports.jsonl"
@@ -82,9 +81,6 @@ def reports_path(routines_home: Path) -> Path:
     return Path(routines_home) / ".control" / REPORTS_FILE
 
 
-def _append(path: Path, row: dict) -> None:
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def next_id(path: Path) -> str:
@@ -92,19 +88,8 @@ def next_id(path: Path) -> str:
     — no sidecar to drift out of sync with a restored or hand-edited file.
     """
     highest = 0
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return "R1"
-    for line in lines:
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        m = REPORT_ID_RE.match(str(row.get("id") or "")) if isinstance(row, dict) else None
-        if m:
+    for row in read_jsonl(path):
+        if m := REPORT_ID_RE.match(str(row.get("id") or "")):
             highest = max(highest, int(m.group(1)))
     return f"R{highest + 1}"
 
@@ -227,16 +212,18 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
                 if len(open_ids) >= OPEN_THREAD_CAP:
                     raise ThreadCapError(routine, target, open_ids)
             item_id = next_id(path)
-            _append(path, {"id": item_id, "ts": now_iso(), "routine": routine, "run_id": run_id,
-                           "title": title[:TITLE_MAX], "detail": detail[:DETAIL_MAX],
-                           **({"target": target} if target else {}),
-                           **({"answers": answers} if answers else {}),
-                           **({"closes": True} if closes else {}),
-                           **({"supersedes": folded} if folded else {}),
-                           **({"settles": list(disposal.settles)} if disposal.settles else {})})
+            append_jsonl(path, {"id": item_id, "ts": now_iso(), "routine": routine,
+                                "run_id": run_id,
+                                "title": title[:TITLE_MAX], "detail": detail[:DETAIL_MAX],
+                                **({"target": target} if target else {}),
+                                **({"answers": answers} if answers else {}),
+                                **({"closes": True} if closes else {}),
+                                **({"supersedes": folded} if folded else {}),
+                                **({"settles": list(disposal.settles)}
+                                   if disposal.settles else {})})
             for old in folded:
-                _append(path, {"id": old, "event": "superseded", "ts": now_iso(),
-                               "by": item_id, **({"to": target} if target else {})})
+                append_jsonl(path, {"id": old, "event": "superseded", "ts": now_iso(),
+                                    "by": item_id, **({"to": target} if target else {})})
         if target and target_dir is not None:
             # Through the ONE writer of the msg-* shape (engine/inbox), with the
             # DETERMINISTIC `rep-<id>` stem: the sender reads its own delivery back by name
@@ -276,7 +263,8 @@ def stamp_delivered(routines_home: Path, msgs: list[dict], *, run_id: str) -> li
     try:
         with file_lock(path.with_suffix(".lock")):
             for item_id in ids:
-                _append(path, {"id": item_id, "event": "delivered", "ts": ts, "run_id": run_id})
+                append_jsonl(path, {"id": item_id, "event": "delivered", "ts": ts,
+                                    "run_id": run_id})
     except OSError:
         return owed
     return owed
@@ -314,7 +302,7 @@ def retract_report(routines_home: Path, report_id: str) -> dict:
             if inbox_dir.is_dir():
                 raise ValueError(f"{report_id} was already picked up by the target — a "
                                  "consumed message cannot be retracted") from None
-        _append(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
+        append_jsonl(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
     return row
 
 
@@ -347,7 +335,7 @@ def discard_undelivered_report(routines_home: Path, report_id: str) -> dict:
         if (inbox_dir / f"msg-rep-{report_id}.json").exists():
             raise ValueError(f"{report_id} has a delivery still waiting in {row['target']}'s "
                              "inbox — retract it instead of discarding")
-        _append(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
+        append_jsonl(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
     return row
 
 
@@ -370,19 +358,9 @@ def read_reports(path: Path) -> list[dict]:
 
 
 def _fold_reports(path: Path) -> list[dict]:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
     reports: dict[str, dict] = {}
-    for line in lines:
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(row, dict) or not (item_id := str(row.get("id") or "")):
+    for row in read_jsonl(path):
+        if not (item_id := str(row.get("id") or "")):
             continue
         if row.get("event") == "delivered":
             if item_id in reports:

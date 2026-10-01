@@ -104,6 +104,8 @@ def runs_since(check: dict, ctx: dict) -> tuple[bool, str, str]:
                     rec = json.loads(line)
                 except ValueError:
                     continue
+                if not isinstance(rec, dict):   # hand-trimmed or torn: one row, not the check
+                    continue
                 who = rec.get("routine")
                 if who == me or (wanted and who not in wanted) or rec.get("depth"):
                     continue

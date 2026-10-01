@@ -18,7 +18,6 @@ and an OOM arrive identically. It now reads the cause instead (F480).
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 
@@ -26,7 +25,7 @@ from .. import registry
 from ..config import RoutineConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
-from ..paths import atomic_write, atomic_write_json, read_json
+from ..paths import append_jsonl, atomic_write, atomic_write_json, read_json
 from .runner_state import (
     ActiveRun,
     _last_vm_hwm_kb,
@@ -291,10 +290,9 @@ def close_out(runner, run_dir: Path, run_id: str, message: str, *,
     sixth state.
     """
     try:
-        with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"ts": now_iso(), "type": "finish",
-                                 "payload": {"status": status, "summary": message,
-                                             "authored": False}}) + "\n")
+        append_jsonl(run_dir / "transcript.jsonl",
+                     {"ts": now_iso(), "type": "finish",
+                      "payload": {"status": status, "summary": message, "authored": False}})
     except OSError:
         pass
     raw = read_json(run_dir / "status.json")

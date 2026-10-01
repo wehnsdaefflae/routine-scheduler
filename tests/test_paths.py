@@ -42,3 +42,41 @@ def test_read_yaml_lets_a_broken_file_raise(tmp_path):
     (tmp_path / "broken.yaml").write_text("a: [1, 2\nb: }\n", encoding="utf-8")
     with pytest.raises(yaml.YAMLError):
         paths.read_yaml(tmp_path / "broken.yaml", {})
+
+
+def test_append_jsonl_round_trips_through_jsonl_records(tmp_path):
+    """The stream pair: one writer, one reader. A value holding U+2028 stays on its line —
+    `str.splitlines` would cut it there, so the reader splits on the newline byte alone."""
+    path = tmp_path / "deep" / "stream.jsonl"
+    rows = [{"n": 1, "text": "a b\u0085c"}, {"n": 2, "text": "plain"}]
+    paths.append_jsonl(path, *rows)
+    paths.append_jsonl(path)                          # nothing to append writes nothing
+    assert paths.read_jsonl(path) == rows
+    assert path.read_text(encoding="utf-8").count("\n") == 2
+
+
+def test_jsonl_records_keeps_every_good_row_around_a_bad_one(tmp_path):
+    """Hand-trimmed, restored or torn by a writer that died mid-line: one bad row never hides
+    the rest, and a missing file reads as empty."""
+    path = tmp_path / "s.jsonl"
+    path.write_bytes(b'{"a": 1}\n\n[1, 2]\n"text"\nnot json\n{"b": 2}\n{"c": "\xe2\x80')
+    assert paths.read_jsonl(path) == [{"a": 1}, {"b": 2}]
+    assert paths.read_jsonl(tmp_path / "missing.jsonl") == []
+
+
+def test_append_jsonl_hands_the_kernel_one_write(tmp_path, monkeypatch):
+    """Several processes append to the same streams; a line reaches the file in ONE write(2),
+    the unit an O_APPEND file takes whole, never in buffer-sized pieces another line can land
+    between."""
+    import os
+
+    writes: list[int] = []
+    real = os.write
+
+    def spy(fd, data):
+        writes.append(len(data))
+        return real(fd, data)
+
+    monkeypatch.setattr(os, "write", spy)
+    paths.append_jsonl(tmp_path / "s.jsonl", {"big": "x" * 70_000}, {"next": 1})
+    assert len(writes) == 1
