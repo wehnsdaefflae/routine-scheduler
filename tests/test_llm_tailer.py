@@ -12,23 +12,33 @@ from rsched.daemon.llm_tailer import tail_llm_sidecar
 
 
 def test_tail_drains_records_as_they_are_appended(tmp_path, monkeypatch):
+    """Each record must arrive while the tail RUNS, before anything cancels it. Asserting
+    only after the cancel let the cancel-time drain deliver both, so a poll loop that never
+    read a thing past its first pass passed too."""
     monkeypatch.setattr(tailer_mod, "POLL_S", 0.02)
     got: list[dict] = []
     path = tmp_path / "llm-tasks.jsonl"
 
+    async def delivered(n: int) -> list[tuple]:
+        for _ in range(100):                         # ~2 s: a hundred polls' worth
+            if len(got) >= n:
+                break
+            await asyncio.sleep(0.02)
+        return [(r["id"], r["phase"]) for r in got]
+
     async def scenario():
         path.write_text('{"id": "a", "phase": "started"}\n')
         task = asyncio.create_task(tail_llm_sidecar(tmp_path, got.append))
-        await asyncio.sleep(0.1)                     # a poll picks up "a: started"
-        _append(path, '{"id": "a", "phase": "finished"}\n')  # append while the tailer runs
-        await asyncio.sleep(0.1)
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        try:
+            assert await delivered(1) == [("a", "started")]
+            _append(path, '{"id": "a", "phase": "finished"}\n')  # append while the tailer runs
+            assert await delivered(2) == [("a", "started"), ("a", "finished")]
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     asyncio.run(scenario())
-    seen = [(r["id"], r["phase"]) for r in got]
-    assert ("a", "started") in seen and ("a", "finished") in seen
 
 
 def test_final_drain_catches_records_written_before_cancel(tmp_path, monkeypatch):

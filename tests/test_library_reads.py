@@ -70,8 +70,25 @@ def test_the_whole_library_lint_invalidates_on_any_kind_it_walks(tmp_path):
         encoding="utf-8")
     problems = library_reads.lint(lib)
     assert problems["patterns/steward.yaml"], "a pattern added after the first read must be seen"
-    assert library_reads.utils(lib) == library_reads.utils(lib)
-    assert [u["name"] for u in library_reads.utils(lib)] == ["ping"]
+
+
+def test_the_util_catalog_is_read_once_per_change(tmp_path):
+    """The catalog is shared, not copied, so a second read of an unchanged util tree is the
+    SAME list — and a util added after it is in the next one. Comparing two reads by value
+    held whether the memo worked or not.
+    """
+    lib = _library(tmp_path)
+    memo.reset()
+    first = library_reads.utils(lib)
+    assert [u["name"] for u in first] == ["ping"]
+    assert library_reads.utils(lib) is first, "an unchanged util tree must not be re-read"
+    pong = lib / "utils" / "pong"
+    pong.mkdir()
+    pong.joinpath("main.py").write_text(
+        '"""pong — answer back\n\nusage: gu pong\ntags: a, b, c\ncalls: (none)\n'
+        'net: none\nfs: none\nsecrets: (none)\n"""\n', encoding="utf-8")
+    assert [u["name"] for u in library_reads.utils(lib)] == ["ping", "pong"], (
+        "a util added after the first read must be seen")
 
 
 def test_the_memo_bound_evicts_the_least_recently_used(tmp_path, monkeypatch):
