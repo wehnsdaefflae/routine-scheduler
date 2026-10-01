@@ -178,6 +178,25 @@ def test_materialize_a_lane_uses_the_same_store_the_page_writes(server, sched_ct
     assert lanes.member_slugs(made[0]) == ["routine-improver"]
 
 
+def test_a_materialized_lane_schedule_carries_its_zone_and_arms_now(server, sched_ctx, client,
+                                                                     monkeypatch):
+    """The lane PATCH and the conversation's own manage_lane save a cron WITH the server zone
+    and rescan; the proposal path wrote a bare cron (read in whatever zone the server had at
+    each rescan) and left the fire table to the next periodic pass."""
+    from rsched import lanes, schedule
+
+    monkeypatch.setattr(schedule, "server_tz", lambda: "Europe/Berlin")
+    rescans: list[int] = []
+    monkeypatch.setattr(client.app.state.scheduler, "rescan", lambda: rescans.append(1))
+    handle_manage_lane(sched_ctx, {"verb": "create", "name": "Nightly",
+                                   "members": ["routine-improver"], "cron": "0 3 * * *"})
+    pid = client.get("/api/pending-creations").json()[0]["id"]
+    assert client.post(f"/api/pending-creations/{pid}/materialize").status_code == 200
+    [lane] = lanes.list_lanes(server.routines_home)
+    assert (lane["cron"], lane["tz"]) == ("0 3 * * *", "Europe/Berlin")
+    assert rescans
+
+
 def test_discard_removes_it_and_tells_the_proposer_why(server, sched_ctx, client):
     handle_create_routine(sched_ctx, {"target": "nope", "name": "Nope", "prompt": "p",
                                       "workflow": "general-task"})

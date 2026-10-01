@@ -24,7 +24,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import lanes, pending
+from .. import lanes, pending, schedule
 from ..engine import finishline
 
 router = APIRouter(tags=["pending"])
@@ -86,10 +86,15 @@ def _materialize_lane(server, fields: dict) -> dict:
     members = ([{"slug": str(m)} for m in raw_members]
                if isinstance(raw_members, list) else None)
     on_failure = fields.get("on_failure")
-    cron = str(fields.get("cron") or "")
+    cron = str(fields.get("cron") or "").strip()
+    # A schedule is saved WITH the zone it was written in — the server's, exactly as the lane
+    # PATCH and the conversation's own manage_lane record it. Without it the lane read the
+    # server zone at every rescan instead, so a later zone change silently moved its fires.
+    tz = schedule.server_tz() if cron else ""
     if verb == "create":
         rec = lanes.create(home, name=name, members=members,
-                           on_failure=str(on_failure) if on_failure else None, cron=cron)
+                           on_failure=str(on_failure) if on_failure else None,
+                           cron=cron, tz=tz)
         return {"created": "lane", "lane_id": rec["id"], "name": rec.get("name")}
     if verb == "update":
         paused = fields.get("paused")
@@ -100,7 +105,7 @@ def _materialize_lane(server, fields: dict) -> dict:
         if on_failure:
             extra["on_failure"] = str(on_failure)
         if "cron" in fields:
-            extra["cron"] = cron
+            extra.update(cron=cron, tz=tz)
         updated = lanes.update(
             home, lane_id, name=name or None, members=members,
             paused=bool(paused) if paused is not None else None, **extra)
@@ -170,6 +175,10 @@ def materialize(request: Request, pid: str) -> dict:
         # a bad slug or an unknown pattern: the proposal is wrong, not the click — keep it on
         # the page with a legible reason so the operator can discard it deliberately
         raise HTTPException(400, str(exc)) from exc
+    # A new routine or a lane change moves the fire table and the member-suppression set
+    # (D71): rescan now, as the lane routes and the routine PATCH do, rather than leaving the
+    # first fire to the next periodic pass (`registry_rescan_s`).
+    request.app.state.scheduler.rescan()
     pending.drop(server.routines_home, pid)
     told = pending.notify_proposer(server, rec, "approved and materialized")
     return {"ok": True, "id": pid, "notified": told, **out}
