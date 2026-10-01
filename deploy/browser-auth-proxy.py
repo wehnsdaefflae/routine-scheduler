@@ -14,8 +14,8 @@ injects it only if the util declares it AND the routine was granted it. The rese
 and the secret-exposure decision then both actually bind.
 
 Why a header check and a splice rather than a real HTTP proxy: DevTools echoes back whichever
-IP-literal `Host` it was dialled with, which is what makes the existing socat forward work at
-all. Because this listens on the same address the client dialled and passes `Host` through
+IP-literal `Host` it was dialled with, which is what made the bare socat forward this replaced
+work at all. Because this listens on the same address the client dialled and passes `Host` through
 untouched, Chrome still hands out WebSocket URLs pointing here — so there is nothing to rewrite,
 which is the part that usually makes a CDP proxy fragile. Both plain requests and the WebSocket
 upgrade begin with an HTTP head, so one check covers both.
@@ -37,6 +37,10 @@ import sys
 #: anything past this is not a client we want to keep reading for.
 HEAD_MAX = 65536
 HEAD_END = b"\r\n\r\n"
+#: How long a caller may hold a connection before its head has arrived. A real client sends it
+#: at once; without a bound, a caller that never spoke kept a socket and a task here forever.
+#: Only the head is timed — a WebSocket spliced through afterwards lives as long as it likes.
+HEAD_TIMEOUT_S = 10.0
 
 
 def _log(msg: str) -> None:
@@ -47,7 +51,9 @@ def _authorized(head: bytes, token: str) -> bool:
     """True when the request head carries `Authorization: Bearer <token>`.
 
     Compared with `hmac.compare_digest`, like every other credential check here — a bearer
-    token compared with `==` leaks its prefix to a patient caller on the same network.
+    token compared with `==` leaks its prefix to a patient caller on the same network. As
+    BYTES, the way the header arrived: on `str` the comparison raises for any non-ASCII
+    character, which turned such a header into a dropped connection instead of a 401.
     """
     if not token:
         return False
@@ -55,11 +61,10 @@ def _authorized(head: bytes, token: str) -> bool:
         name, _, value = line.partition(b":")
         if name.strip().lower() != b"authorization":
             continue
-        presented = value.strip().decode("latin-1", "replace")
-        scheme, _, got = presented.partition(" ")
-        if scheme.lower() != "bearer":
+        scheme, _, got = value.strip().partition(b" ")
+        if scheme.lower() != b"bearer":
             continue
-        return hmac.compare_digest(got.strip(), token)
+        return hmac.compare_digest(got.strip(), token.encode())
     return False
 
 
@@ -108,9 +113,12 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
                     "every connection rather than forwarding an unauthenticated one")
             await writer.drain()
             return
-        head = await _read_head(reader)
+        try:
+            head = await asyncio.wait_for(_read_head(reader), HEAD_TIMEOUT_S)
+        except TimeoutError:
+            head = None
         if head is None:
-            return                                  # not HTTP, or gave up mid-head
+            return                                  # not HTTP, gave up mid-head, or never spoke
         if not _authorized(head, token):
             _log(f"{label}: refused {peer} — no valid bearer token")
             _refuse(writer, "401 Unauthorized",
