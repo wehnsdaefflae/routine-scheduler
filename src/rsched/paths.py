@@ -42,9 +42,12 @@ def atomic_write(path: str | Path, data: str | bytes, *, mode: int | None = None
     when overwriting so the temp file's default 0600 doesn't drop an existing file's bits
     (notably +x); omit it for new files.
 
-    Deliberately NO fsync (file or directory): the guarantee is concurrent-reader
-    atomicity, not power-loss durability — every consumer here is a cache, telemetry, or
-    state that a crashed box legitimately rebuilds/re-derives.
+    The tmp file's DATA is fsynced before the rename, so a reader that sees the new name
+    never sees unflushed bytes. The containing DIRECTORY is deliberately not fsynced: the
+    guarantee is concurrent-reader atomicity (old file or new, never a torn write), not
+    power-loss durability of the rename itself — a crash that loses the directory entry
+    leaves the prior valid file in place, and every consumer here is a cache, telemetry, or
+    state a rebooted box re-derives.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
