@@ -227,7 +227,8 @@ export function patternBar(form) {
  *  recommendation, or a proposed pattern switch. Hidden when there is none. */
 export function draftBanner(form) {
   const node = el("div", { class: "draft-banner", "data-draft-banner": "", hidden: true });
-  const SOURCE = { creation: "written when the routine was created", create: "written when the routine was created",
+  // patterns/drafts.py's `source`, as its three writers spell it
+  const SOURCE = { creation: "written when the routine was created",
                    recommend: "recommended for this routine", follow: "proposed by a pattern switch" };
   function paint() {
     const p = form.proposal;

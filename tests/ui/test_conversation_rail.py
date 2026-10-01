@@ -6,6 +6,7 @@ persistence (F296 / R262 pt1)."""
 from __future__ import annotations
 
 import json
+import re
 import socket
 
 from playwright.sync_api import expect
@@ -97,3 +98,28 @@ def test_a_conversation_has_no_goal_panel_and_no_compression_dial(ui, ui_page):
     expect(ui_page.locator(".conv-view .rail-cap", has_text="state").first).to_be_visible()
     expect(ui_page.locator('.conv-view .rail-cap[data-rail="goal"]')).to_have_count(0)
     expect(ui_page.get_by_label("Output compression", exact=True)).to_have_count(0)
+
+
+def test_the_rail_renders_where_this_browser_refuses_storage(ui, ui_page):
+    """The rail remembers each section's fold in browser storage, which can THROW (a private
+    window, a blocked site-data setting). util.js's `storage` degrades to memory for exactly
+    that; the rail called localStorage itself, so a refused read took the whole run view down
+    with it. Only the rail's own keys are refused here — the console's token still reads."""
+    ui_page.add_init_script("""(() => {
+      const get = Storage.prototype.getItem, set = Storage.prototype.setItem;
+      const refuse = (k) => String(k).startsWith("rail:");
+      Storage.prototype.getItem = function (k) {
+        if (refuse(k)) throw new DOMException("refused", "SecurityError");
+        return get.call(this, k);
+      };
+      Storage.prototype.setItem = function (k, v) {
+        if (refuse(k)) throw new DOMException("refused", "SecurityError");
+        return set.call(this, k, v);
+      };
+    })()""")
+    ui.seed_run("uir", "20260714-070000", "finished", summary="done")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260714-070000")
+    cap = ui_page.locator(".rail-cap").first
+    expect(cap).to_be_visible()
+    cap.click()                                   # the fold still works, held in memory
+    expect(cap).to_have_class(re.compile(r"\bclosed\b"))
