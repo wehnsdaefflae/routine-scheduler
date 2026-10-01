@@ -18,7 +18,7 @@
 // closed fold is a change nobody accepts on purpose. The rarely needed sections sit behind the
 // group's own "more" menu, whose summary is a one-line digest of what is inside.
 
-import { el, storage } from "/static/util.js";
+import { el, flash as flashNode, openFolds, storage } from "/static/util.js";
 import { describe } from "/static/components/settings-digest.js";
 
 const asList = (keys) => (Array.isArray(keys) ? keys : [keys]);
@@ -26,12 +26,9 @@ const asList = (keys) => (Array.isArray(keys) ? keys : [keys]);
 /** Open every fold on the way to `node`, bring it to the middle of the screen, flash it. */
 export function reveal(node, { flash = true } = {}) {
   if (!node) return false;
-  for (let d = node.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true;
+  openFolds(node);
   node.scrollIntoView({ block: "center" });
-  if (flash) {
-    node.classList.add("ref-flash");
-    setTimeout(() => node.classList.remove("ref-flash"), 2500);
-  }
+  if (flash) flashNode(node);
   return true;
 }
 

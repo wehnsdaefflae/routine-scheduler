@@ -29,7 +29,7 @@
 
 import { api } from "/static/api.js";
 import { LABEL } from "/static/components/setupcheck.js";
-import { el } from "/static/util.js";
+import { el, flash, openFolds } from "/static/util.js";
 
 function sourceKey(node) {
   const src = node.source || {};
@@ -160,8 +160,8 @@ function inViewport(node) {
   return r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight;
 }
 
-// The landing half, shaped after `reflinks.focusRef` — scroll centred, flash, drop the flash
-// after 2500ms. It cannot BE focusRef: that one addresses item cards by `ref-<id>`; these
+// The landing half, shaped after `reflinks.focusRef` — scroll centred, then util.js `flash`.
+// It cannot BE focusRef: that one addresses item cards by `ref-<id>`; these
 // anchors are the section headings' own `sec-*` ids. `focus` addresses ONE control inside the
 // panel — the ability card carrying the dial, the exposure row carrying the select. The section
 // is scrolled to first and the control only if that left it off screen, by the LEAST scroll that
@@ -175,18 +175,14 @@ function jumpToSection(id, focus) {
   const panel = heading.nextElementSibling?.classList.contains("panel")
     ? heading.nextElementSibling : null;
   const control = focus && panel ? panel.querySelector(focus) : null;
-  const start = control || heading;
-  for (let d = start.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true;
+  openFolds(control || heading);
   heading.scrollIntoView({ block: "center" });
   // The control is what the reader was sent to, so it is what gets centred — `nearest` does the
   // minimum and parks a 22px button flush against the bottom edge, where the row it sits in is
   // half cut off and the reader has to scroll again to read what they landed on. `center` is
   // also what reflinks.js does for the same journey.
   if (control && !inViewport(control)) control.scrollIntoView({ block: "center" });
-  for (const node of (control ? [panel, control] : [heading, panel]).filter(Boolean)) {
-    node.classList.add("ref-flash");
-    setTimeout(() => node.classList.remove("ref-flash"), 2500);
-  }
+  for (const node of (control ? [panel, control] : [heading, panel]).filter(Boolean)) flash(node);
   return true;
 }
 
