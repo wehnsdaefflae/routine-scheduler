@@ -51,9 +51,33 @@ def path(routine_dir: Path) -> Path:
 def load(routine_dir: Path) -> dict:
     """The document, normalized to `{outcomes, until}`. A missing or unreadable file is the empty
     finish line: a routine that runs until it is switched off.
+
+    Every outcome comes back with an id. The web's save assigns them, but a file edited by hand
+    can lack one — and an outcome without an id is owed an accounting entry no run can write
+    (an entry is `g<n> <verdict>: …`), so every finish would be set aside until the budget died.
     """
     raw = read_json(path(routine_dir))
-    return normalize(raw if isinstance(raw, dict) else {})
+    doc = normalize(raw if isinstance(raw, dict) else {})
+    assign_ids(doc["outcomes"])
+    return doc
+
+
+def _iso_date(raw: object) -> str:
+    """`raw` when it names a real calendar day as YYYY-MM-DD, else "".
+
+    The shape alone is not enough: `2026-02-30` has it, and every later question to the
+    calendar (`is_reached`, `reached`) would raise on it — inside `registry.scan`, so one bad
+    date took down the listing of every routine, and the web's save wrote the file before the
+    retirement check that raised.
+    """
+    text = str(raw or "")
+    if not _DATE_RE.match(text):
+        return ""
+    try:
+        _dt.date.fromisoformat(text)
+    except ValueError:
+        return ""
+    return text
 
 
 def normalize(raw: dict) -> dict:
@@ -62,17 +86,15 @@ def normalize(raw: dict) -> dict:
         if not isinstance(o, dict) or not str(o.get("text") or "").strip():
             continue
         judge = o["judge"] if o.get("judge") in JUDGES else "you"
-        date = str(o.get("date") or "")
         outcomes.append({
             "id": str(o["id"]) if _ID_RE.match(str(o.get("id") or "")) else "",
             "text": str(o["text"]).strip(),
             "judge": judge,
-            "date": date if judge == "date" and _DATE_RE.match(date) else "",
+            "date": _iso_date(o.get("date")) if judge == "date" else "",
             "status": o["status"] if o.get("status") in STATUSES else "open",
             **{k: str(o.get(k) or "") for k in ENGINE_OWNED},
         })
-    until = str(raw.get("until") or "")
-    return {"outcomes": outcomes, "until": until if _DATE_RE.match(until) else ""}
+    return {"outcomes": outcomes, "until": _iso_date(raw.get("until"))}
 
 
 _WORDS_RE = re.compile(r"^\s*(run|you|\d{4}-\d{2}-\d{2})\s*:\s*(\S.*)$", re.IGNORECASE)
