@@ -34,8 +34,11 @@ next boot — never a backlog — because a lane's fire table is process memory 
 own crons are suppressed, so a lost lane fire has no other path (docs/architecture.md, "Lane
 catch-up"). What boot compares is a WATERMARK on disk (`.control/lane-fires.json`); every
 path that HANDLES a due fire moves it: an arm and a fire the operator's global pause skipped
-on purpose. A deliberate skip is handled, not missed — resuming from a pause backlog-fires
-nothing; the nightly restart does not fire it for the pause either.
+on purpose. A deliberate skip is handled, not missed — the next boot does not fire it. Lifting
+the pause decides once per lane (D156, `lane_catchup.resume_catchup`): a skipped fire still
+EARLY in the lane's own cadence (less than a quarter of it has passed — six hours for a daily
+lane, forty-two for a weekly one) is made up as ONE chain; a later one waits for the next fire.
+Never a backlog.
 
 What a lane FAILED to do is read at `GET /api/health/blocked` (docs/run-analytics.md): a
 `lane_fire_refused` (the previous chain is still in flight), a `lane_chain_stopped` (the

@@ -55,18 +55,23 @@ def parse_fire_at(value: str, now: datetime | None = None) -> datetime:
     raw = str(value or "").strip()
     if not raw:
         raise ValueError("fire_at is required (an ISO instant or a relative offset like '+3d')")
-    if m := _REL.match(raw):
-        fire = now + timedelta(**{_REL_UNIT[m.group(2).lower()]: int(m.group(1))})
-    else:
-        try:
-            fire = datetime.fromisoformat(raw)
-        except ValueError as exc:
-            raise ValueError(
-                f"fire_at {raw!r} is not an ISO-8601 instant or a relative offset "
-                "like '+3d'/'+2h'/'+30m'") from exc
-        if fire.tzinfo is None:
-            fire = fire.replace(tzinfo=UTC)
-    fire = fire.astimezone(UTC)
+    try:
+        if m := _REL.match(raw):
+            fire = now + timedelta(**{_REL_UNIT[m.group(2).lower()]: int(m.group(1))})
+        else:
+            try:
+                fire = datetime.fromisoformat(raw)
+            except ValueError as exc:
+                raise ValueError(
+                    f"fire_at {raw!r} is not an ISO-8601 instant or a relative offset "
+                    "like '+3d'/'+2h'/'+30m'") from exc
+            if fire.tzinfo is None:
+                fire = fire.replace(tzinfo=UTC)
+        fire = fire.astimezone(UTC)
+    except OverflowError as exc:
+        # an offset or instant no datetime can hold — the caller surfaces ValueError, and an
+        # OverflowError reached neither of them (it ended the run that typo'd it)
+        raise ValueError(f"fire_at {raw!r} is out of range — likely a typo") from exc
     if fire <= now:
         raise ValueError(f"fire_at {fire.isoformat()} is not in the future")
     if fire - now > MAX_HORIZON:

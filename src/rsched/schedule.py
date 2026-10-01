@@ -15,49 +15,87 @@ load, never surfaced to the user.
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
+#: Where a host — or a container, through its read-only bind mounts — names its zone.
+ETC_TIMEZONE = Path("/etc/timezone")
+ETC_LOCALTIME = Path("/etc/localtime")
+
 
 def server_tz() -> str:
-    """The server's local IANA timezone name (e.g. 'Europe/Berlin'), best-effort. Inside
-    a container the host's zone arrives as a TZ env var or a bind-mounted /etc/timezone
-    (a plain file naming the zone). /etc/timezone is consulted BEFORE the /etc/localtime
-    symlink: Docker mounts through the image's symlink, leaving a stale symlink NAME over
-    correct zone DATA — the symlink is only trustworthy where /etc/timezone is absent.
+    """The server's local IANA timezone name (e.g. 'Europe/Berlin'), best-effort, from the
+    first of these that names a zone `ZoneInfo` loads: the TZ env var, /etc/timezone, the
+    /etc/localtime symlink — else 'UTC'. Inside a container the host's zone arrives as a TZ
+    env var or a bind-mounted /etc/timezone (a plain file naming the zone). /etc/timezone is
+    consulted BEFORE the /etc/localtime symlink: Docker mounts through the image's symlink,
+    leaving a stale symlink NAME over correct zone DATA — the symlink is only trustworthy
+    where /etc/timezone is absent.
+
+    A source that names no loadable zone FALLS THROUGH rather than winning: the answer is
+    written beside every cron the console saves (routine.yaml, lanes.json), so the systemd
+    idiom `TZ=:/etc/localtime`, a POSIX rule string or a typo must never become a zone no
+    routine can load. A path is read for the key under its `zoneinfo/`, following a symlink
+    the way the last source does.
     """
-    env = os.environ.get("TZ", "").strip().lstrip(":")
-    if env:
-        return env
-    try:
-        tz = datetime.now(UTC).astimezone().tzinfo
-        key = getattr(tz, "key", None)
-        if key:
-            return str(key)
-        tzfile = Path("/etc/timezone")
-        if tzfile.is_file():
-            name = tzfile.read_text(encoding="utf-8").strip()
-            if name:
-                return name
-        link = Path("/etc/localtime")
-        if link.is_symlink():
-            p = str(link.resolve())
-            if "zoneinfo/" in p:
-                return p.split("zoneinfo/", 1)[1]
-    except Exception:
-        pass
+    for read in (_tz_env, _etc_timezone, _localtime_link):
+        try:
+            zone = zone_key(read())
+        except (OSError, RuntimeError, ValueError):
+            continue        # an unreadable source names nothing (RuntimeError: a symlink loop)
+        if zone:
+            return zone
     return "UTC"
 
 
-def friendly_to_cron(spec: dict) -> str:
-    """Friendly spec → cron string ('' for manual). Raises ValueError on bad input."""
-    freq = (spec or {}).get("frequency", "manual")
+def _tz_env() -> str:
+    return os.environ.get("TZ", "")
+
+
+def _etc_timezone() -> str:
+    return ETC_TIMEZONE.read_text(encoding="utf-8")
+
+
+def _localtime_link() -> str:
+    return str(ETC_LOCALTIME) if ETC_LOCALTIME.is_symlink() else ""
+
+
+def zone_key(name: str) -> str:
+    """`name` as a key `ZoneInfo` loads, or "" when it names none — the ONE zone check every
+    stored tz goes through (`lanes` degrades a hand-edited zone with it). The POSIX leading
+    colon is dropped; a path becomes the key under its `zoneinfo/` (resolved first, so a
+    symlink names its target's zone and a plain file names none).
+    """
+    name = name.strip().lstrip(":")
+    if name.startswith("/"):
+        resolved = str(Path(name).resolve())
+        name = resolved.split("zoneinfo/", 1)[1] if "zoneinfo/" in resolved else ""
+    if not name:
+        return ""
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ""
+    return name
+
+
+def friendly_to_cron(spec: dict | None) -> str:
+    """Friendly spec → cron string ('' for manual). Raises ValueError on bad input — on
+    EVERY bad input: the routine PATCH answers 400 for a ValueError and catches nothing else.
+    """
+    if spec is None:
+        spec = {}
+    if not isinstance(spec, dict):
+        # ValueError, not TypeError: the contract is one error for any bad spec, shape or value
+        raise ValueError(f"a schedule spec is a mapping, got {spec!r}")  # noqa: TRY004
+    freq = spec.get("frequency", "manual")
     if freq in ("manual", "disabled"):
         return ""
     if freq == "hourly":
-        minute = int(spec.get("minute", 0))
+        minute = _int(spec.get("minute", 0), "minute")
         _check(0 <= minute <= 59, "minute must be 0-59")
         return f"{minute} * * * *"
     hh, mm = _parse_time(spec.get("time", "07:00"))
@@ -70,11 +108,11 @@ def friendly_to_cron(spec: dict) -> str:
         days_in = spec.get("weekdays")
         if not isinstance(days_in, list) or not days_in:   # explicit — mypy can narrow this
             raise ValueError("weekly needs a non-empty weekdays list (0=Sunday … 6=Saturday)")
-        days = sorted({int(d) for d in days_in})
+        days = sorted({_int(d, "a weekday") for d in days_in})
         _check(all(0 <= d <= 6 for d in days), "weekdays must be 0-6")
         return f"{mm} {hh} * * {','.join(str(d) for d in days)}"
     if freq == "monthly":
-        day = int(spec.get("day", 1))
+        day = _int(spec.get("day", 1), "day")
         _check(1 <= day <= 31, "day must be 1-31")
         return f"{mm} {hh} {day} * *"
     raise ValueError(f"unknown frequency {freq!r}")
@@ -158,6 +196,13 @@ def _parse_time(t: str) -> tuple[int, int]:
         return h, m
     except (ValueError, AttributeError):
         raise ValueError(f"bad time {t!r} (expected HH:MM)") from None
+
+
+def _int(value: Any, what: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{what} must be a whole number, got {value!r}") from None
 
 
 def _check(cond: bool, msg: str) -> None:

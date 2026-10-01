@@ -48,7 +48,7 @@ def machine_public(mac: MachineConfig, *, key_set: bool, name: str | None = None
             "description": mac.description, "tags": list(mac.tags),
             # the `remote` util reads this to decide whether `submit` LAUNCHES or takes a queue
             # ticket — the enforcement point is the one place that opens an SSH connection
-            "exclusive": getattr(mac, "exclusive", False),
+            "exclusive": mac.exclusive,
             "key_var": mac.key_var, "has_key": key_set, "has_host_key": bool(mac.host_key)}
 
 
@@ -97,5 +97,3 @@ def machines_for_routine(names: list[str], catalog: dict[str, MachineConfig], *,
     env = {MACHINES_VAR: json.dumps(meta, separators=(",", ":")),
            MACHINE_KEYS_VAR: json.dumps(keys, separators=(",", ":"))}
     return env, warnings
-
-

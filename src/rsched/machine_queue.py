@@ -31,6 +31,9 @@ So: tickets, FAIR-SHARE order, and a deadline on every job.
 - **Fair share** is round-robin across HOLDERS by each holder's oldest waiting ticket, FIFO within
   one holder. Three jobs from funscript-trainer and one from voice-model-trainer interleave
   f, v, f, f — the routine that asked once does not wait behind a routine that asked three times.
+  The ONE definition is the `remote` util's `fair_share_order`, which the util ships to the box
+  by source; the box orders over the whole round (the turns already spent plus the ones still
+  waiting), so nothing on this side re-derives an order — it reads the box's.
 - **Every ticket carries a deadline.** A detached job has no live process to heartbeat against, so
   a wall clock is the only thing that can make the queue self-healing. Past it the job is killed
   and its ticket dropped.
@@ -57,7 +60,6 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
-from itertools import zip_longest
 from pathlib import Path
 
 from .paths import atomic_write_json, read_json
@@ -92,53 +94,33 @@ def save(routines_home: Path, machine: str, tickets: list[dict], *, error: str =
 
 
 def load(routines_home: Path, machine: str) -> dict:
-    """`{machine, fetched, tickets, error, stale}` — the mirror as a reader sees it."""
+    """`{machine, fetched, tickets, error, stale}` — the mirror as a reader sees it.
+
+    A mirror whose `tickets` is not a list read nothing from the box, so it is STALE, never an
+    empty queue: defaulting it to `[]` told a run the machine was FREE.
+    """
     doc = read_json(mirror_path(routines_home, machine))
     if not isinstance(doc, dict):
         return {"machine": machine, "fetched": "", "tickets": [], "error": "", "stale": True}
-    doc.setdefault("tickets", [])
+    tickets = doc.get("tickets")
+    doc["tickets"] = [t for t in tickets if isinstance(t, dict)] if isinstance(tickets, list) \
+        else []
     doc.setdefault("error", "")
-    doc["stale"] = _stale(str(doc.get("fetched") or ""))
+    doc["stale"] = not isinstance(tickets, list) or _stale(str(doc.get("fetched") or ""))
     return doc
 
 
 def _stale(fetched: str, max_age_s: float = STALE_AFTER_S) -> bool:
+    """No readable, AWARE `fetched` stamp is no evidence of freshness — a naive one (TypeError
+    against an aware now) is as unreadable as a malformed one.
+    """
     if not fetched:
         return True
     try:
         age = (datetime.now(UTC) - datetime.fromisoformat(fetched)).total_seconds()
-    except ValueError:
+    except (TypeError, ValueError):
         return True
     return age > max_age_s
-
-
-def fair_share_order(tickets: list[dict]) -> list[dict]:
-    """Round-robin across holders by each holder's oldest waiting ticket, FIFO within a holder.
-
-    THE definition of "everyone gets their turn". It lives here and the `remote` util ships this
-    exact function to the box, so the two halves cannot drift. Three tickets from one routine and
-    one from another interleave A, B, A, A — the routine that asked once does not wait behind the
-    routine that asked three times.
-
-    **Give it the WHOLE round — the turns already spent plus the ones still waiting.** Applied to
-    the live set alone it silently collapses to FIFO, because deleting the ticket that just ran
-    also deletes the evidence that its holder used a turn, so that holder is head again
-    immediately. (Found by the util's own end-to-end harness: four jobs, two holders, `f1 f2 f3
-    v1` instead of `f1 v1 f2 f3`.) The box therefore retires a finished ticket into `round/`
-    rather than deleting it and orders over `spent + live`. Nothing here should re-derive an
-    order for a partly-served round — read the box's, which `remote queue` already returns in its
-    true order and `save()` preserves.
-    """
-    by_holder: dict[str, list[dict]] = {}
-    for t in sorted(tickets, key=lambda t: str(t.get("submitted") or "")):
-        by_holder.setdefault(str(t.get("holder") or "?"), []).append(t)
-    # holders enter the rotation in the order their oldest ticket arrived, so a newcomer does not
-    # jump ahead of someone already waiting
-    holders = sorted(by_holder, key=lambda h: str(by_holder[h][0].get("submitted") or ""))
-    # interleaving each holder's FIFO queue IS the round-robin: take one from every holder that
-    # still has one, in holder order, until all are drained
-    return [t for row in zip_longest(*(by_holder[h] for h in holders)) for t in row
-            if t is not None]
 
 
 def position_of(tickets: list[dict], job: str) -> int | None:
@@ -146,9 +128,10 @@ def position_of(tickets: list[dict], job: str) -> int | None:
 
     Deliberately does NOT re-sort. The mirror holds what `remote queue` returned, and the box
     orders over the whole round — the turns already spent plus the ones waiting. Re-deriving the
-    order here from the live tickets alone would drop the spent half and answer FIFO, so a run
-    would be told a position the machine does not agree with. The ordering DEFINITION is
-    `fair_share_order` above (the box runs that very function); this is the reader.
+    order here from the live tickets alone would drop the spent half and answer FIFO (the ticket
+    that just ran takes with it the evidence that its holder used a turn), so a run would be told
+    a position the machine does not agree with. The ordering DEFINITION is the `remote` util's
+    `fair_share_order` (the box runs that very function); this is the reader.
     """
     for i, t in enumerate(tickets, start=1):
         if str(t.get("job") or "") == job:
@@ -222,7 +205,7 @@ def refresh(server, *, timeout: int = 60) -> dict[str, dict]:
     collision this whole mechanism exists to prevent.
     """
     from . import sandbox, utils_run
-    from .machines import resolve_machines
+    from .machines import machines_for_routine
     from .secrets import load_secrets
 
     out: dict[str, dict] = {}
@@ -239,17 +222,16 @@ def refresh(server, *, timeout: int = 60) -> dict[str, dict]:
         return out
     secrets = load_secrets()
     for name, was in due.items():
-        # `resolve_machines` OWNS the two env-var shapes the util reads — the metadata list and
-        # `{machine NAME: PEM}`. Hand-rolling them here keyed the PEM by `key_var` instead, so the
-        # util reported "no private key available" and the mirror recorded UNKNOWN forever. One
-        # resolver, one contract.
-        meta, keys, _warnings = resolve_machines([name], server.machines, secrets)
+        # The util is handed exactly what the engine injects for a routine bound to this
+        # machine: `machines_for_routine` owns both env vars and their shapes — the metadata list
+        # and `{machine NAME: PEM}`. Hand-rolling them here keyed the PEM by `key_var` instead,
+        # so the util reported "no private key available" and the mirror recorded UNKNOWN
+        # forever. One resolver, one contract.
+        env, _warnings = machines_for_routine([name], server.machines, secrets=secrets)
         try:
             code, stdout, stderr = utils_run.run_util(
                 server.libraries_home, REMOTE_UTIL, ["queue", name, "--json"],
-                timeout=timeout, policy=sandbox.base_policy(server),
-                extra_secrets={"RSCHED_MACHINE_KEYS": json.dumps(keys),
-                               "RSCHED_MACHINES": json.dumps(meta)})
+                timeout=timeout, policy=sandbox.base_policy(server), extra_secrets=env)
         except OSError as exc:
             out[name] = _record(server.routines_home, name, [], error=str(exc), was=was)
             continue

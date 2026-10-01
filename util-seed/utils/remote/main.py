@@ -292,10 +292,10 @@ def fair_share_order(tickets: list) -> list:
 
     THE definition of "everyone gets their turn", and the single copy of it: `build_queue_helper`
     ships this exact function to the box by source, so the position a run is told here and the
-    order the machine actually starts jobs in cannot drift apart. It reproduces the scheduler's
-    own `machine_queue.fair_share_order` — three tickets from one routine and one from another
-    interleave A, B, A, A, so the routine that asked once does not wait behind the routine that
-    asked three times.
+    order the machine actually starts jobs in cannot drift apart (the scheduler's
+    `machine_queue` only reads the order back). Three tickets from one routine and one from
+    another interleave A, B, A, A, so the routine that asked once does not wait behind the
+    routine that asked three times.
     """
     from itertools import zip_longest
 
@@ -1533,7 +1533,7 @@ def selftest_queue() -> int:
     def tk(holder, job, submitted):
         return {"holder": holder, "job": job, "submitted": submitted}
 
-    # THE property, pinned against the scheduler's own test (tests/test_machine_queue.py): three
+    # THE property, pinned here because this is the one copy of the order (the box runs it): three
     # jobs from one routine must not starve one job from another. FIFO would answer f1 f2 f3 v1.
     order = fair_share_order([tk("funscript", "f1", "1"), tk("funscript", "f2", "2"),
                               tk("funscript", "f3", "3"), tk("voice", "v1", "4")])

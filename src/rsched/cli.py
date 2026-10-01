@@ -13,9 +13,14 @@ import sys
 from pathlib import Path
 
 from .cli_daemon import cmd_daemon
-from .cli_render import _render_event, _server_tz
+from .cli_render import _render_event
 from .config import MODEL_KINDS, load_server_config
 from .paths import expand
+from .schedule import server_tz
+
+#: A finished run's status → the process exit code (`run-once` and the daemon's `engine-run`).
+#: A partial run did its job as far as it went — 0; an abort is the shell's SIGINT 130.
+RUN_EXIT_CODES = {"ok": 0, "partial": 0, "failed": 1, "aborted": 130}
 
 
 def _parse_model_overrides(values: list[str]) -> dict[str, str]:
@@ -70,9 +75,7 @@ def cmd_run_once(args) -> int:
     signal.signal(signal.SIGINT, lambda *_: request_abort())
 
     def on_event(obj: dict) -> None:
-        line = _render_event(obj)
-        if line:
-            print(line, flush=True)
+        print(_render_event(obj), flush=True)
 
     try:
         status, run_dir = run_routine(routine_dir, server,
@@ -82,7 +85,7 @@ def cmd_run_once(args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"run dir: {run_dir}", file=sys.stderr)
-    return {"ok": 0, "partial": 0, "failed": 1, "aborted": 130}.get(status, 1)
+    return RUN_EXIT_CODES.get(status, 1)
 
 
 def cmd_engine_run(args) -> int:
@@ -126,7 +129,7 @@ def cmd_engine_run(args) -> int:
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    return {"ok": 0, "partial": 0, "failed": 1, "aborted": 130}.get(status, 1)
+    return RUN_EXIT_CODES.get(status, 1)
 
 
 def cmd_validate(args) -> int:
@@ -211,30 +214,40 @@ def _instance_problems(server) -> list[str]:
 
 
 def cmd_abort(args) -> int:
+    """Abort `<slug>` (its newest active run) or `<slug>:<ts>` (that run).
+
+    Only an ACTIVE run is signalled, in both forms. A finished run's status.json keeps the
+    pid it ran under, and the OS hands pids out again, so signalling a named finished run
+    reached whatever process group holds that pid NOW.
+    """
     import asyncio
 
     from . import registry
     from .daemon.runner_state import abort_process
     from .ids import parse_run_id
-    from .paths import read_json
 
     server, _ = load_server_config()
     target = args.run_id
+    ts = ""
     if ":" in target:
-        slug, ts = parse_run_id(target)
+        try:
+            slug, ts = parse_run_id(target)
+        except ValueError as exc:
+            print(f"error: {exc} — expected <slug> or <slug>:<YYYYMMDD-HHMMSS>",
+                  file=sys.stderr)
+            return 2
     else:
         slug = target
-        runs = registry.run_index(_dir_across_homes(server, slug), slug)
-        alive = [r for r in runs if r.state in registry.ACTIVE_STATES]
-        if not alive:
-            print(f"no active run for {slug}", file=sys.stderr)
-            return 1
-        ts = alive[0].ts
-    run_dir = _dir_across_homes(server, slug) / "runs" / ts
-    st = read_json(run_dir / "status.json")
-    pid = st.get("pid") if isinstance(st, dict) else None
-    ok = asyncio.run(abort_process(pid))
-    print(f"abort {'sent' if ok else 'failed — process not found'} for {slug}:{ts}",
+    runs = [r for r in registry.run_index(_dir_across_homes(server, slug), slug)
+            if not ts or r.ts == ts]
+    alive = [r for r in runs if r.state in registry.ACTIVE_STATES]
+    if not alive:
+        print(f"run {target} is not active ({runs[0].state})" if ts and runs
+              else f"no active run for {target}", file=sys.stderr)
+        return 1
+    run = alive[0]
+    ok = asyncio.run(abort_process(run.pid))
+    print(f"abort {'sent' if ok else 'failed — process not found'} for {run.run_id}",
           file=sys.stderr)
     return 0 if ok else 1
 
@@ -243,7 +256,7 @@ def cmd_lint(args) -> int:
     from .workflows.lint import lint_all
 
     if getattr(args, "libraries_home", None):
-        libraries_home = Path(args.libraries_home)   # sandboxed caller: skip ~/.config read
+        libraries_home = expand(args.libraries_home)   # sandboxed caller: skip ~/.config read
     else:
         server, _ = load_server_config()
         libraries_home = server.libraries_home
@@ -282,12 +295,12 @@ def cmd_scaffold(args) -> int:
             if args.instruction_file
             else f"# Instruction\n\n(fill in) — scaffolded for {args.slug}",
             workflow_slug=args.workflow, cron=args.cron or "",
-            tz=args.tz or _server_tz(),
+            tz=args.tz or server_tz(),
             description=args.description or "",
             tags=args.tag or None,
             fs_read_roots=args.read_root or None, fs_write_roots=args.write_root or None,
         )
-    except (ValueError, KeyError, FileNotFoundError) as exc:
+    except (ValueError, KeyError, OSError) as exc:     # OSError: an unreadable instruction file
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"scaffolded: {path}", file=sys.stderr)

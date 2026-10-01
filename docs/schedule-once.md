@@ -5,9 +5,10 @@
 > both the design rationale and the shipped design. Code: `src/rsched/schedule_once.py`
 > (spool), `src/rsched/daemon/schedule_once.py` (`OneShotManager`), the `schedule_run` action
 > (`engine/actions.py` + `engine/admin_handlers.py`), the `scheduling` permission
-> (`library-seed/permissions/scheduling.md`), the API (`web/api_schedule.py`), and
-> `tests/test_schedule_once.py`. The UI *Schedule once* card + week-strip surfacing remain a
-> follow-up.
+> (`library-seed/permissions/scheduling.md`), the API (`web/api_schedule.py`), the routine
+> page's *Schedule once* card (`static/components/schedule-once.js`) and the week strip's
+> one-shot points, with `tests/test_schedule_once.py` and `tests/ui/test_schedule_once.py`.
+> Where the shipped code departs from the original spec below, the text says what shipped.
 > Cross-refs: `docs/triggers.md` (event triggers), `src/rsched/schedule.py` (cron),
 > `src/rsched/grants.py` (capabilities), `src/rsched/daemon/triggers.py` (the fire manager
 > this mirrors).
@@ -46,7 +47,6 @@ gated engine action may write, and the daemon consumes.
 {
   "id": "so-4f9a01bc",                    // server/engine-generated stable handle
   "fire_at": "2026-07-22T03:00:00+00:00", // absolute UTC instant (aware)
-  "active": true,                         // false = armed-but-paused (deletion = cancel)
   "reason": "re-check BahnBonus seat availability",
   "requested_by": "self-audit:20260719-101727",  // or "ui"
   "created": "2026-07-19T10:30:00+00:00",
@@ -70,7 +70,7 @@ tick, not a licence to re-implement the mechanics: `slugs_with_requests`, `read_
 
 A new **`OneShotManager`** (`daemon/schedule_once.py`) mirrors `TriggerManager`, ticked by
 the `Scheduler` after the cron loop and beside `triggers.tick` (`daemon/scheduler.py`,
-5 s tick). Each tick, for every `req-*.json` with `active` and `fire_at <= now`:
+5 s tick). Each tick, for every `req-*.json` with `fire_at <= now`:
 
 1. **Same fire gates as cron/trigger fires** — skip if `runner.draining` or
    `runner.is_active(slug)`. The request stays and fires on the next free tick
@@ -86,15 +86,19 @@ the `Scheduler` after the cron loop and beside `triggers.tick` (`daemon/schedule
 
 **Missed while the daemon was down:** a `fire_at` already past at boot is still on disk →
 it fires on the first tick (a make-up fire — desirable for a one-shot; the point is it
-*eventually* runs once). Bound staleness with the optional `expires_at`: past it, the req
-is dropped instead of fired.
+*eventually* runs once). The manager also drops a request past an optional `expires_at`
+instead of firing it — but neither the API nor the `schedule_run` action can set one today.
+
+**When it may fire.** `fire_at` is an ISO-8601 instant (naive reads as UTC) or an offset from
+now (`+3d`, `+2h`, `+30m`, `+45s`), and must lie in the future and at most a year out
+(`schedule_once.MAX_HORIZON`) — anything else, an offset too large for a date included, is
+refused: a 422 from the API, a `bad_fire_at` observation from the action.
 
 ## Deactivate / cancel before firing
 
 - **Cancel** = delete the req file (idempotent). This is what the UI Cancel button and the
-  routine `cancel` variant both do.
-- `active: false` is an optional armed-but-paused state (re-arm later). Deletion is the MVP;
-  the `active` flag is cheap to honour in the tick.
+  routine `cancel` variant both do — by id, or every request armed on the routine when the
+  action names no id. There is no paused state (the spec's `active: false` was not built).
 
 ## The cross-routine permission + engine action (the novel part)
 
@@ -103,16 +107,18 @@ is a **new engine action** the engine executes un-sandboxed, exactly like `write
 `remove_util` / `detach`:
 
 - **New gated action kind `schedule_run`.** Fields: `{target: <slug>, fire_at: <iso or
-  relative like "+3d">, reason: <text>, active?}`; a `cancel` variant by `{target, id}`.
+  relative like "+3d">, reason: <text>}`; a `cancel` variant by `{target, cancel: true, id?}`.
   Wire in `actions.py` (KINDS, REQUIRED_FIELDS, KIND_EXAMPLES, validate: `is_slug(target)`,
   `fire_at` parseable and in the future, non-empty `reason`).
 - **Gating.** Add `schedule_run` to `grants.GATED_KINDS`, sourced from a new conduct
   permission doc `permissions/scheduling.md` whose `requires.actions: [schedule_run]` drives
   the activation cascade; add to `_DEFAULT_KIND_SOURCE`.
-- **Dispatch.** `loop.py` routes to `interact.handle_schedule_run`, which resolves the
-  target routine dir (`paths`/`registry`), writes the spool req atomically engine-side, and
-  returns the created `id`. `cancel` removes the file. Follow the `remove_util` wiring
-  (observations/composer/capabilities) for the full surface.
+- **Dispatch.** `engine/actionroute.py` routes to `admin_handlers.handle_schedule_run`, which
+  resolves the target routine dir, writes the spool req atomically engine-side, and returns
+  the created `id`; an unknown target gets the valid slugs and close matches back instead of a
+  bare refusal. `cancel` removes the file. A CONVERSATION may target itself — the "remind me in
+  3 days" flow: its request is namespaced `conv--<slug>` in the spool, so a same-named routine
+  can never be mis-fired, and the manager wakes it by RESUMING the conversation.
 - **Cross-routine scope** (a real decision for the build — flag in D27):
   - **(a)** Any routine holding `scheduling` may target ANY routine. Simple; fits the current
     single-operator deployment (every routine is the same owner). **Recommended now.**
@@ -136,7 +142,7 @@ is a **new engine action** the engine executes un-sandboxed, exactly like `write
 - **Dashboard** — armed one-shots surface as single future points in the week strip
   (`api_schedule.schedule_week`), so the operator sees them alongside cron fires.
 
-## Testing plan (implementation follow-up)
+## Testing plan (as built: `tests/test_schedule_once.py`, `tests/ui/test_schedule_once.py`)
 
 - **Unit:** spool read/write/consume; `OneShotManager.tick` fires when due, defers on
   active/draining, consumes on fire, drops on a routine that is missing, off or retired,

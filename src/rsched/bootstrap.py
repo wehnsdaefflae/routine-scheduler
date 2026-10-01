@@ -1,7 +1,10 @@
-"""First-boot bootstrap for a fresh (container) deploy. A host install runs deploy/install.sh; the
-container has no install step, so the daemon + Settings do the equivalent: generate a config with a
-random token if none exists (a fresh deploy must never serve an OPEN API), and seed a library from
-the built-in defaults when the user chooses to create a new repo.
+"""First-boot bootstrap for a fresh deploy, and the top-ups every boot runs. A host install runs
+deploy/install.sh, which seeds the library whole (`seed_libraries`); a container has no install
+step, so the daemon's boot (rsched.cli_daemon) does the equivalent: generate a config with fresh
+tokens if none exists (a fresh deploy must never serve an OPEN API), create the library repo
+(utils_lib.ensure_library), then install every seed util and doc it lacks (`sync_seed_utils`,
+`sync_seed_library_docs`) — add-only, which is also how a seed added later reaches an existing
+instance.
 """
 from __future__ import annotations
 
@@ -29,23 +32,31 @@ log = logging.getLogger("rsched.bootstrap")
 
 
 def ensure_config() -> bool:
-    """Create config.yaml with random tokens if it's missing, and add a `routine_token`
-    to an existing config that predates the two-tier auth (R94) — the primary must never
-    double as the routine tier, or the seal is vacuous. Returns True if it generated the
-    whole config. Without this a fresh deploy has an empty token → auth is disabled → an
-    open API on the LAN.
+    """Create config.yaml with random tokens if it's missing, and give an existing config a
+    `routine_token` of its own when it has none that is a SECRET (R94): none at all, the
+    example's published placeholder, or the primary itself — the primary must never double
+    as the routine tier, or the seal is vacuous. Returns True if it generated the whole
+    config. Without this a fresh deploy has an empty token → auth is disabled → an open API
+    on the LAN.
+
+    The placeholder case is a host install's: deploy/install.sh copies the example and
+    generates only the primary, so its routine tier answered to `change-me-too`, a value
+    anyone who read the repo knows. An explicitly EMPTY `routine_token` is left alone — that
+    is the documented way to switch the tier off (config/server.py).
     """
     path = config_file()
     if path.exists():
         text = path.read_text(encoding="utf-8")
-        if not re.search(r"(?m)^routine_token:", text):
-            atomic_write(path, text.rstrip()
-                         + f'\nroutine_token: "{secrets.token_urlsafe(24)}"\n')
-            log.warning("boot: added a routine_token to %s (R94 two-tier auth)", path)
+        if not _routine_token_missing_or_known(text):
+            return False
+        fresh = f'routine_token: "{secrets.token_urlsafe(24)}"'
+        text, n = re.subn(r"(?m)^routine_token:.*$", fresh, text, count=1)
+        atomic_write(path, text if n else text.rstrip() + f"\n{fresh}\n")
+        log.warning("boot: gave %s a routine_token of its own (R94 two-tier auth)", path)
         return False
     token = secrets.token_urlsafe(24)
     routine_token = secrets.token_urlsafe(24)
-    example = repo_root() / "config" / "config.example.yaml"
+    example = _example_config()
     if example.exists():
         # replace WHATEVER token line the example carries (a drifted placeholder must
         # never ship as a known token / an empty token = an open API); none → append
@@ -64,6 +75,35 @@ def ensure_config() -> bool:
     atomic_write(path, text)
     log.warning("first boot: generated %s with fresh access tokens", path)
     return True
+
+
+def _example_config() -> Path:
+    return repo_root() / "config" / "config.example.yaml"
+
+
+def _routine_token_missing_or_known(text: str) -> bool:
+    """Does this config's routine tier need a token of its own? Absent, a placeholder the
+    shipped example carries, or the same value as the primary. A config that does not parse
+    is `load_server_config`'s to report, never this function's to rewrite.
+    """
+    try:
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return False
+    if not isinstance(raw, dict):
+        return False
+    if "routine_token" not in raw:
+        return True
+    value = str(raw.get("routine_token") or "")
+    if not value:
+        return False                   # explicitly empty: the tier is switched off on purpose
+    try:
+        example = yaml.safe_load(_example_config().read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        example = {}
+    known = {str(example.get(k)) for k in ("token", "routine_token")
+             if isinstance(example, dict) and example.get(k)}
+    return value in known or value == str(raw.get("token") or "")
 
 
 # DEFAULT_PERMISSIONS entries introduced AFTER routines already existed never reach them via
@@ -161,44 +201,43 @@ def _merge_caps(caps: dict, slug: str, lib: dict) -> None:
     caps.update(capabilities_for([slug], lib, base=caps))
 
 
+#: The flat library doc kinds, with the glob that finds them — what `seed_libraries` lays down
+#: and the boot sync tops up, ONE list so an install and a running instance cannot disagree
+#: about what the library holds. `patterns` is here because a settings PATTERN is read LIVE —
+#: by creation, the routine page and the recommender (docs/patterns.md) — so one that only ever
+#: landed when the repo was first created would mean a pattern added to the seed later reaches
+#: no existing instance at all. `reminders` carries only its README — the curated cautions
+#: themselves are written by runs, under approval — but the DIRECTORY has to exist and be
+#: tracked, or the store is invisible in the repo until the first write and the Library tab
+#: has nothing to list.
+SEED_DOC_KINDS = (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.md"),
+                  ("patterns", "*.yaml"), ("reminders", "*.md"))
+
+
 def seed_libraries(home: Path) -> None:
-    """Populate an empty library repo (workflows/ + rules/ + permissions/ + patterns/ +
-    reminders/ + utils/) from the built-in seeds + git-init it (matches deploy/install.sh).
-    The `gu` dispatcher is installed by utils_lib.ensure_library on first use.
+    """Populate an empty library repo from the built-in seeds + git-init it — what
+    deploy/install.sh calls, so a host install starts with the library whole: every
+    SEED_DOC_KINDS kind, the playbooks/ subfolders and utils/. The `gu` dispatcher is installed
+    by utils_lib.ensure_library on first use.
     """
-    root = repo_root()
+    seed = repo_root() / "library-seed"
     home.mkdir(parents=True, exist_ok=True)
-    if (root / "library-seed" / "workflows").is_dir():
-        shutil.copytree(root / "library-seed" / "workflows", home / "workflows", dirs_exist_ok=True)
-    for kind, pattern in (("rules", "*.md"), ("permissions", "*.md"), ("patterns", "*.yaml"),
-                          ("reminders", "*.md")):
+    for kind, pattern in SEED_DOC_KINDS:
         (home / kind).mkdir(exist_ok=True)
-        if (root / "library-seed" / kind).is_dir():
-            for f in sorted((root / "library-seed" / kind).glob(pattern)):
-                shutil.copy(f, home / kind / f.name)
-    # playbooks are subfolders (MAIN.md + detail files), so copy the whole tree
-    if (root / "library-seed" / "playbooks").is_dir():
-        shutil.copytree(root / "library-seed" / "playbooks", home / "playbooks", dirs_exist_ok=True)
-    (home / "utils").mkdir(exist_ok=True)
-    if (root / "util-seed" / "utils").is_dir():
-        shutil.copytree(root / "util-seed" / "utils", home / "utils", dirs_exist_ok=True)
+        for f in sorted((seed / kind).glob(pattern)):
+            shutil.copy(f, home / kind / f.name)
+    # playbooks are subfolders (MAIN.md + detail files) and utils are directories: whole trees
+    for src, dest in ((seed / "playbooks", home / "playbooks"),
+                      (repo_root() / "util-seed" / "utils", home / "utils")):
+        dest.mkdir(exist_ok=True)
+        if src.is_dir():
+            shutil.copytree(src, dest, dirs_exist_ok=True)
     if not (home / ".git").is_dir():
         libgit.init_repo(home, first_commit="seed library repo")
     else:
         # install-time seeding runs before any instance exists: no health stream to file in
         libgit.commit(home, "seed library repo", routines_home=None)
         libgit.install_push_hook(home)
-
-
-#: The flat library doc kinds the boot sync tops up, with the glob that finds them.
-#: `patterns` is here because a settings PATTERN is read LIVE — by creation, the routine page
-#: and the recommender (docs/patterns.md) — so one that only ever landed when the repo was first
-#: created would mean a pattern added to the seed later reaches no existing instance at all.
-#: `reminders` carries only its README — the curated cautions themselves are written by
-#: runs, under approval — but the DIRECTORY has to exist and be tracked, or the store is
-#: invisible in the repo until the first write and the Library tab has nothing to list.
-SEED_DOC_KINDS = (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.md"),
-                  ("patterns", "*.yaml"), ("reminders", "*.md"))
 
 
 def sync_seed_library_docs(libraries_home: Path, *, routines_home: Path) -> int:
@@ -283,7 +322,7 @@ def sync_seed_utils(libraries_home: Path, *, routines_home: Path) -> int:
     src = repo_root() / "util-seed" / "utils"
     dest = libraries_home / "utils"
     if not src.is_dir() or not dest.is_dir():
-        return 0   # fresh deploys get everything via seed_libraries instead
+        return 0   # no library yet — the daemon's boot creates it (ensure_library) before this
     from . import utils_lib
 
     installed = []

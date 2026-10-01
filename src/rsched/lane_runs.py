@@ -33,10 +33,12 @@ it. Shape (single document, atomic-written):
      "log": [{"slug","run_id","state","outcome"}],  # per-member results as they finish
      "armed_by": "ui", "created": "…", "ended": null}
 
-These records are EPHEMERAL — one exists only while its chain is in flight and the daemon
-drains every run before it restarts — so the directory holds nothing worth carrying across a
-release. The shared STORE directory is the opposite case: routines address those paths in
-their own memory, so it must never move (`sharedstores.STORES_DIRNAME`).
+These records are EPHEMERAL — one exists only while its chain is in flight — but they are not
+process memory: a restart is no drain, and a pending self-update restart HOLDS a chain's next
+member for exactly the quiet gap the restart waits for, so a chain crosses a restart in this
+file and its member fires at the first tick after boot (daemon/lane_runs.py). Only the daemon
+reads them back, though; the shared STORE directory is the opposite case: routines address
+those paths in their own memory, so it must never move (`sharedstores.STORES_DIRNAME`).
 
 This module owns the file IO and shape, the DAEMON manager (`daemon/lane_runs.py`) the
 advance logic, and the API layer the validation of members against the live registry.

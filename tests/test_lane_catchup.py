@@ -74,6 +74,25 @@ def test_missed_fire_is_made_up_once(tmp_path):
     assert lane_catchup.boot_catchup(server, now + timedelta(minutes=5)) == []
 
 
+def test_a_naive_stamp_reads_as_no_evidence_and_spares_the_other_lanes(tmp_path):
+    """Every writer stamps an aware instant; a naive one (a hand edit of a file documented as
+    safe to delete) used to come back naive, and comparing it with the aware due fire raised
+    TypeError mid-loop — the make-up of every lane after it was lost with it. It reads like a
+    missing entry now: stamped at boot, nothing made up for it."""
+    server = _server(tmp_path)
+    home = server.routines_home
+    naive = lanes.create(home, name="Naive", cron="0 7 * * *", tz="UTC")
+    missed = lanes.create(home, name="Missed", cron="0 7 * * *", tz="UTC")
+    lane_fires.stamp(home, naive["id"], "2026-09-01T07:00:00")
+    lane_fires.stamp(home, missed["id"], datetime(2026, 9, 1, 7, 0, tzinfo=UTC).isoformat())
+    assert lane_fires.last_armed(home, naive["id"]) is None
+    now = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
+    assert lane_catchup.boot_catchup(server, now) == [missed["id"]]
+    assert lane_fires.last_armed(home, naive["id"]) == now           # stamped, not made up
+    lane_fires.stamp_paused_skip(home, naive["id"], "2026-09-09T07:00:00")
+    assert lane_fires.last_paused_skip(home, naive["id"]) is None
+
+
 def test_skip_policy_paused_and_in_flight_lanes_are_not_made_up(tmp_path):
     server = _server(tmp_path)
     home = server.routines_home

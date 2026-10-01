@@ -299,6 +299,24 @@ async def test_crash_replayed_event_lands_exactly_once(tmp_path):
 REPORT_TRIG = {"id": "t-rep00001", "type": "report", "cooldown_s": 900}
 
 
+def test_a_report_trigger_without_a_cooldown_gets_the_report_default():
+    """docs/triggers.md: a report trigger's cooldown defaults to 900 s — generous so a delivery
+    burst becomes ONE run — and the daemon's own fallback says the same. Validation filled the
+    webhook's 60 s into every type first, so the report default could never apply."""
+    out, problems = triggers.validate_triggers([{"id": "t-rep", "type": "report"},
+                                                {"id": "t-web", "type": "webhook", "token": "x"}])
+    assert problems == []
+    assert out[0]["cooldown_s"] == triggers.DEFAULT_REPORT_COOLDOWN_S
+    assert out[1]["cooldown_s"] == triggers.DEFAULT_COOLDOWN_S
+    out, problems = triggers.validate_triggers([{"id": "t-rep", "type": "report",
+                                                 "cooldown_s": "soon"}])
+    assert out[0]["cooldown_s"] == triggers.DEFAULT_REPORT_COOLDOWN_S
+    assert f"using {triggers.DEFAULT_REPORT_COOLDOWN_S}" in problems[0]
+    # the comparison form agrees with what validation makes of the same row
+    assert triggers.with_defaults({"id": "t-rep", "type": "report"})["cooldown_s"] \
+        == triggers.DEFAULT_REPORT_COOLDOWN_S
+
+
 def test_validate_triggers_accepts_report_without_warning():
     out, problems = triggers.validate_triggers([dict(REPORT_TRIG)])
     assert problems == []                       # implemented type: no reserved-inert flag

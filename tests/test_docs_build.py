@@ -29,6 +29,13 @@ def test_render_guide_is_selfcontained_html():
     assert "http://" not in html.split("</style>")[1]  # body: no external asset fetches
 
 
+def test_render_guide_escapes_the_title_it_puts_in_the_head():
+    """The title is a heading's raw markdown text (`# Rules, permissions & capabilities`), and
+    it lands in <title> — markup there, never text the page interprets."""
+    html = render_guide("# a <b> & &copy;\n", "a <b> & &copy;")
+    assert "<title>a &lt;b&gt; &amp; &amp;copy;</title>" in html
+
+
 def test_build_skip_and_force(tmp_path):
     repo = _src_repo(tmp_path)
     out = tmp_path / "out"

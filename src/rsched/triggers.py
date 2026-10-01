@@ -83,6 +83,11 @@ def hook_path(slug: str, trigger: dict) -> str:
     return f"/api/hooks/{slug}/{trigger.get('token', '')}"
 
 
+def default_cooldown(ttype: str) -> int:
+    """A trigger type's own cooldown when its entry names none: report 900s, others 60s."""
+    return DEFAULT_REPORT_COOLDOWN_S if ttype == "report" else DEFAULT_COOLDOWN_S
+
+
 def default_cap(ttype: str) -> int:
     """A trigger type's own per-day cap when its entry names none: report 24, others uncapped."""
     return DEFAULT_REPORT_MAX_FIRES_PER_DAY if ttype == "report" else UNCAPPED_FIRES
@@ -93,8 +98,9 @@ def with_defaults(entry: dict) -> dict:
     `validate_triggers` makes of it — so a row that names a default and one that leaves it out
     compare equal.
     """
-    return {"cooldown_s": DEFAULT_COOLDOWN_S,
-            "max_fires_per_day": default_cap(str(entry.get("type") or "")), **entry}
+    ttype = str(entry.get("type") or "")
+    return {"cooldown_s": default_cooldown(ttype), "max_fires_per_day": default_cap(ttype),
+            **entry}
 
 
 def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
@@ -129,11 +135,14 @@ def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
         if tid in seen:
             problems.append(f"{where}: duplicate id {tid!r}")
             continue
-        cooldown = entry.get("cooldown_s", DEFAULT_COOLDOWN_S)
+        # Absent = the type's own default (report 900s, everything else 60s) — filled in here,
+        # so every later reader sees the value that applies.
+        cool_default = default_cooldown(ttype)
+        cooldown = entry.get("cooldown_s", cool_default)
         if isinstance(cooldown, bool) or not isinstance(cooldown, int) or cooldown < 0:
             problems.append(f"{where}: cooldown_s must be a non-negative integer "
-                            f"(got {cooldown!r}; using {DEFAULT_COOLDOWN_S})")
-            cooldown = DEFAULT_COOLDOWN_S
+                            f"(got {cooldown!r}; using {cool_default})")
+            cooldown = cool_default
         entry["cooldown_s"] = cooldown
         # Absent = the type's own default (report 24/day, everything else uncapped), the
         # same convention cooldown_s follows — so a trigger written before the cap existed

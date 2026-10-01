@@ -25,12 +25,11 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from . import libgit
 from .grants import RECIPE_PREFIXES
 
 # git pathspecs for the recipe set — RECIPE_PREFIXES minus the dir-prefix slashes
 RECIPE_PATHSPECS: tuple[str, ...] = tuple(p.rstrip("/") for p in RECIPE_PREFIXES)
-
-from . import libgit  # noqa: E402 — one git plumbing home
 
 
 class RecipeError(Exception):
@@ -88,7 +87,7 @@ def recipe_log(routine_dir: Path, limit: int = 50) -> list[dict]:
         return []
     try:
         r = libgit.git(routine_dir, "log", f"-{limit}", "--format=%H%x09%h%x09%cI%x09%s",
-                 "--", *RECIPE_PATHSPECS)
+                       "--", *RECIPE_PATHSPECS)
     except (OSError, subprocess.TimeoutExpired):
         return []
     out = []
@@ -118,7 +117,7 @@ def revert_recipe(routine_dir: Path, commit: str, *, routines_home: Path | None)
         if libgit.git(routine_dir, "cat-file", "-e", f"{ref}^{{commit}}").returncode != 0:
             raise RecipeError(f"unknown commit {ref!r}")
         touched = libgit.git(routine_dir, "show", "--name-only", "--format=", ref,
-                       "--", *RECIPE_PATHSPECS)
+                             "--", *RECIPE_PATHSPECS)
         if not touched.stdout.strip():
             raise RecipeError(f"commit {ref!r} touched no recipe file — nothing to revert")
         parent = libgit.git(routine_dir, "rev-parse", "--short", f"{ref}^")

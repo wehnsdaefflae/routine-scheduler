@@ -184,6 +184,31 @@ def test_second_branch_gets_its_own_slug(server):
 
 # ---- the hand-back -------------------------------------------------------------------------
 
+def test_a_fork_never_writes_into_a_branch_another_fork_just_claimed(server, monkeypatch):
+    """The route runs on the threadpool, so a double-submitted fork is two forks at once. A
+    free name used to be PICKED (an exists() check) and then created with exist_ok, so the
+    fork that lost the race wrote its routine.yaml and transcript over the winner's. Here the
+    winner creates b1 a moment before this fork's own mkdir of it."""
+    _parent(server)
+    home = server.conversations_home
+    real_mkdir = Path.mkdir
+    raced: list[bool] = []
+
+    def racing_mkdir(self, *args, **kwargs):
+        if self == home / "c-p-b1" and not raced:
+            raced.append(True)
+            real_mkdir(self)                               # the other fork claims b1 first
+            (self / "routine.yaml").write_text("slug: c-p-b1\n", encoding="utf-8")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", racing_mkdir)
+    made = branches.fork_conversation(server, parent_dir=home / "c-p", parent_slug="c-p",
+                                      at_turn=1)
+    monkeypatch.undo()
+    assert made["slug"] != "c-p-b1"
+    assert (home / "c-p-b1" / "routine.yaml").read_text(encoding="utf-8") == "slug: c-p-b1\n"
+
+
 def test_handback_delivers_summary_and_artifacts_without_merging(server):
     """Merging is deliberately a HAND-BACK: the parent gets a message and files, and its own
     transcript is untouched — two divergent histories are never interleaved."""

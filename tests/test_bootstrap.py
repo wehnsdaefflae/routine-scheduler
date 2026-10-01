@@ -114,8 +114,38 @@ def test_sync_seed_utils_installs_missing_never_overwrites(tmp_path, monkeypatch
     assert bootstrap.sync_seed_utils(lib, routines_home=tmp_path) == 0
 
 
+def test_a_fresh_containers_first_boot_seeds_utils_and_docs(tmp_path, monkeypatch):
+    """A container has no install step: its library is an EMPTY bind mount at first boot. The
+    seed util sync only installs into an existing utils/, and the repo used to be created by
+    the web lifespan — after the syncs had run — so a new deploy started with docs but no
+    utils, and first got them at its second boot. The daemon's boot creates the repo first."""
+    from types import SimpleNamespace
+
+    from rsched import cli_daemon
+
+    lib = tmp_path / "lib"
+    lib.mkdir()                                            # what a fresh bind mount leaves
+    server = SimpleNamespace(libraries_home=lib, libraries_remote="", bind="127.0.0.1",
+                             port=8321, routines_home=tmp_path / "routines",
+                             permissions_home=lib / "permissions")
+    server.routines_home.mkdir()
+    monkeypatch.setattr(bootstrap, "ensure_config", lambda: False)
+    monkeypatch.setattr(cli_daemon, "load_server_config", lambda: (server, []))
+    monkeypatch.setattr("rsched.migrate_settings_patterns.run_migration", lambda s: {})
+    monkeypatch.setattr("rsched.web.app.create_app", lambda s: None)
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+
+    assert cli_daemon.cmd_daemon(None) == 0
+    assert (lib / ".git").is_dir()
+    assert (lib / "utils" / "remote" / "main.py").is_file()       # utils at the FIRST boot
+    assert list((lib / "rules").glob("*.md"))
+    from rsched import libgit
+    assert libgit.git(lib, "status", "--porcelain").stdout.strip() == ""   # all committed
+
+
 def test_sync_seed_utils_no_library_yet(tmp_path, monkeypatch):
-    """Before seed_libraries has created utils/, the sync is a silent no-op."""
+    """Before the library exists (the daemon's boot creates it first), the sync is a silent
+    no-op."""
     from rsched import bootstrap
     fake_repo = tmp_path / "repo"
     (fake_repo / "util-seed" / "utils" / "x").mkdir(parents=True)
@@ -161,6 +191,52 @@ def test_adopt_raises_the_actions_the_doc_requires_and_keeps_the_settings(make_r
     caps = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))["capabilities"]
     assert caps["actions"] == ["schedule_run"]
     assert (caps["runs"], caps["reminders"], caps["confirm"]) == ("all", "none", "always")
+
+
+# ------------------------------------------------------------------ the config's tokens
+
+
+def _config_at(tmp_path, monkeypatch, text: str):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(bootstrap, "config_file", lambda: cfg)
+    return cfg
+
+
+def test_an_install_sh_config_never_keeps_the_examples_routine_token(tmp_path, monkeypatch):
+    """deploy/install.sh copies the example and generates only the PRIMARY token, so the
+    routine tier's bearer was the example's `change-me-too` — a value published in the repo,
+    which opens every GET outside the denied subtrees to anyone who read it. A known
+    placeholder is no secret: boot replaces it, and the primary is left exactly as it was."""
+    example = (bootstrap.repo_root() / "config" / "config.example.yaml").read_text(
+        encoding="utf-8")
+    cfg = _config_at(tmp_path, monkeypatch,
+                     example.replace('token: "change-me"', 'token: "generated-primary"', 1))
+    assert yaml.safe_load(cfg.read_text(encoding="utf-8"))["routine_token"] == "change-me-too"
+
+    assert bootstrap.ensure_config() is False
+    raw = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    assert raw["token"] == "generated-primary"
+    assert raw["routine_token"] not in ("change-me-too", "change-me", "generated-primary")
+    assert len(raw["routine_token"]) >= 24
+
+
+def test_a_routine_token_equal_to_the_primary_is_replaced(tmp_path, monkeypatch):
+    """R94: the primary must never double as the routine tier, or the seal is vacuous."""
+    cfg = _config_at(tmp_path, monkeypatch, 'token: "same"\nroutine_token: "same"\n')
+    assert bootstrap.ensure_config() is False
+    raw = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    assert raw["token"] == "same" and raw["routine_token"] not in ("same", "")
+
+
+def test_a_real_or_deliberately_empty_routine_token_is_left_alone(tmp_path, monkeypatch):
+    """Its own secret stays byte-identical; an explicit empty value is the documented way to
+    switch the tier off (config/server.py), so boot never 'repairs' it either."""
+    for text in ('token: "p"\nroutine_token: "a-real-secret"  # mine\n',
+                 'token: "p"\nroutine_token: ""\n'):
+        cfg = _config_at(tmp_path, monkeypatch, text)
+        assert bootstrap.ensure_config() is False
+        assert cfg.read_text(encoding="utf-8") == text
 
 
 def test_the_implicit_default_block_carries_the_reminders_setting():
