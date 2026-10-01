@@ -18,6 +18,10 @@ from .config import MODEL_KINDS, load_server_config
 from .paths import expand
 from .schedule import server_tz
 
+#: A finished run's status → the process exit code (`run-once` and the daemon's `engine-run`).
+#: A partial run did its job as far as it went — 0; an abort is the shell's SIGINT 130.
+RUN_EXIT_CODES = {"ok": 0, "partial": 0, "failed": 1, "aborted": 130}
+
 
 def _parse_model_overrides(values: list[str]) -> dict[str, str]:
     """--model main=gpt-4o (a catalog model NAME; repeatable per role)."""
@@ -81,7 +85,7 @@ def cmd_run_once(args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"run dir: {run_dir}", file=sys.stderr)
-    return {"ok": 0, "partial": 0, "failed": 1, "aborted": 130}.get(status, 1)
+    return RUN_EXIT_CODES.get(status, 1)
 
 
 def cmd_engine_run(args) -> int:
@@ -125,7 +129,7 @@ def cmd_engine_run(args) -> int:
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    return {"ok": 0, "partial": 0, "failed": 1, "aborted": 130}.get(status, 1)
+    return RUN_EXIT_CODES.get(status, 1)
 
 
 def cmd_validate(args) -> int:
@@ -252,7 +256,7 @@ def cmd_lint(args) -> int:
     from .workflows.lint import lint_all
 
     if getattr(args, "libraries_home", None):
-        libraries_home = Path(args.libraries_home)   # sandboxed caller: skip ~/.config read
+        libraries_home = expand(args.libraries_home)   # sandboxed caller: skip ~/.config read
     else:
         server, _ = load_server_config()
         libraries_home = server.libraries_home
@@ -296,7 +300,7 @@ def cmd_scaffold(args) -> int:
             tags=args.tag or None,
             fs_read_roots=args.read_root or None, fs_write_roots=args.write_root or None,
         )
-    except (ValueError, KeyError, FileNotFoundError) as exc:
+    except (ValueError, KeyError, OSError) as exc:     # OSError: an unreadable instruction file
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"scaffolded: {path}", file=sys.stderr)

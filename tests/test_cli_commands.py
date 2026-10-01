@@ -167,6 +167,18 @@ def test_scaffold_creates_a_runnable_routine(cli_server, capsys):
     assert not (cli_server.routines_home / "scaffed2").exists()
 
 
+def test_scaffold_reports_an_unreadable_instruction_file(cli_server, tmp_path, capsys):
+    """A directory (or an unreadable file) given as --instruction-file is a usage error with a
+    message, like a missing one — not an IsADirectoryError traceback."""
+    rc = cli.cmd_scaffold(_args(slug="scaffed3", name="", workflow="general-task",
+                                instruction_file=str(tmp_path), cron="", tz="Europe/Berlin",
+                                description="", tag=None, read_root=None, write_root=None))
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error:") and "Traceback" not in err
+    assert not (cli_server.routines_home / "scaffed3").exists()
+
+
 # ---- run-once ---------------------------------------------------------------------------
 
 
