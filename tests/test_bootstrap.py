@@ -163,6 +163,52 @@ def test_adopt_raises_the_actions_the_doc_requires_and_keeps_the_settings(make_r
     assert (caps["runs"], caps["reminders"], caps["confirm"]) == ("all", "none", "always")
 
 
+# ------------------------------------------------------------------ the config's tokens
+
+
+def _config_at(tmp_path, monkeypatch, text: str):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(bootstrap, "config_file", lambda: cfg)
+    return cfg
+
+
+def test_an_install_sh_config_never_keeps_the_examples_routine_token(tmp_path, monkeypatch):
+    """deploy/install.sh copies the example and generates only the PRIMARY token, so the
+    routine tier's bearer was the example's `change-me-too` — a value published in the repo,
+    which opens every GET outside the denied subtrees to anyone who read it. A known
+    placeholder is no secret: boot replaces it, and the primary is left exactly as it was."""
+    example = (bootstrap.repo_root() / "config" / "config.example.yaml").read_text(
+        encoding="utf-8")
+    cfg = _config_at(tmp_path, monkeypatch,
+                     example.replace('token: "change-me"', 'token: "generated-primary"', 1))
+    assert yaml.safe_load(cfg.read_text(encoding="utf-8"))["routine_token"] == "change-me-too"
+
+    assert bootstrap.ensure_config() is False
+    raw = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    assert raw["token"] == "generated-primary"
+    assert raw["routine_token"] not in ("change-me-too", "change-me", "generated-primary")
+    assert len(raw["routine_token"]) >= 24
+
+
+def test_a_routine_token_equal_to_the_primary_is_replaced(tmp_path, monkeypatch):
+    """R94: the primary must never double as the routine tier, or the seal is vacuous."""
+    cfg = _config_at(tmp_path, monkeypatch, 'token: "same"\nroutine_token: "same"\n')
+    assert bootstrap.ensure_config() is False
+    raw = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    assert raw["token"] == "same" and raw["routine_token"] not in ("same", "")
+
+
+def test_a_real_or_deliberately_empty_routine_token_is_left_alone(tmp_path, monkeypatch):
+    """Its own secret stays byte-identical; an explicit empty value is the documented way to
+    switch the tier off (config/server.py), so boot never 'repairs' it either."""
+    for text in ('token: "p"\nroutine_token: "a-real-secret"  # mine\n',
+                 'token: "p"\nroutine_token: ""\n'):
+        cfg = _config_at(tmp_path, monkeypatch, text)
+        assert bootstrap.ensure_config() is False
+        assert cfg.read_text(encoding="utf-8") == text
+
+
 def test_the_implicit_default_block_carries_the_reminders_setting():
     """A routine with no `capabilities:` key means DEFAULT_CAPABILITIES; adopt deliberately
     does not write a block for one — so the default itself must carry the one setting that is
