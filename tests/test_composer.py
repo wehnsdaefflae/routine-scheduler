@@ -326,6 +326,30 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "spawn" not in kinds2 and "ask_user" in kinds2
 
 
+def test_capabilities_never_advertise_a_granted_kind_the_tools_list_leaves_out(make_routine,
+                                                                               tmp_path):
+    """The kinds line reads grant ∩ workflow `tools:`, but the capability lines below it read
+    the grant alone — a recipe whose tools omit write_util/shell/schedule_run/script/… was told
+    about kinds its schema refuses. Every line now keys on the same effective kinds."""
+    from rsched.engine.capabilities import capabilities_digest
+    from rsched.grantpolicy import GrantPolicy
+
+    ctx = _ctx(make_routine, tmp_path, slug="capsnarrow")
+    gated = ("write_util", "remove_util", "write_rule", "shell", "schedule_run")
+    ctx.grants = GrantPolicy(actions=frozenset(gated), confirm="never", rule_confirm="never")
+    full = capabilities_digest(ctx)
+    for marker in ("write_util (", "remove_util (", "write_rule (", "shell (",
+                   "schedule_run (", "script — "):
+        assert marker in full
+    narrow = capabilities_digest(ctx, allowed_kinds={"read_file", "write_file", "finish"})
+    enabled = next(line for line in narrow.split("\n\n")
+                   if line.startswith("Capabilities enabled"))
+    for marker in ("write_util", "remove_util", "write_rule", "shell", "schedule_run",
+                   "script"):
+        assert marker not in enabled
+    assert "(none beyond the base kinds)" in enabled
+
+
 def test_shared_store_notes_reach_the_prompt_and_drain_once(make_routine, tmp_path):
     """F335 end to end through the composer: the harness contract NAMES each shared store, who
     else shares it and the light channel between them (a channel a run does not know about is a
