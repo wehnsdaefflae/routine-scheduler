@@ -7,7 +7,7 @@
 // nothing outside that file imported it.
 
 import { api } from "/static/api.js";
-import { el, toast } from "/static/util.js";
+import { act, el, toast } from "/static/util.js";
 
 //: Who the proxy is signed in as FOR THIS ENDPOINT'S MODELS, and the way back in when a session
 //: dies. The proxy owns the OAuth flow; the console only ferries the consent link out and the
@@ -47,9 +47,12 @@ export function proxyAccounts(ep, onSignedIn) {
     }
     list.replaceChildren(...a.accounts.map(accountLine));
     if (!a.accounts.length) list.append(el("span", { class: "muted" }, "no proxy account signed in yet"));
+    // act() holds the button while the proxy mints the link: a double press started two
+    // sign-ins, and the card showed whichever link answered last while the other state waited.
+    // startLogin reports its own failure in the card, so act() only does the holding.
     buttons.replaceChildren(...(a.providers || []).map(({ id, label }) => {
       const b = el("button", { class: "btn small" }, `re-authenticate ${label}`);
-      b.onclick = () => startLogin(id, label);
+      b.onclick = () => act(b, () => startLogin(id, label));
       return b;
     }));
   }

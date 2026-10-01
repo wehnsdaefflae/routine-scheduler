@@ -7,7 +7,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast, toastError, when } from "/static/util.js";
+import { act, el, toast, toastError, when } from "/static/util.js";
 
 export function scheduleOnceCard(slug) {
   const body = el("div", { class: "oneshot-body" });
@@ -36,14 +36,19 @@ export function scheduleOnceCard(slug) {
       armForm());
   }
 
+  // Both buttons run through util.js act(): disabled while their request is out. The spool keeps
+  // every request it is handed, so a double press on "arm" armed TWO one-shots for the same
+  // instant; a doubly activated "cancel" asked twice and sent a DELETE that answered 404.
   function row(o) {
+    const drop = el("button", { class: "btn small danger" }, "cancel");
+    drop.onclick = () => act(drop, () => cancel(o));
     return el("div", { class: "oneshot-row", style: "padding:8px 0;border-bottom:1px solid var(--rule)" },
       el("div", { class: "row spread", style: "margin-bottom:4px" },
         el("div", { class: "row", style: "gap:10px" },
           el("span", { class: "ref-tag" }, "one-shot"),
           el("span", { title: o.fire_at }, "fires ", when(o.fire_at)),
           el("span", { class: "muted small" }, o.id)),
-        el("button", { class: "btn small danger", onclick: () => cancel(o) }, "cancel")),
+        drop),
       o.reason ? el("div", { class: "muted small" }, o.reason) : "",
       el("div", { class: "muted small" }, `armed by ${o.requested_by || "?"}`));
   }
@@ -52,7 +57,8 @@ export function scheduleOnceCard(slug) {
     const at = el("input", { type: "datetime-local", class: "code oneshot-at" });
     const reason = el("input", { type: "text", placeholder: "reason (optional)",
       class: "oneshot-reason", style: "flex:1;min-width:180px" });
-    const add = el("button", { class: "btn primary", onclick: () => arm(at, reason) }, "arm one-shot");
+    const add = el("button", { class: "btn primary" }, "arm one-shot");
+    add.onclick = () => act(add, () => arm(at, reason));
     return el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap;align-items:center" },
       at, reason, add);
   }
@@ -62,21 +68,17 @@ export function scheduleOnceCard(slug) {
     if (!local) { toast("pick a date & time first", 3000, { error: true }); return; }
     // datetime-local is naive LOCAL time; send an absolute UTC ISO instant to the API.
     const iso = new Date(local).toISOString();
-    try {
-      await api(`/api/routines/${slug}/schedule-once`,
-        { method: "POST", body: { fire_at: iso, reason: reason.value || "" } });
-      toast("one-shot armed");
-      refresh();
-    } catch (err) { toastError(err); }
+    await api(`/api/routines/${slug}/schedule-once`,
+      { method: "POST", body: { fire_at: iso, reason: reason.value || "" } });
+    toast("one-shot armed");
+    refresh();
   }
 
   async function cancel(o) {
     if (!(await confirmDialog(`Cancel the one-shot armed for ${new Date(o.fire_at).toLocaleString()}? It will not fire.`,
                               { confirmLabel: "cancel one-shot" }))) return;
-    try {
-      await api(`/api/routines/${slug}/schedule-once/${o.id}`, { method: "DELETE" });
-      toast("one-shot cancelled");
-      refresh();
-    } catch (err) { toastError(err); }
+    await api(`/api/routines/${slug}/schedule-once/${o.id}`, { method: "DELETE" });
+    toast("one-shot cancelled");
+    refresh();
   }
 }

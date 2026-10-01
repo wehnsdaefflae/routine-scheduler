@@ -146,6 +146,37 @@ def test_own_secrets_set_shadow_and_remove(ui, ui_page):
     assert secrets.load_routine_secrets("uir") == {}
 
 
+def test_an_own_secret_is_set_and_removed_once_per_press(ui, ui_page):
+    """Both buttons sent their request again on a second press — a second PUT, and a second
+    DELETE answering 404 over the success. They rest while it is out (util.js act), as the
+    Settings → Secrets buttons do."""
+    from rsched import secrets
+
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    _unfold(ui_page)
+    ui_page.wait_for_selector("h2:has-text('Own secrets')")
+    sent = []
+
+    def slow(route):                    # hold each write so a second press lands while it is out
+        if route.request.method in {"PUT", "DELETE"}:
+            sent.append(route.request.method)
+            ui_page.wait_for_timeout(400)
+        route.continue_()
+
+    ui_page.route("**/api/routines/uir/secrets**", slow)
+    ui_page.locator("[data-own-secret-key]").fill("ONCE_ONLY")
+    ui_page.locator("[data-own-secret-value]").fill("v")
+    ui_page.locator("[data-own-secret-set]").dblclick()
+    row = ui_page.locator('[data-own-secret="ONCE_ONLY"]')
+    expect(row).to_be_visible()
+    row.get_by_role("button", name="remove").dblclick()
+    expect(row).to_have_count(0)
+    ui_page.wait_for_timeout(500)
+    assert sent == ["PUT", "DELETE"], f"two presses each, sent {sent}"
+    assert secrets.load_routine_secrets("uir") == {}
+    expect(_toast(ui_page)).to_contain_text("ONCE_ONLY removed")
+
+
 def test_sections_side_toc(ui, ui_page):
     """The routine page grows an "On this page" index in the navigation rail listing its <h2>
     sections — the same mountToc index Settings gets (routine.js's recipe file tree is a

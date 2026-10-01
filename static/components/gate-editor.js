@@ -12,7 +12,7 @@
 // the real admission path and starts no run.
 
 import { api } from "/static/api.js";
-import { el, toastError } from "/static/util.js";
+import { act, el } from "/static/util.js";
 
 const ADMIT = "scripts/admit.py";
 
@@ -166,15 +166,18 @@ export function gateEditor({ slug, value, onChange }) {
         const area = el("textarea", { class: "code", rows: "16", spellcheck: "false",
           "data-nopersist": true });
         area.value = content;
+        // act(): one PUT per press. While a run is active the write is QUEUED to its end (D78-A),
+        // and a test now would still ask the script as it was — so the note says which happened.
+        const save = el("button", { class: "btn primary small", type: "button" }, `save ${ADMIT}`);
+        save.onclick = () => act(save, async () => {
+          const res = await api(`/api/routines/${slug}/file`, { method: "PUT",
+            body: { path: ADMIT, content: area.value } });
+          box.replaceChildren(open, el("span", { class: "muted small" }, res?.queued
+            ? ` ${ADMIT} is written when the active run ends — test the gate after that`
+            : ` saved ${ADMIT} — test the gate to see its answer`));
+        });
         box.replaceChildren(area, el("div", { class: "row mt", style: "gap:8px" },
-          el("button", { class: "btn primary small", type: "button", onclick: async () => {
-            try {
-              await api(`/api/routines/${slug}/file`, { method: "PUT",
-                body: { path: ADMIT, content: area.value } });
-              box.replaceChildren(open, el("span", { class: "muted small" },
-                ` saved ${ADMIT} — test the gate to see its answer`));
-            } catch (err) { toastError(err); }
-          } }, `save ${ADMIT}`),
+          save,
           el("button", { class: "btn small", type: "button",
             onclick: () => box.replaceChildren(open) }, "close")));
       } }, `edit ${ADMIT}`);

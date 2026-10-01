@@ -59,3 +59,22 @@ def test_schedule_once_arm_from_ui(ui, ui_page):
     rec = schedule_once.read_request(reqs[0])
     assert rec["reason"] == "from the ui" and rec["requested_by"] == "ui"
     assert rec["fire_at"] > datetime.now(UTC).isoformat()
+
+
+def test_a_double_pressed_arm_arms_one_one_shot(ui, ui_page):
+    """The spool keeps every request it is handed, so two presses armed two one-shots for the
+    same instant. The button rests while its POST is out (util.js act)."""
+    _open(ui, ui_page)
+    when_local = (datetime.now(UTC).astimezone() + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M")
+    ui_page.locator("input.oneshot-at").fill(when_local)
+
+    def slow(route):                    # hold the POST so the second press lands while it is out
+        if route.request.method == "POST":
+            ui_page.wait_for_timeout(400)
+        route.continue_()
+
+    ui_page.route("**/api/routines/uir/schedule-once", slow)
+    ui_page.get_by_role("button", name="arm one-shot").dblclick()
+    expect(ui_page.locator(".oneshot-row")).to_have_count(1)
+    ui_page.wait_for_timeout(500)
+    assert len(schedule_once.pending_requests(ui.routines, "uir")) == 1
