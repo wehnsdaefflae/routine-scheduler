@@ -68,6 +68,19 @@ def _run_key(ctx: RunContext) -> str:
     return ctx.run_ts
 
 
+def unused_name(path: Path) -> Path:
+    """`path`, or the first free `<stem>-<n><suffix>` beside it. `t<turn>-<name>` is not unique
+    within a run: a user's slash command executes at the turn boundary under the number of the
+    model turn before it, and overwriting that turn's file left its observation — already in
+    the transcript and the context — pointing at output it never produced.
+    """
+    candidate, n = path, 2
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem}-{n}{path.suffix}")
+        n += 1
+    return candidate
+
+
 def _prune(base: Path) -> None:
     """Keep the KEEP_RUNS newest run dirs (ISO timestamps sort lexically); a run's
     sub-<n> dirs nest inside its own, so this prunes children with their parent.
@@ -98,10 +111,10 @@ def spill(ctx: RunContext, name: str, out: str, err: str, *,
                                         ("err", err, err_truncated)):
             if not truncated:
                 continue
-            rel = f"{rel_dir}/t{ctx.turn}-{name}.{stream}"
-            atomic_write(ctx.routine.dir / rel, text)
+            target = unused_name(ctx.routine.dir / rel_dir / f"t{ctx.turn}-{name}.{stream}")
+            atomic_write(target, text)
             key = "stdout" if stream == "out" else "stderr"
-            pointer[key] = rel
+            pointer[key] = str(target.relative_to(ctx.routine.dir))
             pointer[f"{key}_chars"] = len(text)
             if getattr(text, "capture_truncated", False):
                 pointer[f"{key}_capture_truncated"] = True

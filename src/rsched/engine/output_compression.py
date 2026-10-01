@@ -120,8 +120,8 @@ def _observation(ctx: RunContext, name: str, out: str, err: str, code: int) -> d
             return obs
         kind, encoded = found
         candidate = f"{lossless.LABELS[kind]}\n{encoded}"
-        rel = (ctx.routine.dir / "runs" / ctx.run_ts / "outputs"
-               / f"t{ctx.turn}-{name}.out").relative_to(ctx.routine.dir)
+        rel = outputs.unused_name(ctx.routine.dir / "runs" / ctx.run_ts / "outputs"
+                                  / f"t{ctx.turn}-{name}.out").relative_to(ctx.routine.dir)
         pointer = {**obs.get("full_output", {}), "stdout": str(rel), "stdout_chars": len(out)}
         baseline_size = len(stdout) + (len(outputs.pointer_line(obs["full_output"]))
                                       if obs.get("full_output") else 0)

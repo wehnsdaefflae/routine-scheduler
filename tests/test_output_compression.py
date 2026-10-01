@@ -220,6 +220,17 @@ def test_every_encoding_round_trips(text):
             assert decode(encoded) == text
 
 
+def test_a_second_original_under_the_same_turn_keeps_the_first(ctx, monkeypatch):
+    """Same turn number, same command name — a slash command right after the model's own
+    call — must not overwrite the original the earlier pointer names."""
+    minify = json.dumps(json.loads(DATA), separators=(",", ":"))
+    monkeypatch.setattr(compression, "_compress", lambda *_: ("json", minify))
+    first = compression.command_output(ctx, "sample", DATA, "", 0)["full_output"]["stdout"]
+    second = compression.command_output(ctx, "sample", DATA + " ", "", 0)["full_output"]["stdout"]
+    assert first != second and second.endswith("t7-sample-2.out")
+    assert (ctx.routine.dir / first).read_text() == DATA
+
+
 def test_child_original_is_engine_owned(ctx, monkeypatch):
     from rsched.grantpolicy import GrantPolicy
 

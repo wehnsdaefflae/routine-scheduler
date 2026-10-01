@@ -91,6 +91,20 @@ def test_a_child_run_cannot_overwrite_its_parents_spill(make_routine):
     assert (ctx.routine.dir / parent["stdout"]).read_text(encoding="utf-8") == BIG
 
 
+def test_a_second_spill_under_the_same_turn_keeps_the_first(make_routine):
+    """A user's slash command executes at the turn boundary under the number of the model
+    turn before it, so `/util page-fetch` right after the model's own page-fetch call names
+    the same `t7-page-fetch.out`. Overwriting it left the earlier observation's pointer — in
+    the transcript and the context already — naming output it never produced."""
+    ctx = _ctx(make_routine)
+    model = outputs.spill(ctx, "page-fetch", BIG, "", out_truncated=True, err_truncated=False)
+    user = outputs.spill(ctx, "page-fetch", BIG + "!", "", out_truncated=True,
+                         err_truncated=False)
+    assert user["stdout"] == f"{outputs.OUTPUTS_DIR}/20260726-120000/t7-page-fetch-2.out"
+    assert (ctx.routine.dir / model["stdout"]).read_text(encoding="utf-8") == BIG
+    assert (ctx.routine.dir / user["stdout"]).read_text(encoding="utf-8") == BIG + "!"
+
+
 def test_retention_prunes_to_the_newest_runs(make_routine):
     ctx = _ctx(make_routine)
     for i in range(outputs.KEEP_RUNS + 3):
