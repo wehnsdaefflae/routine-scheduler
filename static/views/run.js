@@ -20,7 +20,7 @@ import { createStateGraph } from "/static/components/stategraph.js";
 import { createRunAccounting } from "/static/components/run-accounting.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { createTranscript } from "/static/components/transcript.js";
-import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
+import { busy, chip, el, emptyState, fmtAbs, fmtDur, fmtTokens, skeleton, streamStatus,
          toast, toastError, toDate } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
 import { followScroll } from "/static/follow.js";
@@ -57,7 +57,7 @@ export async function render(view, runId, query = {}) {
   col.append(el("div", { class: "page-head" },
     el("div", {},
       kickerEl,
-      el("h1", {}, titleLink, ` · run ${fmtTs(ts)}`)),
+      el("h1", {}, titleLink, ` · run ${fmtAbs(ts)}`)),
     controls));
   col.append(el("div", { class: "runbar" }, stateChip, stream.node, usageSpan, durSpan, modelSpan));
   // A run started by hand with a BRIEF answers for that one line instead of its recipe's Done
