@@ -443,6 +443,14 @@ def _within(root: Path, path: Path) -> bool:
         return False
 
 
+def _is_repo(repo: Path) -> bool:
+    """`repo` is the top of a git work tree: its `.git` is the repository DIRECTORY, or — in a
+    linked worktree or a submodule — a FILE naming the git dir that lives elsewhere. Testing for
+    a directory alone refused every worktree, and a long piece of work is carried in one.
+    """
+    return (repo / ".git").exists()
+
+
 def _restore_run(repo_path: str, files: list[str] | None = None) -> dict:
     """Return the repo, or the named FILES, to HEAD — in the index AND the working tree.
 
@@ -456,7 +464,7 @@ def _restore_run(repo_path: str, files: list[str] | None = None) -> dict:
     git's exit codes were thrown away, so a restore stopped by an `index.lock` read as done.
     """
     repo = Path(repo_path).expanduser()
-    if not (repo / ".git").is_dir():
+    if not _is_repo(repo):
         raise ValueError(f"{repo} is not a git repository")
     if _git(repo, "rev-parse", "--verify", "--quiet", "HEAD").returncode != 0:
         raise ValueError(f"{repo} has no commit yet — there is no HEAD to restore to")
@@ -548,6 +556,12 @@ def _restore_selftest() -> int:
         assert locked["ok"] is False and locked["restored"] == [], locked
         assert "index.lock" in locked["errors"][0]["error"], locked
         (repo / ".git" / "index.lock").unlink()
+        # a linked WORKTREE has a `.git` FILE naming its git dir — still a repository
+        wt = Path(tmp) / "linked-wt"
+        _git(repo, "worktree", "add", "--detach", "-q", str(wt))
+        (wt / "keep.py").write_text("worktree edit\n")
+        in_wt = _restore_run(str(wt), files=["keep.py"])
+        assert in_wt["ok"] is True and (wt / "keep.py").read_text() == "original\n", in_wt
     print("selftest: ok", file=sys.stderr)
     return 0
 
@@ -620,14 +634,33 @@ def _identity_for(repo: Path) -> list[str]:
 NO_EDITOR = ["-c", "core.editor=true"]
 
 
+def _named_git_dir(dot_git_file: Path) -> Path | None:
+    """The git dir a `.git` FILE names (`gitdir: <path>`, relative to the file's own dir), or
+    None when it names none that exists — paths._named_git_dir's copy (a util cannot import
+    the package)."""
+    try:
+        text = dot_git_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    head, sep, target = text.strip().partition("gitdir:")
+    if not sep or head.strip():
+        return None
+    named = (dot_git_file.parent / target.strip()).resolve()
+    return named if named.is_dir() else None
+
+
 @contextmanager
 def _repo_lock(repo: Path, timeout: float = 30.0):
     """The rsched per-repo commit lock (mirrors paths.repo_lock_path / paths.file_lock):
-    an fcntl.flock on <repo>/.git/rsched-commit.lock, shared with the engine's autocommit and
-    pre-run recipe snapshot. Best-effort — proceed after `timeout` so a hung holder can never
-    deadlock a sync."""
-    gitdir = repo / ".git"
-    lock_path = gitdir / "rsched-commit.lock" if gitdir.is_dir() else repo / ".rsched-commit.lock"
+    an fcntl.flock on <git dir>/rsched-commit.lock, shared with the engine's autocommit and
+    pre-run recipe snapshot. In a linked worktree or a submodule the git dir is the one its
+    `.git` FILE names — never a file in the work tree, which the `add -A` below would stage.
+    Best-effort — proceed after `timeout` so a hung holder can never deadlock a sync."""
+    gitdir: Path | None = repo / ".git"
+    if gitdir is not None and gitdir.is_file():
+        gitdir = _named_git_dir(gitdir)
+    lock_path = (gitdir / "rsched-commit.lock" if gitdir is not None and gitdir.is_dir()
+                 else repo / ".rsched-commit.lock")
     try:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
     except OSError:
@@ -750,7 +783,7 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
     Keeps a repo in sync with its remote in one call. Set pull/push False to do less.
     The result carries attempted/error fields so failures are visible, not silent."""
     repo = Path(repo_path).expanduser()
-    if not (repo / ".git").is_dir():
+    if not _is_repo(repo):
         raise ValueError(f"{repo} is not a git repository")
     # The index-touching steps (add, commit, rebase) run under the shared per-repo lock so a
     # routine autocommitting THIS dir at the same instant takes turns instead of colliding.
@@ -852,6 +885,15 @@ def _sync_selftest() -> int:
         third = _sync_run(str(repo), message="second commit", push=True, pull=True)
         assert third["push_attempted"] is True and third["pushed"] is False, third
         assert third["ok"] is False and third.get("push_error"), third
+        # a linked WORKTREE syncs too — and its commit lock lives in the git dir its `.git`
+        # file names, never in the tree its `add -A` stages
+        wt = Path(tmp) / "linked-wt"
+        _git(repo, "worktree", "add", "--detach", "-q", str(wt))
+        (wt / "w.txt").write_text("from the worktree")
+        in_wt = _sync_run(str(wt), message="worktree commit", push=False, pull=False)
+        assert in_wt["committed"] and in_wt["ok"] is True, in_wt
+        assert not (wt / ".rsched-commit.lock").exists(), "the lock is a file in the work tree"
+        assert not _git(wt, "status", "--porcelain").stdout.strip(), "the tree is not clean"
         _selftest_conflicts(Path(tmp))
         _selftest_hook_refusal(Path(tmp))
         _selftest_identity(Path(tmp))

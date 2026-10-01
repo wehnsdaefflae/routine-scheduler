@@ -223,9 +223,12 @@ def resolve_rel(base: Path, rel: str, extra_roots: Sequence[Path] = ()) -> Path:
 
 def repo_lock_path(home: Path) -> Path:
     """The per-repo commit-lock file for the git repo containing `home`, placed inside the
-    shared `.git` dir so every writer of the SAME repo — no matter which subdir it passes as
-    `home` — agrees on one lock. Falls back to a dotfile at the tree root for the (never, for
-    the library) case of a worktree/submodule `.git` file or no repo at all.
+    repository's git dir so every writer of the SAME work tree — no matter which subdir it
+    passes as `home` — agrees on one lock, and the lock is never a file in that tree. A linked
+    worktree or a submodule has a `.git` FILE naming its git dir (`gitdir: <path>`); the lock
+    goes there, because a dotfile beside it was swept into the tree's next `add -A`. A broken
+    `.git` file (naming nothing) or a tree with no repo at all gets a dotfile at its root.
+    The `git` util's runner keeps a copy of this rule (util-seed/utils/git, `_repo_lock`).
     """
     cur = Path(home).resolve()
     for d in (cur, *cur.parents):
@@ -233,8 +236,24 @@ def repo_lock_path(home: Path) -> Path:
         if g.is_dir():
             return g / "rsched-commit.lock"
         if g.is_file():
-            return d / ".rsched-commit.lock"
+            named = _named_git_dir(g)
+            return named / "rsched-commit.lock" if named else d / ".rsched-commit.lock"
     return cur / ".rsched-commit.lock"
+
+
+def _named_git_dir(dot_git_file: Path) -> Path | None:
+    """The git dir a `.git` FILE names (`gitdir: <path>`, relative to the file's own dir), or
+    None when the file names none that exists.
+    """
+    try:
+        text = dot_git_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    head, sep, target = text.strip().partition("gitdir:")
+    if not sep or head.strip():
+        return None
+    named = (dot_git_file.parent / target.strip()).resolve()
+    return named if named.is_dir() else None
 
 
 @contextmanager
