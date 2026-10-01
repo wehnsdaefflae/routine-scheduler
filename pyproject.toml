@@ -46,6 +46,12 @@ dev = [
     # The rerun shield tests/ui/conftest.py applies to the browser suite.
     "pytest-rerunfailures>=14.0",
     "vulture>=2.14",
+    # The commit hooks in .pre-commit-config.yaml — CLAUDE.md and the README say
+    # `uv run pre-commit install`, which needs the tool in this venv.
+    "pre-commit>=4.0",
+    # A per-test deadline (`timeout` below): a test that hangs on a pipe or a lock otherwise
+    # holds its xdist worker for the rest of the session and reads as a slow suite, not a bug.
+    "pytest-timeout>=2.3",
 ]
 
 [build-system]
@@ -87,6 +93,10 @@ addopts = ["-n", "auto", "--dist", "worksteal", "-rR", "-m", "not ui"]  # -rR: n
 # oldest generation before it could start. `failed` still keeps the tmp dir of any test that
 # FAILED, which is the only one anybody ever opens.
 tmp_path_retention_policy = "failed"
+# Generous on purpose — the slowest legitimate test (a jailed runner's 30 s SIGTERM grace) takes
+# well under a minute. What it catches is a test that will never finish: a pipe a stray
+# descendant holds open, a lock nobody releases (the run-gate deadline hang was one).
+timeout = 300
 markers = [
     "flaky: retry a flaky test on failure (pytest-rerunfailures, applied to tests/ui by its conftest)",
     "ui: drives a real browser (tests/ui) — applied to the whole directory by its conftest, deselected by the default -m so the fast gate stays fast; `-m ui` runs them",
