@@ -23,12 +23,18 @@ def _denied_roots() -> list[Path]:
     keeping these invisible to runs; the picker must not hand their layout (key file
     names, connection accounts, mount keys) to any bearer holder either. Names only is
     still reconnaissance.
-    """
-    from ..paths import config_file
 
-    home = Path("~").expanduser()
-    return [config_file().parent,      # secrets.env, connections.json, vapid keys, .mounts/
-            home / ".credentials", home / ".ssh", home / ".claude"]
+    Every store no grant may open (`entities.NEVER_GRANTABLE`, the one list), plus the config
+    dir this instance actually loaded (secrets.env, connections.json, vapid keys, .mounts/ —
+    `RSCHED_CONFIG` may move it off the default) and ~/.claude, the claude CLI's OAuth
+    credentials — not on the never list only because the sandbox opens it to utils (the CLI
+    needs it, sandbox._HOME_RW), which is no reason to show its layout here.
+    """
+    from ..entities import NEVER_GRANTABLE
+    from ..paths import config_file, expand
+
+    return [*(expand(store) for store in NEVER_GRANTABLE), config_file().parent,
+            expand("~/.claude")]
 
 
 def _deny_sensitive(target: Path) -> None:
@@ -40,13 +46,6 @@ def _deny_sensitive(target: Path) -> None:
         if target == root or root in target.parents:
             raise HTTPException(403, "that directory holds instance credentials — "
                                      "not browsable")
-
-
-def _is_dir(p: Path) -> bool:
-    try:
-        return p.is_dir()
-    except OSError:      # broken symlink, unreadable — treat as a non-directory leaf
-        return False
 
 
 def _stat_entry(p: Path) -> tuple[bool, bool]:
@@ -68,22 +67,25 @@ def list_dir(path: str = "") -> dict:
     where entries are {name, path, is_dir}; `parent` is null at the filesystem root.
     """
     try:
-        target = Path(path.strip() or "~").expanduser()
-    except (RuntimeError, ValueError) as exc:
-        raise HTTPException(400, f"bad path: {exc}") from exc
-    try:
-        target = target.resolve()
-    except OSError as exc:
+        # RuntimeError: an unknown `~user`, or a symlink loop (this interpreter's resolve());
+        # ValueError: an embedded NUL. Each is a path the picker refuses, never a 500.
+        target = Path(path.strip() or "~").expanduser().resolve()
+    except (OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(400, f"bad path: {exc}") from exc
     _deny_sensitive(target)
-    if not target.exists():
-        raise HTTPException(404, f"no such directory: {target}")
-    if not _is_dir(target):
-        raise HTTPException(400, f"not a directory: {target}")
+    # The listing itself says what is wrong, rather than a stat beforehand: `exists()` RAISES
+    # on a dead mount (ENOTCONN, EIO), which made descending into exactly the entry F190 marks
+    # `unreadable` a 500 instead of the explicit error that marking promises.
     try:
         children = [(c, *_stat_entry(c)) for c in target.iterdir()]
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"no such directory: {target}") from exc
+    except NotADirectoryError as exc:
+        raise HTTPException(400, f"not a directory: {target}") from exc
     except PermissionError as exc:
         raise HTTPException(403, f"permission denied: {target}") from exc
+    except OSError as exc:
+        raise HTTPException(502, f"cannot list {target}: {exc.strerror or exc}") from exc
     children.sort(key=lambda t: (not t[1], t[0].name.lower()))
     entries = [{"name": c.name, "path": str(c), "is_dir": is_dir,
                 **({"unreadable": True} if unreadable else {})}

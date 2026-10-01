@@ -1,18 +1,21 @@
 """The same-origin relay for the shared browser's noVNC screen (F527).
 
-Two routes, both under `browser_proxy.PREFIX`:
+Two routes under `browser_proxy.PREFIX`, plus the one that mints their credential:
 
   GET  /browser-view/{path}        — the noVNC page and its assets
   WS   /browser-view/websockify    — the VNC stream itself
+  POST /api/browser-view/pass      — the screen's PASS, for a caller holding the console token
 
 Why a relay at all is argued in `browser_proxy`: a console served over https cannot embed a
 page that opens `ws://`, so the screen stayed blank exactly where the operator uses it. Making
 the console the origin means the browser upgrades to `wss://` on its own, under the TLS and the
 auth the console already has.
 
-The websocket carries a TICKET rather than a bearer header, for the same reason the SSE streams
-do (`app._is_sse_path`): the browser's WebSocket API cannot send headers. Same 60 s TTL, same
-single-purpose scope — a leaked ticket reaches this screen and nothing else.
+Both relay routes authenticate with the PASS COOKIE (F530), never a bearer header or a query
+ticket: an iframe's sub-resource requests and the WebSocket handshake carry no header the page
+can set, and noVNC builds its own asset URLs, so no parameter the console chooses reaches them —
+the SSE ticket this shipped on 401'd every asset. The cookie is path-scoped to the relay,
+HttpOnly, SameSite=Strict and lives `PASS_TTL_S`, so a watched session does not expire midway.
 """
 
 from __future__ import annotations
@@ -20,6 +23,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import secrets
+import time
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -44,13 +49,13 @@ PASS_TTL_S = 12 * 3600
 
 #: The GET half. Included WITH the console's auth dependency, so a relayed asset is exactly
 #: as protected as any other console route (noVNC's own asset fetches carry no header, so
-#: require_auth's `_is_browser_view_path` ticket branch is what lets them through).
+#: require_auth's `_is_browser_view_path` pass-cookie branch is what lets them through).
 router = APIRouter(tags=["browser-view"])
 
 #: The WEBSOCKET half, deliberately a SEPARATE router. A FastAPI HTTP dependency cannot be
 #: applied to a websocket route — it fails at connect time with "require_auth() missing 1
 #: required positional argument: 'request'", because a websocket scope has no Request. So
-#: this router is included without dependencies and the endpoint checks the ticket itself.
+#: this router is included without dependencies and the endpoint checks the pass itself.
 #: Keeping the two apart is what stops that fix from silently unauthenticating the GETs.
 ws_router = APIRouter(tags=["browser-view"])
 
@@ -66,9 +71,6 @@ ASSET_TIMEOUT_S = 15.0
 
 def _issue_pass(request: Request) -> str:
     """Mint a screen pass and remember it on the app, like the SSE tickets beside it."""
-    import secrets
-    import time
-
     passes = request.app.state.browser_view_passes
     now = time.monotonic()
     for token, expiry in list(passes.items()):   # purge on issue; the set is tiny
@@ -83,8 +85,6 @@ def pass_is_valid(app, token: str) -> bool:
     """True while `token` is an unexpired screen pass. Read by `require_auth`, which is the
     only gate the frame's requests pass through.
     """
-    import time
-
     if not token:
         return False
     expiry = getattr(app.state, "browser_view_passes", {}).get(token)
@@ -203,7 +203,7 @@ async def relay_socket(ws: WebSocket) -> None:
                         message = message.encode()
                     await ws.send_bytes(message)
 
-            _done, pending = await asyncio.wait(
+            done, pending = await asyncio.wait(
                 [asyncio.create_task(to_upstream()), asyncio.create_task(to_browser())],
                 return_when=asyncio.FIRST_COMPLETED)
             for task in pending:
@@ -219,7 +219,7 @@ async def relay_socket(ws: WebSocket) -> None:
                                          Exception):
                     await task
             # the winner too: whichever side ended first may also carry a disconnect
-            for task in _done:
+            for task in done:
                 with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect,
                                          Exception):
                     await task

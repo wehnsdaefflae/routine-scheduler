@@ -236,6 +236,28 @@ def test_message_to_terminal_conversation_refused_while_draining(client):
     assert len(list((conv_dir / "inbox").glob("msg-*.json"))) == before + 1
 
 
+def test_create_refused_while_draining_leaves_no_conversation(client):
+    """R81's other door. A create in the restart's SIGTERM window made the conversation dir,
+    then the fire refused — a 409, and a conversation with a first message and no run left in
+    the list, so the retry after the restart made a second one. Refused up front, like a
+    message; and a fire refused anyway (a race with the gate) takes its dir with it."""
+    c, server = client
+    c.app.state.runner.draining = True
+    r = c.post("/api/conversations", data={"text": "Plan the week"})
+    assert r.status_code == 503, r.text
+    assert "NOT created" in r.json()["detail"]
+    assert not list(server.conversations_home.glob("*/routine.yaml"))
+
+    async def refused(cfg, *, reason="x"):
+        return None
+
+    c.app.state.runner.draining = False
+    c.app.state.runner.fire = refused          # the gate closed between the check and the fire
+    r = c.post("/api/conversations", data={"text": "Plan the week"})
+    assert r.status_code == 503, r.text
+    assert not list(server.conversations_home.glob("*/routine.yaml"))
+
+
 def test_message_admin_token_drops_marker_only_when_valid(client, monkeypatch):
     """D63-1A: the Conversations composer's Admin toggle sends x-admin-token with the message;
     a resume of a terminal conversation carrying a VALID token drops the one-shot admin marker
@@ -559,6 +581,34 @@ def test_patch_folder_access_lists(client):
     assert raw["fs_write_roots"] == []
 
 
+def test_a_conversation_is_never_granted_a_credential_store(client):
+    """SEC-1 for the conversation home. The routine PATCH refuses the never-grantable stores;
+    a conversation is routine-shaped, its replies run the same utils in the same jail, and
+    both of its grant edges — the composer and the header panel, roots AND the workdir that
+    is write root #1 — accepted `~/.ssh` or the instance config dir as a live root."""
+    import json
+
+    c, server = client
+    store = "~/.config/routine-scheduler"
+    for field, value in (("fs_read_roots", json.dumps(["~/datasets", store])),
+                         ("fs_write_roots", json.dumps(["~/.ssh"])),
+                         ("workdir", "~/.credentials")):
+        r = c.post("/api/conversations", data={"text": "x", field: value})
+        assert r.status_code == 400, (field, r.text)
+        assert "credential store" in r.json()["detail"]
+    assert not list(server.conversations_home.glob("*/routine.yaml"))   # nothing landed
+
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    path = server.conversations_home / slug / "routine.yaml"
+    before = path.read_text()
+    for body in ({"fs_read_roots": ["~/datasets", store]}, {"fs_write_roots": ["~/.ssh"]},
+                 {"workdir": "~"}):           # a root CONTAINING a store is one too
+        r = c.patch(f"/api/conversations/{slug}", json=body)
+        assert r.status_code == 400, (body, r.text)
+        assert "credential store" in r.json()["detail"]
+    assert path.read_text() == before
+
+
 def _tiny_window_model(server, name="tiny"):
     """A catalog model whose max output tokens alone fill its window (65_536 chars ≈
     16_384 tokens = the default output reservation) — the class the harness cannot run."""
@@ -689,6 +739,24 @@ def test_patch_and_permissions(client):
     r = c.put(f"/api/conversations/{slug}/permissions",
               json={"active": ["darknet", "shell", "not-a-permission"]})
     assert r.json()["active"] == ["darknet", "shell"]
+
+
+def test_a_permissions_save_tells_the_live_reply(client):
+    """F337 on the conversation side: the header panel's PATCH tells a reply in flight what
+    changed and which half reaches it, but `PUT /permissions` wrote routine.yaml and stopped —
+    a reply mid-flight finished under the old surface without a word, the silence the routine
+    side's PUT /permissions was fixed for."""
+    from rsched.paths import read_json
+
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    [run_dir] = (server.conversations_home / slug / "runs").iterdir()   # the live reply
+    r = c.put(f"/api/conversations/{slug}/permissions", json={"active": ["shell"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["told_live_run"] is True
+    signal = read_json(run_dir / "control.json")["config_change"]
+    assert set(signal["fields"]) == {"permissions", "capabilities"}
+    assert signal["values"]["permissions"] == r.json()["active"]
 
 
 def test_delete_guarded_while_active(client):
@@ -857,6 +925,33 @@ def test_delete_conversation_tears_down_background(client):
     task = _bg_task(server, f"bg-{slug}-eeee", slug)   # dead pid → abort falls through, then rmtree
     assert c.delete(f"/api/conversations/{slug}").status_code == 200
     assert not task.exists() and not conv_dir.exists()
+
+
+def test_delete_conversation_removes_the_tree_off_the_event_loop(client, monkeypatch):
+    """The delete is async (it awaits the background aborts), and a long conversation is
+    thousands of files: removed on the event loop, it froze every SSE stream meanwhile."""
+    import asyncio
+    import shutil
+
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    ts = "20260712-120000"
+    atomic_write_json(conv_dir / "runs" / ts / "status.json",
+                      {"run_id": f"{slug}:{ts}", "state": "finished", "turn": 1})
+    real, on_loop = shutil.rmtree, []
+
+    def spy(path, *args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", spy)
+    assert c.delete(f"/api/conversations/{slug}").status_code == 200
+    assert not conv_dir.exists() and on_loop == [False]
 
 
 # ---- runner + registry + bootstrap ---------------------------------------------------------------

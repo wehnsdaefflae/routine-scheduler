@@ -21,15 +21,18 @@ import json
 import shutil
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 
 from .. import conversations as conv_mod
-from ..config import DELIBERATION_LEVELS, MODEL_KINDS, load_routine
+from ..config import DELIBERATION_LEVELS, load_routine
 from ..paths import atomic_write_json
+from .api_conversation_config import granted_roots
 from .api_routine_edit import (
     PermissionsBody,
     resolve_permission_layers,
 )
+from .config_fields import validate_models
 from .conversations_common import (
     _save_attachments,
 )
@@ -46,11 +49,10 @@ _autolabel_tasks: set[asyncio.Task] = set()   # strong refs for fire-and-forget 
 def _parse_roots(raw: str, field: str) -> list[str]:
     """The composer's folder-access fields (D70): a JSON string array of server paths.
     Each must be absolute (or ~-anchored — the canonical form live configs carry);
-    existence is NOT required, matching the routine page's roots editor. Returns the
-    cleaned list; raises 400 on anything else.
+    existence is NOT required, matching the routine page's roots editor. A credential store
+    is refused exactly as the header panel refuses it (`granted_roots`). Returns the cleaned
+    list; raises 400 on anything else.
     """
-    import json
-
     if not raw.strip():
         return []
     try:
@@ -67,7 +69,7 @@ def _parse_roots(raw: str, field: str) -> list[str]:
                 400, f"{field}: {v!r} is not an absolute path (use /abs/path or ~/path)")
         if p not in roots:
             roots.append(p)
-    return roots
+    return granted_roots(field, roots)
 
 
 def _parse_rules(server, raw: str) -> list[str] | None:
@@ -76,8 +78,6 @@ def _parse_rules(server, raw: str) -> list[str] | None:
     library, so a typo cannot quietly produce a conversation holding a rule that has no
     prose — the tail would name a practice nobody wrote.
     """
-    import json
-
     from ..readmodels import library_reads
 
     if not raw.strip():
@@ -102,12 +102,11 @@ def _parse_rules(server, raw: str) -> list[str] | None:
 
 
 def _parse_connections(raw: str) -> dict[str, str] | None:
-    """The composer's connections field (F339): a JSON {provider: account} map, validated
-    the same way the routine PATCH validates one — an unknown provider, or an account that
-    is not actually connected, is a 400 rather than a binding that fails at first use.
+    """The composer's connections field (F339): a JSON {provider: account} map. Stricter than
+    the PATCH (`config_fields.validate_connections` lets a routine bind ahead of connecting):
+    reply #1 fires on create, so an unknown provider or an account that is not connected YET
+    is a 400 here rather than a binding that fails on the very first reply.
     """
-    import json
-
     from ..oauth import store as oauth_store
     from ..oauth.providers import PROVIDERS
 
@@ -159,74 +158,89 @@ def _resolve_create_models(server, model: str, models: str) -> dict[str, str] | 
         raise HTTPException(400, f"models: invalid JSON ({exc})") from None
     if not isinstance(per_role, dict):
         raise HTTPException(400, "models: must be a {role: model-name} object")
-    for kind, name in per_role.items():
-        if kind not in MODEL_KINDS:
-            raise HTTPException(400, f"unknown model kind {kind!r}")
-        if not isinstance(name, str) or name not in server.models:
-            raise HTTPException(400, f"models.{kind}: must be a catalog model name")
-        problem = model_window_problem(server, name)
-        if problem:   # R112/R128: the first reply would die on its first completion
-            raise HTTPException(400, problem)
-    return {**(cfg or {}), **{k: v.strip() for k, v in per_role.items()}}
+    # the PATCH's own check — role, catalog name, and a window that can run a turn (R112/R128)
+    return {**(cfg or {}), **validate_models(server, per_role)}
+
+
+#: The budgets the composer offers, each a whole number (-1 = unlimited where it applies).
+_BUDGET_FIELDS = ("max_turns", "max_total_turns", "max_wall_clock_min", "max_total_tokens")
+_RESTARTING = ("the server is restarting — the conversation was NOT created. Start it again "
+               "in a moment, once the server is back.")
+
+
+class ComposerForm(BaseModel):
+    """Everything the new-conversation composer sends, as multipart form fields — each one a
+    PRE-START choice (D70/F339): reply #1 boots with whatever lands in routine.yaml here. A
+    blank field keeps the conversation default; the structured ones arrive as JSON strings
+    and are parsed above, each into the 400 that names it.
+    """
+
+    text: str = ""              # the first message — blank only when a playbook seeds it
+    playbook: str = ""          # a library playbook that seeds instruction.md
+    workdir: str = ""           # the project directory: write root #1
+    model: str = ""             # shorthand: one catalog model for main + tool_call
+    models: str = ""            # JSON {role: catalog model}, wins over `model`
+    max_turns: str = ""         # per REPLY …
+    max_total_turns: str = ""   # … except this one: cumulative over the conversation
+    max_wall_clock_min: str = ""
+    max_total_tokens: str = ""
+    deliberation: str = ""      # one of DELIBERATION_LEVELS
+    permissions: str = ""       # JSON — the ⚙ panel's {active, capabilities}
+    fs_read_roots: str = ""     # JSON array of absolute (or ~/) paths
+    fs_write_roots: str = ""
+    rules: str = ""             # JSON array of library rule slugs
+    connections: str = ""       # JSON {provider: connected account}
+    files: list[UploadFile] = []   # the first message's attachments
 
 
 @router.post("/conversations")
-async def create_conversation(request: Request, *,  # noqa: PLR0913 — one Form field per composer knob
-                              text: Annotated[str, Form()] = "",
-                              workdir: Annotated[str, Form()] = "",
-                              model: Annotated[str, Form()] = "",
-                              models: Annotated[str, Form()] = "",
-                              playbook: Annotated[str, Form()] = "",
-                              max_turns: Annotated[str, Form()] = "",
-                              max_total_turns: Annotated[str, Form()] = "",
-                              max_wall_clock_min: Annotated[str, Form()] = "",
-                              max_total_tokens: Annotated[str, Form()] = "",
-                              deliberation: Annotated[str, Form()] = "",
-                              permissions: Annotated[str, Form()] = "",
-                              fs_read_roots: Annotated[str, Form()] = "",
-                              fs_write_roots: Annotated[str, Form()] = "",
-                              rules: Annotated[str, Form()] = "",
-                              connections: Annotated[str, Form()] = "",
-                              files: Annotated[list[UploadFile] | None, File()] = None) -> dict:
+async def create_conversation(request: Request,
+                              form: Annotated[ComposerForm, Form()]) -> dict:
     server = request.app.state.server
-    text = text.replace("\r\n", "\n")   # multipart encodes newlines CRLF; \n is canonical
-    if not text.strip() and not playbook.strip():
+    text = form.text.replace("\r\n", "\n")   # multipart encodes newlines CRLF; \n is canonical
+    playbook, workdir, deliberation = (form.playbook.strip(), form.workdir.strip(),
+                                       form.deliberation.strip())
+    if not text.strip() and not playbook:
         raise HTTPException(400, "empty message — write the first message or pick a playbook")
-    # Optional pre-start budgets: per-REPLY ceilings (turns / minutes / tokens) plus
-    # max_total_turns, the cumulative cap over the WHOLE conversation (-1 = unlimited
-    # where applicable). Blank = leave the default.
     budgets: dict[str, int] = {}
-    for key, raw_val in (("max_turns", max_turns), ("max_total_turns", max_total_turns),
-                         ("max_wall_clock_min", max_wall_clock_min),
-                         ("max_total_tokens", max_total_tokens)):
-        if raw_val.strip():
+    for key in _BUDGET_FIELDS:
+        if raw_val := getattr(form, key).strip():
             try:
                 budgets[key] = int(raw_val)
             except ValueError:
                 raise HTTPException(400, f"{key} must be a whole number (-1 = unlimited)") from None
-    if deliberation.strip() and deliberation.strip() not in DELIBERATION_LEVELS:
-        raise HTTPException(400, f"unknown deliberation level {deliberation.strip()!r} "
+    if deliberation and deliberation not in DELIBERATION_LEVELS:
+        raise HTTPException(400, f"unknown deliberation level {deliberation!r} "
                                  f"(expected one of {DELIBERATION_LEVELS})")
     # Pre-start permission layers: the composer's ⚙ panel sends the same {active,
     # capabilities} payload the header panel saves — resolved through the same
     # validate + cascade + floor, so reply #1 already runs under the chosen surface.
     active_perms: list[str] | None = None
     caps_override: dict | None = None
-    if permissions.strip():
+    if form.permissions.strip():
         try:
-            body = PermissionsBody.model_validate_json(permissions)
+            body = PermissionsBody.model_validate_json(form.permissions)
         except ValueError as exc:
             raise HTTPException(400, f"invalid permissions payload: {exc}") from None
         active_perms, caps_override = resolve_permission_layers(server, body, {})
     # D70: folder access granted on the composer, applied to the config BEFORE the engine
     # boots — reply #1 already runs with it (the mid-run grant path stays for later changes).
-    read_roots = _parse_roots(fs_read_roots, "fs_read_roots")
-    write_roots = _parse_roots(fs_write_roots, "fs_write_roots")
+    # The workdir is write root #1, so it is a grant like the lists.
+    if workdir:
+        granted_roots("workdir", [workdir])
+    read_roots = _parse_roots(form.fs_read_roots, "fs_read_roots")
+    write_roots = _parse_roots(form.fs_write_roots, "fs_write_roots")
     # F339: rules and connections are pre-start choices too: reply #1 boots with the rules
     # routine.yaml holds when it starts, so one bound afterwards never governs it.
-    rule_slugs = _parse_rules(server, rules)
-    conn_map = _parse_connections(connections)
-    models_cfg = _resolve_create_models(server, model, models)
+    rule_slugs = _parse_rules(server, form.rules)
+    conn_map = _parse_connections(form.connections)
+    models_cfg = _resolve_create_models(server, form.model, form.models)
+    # R81, the create door: in the restart's exit window the fire is refused, so refuse BEFORE
+    # anything lands — a conversation made and never started stays in the list, and the
+    # retry after the restart makes a second one.
+    runner = request.app.state.runner
+    if getattr(runner, "draining", False):
+        raise HTTPException(503, _RESTARTING)
     server.conversations_home.mkdir(parents=True, exist_ok=True)
     slug = conv_mod.new_slug(server.conversations_home)
     try:
@@ -234,8 +248,8 @@ async def create_conversation(request: Request, *,  # noqa: PLR0913 — one Form
                                                 workdir=workdir, models=models_cfg,
                                                 permissions=active_perms,
                                                 capabilities=caps_override,
-                                                deliberation=deliberation.strip(),
-                                                playbook_slug=playbook.strip(),
+                                                deliberation=deliberation,
+                                                playbook_slug=playbook,
                                                 budgets=budgets or None,
                                                 fs_read_roots=read_roots,
                                                 fs_write_roots=write_roots,
@@ -244,7 +258,7 @@ async def create_conversation(request: Request, *,  # noqa: PLR0913 — one Form
         raise HTTPException(500, f"the library has no '{conv_mod.CONVERSE_WORKFLOW}' workflow "
                                  f"— restart the daemon to seed it ({exc})") from exc
     try:
-        rels = await _save_attachments(conv_dir, files or [])
+        rels = await _save_attachments(conv_dir, form.files)
     except HTTPException:
         shutil.rmtree(conv_dir, ignore_errors=True)   # no orphan conversation on a 413
         raise
@@ -263,9 +277,10 @@ async def create_conversation(request: Request, *,  # noqa: PLR0913 — one Form
     # /runs/{id}/converse; the token never reaches the engine.
     from ..engine.admin import ADMIN_HEADER, admin_token_valid, write_admin_marker
     admin_ok = admin_token_valid(request.headers.get(ADMIN_HEADER))
-    rid = await request.app.state.runner.fire(cfg, reason="conversation")
-    if rid is None:
-        raise HTTPException(409, "could not start the conversation (daemon draining?)")
+    rid = await runner.fire(cfg, reason="conversation")
+    if rid is None:   # a brand-new slug is never already active: the drain gate closed meanwhile
+        shutil.rmtree(conv_dir, ignore_errors=True)
+        raise HTTPException(503, _RESTARTING)
     if admin_ok:
         # No await between fire() returning and this write, so the marker lands before the
         # runner's supervisor task spawns the engine subprocess that reads it at loop init.

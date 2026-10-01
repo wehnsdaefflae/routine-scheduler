@@ -1,5 +1,5 @@
-"""Conversations API: list/create/detail/message/delete, config edits, artifact +
-attachment serving.
+"""Conversations API: living with one — the list, a message and its queued edits, delete,
+the state graph, and artifact + attachment serving.
 
 A conversation is a routine-shaped dir under conversations_home (see conversations.py);
 its ONE run is continued in place — a message to a live run is an ordinary injection, a
@@ -7,38 +7,35 @@ message to a finished run resumes it (converse semantics). Transcript/SSE/abort 
 existing /api/runs endpoints (run resolution is home-aware). Attachments upload as
 multipart files into <conv>/attachments/ and travel as an `[attached files]` block in the
 message text; deliverables the model writes into <conv>/artifacts/ are listed and served
-here for the chat's artifact panel. Its detached background tasks live in api_background.
+here for the chat's artifact panel. Its siblings (F393): creating one is
+api_conversation_create, its detail and config edits api_conversation_config, its detached
+background tasks api_background.
 """
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from pydantic import BaseModel
 
 from .. import conversations as conv_mod
 from .. import registry
 from ..engine import inbox
-from ..ids import now_iso
-from ..paths import atomic_write_json, read_json
+from ..paths import read_json
 from . import artifacts
 from .api_background import teardown_background
-from .routines_common import (
-    guard_not_active,
-    queued_message,
-)
-
-router = APIRouter(tags=["conversations"])
-
-
-from .conversations_common import (  # noqa: E402
+from .api_messages import MessageBody, rewrite_queued, withdraw_queued
+from .conversations_common import (
     _home,
     _item,
     _save_attachments,
     conversation_info,
 )
+from .routines_common import guard_not_active
+
+router = APIRouter(tags=["conversations"])
 
 
 @router.get("/conversations")
@@ -144,17 +141,6 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
             "run_id": rid, "command": is_command, "id": queued_id}
 
 
-class ConvMessageBody(BaseModel):
-    text: str = ""
-
-
-def _conv_text(body: ConvMessageBody) -> str:
-    text = body.text.replace("\r\n", "\n").strip()
-    if not text:
-        raise HTTPException(400, "empty message")
-    return text
-
-
 @router.get("/conversations/{slug}/messages")
 def list_conversation_messages(request: Request, slug: str) -> dict:
     """The messages this conversation has QUEUED and not yet consumed (D139).
@@ -182,19 +168,15 @@ def list_conversation_messages(request: Request, slug: str) -> dict:
 
 @router.put("/conversations/{slug}/messages/{msg_id}")
 def edit_conversation_message(request: Request, slug: str, msg_id: str,
-                              body: ConvMessageBody) -> dict:
-    """Rewrite a queued message in place — the SAME file, so its position in the queue
-    holds and the original `ts` stands; `edited` is stamped so a run can tell.
+                              body: MessageBody) -> dict:
+    """Rewrite a queued message in place, exactly as the routine Messages page does.
 
     `via="conversation"` narrows resolution to messages this surface wrote: a conversation
     endpoint can never rewrite a question answer or an engine-filed delivery sharing the
     same inbox.
     """
     info = conversation_info(request, slug)
-    path, prev = queued_message(info.cfg.dir / "inbox", msg_id, via="conversation")
-    rec = dict(prev)
-    rec.update(text=_conv_text(body), edited=now_iso())
-    atomic_write_json(path, rec)
+    rewrite_queued(info.cfg.dir / "inbox", msg_id, body, via="conversation")
     return {"ok": True, "id": msg_id}
 
 
@@ -202,12 +184,7 @@ def edit_conversation_message(request: Request, slug: str, msg_id: str,
 def withdraw_conversation_message(request: Request, slug: str, msg_id: str) -> dict:
     """Withdraw a queued message: the delivery is removed and the model never sees it."""
     info = conversation_info(request, slug)
-    path, _ = queued_message(info.cfg.dir / "inbox", msg_id, via="conversation")
-    try:
-        path.unlink()
-    except FileNotFoundError:  # drained between the check and now — same outcome
-        raise HTTPException(
-            404, "this message is no longer queued — the model already read it") from None
+    withdraw_queued(info.cfg.dir / "inbox", msg_id, via="conversation")
     return {"ok": True, "id": msg_id}
 
 
@@ -215,12 +192,14 @@ def withdraw_conversation_message(request: Request, slug: str, msg_id: str) -> d
 async def delete_conversation(request: Request, slug: str) -> dict:
     """A conversation is unversioned by design — delete means gone. Also cancels + removes any
     detached background tasks it launched (the manager's 'owner missing at delivery' branch is
-    the safety net, but tearing them down here frees the pool and stops wasted compute).
+    the safety net, but tearing them down here frees the pool and stops wasted compute). The
+    tree goes in a worker thread: a long conversation is thousands of files, and this handler
+    is async (it awaits the aborts), so on the event loop the delete froze every stream.
     """
     info = conversation_info(request, slug)
     guard_not_active(request, info, noun="conversation")
     await teardown_background(request, slug)
-    shutil.rmtree(info.cfg.dir)
+    await asyncio.to_thread(shutil.rmtree, info.cfg.dir)
     return {"ok": True}
 
 @router.get("/conversations/{slug}/stategraph")

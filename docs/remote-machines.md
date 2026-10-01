@@ -25,8 +25,10 @@ sandboxed:
 
 - **`config/modelconf.py` `MachineConfig` + `config/server.py` `ServerConfig.machines`** — the catalog, one entry per host:
   `host`, `user`, `port` (default 22), `key_var`, `host_key`, `share`, `workdir`, `description`,
-  `tags`. Instance-wide config in `config.yaml`. **No secret lives here**: `key_var` names a
-  Secrets-store key holding the private key (PEM); `host_key` is the server's PUBLIC host key.
+  `tags`, `exclusive` ([below](#exclusive-compute-one-job-at-a-time-in-turns) — set in
+  `config.yaml`; the Settings form has no control for it, and a save there keeps every field it
+  did not send). Instance-wide config in `config.yaml`. **No secret lives here**: `key_var` names
+  a Secrets-store key holding the private key (PEM); `host_key` is the server's PUBLIC host key.
 - **The Secrets store** holds the actual private key under the `key_var` name (e.g.
   `GPUBOX_SSH_KEY`). Use an UNENCRYPTED key for a supported type (ed25519 / ecdsa / rsa). Set it on
   Settings → Secrets like any other secret.

@@ -330,3 +330,21 @@ def test_api_lineage_reports_a_deleted_parent_instead_of_hiding_it(server, clien
     shutil.rmtree(d)
     lin = client.get(f"/api/conversations/{slug}/lineage").json()
     assert lin["parent"]["slug"] == "c-p" and lin["parent"]["exists"] is False
+
+
+def test_api_lineage_survives_another_conversations_broken_config(server, client):
+    """Lineage reads every conversation's routine.yaml to find the branches, and `read_yaml`
+    RAISES on a file that does not parse (on purpose — it guards read-modify-writes). One
+    hand-broken conversation made every conversation's lineage a 500; the catalog, by
+    contrast, lists such a file as an unloadable conversation and carries on."""
+    _parent(server)
+    slug = client.post("/api/conversations/c-p/branch", json={"turn": 1}).json()["slug"]
+    broken = server.conversations_home / "c-broken"
+    broken.mkdir()
+    (broken / "routine.yaml").write_text("name: [unclosed\n", encoding="utf-8")
+    (server.conversations_home / "c-list").mkdir()
+    (server.conversations_home / "c-list" / "routine.yaml").write_text("- a\n- b\n",
+                                                                      encoding="utf-8")
+    back = client.get("/api/conversations/c-p/lineage")
+    assert back.status_code == 200, back.text
+    assert [b["slug"] for b in back.json()["branches"]] == [slug]

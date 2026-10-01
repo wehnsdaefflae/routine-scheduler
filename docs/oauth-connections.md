@@ -79,8 +79,9 @@ OAuth has two halves that live in different places, because a routine run is hea
 ## Security
 
 - `/oauth/callback` is intentionally unauthenticated (a redirect carries no bearer); a random
-  256-bit, single-use (the callback consumes it), TTL'd `state` is the CSRF guard and PKCE-S256
-  protects the exchange. Authorization codes and `state` are never logged or echoed.
+  (256-bit), TTL'd, single-use `state` is the CSRF guard — the first callback presenting it
+  consumes it — and PKCE-S256 protects the exchange. Authorization codes and `state` are never
+  logged or echoed.
 - `connections.json` is mode 0600; no API returns token values; tokens never enter the prompt,
   transcripts, or the search index (the config dir is excluded). Refresh tokens stay in the
   daemon/web process — only a short-lived access token crosses into a util, and only under the

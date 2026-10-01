@@ -7,13 +7,13 @@ background_home and drops intents into its `.requests/`.
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request
 
 from .. import registry
-from ..config import load_routine
 from ..ids import background_task_id
 from ..paths import atomic_write_json
 
@@ -74,39 +74,34 @@ def launch_background(request: Request, slug: str, prompt: Annotated[str, Form()
     return {"ok": True, "taskid": taskid}
 
 
-@router.post("/conversations/{slug}/background/{taskid}/cancel")
-async def cancel_background(request: Request, slug: str, taskid: str) -> dict:
-    """Abort a running detached task. Falls back to signalling the recorded pid for a task that
-    survived a daemon restart (no longer in the runner's active set), mirroring the run abort.
+async def _abort(request: Request, taskid: str, ti: registry.RoutineInfo) -> bool:
+    """Abort one detached task through the run abort path, falling back to its recorded pid
+    when it outlived a daemon restart (no longer in the runner's active set). True when a
+    process was told to stop.
     """
-    server = request.app.state.server
-    task_dir = server.background_home / taskid
-    cfg, _ = load_routine(task_dir) if (task_dir / "routine.yaml").exists() else (None, [])
-    if cfg is None or (cfg.owner or {}).get("slug") != slug:
-        raise HTTPException(404, f"no background task {taskid!r} for conversation {slug!r}")
     from .api_run_control import abort_with_fallback
 
     runner = request.app.state.runner
-    last = registry.run_index(task_dir, taskid)
-    cancelled = (await abort_with_fallback(runner, taskid, last[0].dir)
-                 if last else await runner.abort(taskid))
-    if not cancelled:
+    last = ti.last_run
+    return (await abort_with_fallback(runner, taskid, last.dir) if last
+            else await runner.abort(taskid))
+
+
+@router.post("/conversations/{slug}/background/{taskid}/cancel")
+async def cancel_background(request: Request, slug: str, taskid: str) -> dict:
+    """Abort a running detached task this conversation owns."""
+    server = request.app.state.server
+    ti = registry.info(server, server.background_home, taskid)
+    if ti is None or (ti.cfg.owner or {}).get("slug") != slug:
+        raise HTTPException(404, f"no background task {taskid!r} for conversation {slug!r}")
+    if not await _abort(request, taskid, ti):
         # honesty: the UI used to toast "cancelling…" off ok:true while nothing died
         raise HTTPException(409, "no live process for this task — it may already be done")
     return {"ok": True, "cancelled": True}
 
 
 async def teardown_background(request: Request, slug: str) -> None:
-    """On conversation delete: abort + remove its detached tasks (pid fallback for a task that
-    outlived a restart), reusing the run abort path.
-    """
-    from .api_run_control import abort_with_fallback
-
-    runner = request.app.state.runner
+    """On conversation delete: abort + remove its detached tasks."""
     for taskid, ti in _background_tasks(request, slug):
-        last = ti.last_run
-        if last:
-            await abort_with_fallback(runner, taskid, last.dir)
-        else:
-            await runner.abort(taskid)
-        shutil.rmtree(ti.cfg.dir, ignore_errors=True)
+        await _abort(request, taskid, ti)
+        await asyncio.to_thread(shutil.rmtree, ti.cfg.dir, ignore_errors=True)

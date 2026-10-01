@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import utils_header, utils_run
+from ..ids import is_slug
 from ..paths import atomic_write
 from ..readmodels import library_reads
 from ..workflows import library
@@ -290,20 +291,35 @@ class UtilBody(BaseModel):
 
 
 def put_util(request: Request, name: str, body: UtilBody) -> dict:
-    """Edit a global util (selftest-gated, committed) — mirrors the write_util engine action."""
+    """Create or edit a global util (selftest-gated, committed) — the web twin of the
+    write_util engine action, and like it the selftest gates the LIBRARY, not just the reply:
+    a text that fails it is rolled back (a new util removed, a revision restored) so a broken
+    script is never left live for the `gu` callers of every routine. Without that the 422
+    said "not committed" while the broken text stayed on disk.
+    """
     from .. import sandbox, utils_lib
+    from ..engine.observations import truncate
 
     server = request.app.state.server
+    if not is_slug(name):   # write_util_file's backstop would raise it as a 500
+        raise HTTPException(400, f"invalid util name {name!r} — lowercase a-z, 0-9 and -")
     problems = utils_header.header_problems(body.content)
     if problems:
         raise HTTPException(422, "header problems (not saved): " + "; ".join(problems))
     _require_digest(request, "utils", name, body.content, body.impact_digest)
     utils_lib.ensure_library(server.libraries_home, remote=server.libraries_remote)
+    previous = utils_lib.read_util(server.libraries_home, name)
     utils_lib.write_util_file(server.libraries_home, name, body.content)
     ok, output = utils_run.selftest(server.libraries_home, name,
                                     policy=sandbox.base_policy(server))
     if not ok:
-        raise HTTPException(422, f"selftest failed (not committed):\n{output[:800]}")
+        if previous is None:
+            utils_lib.remove_util_file(server.libraries_home, name)
+        else:
+            utils_lib.write_util_file(server.libraries_home, name, previous)
+        # head+tail, as the engine reports it (R93): a traceback's END is the repair material
+        raise HTTPException(422, "selftest failed (rolled back, not committed):\n"
+                                 + truncate(output, cap=2000)[0])
     utils_lib.git_commit(server.libraries_home, f"revise {name} via web",
                          routines_home=server.routines_home, paths=[f"utils/{name}"])
     return {"ok": True}

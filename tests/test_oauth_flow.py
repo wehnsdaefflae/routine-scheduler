@@ -1,6 +1,7 @@
 """OAuth connect flow over the real app: authorize-start builds a PKCE authorize URL, the public
 /oauth/callback exchanges the code (httpx mocked) and stores the connection, and a bad/expired
-`state` is rejected without storing anything."""
+`state` is rejected without storing anything. Both of the Settings page's pending-flow tables
+(OAuth flows, GitHub device flows) survive concurrent worker threads."""
 
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from conftest import hammer
 from rsched import secrets
 from rsched.oauth import exchange, store
 from rsched.web.settings import oauth as oauth_mod
@@ -219,3 +221,53 @@ def test_set_public_url_validates(oauth_client):
     assert r.status_code == 200
     assert r.json()["public_url"] == "https://h.ts.net"           # trailing slash trimmed
     assert client.app.state.server.public_url == "https://h.ts.net"
+
+
+def test_concurrent_flow_bookkeeping_never_raises(monkeypatch):
+    """The handlers are sync, so FastAPI runs them on worker threads at once: authorize-start,
+    the card's poll and the provider's callback all prune the one flow table. Unguarded, a
+    prune iterated it while another thread changed it, or read a flow another prune had just
+    dropped — "dictionary changed size during iteration" / KeyError, a 500 on whichever
+    request lost (the same hammer over the unguarded table raised both)."""
+    monkeypatch.setattr(oauth_mod, "_flows", {})
+    monkeypatch.setattr(oauth_mod, "_state_index", {})
+
+    def churn(tag: int) -> None:
+        for i in range(2000):
+            fid, state = f"{tag}-{i}", f"s-{tag}-{i}"
+            oauth_mod._register(fid, {"state": state, "expires_at": 0})   # born expired
+            oauth_mod._flow(fid)
+            oauth_mod._claim(state)
+
+    assert hammer(churn) == []
+    assert oauth_mod._flows == {} and oauth_mod._state_index == {}
+
+
+def test_concurrent_github_device_flows_never_raise(monkeypatch):
+    """The Settings page's other pending-flow table, with the same hazard: device-start pruned
+    the GitHub device flows inline while a poll or a resume popped from them on another
+    worker thread — "dictionary changed size during iteration" against the unguarded table."""
+    from rsched.web.settings import github
+
+    monkeypatch.setattr(github, "_device_flows", {})
+
+    def churn(tag: int) -> None:
+        for i in range(2000):
+            fid = f"{tag}-{i}"
+            github._remember(fid, {"expires_at": 0})               # born expired
+            github._pending(f"{tag}-{i - 1}")
+            github._forget(fid)
+
+    assert hammer(churn) == []
+    assert github._device_flows == {}
+
+
+def test_a_refused_authorize_start_leaves_no_flow_behind(oauth_client):
+    """A scoped provider without its scopes secret is refused — after the flow used to be
+    registered already, so a pending flow nobody could finish sat in the table for its TTL."""
+    client, _ = oauth_client
+    secrets.set_secret("GOOGLE_OAUTH_CLIENT_ID", "gcid")
+    secrets.set_secret("GOOGLE_OAUTH_CLIENT_SECRET", "gsek")
+    r = client.post("/api/settings/oauth/google/authorize-start", json={"account": "me"})
+    assert r.status_code == 400
+    assert oauth_mod._flows == {} and oauth_mod._state_index == {}

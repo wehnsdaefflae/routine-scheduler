@@ -352,6 +352,21 @@ def test_lane_patch_forbids_unknown_keys(api_client):
     assert client.patch(f"/api/lanes/{lane_id}", json={"name": "G2"}).status_code == 200
 
 
+def test_lane_create_forbids_unknown_keys_like_the_patch(api_client):
+    """R102 at both doors: a create carrying a key a lane does not have — `config`, a typo'd
+    `membrs`, a member field — answered 200 with the key silently dropped, read as saved."""
+    client, tmp_path = api_client
+    _mk(tmp_path, "alpha")
+    for body in ({"name": "G", "config": {"permissions": ["memory"]}},
+                 {"name": "G", "membrs": [{"slug": "alpha"}]},
+                 {"name": "G", "members": [{"slug": "alpha", "flags": ["x"]}]}):
+        r = client.post("/api/lanes", json=body)
+        assert r.status_code == 422, (body, r.text)
+    assert client.get("/api/lanes").json()["lanes"] == []
+    assert client.put("/api/lanes/default", json={"default_on_failure": "continue",
+                                                  "x": 1}).status_code == 422
+
+
 def test_api_lane_schedule_roundtrip(api_client):
     """D71 web half: PATCH {schedule: {friendly}} → cron + server tz recorded; GET rides
     the friendly prefill back; a manual spec clears the schedule; a bad spec 400s."""

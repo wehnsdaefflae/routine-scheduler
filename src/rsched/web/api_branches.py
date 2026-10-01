@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -29,9 +30,22 @@ class HandBackBody(BaseModel):
     summary: str       # what the branch concluded — the parent reads this, not the transcript
 
 
+def _config(conv_dir: Path) -> dict:
+    """A conversation's routine.yaml as a mapping, for READING ONLY — `{}` when it is missing,
+    does not parse, or is not a mapping. Lineage reads every conversation's file to find the
+    branches, so `read_yaml`'s deliberate raise (it guards read-modify-writes) turned one
+    hand-broken config into a 500 for every conversation; the catalog lists such a file as an
+    unloadable conversation and carries on, and so does this.
+    """
+    try:
+        raw = read_yaml(conv_dir / "routine.yaml", {})
+    except (OSError, yaml.YAMLError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
 def _parent_record(conv_dir: Path) -> dict:
-    raw = read_yaml(conv_dir / "routine.yaml", {})
-    rec = raw.get("parent")
+    rec = _config(conv_dir).get("parent")
     return rec if isinstance(rec, dict) else {}
 
 
@@ -83,8 +97,7 @@ def lineage(request: Request, slug: str) -> dict:
     server = request.app.state.server
     parent = _parent_record(info.cfg.dir)
     if parent.get("slug"):
-        pdir = server.conversations_home / str(parent["slug"])
-        raw = read_yaml(pdir / "routine.yaml", {}) if (pdir / "routine.yaml").is_file() else {}
+        raw = _config(server.conversations_home / str(parent["slug"]))
         # A deleted parent leaves the record standing: the branch's history still came from
         # somewhere, and saying so beats silently reading as a root conversation.
         parent = {**parent, "name": str(raw.get("name") or parent["slug"]),
@@ -93,12 +106,10 @@ def lineage(request: Request, slug: str) -> dict:
     home = server.conversations_home
     if home.is_dir():
         for d in sorted(home.iterdir()):
-            if not (d / "routine.yaml").is_file():
+            raw = _config(d)
+            rec = raw.get("parent")
+            if not isinstance(rec, dict) or rec.get("slug") != slug:
                 continue
-            rec = _parent_record(d)
-            if rec.get("slug") != slug:
-                continue
-            raw = read_yaml(d / "routine.yaml", {})
             kids.append({"slug": d.name, "name": str(raw.get("name") or d.name),
                          "turn": rec.get("turn"), "forked": rec.get("forked")})
     return {"parent": parent or None, "branches": kids}

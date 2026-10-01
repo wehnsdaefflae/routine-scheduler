@@ -56,3 +56,24 @@ def test_endpoint_probe_routes_are_mounted():
         mounted |= {rt.path for rt in sub.routes if hasattr(rt, "path")}
     assert "/settings/endpoints/{name}/credits" in mounted
     assert "/settings/endpoints/{name}/test" in mounted
+
+
+def test_a_balance_answer_off_the_documented_shape_reads_as_an_error(api_client, monkeypatch):
+    """The route promises never to raise on provider trouble — the card shows the error text
+    instead. A 200 whose body is not the documented JSON (an HTML interstitial, a reshaped
+    payload) escaped as a 500 from the parse."""
+    import httpx
+
+    from rsched.config import EndpointConfig
+
+    c, _ = api_client
+    c.app.state.server.endpoints["or"] = EndpointConfig(
+        kind="openai", base_url="https://openrouter.ai/api/v1", api_key="sk-test")
+    for body in ("<html>checking your browser</html>", '{"data": [1, 2]}', "[]",
+                 '{"data": {"total_credits": "lots"}}'):
+        monkeypatch.setattr(httpx, "get", lambda *_a, _body=body, **_k: httpx.Response(
+            200, text=_body))
+        r = c.get("/api/settings/endpoints/or/credits")
+        assert r.status_code == 200, (body, r.text)
+        assert r.json()["ok"] is False and r.json()["manage_url"] == CREDIT_MANAGE_URLS["openrouter"]
+        assert r.json()["error"]

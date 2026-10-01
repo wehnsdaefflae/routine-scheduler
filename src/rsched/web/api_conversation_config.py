@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from .. import conversations as conv_mod
+from .. import entities
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
 from ..paths import atomic_write_yaml, read_yaml
 from .api_background import list_background_rows
@@ -52,6 +53,21 @@ def _raw_roots(conv_dir, key: str) -> list[str]:
     """
     raw = read_yaml(conv_dir / "routine.yaml", {})
     return [str(r) for r in raw.get(key) or []]
+
+
+def granted_roots(key: str, values: list | None) -> list[str]:
+    """One folder grant a conversation is about to hold — `validate_roots`, then the
+    never-grantable credential stores refused (SEC-1) in the wording every enforcer uses.
+
+    The routine PATCH refused them and the conversation home did not: a reply runs the same
+    utils in the same jail, so `~/.ssh` or the instance config dir typed into the composer or
+    the header panel became a live root. Both of a conversation's grant edges come through
+    here — the create form and the PATCH below, the lists AND the workdir (write root #1).
+    """
+    roots = validate_roots(key, values)
+    if guarded := entities.guarded_roots(roots):
+        raise HTTPException(400, f"{key}: {', '.join(guarded)} {entities.GUARDED_ROOT_REASON}")
+    return roots
 
 @router.get("/conversations/{slug}")
 def detail(request: Request, slug: str) -> dict:
@@ -137,19 +153,22 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
         # folder grants beyond it (D70 create-time roots, allow-forever fs decisions)
         # must survive a project-directory change, not be wiped by it.
         wd = updates["workdir"].strip()
+        if wd:
+            granted_roots("workdir", [wd])
         prev = next(iter(raw.get("fs_write_roots") or []), None)
         for key in ("fs_read_roots", "fs_write_roots"):
             roots = [str(r) for r in raw.get(key) or []]
             roots = [r for r in roots if r not in (prev, wd)]
             raw[key] = ([wd] if wd else []) + roots
     # D82: the header panel edits the FULL folder-access lists — REPLACE wholesale, same
-    # validation as the routine page's save path (api_routine_patch._apply_resource_fields).
-    # Placed AFTER the workdir slot-swap so a request carrying both (the UI sends one or the
-    # other) lands on the explicit lists. Like every conversation config edit, the change
-    # reaches the NEXT reply's boot — a live reply keeps the roots it booted with.
+    # validation as the routine page's save path (api_routine_patch._apply_resource_fields),
+    # the credential-store refusal included. Placed AFTER the workdir slot-swap so a request
+    # carrying both (the UI sends one or the other) lands on the explicit lists. Like every
+    # conversation config edit, the change reaches the NEXT reply's boot — a live reply keeps
+    # the roots it booted with.
     for roots_key in ("fs_read_roots", "fs_write_roots"):
         if roots_key in updates:
-            raw[roots_key] = validate_roots(roots_key, updates[roots_key])
+            raw[roots_key] = granted_roots(roots_key, updates[roots_key])
     # Every one of these five is validated by `web/config_fields`, which both this PATCH and
     # the routine PATCH call: a conversation is routine-shaped, and two copies of one check
     # drift (the window-fit refusal lived here alone, so a ROUTINE could be bound to a model
@@ -188,9 +207,11 @@ def set_conversation_rules(request: Request, slug: str, body: RulesBody) -> dict
 
 @router.put("/conversations/{slug}/permissions")
 def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
-    # No active-reply guard: like the budget PATCH above, a conversation reads routine.yaml
-    # only at each reply's boot, so a permission/capability edit simply lands on the NEXT
-    # reply — blocking on a live reply would only add friction (the user can retune anytime).
+    """No active-reply guard: like the PATCH above, a conversation reads routine.yaml only at
+    each reply's boot, so a permission/capability edit lands on the NEXT reply — blocking on a
+    live reply would only add friction. A reply in flight is TOLD so (F337), as the PATCH and
+    the routine side's PUT /permissions tell theirs; this route used to stay silent.
+    """
     info = conversation_info(request, slug)
     active, caps = resolve_permission_layers(request.app.state.server, body,
                                              info.cfg.capabilities or {})
@@ -199,4 +220,7 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     raw["permissions"] = active
     raw["capabilities"] = caps
     atomic_write_yaml(path, raw)
-    return {"ok": True, "active": active, "capabilities": caps}
+    live = signal_config_change(info, ["permissions", "capabilities"],
+                                {"permissions": active, "capabilities": caps})
+    return {"ok": True, "active": active, "capabilities": caps,
+            **({"told_live_run": True} if live else {})}

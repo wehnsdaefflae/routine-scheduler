@@ -16,13 +16,13 @@ from pydantic import BaseModel
 from ... import machines as machines_mod
 from ... import sandbox, utils_run
 from ...config import MachineConfig
+from ...machine_queue import REMOTE_UTIL
 from ...secrets import load_secrets
 from .common import rewrite_block, server_of
 
 router = APIRouter()
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")   # catalog key = the name routines bind
-REMOTE_UTIL = "remote"
 
 
 def _machine_view(mac: MachineConfig, have_keys: set[str]) -> dict:
@@ -60,17 +60,24 @@ class MachineBody(BaseModel):
 
 
 @router.put("/settings/machines/{name}")
-def upsert_machine(request: Request, body: MachineBody, name: str | None = None) -> dict:
-    key = name or body.name
-    if not _NAME_RE.match(key):
+def upsert_machine(request: Request, body: MachineBody, name: str) -> dict:
+    """Add or edit the catalog machine `name`. A field the request SENDS replaces what
+    config.yaml holds — sent empty, it is cleared — and a field it leaves out is KEPT.
+
+    The Settings form has no control for `exclusive`, so an edit never sends it; writing the
+    model's default for every unsent field reset it on each save, and re-scanning a GPU box's
+    host key quietly ended its one-job-at-a-time queue.
+    """
+    if not _NAME_RE.match(name):
         raise HTTPException(400, "machine name must be lowercase [a-z0-9] with - or _")
     if not body.host.strip() or not body.user.strip():
         raise HTTPException(400, "host and user are required")
+    sent = body.model_dump(include=body.model_fields_set - {"name"})
 
     def mutate(machines: dict) -> None:
-        spec = {k: v for k, v in body.model_dump().items()
-                if k != "name" and v not in ("", None) and v != []}
-        machines[key] = spec
+        kept = {k: v for k, v in (machines.get(name) or {}).items() if k not in sent}
+        machines[name] = {**kept, **{k: v for k, v in sent.items()
+                                     if v not in ("", None) and v != []}}
 
     return _rewrite_machines(request, mutate)
 

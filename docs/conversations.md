@@ -39,7 +39,9 @@ Optional, all on the same form:
 - **Folder access** — extra folders beyond the project directory, granted **before the first reply
   fires**: read + write ones (also readable) and read-only ones, each picked with the server-side
   directory browser. They land on the conversation's config the same way an allow-forever folder
-  grant does, so reply #1 already has the access instead of asking you mid-run.
+  grant does, so reply #1 already has the access instead of asking you mid-run. The instance's
+  credential stores (its config dir, `~/.credentials`, `~/.ssh`, or a folder containing one) are
+  refused here and in the header panel — as project directory too — exactly as on a routine.
 - **Model** — start on a specific catalog model (picked by name), or the system default
   (switchable any time later). Every option shows the model's context window; one whose window is
   too small to run the harness at all is disabled — and the server refuses it too.
@@ -224,7 +226,8 @@ produced in its reply, so you always know what to look at.
 The same **⚙ capabilities & budgets** panel is offered in two places: on the **new-conversation
 composer** (open it before you hit *start* — the first reply fires on create, so a permission,
 budget, or deliberation level that must govern reply #1 has to be set there) and at the top of a
-running conversation, where changes apply from the next reply:
+running conversation, where changes apply from the next reply (a reply already in flight is told
+what changed and which part of it reaches it — F337):
 
 - **Budgets** are **per reply**: turns, minutes, tokens and child tasks for each message, not the
   whole session. They are a runaway backstop — raise them for a conversation doing heavy work,

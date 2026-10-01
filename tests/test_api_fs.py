@@ -47,6 +47,42 @@ def test_missing_is_404_and_file_is_400(api_client):
     assert c.get(f"/api/fs/list?path={f}").status_code == 400
 
 
+def test_an_unresolvable_path_is_a_bad_path_not_a_crash(api_client):
+    """`Path.resolve()` raises RuntimeError on a symlink loop (Python 3.12) and ValueError on
+    an embedded NUL; the guard around it caught OSError alone, so both were a 500."""
+    c, tmp = api_client
+    loop = tmp / "loop"
+    loop.symlink_to(loop)
+    for path in (str(loop), f"{tmp}/a\x00b"):
+        r = c.get("/api/fs/list", params={"path": path})
+        assert r.status_code == 400, (path, r.text)
+        assert r.json()["detail"].startswith("bad path")
+
+
+def test_descending_into_a_dead_mount_is_an_explicit_error(api_client, monkeypatch):
+    """F190 marks an entry the daemon cannot stat as an `unreadable` DIRECTORY, so the picker
+    descends into it and gets an explicit error. A dead network mount raises ENOTCONN from
+    every stat — `Path.exists()` re-raises that errno — so descending was a 500 instead."""
+    import errno
+    from pathlib import Path
+
+    c, tmp = api_client
+    dead = tmp / "mnt" / "share"
+    dead.mkdir(parents=True)
+    real_stat, real_iterdir = Path.stat, Path.iterdir
+
+    def gone(path):
+        raise OSError(errno.ENOTCONN, "Transport endpoint is not connected", str(path))
+
+    monkeypatch.setattr(Path, "stat", lambda self, *a, **k: gone(self) if self == dead
+                        else real_stat(self, *a, **k))
+    monkeypatch.setattr(Path, "iterdir", lambda self: gone(self) if self == dead
+                        else real_iterdir(self))
+    r = c.get("/api/fs/list", params={"path": str(dead)})
+    assert r.status_code == 502, r.text
+    assert "not connected" in r.json()["detail"]
+
+
 def test_credential_stores_are_not_browsable(api_client, monkeypatch):
     """The picker must not hand credential-store layouts (secrets.env, key files, .mounts)
     to a bearer holder — the sandbox works to keep exactly these invisible to runs."""

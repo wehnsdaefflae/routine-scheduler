@@ -183,7 +183,8 @@ def test_accepting_keeps_an_existing_triggers_identity(client):
     """The page sends back the rows it was given — validated, defaults spelled out — while the
     file leaves them out; the webhook a third party holds must keep its URL either way."""
     c, tmp = client
-    c.post("/api/routines/alpha/triggers", json={"type": "webhook"})
+    c.post("/api/routines/alpha/settings", json={"changes": {"triggers": [
+        {"type": "webhook", "cooldown_s": 60, "max_fires_per_day": 0}]}})
     token = read_yaml(tmp / "routines/alpha/routine.yaml")["triggers"][0]["token"]
     shown = c.get("/api/routines/alpha/settings").json()["fields"]["triggers"]
     r = c.post("/api/routines/alpha/settings", json={"changes": {"triggers": [
@@ -192,6 +193,24 @@ def test_accepting_keeps_an_existing_triggers_identity(client):
     rows = read_yaml(tmp / "routines/alpha/routine.yaml")["triggers"]
     assert {t["type"] for t in rows} == {"webhook", "report"}
     assert next(t for t in rows if t["type"] == "webhook")["token"] == token
+
+
+@pytest.mark.parametrize("refused", [
+    {"finish_line": {"outcomes": [{"text": "launched", "judge": "date"}]}},   # no date
+    {"triggers": [{"type": "imap", "cooldown_s": 60, "max_fires_per_day": 0}]},
+])
+def test_an_accept_one_owner_refuses_lands_nothing(client, refused):
+    """The accept routes each field to the writer that owns it, and the triggers list and the
+    finish line were checked only AFTER routine.yaml had been rewritten and committed: the
+    page got a 400 for an accept that had half landed, its draft still showing every change
+    as pending. Everything is checked before anything is written."""
+    c, tmp = client
+    path = tmp / "routines/alpha/routine.yaml"
+    before = path.read_text()
+    r = c.post("/api/routines/alpha/settings", json={"changes": {"keep_runs": 12, **refused}})
+    assert r.status_code in (400, 422), r.text
+    assert path.read_text() == before
+    assert not (tmp / "routines/alpha/state/finish-line.json").exists()
 
 
 def test_a_trigger_row_compares_equal_with_or_without_its_defaults():

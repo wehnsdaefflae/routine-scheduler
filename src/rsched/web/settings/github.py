@@ -9,6 +9,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import threading
 import time
 
 import httpx
@@ -21,13 +22,51 @@ router = APIRouter()
 
 GH_CLI_CLIENT_ID = "178c6fc778ccc68e1d6a"   # GitHub CLI's public OAuth app (device flow on)
 _device_flows: dict[str, dict] = {}
+# The handlers are sync, so FastAPI runs them on worker THREADS at once: device-start's prune
+# iterated the table while a poll or a resume popped from it ("dictionary changed size during
+# iteration" — a 500). The same discipline as settings/oauth's flow table: these three helpers
+# are the only way in.
+_lock = threading.Lock()
+
+
+def _remember(flow_id: str, flow: dict) -> None:
+    """Store a new device flow, dropping the expired ones — nothing else ever removes an
+    abandoned flow.
+    """
+    with _lock:
+        now = time.time()
+        for fid in [f for f, fl in _device_flows.items() if fl["expires_at"] <= now]:
+            del _device_flows[fid]
+        _device_flows[flow_id] = flow
+
+
+def _pending(flow_id: str) -> dict | None:
+    """The device flow `flow_id` while it is still valid; None — and dropped — once expired."""
+    with _lock:
+        flow = _device_flows.get(flow_id)
+        if flow is not None and flow["expires_at"] <= time.time():
+            del _device_flows[flow_id]
+            return None
+        return flow
+
+
+def _forget(flow_id: str) -> None:
+    with _lock:
+        _device_flows.pop(flow_id, None)
 
 
 def _gh_login() -> str | None:
+    """The login `gh` is signed in as, or None — also when github.com does not answer in
+    time: `gh api user` goes over the network, and its timeout escaping the status read made
+    the Settings page's GitHub card a 500 instead of "not connected".
+    """
     if not shutil.which("gh"):
         return None
-    r = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True,
-                       timeout=15, check=False)
+    try:
+        r = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True,
+                           text=True, timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
     return (r.stdout.strip() or None) if r.returncode == 0 else None
 
 
@@ -53,18 +92,15 @@ def github_device_start(request: Request) -> dict:
     if r.status_code != 200:
         raise HTTPException(502, f"github device/code failed: {r.text[:200]}")
     d = r.json()
-    # prune expired flows here — nothing else ever removes an abandoned one
-    for fid in [f for f, fl in _device_flows.items() if fl["expires_at"] <= time.time()]:
-        _device_flows.pop(fid, None)
     flow_id = secrets.token_urlsafe(8)
     verification_uri = d.get("verification_uri", "https://github.com/login/device")
     interval = d.get("interval", 5)
     # Keep the display fields so a reloaded UI can resume the SAME flow via GET (below) instead of
     # losing the one-time code — the device-flow state is then addressable as #/settings?flow=<id>.
-    _device_flows[flow_id] = {"device_code": d["device_code"], "client_id": client_id,
-                              "user_code": d["user_code"], "verification_uri": verification_uri,
-                              "interval": interval,
-                              "expires_at": time.time() + int(d.get("expires_in", 900))}
+    _remember(flow_id, {"device_code": d["device_code"], "client_id": client_id,
+                        "user_code": d["user_code"], "verification_uri": verification_uri,
+                        "interval": interval,
+                        "expires_at": time.time() + int(d.get("expires_in", 900))})
     return {"flow_id": flow_id, "user_code": d["user_code"], "verification_uri": verification_uri,
             "interval": interval, "expires_in": d.get("expires_in", 900)}
 
@@ -74,10 +110,10 @@ def github_device_flow(_request: Request, flow_id: str) -> dict:
     """Resume a pending device flow after a reload: return its still-valid code + URL, or 404 if
     it's unknown/expired (the UI then just shows the normal connect button).
     """
-    flow = _device_flows.get(flow_id)
+    flow = _pending(flow_id)
     remaining = int(flow["expires_at"] - time.time()) if flow else 0
     if not flow or remaining <= 0:
-        _device_flows.pop(flow_id, None)
+        _forget(flow_id)
         raise HTTPException(404, "unknown or expired flow — start again")
     return {"flow_id": flow_id, "user_code": flow["user_code"],
             "verification_uri": flow["verification_uri"],
@@ -91,7 +127,7 @@ class DevicePoll(BaseModel):
 @router.post("/settings/github/device-poll")
 def github_device_poll(_request: Request, body: DevicePoll) -> dict:
     """Called by the UI every few seconds until the user authorizes; then store the token via gh."""
-    flow = _device_flows.get(body.flow_id)
+    flow = _pending(body.flow_id)
     if flow is None:
         raise HTTPException(404, "unknown or expired flow — start again")
     try:
@@ -103,12 +139,12 @@ def github_device_poll(_request: Request, body: DevicePoll) -> dict:
         raise HTTPException(502, f"could not reach github.com: {exc}") from exc
     d = r.json()
     if d.get("access_token"):
-        _device_flows.pop(body.flow_id, None)
+        _forget(body.flow_id)
         return {"status": "connected", "login": _gh_store_token(d["access_token"])}
     err = d.get("error", "unknown")
     if err in ("authorization_pending", "slow_down"):
         return {"status": "pending"}
-    _device_flows.pop(body.flow_id, None)
+    _forget(body.flow_id)
     return {"status": "error", "error": d.get("error_description") or err}
 
 

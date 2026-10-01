@@ -60,7 +60,7 @@ def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routin
         cases = [
             ("PATCH", "/api/routines/apir", {"description": "x"}),       # routine config
             ("PUT", "/api/routines/apir/permissions", {"active": []}),   # permission layers
-            ("POST", "/api/routines/apir/triggers", {"type": "report"}),  # trigger config
+            ("POST", "/api/routines/apir/settings", {"changes": {}}),    # the one accept
             ("POST", "/api/lanes", {"name": "G"}),                       # lane store
             ("POST", "/api/questions/q-x/answer", {"text": "hi"}),       # decisions/grants
             ("PUT", "/api/settings/secrets", {"key": "K_X", "value": "v"}),  # settings
@@ -328,7 +328,6 @@ def test_mid_run_edits_queue_and_replay(client):
     replayed at run end (the daemon reap). Here we drive the spool + applier directly to
     prove queue → replay produces the same effect as an immediate edit."""
     from rsched import pending_edits
-    from rsched.config import load_routine
 
     c, tmp = client
     routines = tmp / "routines"
@@ -336,26 +335,17 @@ def test_mid_run_edits_queue_and_replay(client):
     home = routines
     rdir = routines / "apir"
 
-    # A file edit and a webhook trigger create, both mid-run, both queue (200, queued).
+    # A file edit mid-run queues (200, queued) instead of a 409.
     rf = c.put("/api/routines/apir/file", json={"path": "stages/x.md", "content": "queued!"})
     assert rf.status_code == 200 and rf.json().get("queued") is True
-    rt = c.post("/api/routines/apir/triggers", json={"type": "webhook"})
-    assert rt.status_code == 200 and rt.json().get("queued") is True
-    # a webhook's URL is returned even when queued (token is generated at request time)
-    assert rt.json()["trigger"]["url_path"].startswith("/api/hooks/apir/")
-    tid = rt.json()["trigger"]["id"]
-
-    assert pending_edits.pending_count(home, "apir") == 2
+    assert pending_edits.pending_count(home, "apir") == 1
     assert not (rdir / "stages" / "x.md").exists()          # not applied yet
-    assert not any(t.get("id") == tid                        # not in config yet
-                   for t in (load_routine(rdir)[0].triggers or []))
 
     # Replay (what Runner._reap calls after a clean finish).
     rows = pending_edits.apply_pending(rdir, home, "apir")
-    assert len(rows) == 2 and all(r["ok"] for r in rows)
+    assert len(rows) == 1 and all(r["ok"] for r in rows)
     assert pending_edits.pending_count(home, "apir") == 0   # spool drained
     assert (rdir / "stages" / "x.md").read_text() == "queued!"
-    assert any(t.get("id") == tid for t in (load_routine(rdir)[0].triggers or []))
 
 
 def test_mid_run_edit_idle_applies_immediately(client):
@@ -368,16 +358,6 @@ def test_mid_run_edit_idle_applies_immediately(client):
     assert r.status_code == 200 and r.json().get("queued") is None
     assert (tmp / "routines" / "apir" / "main.md").read_text() == "now"
     assert pending_edits.pending_count(tmp / "routines", "apir") == 0
-
-
-def test_mid_run_bad_trigger_id_404s_upfront(client):
-    """A delete/patch of a non-existent trigger is a 404 at request time, never a silent
-    replay failure — the operator learns immediately."""
-    c, tmp = client
-    _mk_run(tmp / "routines", "apir", "20260708-090000", "running")
-    assert c.delete("/api/routines/apir/triggers/nope").status_code == 404
-    assert c.patch("/api/routines/apir/triggers/nope",
-                   json={"cooldown_s": 30}).status_code == 404
 
 
 def test_file_read_guarded(client):
@@ -1533,6 +1513,13 @@ def test_settings_endpoints_crud(client):
     assert r.status_code == 400
     r = c.post("/api/settings/endpoints", json={"name": "cc", "kind": "claude-cli"})
     assert r.status_code == 400
+    # a schema_mode the loader cannot load is refused, not saved for the loader to revert
+    # quietly behind an `ok: true` (the endpoint card does not show `problems`; R102)
+    before = (tmp / "config.yaml").read_text()
+    r = c.put("/api/settings/endpoints/vllm", json={
+        "name": "vllm", "kind": "openai", "schema_mode": "strict-please"})
+    assert r.status_code == 422, r.text
+    assert (tmp / "config.yaml").read_text() == before
     assert c.delete("/api/settings/endpoints/vllm").status_code == 200
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
 
@@ -1703,6 +1690,24 @@ def test_github_device_flow_resume(client):
         github._device_flows.pop("fl-resume", None)
 
 
+def test_github_status_survives_a_hanging_gh(client, monkeypatch):
+    """`gh api user` reaches github.com; when it does not answer within its timeout the
+    Settings page's GitHub card got a 500 (TimeoutExpired straight out of the status read)
+    instead of reading "not connected"."""
+    import subprocess
+
+    c, _ = client
+    monkeypatch.setattr("rsched.web.settings.github.shutil.which", lambda _name: "/usr/bin/gh")
+
+    def hang(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs.get("timeout", 15))
+
+    monkeypatch.setattr("rsched.web.settings.github.subprocess.run", hang)
+    r = c.get("/api/settings/github")
+    assert r.status_code == 200, r.text
+    assert r.json()["gh"] is True and r.json()["connected"] is False
+
+
 def test_status_meta_routines(client):
     """/api/status lists meta-tagged routines with their enabled state — the UI's
     'self-improvement is off' first-launch notice keys off this."""
@@ -1743,6 +1748,32 @@ def test_put_util_rejects_bad_header(client):
     assert r.status_code == 422
     assert "tags" in r.json()["detail"] and "SOME_API_KEY" in r.json()["detail"]
     assert not (tmp / "library" / "utils" / "x").exists()
+
+
+def _util_src(name: str, body: str = 'print("ok")') -> str:
+    return (f'"""{name} — a test util.\n\nusage: gu {name}\ntags: test\nnet: none\nfs: none\n'
+            f'"""\n{body}\n')
+
+
+def test_put_util_that_fails_its_selftest_is_rolled_back(client, monkeypatch):
+    """The web editor mirrors write_util, whose selftest gates the LIBRARY: a revision that
+    fails it is reverted and a new util removed, so a broken script is never left live for
+    the routines calling it. Here the 422 said "not committed" while the broken text stayed
+    on disk, and every `gu` caller ran it until someone noticed."""
+    c, tmp = client
+    utils = tmp / "library" / "utils"
+    (utils / "x").mkdir(parents=True)
+    (utils / "x" / "main.py").write_text(_util_src("x"), encoding="utf-8")
+    monkeypatch.setattr("rsched.utils_run.selftest", lambda *_a, **_k: (False, "exit 3"))
+    r = c.put("/api/library/utils/x", json={"content": _util_src("x", "raise SystemExit(3)")})
+    assert r.status_code == 422 and "exit 3" in r.json()["detail"]
+    assert (utils / "x" / "main.py").read_text(encoding="utf-8") == _util_src("x")
+    r = c.put("/api/library/utils/fresh", json={"content": _util_src("fresh")})
+    assert r.status_code == 422
+    assert not (utils / "fresh").exists()
+    # a name outside the slug alphabet is refused as such, not by write_util_file's 500
+    assert c.put("/api/library/utils/Fresh.Util",
+                 json={"content": _util_src("Fresh.Util")}).status_code == 400
 
 
 def test_workflow_delete_and_no_proposals_flow(client):

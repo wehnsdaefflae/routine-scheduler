@@ -7,8 +7,9 @@ no auth header, so the unguessable per-flow `state` is the CSRF guard); the call
 code and writes the connection via the daemon-owned store. `router` is the authed CRUD the Settings
 card uses; `callback_router` is the one public route.
 
-Pending flows live in a process-local dict (like the GitHub device flow) — lost on restart, which
-only means an in-flight consent must be restarted, never a stored token.
+Pending flows live in a process-local dict (like the GitHub device flow) behind one lock — the
+handlers run on worker threads — and are lost on restart, which only means an in-flight consent
+must be restarted, never a stored token.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import base64
 import hashlib
 import logging
 import secrets
+import threading
 import time
 from urllib.parse import urlencode
 
@@ -36,13 +38,44 @@ callback_router = APIRouter()   # UNAUTHENTICATED public redirect target (wired 
 FLOW_TTL_S = 600
 _flows: dict[str, dict] = {}      # flow_id → pending-flow state
 _state_index: dict[str, str] = {}  # state → flow_id (the callback looks up by state)
+# Every handler here is SYNC, so FastAPI runs them on worker THREADS at once — the card's poll,
+# the provider's callback and a new authorize-start each prune the table. Unguarded, a prune
+# iterated `_flows` while another thread changed it ("dictionary changed size during
+# iteration") or read a flow another prune had just dropped (KeyError): a 500 on whichever
+# request lost, the callback's included. The three helpers below are the only way in.
+_lock = threading.Lock()
 
 
 def _prune() -> None:
+    """Drop the expired flows. The caller holds `_lock`."""
     now = time.time()
     for fid in [f for f, e in _flows.items() if e["expires_at"] < now]:
-        _state_index.pop(_flows[fid].get("state", ""), None)
-        _flows.pop(fid, None)
+        _state_index.pop(_flows.pop(fid).get("state", ""), None)
+
+
+def _register(flow_id: str, entry: dict) -> None:
+    """Remember a new pending flow under its id and its `state`."""
+    with _lock:
+        _prune()
+        _flows[flow_id] = entry
+        _state_index[entry["state"]] = flow_id
+
+
+def _flow(flow_id: str) -> dict | None:
+    """A pending flow by id — the card's poll — or None once unknown or expired."""
+    with _lock:
+        _prune()
+        return _flows.get(flow_id)
+
+
+def _claim(state: str) -> dict | None:
+    """The flow a callback's `state` names, CONSUMED: a state is single-use, so a replayed
+    redirect finds nothing. None for an unknown or expired one.
+    """
+    with _lock:
+        _prune()
+        flow_id = _state_index.pop(state, None) if state else None
+        return _flows.get(flow_id) if flow_id else None
 
 
 def _pkce() -> tuple[str, str]:
@@ -118,11 +151,6 @@ def authorize_start(request: Request, provider: str, body: AuthorizeStart) -> di
     verifier, challenge = _pkce()
     state = secrets.token_urlsafe(32)
     flow_id = secrets.token_urlsafe(8)
-    _prune()
-    _flows[flow_id] = {"provider": provider, "account": account, "code_verifier": verifier,
-                       "redirect_uri": redirect_uri, "state": state, "status": "pending",
-                       "error": "", "expires_at": time.time() + FLOW_TTL_S}
-    _state_index[state] = flow_id
     params = {"client_id": creds.client_id, "redirect_uri": redirect_uri,
               "response_type": "code", "state": state}
     if prov.uses_pkce:
@@ -136,14 +164,16 @@ def authorize_start(request: Request, provider: str, body: AuthorizeStart) -> di
                                      "requires explicit OAuth scopes (no default is assumed)")
         params["scope"] = scope
     params.update(dict(prov.authorize_extra))
+    _register(flow_id, {"provider": provider, "account": account, "code_verifier": verifier,
+                        "redirect_uri": redirect_uri, "state": state, "status": "pending",
+                        "error": "", "expires_at": time.time() + FLOW_TTL_S})
     return {"flow_id": flow_id, "authorize_url": f"{prov.authorize_url}?{urlencode(params)}"}
 
 
 @router.get("/settings/oauth/flow/{flow_id}")
 def oauth_flow(flow_id: str) -> dict:
     """Poll a pending flow's status (set by the callback): pending | connected | error."""
-    _prune()
-    entry = _flows.get(flow_id)
+    entry = _flow(flow_id)
     if entry is None:
         raise HTTPException(404, "unknown or expired flow — start again")
     return {"status": entry["status"], "error": entry.get("error", ""),
@@ -207,9 +237,7 @@ def oauth_callback(state: str = "", code: str = "", error: str = "") -> HTMLResp
     is the CSRF guard; on a match we exchange the code and store the connection. Nothing sensitive
     is echoed or logged.
     """
-    _prune()
-    flow_id = _state_index.pop(state, None) if state else None
-    entry = _flows.get(flow_id) if flow_id else None
+    entry = _claim(state)
     if entry is None:
         log.warning("oauth callback rejected: unknown or expired state")
         return _page("Connection failed", "This authorization link is unknown or expired.", 400)

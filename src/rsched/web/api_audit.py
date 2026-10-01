@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from ..engine import inbox
 from ..ids import now_iso
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write_json, file_lock, read_json
 from ..readmodels.items import SELF_AUDIT_SLUG
 from .routines_common import queued_message
 
@@ -120,14 +120,19 @@ def _record_decision_answer(routine_dir, decision_id: str) -> None:
     the routine gets the same injection again, forever. The marker outlives consumption;
     _audit_decisions hides a decision answered at-or-after the report's `generated`
     until a NEWER report explicitly lists it open again.
+
+    Under the file's lock: answers arrive on worker threads (this route and the Decisions
+    page's), and two read-modify-writes at once kept one marker — the other decision then
+    re-presented as open, the loop this marker exists to end.
     """
     path = routine_dir / "audit" / "decisions-answered.json"
-    data = read_json(path)
-    if not isinstance(data, dict):
-        data = {}
-    data[decision_id] = now_iso()
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(path, data)
+    with file_lock(path.with_suffix(".lock")):
+        data = read_json(path)
+        if not isinstance(data, dict):
+            data = {}
+        data[decision_id] = now_iso()
+        atomic_write_json(path, data)
 
 
 def write_feedback(routine_dir, body: Feedback) -> str:

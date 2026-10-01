@@ -541,3 +541,28 @@ def mk_run(routine_dir: Path, ts: str, state: str, *, turn: int = 3, pid: int | 
         (run_dir / "transcript.jsonl").write_text(
             "".join(json.dumps(e) + "\n" for e in transcript), encoding="utf-8")
     return run_dir
+
+
+def hammer(work, threads: int = 6) -> list[BaseException]:
+    """Run `work(tag)` on `threads` threads at once, switching between them as often as the
+    interpreter allows, and return whatever any of them raised — the shape of a sync FastAPI
+    handler's state under concurrent requests (they run on worker threads)."""
+    errors: list[BaseException] = []
+
+    def run(tag: int) -> None:
+        try:
+            work(tag)
+        except Exception as exc:   # any failure kind is the regression
+            errors.append(exc)
+
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        pool = [threading.Thread(target=run, args=(n,)) for n in range(threads)]
+        for t in pool:
+            t.start()
+        for t in pool:
+            t.join()
+    finally:
+        sys.setswitchinterval(interval)
+    return errors

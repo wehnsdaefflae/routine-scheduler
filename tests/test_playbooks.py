@@ -259,6 +259,22 @@ def test_playbook_edit_detail_and_delete_routes(client):
     assert c.delete("/api/playbooks/research-and-report").status_code == 404
 
 
+@pytest.mark.parametrize("segment", ["%2E%2E", "%2E"])
+def test_a_dot_segment_is_not_a_playbook(client, segment):
+    """A playbook is addressed by its slug and the slug is joined onto `playbooks/`, so `..`
+    named the LIBRARY ROOT and `.` the whole playbooks dir: DELETE rmtree'd either one — the
+    workflows, rules, utils and the library's `.git` with them. A percent-encoded dot segment
+    survives every client's normalisation and reaches the route as a literal `..`."""
+    c, server = client
+    home = server.libraries_home
+    assert c.delete(f"/api/playbooks/{segment}").status_code == 404
+    assert c.put(f"/api/playbooks/{segment}", json={"content": "x"}).status_code == 404
+    assert c.get(f"/api/playbooks/{segment}").status_code == 404
+    assert c.get(f"/api/playbooks/{segment}/detail/README.md").status_code == 404
+    assert (home / "workflows").is_dir() and (home / "rules").is_dir()
+    assert (home / "playbooks" / "research-and-report" / "MAIN.md").is_file()
+
+
 def test_create_conversation_from_playbook(client):
     c, server = client
     r = c.post("/api/conversations",
