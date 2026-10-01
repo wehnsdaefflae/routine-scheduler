@@ -227,6 +227,8 @@ It exists because two documented operations had no mechanism (F492/D110, 0.345.0
 `report_threads.OPEN_THREAD_CAP` (3) parallel threads from one sender to one owner, and the
 observation names the open ids oldest-first. A reply (`answers`) and a fold (`supersedes`) are
 exempt — both REDUCE the thread count, and capping the way out is how a cap loses a finding.
+A fold is judged by what the ledger actually takes over under its lock, not by what it asked
+for: rows another filing folded first leave it a plain new thread, and the cap applies.
 That pairing is the whole design: the cap is only fair because the fold exists.
 
 **Deferrals whose carrier closed without delivering them.** An item routinely defers part of its
@@ -344,6 +346,8 @@ still happens on the Decisions page, through the same inbox.
 
 The `report` action stamps a monotonic `R<n>` on every report as it is appended
 (`rsched/reports.py`), under the same advisory file lock the append takes, so two runs filing
-at once cannot collide. The id comes back in the action's observation, so the filing run can
+at once cannot collide; a filing that cannot take the lock (a holder stalled past the lock's
+timeout) is refused and says so, rather than numbered without it. The id comes back in the
+action's observation, so the filing run can
 name it in its own summary, and it is how a later report CLOSES this one (`answers`). Every
 row in `reports.jsonl` carries an `id`; there is no id-less form to handle.
