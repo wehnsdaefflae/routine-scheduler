@@ -548,18 +548,44 @@ def test_rendered_output_counts_as_seen_only_when_looked_at():
     from types import SimpleNamespace
 
     from rsched.engine.assist_predicates import Situation, _rendered_output_unseen
+    from rsched.engine.compaction import turn_record
 
-    def situation(*records):
-        return Situation(loop=SimpleNamespace(ctx=None, turn_records=list(records)))
+    def situation(*actions):
+        records = [turn_record(n, a) for n, a in enumerate(actions, 1)]
+        return Situation(loop=SimpleNamespace(ctx=None, turn_records=records))
 
-    page = {"kind": "write_file", "brief": json.dumps("site/index.html")}
+    page = {"kind": "write_file", "path": "site/index.html"}
     assert _rendered_output_unseen(situation(page))
     assert not _rendered_output_unseen(situation(page, {"kind": "view_image",
-                                                        "brief": '"shot.png"'}))
+                                                        "path": "shot.png"}))
     assert not _rendered_output_unseen(situation(page, {"kind": "util",
-                                                        "brief": '"browser-session"'}))
-    assert not _rendered_output_unseen(situation({"kind": "write_file",
-                                                  "brief": '"notes.md"'}))
+                                                        "name": "browser-session"}))
+    assert not _rendered_output_unseen(situation({"kind": "write_file", "path": "notes.md"}))
+
+
+def test_a_long_path_keeps_the_extension_its_predicates_read():
+    """A turn record carried its brief cut to the DIGEST's 80 characters, and the predicates
+    that read a written path off it (a rendered extension, a write outside state/) saw the
+    cut: a page written deep in a report tree lost its `.html`, and the run that never looked
+    at it was never reminded. The cut belongs to the digest that renders it."""
+    from types import SimpleNamespace
+
+    from rsched.engine.assist_predicates import Situation, _rendered_output_unseen
+    from rsched.engine.compaction import maybe_compact, turn_record
+
+    deep = "artifacts/reports/2026-10-01-weekly-review-of-the-whole-fleet/sections/summary.html"
+    assert len(deep) > 80
+    record = turn_record(4, {"kind": "write_file", "path": deep, "say": "publish"})
+    loop = SimpleNamespace(ctx=None, turn_records=[record])
+    assert _rendered_output_unseen(Situation(loop=loop))
+
+    # …while the digest line that renders the same record stays as wide as it always was
+    filler = [{"role": "user", "content": "x" * 400} for _ in range(40)]
+    records = [turn_record(n, {"kind": "write_file", "path": deep}) for n in range(1, 30)]
+    compacted, info = maybe_compact(filler, records, cap_tokens=1)
+    assert info is not None
+    digest = next(m["content"] for m in compacted if "CONTEXT COMPACTED" in m["content"])
+    assert json.dumps(deep[:80]) in digest and deep not in digest
 
 
 def test_a_report_answered_elsewhere_is_no_longer_owed(tmp_path):

@@ -6,7 +6,7 @@ import os
 
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.budgets_config import Budgets
-from rsched.engine.compaction import estimate_input_tokens, maybe_compact
+from rsched.engine.compaction import estimate_input_tokens, maybe_compact, turn_record
 from rsched.engine.composer import build_system_prompt, state_digest
 from rsched.engine.harness import harness_contract
 from rsched.engine.observations import format_observation, truncate
@@ -783,7 +783,7 @@ def test_compaction_deterministic_and_bounded():
     for turn in range(1, 41):
         messages.append({"role": "assistant", "content": json.dumps({"kind": "util", "say": f"t{turn}"})})
         messages.append({"role": "user", "content": f"OBSERVATION {turn}: " + "o" * 400})
-        records.append({"turn": turn, "kind": "util", "brief": f'"cmd{turn}"', "say": f"say {turn}"})
+        records.append(turn_record(turn, {"kind": "util", "name": f"cmd{turn}", "say": f"say {turn}"}))
     small_budget = estimate_input_tokens(messages)  # force compaction: budget*0.6 < current size
     compacted, info = maybe_compact(list(messages), records, cap_tokens=small_budget * 0.6)
     assert info and info["after_estimated_tokens"] < info["before_estimated_tokens"]
