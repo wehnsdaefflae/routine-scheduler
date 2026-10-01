@@ -415,7 +415,7 @@ export async function render(view) {
     // ---- per-util execution stats -------------------------------------------
     parts.push(utilsSection(agg.utils));
 
-    // ---- what the optional output compressor bought --------------------------
+    // ---- what output compression bought (engine behaviour, not a setting) ---
     parts.push(compressionSection(agg.compression));
 
     // ---- slice tables -----------------------------------------------------
