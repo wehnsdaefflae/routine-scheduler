@@ -97,8 +97,7 @@ export function mountComposerOnly(main) {
     if (b.max_turns != null) turnsIn.placeholder = String(b.max_turns);
     if (b.max_wall_clock_min != null) minsIn.placeholder = String(b.max_wall_clock_min);
     if (b.max_total_tokens != null) tokIn.placeholder = String(b.max_total_tokens);
-    permPanel = abilitiesPanel(d.permissions, d.capabilities, {
-      disableRuns: "a conversation is one continuous run — previous-run depth is routine-only" });
+    permPanel = abilitiesPanel(d.permissions, d.capabilities);
     permsHost.replaceChildren(permPanel.node);
     // no onSave → the picker renders no apply button; its `selected` rides the form
     rulePick = rulePicker(d.library_rules || [], d.rules || []);

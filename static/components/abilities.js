@@ -38,8 +38,8 @@
 //                                 perform it is the defect this attribute exists to make
 //                                 impossible, so it is on the button, never on the row.
 //
-// Drop-in for permissionsPanel: same (permissions, capabilities, opts) in, same {node, value} out,
-// so the routine page, the conversation rail and the composer all keep working.
+// (permissions, capabilities, opts) in, {node, value} out, for its three hosts: the routine page,
+// the conversation rail and the composer.
 // `opts.surface` is optional — an unsaved conversation has no routine to resolve, so the cards
 // degrade to the two-layer view that case can support.
 //
@@ -50,11 +50,11 @@
 // — which is what a staged row is marked against, while `permissions`/`capabilities` are the draft.
 
 import { effectLine } from "/static/components/effectline.js";
-import { el, toast } from "/static/util.js";
+import { el } from "/static/util.js";
 import { docExpander } from "/static/components/docexpand.js";
 
 import {
-  CONFIRM_OPTIONS, RULE_CONFIRM_OPTIONS, RUNS_OPTIONS, RUNS_RANK, REMINDERS_OPTIONS, REM_RANK, ACTION_HELP, UTIL_HELP, ABSENT_UTIL, KIND_LABEL
+  CONFIRM_OPTIONS, RULE_CONFIRM_OPTIONS, ACTION_HELP, UTIL_HELP, ABSENT_UTIL, KIND_LABEL
 } from "/static/components/abilities-data.js";
 import { createOrphanCard } from "/static/components/abilities-orphans.js";
 
@@ -85,35 +85,22 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
   const marks = [];                         // [{slug, node}] — repainted on every toggle
   let ready = false;                        // the first render reports nothing: building is not editing
 
+  // A doc's `requires:` names ACTIONS and UTILS and nothing else (grants.normalize_capabilities
+  // drops any other key: the approval dials, the run-history depth and the reminder stores are
+  // settings the user chooses, never something holding a doc switches on).
   const needs = (p) => p.requires || {};
   const baseName = (u) => String(u).split(":")[0];
 
-  // The RANKED dials in one table — the `requires:` key each answers, against the ladder
-  // it is ranked on. A doc names a FLOOR, so a live value at or above it satisfies the doc; a
-  // value the ladder does not know is not one this can call satisfied. Every reading of a dial
-  // goes through it: the raise, the deactivation cascade and the state the card's dial row
-  // wears. The server builds the `switch_on` fix's `missing` list by raising the mapping through
-  // its own cascade and reporting every key the raise CHANGED, which is this comparison — so the
-  // dot the reader sees and the shortfall the fix names can only agree.
-  const RANKED = { runs: RUNS_RANK, reminders: REM_RANK };
-  const dialMet = (key, need) => !need || RANKED[key][caps[key]] >= RANKED[key][need];
-  // the activation cascade: raise the mapping to cover one doc's requires
+  // The activation cascade: ticking a doc on switches on what it requires. Nothing cascades
+  // the other way, because nothing here can switch a REQUIRED capability off: a doc is the
+  // switch for what it needs, and the one place a capability comes off — the uncovered card —
+  // offers only those no held doc requires. A "deactivation cascade" once ran after every
+  // untick, which changes no capability, so all it did was untick every OTHER held doc that was
+  // already short of a requirement (one a library change gave it — its card's "switch on" is
+  // the remedy) and toast "also switched off" as if the untick had done it.
   const raiseFor = (r) => {
     (r.actions || []).forEach((a) => caps.actions.add(a));
     (r.utils || []).forEach((u) => caps.utils.add(u));
-    for (const key of Object.keys(RANKED)) if (!dialMet(key, r[key])) caps[key] = r[key];
-  };
-  // the deactivation cascade: drop what the mapping no longer covers
-  const dropUnsatisfied = () => {
-    const dropped = [];
-    for (const slug of [...held]) {
-      const r = needs(docs.find((d) => d.slug === slug) || {});
-      const ok = (r.actions || []).every((a) => caps.actions.has(a))
-        && (r.utils || []).every((u) => caps.utils.has(u))
-        && Object.keys(RANKED).every((key) => dialMet(key, r[key]));
-      if (!ok) { held.delete(slug); dropped.push(slug); }
-    }
-    if (dropped.length) toast(`also switched off: ${dropped.join(", ")}`);
   };
 
   /** Surface rows this ability owns: by declaring doc, or by a util it reserves. */
@@ -150,13 +137,10 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
         note ? el("div", { class: "muted small prose" }, note) : null));
   }
 
-  /** The one dial a doc's requirement rides on, with the STATE its row wears.
-   *
-   *  An approval dial is never short: an approval level is the user's policy and a `requires:`
-   *  may not name one (grants.normalize_capabilities rejects it inside requires), so there is
-   *  nothing for the value to fall below. A ranked dial is short whenever the live value sits
-   *  under what the doc asks for — the row the reader has to close, wearing the same `blocks`
-   *  the card's badge is built from and naming the same shortfall the server put in the fix.
+  /** The approval dial a doc's requirement rides on — write_util's `confirm`, write_rule's
+   *  `rule_confirm` — or null. Its row is never short: an approval level is the user's policy,
+   *  and a `requires:` names only actions and utils, so there is nothing for the value to fall
+   *  below.
    */
   function dialFor(doc) {
     const r = needs(doc);
@@ -169,38 +153,15 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
                control: selectDial(RULE_CONFIRM_OPTIONS, caps.rule_confirm,
                                    (v) => { caps.rule_confirm = v; }) };
     }
-    const state = (key) => (dialMet(key, r[key]) ? "ok" : "blocks");
-    if (r.runs) {
-      return { kind: "depth", state: state("runs"),
-               control: selectDial(RUNS_OPTIONS, caps.runs, (v) => { caps.runs = v; },
-                                   opts.disableRuns) };
-    }
-    if (r.reminders) {
-      // One control over two keys, so its value is a pair. `none` is a real place for the
-      // mapping to stand — a file edited by hand holds this doc with the layer switched off —
-      // and it is shown as such rather than displayed as the `local` it is not.
-      const now = caps.reminders === "none" ? "off"
-        : caps.reminders === "global" ? `global:${caps.remind_confirm}` : "local";
-      return { kind: "stores", state: state("reminders"),
-               control: selectDial(REMINDERS_OPTIONS, now, (v) => {
-                 const [level, confirm] = v.split(":");
-                 caps.reminders = level === "off" ? "none" : level;
-                 if (confirm) caps.remind_confirm = confirm;
-               }) };
-    }
     return null;
   }
 
-  function selectDial(options, current, set, disabled) {
-    // `disabled` is the caller's SENTENCE saying why this dial cannot move (a conversation is
-    // one continuous run, so previous-run depth means nothing there). A greyed control with no
-    // explanation is a dead end, so the sentence rides the control as its tooltip.
-    //
+  function selectDial(options, current, set) {
     // A card whose doc requires the capability never OFFERS the off value — off is the engine
     // rejecting the very thing the ability is for. It still SHOWS it while that is where the
     // mapping actually stands: a control resting on a value the routine does not hold reads as
     // a closed row, leaving the reader nothing to move.
-    const sel = el("select", { disabled: disabled ? "" : null, title: disabled || null },
+    const sel = el("select", {},
       ...options.filter(([v]) => v !== "off" || v === current).map(([v, label]) =>
         el("option", { value: v, selected: current === v ? "" : null }, label)));
     sel.onchange = () => { set(sel.value); render(); };
@@ -254,7 +215,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
                               disabled: doc.routine_only ? "" : null });
     box.onchange = () => {
       if (box.checked) { held.add(doc.slug); raiseFor(r); }
-      else { held.delete(doc.slug); dropUnsatisfied(); }
+      else held.delete(doc.slug);
       repaint();
     };
     // the card's own verdict: the worst state in its stack, which is the whole reason the

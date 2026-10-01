@@ -34,10 +34,13 @@ do; permissions instruct it in what it may do.**
 
 ## The two permission layers and their cascade
 
-Activating a permission switches on the capabilities its `requires:` names. Switching a
-capability off deactivates every permission that requires it. Both cascades live in the
-UI (the routine page shows the two layers side by side, each capability badged with the
-docs requiring it); the server re-runs the same raise-then-**floor** on every path that
+Activating a permission switches on the capabilities its `requires:` names — actions and
+utils, the only two things a doc may require. In the UI the doc is the switch: the routine
+page's ability cards hang each doc's requirements under it with no switch of their own, and
+the one place a capability comes off (the card of capabilities "switched on by nothing")
+offers only those no held doc requires — so no edit there can leave a held doc short, and
+unticking one doc changes nothing about another. The server re-runs the same
+raise-then-**floor** on every path that
 persists a mapping — save *and* creation (routine scaffold, conversation create, the
 composer's pre-start panel, the `/conversations/defaults` preview) — so two invariants
 hold regardless of the client: *a held doc's requirements are always on*, and *a saved

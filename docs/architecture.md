@@ -889,9 +889,10 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   `confirm` / `rule_confirm` / `remind_confirm`, and the levels `runs` / `reminders` (the full
   key list with each one's meaning is docs/rules-permissions.md, not restated here) —
   grants.py builds the run policy from it alone, so a doc-without-capability config fails closed;
-  a doc's `requires:` names what its instructions presume and drives the UI cascades (activating a
-  doc switches its requirements on; switching a capability off deactivates the docs requiring it —
-  and the server runs the SAME raise-then-floor on every path that persists a mapping: save AND
+  a doc's `requires:` names what its instructions presume and drives the UI's activation cascade
+  (activating a doc switches its requirements on; on the ability cards a required capability has
+  no switch of its own — the doc is the switch — and the server runs the SAME raise-then-floor on
+  every path that persists a mapping: save AND
   creation (scaffold, conversation create, the composer's ⚙ payload, the /defaults preview), so a
   mapping never expresses a capability its held docs don't require — from birth, not first edit).
   Both layers user-changeable ONLY; routines can't self-grant. The shipped doc set is 17 files
