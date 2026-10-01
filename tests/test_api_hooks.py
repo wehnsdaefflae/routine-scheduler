@@ -1,9 +1,11 @@
-"""The webhook ingest route (the ONE unauthenticated API route) + trigger CRUD: URL-token
-auth (constant-time, generic 404), payload cap, rate limit + spool cap, the durable
-web→daemon handoff, and the routine-page CRUD with its 409/403 guards."""
+"""The webhook ingest route (the ONE unauthenticated API route) and the triggers it serves:
+URL-token auth (constant-time, generic 404), payload cap, rate limit + spool cap, the durable
+web→daemon handoff, and editing the trigger list through the routine page's one accept with
+its validation and its 401/409 guards."""
 
 import asyncio
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 
@@ -65,6 +67,23 @@ def test_hook_generic_404_for_slug_token_and_disabled(api_client, make_routine):
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
     disabled = bare.post(f"/api/hooks/testr/{TOK}", content=b"x")
     assert disabled.status_code == 404 and disabled.json() == wrong_token.json()
+    assert triggers.pending_events(tmp / "routines", "testr") == []
+
+
+def test_hook_refuses_a_retired_routine_like_a_disabled_one(api_client, make_routine):
+    """A routine whose finish line is reached may not fire (`RoutineInfo.fireable`), and the
+    daemon drops its spooled events unread — so the hook must not answer 202 for one."""
+    from rsched.engine import finishline
+
+    c, tmp = api_client
+    routine = make_routine(slug="testr")
+    _add_trigger(tmp, "testr")
+    finishline.save(routine, {"outcomes": [{"text": "shipped", "judge": "you",
+                                            "status": "met"}]}, now="2026-10-01T09:00:00")
+    bare = TestClient(c.app)
+    r = bare.post(f"/api/hooks/testr/{TOK}", content=b"x")
+    assert r.status_code == 404
+    assert r.json() == bare.post(f"/api/hooks/ghost/{TOK}", content=b"x").json()
     assert triggers.pending_events(tmp / "routines", "testr") == []
 
 
@@ -186,119 +205,109 @@ def test_hook_to_daemon_handoff(api_client, make_routine):
     assert triggers.pending_events(tmp / "routines", "testr") == []
 
 
-# -- CRUD ---------------------------------------------------------------------------------
+# -- editing: the routine page's one accept ------------------------------------------------
+# The Triggers card is a field of the settings page (0.369.0): a trigger is added, re-bounded or
+# removed in the draft and lands with the page's one accept (web/api_settings). What the server
+# mints is IDENTITY — the id, and a webhook's token, the hook's only auth.
+
+WEBHOOK = {"type": "webhook", "cooldown_s": 120, "max_fires_per_day": 0}
+REPORT = {"type": "report", "cooldown_s": 900, "max_fires_per_day": 24}
 
 
-def test_create_and_delete_trigger(api_client, make_routine):
+def _accept(c, rows, slug="testr"):
+    return c.post(f"/api/routines/{slug}/settings", json={"changes": {"triggers": rows}})
+
+
+def _saved_triggers(tmp, slug="testr"):
+    path = tmp / "routines" / slug / "routine.yaml"
+    return yaml.safe_load(path.read_text(encoding="utf-8")).get("triggers") or []
+
+
+def test_an_accepted_webhook_has_a_working_url_until_it_is_removed(api_client, make_routine):
     c, tmp = api_client
     make_routine(slug="testr")
-    r = c.post("/api/routines/testr/triggers", json={"cooldown_s": 120})
-    assert r.status_code == 200
-    trig = r.json()["trigger"]
+    assert _accept(c, [WEBHOOK]).status_code == 200
+    [trig] = _saved_triggers(tmp)
     assert trig["type"] == "webhook" and trig["cooldown_s"] == 120
-    assert trig["url_path"] == f"/api/hooks/testr/{trig['token']}"
     assert len(trig["token"]) >= 24                      # server-generated, never client-supplied
-    raw = yaml.safe_load((tmp / "routines" / "testr" / "routine.yaml").read_text())
-    assert raw["triggers"][0]["id"] == trig["id"]
-    # the detail payload renders the card's rows
-    detail = c.get("/api/routines/testr").json()
-    assert detail["triggers"][0]["url_path"] == trig["url_path"]
-    assert detail["triggers"][0]["last_fired"] == "" and detail["triggers"][0]["pending"] == 0
-    # the fresh hook works immediately
-    assert TestClient(c.app).post(trig["url_path"], content=b"hi").status_code == 202
-    # delete: the URL stops matching, the config entry is gone
-    assert c.delete(f"/api/routines/testr/triggers/{trig['id']}").status_code == 200
-    raw = yaml.safe_load((tmp / "routines" / "testr" / "routine.yaml").read_text())
-    assert raw["triggers"] == []
-    assert TestClient(c.app).post(f"/api/hooks/testr/{trig['token']}",
-                                  content=b"hi").status_code == 404
-    assert c.delete("/api/routines/testr/triggers/t-ghost").status_code == 404
+    url = f"/api/hooks/testr/{trig['token']}"
+    row = c.get("/api/routines/testr").json()["triggers"][0]     # the card's row
+    assert row["url_path"] == url and row["last_fired"] == "" and row["pending"] == 0
+    assert TestClient(c.app).post(url, content=b"hi").status_code == 202
+    assert _accept(c, []).status_code == 200
+    assert _saved_triggers(tmp) == []
+    assert TestClient(c.app).post(url, content=b"hi").status_code == 404
 
 
-def test_trigger_crud_guards(api_client, make_routine):
+def test_a_zero_bound_is_a_value_not_an_absence(api_client, make_routine):
+    """`0` is documented as no wait (cooldown) and no cap (daily fires). The accept read a
+    zero cooldown as falsy and minted the type's default instead — 60 s, or 900 s for a
+    report trigger — so the value the operator typed never reached the file."""
     c, tmp = api_client
     make_routine(slug="testr")
-    _mk_active_run(tmp, "testr")
-    # D78-A: an active run no longer bounces trigger create with a 409 — it is QUEUED and
-    # applied at run end (the webhook's URL is still returned; the config is untouched).
-    rq = c.post("/api/routines/testr/triggers", json={})
-    assert rq.status_code == 200 and rq.json().get("queued") is True
-    assert rq.json()["trigger"]["url_path"].startswith("/api/hooks/testr/")
-    from rsched import pending_edits
-    assert pending_edits.pending_count(tmp / "routines", "testr") == 1
-    assert not (yaml.safe_load(
-        (tmp / "routines" / "testr" / "routine.yaml").read_text()).get("triggers"))
-    # an unknown routine still refuses outright (the guard runs first)
-    assert c.post("/api/routines/ghost/triggers", json={}).status_code == 404
-    # CRUD stays bearer-gated (only the hook ingest is public)
+    r = _accept(c, [{**WEBHOOK, "cooldown_s": 0},
+                    {**REPORT, "cooldown_s": 0, "max_fires_per_day": 0}])
+    assert r.status_code == 200, r.text
+    assert sorted((t["type"], t["cooldown_s"], t["max_fires_per_day"])
+                  for t in _saved_triggers(tmp)) == [("report", 0, 0), ("webhook", 0, 0)]
+
+
+def test_a_report_trigger_has_no_url_and_a_routine_has_one(api_client, make_routine):
+    c, tmp = api_client
+    make_routine(slug="testr")
+    assert _accept(c, [REPORT]).status_code == 200
+    [trig] = _saved_triggers(tmp)
+    assert trig["type"] == "report" and "token" not in trig
+    assert c.get("/api/routines/testr").json()["triggers"][0]["url_path"] == ""
+    # one inbox, one watcher — the card disables its button, the accept refuses the second
+    r = _accept(c, [REPORT, {**REPORT, "cooldown_s": 300}])
+    assert r.status_code == 422 and "one report trigger" in r.json()["detail"]
+    assert _saved_triggers(tmp) == [trig]
+
+
+@pytest.mark.parametrize("row", [
+    {**WEBHOOK, "type": "imap"},             # reserved shape: nothing would ever fire it
+    {**WEBHOOK, "type": "nonsense"},
+    {**WEBHOOK, "cooldown_s": -1},
+    {**WEBHOOK, "max_fires_per_day": "lots"},
+    {**WEBHOOK, "cooldown_s": True},
+    {**WEBHOOK, "host": "imap.example.org"},  # a key no creatable trigger reads
+])
+def test_the_accept_refuses_a_trigger_it_cannot_create(api_client, make_routine, row):
+    """Any type that was not `report` used to become a WEBHOOK — a new token, a new public
+    entry point — and a bound the loader would later replace with its default was written
+    as given."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    r = _accept(c, [row])
+    assert r.status_code == 422, r.text
+    assert _saved_triggers(tmp) == []
+
+
+def test_changing_a_webhooks_bounds_mints_a_new_url(api_client, make_routine):
+    """A trigger's id and token are identity, not configuration, so the accept matches a row
+    to a trigger by what it configures: an unchanged row keeps its URL (test_patterns), a
+    row whose bounds changed stands for a NEW trigger — the card says so before the accept."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _accept(c, [WEBHOOK])
+    old = _saved_triggers(tmp)[0]["token"]
+    assert _accept(c, [{**WEBHOOK, "cooldown_s": 300}]).status_code == 200
+    [trig] = _saved_triggers(tmp)
+    assert trig["cooldown_s"] == 300 and trig["token"] != old
     bare = TestClient(c.app)
-    assert bare.post("/api/routines/testr/triggers", json={}).status_code == 401
+    assert bare.post(f"/api/hooks/testr/{old}", content=b"x").status_code == 404
+    assert bare.post(f"/api/hooks/testr/{trig['token']}", content=b"x").status_code == 202
 
 
-def test_create_report_trigger(api_client, make_routine):
-    """The report trigger's web half: server-generated entry, no token/URL, the type's
-    own generous default cooldown, and one-per-routine (409 on a second)."""
+def test_trigger_edits_are_bearer_gated_and_wait_for_an_active_run(api_client, make_routine):
     c, tmp = api_client
     make_routine(slug="testr")
-    r = c.post("/api/routines/testr/triggers", json={"type": "report"})
-    assert r.status_code == 200
-    trig = r.json()["trigger"]
-    assert trig["type"] == "report"
-    assert trig["cooldown_s"] == 900                  # the type's own default, not 60
-    assert "token" not in trig and "url_path" not in trig
-    raw = yaml.safe_load((tmp / "routines" / "testr" / "routine.yaml").read_text())
-    assert raw["triggers"][0]["id"] == trig["id"]
-    detail = c.get("/api/routines/testr").json()
-    assert detail["triggers"][0]["type"] == "report"
-    assert detail["triggers"][0]["url_path"] == ""
-    # one inbox, one watcher
-    assert c.post("/api/routines/testr/triggers",
-                  json={"type": "report"}).status_code == 409
-    # an explicit cooldown is honored
-    assert c.delete(f"/api/routines/testr/triggers/{trig['id']}").status_code == 200
-    r = c.post("/api/routines/testr/triggers", json={"type": "report", "cooldown_s": 300})
-    assert r.json()["trigger"]["cooldown_s"] == 300
-
-
-def test_patch_trigger_cooldown(api_client, make_routine):
-    """Retuning is in-place: the webhook keeps its token (the URL a third party holds
-    survives the edit), the daemon reads the new window, and only cooldown is settable."""
-    c, tmp = api_client
-    make_routine(slug="testr")
-    trig = c.post("/api/routines/testr/triggers", json={"cooldown_s": 60}).json()["trigger"]
-
-    r = c.patch(f"/api/routines/testr/triggers/{trig['id']}", json={"cooldown_s": 300})
-    assert r.status_code == 200
-    assert r.json()["trigger"]["cooldown_s"] == 300
-    raw = yaml.safe_load((tmp / "routines" / "testr" / "routine.yaml").read_text())
-    assert raw["triggers"][0]["cooldown_s"] == 300
-    assert raw["triggers"][0]["token"] == trig["token"]        # identity survives the edit
-    assert c.get("/api/routines/testr").json()["triggers"][0]["cooldown_s"] == 300
-    assert TestClient(c.app).post(trig["url_path"], content=b"hi").status_code == 202
-
-    assert c.patch(f"/api/routines/testr/triggers/{trig['id']}",
-                   json={"cooldown_s": 0}).status_code == 200  # 0 = fire every event
-    assert c.patch(f"/api/routines/testr/triggers/{trig['id']}",
-                   json={"cooldown_s": -1}).status_code == 422
-    assert c.patch(f"/api/routines/testr/triggers/{trig['id']}",
-                   json={"cooldown_s": 60, "type": "report"}).status_code == 422
-    assert c.patch("/api/routines/testr/triggers/t-ghost",
-                   json={"cooldown_s": 60}).status_code == 404
-
-
-def test_patch_trigger_guards(api_client, make_routine):
-    """A cooldown edit is a config edit: bearer-gated, and D78-A queues it while a run is
-    active (applied at run end) instead of a 409."""
-    c, tmp = api_client
-    make_routine(slug="testr")
-    trig = c.post("/api/routines/testr/triggers", json={"type": "report"}).json()["trigger"]
-    path = f"/api/routines/testr/triggers/{trig['id']}"
-    assert TestClient(c.app).patch(path, json={"cooldown_s": 60}).status_code == 401
+    assert TestClient(c.app).post("/api/routines/testr/settings",
+                                  json={"changes": {"triggers": [WEBHOOK]}}).status_code == 401
     _mk_active_run(tmp, "testr")
-    rq = c.patch(path, json={"cooldown_s": 60})
-    assert rq.status_code == 200 and rq.json().get("queued") is True
-    from rsched import pending_edits
-    assert pending_edits.pending_count(tmp / "routines", "testr") == 1
+    assert _accept(c, [WEBHOOK]).status_code == 409
+    assert _saved_triggers(tmp) == []
 
 
 def _add_report_trigger(tmp, slug, *, tid="t-report01", cooldown_s=0, cap=24):
@@ -361,20 +370,3 @@ def test_report_trigger_daily_cap(api_client, make_routine):
     state["triggers"]["t-report01"]["day"] = "2026-08-04"
     atomic_write_json(tmp / "routines" / ".control" / "triggers" / "testr" / "state.json", state)
     assert _fire_once(c, tmp).fired == [("testr", "trigger")]
-
-
-def test_patch_trigger_daily_cap(api_client, make_routine):
-    c, tmp = api_client
-    make_routine(slug="testr")
-    trig = c.post("/api/routines/testr/triggers", json={"type": "report"}).json()["trigger"]
-    assert trig["max_fires_per_day"] == 24                   # the type's own default
-    path = f"/api/routines/testr/triggers/{trig['id']}"
-    assert c.patch(path, json={"max_fires_per_day": 6}).json()["trigger"]["max_fires_per_day"] == 6
-    raw = yaml.safe_load((tmp / "routines" / "testr" / "routine.yaml").read_text())
-    assert raw["triggers"][0]["max_fires_per_day"] == 6
-    assert raw["triggers"][0]["cooldown_s"] == 900           # untouched by a partial patch
-    assert c.patch(path, json={"max_fires_per_day": 0}).status_code == 200      # 0 = uncapped
-    assert c.patch(path, json={"max_fires_per_day": -1}).status_code == 422
-    assert c.patch(path, json={}).status_code == 400
-    detail = c.get("/api/routines/testr").json()["triggers"][0]
-    assert detail["max_fires_per_day"] == 0 and detail["fires_today"] == 0

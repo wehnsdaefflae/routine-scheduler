@@ -69,9 +69,11 @@ the payload.
   global bearer (third parties can't hold your console token). Tokens are server-generated
   (24 bytes url-safe), compared constant-time, and never client-supplied. Treat the URL as
   a secret; rotating it = delete the trigger, create a new one.
-- **No existence oracle.** Unknown slug, wrong token, and disabled routine all return the
-  same generic `404 unknown hook` (with an equalized token comparison on the unknown-slug
-  path). Rejections are logged with slug + client address, never the payload.
+- **No existence oracle.** Unknown slug, wrong token, and a routine that may not fire
+  (switched off, or retired — its finish line reached) all return the same generic
+  `404 unknown hook`, with an equalized token comparison on the unknown-slug path and the same
+  whole-catalog lookup for every slug. Rejections are logged with slug + client address, never
+  the payload.
 - **Size cap** — bodies over 64 KiB are rejected `413` before anything is stored.
 - **Rate limit + spool cap** — per routine, accepted events are limited per minute (`429`)
   and at most 32 events may wait unprocessed (`429`). Combined with the cooldown below, a
@@ -159,21 +161,23 @@ These are the trigger analog of the schedule's catchup/overrun rules:
 - **Cooldown.** `cooldown_s` (default 60; **900** for a report trigger) is the minimum gap
   between trigger-initiated fires; events inside the window coalesce into the next fire.
   When pending events span triggers with different cooldowns, the largest applies. It is
-  the one field of a live trigger that is tunable — the Triggers card edits it in place
-  (`PATCH /api/routines/<slug>/triggers/<id>`, `{"cooldown_s": N}`), and the daemon reads
-  the new window at the next rescan. Editing beats delete-and-recreate: a webhook keeps its
-  token, so a URL already handed to a third party survives, and a report trigger — one per
-  routine — has no other route to a non-default window. `id`, `token` and `type` are the
-  trigger's identity and are never patchable; a config edit is guarded while a run is
-  active, like every other. `0` means *no wait* — fire on every delivery.
+  set on the Triggers card like any other setting and lands with the page's one accept
+  (`POST /api/routines/<slug>/settings`, guarded while a run is active like every multi-field
+  config edit); the daemon reads the new window at the next rescan. `id`, `token` and `type`
+  are the trigger's IDENTITY, never its configuration, so the accept matches a row to a saved
+  trigger by its bounds: a row whose cooldown or cap changed stands for a NEW trigger, and
+  accepting it replaces the old one — a webhook's URL with it, which the row says before you
+  accept. `0` means *no wait* — fire on every delivery. The accept refuses (`422`) a type it
+  cannot create (`imap`/`watch_path` are reserved), a bound that is not a whole number `≥ 0`,
+  and a second report trigger.
 - **Daily cap.** `max_fires_per_day` (report triggers: **24**; other types uncapped unless
   set; `0` = uncapped) bounds the day's TOTAL trigger-initiated fires, which the cooldown
   cannot: a cooldown limits the rate, so two routines answering each other would stay awake
   forever at one run per window. The count is per trigger, keyed on the server's date, and
   resets with it. Reaching the cap emits ONE `trigger_capped` health event for that day —
   a capped trigger is a dark routine, and dark must be visible (F276) — and the waiting
-  inbox work is picked up by the next scheduled run, never dropped. Editable in place
-  beside the cooldown.
+  inbox work is picked up by the next scheduled run, never dropped. Set beside the cooldown,
+  with the same accept.
 - **Closures never wake.** A report filed with `closes: true` is the terminal
   acknowledgment of an exchange: it asks nothing, so it is delivered to the target's inbox
   but does NOT fire its report trigger (the same exemption `answer-*` files have there). It

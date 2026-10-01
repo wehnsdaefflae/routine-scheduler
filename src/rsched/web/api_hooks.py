@@ -1,4 +1,4 @@
-"""Webhook ingest (the ONE unauthenticated API route) + trigger CRUD for the routine page.
+"""Webhook ingest (the ONE unauthenticated API route) + the routine page's trigger list.
 
 POST /api/hooks/<slug>/<token> is called by THIRD PARTIES (CI, monitors, IFTTT-style
 services), so it deliberately takes no global bearer: the per-trigger URL token —
@@ -7,12 +7,13 @@ RECORD the event durably in the trigger spool (rsched.triggers.write_event — t
 request-file idiom restart.request and the background .requests/ use); FIRING is the
 daemon's job (daemon/triggers.py at the scheduler tick), which keeps one-run-per-routine,
 max_concurrent_runs, and coalescing in one place. Hardening: one generic 404 for unknown
-slug / wrong token / disabled routine (no existence oracle), a payload size cap, a
-per-slug accept rate limit + a durable spool cap so a leaked URL can't fill the disk,
+slug / wrong token / a routine that may not fire (no existence oracle), a payload size cap,
+a per-slug accept rate limit + a durable spool cap so a leaked URL can't fill the disk,
 the payload is never echoed back, and every rejection is logged (never the payload).
 
-`hooks_router` is wired in app.py WITHOUT the auth dependency; `router` (the trigger
-CRUD the routine page uses) rides the normal authed include like every other module.
+`hooks_router` is wired in app.py WITHOUT the auth dependency. The trigger list itself is a
+field of the settings page (0.369.0): added, re-bounded and removed in the draft and landed by
+its one accept (api_settings), which asks `reconciled_triggers` here what the new list is.
 """
 
 from __future__ import annotations
@@ -22,23 +23,16 @@ import logging
 import secrets
 import time
 from collections import deque
-from typing import Literal, NoReturn
+from typing import NoReturn
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
 
 from .. import registry, triggers
-from ..paths import read_yaml
-from .routines_common import (
-    _info,
-    queue_or_apply,
-    write_routine_config,
-)
+from ..patterns import fields
 
 log = logging.getLogger("rsched.hooks")
 
 hooks_router = APIRouter(tags=["hooks"])   # unauthenticated ingest (see app.py wiring)
-router = APIRouter(tags=["triggers"])      # authed CRUD
 
 RATE_WINDOW_S = 60.0
 RATE_MAX_ACCEPTS = 30   # accepted events per slug per window; the spool cap backstops it
@@ -122,10 +116,13 @@ async def receive_hook(request: Request, slug: str, token: str) -> dict:
     # garbage POST stalled each SSE stream and async route for the length of the walk.
     info = (await asyncio.to_thread(registry.scan, server)).get(slug)
     trigger = _match_webhook(info, token)
-    if info is None or trigger is None or not info.cfg.enabled:
-        # one generic answer for unknown slug / wrong token / disabled — no oracle
+    # `fireable`, the registry's ONE fire predicate: a switched-off routine and a RETIRED one
+    # (its finish line reached) alike. On `enabled` alone a retired routine's hook answered 202
+    # for an event the daemon then dropped unread.
+    if info is None or trigger is None or not info.fireable:
+        # one generic answer for unknown slug / wrong token / not fireable — no oracle
         why = ("unknown routine" if info is None
-               else "no matching token" if trigger is None else "routine disabled")
+               else "no matching token" if trigger is None else "routine switched off or retired")
         _reject(404, slug, client, why, "unknown hook")
     window = _rate_window(request, slug)
     if len(window) >= RATE_MAX_ACCEPTS:
@@ -141,121 +138,59 @@ async def receive_hook(request: Request, slug: str, token: str) -> dict:
     return {"ok": True}
 
 
-# -- trigger CRUD (authed; the routine page's Triggers card) ------------------------------
+# -- the trigger list (the settings page's Triggers field) --------------------------------
+
+#: What the Triggers card can CREATE. `imap` and `watch_path` are reserved shape with no
+#: watcher yet (rsched/triggers.py): kept when a file already names one, never minted here.
+CREATABLE_TRIGGERS = ("webhook", "report")
+_BOUNDS = ("cooldown_s", "max_fires_per_day")
 
 
-class TriggerCreate(BaseModel):
-    # webhook + report are creatable — imap/watch_path are reserved shape, no watcher.
-    # cooldown_s None = the type's own default (60s webhook, 900s report — report
-    # deliveries come in bursts and coalesce into one run per window).
-    type: Literal["webhook", "report"] = "webhook"
-    cooldown_s: int | None = Field(None, ge=0)
+def reconciled_triggers(current: list[dict], target: object) -> list[dict]:
+    """The trigger list that makes `current` (routine.yaml's entries) equal `target` (canonical
+    rows: type + bounds, no identity). A trigger that is already there keeps its id and — for
+    a webhook — its token, so a URL a third party holds keeps working; only a trigger the
+    target lacks is removed, only one it adds is created. A row whose bounds changed is
+    therefore a NEW trigger, under a new URL — the card says so before the accept.
 
-
-@router.post("/routines/{slug}/triggers")
-def create_trigger(request: Request, slug: str, body: TriggerCreate) -> dict:
-    """Append a server-generated trigger to routine.yaml (user config: 409 while a run is
-    active, like every config edit). A webhook's response carries the one place the full
-    hook URL path is handed out; a report trigger has no URL — the daemon watches the
-    routine's inbox (web records, daemon fires).
+    Writes nothing: a row that cannot become a trigger is refused here (422), before the
+    accept has written anything at all.
     """
-    info = _info(request, slug)
-    if body.type == "report":
-        if any(t.get("type") == "report" for t in info.cfg.triggers):
-            raise HTTPException(409, "this routine already has a report trigger — one "
-                                     "inbox, one watcher; adjust its cooldown instead")
-        trigger = triggers.new_report_trigger(
-            cooldown_s=triggers.DEFAULT_REPORT_COOLDOWN_S if body.cooldown_s is None
-            else body.cooldown_s)
-    else:
-        trigger = triggers.new_webhook_trigger(
-            cooldown_s=triggers.DEFAULT_COOLDOWN_S if body.cooldown_s is None
-            else body.cooldown_s)
-
-    def _apply() -> dict:
-        raw = read_yaml(info.cfg.dir / "routine.yaml", {})
-        entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
-        entries.append(trigger)
-        raw["triggers"] = entries
-        write_routine_config(request, info, raw,
-                             message=f"add {body.type} trigger {trigger['id']}",
-                             fields=["triggers"])
-        extra = ({"url_path": triggers.hook_path(slug, trigger)}
-                 if body.type == "webhook" else {})
-        return {"ok": True, "trigger": {**trigger, **extra}}
-
-    # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast.
-    # The token/id are generated NOW so the webhook URL is returned either way.
-    result = queue_or_apply(request, info, "trigger_create", {"entry": trigger}, _apply)
-    if result.get("queued") and body.type == "webhook":
-        result["trigger"] = {**trigger, "url_path": triggers.hook_path(slug, trigger)}
-    return result
+    wanted = fields.canonical("triggers", target)
+    want = list(wanted) if isinstance(wanted, list) else []
+    kept: list[dict] = []
+    for entry in current:
+        rows = fields.canonical("triggers", [entry])
+        row = rows[0] if isinstance(rows, list) and rows else {}
+        if row in want:
+            want.remove(row)
+            kept.append(entry)
+    added = [_new_trigger(row) for row in want]
+    if any(t["type"] == "report" for t in added) \
+            and sum(t.get("type") == "report" for t in kept + added) > 1:
+        raise HTTPException(422, "triggers: one report trigger per routine — one inbox, one "
+                                 "watcher; change the bounds of the one it has instead")
+    return kept + added
 
 
-class TriggerPatch(BaseModel):
-    # The two firing bounds are tunable; id, token and type ARE the trigger's identity.
-    model_config = ConfigDict(extra="forbid")
-
-    cooldown_s: int | None = Field(None, ge=0)
-    max_fires_per_day: int | None = Field(None, ge=0)   # 0 = uncapped
-
-
-@router.patch("/routines/{slug}/triggers/{trigger_id}")
-def patch_trigger(request: Request, slug: str, trigger_id: str, body: TriggerPatch) -> dict:
-    """Retune a live trigger's cooldown in place (user config: guarded like create/delete).
-
-    Editing beats delete-and-recreate: a webhook keeps its token, so the URL a third party
-    already holds keeps working, and a report trigger — of which a routine may hold only
-    one — has no other way to reach a non-default window.
+def _new_trigger(row: dict) -> dict:
+    """The trigger a row the accepted list GAINS stands for: identity minted server-side (the
+    id and, for a webhook, the token that is the hook's only auth), configuration exactly as
+    the row carries it. `fields.canonical` spells both bounds out, and `0` is a value — no
+    wait, no cap — never an absence to fill with the type's default.
     """
-    fields = body.model_dump(exclude_none=True)
-    if not fields:
-        raise HTTPException(400, "nothing to patch — send cooldown_s and/or max_fires_per_day")
-    info = _info(request, slug)
-    # validate the trigger exists up front so a bad id is a 404 NOW, not a silent replay
-    if not any(str(t.get("id")) == trigger_id for t in info.cfg.triggers):
-        raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
-
-    def _apply() -> dict:
-        raw = read_yaml(info.cfg.dir / "routine.yaml", {})
-        entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
-        target = next((t for t in entries if str(t.get("id")) == trigger_id), None)
-        if target is None:
-            raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
-        target.update(fields)
-        raw["triggers"] = entries
-        write_routine_config(
-            request, info, raw,
-            message=f"retune trigger {trigger_id}: "
-                    + ", ".join(f"{k}={v}" for k, v in sorted(fields.items())),
-            fields=["triggers"])
-        return {"ok": True, "trigger": target}
-
-    # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast
-    return queue_or_apply(request, info, "trigger_update",
-                          {"trigger_id": trigger_id, "fields": fields}, _apply)
-
-
-@router.delete("/routines/{slug}/triggers/{trigger_id}")
-def delete_trigger(request: Request, slug: str, trigger_id: str) -> dict:
-    """Remove a trigger; its hook URL stops matching immediately, and the daemon drops
-    any still-spooled events for it at the next tick.
-    """
-    info = _info(request, slug)
-    # validate the trigger exists up front so a bad id is a 404 NOW, not a silent replay
-    if not any(str(t.get("id")) == trigger_id for t in info.cfg.triggers):
-        raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
-
-    def _apply() -> dict:
-        raw = read_yaml(info.cfg.dir / "routine.yaml", {})
-        entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
-        kept = [t for t in entries if str(t.get("id")) != trigger_id]
-        if len(kept) == len(entries):
-            raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
-        raw["triggers"] = kept
-        write_routine_config(request, info, raw,
-                             message=f"remove trigger {trigger_id}", fields=["triggers"])
-        return {"ok": True}
-
-    # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast
-    return queue_or_apply(request, info, "trigger_delete", {"trigger_id": trigger_id}, _apply)
+    ttype = row.get("type")
+    if ttype not in CREATABLE_TRIGGERS:
+        raise HTTPException(422, f"triggers: a {ttype!r} trigger cannot be created — one of "
+                                 f"{', '.join(CREATABLE_TRIGGERS)}")
+    if stray := sorted(set(row) - {"type", *_BOUNDS}):
+        raise HTTPException(422, f"triggers: a {ttype} trigger has no {', '.join(stray)}")
+    for key in _BOUNDS:
+        value = row.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise HTTPException(422, f"triggers: {key} is a whole number, 0 or more "
+                                     f"(got {value!r})")
+    entry = (triggers.new_report_trigger() if ttype == "report"
+             else triggers.new_webhook_trigger())
+    entry.update({key: row[key] for key in _BOUNDS})
+    return entry

@@ -14,10 +14,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from .. import triggers as triggers_mod
 from ..paths import read_yaml
 from ..patterns import drafts, fields, store
 from ..patterns.recommend import CHECK_MESSAGE
+from .api_finishline import FinishLineBody, checked
+from .api_finishline import save as save_finish_line
+from .api_hooks import reconciled_triggers
 from .api_routine_patch import RoutinePatch, apply_updates
 from .routines_common import _info, _state, guard_not_active, write_routine_config
 
@@ -97,10 +99,13 @@ def apply_settings(request: Request, slug: str, body: ApplyBody) -> dict:
     """Apply every change the person kept — the page's one "accept changes" button.
 
     The routine.yaml fields go through the validated PATCH writer in ONE write; the triggers
-    list and the goal document through their own owners after it. A change to a field this
-    routine already holds is dropped rather than rewritten, so an accept never commits noise.
-    Guarded while a run is active, like every multi-field config edit: a live run keeps the
-    configuration it booted with; a half-applied proposal would be neither.
+    list and the goal document through their own owners after it. Every one of the three is
+    CHECKED before the first is written, so an accept lands whole or not at all — the two
+    owners used to validate after routine.yaml had already been committed, and their refusal
+    answered an accept that had half landed. A change to a field this routine already holds
+    is dropped rather than rewritten, so an accept never commits noise. Guarded while a run is
+    active, like every multi-field config edit: a live run keeps the configuration it booted
+    with; a half-applied proposal would be neither.
     """
     info = _info(request, slug)
     guard_not_active(request, info)
@@ -119,7 +124,7 @@ def apply_settings(request: Request, slug: str, body: ApplyBody) -> dict:
         patch[pkey] = pvalue
     if body.pattern is not None and body.pattern != info.cfg.pattern:
         patch["pattern"] = body.pattern
-    applied: list[str] = []
+    updates: dict = {}
     if patch:
         try:
             model = RoutinePatch.model_validate(patch)
@@ -128,49 +133,34 @@ def apply_settings(request: Request, slug: str, body: ApplyBody) -> dict:
         updates = model.model_dump(exclude_none=True)
         if model.run_gate is not None:
             updates["run_gate"] = model.run_gate.model_dump(exclude_unset=True)
+    triggers: list[dict] | None = None
+    if "triggers" in wanted:
+        current = read_yaml(info.cfg.dir / "routine.yaml", {}).get("triggers") or []
+        triggers = reconciled_triggers([t for t in current if isinstance(t, dict)],
+                                       wanted["triggers"])
+    finish: dict | None = None
+    if "finish_line" in wanted:
+        try:   # the PUT route's own model, so both doors refuse the same documents
+            finish = FinishLineBody.model_validate(wanted["finish_line"] or {}).model_dump()
+        except ValidationError as exc:
+            raise HTTPException(422, f"finish_line: {exc}") from exc
+        checked(finish)
+    applied: list[str] = []
+    if updates:
         result = apply_updates(request, info, updates,
                                message=f"settings accepted via web ({', '.join(sorted(patch))})")
         applied += result["updated"]
-    if "triggers" in wanted:
-        _reconcile_triggers(request, slug, wanted["triggers"])
+    if triggers is not None:
+        raw = read_yaml(info.cfg.dir / "routine.yaml", {})
+        raw["triggers"] = triggers
+        write_routine_config(request, info, raw, message="triggers set via web (settings)",
+                             fields=["triggers"])
         applied.append("triggers")
-    if "finish_line" in wanted:
-        from .api_finishline import save as save_finish_line
-        save_finish_line(info.cfg.dir, slug, info.cfg.name, dict(wanted["finish_line"] or {}))
+    if finish is not None:
+        save_finish_line(info.cfg.dir, slug, info.cfg.name, finish)
         applied.append("finish_line")
     drafts.clear(server.routines_home, slug)
     return {"ok": True, "applied": applied, **_settings_payload(request, slug)}
-
-
-def _reconcile_triggers(request: Request, slug: str, target: object) -> None:
-    """Make the routine's triggers equal `target` (canonical rows: type + bounds, no identity).
-    A trigger that is already there keeps its id and — for a webhook — its token, so a URL a
-    third party holds keeps working; only a trigger the target lacks is removed, only one it
-    adds is created.
-    """
-    info = _info(request, slug)
-    raw = read_yaml(info.cfg.dir / "routine.yaml", {})
-    current = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
-    wanted = fields.canonical("triggers", target)
-    want = list(wanted) if isinstance(wanted, list) else []
-    kept: list[dict] = []
-    for entry in current:
-        rows = fields.canonical("triggers", [entry])
-        row = rows[0] if isinstance(rows, list) and rows else {}
-        if row in want:
-            want.remove(row)
-            kept.append(entry)
-    for row in want:
-        maker = (triggers_mod.new_report_trigger if row.get("type") == "report"
-                 else triggers_mod.new_webhook_trigger)
-        entry = maker(cooldown_s=int(row.get("cooldown_s") or (
-            triggers_mod.DEFAULT_REPORT_COOLDOWN_S if row.get("type") == "report"
-            else triggers_mod.DEFAULT_COOLDOWN_S)))
-        entry.update({k: v for k, v in row.items() if k not in ("type", "cooldown_s")})
-        kept.append(entry)
-    raw["triggers"] = kept
-    write_routine_config(request, info, raw, message="triggers set via web (settings)",
-                         fields=["triggers"])
 
 
 @router.delete("/routines/{slug}/settings/draft")

@@ -74,9 +74,10 @@ def payload(routine_dir: Path) -> dict:
             "verdicts": verdict_history(routine_dir)}
 
 
-def save(routine_dir: Path, slug: str, name: str, body: dict) -> dict:
-    """Validate and write the operator's finish line; queue the retirement card when this save
-    is what completes it. Shared by this route and the settings page's one accept.
+def checked(body: dict) -> dict:
+    """The operator's document as `finishline.normalize` reads it — or the 400 naming what is
+    wrong with it. Apart from `save` because the settings page's one accept must refuse a bad
+    finish line BEFORE it writes the fields it carries beside it, not after.
     """
     doc = finishline.normalize(body)
     if body.get("until") and not doc["until"]:
@@ -86,7 +87,14 @@ def save(routine_dir: Path, slug: str, name: str, body: dict) -> dict:
             raise HTTPException(400, f"judge must be one of {list(finishline.JUDGES)}")
     if found := finishline.problems(doc):
         raise HTTPException(400, "; ".join(found))
-    finishline.save(routine_dir, doc, now=now_iso())
+    return doc
+
+
+def save(routine_dir: Path, slug: str, name: str, body: dict) -> dict:
+    """Validate and write the operator's finish line; queue the retirement card when this save
+    is what completes it. Shared by this route and the settings page's one accept.
+    """
+    finishline.save(routine_dir, checked(body), now=now_iso())
     goalreached.propose(routine_dir.parent, slug, name)
     goalreached.withdraw(routine_dir.parent, slug)
     return payload(routine_dir)

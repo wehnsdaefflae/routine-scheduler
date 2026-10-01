@@ -156,7 +156,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
                    api_items, api_messages, api_pending,
                    api_traces,
                    settings,
-                   api_workflows, api_playbooks, api_llm_tasks, api_hooks,
+                   api_workflows, api_playbooks, api_llm_tasks,
                    api_lanes, api_search, api_fs, api_debug):
         app.include_router(module.router, prefix="/api", dependencies=deps)
     # The ONE deliberately unauthenticated API route: webhook trigger ingest. Third

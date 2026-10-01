@@ -61,7 +61,7 @@ def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routin
         cases = [
             ("PATCH", "/api/routines/apir", {"description": "x"}),       # routine config
             ("PUT", "/api/routines/apir/permissions", {"active": []}),   # permission layers
-            ("POST", "/api/routines/apir/triggers", {"type": "report"}),  # trigger config
+            ("POST", "/api/routines/apir/settings", {"changes": {}}),    # the one accept
             ("POST", "/api/lanes", {"name": "G"}),                       # lane store
             ("POST", "/api/questions/q-x/answer", {"text": "hi"}),       # decisions/grants
             ("PUT", "/api/settings/secrets", {"key": "K_X", "value": "v"}),  # settings
@@ -315,7 +315,6 @@ def test_mid_run_edits_queue_and_replay(client):
     replayed at run end (the daemon reap). Here we drive the spool + applier directly to
     prove queue → replay produces the same effect as an immediate edit."""
     from rsched import pending_edits
-    from rsched.config import load_routine
 
     c, tmp = client
     routines = tmp / "routines"
@@ -323,26 +322,17 @@ def test_mid_run_edits_queue_and_replay(client):
     home = routines
     rdir = routines / "apir"
 
-    # A file edit and a webhook trigger create, both mid-run, both queue (200, queued).
+    # A file edit mid-run queues (200, queued) instead of a 409.
     rf = c.put("/api/routines/apir/file", json={"path": "stages/x.md", "content": "queued!"})
     assert rf.status_code == 200 and rf.json().get("queued") is True
-    rt = c.post("/api/routines/apir/triggers", json={"type": "webhook"})
-    assert rt.status_code == 200 and rt.json().get("queued") is True
-    # a webhook's URL is returned even when queued (token is generated at request time)
-    assert rt.json()["trigger"]["url_path"].startswith("/api/hooks/apir/")
-    tid = rt.json()["trigger"]["id"]
-
-    assert pending_edits.pending_count(home, "apir") == 2
+    assert pending_edits.pending_count(home, "apir") == 1
     assert not (rdir / "stages" / "x.md").exists()          # not applied yet
-    assert not any(t.get("id") == tid                        # not in config yet
-                   for t in (load_routine(rdir)[0].triggers or []))
 
     # Replay (what Runner._reap calls after a clean finish).
     rows = pending_edits.apply_pending(rdir, home, "apir")
-    assert len(rows) == 2 and all(r["ok"] for r in rows)
+    assert len(rows) == 1 and all(r["ok"] for r in rows)
     assert pending_edits.pending_count(home, "apir") == 0   # spool drained
     assert (rdir / "stages" / "x.md").read_text() == "queued!"
-    assert any(t.get("id") == tid for t in (load_routine(rdir)[0].triggers or []))
 
 
 def test_mid_run_edit_idle_applies_immediately(client):
@@ -355,16 +345,6 @@ def test_mid_run_edit_idle_applies_immediately(client):
     assert r.status_code == 200 and r.json().get("queued") is None
     assert (tmp / "routines" / "apir" / "main.md").read_text() == "now"
     assert pending_edits.pending_count(tmp / "routines", "apir") == 0
-
-
-def test_mid_run_bad_trigger_id_404s_upfront(client):
-    """A delete/patch of a non-existent trigger is a 404 at request time, never a silent
-    replay failure — the operator learns immediately."""
-    c, tmp = client
-    _mk_run(tmp / "routines", "apir", "20260708-090000", "running")
-    assert c.delete("/api/routines/apir/triggers/nope").status_code == 404
-    assert c.patch("/api/routines/apir/triggers/nope",
-                   json={"cooldown_s": 30}).status_code == 404
 
 
 def test_file_read_guarded(client):
