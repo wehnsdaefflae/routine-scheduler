@@ -669,7 +669,9 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   input (`/util …`, `/read_file …`, … — autocomplete + a reference panel fed by
   `GET …/commands`). A command-flagged inbox message EXECUTES at the turn boundary via
   `control.run_user_command` — parse (`engine/commands.py`) → the model action's exact
-  validate_action gates → executor.dispatch — costing NO model turn; the observation lands in the
+  validate_action gates → the model's own routing table (`actionroute.dispatch_action`, so a
+  `/util` passes the D39 secret-exposure gate exactly as the model's call does) — costing NO
+  model turn; the observation lands in the
   transcript (`user_injection {command}` + `observation {user_command}` payload extensions) and in
   the model's context as one USER COMMAND message. **The speaker turn stays with the user**: when
   the model has handed the turn back (an authored finish) and the resuming message ONLY runs
@@ -873,7 +875,9 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   shared impl): the config list is the state, the tail is DERIVED and rebuilt from it. Deliberately
   not 409-guarded — no run writes routine.yaml, so the web layer is the sole writer; a newly bound
   rule even reaches a LIVE run via control.json `add_rules` → `engine/switches.apply_rule_additions` (an
-  engine note read from the library, since the prompt is immutable), while an unbind lands next run.
+  engine note read from the library, since the prompt is immutable), and an unbind does too, via
+  `drop_rules` → `engine/switches.apply_rule_drop` (a note that the rule no longer binds; its
+  assists stop with it).
   The TEXT is a separate ownership: `read_rule` is UNGATED (a routine must be able to read what
   binds it, and library prose has no side effect; reading one it does not hold applies for that run
   only) and takes a catalog SLUG, never a path — the name is joined onto the library dir, so a
@@ -954,7 +958,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   R40/R20), so a heavy dependency tree never spends the selftest timeout on toolchain install.
   A slug with a DELETION in the library's git history is a user
   decision: `write_util` on it is rejected inside the schema-retry cycle until the user allows the
-  `recreate:<slug>` access request this run (`interact.recreate_denial` / `utils_lib.was_deleted`;
+  `recreate:<slug>` access request this run (`authoring.recreate_denial` / `utils_lib.was_deleted`;
   no allow-forever — a fresh deletion outranks any old grant), and the boot
   seed-sync never resurrects a deleted seed util. Discover with the `util` action `name: list`.
 - **Every util subprocess is SANDBOXED** (docs/sandboxing.md): `utils_run.run_util` takes a
@@ -989,7 +993,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   (delete/gzip old run dirs), detached-task delivery (artifacts + `state/background.json` on the
   owner), and the `.control/` spools/ledgers. The **web layer** edits routine config only when no
   run is active (409 otherwise) — deliberate live-edit exceptions: conversation settings and rule
-  bind/unbind (control.json `add_rules` tells the live run); web-side routine-dir commits take the
+  bind/unbind (control.json `add_rules` / `drop_rules` tell the live run); web-side routine-dir commits take the
   engine's per-repo commit lock.
 - The daemon (`scheduler.py` + `runner.py`) fires cron via croniter and spawns one `engine-run` subprocess
   per routine (never two of the same at once) under `max_concurrent_runs`; a run that blocks on a user

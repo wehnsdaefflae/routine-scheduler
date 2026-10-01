@@ -336,6 +336,44 @@ def test_notable_stderr_extracts_only_warnings_and_errors():
     assert kept.count("ERROR") == 12 and "e49" in kept and "e0 " not in kept
 
 
+def _engine_stderr(monkeypatch, *records: tuple[int, str]) -> bytes:
+    """What `engine-run` actually writes to stderr for these log records: the logging
+    configuration `cli.cmd_engine_run` installs, captured from its own call and replayed into
+    a buffer — never a hand-typed line, which is how the matcher and the writer drifted."""
+    import io
+
+    from rsched import cli
+
+    seen: dict = {}
+    monkeypatch.setattr(logging, "basicConfig", lambda **kw: seen.update(kw))
+    args = type("A", (), {"config": "/nonexistent/config.yaml", "homes": ""})()
+    assert cli.cmd_engine_run(args) == 2          # refuses the missing config AFTER logging
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    handler.setFormatter(logging.Formatter(seen["format"]))
+    logger = logging.getLogger("rsched.test_engine_stderr")
+    logger.addHandler(handler)
+    logger.propagate = False
+    logger.setLevel(seen["level"])
+    try:
+        for level, msg in records:
+            logger.log(level, msg)
+    finally:
+        logger.removeHandler(handler)
+    return buf.getvalue().encode()
+
+
+def test_an_engine_warning_reaches_the_daemons_re_emit(monkeypatch):
+    """F97's re-emit matches the level NAME. engine-run configured no logging, so Python's
+    last-resort handler wrote the bare message and a clean run's warning was never re-emitted.
+    """
+    out = _notable_stderr(_engine_stderr(
+        monkeypatch, (logging.INFO, "routine noise"),
+        (logging.WARNING, "snapshot write to /x failed: boom")))
+    assert "WARNING" in out and "snapshot write to /x failed" in out
+    assert "routine noise" not in out
+
+
 async def test_reap_surfaces_clean_exit_diagnostics(make_routine, tmp_path, monkeypatch, caplog):
     # A run that finishes cleanly but logged a WARNING (stdout is DEVNULL, stderr otherwise
     # dropped) must still leave that line in the daemon log — the F97 breadcrumb that vanished.

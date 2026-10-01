@@ -8,11 +8,12 @@ run now, streaming events), `validate` (server config + routine.yaml checks), `l
 from __future__ import annotations
 
 import argparse
+import logging
 import signal
 import sys
 from pathlib import Path
 
-from .cli_daemon import cmd_daemon
+from .cli_daemon import LOG_FORMAT, cmd_daemon
 from .cli_render import _render_event
 from .config import MODEL_KINDS, load_server_config
 from .paths import expand
@@ -96,7 +97,14 @@ def cmd_engine_run(args) -> int:
     `~/.config/routine-scheduler/config.yaml` — the production instance — whenever the
     spawner meant somewhere else (F394). The homes the named config resolves to must be the
     ones the spawner is using; a disagreement is refused, never reconciled.
+
+    Logging is configured FIRST, in the daemon's line shape (`LOG_FORMAT`), at WARNING. A fresh
+    interpreter has no handler, so Python's last-resort one printed the bare message — no level,
+    no logger name — and the daemon's re-emit of a cleanly finishing run's warnings (F97,
+    `runner_state._notable_stderr`) matches on the level name: it could never fire. WARNING,
+    because the daemon re-emits nothing below it and the stderr pipe is held in its memory.
     """
+    logging.basicConfig(level=logging.WARNING, format=LOG_FORMAT)
     from .endpoints.instrument import FileSink, set_sink
     from .engine.control import request_abort
     from .engine.runtime import run_routine

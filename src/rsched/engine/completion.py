@@ -143,7 +143,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
         switched = None
         if completion.stop_reason in REFUSAL_STOPS:
             # BEFORE the empty check: a mid-stream classifier cut can leave partial text
-            # (and the CLI's refusal envelope carries error prose), but a refused turn is
+            # (and openai_compat's promoted refusal carries its prose), but a refused turn is
             # never a usable action and never a same-model retry — flag + clarify
             # (engine/refusal.py), then advance the fallback chain (_handle_refusal
             # raises when the chain is exhausted).

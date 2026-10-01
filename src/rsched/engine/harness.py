@@ -12,11 +12,10 @@ change there fails `tests/test_prompt_anatomy.py`, deliberately.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from . import deliberation
 from .kindsurface import effective_kinds, kind_bullets
 from .run_context import RunContext
+from .runkind import is_conversation
 
 
 def _subrun_allowance(ctx: RunContext) -> str:
@@ -42,18 +41,6 @@ def _subrun_allowance(ctx: RunContext) -> str:
         return f"no child runs left (all {total} shared across this run tree are spent)"
     return f"{left} more child runs ({total} shared across this run tree, {used} already started)"
 
-
-def _is_conversation(ctx: RunContext) -> bool:
-    """True when this run is a conversation — a routine-shaped dir directly under the
-    server's conversations_home. Run kind is discriminated by HOME everywhere (the yaml
-    `kind: conversation` is dropped by pydantic), mirroring daemon.runner._under_home. A
-    conversation's task lives in instruction.md (the first message), unlike a scheduled
-    routine whose task is its self-contained recipe.
-    """
-    try:
-        return ctx.routine.dir.resolve().parent == Path(ctx.server.conversations_home).resolve()
-    except OSError:
-        return False
 
 def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     r, b = ctx.routine, ctx.budgets
@@ -103,7 +90,7 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
         ownership = ("Ownership of prose: your task is the INSTRUCTION section below — a "
                      "self-contained brief written by your parent; everything you need to do, and "
                      "why, is there. ")
-    elif _is_conversation(ctx):
+    elif is_conversation(ctx):
         ownership = ("Ownership of prose: your task is the INSTRUCTION section below — the first "
                      "message that opened this conversation (saved as instruction.md in your "
                      "working directory); every later user turn arrives as a MESSAGE that refines, "

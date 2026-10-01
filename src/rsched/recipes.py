@@ -66,7 +66,7 @@ def current_recipe_commit(routine_dir: Path, *, routines_home: Path | None) -> s
     try:
         specs = _matchable_specs(routine_dir) if _recipe_paths_dirty(routine_dir) else []
         # Under the per-repo lock (libgit.commit): the improver may be committing this same
-        # target dir via git-sync at this instant (this snapshot runs at the target's run
+        # target dir via `git sync` at this instant (this snapshot runs at the target's run
         # start). `only` keeps the snapshot recipe-only whatever else is staged.
         if specs and libgit.commit(routine_dir, "recipe: pre-run snapshot",
                                    routines_home=routines_home, paths=specs, only=True).failed:
@@ -127,7 +127,7 @@ def revert_recipe(routine_dir: Path, commit: str, *, routines_home: Path | None)
         # by the reverted change disappear), then check out the parent's copies. Per-path
         # checkout with check=False skips paths absent in the parent (e.g. no tuning.yaml
         # yet) — the staged removal keeps those deleted, which is exactly the parent state.
-        # Under the per-repo lock (like autocommit / the pre-run snapshot / the git-sync util),
+        # Under the per-repo lock (like autocommit / the pre-run snapshot / `git sync`),
         # so this multi-step restore is not interleaved with another writer of this dir. An
         # index lock that must stay refuses the revert BEFORE any step touches the index:
         # every step would fail — the empty commit at the end then read as "already matches".

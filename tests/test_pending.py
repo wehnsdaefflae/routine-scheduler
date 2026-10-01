@@ -44,7 +44,7 @@ def server(tmp_path):
 @pytest.fixture
 def sched_ctx(server, make_routine):
     """A ctx that looks like a SCHEDULED run: depth 0, but its dir is under routines_home, so
-    `_is_root_conversation` is False — exactly the caller that used to be refused."""
+    `runkind.is_root_conversation` is False — exactly the caller that used to be refused."""
     from types import SimpleNamespace
 
     # make_routine already writes into routines_home — this IS the scheduled routine's dir

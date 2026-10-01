@@ -134,10 +134,10 @@ async def wake_owner(mgr, owner_dir: Path, slug: str) -> None:
         return
     # the ONE inbox predicate (engine/inbox), asked about exactly what the wake's RESUMED leg
     # drains: LIVE_MESSAGE_VIAS — the user's own messages, a background result, a branch
-    # hand-back. Anything else waiting (a report, audit feedback, the conversation's own
-    # one-shot reminder) is a fresh run's freight (F359), so a wake for it consumed nothing and
-    # the next tick woke the owner again: one full reply per tick for as long as the delivered
-    # task stood, the F367 loop on another channel. An unparseable file does not count either,
+    # hand-back, a one-shot's fire text. Anything else waiting (a report, audit feedback) is a
+    # fresh run's freight (F359), so a wake for it consumed nothing and the next tick woke the
+    # owner again: one full reply per tick for as long as the delivered task stood, the F367
+    # loop on another channel. An unparseable file does not count either,
     # because the drain it would wake for is fail-closed on the same file.
     if not inbox.has_pending_messages(owner_dir, vias=inbox.LIVE_MESSAGE_VIAS):
         return

@@ -34,8 +34,9 @@ must fit the observation cap without further truncation. This measures preview c
 and estimates tokens as characters / 4; it does not measure billing or guarantee savings on a
 particular model.
 Measurements and fallback reasons appear in command output details and the observation's
-`compression` transcript field. Compare total usage, cache hits, correctness, recovery reads and
-elapsed run time when deciding whether to enable it.
+`compression` transcript field. Compression is engine behaviour, not a setting, so these are
+for judging whether it pays: compare total usage, cache hits, correctness, recovery reads and
+elapsed run time.
 
 Applied compression first saves the original at `runs/<run>/outputs/` (under the child's run
 folder for children). Those files share the run's retention, independent of the five-run spill

@@ -106,8 +106,8 @@ def _init_repo(path) -> None:
 
 
 def test_autocommit_takes_the_repo_lock(tmp_path):
-    """The routine-dir autocommit runs under the same per-repo lock the git-sync util takes,
-    so a target's autocommit and the improver's git-sync of that target take turns."""
+    """The routine-dir autocommit runs under the same per-repo lock `git sync` takes,
+    so a target's autocommit and the improver's `git sync` of that target take turns."""
     from rsched.engine.autocommit import autocommit
 
     _init_repo(tmp_path)

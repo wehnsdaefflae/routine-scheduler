@@ -32,7 +32,8 @@ PRIORITIES_FILE = "item-priorities.json"
 ITEM_ID_RE = re.compile(r"^[FDR]\d+$")
 
 #: Findings and decisions live in this routine's report.json; untargeted reports wait in
-#: its triage. Mirrors readmodels/items.py — the read model and this resolver must agree.
+#: its triage. The ONE definition: readmodels/items.py (and the web routes reading through
+#: it) import it from here, because the read model and this resolver must agree.
 SELF_AUDIT_SLUG = "self-audit"
 
 

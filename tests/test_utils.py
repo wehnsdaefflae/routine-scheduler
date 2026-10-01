@@ -668,6 +668,24 @@ def test_dispatcher_list_skips_non_util_entries(tmp_path):
     assert "stray" not in r.stdout
 
 
+def test_dispatcher_list_survives_an_oddly_written_util(tmp_path):
+    """One util whose docstring opens on a whitespace-only line (no line [0] to take) or
+    whose source is not UTF-8 used to crash `gu list` for every util in the library."""
+    import subprocess as sp
+    import sys
+
+    home = tmp_path / "utils-home"
+    utils_lib.ensure_library(home)
+    utils_lib.write_util_file(home, "adder", ADDER)
+    for name, body in (("blank", b'"""   \n"""\n'), ("latin", b'"""caf\xe9 \xe9t\xe9."""\n')):
+        (home / "utils" / name).mkdir()
+        (home / "utils" / name / "main.py").write_bytes(body)
+    r = sp.run([sys.executable, str(home / "gu"), "list"],
+               capture_output=True, text=True, timeout=30, check=False)
+    assert r.returncode == 0, r.stderr
+    assert "adder — " in r.stdout and "blank — " in r.stdout and "latin — " in r.stdout
+
+
 def test_run_util_timeout_kills_grandchildren(tmp_path):
     """The timeout must end the whole process GROUP: `uv run` re-execs the script as a
     grandchild that a plain kill leaves alive — holding the pipes open and blocking the

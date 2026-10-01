@@ -34,12 +34,10 @@ from pathlib import Path
 from typing import Any
 
 from ..paths import read_json
-from ..priorities import priorities_path, read_priorities
+from ..priorities import SELF_AUDIT_SLUG, priorities_path, read_priorities
 from ..reports import read_reports, reports_path
 from . import memo
 from .item_reports import event_stamp, refs, report_row_item, resolved_carriers
-
-SELF_AUDIT_SLUG = "self-audit"
 
 #: The status vocabulary. `unknown` is the absence of a recorded status, not a state an
 #: item is put into.

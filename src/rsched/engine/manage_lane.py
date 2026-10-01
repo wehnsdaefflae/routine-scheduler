@@ -55,8 +55,8 @@ from __future__ import annotations
 
 from .. import lane_runs, lanes, registry, schedule
 from ..pending import READ_ONLY_VERBS
-from .detach import _is_root_conversation
 from .run_context import RunContext
+from .runkind import is_root_conversation
 
 VERBS = ("list", "create", "update", "delete", "set-default", "run")
 
@@ -185,7 +185,7 @@ def handle_manage_lane(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911 
             "manage_lane cannot CHANGE anything from inside a child run — a sub-workflow must "
             "not reshape the fire order of other routines as a side effect. Report what you "
             "would change in your finish summary and let the run that started you decide.")
-    if not _is_root_conversation(ctx) and verb not in READ_ONLY_VERBS:
+    if not is_root_conversation(ctx) and verb not in READ_ONLY_VERBS:
         # `run` is NOT proposable. It arms an ephemeral lane fire — it writes no config and the
         # materializer (web/api_pending._materialize_lane) cannot build it, so a queued `run`
         # is a dead "create it" card the operator can only discard. Fire is time-sensitive too:

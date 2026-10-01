@@ -95,6 +95,21 @@ def test_a_live_leg_sees_exactly_what_its_drain_would_consume(tmp_path):
     assert inbox.count_pending(d) == 2
 
 
+def test_a_resumed_leg_drains_the_one_shot_that_woke_it(tmp_path):
+    """A conversation's "remind me in 3 days" fires by RESUMING it (daemon/schedule_once), and
+    a resumed leg drains only LIVE_MESSAGE_VIAS. With the one-shot's text off that set the
+    leg ran without the reminder and the file stayed in the inbox forever — a conversation
+    never boots fresh, so nothing else would ever consume it.
+    """
+    d = _routine(tmp_path)
+    inbox.file_message(d, "[scheduled-once fire] armed by chatty: check the build",
+                       via="schedule_once", name="once-r1")
+    assert inbox.has_pending_messages(d, vias=inbox.LIVE_MESSAGE_VIAS)
+    drained = inbox.drain_messages(d, tmp_path / "c", vias=inbox.LIVE_MESSAGE_VIAS)
+    assert [m["via"] for m in drained] == ["schedule_once"]
+    assert not inbox.has_pending_messages(d)
+
+
 def test_the_third_axis_is_what_an_unreadable_file_counts_as(tmp_path):
     """The one difference two flags could not express. The trigger manager is fail-OPEN by
     contract — anything it cannot read WAKES a run, because a spurious run costs a run and a

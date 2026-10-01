@@ -7,8 +7,8 @@ from collections import deque
 
 from ..policyload import load_policy
 from . import (
-    detach,
     loopnudge,
+    runkind,
 )
 from .loopnudge import REPEAT_FAIL
 from .run_context import RunContext
@@ -34,7 +34,7 @@ def build_base_policy(loop, grants_map: dict) -> None:
                                    recipe_unlocked=bool(loop._recipe_unlocked),
                                    admin=loop.admin_leg,
                                    grants_map=grants_map)
-    if loop.ctx.depth == 0 and detach._is_root_conversation(loop.ctx):
+    if loop.ctx.depth == 0 and runkind.is_root_conversation(loop.ctx):
         # `detach` is STRUCTURAL: a job that outlives the reply can only be delivered back
         # into a conversation, so a root conversation holds it and nothing else does. It was
         # a permission (background-tasks) held by 32 routines that could never use it.
@@ -119,7 +119,7 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # gates still apply. Root conversations only — a scheduled routine never gets an operator
     # at the keyboard, and a subrun builds its own capabilities-off policy (engine/admin.py).
     from .admin import admin_marker, clear_admin_marker
-    loop.admin_leg = admin_marker(ctx.run_dir) and detach._is_root_conversation(ctx)
+    loop.admin_leg = admin_marker(ctx.run_dir) and runkind.is_root_conversation(ctx)
     clear_admin_marker(ctx.run_dir)
     # D58: routine and lane creation is INITIATED from a conversation — that is where a
     # user is in the loop to design with. F328 keeps the restriction and drops its

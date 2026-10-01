@@ -133,6 +133,22 @@ def within(root: Path, candidate: Path) -> bool:
         return False
 
 
+def directly_under(path: Path | str, home: Path | str | None) -> bool:
+    """True when `path` is a directory DIRECTLY inside `home`, both resolved.
+
+    How run KIND is told everywhere: a conversation, a detached background task and a
+    scheduled routine are told apart by the HOME their directory sits in, never by the yaml's
+    `kind:` — a detached task's routine.yaml carries none, and the home is where the run
+    actually lives. A missing home, or a path that cannot be resolved, is under nothing.
+    """
+    if home is None:
+        return False
+    try:
+        return Path(path).resolve().parent == Path(home).resolve()
+    except (OSError, RuntimeError):     # RuntimeError: a symlink loop
+        return False
+
+
 def resolve_rel(base: Path, rel: str, extra_roots: Sequence[Path] = ()) -> Path:
     """Resolve a path from an action: relative → under base; absolute → must fall inside
     base or one of extra_roots. Raises PermissionError otherwise.

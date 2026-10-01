@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..ids import question_id
-from . import availability, detach, inbox, requests
+from . import availability, inbox, requests, runkind
 from .control import RunAborted
 
 # Natural affirmatives count: approval answers arrive as free text, and "Do it. The mail
@@ -119,19 +119,6 @@ def _free_qid(ctx) -> str:
     return qid
 
 
-def _lands_in_conversation(ctx) -> bool:
-    """Whether this run's decision records land in a CONVERSATION — where the Decisions page
-    applies an untargeted `config_patch` through `PATCH /api/conversations/…`, not the routine
-    endpoint. A child files into its ROOT's dir (`ctx.root_routine_dir`), so the root decides;
-    run kind is told by HOME, as everywhere else (`harness._is_conversation`).
-    """
-    try:
-        return (ctx.root_routine_dir.resolve().parent
-                == Path(ctx.server.conversations_home).resolve())
-    except OSError:
-        return False
-
-
 def _config_patch_shape(patch: dict | None, target: str = "", *,
                         conversation: bool = False) -> str:
     """Refuse a `config_patch` whose KEYS the apply route would reject, at the moment it is
@@ -145,7 +132,7 @@ def _config_patch_shape(patch: dict | None, target: str = "", *,
 
     The keys are judged in the vocabulary of the surface the apply will PATCH: `RoutinePatch`
     for a routine, `ConversationPatch` for a conversation's proposal about itself
-    (`conversation`, from `_lands_in_conversation`). Judged against their union — the
+    (`conversation`, from `runkind.lands_in_conversation`). Judged against their union — the
     classification table — a routine proposal naming `title` passed here, as did a
     conversation's naming `schedule`; each was a 422 on the click. `configflow` spells both
     sets out and `tests/test_configflow.py` pins them to the models, so this can never drift
@@ -197,7 +184,7 @@ def _config_target(ctx, cpatch: dict | None, *,
     reached the Decisions page, which posted the patch to `/api/routines/<the asking
     conversation>`: a 404. A `routine` naming the asker means the asker itself only when the
     asker IS a routine (`conversation`: the record lands in a conversation,
-    `_lands_in_conversation`).
+    `runkind.lands_in_conversation`).
     """
     if not cpatch:
         return "", ""
@@ -225,7 +212,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         loop.dialog_qid = None
     qid = _free_qid(ctx)
     mode = action.get("mode") or "deferred"
-    if ctx.depth > 0 or detach.is_detached_run(ctx):
+    if ctx.depth > 0 or runkind.is_detached_run(ctx):
         mode = "deferred"  # subruns / detached tasks cannot block the run on the user
     options = list(action.get("options") or [])
     default = str(action.get("default") or "").strip()
@@ -239,7 +226,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # routine can never reach the Decisions page wearing an apply button. An unresolvable
     # target is refused loudly rather than falling back to the asker — a silent fallback is
     # precisely the defect.
-    conversation = _lands_in_conversation(ctx)
+    conversation = runkind.lands_in_conversation(ctx)
     ctarget, cterr = _config_target(ctx, cpatch, conversation=conversation)
     if not cterr:
         cterr = _config_patch_shape(cpatch, ctarget, conversation=conversation)

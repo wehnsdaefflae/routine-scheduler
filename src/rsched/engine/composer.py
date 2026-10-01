@@ -12,9 +12,10 @@ from pathlib import Path
 from . import notes, outputs
 from .actionschema import example_action
 from .capabilities import capabilities_digest
-from .harness import _is_conversation, harness_contract
+from .harness import harness_contract
 from .kindsurface import effective_kinds, schema_for_kinds
 from .run_context import RunContext
+from .runkind import is_conversation
 
 PLAN_MAX_LINES = 60
 
@@ -224,7 +225,7 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
     # in the prompt. A CONVERSATION runs at depth 0 but its task IS its first message
     # (instruction.md), so it carries the section too (without it the agent never sees its
     # task — only the converse HOW-to pattern).
-    if ctx.depth > 0 or (_is_conversation(ctx) and instruction.strip()):
+    if ctx.depth > 0 or (is_conversation(ctx) and instruction.strip()):
         sections.append("# INSTRUCTION (your assigned task)\n" + instruction.strip())
     sections.append("# CAPABILITIES (what this run can actually use)\n"
                     + capabilities_digest(ctx, allowed_kinds))

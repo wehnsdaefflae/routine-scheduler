@@ -3,7 +3,7 @@
 A command is one line, `/<kind> …` (the composer autocompletes them; its help panel
 documents them). Parsing produces an ordinary action dict that then rides the model
 action's exact path — schema validate → validate_action (workflow tools ∩ capabilities)
-→ executor.dispatch — at a turn boundary, WITHOUT costing a model turn (see
+→ actionroute.dispatch_action — at a turn boundary, WITHOUT costing a model turn (see
 control.run_user_command). Loop-control kinds (spawn/subtask/wait/ask_user/finish/…)
 are deliberately NOT commands: they steer the model's run; ask the assistant instead.
 
@@ -29,7 +29,7 @@ class CommandError(ValueError):
 
 
 # (kind, usage, one-line summary) — the help panel + autocomplete read this; the order is
-# the display order. Every kind here is executor-dispatched (an EFFECT, not loop control).
+# the display order. Every kind here is an EFFECT kind, not loop control.
 COMMAND_HELP = (
     ("util", "/util <name> [arg …]",
      ("run a global util with exactly the arguments `gu <name>` takes (add --json for "

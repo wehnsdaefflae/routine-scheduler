@@ -10,6 +10,11 @@ from __future__ import annotations
 
 from .config import load_server_config
 
+#: The ONE log line shape: the daemon's own log, and an engine subprocess's stderr, which the
+#: daemon scans for `WARNING`/`ERROR` lines to re-emit after a clean finish
+#: (`daemon/runner_state._notable_stderr`) — so the level name has to be IN the line.
+LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s %(message)s"
+
 
 def cmd_daemon(_args) -> int:
     import logging
@@ -19,8 +24,7 @@ def cmd_daemon(_args) -> int:
 
     from .web.app import create_app
 
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     from .bootstrap import (
         adopt_library_edits,
         adopt_permissions,

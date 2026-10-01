@@ -90,7 +90,12 @@ call, live run included:
   file that already carries one is REPORTED by the config loader rather than silently stripped:
   two live routines audit and export the server's own configuration as their job, and a root
   that vanished from under their next run would fail them with nothing naming the cause. A
-  routine still listing one says so on its page and in `rsched validate`.
+  routine still listing one says so on its page and in `rsched validate`. Both checks look at
+  a root when it is GRANTED; the jail opens it when a util RUNS, following symlinks. So
+  `sandbox.wrap` asks once more at assembly and DROPS (with a logged warning) any root whose
+  written form names no store but whose resolved form does
+  (`entities.reaches_store_only_through_a_link`) — a link planted after the approval. A root
+  that names a store openly stays mounted, for the reason above.
 
 Known tradeoffs, accepted and documented: `/proc` is readable (headless chromium needs
 it), so keep secrets out of the daemon's environment — the compose file already prefers
@@ -165,7 +170,9 @@ prompt-injection away from exfiltration.
 So a path some util claims as private is removed from the wholesale `roots` mount
 (`sandbox.private_store_paths`, computed across the library and cached on the newest util
 directory mtime). Claiming a path private is a statement about the PATH, so it binds every
-util that did not claim it. The grant stays exactly what it was — one explicit, auditable,
+util that did not claim it — compared RESOLVED on both sides, as Landlock opens it, so a
+granted root that is a symlink to a store (or a store declared through one) is the store. The
+grant stays exactly what it was — one explicit, auditable,
 four-state decision on `fs-write:<path>` — but its blast radius is now one util instead of all
 of them.
 
@@ -227,6 +234,19 @@ declaration makes the name required. The same rule applies to a per-routine scri
 `calls:` tree. Blast radius after both layers: a prompt-injected util can leak at most its
 own declared secrets, not the store.
 
+A secret a call was HANDED does not come back through its output either. The capture seam
+every util and script passes (`utils_run.run_jailed` → `captured_output.read_capped`) is
+given the injected name → value pairs (`utils_run.injected_secrets`; a script's are its
+`env_secrets`) and replaces each value of at least `REDACT_MIN_CHARS` (8) by
+`[secret NAME redacted]` in both streams — before the observation, the transcript, the
+`.util_outputs/` spill and full-text search each make their copy. A util that echoes its
+request headers, or a script that dumps its env on a crash, used to write the token verbatim
+into every one of them. The cut of an over-long capture never splits a value, so no prefix
+survives in the preview. It is a backstop for the accidental print, not a boundary: a util
+that transforms the value before printing it (base64, a substring) is not caught, which is
+why declared-only injection above is the layer that limits exposure. `shell` is handed no
+store secret, so it has nothing to redact.
+
 Three NON-secret vars ride along for every util and script: `PATH` (the library root, so
 `gu <sibling>` resolves), `GLOBAL_UTILS_HOME`, and `RSCHED_UTIL_TIMEOUT_S` — the deadline
 this call was given. A util that waits on something slow sets its own timeout inside that
@@ -263,7 +283,7 @@ convenience): `write_util` for a slug whose `utils/<name>/main.py` has a **delet
 the library's git history** is rejected inside the schema-retry cycle (never costs a
 turn). The correction routes to a blocking ACCESS REQUEST for the entity
 `recreate:<slug>` (docs/rules-permissions.md); an allow-now decision in the same run
-unblocks the recreate (`interact.recreate_denial`, probe: `utils_lib.was_deleted`) —
+unblocks the recreate (`authoring.recreate_denial`, probe: `utils_lib.was_deleted`) —
 deliberately with no allow-forever, so a fresh deletion always outranks an old grant. Any prior deletion counts — the web UI is the only deliberate
 delete path, so every deletion is user intent. The boot seed-sync obeys the same rule:
 a user-deleted seed util is never resurrected (`bootstrap.sync_seed_utils`).

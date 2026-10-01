@@ -21,7 +21,7 @@ of queuing a second) passes `name=`; extra keys ride in `extra=`.
 
 A fresh run's boot drains every message; live turn boundaries and a resumed leg's boot deliver
 only the LIVE_MESSAGE_VIAS set (the user talking to this run, plus the results of work this run
-started — a background task's, a branch's — user order 2026-08-20).
+started — a background task's, a branch's, a one-shot it armed — user order 2026-08-20).
 Every scanner selects `msg-*.json` — the stem the one writer produces — never "any file that
 is not answer-*", which also matched `atomic_write`'s in-flight `.msg-….json.XXXX.tmp`: on a
 fresh boot that temp file reached the unparseable branch below, was logged "not a message
@@ -51,14 +51,19 @@ USER_MESSAGE_VIAS = ("conversation", "web", "web-converse")
 #: drains (F359, generalized by the user order of 2026-08-20): the user talking to THIS run
 #: (USER_MESSAGE_VIAS) plus the results of work this run itself started — a detached
 #: background task's delivery (the daemon's delivery contract counts on the live owner
-#: draining it at the next boundary, daemon/detached_delivery.wake) and a branch's hand-back
-#: (branches.hand_back: the parent's next reply reads it). Everything else — reports, audit
-#: feedback, routine-page queued messages, trigger/one-shot texts, answers to other runs'
+#: draining it at the next boundary, daemon/detached_delivery.wake), a branch's hand-back
+#: (branches.hand_back: the parent's next reply reads it) and a one-shot's fire text. A
+#: one-shot's text is filed only by the fire it starts (daemon/schedule_once._fire), and a
+#: CONVERSATION's one-shot — the "remind me in 3 days" it armed for itself — fires by RESUMING
+#: it: with the text off this set that leg drained nothing, ran without the reminder, and the
+#: message sat in the inbox forever, since a conversation never boots fresh. A routine's
+#: one-shot fires a fresh run, which drains everything anyway. Everything else — reports,
+#: audit feedback, routine-page queued messages, trigger texts, answers to other runs'
 #: questions — is addressed to the routine's NEXT FRESH run and is consumed only by that
 #: run's boot, never mid-flight: a follow-up leg draining it wholesale silently ate decision
 #: answers meant for that night's run (D92/D93). Mid-run injection into a running run is the
 #: live run view's channel, by design.
-LIVE_MESSAGE_VIAS = (*USER_MESSAGE_VIAS, "background", "branch")
+LIVE_MESSAGE_VIAS = (*USER_MESSAGE_VIAS, "background", "branch", "schedule_once")
 
 #: The CLOSED set of delivery channels. `via` is not a label: it is the switch that decides
 #: when a message is consumed (the two tuples above), whether the reap counts it as a user

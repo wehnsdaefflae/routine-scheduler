@@ -55,7 +55,7 @@ class OneShotManager:
 
     async def tick(self, catalog: dict[str, registry.RoutineInfo]) -> None:
         """One pass over the spool. Never raises into the scheduler loop. `conv--<slug>`
-        entries (a conversation's self-armed one-shots — engine/interact.handle_schedule_run
+        entries (a conversation's self-armed one-shots — engine/admin_handlers.handle_schedule_run
         namespaces them so a same-named routine can never be mis-fired) resolve to
         conversations_home and wake the conversation by RESUME, like a detached delivery.
         """

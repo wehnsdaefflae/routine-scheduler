@@ -242,7 +242,10 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                  "rejected by the engine before it becomes a turn.")
     if g is not None:
         cap_bits = []
-        if g.allows_kind("write_util"):
+        # Each line keys on `kinds` — the grant ∩ the workflow's `tools:` — never on the grant
+        # alone: a recipe that leaves a granted kind out of its tools would otherwise be told,
+        # here, about a kind its schema refuses.
+        if "write_util" in kinds:
             placement = (" A util is GLOBAL, for every routine — a helper only THIS "
                          "routine will ever call belongs in its own scripts/, not the "
                          "shared library.")
@@ -252,10 +255,10 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                              "once the selftest passes).",
                 "never": "write_util (autonomous, selftest-gated).",
             }[g.confirm] + placement)
-        if g.allows_kind("remove_util"):
+        if "remove_util" in kinds:
             cap_bits.append("remove_util (delete a global util the library no longer needs; "
                             "refused while another util still calls it)")
-        if g.allows_kind("write_rule"):
+        if "write_rule" in kinds:
             # Named like the other emittable gated kinds, with its OWN approval dial: left out,
             # a routine holding only rule-authoring read "(none beyond the base kinds)".
             cap_bits.append("write_rule (author or revise a general rule in the shared library "
@@ -264,14 +267,14 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                                 "creations": "NEW rules need approval, revisions do not",
                                 "never": "no approval asked",
                             }[g.rule_confirm] + ")")
-        if g.allows_kind("shell"):
+        if "shell" in kinds:
             cap_bits.append("shell (run an ad-hoc command on the host — the ESCAPE HATCH "
                             "around the util library; hold it, use it for the one-off, and "
                             "turn anything you run twice into a util or a scripts/ helper)")
-        if g.allows_kind("schedule_run"):
+        if "schedule_run" in kinds:
             cap_bits.append("schedule_run (arm/cancel a one-shot future run of this routine "
                             "or another)")
-        if g.allows_kind("script"):
+        if "script" in kinds:
             from .. import scripts
             have = scripts.list_scripts(ctx.routine.dir)
             if have:

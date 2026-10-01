@@ -56,8 +56,10 @@ def test_detach_rejected_outside_root_conversation(tmp_path):
 
 
 def test_is_detached_run(tmp_path):
-    assert detach.is_detached_run(_ctx(tmp_path, home="background_home")) is True
-    assert detach.is_detached_run(_ctx(tmp_path, home="conversations_home")) is False
+    from rsched.engine import runkind
+
+    assert runkind.is_detached_run(_ctx(tmp_path, home="background_home")) is True
+    assert runkind.is_detached_run(_ctx(tmp_path, home="conversations_home")) is False
 
 
 def test_detached_run_defers_blocking_ask(tmp_path, scripted):

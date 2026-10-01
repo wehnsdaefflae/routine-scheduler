@@ -280,10 +280,9 @@ async def test_wake_skips_live_owner(tmp_path):
 
 async def test_wake_ignores_freight_a_resumed_leg_never_drains(tmp_path):
     """A wake RESUMES the owner, and a resumed leg drains only LIVE_MESSAGE_VIAS (F359): a
-    conversation's own one-shot reminder (`schedule_once`), a report or audit feedback stays
-    queued for a fresh run. Waking on it consumed nothing, so every tick woke the owner again —
-    one full reply each — for as long as the delivered task stood: the F367 loop on another
-    channel."""
+    report or audit feedback stays queued for a fresh run. Waking on it consumed nothing, so
+    every tick woke the owner again — one full reply each — for as long as the delivered task
+    stood: the F367 loop on another channel."""
     from rsched.engine import inbox
 
     server = _server(tmp_path)
@@ -295,8 +294,8 @@ async def test_wake_ignores_freight_a_resumed_leg_never_drains(tmp_path):
     assert len(fr.resumed) == 1
     for m in (owner / "inbox").glob("msg-bg-*.json"):  # …whose resumed leg drains the delivery
         m.unlink()
-    inbox.file_message(owner, "[scheduled-once fire] armed by c-1", via="schedule_once",
-                       name="once-so-1")
+    inbox.file_message(owner, "for the next fresh run", via="report", name="rep-R1",
+                       extra={"report": "R1", "from": "sibling"})
     await mgr.tick()
     await mgr.tick()
     assert len(fr.resumed) == 1                       # nothing a resumed leg would read: no wake

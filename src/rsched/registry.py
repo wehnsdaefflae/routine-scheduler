@@ -115,9 +115,17 @@ _retired_memo: dict[str, tuple[tuple, bool]] = {}
 
 
 def _prune(memo: dict, home: Path, visited: set[str]) -> None:
+    """Drop the entries of directories this walk of `home` no longer found.
+
+    The memos are shared by every thread that scans or reads (the scheduler, the web's
+    worker threads), and the filter below runs Python bytecode between dict steps — a
+    concurrent insert made iterating the live dict raise "dictionary changed size during
+    iteration". So the keys are SNAPSHOT in one C-level call first, and a key another prune
+    already removed is not an error.
+    """
     prefix = f"{home}/"
-    for key in [k for k in memo if k.startswith(prefix) and k not in visited]:
-        del memo[key]
+    for key in [k for k in list(memo.keys()) if k.startswith(prefix) and k not in visited]:
+        memo.pop(key, None)
 
 
 def read_run(run_dir: Path, slug: str) -> RunInfo:

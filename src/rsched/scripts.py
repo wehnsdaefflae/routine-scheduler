@@ -27,9 +27,9 @@ The envelope is deliberately NARROWER than a util call's:
 - ASKS: mid-run escalation (`ask_user`, blocking approvals) is the recipe's channel — a
   script gets its declared grants; anything more is requested recipe-side.
 
-The `script` action is GATED by the `script` capability (the `scripts` permission doc).
-There is deliberately NO approval dial: a script's blast radius is a subset of the
-routine's own permissions, and the sandbox enforces those regardless of the code.
+The `script` action is a BASE kind every routine holds (grants.py): no capability, no
+permission doc, no approval dial — a script's blast radius is a subset of the routine's own
+permissions, and the sandbox enforces those regardless of the code.
 Header contract: first line `<name> — <summary>`, optional `usage:`, `net: outbound|none`
 (undeclared = none → no TCP at exec; the dependency install is a net-open build step,
 R40), `secrets:` for the exposure gate above, `calls:` for the utils it shells out to.
@@ -345,5 +345,5 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     # a script that dumps a large file must not be buffered whole in the daemon's memory.
     res = utils_run.run_jailed(cmd, env=env, cwd=routine_dir, timeout=timeout,
                                label=f"script {name!r}", config_seal=routine_dir,
-                               aborted=aborted)
+                               aborted=aborted, secrets=env_secrets)
     return res.exit_code, res.stdout, res.stderr

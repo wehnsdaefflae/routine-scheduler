@@ -2022,6 +2022,34 @@ tools: [read_file, write_file]
     assert any("unknown command /spawn" in m for m in cmd_msgs)
 
 
+def test_a_handler_that_raises_becomes_an_error_observation(make_routine, scripted,
+                                                            monkeypatch):
+    """A bug inside one action's handler used to propagate out of the loop and end the whole
+    run, the model never told which action broke. dispatch_action now turns it into an error
+    observation (the traceback in the log and the transcript's error stream) and the run
+    carries on to its own finish."""
+    from rsched.engine import executor
+
+    def _boom(_action, _ctx):
+        msg = "handler exploded"
+        raise RuntimeError(msg)
+
+    # a util: its own renderer reads `exit`, which a crash never set
+    monkeypatch.setitem(executor.DISPATCH, "util", _boom)
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
+        util("frob"),
+        probe(),
+        finish(),
+    ])
+    assert status == "ok"
+    obs = next(e["payload"] for e in events if e["type"] == "observation")
+    assert obs["kind"] == "util" and "RuntimeError: handler exploded" in obs["error"]
+    err = next(e["payload"] for e in events if e["type"] == "error")
+    assert err["where"] == "dispatch" and err["kind"] == "util"
+    assert "OBSERVATION (util FAILED — engine error): RuntimeError: handler exploded" \
+        in ep.calls[1]["messages"][-1]["content"]
+
+
 def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
     """Every finished run — and every finished sub-workflow — appends one line to
     .control/workflow-usage.jsonl, the meta-workflows routine's evidence stream."""

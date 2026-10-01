@@ -46,8 +46,8 @@ from pathlib import Path
 
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
-from .detach import _is_root_conversation
 from .run_context import RunContext
+from .runkind import is_root_conversation
 
 # The default pattern when the conversation does not name one — the sane general-purpose
 # workflow, same default the spawn/subtask/detach actions use.
@@ -353,7 +353,7 @@ def _for_non_conversation(ctx: RunContext, fields: dict) -> dict | None:
                 "reason": "create_routine is not available inside a child run — a sub-workflow "
                           "must not create routines as a side effect. Hand the design back in "
                           "your finish summary and let the run that started you decide."}
-    if not _is_root_conversation(ctx):
+    if not is_root_conversation(ctx):
         return _queued_obs(ctx, fields)
     return None
 

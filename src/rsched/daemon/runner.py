@@ -13,14 +13,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from pathlib import Path
 
 from .. import registry
 from ..config import RoutineConfig, ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..ids import run_ts as make_run_ts
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write_json, directly_under, read_json
 from . import run_gate, runner_reap, runner_state
 from .events import EventBus
 from .llm_tailer import tail_llm_sidecar
@@ -59,11 +58,7 @@ class Runner:
         chosen by HOME, not by `cfg.kind`: a detached task's routine.yaml carries no kind at
         all, and the home is where the run actually lives.
         """
-        home = getattr(self.server, home_attr, None)
-        try:
-            return home is not None and cfg.dir.resolve().parent == Path(home).resolve()
-        except OSError:
-            return False
+        return directly_under(cfg.dir, getattr(self.server, home_attr, None))
 
     def is_background(self, cfg: RoutineConfig) -> bool:
         """A detached background task — its dir sits directly under background_home."""

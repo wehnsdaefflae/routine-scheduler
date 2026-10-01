@@ -13,16 +13,19 @@ from it.
 
 from __future__ import annotations
 
+import logging
 import time
 
 from .. import reports
 from ..paths import read_json
 from ..schema_guard import validate
-from . import child, executor, inbox, mediaops
+from . import child, inbox, mediaops
 from .actions import util_rejection_outcome, validate_action
 from .actionschema import ACTION_SCHEMA
 from .commands import CommandError, parse_command
 from .observations import format_observation, truncate
+
+log = logging.getLogger("rsched.engine.control")
 
 _ABORT = {"flag": False}
 
@@ -137,10 +140,16 @@ def render_command_result(obs: dict) -> str:
 def run_user_command(loop, m: dict) -> None:
     """Execute ONE user-authored action (a chat slash command) at the turn boundary —
     the model action's exact path (parse → schema validate → validate_action against the
-    same workflow tools ∩ capabilities → executor.dispatch) minus the model, so it costs
-    no turn. The observation lands in the transcript (the chat renders it) AND in the
+    same workflow tools ∩ capabilities → actionroute.dispatch_action) minus the model, so it
+    costs no turn. The observation lands in the transcript (the chat renders it) AND in the
     message list (the assistant sees exactly what the user did); a parse/validation/
     dispatch failure becomes a teaching observation instead of killing the run.
+
+    The routing table is the model's, not `executor.dispatch` directly: a `/util` went
+    straight to the executor and so skipped the D39 secret-exposure gate that stands in front
+    of the model's util call, and the executor injects every REQUIRED secret a util declares —
+    a secret the user had declined for this routine reached a util the chat ran. Typing the
+    command is not a decision about exposure; the gate asks it, or applies the one on record.
     """
     ctx = loop.ctx
     text = str(m.get("text") or "")
@@ -159,10 +168,14 @@ def run_user_command(loop, m: dict) -> None:
             if counted is not None:
                 ctx.count_util(*counted)
             raise CommandError("; ".join(problems))
-        obs = executor.dispatch(action, ctx)
+        from .actionroute import dispatch_action  # actionroute imports this module
+        obs = dispatch_action(loop, action, ctx)
     except CommandError as exc:
         obs = {"kind": "user_command", "error": str(exc)}
+    except RunAborted:
+        raise           # the exposure gate's ask can be ended by an abort — control flow
     except Exception as exc:  # a failing command must never kill the run
+        log.exception("slash command %r failed", text[:80])
         obs = {"kind": "user_command", "error": f"command failed: {exc}"}
     ctx.transcript.event("observation", {**obs, "user_command": True})
     msg: dict = {"role": "user", "content": command_message(text, obs)}
