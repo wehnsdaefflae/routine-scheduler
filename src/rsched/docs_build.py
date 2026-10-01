@@ -13,6 +13,7 @@ one directory scan.
 
 from __future__ import annotations
 
+import html
 import logging
 import os
 import re
@@ -132,7 +133,8 @@ def docs_out_dir() -> Path:
 
 def source_stamp(source_repo: Path) -> str:
     """Cheap staleness key: version + newest mtime across the doc inputs. Mtime (not git
-    HEAD) so uncommitted docstring edits rebuild too — the scan is ~70 files.
+    HEAD) so uncommitted docstring edits rebuild too — the scan is a stat per file, a few
+    hundred of them.
     """
     from . import __version__
 
@@ -163,7 +165,7 @@ def render_guide(text: str, title: str) -> str:
         text, extras=["fenced-code-blocks", "tables", "header-ids", "strike"])
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-            f'<title>{title}</title><link rel="icon" href="{FAVICON}">'
+            f'<title>{html.escape(title)}</title><link rel="icon" href="{FAVICON}">'
             f"<style>{GUIDE_CSS}</style><script>{THEME_SCRIPT}</script>"
             f"</head><body>{body}</body></html>")
 
