@@ -4,6 +4,10 @@ decoded, and a directory reads as its listing. On 2026-09-14 a run read a 1.5 GB
 satisfy the read-before-delete gate; the whole file was decoded into a str twice and the
 3.4 GB host swap-thrashed for five hours until a physical reset.
 
+The write side holds the same line: edit_file refuses what read_file refuses (and a file that
+is not UTF-8 — that decode used to raise out of the handler and end the run), and write_file
+reads the text it replaces only for a format the parse gate checks.
+
 The delete/move side of that chain — a directory read grounding the tree's deletion — is
 tested with the real RunContext in test_fs_actions.py; the head-truncation contract (F204) in
 test_view_image.py.
@@ -11,6 +15,7 @@ test_view_image.py.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -22,10 +27,12 @@ from rsched.engine.obs_files import format_files
 
 def _ctx(tmp_path):
     return SimpleNamespace(routine=SimpleNamespace(dir=tmp_path, fs_read_roots=[]),
-                           grants=None, depth=0, seen_paths=set(), read_roots=list)
+                           grants=None, depth=0, seen_paths=set(), read_roots=list,
+                           write_roots=list,
+                           server=SimpleNamespace(routines_home=tmp_path / "routines"))
 
 
-def _never_read(*_a):
+def _never_read(*_a, **_kw):
     pytest.fail("the file's text was read — the refusal must come from the stat and the sniff")
 
 
@@ -147,6 +154,50 @@ def test_an_empty_directory_lists_nothing(tmp_path):
     (tmp_path / "empty").mkdir()
     obs = fileops._read_one("empty", {}, _ctx(tmp_path))
     assert obs["directory"] is True and obs["content"] == "" and obs["total_lines"] == 0
+
+
+# ---- the write side: an edit refuses what a read refuses; a write reads what it checks --------
+
+
+def _edit(ctx, path):
+    return fileops.do_edit_file({"kind": "edit_file", "path": path, "anchor": "abc",
+                                 "replacement": "xyz"}, ctx)
+
+
+def test_edit_file_refuses_a_binary_or_oversized_file_before_any_decode(tmp_path, monkeypatch):
+    blob = tmp_path / "shot.png"
+    blob.write_bytes(b"\x89PNG\r\n\x1a\n\x00abc")
+    big = tmp_path / "big.log"
+    big.write_text("abc" + "x" * 2_497, encoding="utf-8")
+    monkeypatch.setattr(fileops, "READ_MAX_BYTES", 1_000)
+    monkeypatch.setattr(Path, "read_text", _never_read)
+    binary = _edit(_ctx(tmp_path), "shot.png")
+    oversized = _edit(_ctx(tmp_path), "big.log")
+    monkeypatch.undo()
+    assert binary["error"].startswith("a binary file — edit_file rewrites UTF-8 text")
+    assert oversized["error"].startswith("2,500 bytes, over the 1,000 cap")
+    assert blob.read_bytes() == b"\x89PNG\r\n\x1a\n\x00abc"
+    assert big.read_text(encoding="utf-8").startswith("abc")
+
+
+def test_edit_file_refuses_text_that_is_not_utf8_and_keeps_its_bytes(tmp_path):
+    """No NUL, so the sniff passes it — latin-1 is text, just not UTF-8. A lossy decode
+    written back would replace every é with U+FFFD; raising ended the run."""
+    menu = tmp_path / "menu.txt"
+    menu.write_bytes("café abc\n".encode("latin-1"))
+    obs = _edit(_ctx(tmp_path), "menu.txt")
+    assert obs["error"].startswith("not UTF-8 text (invalid continuation byte at byte 3)")
+    assert menu.read_bytes() == "café abc\n".encode("latin-1")
+
+
+def test_write_file_reads_the_replaced_text_only_for_a_checked_format(tmp_path, monkeypatch):
+    (tmp_path / "big.log").write_text("old\n" * 1_000, encoding="utf-8")
+    monkeypatch.setattr(Path, "read_text", _never_read)
+    obs = fileops.do_write_file({"kind": "write_file", "path": "big.log", "content": "new\n"},
+                                _ctx(tmp_path))
+    monkeypatch.undo()
+    assert "error" not in obs
+    assert (tmp_path / "big.log").read_text(encoding="utf-8") == "new\n"
 
 
 # ---- the resume rebuild counts what the live run counted --------------------------------------

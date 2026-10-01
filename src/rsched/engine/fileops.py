@@ -150,6 +150,15 @@ def _listing_lines(path: Path) -> Iterator[str]:
             yield f"file {size:>12}  {e.name}"
 
 
+def _sniff(path: Path) -> tuple[int, bool]:
+    """(size, binary?) from a stat and an 8 KiB head — everything known about a file before
+    a single byte of it is decoded.
+    """
+    size = path.stat().st_size
+    with path.open("rb") as fh:
+        return size, b"\0" in fh.read(BINARY_SNIFF_BYTES)
+
+
 def _refusal(rel_path: str, path: Path) -> dict | None:
     """The two reads that must never happen, decided from a stat and an 8 KiB sniff BEFORE
     anything is decoded: a binary file (a NUL byte in its head) and a file over
@@ -157,10 +166,8 @@ def _refusal(rel_path: str, path: Path) -> dict | None:
     file, and the reason the refusal still counts as having LOOKED at it for the
     destruction gate (history.seen_paths reads the key back on resume).
     """
-    size = path.stat().st_size
-    with path.open("rb") as fh:
-        head = fh.read(BINARY_SNIFF_BYTES)
-    if b"\0" in head:
+    size, binary = _sniff(path)
+    if binary:
         return {"path": rel_path, "size": size,
                 "error": f"binary file ({size:,} bytes) — read_file shows text only; "
                          "view_image sees an image or PDF, a util or shell handles the rest"}
@@ -400,8 +407,12 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         else:
             # F460, the write_file half: only a STR body over an existing file can break a
             # format the engine did not produce (structured content is serialized here, and
-            # an append is not one document).
-            if (isinstance(action["content"], str) and path.is_file()
+            # an append is not one document). The old text is read for a format the gate
+            # checks and for no other: reading it unconditionally decoded whatever a write
+            # replaced — a log, a media file — whole, the materialisation read_file's cap
+            # exists to prevent (2026-09-14).
+            if (isinstance(action["content"], str) and fileformat.checks(path)
+                    and path.is_file()
                     and (err := fileformat.check_after(
                         path, path.read_text(encoding="utf-8", errors="replace"), data))):
                 return {"kind": "write_file", "path": action["path"], "error": err}
@@ -445,6 +456,28 @@ def _nearest_anchor_hint(text: str, anchor: str) -> str:
             "repr() shows the true bytes to copy.")
 
 
+def _edit_source(path: Path) -> tuple[str, str]:
+    """(the file's text, "") — or ("", why edit_file will not take it).
+
+    An edit holds the whole text and its replaced copy, so it refuses the two files read_file
+    refuses — a binary one and one over READ_MAX_BYTES — from the same stat and sniff, before
+    any decode. A file that is not UTF-8 is refused too, and never decoded lossily: writing
+    back an `errors="replace"` decode would corrupt every byte it could not read. That decode
+    used to raise out of the handler, and an exception there ends the RUN, not the action.
+    """
+    size, binary = _sniff(path)
+    if binary or size > READ_MAX_BYTES:
+        what = "a binary file" if binary else f"{size:,} bytes, over the {READ_MAX_BYTES:,} cap"
+        return "", (f"{what} — edit_file rewrites UTF-8 text in place; change this one with "
+                    "shell or a util instead")
+    try:
+        return path.read_text(encoding="utf-8"), ""
+    except UnicodeDecodeError as exc:
+        return "", (f"not UTF-8 text ({exc.reason} at byte {exc.start}) — edit_file rewrites "
+                    "UTF-8 text in place and will not re-encode this file; change it with "
+                    "shell or a util instead")
+
+
 def do_edit_file(action: dict, ctx: RunContext) -> dict:
     """Anchor-replace in place — revisions cost the diff, not the whole document (the
     write_file counterpart for touching a few lines of a large file).
@@ -456,7 +489,9 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
         if not path.is_file():
             return {"kind": "edit_file", "path": action["path"],
                     "error": "file does not exist — create it with write_file"}
-        text = path.read_text(encoding="utf-8")
+        text, refused = _edit_source(path)
+        if refused:
+            return {"kind": "edit_file", "path": action["path"], "error": refused}
         anchor = str(action["anchor"])
         replacement = str(action.get("replacement") or "")
         count = text.count(anchor)

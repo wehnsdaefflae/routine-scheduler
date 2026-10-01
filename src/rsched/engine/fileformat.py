@@ -44,6 +44,11 @@ _PARSERS: dict[str, tuple[Callable[[str], object], str]] = {
 }
 
 
+def checks(path: Path) -> bool:
+    """Is this a format the gate checks? A caller reads the old text only when it is."""
+    return path.suffix.lower() in _PARSERS
+
+
 def _problem(text: str, suffix: str) -> str | None:
     """The parse error for this text in that format, or None when it parses."""
     parse, _name = _PARSERS[suffix]
@@ -61,9 +66,9 @@ def check_after(path: Path, before: str, after: str) -> str | None:
     the parser's own complaint (line and column, where it gives one) and what to do next,
     because the run has to be able to act on it in the same turn it made the mistake.
     """
-    suffix = path.suffix.lower()
-    if suffix not in _PARSERS:
+    if not checks(path):
         return None
+    suffix = path.suffix.lower()
     if _problem(before, suffix) is not None:
         return None                      # already broken — an edit may be the repair
     problem = _problem(after, suffix)
