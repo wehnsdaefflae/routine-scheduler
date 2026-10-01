@@ -97,11 +97,12 @@ ROUTINE_TOKEN_MUTATIONS: tuple[tuple[str, str], ...] = ()
 # these subtrees hand it exactly what that jail forbids — any directory listing on the
 # host (api_fs's own docstring: "names only is still reconnaissance"), every secret NAME with
 # the utils that declare it, the daemon's own stacks, and full-text search over EVERY
-# routine's transcripts, notes and ledgers (observations are not redacted, so a util that
-# printed a token once is queryable by every other routine forever). Nothing logs it as a
-# boundary crossing, because it is an authorized GET. The 2026-08-05 rsched-api usage survey
-# found runs reading items, questions, the routine cards, the runs index, status and stats —
-# none of these, and no live util or recipe targets one today.
+# routine's transcripts, notes and ledgers (a util's output is redacted only of the secret
+# VALUES the engine itself injected, `captured_output.read_capped`; a token it fetched or read
+# from a file and printed once is still queryable by every other routine forever). Nothing
+# logs it as a boundary crossing, because it is an authorized GET. The 2026-08-05 rsched-api
+# usage survey found runs reading items, questions, the routine cards, the runs index, status
+# and stats — none of these, and no live util or recipe targets one today.
 #
 # `/api/routines/*/secrets` is the per-routine half of the secret-name read (D103): every
 # routine's OWN secret names, the central names each one shadows, and where the store file
