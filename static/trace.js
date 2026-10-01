@@ -42,7 +42,7 @@ export function installTracing() {
     const el = e.target.closest("button, a[href^='#/']");
     if (!el) return;
     const label = (el.textContent || "").trim().slice(0, 40);
-    if (label && el.type !== "password") trace("click", label);
+    if (label) trace("click", label);   // a button's or a link's own text — never a field's
   }, { capture: true, passive: true });
   window.addEventListener("error", (e) => trace("error", "js", String(e.message).slice(0, 200)));
   window.addEventListener("unhandledrejection",

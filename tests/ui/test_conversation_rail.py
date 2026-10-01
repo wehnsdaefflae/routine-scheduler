@@ -71,6 +71,22 @@ def test_browser_section_renders_and_close_clears_session(ui, ui_page):
         srv.close()
 
 
+def test_a_refused_cancel_is_an_error_toast(ui, ui_page):
+    """A refusal on the rail's ✕ is a FAILURE toast (red, and traced as UI friction), never the
+    plain one a success prints — the two looked identical, so a cancel that did nothing read as
+    one that worked."""
+    slug, _conv_dir = _start_conversation(ui, ui_page)
+    row = [{"taskid": "t1", "state": "running", "label": "crawl the archive", "summary": ""}]
+    ui_page.route(f"**/api/conversations/{slug}/background", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=json.dumps(row)))
+    ui_page.route(f"**/api/conversations/{slug}/background/t1/cancel", lambda route: route.fulfill(
+        status=409, content_type="application/json", body='{"detail": "the task already ended"}'))
+    ui_page.reload()
+
+    ui_page.locator(".bg-tasks .bg-cancel").click()
+    expect(ui_page.locator("#toast.err:not([hidden])")).to_contain_text("the task already ended")
+
+
 def test_rail_sections_collapse_and_persist(ui, ui_page):
     """F296: a rail cap is a toggle — clicking collapses just that section, the choice
     sticks in localStorage across a full reload, and clicking again reopens it. R341: the

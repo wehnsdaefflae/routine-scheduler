@@ -112,15 +112,16 @@ export function fmtDur(secs) {
   return `${Math.floor(secs / 3600)}h ${Math.round((secs % 3600) / 60)}m`;
 }
 
+// The counts in the console's one compact form (fmtNum — a long run reads "2.30M", where this
+// line used to print "2300.0k") and the cost in fmtCost's.
 export function fmtTokens(usage) {
   if (!usage) return "";
-  const f = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0));
-  const cost = usage.cost > 0
-    ? ` · $${usage.cost >= 0.1 ? usage.cost.toFixed(2) : usage.cost.toFixed(4)}` : "";
+  const usd = fmtCost(usage);
+  const cost = usd ? ` · ${usd}` : "";
   // cache traffic (cheap re-reads, ~0.1x) is reported separately from fresh input —
   // showing it makes cache hit rates visible per run/turn
-  const cached = usage.cached_in > 0 ? ` (+${f(usage.cached_in)} cached)` : "";
-  return `${f(usage.in || 0)} in${cached} / ${f(usage.out || 0)} out${cost}`;
+  const cached = usage.cached_in > 0 ? ` (+${fmtNum(usage.cached_in)} cached)` : "";
+  return `${fmtNum(usage.in)} in${cached} / ${fmtNum(usage.out)} out${cost}`;
 }
 
 export function fmtCost(usage) {
@@ -191,14 +192,30 @@ export function fullOutput(p) {
   return saved.length ? `\n[full output saved] ${saved.join(", ")}` : "";
 }
 
+// A clickable non-button as the button it stands in for — el() attrs for a tab stop, the role,
+// and Enter/Space. A chip or a table row keeps its own look this way (a <button> would bring
+// the browser's), but an element with only a click handler cannot be reached or pressed from
+// the keyboard at all.
+export const asButton = (activate) => ({
+  role: "button", tabindex: "0",
+  onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(e); } },
+});
+
+// `active` makes a clickable chip a toggle (a filter), and says whether it is on.
 export function tagChip(text, { onClick, onRemove, active } = {}) {
   const cls = ["tag", onClick ? "click" : "", active ? "on" : ""]
     .filter(Boolean).join(" ");
   const attrs = { class: cls };
-  if (onClick) attrs.onclick = onClick;
+  if (onClick) {
+    Object.assign(attrs, { onclick: onClick, ...asButton(onClick) },
+      active === undefined ? {} : { "aria-pressed": String(Boolean(active)) });
+  }
   const node = el("span", attrs, text);
-  if (onRemove) node.append(el("span", { class: "x", title: "remove",
-    onclick: (e) => { e.stopPropagation(); onRemove(); } }, "×"));
+  if (onRemove) {
+    const remove = (e) => { e.stopPropagation(); onRemove(); };
+    node.append(el("span", { class: "x", title: "remove", "aria-label": `remove ${text}`,
+      onclick: remove, ...asButton(remove) }, "×"));
+  }
   return node;
 }
 

@@ -5,7 +5,38 @@ phone there is no devtools to clear localStorage by hand, so the browser stayed 
 until the operator cleared site data. The gate must re-open instead.
 """
 
-from .conftest import ROUTINE_TOKEN, TOKEN
+from .conftest import ROUTINE_TOKEN, TOKEN, until
+
+
+def test_a_late_rejection_of_the_old_token_keeps_the_new_one(ui, page):
+    """Every request in flight when the token went stale is rejected — but not all at once. One
+    that answers AFTER the operator has signed in again was sent with the OLD credential, and it
+    used to clear the NEW one and re-open the gate: "Token rejected" for a token that had just
+    been accepted. Only the credential a request actually carried may be dropped for it."""
+    page.add_init_script("localStorage.setItem('rsched_token', 'stale-token')")
+    held = []
+
+    def hold_first(route):
+        # Never unroute a held request: Playwright releases it on the spot.
+        if held:
+            route.continue_()
+        else:
+            held.append(route)
+
+    page.route("**/api/status", hold_first)
+    page.goto(ui.url)
+    gate = page.locator(".token-gate")
+    gate.wait_for(state="visible", timeout=15000)       # the boot reads were rejected
+    until(lambda: held, what="the boot status read to be sent", page=page)
+
+    page.fill(".token-gate input", TOKEN)
+    page.click(".token-gate button")
+    gate.wait_for(state="detached", timeout=15000)
+    held[0].continue_()                                  # its 401 lands only now
+
+    page.wait_for_selector("#view h1", timeout=15000)    # boot completes on the new token
+    assert page.locator(".token-gate").count() == 0, "the gate re-opened over a good token"
+    assert page.evaluate("localStorage.getItem('rsched_token')") == TOKEN
 
 
 def test_routine_token_browser_regates_instead_of_stranding(ui, page):

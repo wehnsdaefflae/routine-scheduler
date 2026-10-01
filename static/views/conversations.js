@@ -59,6 +59,10 @@ export async function render(view, slug, _query = {}) {
 
   let items = [], activeTag = "";
   let cleanup = [];   // per-mount teardowns (tail, timers, artifact blobs)
+  // Set by the view's teardown. A remount can still be on its way when the view goes — the
+  // one 700 ms after a send, or one already awaiting its detail read — and whatever it armed
+  // after the teardown had run (a live tail, the rail polls) would never be stopped.
+  let disposed = false;
   // F295: the optimistic echo of a just-sent message. A post-finish send has NO transcript
   // event until the woken leg boots, and the view remounts ~700ms after every send — so the
   // echo lives here (render scope), is re-appended by each mount, and is dropped only when
@@ -103,14 +107,23 @@ export async function render(view, slug, _query = {}) {
   }
 
   // ---- sidebar --------------------------------------------------------------------------------
+  // The list reloads on a 20 s timer, on run events and after a rename or a tag edit — reads
+  // that overlap and answer out of order. Only the newest one paints: a read begun before a
+  // rename used to land after it and put the old title back.
+  let listSeq = 0;
   async function loadList() {
-    try { items = await api("/api/conversations"); }
+    const seq = ++listSeq;
+    let next;
+    try { next = await api("/api/conversations"); }
     catch (err) {
+      if (seq !== listSeq) return;
       const retry = el("button", { class: "btn small", onclick: loadList }, "retry");
       sideList.replaceChildren(el("div", { class: "empty" },
         el("div", {}, `couldn't load conversations: ${err.message}`), retry));
       return;
     }
+    if (seq !== listSeq) return;
+    items = next;
     renderList();
   }
 
@@ -195,11 +208,15 @@ export async function render(view, slug, _query = {}) {
     }
   };
   window.addEventListener("rsched-bus", onBus);
-  return () => { unmount(); clearInterval(listTimer); window.removeEventListener("rsched-bus", onBus); };
+  return () => {
+    disposed = true;
+    unmount(); clearInterval(listTimer); window.removeEventListener("rsched-bus", onBus);
+  };
 
 
   // ---- an existing conversation -----------------------------------------------------------------
   async function mountConversation() {
+    if (disposed) return;
     unmount();
     let detail;
     try { detail = await api(`/api/conversations/${slug}`); }
@@ -207,6 +224,7 @@ export async function render(view, slug, _query = {}) {
       main.replaceChildren(emptyState("✕", "Conversation not found", err.message));
       return;
     }
+    if (disposed) return;
     // The live tail, assigned once the run id is known (below). The composer closes over it:
     // a send RESUMES this run in place, so the tail re-attaches instead of the page rebuilding.
     let tail = null;
@@ -269,7 +287,7 @@ export async function render(view, slug, _query = {}) {
           btn.onclick = async () => {
             btn.disabled = true;
             try { await api(`/api/conversations/${slug}/background/${t.taskid}/cancel`, { method: "POST" }); }
-            catch (e) { toast(e.message); btn.disabled = false; return; }
+            catch (err) { toastError(err); btn.disabled = false; return; }
             toast("cancelling background task…");
             setTimeout(refreshBackground, 800);
           };
@@ -319,7 +337,7 @@ export async function render(view, slug, _query = {}) {
           btn.onclick = async () => {
             btn.disabled = true;
             try { await api(`/api/conversations/${slug}/browser/${encodeURIComponent(s.name)}/stop`, { method: "POST" }); }
-            catch (e) { toast(e.message); btn.disabled = false; return; }
+            catch (err) { toastError(err); btn.disabled = false; return; }
             toast("browser session closed");
             brLast = "";
             refreshBrowser();

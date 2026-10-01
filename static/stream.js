@@ -41,6 +41,10 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
 
   async function catchUp() {
     const { events: evs, offset: next } = await api(page(base));
+    // The view may have stopped this tail while the page was in flight — and its onEvent acts
+    // on the WINDOW (a view following the newest message scrolls it to the bottom), so a page
+    // delivered now would scroll whatever page replaced it.
+    if (stopped) return;
     for (const ev of evs.slice(seen)) onEvent(ev);
     base = next;
     seen = 0;
@@ -74,7 +78,7 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
     timer = setTimeout(async () => {
       if (stopped || ended) return;
       try { await catchUp(); } catch (err) {
-        if (err.status === 404) { stopped = true; if (onGone) onGone(); return; }
+        if (!stopped && err.status === 404) { stopped = true; if (onGone) onGone(); return; }
       }
       open();
     }, POLL_MS);
@@ -103,6 +107,7 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
   async function kick() {
     if (stopped || ended) return;
     try { await catchUp(); } catch (err) {
+      if (stopped) return;   // stopped while the page was in flight: nobody to report to
       if (err.status === 404) { stopped = true; if (onGone) onGone(); return; }
       reconnect();
       return;

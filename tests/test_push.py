@@ -173,6 +173,27 @@ def test_push_api_routes(client):
     assert c.get("/static/icon.svg").status_code == 200
 
 
+def test_the_installed_console_wears_the_console_ground():
+    """An installed PWA takes its title bar and launch splash from the MANIFEST, a browser tab
+    from index.html's theme-color — and the manifest still carried the pre-watchfloor ground
+    (#0f1419), so the installed console opened on a colour the console itself never paints.
+    Both must be the dark half of base.css's `--deck`, the colour `body` is painted with."""
+    import json
+    import re
+
+    static = Path(__file__).resolve().parent.parent / "static"
+    deck = re.search(r"--deck:\s*light-dark\(#[0-9a-f]{6},\s*(#[0-9a-f]{6})\)",
+                     (static / "base.css").read_text(encoding="utf-8"))
+    assert deck, "base.css no longer declares --deck as light-dark(light, dark)"
+    manifest = json.loads((static / "manifest.webmanifest").read_text(encoding="utf-8"))
+    assert manifest["theme_color"] == manifest["background_color"] == deck.group(1)
+    html = (static / "index.html").read_text(encoding="utf-8")
+    assert f'<meta name="theme-color" content="{deck.group(1)}">' in html
+    # Chrome deprecates the apple-only spelling and asks for the standard one beside it; the
+    # apple one stays for iOS, whose status-bar style depends on it
+    assert '<meta name="mobile-web-app-capable" content="yes">' in html
+
+
 def test_worker_auth_cache_literals_stay_paired():
     """sw.js is a CLASSIC worker (no bundler, no import) and cannot read localStorage, so the
     Cache API name/key carrying the operator token to it is spelled out in both files. Drift

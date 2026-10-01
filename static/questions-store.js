@@ -18,6 +18,7 @@
 import { api } from "/static/api.js";
 
 const MIN_MS = 3000;    // leading fetch, then at most one per window, plus one trailing
+                        // (owed by any event that arrived after the read it joined began)
 const SKIP = new Set(["llm_task", "llm_process"]);
 
 // The snapshot every reader shares: the list, and WHEN it was asked for. The `at` stamp is
@@ -59,6 +60,10 @@ export function subscribeQuestions(fn) {
 
 function schedule() {
   if (cooldown) { trailing = true; return; }
+  // A read already in flight was asked for BEFORE this event, so its answer may not carry what
+  // the event announced. Join it, and owe the one trailing read the window ends with — without
+  // it the change waited for the next event or the 30 s floor.
+  if (inflight) trailing = true;
   fetchNow().catch(() => { /* the daemon lamp reports the link; the last list stands */ });
   cooldown = setTimeout(() => {
     cooldown = null;

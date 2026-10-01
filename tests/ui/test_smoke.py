@@ -73,6 +73,19 @@ def test_pause_scheduling_toggle(ui, ui_page):
     expect(ui_page.locator("button:has-text('pause scheduling')")).to_be_visible()
 
 
+def test_a_malformed_link_still_routes(ui, ui_page):
+    """The breadcrumb decodes each segment of the hash, and decodeURIComponent THROWS on a
+    broken escape — before the route's own error handling, so a truncated or hand-typed link
+    (`%E0%A4%A`) left the skeleton up for good and an uncaught URIError behind. The crumb now
+    shows such a segment as typed, and the view renders."""
+    ui_page.goto(f"{ui.url}/#/help/%E0%A4%A")
+    expect(ui_page.locator("#view h1")).to_have_text("Help")
+    expect(ui_page.locator("#crumbs")).to_contain_text("%E0%A4%A")
+    # a well-formed escape still reads decoded
+    ui_page.evaluate("location.hash = '#/library/rule%2Fx'")
+    expect(ui_page.locator("#crumbs")).to_contain_text("rule/x")
+
+
 def test_daemon_lamp_shows_restart_pending(ui, ui_page):
     """msg-12: a pending self-update restart no longer blocks work — it waits for a quiet gap —
     so the operator needs to SEE that one is queued rather than meet a surprise bounce. /api/status

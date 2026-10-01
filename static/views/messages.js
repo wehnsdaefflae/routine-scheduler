@@ -306,11 +306,20 @@ export async function render(view, query = {}) {
   }
 
   // ---- load ----------------------------------------------------------------------------
+  // Every chip, the routine select, the search box and each card action reload, and a slow
+  // daemon answers them out of order: the read for the filter you LEFT used to land after the
+  // one you chose and replace it, under chips that said otherwise. Only the newest one paints.
+  let loadSeq = 0;
   async function load() {
+    const seq = ++loadSeq;
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
     let data;
     try { data = await api(`/api/items?${qs}`); }
-    catch (err) { body.replaceChildren(emptyState("✕", "Couldn't load the items", err.message)); return; }
+    catch (err) {
+      if (seq === loadSeq) body.replaceChildren(emptyState("✕", "Couldn't load the items", err.message));
+      return;
+    }
+    if (seq !== loadSeq) return;
 
     header.replaceChildren();
     body.replaceChildren();
@@ -415,4 +424,7 @@ export async function render(view, query = {}) {
   await load();
   // arriving via a ref link (#/messages?focus=F63): land on the named card and flash it
   if (query.focus) focusRef(String(query.focus));
+  // The search debounce is the one thing here that outlives a click: left pending, it would
+  // fetch for a page nobody is on and write these filters into the NEXT page's URL.
+  return () => clearTimeout(searchTimer);
 }

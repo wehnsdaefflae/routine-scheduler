@@ -13,7 +13,7 @@ import { abilitiesPanel } from "/static/components/abilities.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { navigate } from "/static/router.js";
-import { el, modelOption, toast, toastError } from "/static/util.js";
+import { act, el, modelOption, toast, toastError } from "/static/util.js";
 
 // The model line at the top of a conversation: shows the EFFECTIVE main model and the
 // uncensored role, and switches EITHER at any point — routine.yaml is patched
@@ -43,8 +43,8 @@ function modelControl(detail, slug, isLive) {
     const models = {};
     if (mainName) { models.main = mainName; models.tool_call = mainName; }
     if (uncName) models.uncensored = uncName;
-    try {
-      await api(`/api/conversations/${slug}`, { method: "PATCH", body: { models } });
+    const saved = await act(apply, async () => {
+      const res = await api(`/api/conversations/${slug}`, { method: "PATCH", body: { models } });
       if (isLive() && detail.run_id) {
         // a live reply switches each role at its next turn boundary
         if (mainName) await api(`/api/runs/${detail.run_id}/model`,
@@ -52,9 +52,9 @@ function modelControl(detail, slug, isLive) {
         if (uncName) await api(`/api/runs/${detail.run_id}/model`,
           { method: "POST", body: { model: uncName, kind: "uncensored" } }).catch(() => {});
       }
-      toast(`model → ${mainName || sysLabel}${uncName ? ` · uncensored → ${uncName}` : ""}`);
-      apply.hidden = true;
-    } catch (err) { toastError(err); }
+      return res;
+    }, `model → ${mainName || sysLabel}${uncName ? ` · uncensored → ${uncName}` : ""}`);
+    if (saved) apply.hidden = true;
   };
   return el("span", { class: "conv-model" },
     el("span", { class: "faint small" }, "model"), mainSel,
@@ -64,11 +64,18 @@ function modelControl(detail, slug, isLive) {
 export function renderHead(head, detail, stateChip, { slug, isLive, onListChanged }) {
   const title = el("h1", { class: "conv-h1", contenteditable: "plaintext-only",
     spellcheck: "false" }, detail.title || slug);
+  // `saved` is the title the conversation HAS — it moves with every save, or renaming one back
+  // to where it started compared equal to a stale baseline and was silently skipped.
+  let saved = detail.title || slug;
   title.onblur = async () => {
     const t = title.textContent.trim();
-    if (!t || t === detail.title) return;
-    try { await api(`/api/conversations/${slug}`, { method: "PATCH", body: { title: t } }); onListChanged(); }
-    catch (err) { toastError(err); }
+    if (!t) { title.textContent = saved; return; }   // a cleared heading is no new name
+    if (t === saved) return;
+    try {
+      await api(`/api/conversations/${slug}`, { method: "PATCH", body: { title: t } });
+      saved = t;
+      onListChanged();
+    } catch (err) { toastError(err); }
   };
   const tagsRow = el("span", { class: "conv-tagline" },
     tagsEditor(detail.tags, async (next) => {
@@ -95,14 +102,11 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   const minsIn = numIn(b.max_wall_clock_min ?? 60, "-1");    // -1 = unlimited time
   const tokIn = numIn(b.max_total_tokens ?? 400000, "-1");   // -1 = unlimited tokens
   const saveBudgets = el("button", { class: "btn small" }, "save budgets");
-  saveBudgets.onclick = async () => {
-    try {
-      await api(`/api/conversations/${slug}`, { method: "PATCH", body: { budgets: {
-        max_turns: +turnsIn.value || 40, max_wall_clock_min: +minsIn.value || 60,
-        max_total_tokens: +tokIn.value || 400000 } } });
-      toast("budgets saved — they cap EACH reply, from the next one");
-    } catch (err) { toastError(err); }
-  };
+  saveBudgets.onclick = () => act(saveBudgets,
+    () => api(`/api/conversations/${slug}`, { method: "PATCH", body: { budgets: {
+      max_turns: +turnsIn.value || 40, max_wall_clock_min: +minsIn.value || 60,
+      max_total_tokens: +tokIn.value || 400000 } } }),
+    "budgets saved — they cap EACH reply, from the next one");
   const budgetField = (label, input) => el("label", { style: "flex-direction:column" },
     el("span", { class: "faint" }, label), input);
   capBody.append(el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;align-items:flex-end" },
@@ -114,13 +118,10 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   const readRoots = rootsEditor(detail.fs_read_roots, { pickTitle: "add a read root" });
   const writeRoots = rootsEditor(detail.fs_write_roots, { pickTitle: "add a write root" });
   const saveRoots = el("button", { class: "btn small" }, "save folder access");
-  saveRoots.onclick = async () => {
-    try {
-      await api(`/api/conversations/${slug}`, { method: "PATCH", body: {
-        fs_read_roots: readRoots.value(), fs_write_roots: writeRoots.value() } });
-      toast("folder access saved — applies from the next reply");
-    } catch (err) { toastError(err); }
-  };
+  saveRoots.onclick = () => act(saveRoots,
+    () => api(`/api/conversations/${slug}`, { method: "PATCH", body: {
+      fs_read_roots: readRoots.value(), fs_write_roots: writeRoots.value() } }),
+    "folder access saved — applies from the next reply");
   capBody.append(el("div", { class: "mt" },
     el("div", { class: "faint small" }, "folder access — directories the conversation may "
       + "use beyond its own; the first write root is the project folder"),
