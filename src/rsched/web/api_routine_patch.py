@@ -10,13 +10,16 @@ LIVE run what changed and which half of it reaches it now.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
+from croniter import croniter
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .. import entities, schedule
 from .. import rules as rules_mod
 from ..config import DELIBERATION_LEVELS, write_tuning
+from ..config.base import _known_tz
 from ..config.routine import RunGateConfig, RunGatePatch
 from ..paths import read_yaml
 from .config_fields import (
@@ -41,6 +44,39 @@ router = APIRouter(tags=["routine-patch"])
 HUB_TAB_MAX = 60
 
 
+class SchedulePatch(BaseModel):
+    """The `schedule` a PATCH may carry, typed for the same reason `BudgetsPatch` is (R102).
+
+    It was a free mapping merged verbatim into routine.yaml's `schedule:`, so a raw `cron`
+    croniter rejects — or a zone zoneinfo does not know — was written as given and answered
+    `updated: ["schedule"]`, and the next load DROPPED it with a problem (`_validate_lenient`):
+    a scheduled routine silently became a manual one. A misspelled key landed beside the real
+    ones, read by nothing; a non-mapping `friendly` was a 500. All of those are 422s here —
+    strict, like `RunGatePatch`, so `"disabled": "yes"` is refused rather than read as true.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    friendly: dict | None = None    # {"frequency": …} — translated to cron + the server's tz
+    catchup: Literal["skip", "run_once"] | None = None
+    cron: str | None = None
+    tz: str | None = None
+    disabled: bool | None = None
+
+    # an explicit null reaches an after-validator too; it means "not sent" (exclude_none)
+    @field_validator("tz")
+    @classmethod
+    def _tz_known(cls, v: str | None) -> str | None:
+        return v if v is None else _known_tz(v)
+
+    @field_validator("cron")
+    @classmethod
+    def _cron_parses(cls, v: str | None) -> str | None:
+        if v and v.strip() and not croniter.is_valid(v):
+            raise ValueError(f"not a cron expression: {v!r}")
+        return v
+
+
 class RoutinePatch(BaseModel):
     # forbid unknown keys: this is the validated single-writer save path — a misspelled
     # field silently dropped reads as "saved" to a direct API caller (and to the Decisions
@@ -50,7 +86,7 @@ class RoutinePatch(BaseModel):
 
     enabled: bool | None = None
     run_gate: RunGatePatch | None = None    # partial — validated MERGED, see _apply_run_gate
-    schedule: dict | None = None            # {"friendly":…, "catchup":…} (cron built server-side)
+    schedule: SchedulePatch | None = None   # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: BudgetsPatch | None = None     # the runaway backstops, by name — a misspelled
     #                                          key is a 422 here, never a silent revert at load
     models: dict | None = None              # {main|tool_call|uncensored: catalog name}
@@ -234,24 +270,21 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
         raw.setdefault("schedule", {})["disabled"] = not on
         raw.pop("enabled", None)
     if "schedule" in updates:
+        # typed by SchedulePatch: catchup, disabled, a raw cron and its tz arrive valid
         sched_patch = updates.pop("schedule") or {}
         raw.setdefault("schedule", {})
         if "disabled" in sched_patch:
-            if not isinstance(sched_patch["disabled"], bool):
-                raise HTTPException(400, "schedule.disabled must be a boolean")
             raw.pop("enabled", None)
         if "friendly" in sched_patch:
+            friendly = sched_patch.pop("friendly")
             try:
-                friendly = sched_patch.pop("friendly")
                 cron = schedule.friendly_to_cron(friendly)
-                raw["schedule"]["disabled"] = friendly.get("frequency") == "disabled"
-                raw.pop("enabled", None)
-            except ValueError as exc:
+            except (ValueError, TypeError) as exc:     # a field of the wrong type is a 400 too
                 raise HTTPException(400, f"invalid schedule: {exc}") from exc
-            raw["schedule"].update(cron=cron, tz=schedule.server_tz())
-        if sched_patch.get("catchup") not in (None, "skip", "run_once"):
-            raise HTTPException(400, "catchup must be 'skip' or 'run_once'")
-        # merge any remaining RAW keys (cron / tz / catchup) verbatim — a friendly spec was
+            raw["schedule"].update(cron=cron, tz=schedule.server_tz(),
+                                   disabled=friendly.get("frequency") == "disabled")
+            raw.pop("enabled", None)
+        # merge the remaining RAW keys (cron / tz / catchup / disabled) — a friendly spec was
         # already translated and popped above; tz is preserved when only cron is sent.
         raw["schedule"].update(sched_patch)
 
@@ -268,6 +301,12 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
     """Apply already-validated PATCH fields to a routine's `routine.yaml` — the one writer the
     PATCH route and the settings page's single "accept changes" both go through, so a value
     lands the same way whichever door it came in by. `updates` has RoutinePatch's shape.
+
+    ALL OR NOTHING: every field is judged before anything is written. Two of them write
+    outside the one final save — the rule binder (`rules.apply_changes`) and the tuning file
+    — and both used to write first, so a patch refused over a LATER field (an unknown pattern,
+    a bad cron) had already rebound the routine's rules or re-levelled its deliberation:
+    uncommitted, unscanned, unannounced to a live run, under a 4xx that said nothing landed.
     """
     # No busy-guard (D35): pure routine.yaml config, read at run START only — saving
     # mid-run applies at the next run. Destructive ops (archive) keep their guard.
@@ -281,15 +320,16 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
     # endpoint silently ignores must read as NOT applied, never as success).
     requested = list(updates)
     # deliberation is TUNING, not config — it lands in tuning.yaml (recipe-classed), never in
-    # routine.yaml (the user's sealed authority surface). Handle it FIRST, before any raw
-    # mutation, so a tuning-only patch returns without rewriting routine.yaml.
-    if "deliberation" in updates:
-        level = updates.pop("deliberation")
+    # routine.yaml (the user's sealed authority surface). Judged FIRST, so a tuning-only patch
+    # returns without rewriting routine.yaml; in a mixed patch it is written only once every
+    # other field has passed.
+    level = updates.pop("deliberation", None)
+    if level is not None:
         if level not in DELIBERATION_LEVELS:
             raise HTTPException(400, f"deliberation: unknown level {level!r} "
                                      f"(expected one of {DELIBERATION_LEVELS})")
-        write_tuning(info.cfg.dir, {"deliberation": level})
         if not updates:
+            write_tuning(info.cfg.dir, {"deliberation": level})
             _git_commit(request, info.cfg.dir, "tuning.yaml edit via web (deliberation)")
             _state(request).scheduler.rescan()
             live = signal_config_change(info, ["deliberation"], {"deliberation": level})
@@ -317,11 +357,6 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
         if gproblems:
             raise HTTPException(400, "; ".join(gproblems))
         raw["grants"] = gmap
-    # Rules bind/unbind through the ONE canonical path (rules.apply_changes) — F392: a
-    # config_patch carrying `rules` now applies through the generic PATCH, not only the
-    # dedicated /routines/{slug}/rules picker. Extracted to a helper to keep this handler
-    # under the branch-complexity budget.
-    _apply_rules_field(_state(request).server.rules_home, info.cfg.dir, raw, updates)
     # D132/F482: the two authority keys route to the permissions surface's own resolver rather
     # than the generic merge below — a decision may now propose them, and what lands is what the
     # editor would have written.
@@ -335,11 +370,18 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
     if "hub_tab" in updates and not updates["hub_tab"]:
         updates.pop("hub_tab")
         raw.pop("hub_tab", None)    # `""` names no heading; absence is its one spelling
+    # Rules bind/unbind through the ONE canonical path (rules.apply_changes) — F392: a
+    # config_patch carrying `rules` now applies through the generic PATCH, not only the
+    # dedicated /routines/{slug}/rules picker. LAST of the appliers, because it is the one
+    # that writes: it refuses an unknown slug before writing, and nothing after it refuses.
+    _apply_rules_field(_state(request).server.rules_home, info.cfg.dir, raw, updates)
     for key, val in updates.items():
         if isinstance(val, dict) and isinstance(raw.get(key), dict):
             raw[key].update(val)
         else:
             raw[key] = val
+    if level is not None:
+        write_tuning(info.cfg.dir, {"deliberation": level})
     # F337 rides in the shared writer: a run already in flight booted its policy, schema and
     # prompt from the OLD config, and is told what changed and which half reaches it now.
     live = write_routine_config(

@@ -23,6 +23,7 @@ from .routines_common import (
     _catalog,
     _info,
     _state,
+    guard_not_active,
     permission_layers_detail,
     queue_or_apply,
 )
@@ -332,12 +333,18 @@ def delete_local_reminder(request: Request, slug: str, rid: str) -> dict:
     Local only: a curated reminder is the library's copy, removed on the Library tab, and its
     tally here is this routine's evidence about it rather than the reminder itself. Deleting a
     local one takes its tally with it, because the tally is about a definition that is going.
+
+    Refused (409) while a run is active. A live run holds its reminders in memory and keeps
+    holding actions on them, and its next `remind` rewrites the file with the definitions it
+    holds (`engine/remind._save_local`) — so a delete landing mid-run reached nothing and was
+    then silently undone, under a 200.
     """
     from .. import reminders
 
     info = _info(request, slug)
     if not reminders.is_reminder_id(rid):
         raise HTTPException(400, f"not a reminder id: {rid!r}")
+    guard_not_active(request, info)
     local, gstats = reminders.load_local(info.cfg.dir)
     kept = [r for r in local if r.id != rid]
     if len(kept) == len(local):

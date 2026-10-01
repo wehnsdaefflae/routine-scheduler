@@ -292,9 +292,10 @@ def test_patch_routine_resource_fields(client):
     detail = c.get("/api/routines/apir").json()
     assert detail["keep_runs"] == 5 and detail["catchup"] == "run_once"
     assert detail["fs_read_roots"] and detail["fs_write_roots"]   # resolved to absolute server paths
-    # validation: positive keep_runs, a known catchup policy, no empty root strings
+    # validation: positive keep_runs, a known catchup policy (typed: SchedulePatch's 422, like
+    # every schema refusal at this edge), no empty root strings
     assert c.patch("/api/routines/apir", json={"keep_runs": 0}).status_code == 400
-    assert c.patch("/api/routines/apir", json={"schedule": {"catchup": "bogus"}}).status_code == 400
+    assert c.patch("/api/routines/apir", json={"schedule": {"catchup": "bogus"}}).status_code == 422
     assert c.patch("/api/routines/apir", json={"fs_read_roots": ["ok", ""]}).status_code == 400
 
 
@@ -2177,6 +2178,55 @@ def test_patch_binds_rules_via_config_patch(client):
     # an unknown slug is a legible 400, never the opaque extra=forbid 422
     bad = c.patch("/api/routines/apir", json={"rules": ["ghost"]})
     assert bad.status_code == 400 and "ghost" in bad.text
+
+
+def test_a_refused_patch_lands_nothing(client):
+    """The rule binder and the tuning file write outside the one final save, and both used to
+    write FIRST: a patch refused over a later field had already rebound the routine's rules or
+    re-levelled its deliberation — uncommitted, unscanned, under a 4xx saying nothing landed."""
+    from rsched.config import DELIBERATION_LEVELS, load_routine
+
+    c, tmp = client
+    rules_home = tmp / "library" / "rules"
+    rules_home.mkdir(parents=True, exist_ok=True)
+    (rules_home / "alpha.md").write_text(
+        "---\ntags: [a, b, c]\n---\n# rule: alpha — the first principle\nbody\n",
+        encoding="utf-8")
+    rdir = tmp / "routines" / "apir"
+    before = (rdir / "routine.yaml").read_text(encoding="utf-8")
+    deliberation = load_routine(rdir)[0].deliberation
+    level = next(lv for lv in DELIBERATION_LEVELS if lv != deliberation)
+    for later in ({"pattern": "no-such-pattern"}, {"schedule": {"cron": "not a cron"}},
+                  {"keep_runs": 0}):
+        r = c.patch("/api/routines/apir",
+                    json={"rules": ["alpha"], "deliberation": level, **later})
+        assert r.status_code in (400, 422), (later, r.status_code)
+        assert (rdir / "routine.yaml").read_text(encoding="utf-8") == before, later
+        assert load_routine(rdir)[0].deliberation == deliberation, later
+
+
+def test_a_raw_schedule_is_judged_before_it_is_written(client):
+    """`schedule` was a free mapping merged verbatim: a cron croniter rejects (or a zone it
+    does not know) answered `updated: ["schedule"]`, and the next load DROPPED it — a
+    scheduled routine silently turned manual (R102). A misspelled key landed beside the real
+    ones; a `friendly` that was not a mapping, or carried a wrong-typed field, was a 500."""
+    from rsched.config import load_routine
+
+    c, tmp = client
+    rdir = tmp / "routines" / "apir"
+    for body in ({"cron": "not a cron"}, {"tz": "Mars/Olympus"}, {"crn": "0 9 * * 1"},
+                 {"friendly": "daily"}, {"catchup": "always"}, {"disabled": "yes"}):
+        r = c.patch("/api/routines/apir", json={"schedule": body})
+        assert r.status_code == 422, (body, r.status_code, r.text)
+    r = c.patch("/api/routines/apir",
+                json={"schedule": {"friendly": {"frequency": "hourly", "minute": None}}})
+    assert r.status_code == 400 and "invalid schedule" in r.json()["detail"]
+    assert load_routine(rdir)[0].cron == "0 7 * * 1"               # untouched throughout
+    ok = c.patch("/api/routines/apir",
+                 json={"schedule": {"cron": "0 9 * * 2", "tz": "UTC", "catchup": "run_once"}})
+    assert ok.status_code == 200 and ok.json()["updated"] == ["schedule"]
+    cfg = load_routine(rdir)[0]
+    assert (cfg.cron, cfg.tz, cfg.catchup) == ("0 9 * * 2", "UTC", "run_once")
 
 
 def test_put_permissions_cascades_capabilities(client):

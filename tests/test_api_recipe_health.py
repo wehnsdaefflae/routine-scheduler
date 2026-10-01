@@ -125,3 +125,21 @@ def test_a_local_reminder_can_be_deleted_and_a_curated_one_cannot(api_client, ma
     assert c.delete("/api/routines/forgetful/reminders/not-an-id").status_code == 400
     # a curated reminder is the LIBRARY's copy — removed on the Library tab, never here
     assert c.delete("/api/routines/forgetful/reminders/rem-curated").status_code == 404
+
+
+def test_a_local_reminder_is_not_deleted_under_a_live_run(api_client, make_routine):
+    """A live run holds its reminders in memory and keeps holding actions on them, and its
+    next `remind` rewrites the store from what it holds (engine/remind._save_local) — so a
+    delete landing mid-run reached nothing and was then silently undone, under a 200."""
+    from conftest import mk_run
+    from rsched import reminders as store
+
+    c, _tmp = api_client
+    d = make_routine(slug="forgetful")
+    store.save_local(d, [
+        store.Reminder(id="rem-a", regex="^util:a", description="d", scope="local",
+                       created_run="r:1", stats=store.blank_stats())], {})
+    mk_run(d, "20260708-100000", "running")
+    r = c.delete("/api/routines/forgetful/reminders/rem-a")
+    assert r.status_code == 409 and "busy" in r.json()["detail"]
+    assert [x.id for x in store.load_local(d)[0]] == ["rem-a"]
