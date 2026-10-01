@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from .. import registry
 from ..config import RoutineConfig, ServerConfig
@@ -32,6 +34,33 @@ from .runner_state import (
 )
 
 log = logging.getLogger("rsched.runner")
+
+
+#: How many consecutive seconds `_claim_run_dir` tries before giving up — far beyond any real
+#: burst of fires for one routine, which is at most a handful per second.
+_CLAIM_TRIES = 60
+
+
+def _claim_run_dir(runs: Path) -> tuple[str, Path]:
+    """A run dir nobody has used: the run-ts of now, or of the next free second.
+
+    A run-ts has one-second resolution, and the dir used to be made with `exist_ok=True`. A
+    fire in the same second as a run that just ended — a gate skip finishes in milliseconds,
+    and a lane chain or a manual click can follow it at once — therefore reused that run's
+    directory: its status.json and gate record were overwritten and two run ids named one
+    transcript. `mkdir(exist_ok=False)` is the claim; a taken second moves to the next one,
+    which keeps run ids unique and still in fire order.
+    """
+    now = datetime.now(UTC)
+    runs.mkdir(parents=True, exist_ok=True)
+    for bump in range(_CLAIM_TRIES):
+        ts = make_run_ts(now + timedelta(seconds=bump))
+        try:
+            (runs / ts).mkdir()
+        except FileExistsError:
+            continue
+        return ts, runs / ts
+    raise RuntimeError(f"no free run directory under {runs} within {_CLAIM_TRIES}s of now")
 
 
 class Runner:
@@ -134,9 +163,7 @@ class Runner:
             log.info("overrun_skipped routine=%s reason=%s", cfg.slug, reason)
             self._log_refused_scheduled_fire(cfg, reason, "overrun")
             return None
-        ts = make_run_ts()
-        run_dir = cfg.dir / "runs" / ts
-        run_dir.mkdir(parents=True, exist_ok=True)
+        ts, run_dir = _claim_run_dir(cfg.dir / "runs")
         if brief.strip():
             from ..engine import brief as brief_mod
 

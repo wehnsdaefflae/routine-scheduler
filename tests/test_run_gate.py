@@ -54,6 +54,25 @@ def skip_body():
     return 'print(\'{"version":1,"decision":"skip","reason":"no new work"}\')'
 
 
+async def test_a_fire_in_the_same_second_as_a_skip_gets_its_own_run_dir(setup_gate,
+                                                                         monkeypatch):
+    """A gate skip ends in milliseconds; the next fire landing in the same second used the
+    same `runs/<ts>` (made with exist_ok=True) and overwrote the skip's records — two run ids,
+    one directory. The second fire now claims the next free second."""
+    from rsched.daemon import runner as runner_mod
+
+    cfg, _, runner = setup_gate
+    script(cfg, skip_body())
+    # both fires read the clock inside one second; the claim's retry reads the next one
+    stamps = iter(["20260101-000000", "20260101-000000", "20260101-000001"])
+    monkeypatch.setattr(runner_mod, "make_run_ts", lambda now=None: next(stamps))
+    rid1, run1, _ = await finish(runner, cfg)
+    rid2, run2, _ = await finish(runner, cfg)
+    assert rid1 != rid2 and run1.run_dir != run2.run_dir
+    assert run2.run_dir.name == "20260101-000001"
+    assert read_json(run1.run_dir / "status.json")["run_id"] == rid1   # not overwritten
+
+
 async def test_skip_never_builds_engine_command(setup_gate, monkeypatch):
     cfg, _, runner = setup_gate
     script(cfg, skip_body())
