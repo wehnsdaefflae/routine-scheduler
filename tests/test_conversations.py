@@ -236,6 +236,28 @@ def test_message_to_terminal_conversation_refused_while_draining(client):
     assert len(list((conv_dir / "inbox").glob("msg-*.json"))) == before + 1
 
 
+def test_create_refused_while_draining_leaves_no_conversation(client):
+    """R81's other door. A create in the restart's SIGTERM window made the conversation dir,
+    then the fire refused — a 409, and a conversation with a first message and no run left in
+    the list, so the retry after the restart made a second one. Refused up front, like a
+    message; and a fire refused anyway (a race with the gate) takes its dir with it."""
+    c, server = client
+    c.app.state.runner.draining = True
+    r = c.post("/api/conversations", data={"text": "Plan the week"})
+    assert r.status_code == 503, r.text
+    assert "NOT created" in r.json()["detail"]
+    assert not list(server.conversations_home.glob("*/routine.yaml"))
+
+    async def refused(cfg, *, reason="x"):
+        return None
+
+    c.app.state.runner.draining = False
+    c.app.state.runner.fire = refused          # the gate closed between the check and the fire
+    r = c.post("/api/conversations", data={"text": "Plan the week"})
+    assert r.status_code == 503, r.text
+    assert not list(server.conversations_home.glob("*/routine.yaml"))
+
+
 def test_message_admin_token_drops_marker_only_when_valid(client, monkeypatch):
     """D63-1A: the Conversations composer's Admin toggle sends x-admin-token with the message;
     a resume of a terminal conversation carrying a VALID token drops the one-shot admin marker

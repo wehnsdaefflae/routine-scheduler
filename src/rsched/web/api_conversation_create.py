@@ -164,6 +164,8 @@ def _resolve_create_models(server, model: str, models: str) -> dict[str, str] | 
 
 #: The budgets the composer offers, each a whole number (-1 = unlimited where it applies).
 _BUDGET_FIELDS = ("max_turns", "max_total_turns", "max_wall_clock_min", "max_total_tokens")
+_RESTARTING = ("the server is restarting — the conversation was NOT created. Start it again "
+               "in a moment, once the server is back.")
 
 
 class ComposerForm(BaseModel):
@@ -233,6 +235,12 @@ async def create_conversation(request: Request,
     rule_slugs = _parse_rules(server, form.rules)
     conn_map = _parse_connections(form.connections)
     models_cfg = _resolve_create_models(server, form.model, form.models)
+    # R81, the create door: in the restart's exit window the fire is refused, so refuse BEFORE
+    # anything lands — a conversation made and never started stays in the list, and the
+    # retry after the restart makes a second one.
+    runner = request.app.state.runner
+    if getattr(runner, "draining", False):
+        raise HTTPException(503, _RESTARTING)
     server.conversations_home.mkdir(parents=True, exist_ok=True)
     slug = conv_mod.new_slug(server.conversations_home)
     try:
@@ -269,9 +277,10 @@ async def create_conversation(request: Request,
     # /runs/{id}/converse; the token never reaches the engine.
     from ..engine.admin import ADMIN_HEADER, admin_token_valid, write_admin_marker
     admin_ok = admin_token_valid(request.headers.get(ADMIN_HEADER))
-    rid = await request.app.state.runner.fire(cfg, reason="conversation")
-    if rid is None:
-        raise HTTPException(409, "could not start the conversation (daemon draining?)")
+    rid = await runner.fire(cfg, reason="conversation")
+    if rid is None:   # a brand-new slug is never already active: the drain gate closed meanwhile
+        shutil.rmtree(conv_dir, ignore_errors=True)
+        raise HTTPException(503, _RESTARTING)
     if admin_ok:
         # No await between fire() returning and this write, so the marker lands before the
         # runner's supervisor task spawns the engine subprocess that reads it at loop init.
