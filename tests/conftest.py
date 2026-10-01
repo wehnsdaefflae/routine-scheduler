@@ -169,9 +169,15 @@ def _hermetic_home(tmp_path, monkeypatch):
     routines_home/.control — so every pytest run used to append fixture noise (run_failed
     for 'aborted', 'testr', 'wubad', ...) into the LIVE health-events.jsonl. Redirect all
     "~" expansion in rsched.config (field defaults + HomePath validation, both of which
-    resolve `expand` at call time) into this test's tmp dir. The SECRETS store is
-    redirected too: the settings endpoint view reads it on every listing (credential-source
-    labels), and assertions must not vary with whatever the host's real store contains."""
+    resolve `expand` at call time) into this test's tmp dir.
+
+    The CONFIG DIRECTORY is redirected too, through the one variable `paths.config_file`
+    reads: beside config.yaml live both secret stores, the OAuth connections, the push keys
+    and the machine mounts, and assertions must not vary with whatever the host's real stores
+    hold (a conversation-create test read the live connections.json on every host that had
+    one). An environment variable rather than a patch, because it also reaches every
+    subprocess a test spawns — a gate's preparation child inherits no monkeypatch. A test
+    that needs its own config dir sets RSCHED_CONFIG after this and wins."""
     from rsched import paths as _paths
     fake_home = tmp_path / "hermetic-home"
     real = _paths.expand
@@ -184,8 +190,7 @@ def _hermetic_home(tmp_path, monkeypatch):
     # in server.py, the HomePath validator in base.py) — patch both
     monkeypatch.setattr("rsched.config.base.expand", expand)
     monkeypatch.setattr("rsched.config.server.expand", expand)
-    monkeypatch.setattr("rsched.secrets.secrets_path",
-                        lambda: fake_home / ".config/routine-scheduler/secrets.env")
+    monkeypatch.setenv("RSCHED_CONFIG", str(fake_home / ".config/routine-scheduler/config.yaml"))
 
 
 @pytest.fixture(autouse=True)
