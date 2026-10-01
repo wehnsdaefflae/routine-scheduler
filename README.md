@@ -32,12 +32,12 @@ how a Claude or Codex SUBSCRIPTION is billed, through CLIProxyAPI on the `anthro
 [docs/endpoints.md](docs/endpoints.md). What is banned is a second *agent loop* in the
 path: this scheduler is the only harness.
 
-Optional efficiency controls: [output compression and the Ponytail coding rule](docs/output-compression.md).
-Compression is enabled by default: JSON stdout is minified with the stdlib, provably
-faithful and needing no dependency. Nothing else is compressed; measurement mode and Off remain
-available. Ponytail is opt-in.
-What compression actually bought each routine — applications, estimated savings, rejections and the
-time all three cost — is a table on the Stats tab.
+Large command output reaches the model [re-encoded losslessly](docs/output-compression.md):
+grep hits under one heading per file, path listings folded by folder, JSON minified with
+repeated objects as tables — each kept only when its exact inverse gives the original back and
+it is smaller, stdlib only. It is engine behaviour, not a setting. What it bought each routine —
+applications, estimated savings, rejections and the time all three cost — is a table on the
+Stats tab.
 
 ## How the system improves itself
 
@@ -56,9 +56,10 @@ time all three cost — is a table on the Stats tab.
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
   is lens-scoped and test-gated, with bigger decisions on the **Messages** page) and `token-lab`
   (measures token usage and A/B-tests efficiency methods via `llm` subcalls only — never
-  integrating — and publishes a report). The shared library — workflow patterns, rules,
-  playbooks — is owned by `routine-improver`, which fixes them lint-gated and committed; you
-  can edit or delete any of them on the Library tab. There is no routine SEED: a meta routine
+  integrating — and publishes a report). The shared library is curated the same way — the
+  general rules by `rules-review`, which revises the one shared text from how runs actually
+  applied it, the workflow patterns and playbooks by `routine-improver` — lint-gated and
+  committed; you can edit or delete any of them on the Library tab. There is no routine SEED: a meta routine
   is authored through the ordinary create flow like any other, so a fresh instance starts with
   none — while every meta routine an instance HAS is disabled, a dismissible console banner says
   so and offers one click per routine to enable it, because self-improvement costs tokens. The
@@ -198,8 +199,8 @@ A routine can run commands and move files on a remote **SSH host** — for work 
 hardware the daemon box doesn't have (a GPU for training/inference, a big build server). Register a
 host once in **Settings → Machines** (host / user / a `key_var` naming its private key in the
 Secrets store / a pinned, scanned host key), then bind it on a routine's page (`machines:`, a
-resource like `models:`) and switch on the `remote-machines` permission. The routine acts through
-the reserved `remote` util: `exec` for short commands, `submit`/`status`/`logs` for long DETACHED
+resource like `models:`) — the binding is the whole grant. The routine acts through
+the `remote` util: `exec` for short commands, `submit`/`status`/`logs` for long DETACHED
 jobs (a GPU run can `--notify-webhook` the routine's own trigger URL on completion instead of being
 polled), `push`/`pull` over SFTP. Host keys are pinned (a mismatch refuses to connect), the private
 key comes from the Secrets store (never `~/.ssh`) and reaches only the `remote` util of a routine

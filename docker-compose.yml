@@ -73,7 +73,7 @@ services:
       # An ABSOLUTE source, not an ${RSCHED_HOME}-relative one, because the vault is not part of
       # this instance's state: it is the host's own Obsidian store under /srv, synced by
       # syncthing and snapshotted by restic. It is therefore NOT in deploy/state-paths.sh — see
-      # the declared exclusions there. `/srv` is already bound rw above; this deeper mount is
+      # the declared exclusions there. `/srv` is bound rw further down; this deeper mount is
       # what makes THIS subtree read-only and what fails the start loudly when it goes missing.
       - type: bind
         source: /srv/ObsidianVault/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest
@@ -92,18 +92,18 @@ services:
       # these binds they land in the container's writable layer and DIE on every recreate.
       - ${RSCHED_HOME:-/home/mark}/conversations:/home/mark/conversations
       - ${RSCHED_HOME:-/home/mark}/background:/home/mark/background
-      # Messenger session stores — the SAME rule. Signal/WhatsApp/Telegram authenticate by a
-      # linked session on disk (no API key), so losing these dirs unlinks the account and the
-      # operator has to re-pair by phone. They are the util sandbox's write target for
-      # SIGNAL_/WHATSAPP_/TELEGRAM_SESSION_DIR, and a routine reaches them through its
-      # fs_write_roots. Bind-mount an EMPTY host dir over a populated container path and you
-      # shadow a live session — copy the data out first.
       # The interactive `claude /login` token (~/.claude/.credentials.json) — the ONLY credential
       # carrying the user:profile scope the subscription-quota read needs. Without this bind it
       # dies on every recreate and the console's quota chip goes dark with nobody told why. A
       # DEDICATED host dir, not the host's own ~/.claude: sharing that would put the daemon and
       # a human's Claude Code in one session/history/settings store.
       - ${RSCHED_HOME:-/home/mark}/.claude-daemon:/home/mark/.claude
+      # Messenger session stores — the SAME rule. Signal/WhatsApp/Telegram authenticate by a
+      # linked session on disk (no API key), so losing these dirs unlinks the account and the
+      # operator has to re-pair by phone. They are the util sandbox's write target for
+      # SIGNAL_/WHATSAPP_/TELEGRAM_SESSION_DIR, and a routine reaches them through its
+      # fs_write_roots. Bind-mount an EMPTY host dir over a populated container path and you
+      # shadow a live session — copy the data out first.
       - ${RSCHED_HOME:-/home/mark}/telegram-sessions:/home/mark/telegram-sessions
       - ${RSCHED_HOME:-/home/mark}/signal-sessions:/home/mark/signal-sessions
       - ${RSCHED_HOME:-/home/mark}/whatsapp-sessions:/home/mark/whatsapp-sessions
@@ -127,7 +127,8 @@ services:
         source: /tmp
         target: /tmp
         bind: { propagation: rslave }
-      # One merged library repo (workflows/ + fragments/ + utils/ + gu) — see config `libraries_home`.
+      # One merged library repo (workflows/, rules/, permissions/, patterns/, utils/ + gu, …) —
+      # see config `libraries_home`.
       - ${RSCHED_HOME:-/home/mark}/.local/share/routine-scheduler-libraries:/home/mark/.local/share/routine-scheduler-libraries
       # Playwright's browser cache: page-fetch downloads Chromium here once (user-level);
       # mounted so the ~170 MB download survives container recreation. Libs live in the image.

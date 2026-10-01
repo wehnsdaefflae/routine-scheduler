@@ -56,7 +56,7 @@ Two caveats, or the condensation misfires. **Terseness is earned by trigger prec
 short line fired at the wrong moment is worse than the full rule read deliberately, because a
 run trusts a fired assist to be relevant. And the payload line is **authored deliberately as
 its own field** — never auto-truncated from the body — because the caveat-heavy rules
-(`ai-writing-tells`: detectors are not ground truth) are exactly the ones a machine-made
+(`write-as-the-principal`: detectors are not ground truth) are exactly the ones a machine-made
 excerpt would misrepresent.
 
 ## The declaration
@@ -166,8 +166,8 @@ only WHEN its line is read, never what the routine may do. Nothing here can reac
 that does not hold the rule.
 
 `DEFAULT_RULES` is not empty, so this layer is live in most routines from the day it ships —
-which is why precision, not coverage, is the budget, and why only three of the seven assists
-cost a turn.
+which is why precision, not coverage, is the budget, and why only four of the eight assists
+cost a turn (the one `hold` and the three `pre-finish` reminders).
 
 ## The payload axis, and what exists
 
@@ -180,14 +180,14 @@ contract. `PAYLOADS` names what works.
 ## Reaching a live instance
 
 The seed sync is ADD-ONLY: it installs a rule the live library is missing and never overwrites
-one, so a local edit always wins. All 26 rules already exist live, which means **a frontmatter
-block added to `library-seed/rules/*.md` reaches zero instances on its own.** Each batch of
-assists needs a one-shot `MIGRATION(expires=…)` that carries the block across — the first is
-`migrate_rule_assists.py`, and `problem-routing`'s came with a prose revision, so it rides
-`migrate_problem_routing_rule.py` (which replaces the whole file, and only while the live copy
-is still byte-identical to the seed it supersedes). It is idempotent, it skips a rule an operator has edited (a local
-edit outranks the seed there too), and it names everything it skips rather than passing over
-it quietly.
+one, so a local edit always wins. Every seeded rule already exists live, which means **a
+frontmatter block added to `library-seed/rules/*.md` reaches zero instances on its own.** Each
+batch of assists needs a one-shot `MIGRATION(expires=…)` that carries the block across; the
+batches so far have run and, like every migration here, been deleted once they converged. Such
+a migration is idempotent, skips a rule an operator has edited (a local edit outranks the seed
+there too), and names everything it skips rather than passing over it quietly. One that comes
+with a prose revision — `problem-routing`'s did — replaces the whole file, and only while the
+live copy is still byte-identical to the seed it supersedes.
 
 ## The eight
 
