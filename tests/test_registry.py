@@ -199,6 +199,26 @@ def test_scan_memo_sees_config_and_question_changes(make_routine, tmp_path):
     assert registry.scan(server)["memoq"].cfg.enabled is False
 
 
+def test_scan_memo_sees_the_recipe_appear_and_vanish(make_routine, tmp_path):
+    """`load_routine` reports a missing main.md as a problem, so main.md is one of the files
+    the config memo is keyed on. Keyed on routine.yaml + tuning.yaml alone, a recipe written
+    after the first scan kept reading "no main.md" until an unrelated config edit moved the
+    fingerprint — on the routine page, for as long as the daemon lived."""
+    d = make_routine(slug="recipe")
+    server = _server(tmp_path)
+
+    def missing() -> list[str]:
+        return [p for p in registry.scan(server)["recipe"].problems if "main.md" in p]
+
+    assert missing() == []
+    (d / "main.md").unlink()
+    assert missing(), "a recipe that vanished must be reported on the next scan"
+    (d / "main.md").write_text("# recipe\n", encoding="utf-8")
+    assert missing() == [], "…and one that arrived must stop being reported missing"
+    assert registry.info(server, server.routines_home, "recipe").problems == \
+        registry.scan(server)["recipe"].problems
+
+
 def test_scan_memo_prunes_deleted_dirs(make_routine, tmp_path):
     import shutil as sh
 
