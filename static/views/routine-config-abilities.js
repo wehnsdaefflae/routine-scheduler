@@ -70,12 +70,17 @@ export function abilitiesGroup(ctx) {
          "that fixes it inside that card. Only you can change any of this — a routine can never ",
          "grant itself anything. Takes effect at the next run."],
         abilities.node),
+      // Binding and unbinding both reach a LIVE run when they are sent through the rules
+      // endpoint (control.json add_rules / drop_rules, engine/switches.py) — the conversation
+      // header's picker does that. This page sends neither: a rule set here rides the one
+      // accept, which the server refuses while a run is active (api_settings.apply_settings).
       ...settingsSection({ title: "General rules", id: "general-rules" },
         ["the rules this routine reads before the situations they govern. Each states a ",
          "principle the run applies to its own case; the prose lives once in the library, so ",
-         "editing it there reaches every routine holding it. Binding one reaches a run already ",
-         "in flight, unbinding takes effect at the next run. A run can READ any rule (read_rule) ",
-         "but never change this set."],
+         "editing it there reaches every routine holding it. Binding or unbinding one is ",
+         "accepted like every setting on this page — only while no run is in flight — so either ",
+         "takes effect at the next run. A run can READ any rule (read_rule) but never change ",
+         "this set."],
         rules.node),
     ],
     more: [

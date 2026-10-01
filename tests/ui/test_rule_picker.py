@@ -83,3 +83,28 @@ def test_a_draft_picker_offers_no_live_run_controls(ui, ui_page):
     expect(panel.locator(".rule-bound.pending-drop")).to_have_count(1)   # staged, marked
     expect(panel.locator(".rule-erase")).to_be_hidden()
     expect(panel.locator(".rulepicker")).not_to_contain_text("run in flight")
+
+
+def test_the_rules_section_promises_a_run_in_flight_nothing(ui, ui_page):
+    """The section's own description said a rule bound here "reaches a run already in flight"
+    while an unbind waited for the next run. The engine takes both mid-run (control.json
+    add_rules / drop_rules, engine/switches.py) — but only from the rules endpoint the
+    conversation header posts to. A change made HERE rides the page's one accept, which the
+    server refuses while a run is active, so neither reaches the run in flight: both land at the
+    next run, and an accept tried during one writes nothing."""
+    path = ui.routines / "uir" / "routine.yaml"
+    before = yaml.safe_load(path.read_text(encoding="utf-8")).get("rules")
+    ui.seed_run("uir", "20260714-070000", "running")
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    ui_page.wait_for_selector(".rgroup-head")
+    ui_page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) "
+                     "d.open = true; }")
+    about = ui_page.locator("#sec-general-rules + .panel .set-desc")
+    expect(about).to_contain_text("either takes effect at the next run")
+    expect(about).not_to_contain_text("reaches a run already in flight")
+
+    panel = ui_page.locator("#sec-general-rules + .panel")
+    panel.locator('.avail-row[data-rule="git-checkpoint"] input[type="checkbox"]').check()
+    ui_page.locator(".accept-bar [data-accept]").click()
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("a run is active")
+    assert yaml.safe_load(path.read_text(encoding="utf-8")).get("rules") == before
