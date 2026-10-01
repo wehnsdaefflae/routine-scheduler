@@ -174,6 +174,11 @@ def _uncheckpointed_repo_write(s: Situation) -> bool:
     Fires on the FIRST such write only — the one-fire-per-run rule is what makes "no checkpoint
     yet" true without having to detect a checkpoint commit, which happens inside a util or a
     shell command where the engine sees a command string and an exit code, nothing more.
+
+    A repo found CLEAN is an undo point for the rest of the run, so it is remembered
+    (`loop.assist_undo_points`) and never asked about again: HEAD restores what the run found.
+    Asked afresh, the run's own first edit read as uncommitted work and its second edit into
+    the same clean repo was held — and every edit paid a `git status` until one was.
     """
     action = s.action or {}
     if action.get("kind") not in ("write_file", "edit_file"):
@@ -190,7 +195,12 @@ def _uncheckpointed_repo_write(s: Situation) -> bool:
     if within(routine_dir, path) or path == routine_dir:
         return False        # the engine commits this tree itself at run end
     repo = next((p for p in [path, *path.parents] if (p / ".git").exists()), None)
-    return repo is not None and _dirty(repo)
+    if repo is None or repo in s.loop.assist_undo_points:
+        return False
+    if _dirty(repo):
+        return True
+    s.loop.assist_undo_points.add(repo)
+    return False
 
 
 def _dirty(repo) -> bool:

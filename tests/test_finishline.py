@@ -52,6 +52,32 @@ def test_a_date_outcome_keeps_its_date_and_no_other_judge_does():
     assert finishline.problems(doc) == ["y: a date outcome needs its date (YYYY-MM-DD)"]
 
 
+def test_an_impossible_calendar_date_is_no_date_at_all():
+    """`2026-02-30` has the YYYY-MM-DD shape and names no day. Kept, it made every later
+    question to the calendar raise — inside the registry scan that lists every routine."""
+    doc = finishline.normalize({
+        "outcomes": [{"text": "x", "judge": "date", "date": "2026-02-30"}],
+        "until": "2026-13-01"})
+    assert doc["outcomes"][0]["date"] == "" and doc["until"] == ""
+    assert finishline.problems(doc) == ["x: a date outcome needs its date (YYYY-MM-DD)"]
+    assert finishline.reached(doc, DAY) == ""
+
+
+def test_a_hand_written_file_with_a_bad_date_or_no_ids_still_reads(tmp_path):
+    """The file is the operator's and can be edited by hand. A date that names no day reads as
+    none; an outcome with no id gets one, because the accounting owes an entry per open outcome
+    and an entry can only name a `g<n>`."""
+    finishline.path(tmp_path).parent.mkdir(parents=True)
+    finishline.path(tmp_path).write_text(json.dumps({
+        "outcomes": [{"text": "closes", "judge": "date", "date": "2026-02-30"},
+                     {"text": "approved", "judge": "you"}],
+        "until": "2026-02-31"}), encoding="utf-8")
+    doc = finishline.load(tmp_path)
+    assert [o["id"] for o in doc["outcomes"]] == ["g1", "g2"]
+    assert finishline.goal_reached(tmp_path, DAY) is False
+    assert [o["id"] for o in finishline.open_outcomes(doc)] == ["g2"]
+
+
 @pytest.mark.parametrize(("words", "expected"), [
     (["run: the PDF is submitted"], [("run", "the PDF is submitted", "")]),
     (["you: Mark is happy with it"], [("you", "Mark is happy with it", "")]),
@@ -317,8 +343,10 @@ def test_the_endpoint_shows_the_verdicts_the_last_runs_gave(api_client, make_rou
 
 @pytest.mark.parametrize(("body", "status"), [
     ({"until": "next week"}, 400),
+    ({"until": "2026-02-30"}, 400),                                  # the shape, but no day
     ({"outcomes": [{"text": "x", "judge": "robot"}]}, 400),
     ({"outcomes": [{"text": "x", "judge": "date"}]}, 400),
+    ({"outcomes": [{"text": "x", "judge": "date", "date": "2026-02-30"}]}, 400),
     ({"outcomes": [{"text": "x", "distance": "forged"}]}, 422),     # engine-owned, not accepted
     ({"goal": "x"}, 422),
 ])

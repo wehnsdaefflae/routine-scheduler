@@ -11,6 +11,7 @@ recorded instead). An enforcement that can hang a run is not enforcement.
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from rsched.endpoints.base import EndpointError
@@ -18,14 +19,14 @@ from rsched.engine import verifier
 
 
 class _Completion:
-    def __init__(self, parsed):
+    def __init__(self, parsed, text=""):
         self.parsed = parsed
         self.usage = {"in": 10, "out": 5}
-        self.text = ""
+        self.text = text
 
 
-def _loop(tmp_path, parsed=None, *, raises=None):
-    """A loop stub whose tool_call endpoint returns `parsed` (or raises)."""
+def _loop(tmp_path, parsed=None, *, raises=None, text=""):
+    """A loop stub whose tool_call endpoint returns `parsed` and `text` (or raises)."""
     calls: list[dict] = []
 
     class _Endpoint:
@@ -33,7 +34,7 @@ def _loop(tmp_path, parsed=None, *, raises=None):
             calls.append({"messages": messages, **kw})
             if raises is not None:
                 raise raises
-            return _Completion(parsed)
+            return _Completion(parsed, text)
 
     ctx = SimpleNamespace(
         routine=SimpleNamespace(dir=tmp_path, models={}), phase="",
@@ -58,6 +59,18 @@ def test_a_refuted_claim_is_returned_with_its_objection(tmp_path):
     got = verifier.refuted(loop, _claims("the PDF is verified"), "PDF verified")
     assert got == [{"id": "d1", "text": "the PDF is verified",
                     "evidence": "no action ever opened the PDF"}]
+
+
+def test_a_judge_that_answers_in_text_is_read(tmp_path):
+    """Every OpenAI-compatible adapter returns schema output as the reply TEXT and leaves
+    `parsed` empty. Reading `parsed` alone made the check a silent no-op on all of them: every
+    `met` was accepted unread."""
+    reply = json.dumps({"verdicts": [
+        {"id": "d1", "supported": False, "evidence": "no action ever opened the PDF"}]})
+    got = verifier.refuted(_loop(tmp_path, text=reply), _claims("the PDF is verified"), "x")
+    assert [o["id"] for o in got] == ["d1"]
+    fenced = f"Here is my judgement:\n```json\n{reply}\n```"
+    assert verifier.refuted(_loop(tmp_path, text=fenced), _claims("the PDF is verified"), "x")
 
 
 def test_a_supported_claim_is_not_returned(tmp_path):
@@ -118,9 +131,19 @@ def test_an_unavailable_endpoint_accepts_the_run_s_word(tmp_path):
     assert verifier.refuted(loop, _claims("a"), "done") == []
 
 
+def test_any_failure_of_the_subcall_accepts_rather_than_ending_the_run(tmp_path):
+    """It runs at the finish — an exception escaping here would turn a finished run into a
+    crashed one, with the summary unwritten."""
+    loop = _loop(tmp_path, raises=RuntimeError("adapter bug"))
+    assert verifier.refuted(loop, _claims("a"), "done") == []
+
+
 def test_an_unparseable_answer_accepts(tmp_path):
-    for parsed in (None, "not a dict", {"verdicts": "junk"}):
+    for parsed in (None, "not a dict", {"verdicts": "junk"}, {"verdicts": 5},
+                   {"verdicts": None}):
         assert verifier.refuted(_loop(tmp_path, parsed), _claims("a"), "done") == [], parsed
+    assert verifier.refuted(_loop(tmp_path, text="I think it is fine."), _claims("a"),
+                            "done") == []
 
 
 def test_a_claim_the_judge_did_not_mention_accepts(tmp_path):

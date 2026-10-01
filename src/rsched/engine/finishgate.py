@@ -8,6 +8,21 @@ from .control import drain_injections
 from .finish_guard import unbacked_action_claims
 
 
+def _defer(loop, ctx, message: str, **why) -> None:
+    """Set this finish aside for one turn — the shape every rung shares (the R108 deferral).
+
+    The observation records the rung's own keys (`why` — what the console's transcript reads
+    to name the rung) AND the message, because the message is what the model read: a resumed
+    leg replays the transcript through `format_observation`, which renders the stored message
+    verbatim. Without it the replay showed the bare payload as JSON — the missing accounting
+    ids, the refuted claims and the rule's line all gone from the prompt the run resumed with.
+    """
+    ctx.transcript.event("observation", {"kind": "finish", "rejected": True, **why,
+                                         "message": message}, turn=ctx.turn)
+    loop.messages.append({"role": "user", "content": message})
+    ctx.write_status()
+
+
 def _owed(loop, ctx) -> tuple[list[dict], list[dict]] | None:
     """`(done_when_lines, open_outcomes)` a finish must account for — None when it owes
     nothing: a child, a follow-up after the run already ended, or a routine with neither a
@@ -56,15 +71,11 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     if (ctx.depth == 0 and not loop._finish_reserved
             and inbox.has_pending_messages(ctx.routine.dir,
                                            vias=inbox.LIVE_MESSAGE_VIAS)):
-        obs = {"kind": "finish", "rejected": True, "pending_user_input": True}
-        ctx.transcript.event("observation", obs, turn=ctx.turn)
-        loop.messages.append({"role": "user", "content":
-            "OBSERVATION (finish deferred): a user message arrived while "
-            "you were finishing — it is delivered below instead of being "
-            "dropped. Address it, then finish again with an updated "
-            "summary."})
+        _defer(loop, ctx,
+               "OBSERVATION (finish deferred): a user message arrived while you were "
+               "finishing — it is delivered below instead of being dropped. Address it, then "
+               "finish again with an updated summary.", pending_user_input=True)
         drain_injections(loop)
-        ctx.write_status()
         return None   # deferred — the loop goes round again
     # THE ACCOUNTING: one entry per Done-when line of the recipe and per open outcome of the
     # finish line, as a FIELD — checked for presence and shape only (semantics stay the
@@ -76,10 +87,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     if owed is not None and not loop._finish_reserved:
         found = accounting.problems(verdicts, *owed)
         if any(found.values()):
-            obs = {"kind": "finish", "rejected": True, "accounting": found}
-            ctx.transcript.event("observation", obs, turn=ctx.turn)
-            loop.messages.append({"role": "user", "content": accounting.deferral(found)})
-            ctx.write_status()
+            _defer(loop, ctx, accounting.deferral(found), accounting=found)
             return None   # deferred — the loop goes round again
     # A general rule the routine PRACTISES whose moment is the ending itself (a ledger
     # entry not written, a review with no denominator). Same deferral shape as the rungs
@@ -89,10 +97,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     if ctx.depth == 0 and not loop._finish_reserved:
         from . import assist
         if message := assist.at_finish(loop, action):
-            obs = {"kind": "finish", "rejected": True, "assist": True}
-            ctx.transcript.event("observation", obs, turn=ctx.turn)
-            loop.messages.append({"role": "user", "content": message})
-            ctx.write_status()
+            _defer(loop, ctx, message, assist=True)
             return None   # deferred — the loop goes round again
     if (action["status"] == "ok" and loop.executed_actions == 0 and ctx.depth == 0
             and not loop._finish_reserved):
@@ -103,14 +108,11 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         # returns to a loop whose budget is still violated, which force-finishes with an
         # engine string — so the guard costs the run the very summary the reserve exists
         # to author. A reserved turn that reached here executed nothing all run anyway.
-        obs = {"kind": "finish", "rejected": True}
-        ctx.transcript.event("observation", obs, turn=ctx.turn)
-        loop.messages.append({"role": "user", "content":
-            "OBSERVATION (finish REJECTED): you have not executed a single "
-            "action this run, so the workflow cannot be complete and none of "
-            "your claims have observations behind them. Start at workflow "
-            "step 1 and do the actual work, one action per turn."})
-        ctx.write_status()
+        _defer(loop, ctx,
+               "OBSERVATION (finish REJECTED): you have not executed a single action this "
+               "run, so the workflow cannot be complete and none of your claims have "
+               "observations behind them. Start at workflow step 1 and do the actual work, "
+               "one action per turn.")
         return None   # deferred — the loop goes round again
     if action["status"] == "ok" and ctx.depth == 0:
         # Claim guard (D31=B): a top-level ok-finish whose summary claims a
@@ -131,16 +133,11 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                            f"{', '.join(unbacked)} with no such action this run — the "
                            "finish stands because rejecting it would lose the summary"})
         elif unbacked:
-            obs = {"kind": "finish", "rejected": True,
-                   "unbacked_claims": unbacked}
-            ctx.transcript.event("observation", obs, turn=ctx.turn)
-            names = ", ".join(unbacked)
-            loop.messages.append({"role": "user", "content":
-                f"OBSERVATION (finish REJECTED): your summary states you "
-                f"performed {names}, but no such action was taken this run. "
-                f"Either actually take the action now, or remove that claim "
-                f"from your summary, then finish again."})
-            ctx.write_status()
+            _defer(loop, ctx,
+                   f"OBSERVATION (finish REJECTED): your summary states you performed "
+                   f"{', '.join(unbacked)}, but no such action was taken this run. Either "
+                   "actually take the action now, or remove that claim from your summary, "
+                   "then finish again.", unbacked_claims=unbacked)
             return None   # deferred — the loop goes round again
     # The accounting proves each line was ANSWERED, not that the answer is true. Each `met`
     # claim is checked once: deterministically first (a Done-when line whose producing stage
@@ -160,12 +157,8 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         fresh = [o for o in objections if o["id"] not in loop._challenged]
         if fresh:
             loop._challenged.update(o["id"] for o in fresh)
-            obs = {"kind": "finish", "rejected": True,
-                   "claims_unsupported": [o["id"] for o in fresh]}
-            ctx.transcript.event("observation", obs, turn=ctx.turn)
-            loop.messages.append({"role": "user",
-                                  "content": verifier.challenge_message(fresh)})
-            ctx.write_status()
+            _defer(loop, ctx, verifier.challenge_message(fresh),
+                   claims_unsupported=[o["id"] for o in fresh])
             return None   # deferred — the loop goes round again
         disputes = {o["id"]: o["evidence"] for o in objections}
     loop.final_summary = action["summary"]

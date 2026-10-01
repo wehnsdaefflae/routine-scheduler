@@ -128,6 +128,20 @@ def test_a_date_outcome_whose_day_has_come_is_reached(make_routine, tmp_path):
     assert registry.scan(_server(tmp_path))["closes"].retired is True
 
 
+def test_a_date_that_names_no_day_cannot_take_the_catalog_down(make_routine, tmp_path):
+    """`2026-02-30` has the YYYY-MM-DD shape. Kept, `reached` raised on it inside
+    `registry.scan` — the listing every page and the scheduler's tick read — so one routine's
+    hand-edited finish line stopped them all. It now reads as no date at all."""
+    make_routine(slug="healthy")
+    d = make_routine(slug="baddate")
+    finishline.path(d).parent.mkdir(parents=True, exist_ok=True)
+    finishline.path(d).write_text(
+        '{"outcomes": [{"id": "g1", "text": "closes", "judge": "date", "date": "2026-02-30"}],'
+        ' "until": "2026-02-31"}', encoding="utf-8")
+    catalog = registry.scan(_server(tmp_path))
+    assert catalog["baddate"].retired is False and catalog["healthy"].retired is False
+
+
 def test_a_future_until_leaves_the_routine_running(make_routine, tmp_path):
     d = make_routine(slug="later")
     finishline.save(d, {"outcomes": [], "until": "2999-01-01"}, now=NOW)

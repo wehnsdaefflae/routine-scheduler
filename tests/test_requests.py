@@ -81,6 +81,26 @@ def test_request_denial_redirects_already_available_entities(tmp_path):
     assert request_denial(lp, _ask("runs:all")) == []
 
 
+def test_holding_one_half_of_util_authoring_leaves_the_other_requestable(tmp_path):
+    """Creating a util needs `write_util`, revising one `revise_util`; the creation denial
+    routes to `action:write_util`. The availability check asked `allows_kind`, which is true
+    when EITHER half is held — so a routine holding only `revise_util` was told the very
+    request its denial named was "already enabled": a dead end."""
+    lp = _loop(tmp_path, grants=GrantPolicy(actions=frozenset({"revise_util"})))
+    assert request_denial(lp, _ask("action:write_util")) == []
+    assert "already enabled" in request_denial(lp, _ask("action:revise_util"))[0]
+
+
+def test_a_structural_kind_is_never_put_to_the_user(tmp_path):
+    """`detach` is gated but structural: a root conversation holds it from setup and its
+    handler refuses it anywhere else. A grant decision for it would cost the user a click for
+    a capability no grant can make usable — and the teaching copy must not list it either."""
+    problems = request_denial(_loop(tmp_path), _ask("action:detach"))
+    assert problems and "exists only in a root conversation" in problems[0]
+    taught = request_denial(_loop(tmp_path), _ask("action:create_routine"))[0]
+    assert "write_util" in taught and "detach" not in taught
+
+
 def test_request_denial_names_unreserved_and_missing_utils(tmp_path):
     from rsched import utils_lib
 
@@ -646,6 +666,32 @@ def test_capabilities_digest_teaches_once_grants_and_tombstones(make_routine, tm
     digest = capabilities_digest(ctx)
     assert "Granted for THIS RUN only" in digest
     assert "fs-write:/tmp/granted" in digest
+
+
+def test_capabilities_digest_names_write_rule_with_its_own_dial(make_routine, tmp_path):
+    """Every emittable gated kind a run holds is named on the capabilities line — write_rule
+    was not, so a routine holding only rule-authoring read "(none beyond the base kinds)", and
+    nothing said which approval its writes would wait on."""
+    from rsched import utils_lib
+    from rsched.config import ServerConfig, load_routine
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.capabilities import capabilities_digest
+    from rsched.engine.run_context import RunContext
+    from rsched.engine.transcript import Transcript
+
+    d = make_routine(slug="ruler")
+    cfg, _ = load_routine(d)
+    server = ServerConfig()
+    server.libraries_home = tmp_path / "lib"
+    utils_lib.ensure_library(server.libraries_home)
+    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts=TS,
+                     run_dir=d / "runs" / TS, transcript=Transcript(tmp_path / "t3.jsonl"),
+                     budgets=Budgets.from_config(cfg.budgets))
+    ctx.grants = GrantPolicy(actions=frozenset({"write_rule"}), rule_confirm="creations")
+    digest = capabilities_digest(ctx)
+    assert "write_rule (author or revise a general rule" in digest
+    assert "NEW rules need approval, revisions do not" in digest
+    assert "none beyond the base kinds" not in digest
 
 
 def test_a_mid_leg_write_recipe_grant_actually_unlocks_the_recipe():

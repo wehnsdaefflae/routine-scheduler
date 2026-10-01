@@ -11,8 +11,10 @@ from .reminders import REACHES
 
 MAX_REGEX_CHARS = 200
 MAX_DESCRIPTION_CHARS = 400
-_LEAD = re.compile(r"^\^([a-z_]+)([^a-z_]?)")
+_WORD = re.compile(r"[a-z_]+")
 _LITERAL = re.compile(r"[^.^$*+?{}\[\]\\|()]*")
+#: The quantifiers that let the character before them be absent (`x?`, `x*`, `x{0,1}`).
+_OPTIONAL = ("?", "*", "{")
 _FORMS = ("the forms are 'util:<name> <args…>', 'script:<name> <args…>', 'shell: <command>' "
           "and '<kind> <field>=<value>'")
 
@@ -41,43 +43,64 @@ def regex_problem(pattern: object) -> str | None:
 def canon_problem(pattern: str) -> str | None:
     """A pattern anchored on a form no action renders as can never fire — the commonest way a
     reminder died (`^script name=…`, a script's args after `name=`, an edit's anchor after its
-    path). Only a literal lead is judged; a pattern that opens with a group is the author's.
+    path, `^shell:rm` where the rendering is `shell: rm`).
+
+    Only the LITERAL lead is judged: the text after `^` up to where the pattern turns to regex
+    syntax. A pattern that opens with a group, or turns to a class or a wildcard right after
+    the kind (`^shell.*rm -rf`, `^util[: ]`), is the author's to aim — and it can fire, so
+    refusing it would turn a working caution away. That is what judging the one character
+    after the kind as if it were literal did.
     """
     from .engine.actionschema import KINDS
 
-    m = _LEAD.match(pattern)
+    if not pattern.startswith("^"):
+        return None
+    lead = _literal(pattern[1:])
+    m = _WORD.match(lead)
     if not m:
         return None
-    kind, sep = m[1], m[2]
+    kind, rest = m[0], lead[m.end():]
     if kind not in KINDS:
         # a prefix of kind names is fine: `^write` holds write_file and write_util alike
-        prefix = not sep and any(k.startswith(kind) for k in KINDS)
+        prefix = not rest and any(k.startswith(kind) for k in KINDS)
         return None if prefix else (f"remind.regex starts with {kind!r}; no action renders "
                                     f"that way — {_FORMS}")
     if kind in ("util", "script", "shell"):
-        return _colon_form(kind, sep)
-    return _field_form(kind, pattern[m.end():]) if sep == " " else None
+        return _colon_form(kind, rest)
+    return _field_form(kind, rest)
 
 
-def _colon_form(kind: str, sep: str) -> str | None:
-    if sep in ("", ":"):
+def _literal(text: str) -> str:
+    """What `text` matches literally before it turns to regex syntax — minus its last character
+    when a quantifier lets that one be absent.
+    """
+    lit = _LITERAL.match(text)
+    lead = lit[0] if lit else ""
+    return lead[:-1] if lead and text[len(lead):len(lead) + 1] in _OPTIONAL else lead
+
+
+def _colon_form(kind: str, rest: str) -> str | None:
+    """After a callable kind, the literal text must be on its way to `util:` / `script:` /
+    `shell: ` — the colon, and for a shell command the space after it.
+    """
+    head = ": " if kind == "shell" else ":"
+    if head.startswith(rest) or rest.startswith(head):
         return None
     what = "<command>" if kind == "shell" else "<name> <args…>"
     return f"a {kind} call renders as '{kind}:{' ' if kind == 'shell' else ''}{what}'"
 
 
-def _field_form(kind: str, tail: str) -> str | None:
-    """After `<kind> `, the literal text must be on its way to `<field>=`; a pattern that turns
-    to regex syntax there (`.*`) is the author's to aim.
+def _field_form(kind: str, rest: str) -> str | None:
+    """After `<kind>`, the literal text must be on its way to ` <field>=`; a kind with no
+    identifying field renders as its bare name, so nothing may follow it.
     """
     from .engine.actionschema import BRIEF_FIELD
 
     fields = ("path", "paths") if kind == "read_file" else (BRIEF_FIELD.get(kind, ""),)
     if not fields[0]:
-        return f"a {kind} action renders as just '{kind}' — nothing follows it to match"
-    lit = _LITERAL.match(tail)
-    lead = lit[0] if lit else ""
-    if lead and not any(f"{f}=".startswith(lead) or lead.startswith(f"{f}=") for f in fields):
+        return (None if not rest else
+                f"a {kind} action renders as just '{kind}' — nothing follows it to match")
+    if rest and not any(f" {f}=".startswith(rest) or rest.startswith(f" {f}=") for f in fields):
         return (f"a {kind} action renders as '{kind} {fields[0]}=<value>' and carries nothing "
                 "else (no content, no anchor text) — match on the value")
     return None

@@ -62,6 +62,34 @@ def is_failure(obs: dict) -> bool:
     return any(isinstance(f, dict) and f.get("error") for f in obs.get("files") or [])
 
 
+#: The kinds whose own renderer words a REFUSAL — the action never reached the executor, so its
+#: observation carries a `reason` instead of a result. Every other kind's renderer reads the
+#: fields of a dispatch RESULT (`exit`, `bytes`, `path`, `qid` …), which a refused action never
+#: produced: the reserved finish turn's refusal of a non-finish action (`loop.py`) raised
+#: KeyError in fifteen of them, and since a resume re-renders every stored observation, that
+#: left the run unresumable — a conversation could not take its next message.
+_OWN_REFUSALS = frozenset({"spawn", "subtask", "detach", "create_routine", "manage_lane"})
+
+
+def _not_executed(obs: dict, kind: str) -> str | None:
+    """The wording of an observation that reports an action the engine did NOT execute — a
+    hold, a finish the gate set aside, a refusal recorded before dispatch. None for a dispatch
+    result, which the per-kind renderers below word.
+    """
+    if kind in obs_hold.RENDERERS:
+        # The family a hold belongs to: the action was intercepted BEFORE execution, which is
+        # the entire point. Two sources word it differently and both live in obs_hold;
+        # engine/hold.py owns the mechanism.
+        return obs_hold.RENDERERS[kind](obs)
+    if kind == "finish" and obs.get("rejected") and obs.get("message"):
+        # A finish the gate set aside (engine/finishgate.py): the deferral message IS what the
+        # model read, stored beside the rung's own keys so a resumed leg replays it.
+        return str(obs["message"])
+    if obs.get("rejected") and obs.get("reason") and kind not in _OWN_REFUSALS:
+        return f"OBSERVATION ({kind} REJECTED): {obs['reason']}"
+    return None
+
+
 def _run_body(obs: dict) -> str:
     """The body every EXECUTED command shares — util, script and shell alike: what it printed,
     plus the pointer to whatever the observation could not carry. One copy, so the three
@@ -82,11 +110,8 @@ def _run_body(obs: dict) -> str:
 # and lives in ONE place per kind — a dispatch table would only scatter the strings.
 def format_observation(obs: dict) -> str:  # noqa: PLR0911
     kind = obs.get("kind")
-    if kind in obs_hold.RENDERERS:
-        # The one observation FAMILY that is not a dispatch result: the action was
-        # intercepted BEFORE execution, which is the entire point. Two sources word it
-        # differently and both live in obs_hold; engine/hold.py owns the mechanism.
-        return obs_hold.RENDERERS[kind](obs)
+    if (not_run := _not_executed(obs, str(kind or ""))) is not None:
+        return not_run
     if kind == "shell":
         # No advisory tail: a non-zero exit here is usually the answer, not a mistake (do_shell).
         where = f", in {obs['cwd']}" if obs.get("cwd") else ""

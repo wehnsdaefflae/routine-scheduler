@@ -13,7 +13,7 @@ full rationale stays where it was, read on demand with `read_rule`.
 
 Why this is the tractable half. A mechanical check of COMPLIANCE is impossible for most
 rules: a compliant run and a violating one can leave byte-identical traces, differing only in
-the reasoning that produced them, and reasoning is never in the trace. `root-cause-fix` is the
+the reasoning that produced them, and reasoning is never in the trace. `fix-the-cause` is the
 clean example — whether a diff hit the cause or the symptom is a fact about future inputs, not
 about anything observable now. But RELEVANCE is a property of the situation, and the situation
 IS in the trace. So the rule you can never check, you can still TIME.
@@ -211,7 +211,10 @@ def record_fire(routine_dir: Path, assist: Assist) -> int:
     path = state_path(routine_dir)
     raw = read_json(path, {})
     counts = raw if isinstance(raw, dict) else {}
-    n = int(counts.get(assist.key) or 0) + 1
+    try:
+        n = int(counts.get(assist.key) or 0) + 1
+    except (TypeError, ValueError):
+        n = 1        # a count a hand edit broke starts over rather than failing the turn
     counts[assist.key] = n
     try:
         atomic_write_json(path, dict(sorted(counts.items())))

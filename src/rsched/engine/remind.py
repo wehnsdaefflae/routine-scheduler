@@ -208,10 +208,10 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
     finish path, where every rung of the finish gate hands the SAME finish back for revision
     and the model re-emits it with its side fields intact. The payload is then applied at most
     once per run, which is the rule this codebase already applies to its own re-emissions
-    (`reminder_held`: re-emitting a held action is the confirmation, not a second hold; the
-    claim verifier's one challenge per claimed line). Without it a finish deferred three times
-    records one hold's label three times, and the tally the whole layer is justified by —
-    `fires` minus the labels — goes negative.
+    (`loop.holds`, engine/hold.py: re-emitting a held action is the confirmation, not a second
+    hold; the claim verifier's one challenge per claimed line). Without it a finish deferred
+    three times records one hold's label three times, and the tally the whole layer is
+    justified by — `fires` minus the labels — goes negative.
     """
     if replayable and (action.get("remind") or action.get("remind_feedback")):
         key = json.dumps([action.get("remind"), action.get("remind_feedback")], sort_keys=True)
@@ -289,6 +289,13 @@ def _apply_op(loop, op: dict, poll_s: float) -> str:
         return (f"{rid} is a {target.scope} reminder and a {verb} cannot move it — to promote a "
                 "proven local reminder, `add` it with scope global (its evidence is per-routine "
                 "and starts fresh there), then delete the local one")
+    # The write gate asked the dial about the scope the op NAMED, and a revise or delete need
+    # not name one (it defaults to local) — while the store it writes is the TARGET's. Without
+    # asking again here, a routine at `local` could rewrite or remove a curated reminder in
+    # the library every routine reads, which is the curator's setting alone.
+    if (grants := loop.ctx.grants) is not None and (
+            denial := grants.reminder_denial(target.scope)):
+        return f"{rid} is a {target.scope} reminder, so nothing was {verb}d — {denial}"
     if target.scope == "global" and (gate := _approve_global(loop, verb, target, op, poll_s)):
         return gate
     if verb == "delete":
@@ -313,14 +320,20 @@ def _add(loop, op: dict, scope: str, poll_s: float) -> str:
     if scope == "local" and len(local) >= store.MAX_LOCAL:
         return (f"this routine already holds {store.MAX_LOCAL} local reminders, the cap — "
                 "delete one that its tally shows is not earning its turns before adding another")
+    # The store this reminder joins, as (id, pattern) pairs. For the curated store that is every
+    # record in the library, not only the ones that reach THIS routine: a `listed` reminder it
+    # does not list still owns its id and its pattern there — and an id picked against the live
+    # set alone could be that one's, which `write_global` then overwrote.
+    joined = ([(rec["id"], rec["regex"]) for rec in store.records(ctx.server.reminders_home)]
+              if scope == "global" else [(r.id, r.regex) for r in local])
     # Scoped to the SAME store on purpose. A local reminder shadowing a global one with the
     # same pattern is the union's designed precedence, and PROMOTION is exactly that overlap
     # for one turn — `add` the global copy, then delete the local one. Checking across both
     # stores made the engine's own promotion instructions impossible to follow.
-    if any(r.regex == op.get("regex") and r.scope == scope for r in loop.reminders):
+    if any(regex == op.get("regex") for _rid, regex in joined):
         return (f"a {scope} reminder with that exact pattern is already live — revise it "
                 "instead of adding a second one that would hold the same actions")
-    rid = store.new_id(ctx.run_ts, {r.id for r in loop.reminders})
+    rid = store.new_id(ctx.run_ts, {r.id for r in loop.reminders} | {i for i, _ in joined})
     reminder = Reminder(id=rid, regex=str(op["regex"]), description=str(op["description"]),
                         scope=scope, created_run=ctx.run_id, stats=store.blank_stats(),
                         reach=str(op.get("reach") or "") if scope == "global" else "")

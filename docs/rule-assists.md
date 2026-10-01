@@ -143,10 +143,11 @@ three modules, one of them negatively — exactly the check a second hold kind w
 
 ## Guards
 
-An assist fires **at most once per run**. That is the rule `reminder_held` (one hold per
-action string) and the claim verifier's `_challenged` set (one challenge per claimed line)
-already apply to their own interventions, and it exists for the same reason: a trigger that
-can fire twice on one situation livelocks a stubborn model into a dead budget.
+An assist fires **at most once per run**. That is the rule the hold ledger `loop.holds` (one
+hold per source and action string) and the claim verifier's `_challenged` set (one challenge
+per claimed line) already apply to their own interventions, and it exists for the same
+reason: a trigger that can fire twice on one situation livelocks a stubborn model into a dead
+budget.
 
 A predicate that raises is **inert, never fatal**. A library document names the check; the
 run's work is not this layer's to lose.
@@ -163,7 +164,11 @@ turns. The four-way label lands with the hold payload, where a turn is actually 
 An assist is part of the rule, not a permission of its own. The user already decided this
 routine practises this rule — `effect.when` is exactly that decision — and an assist changes
 only WHEN its line is read, never what the routine may do. Nothing here can reach a routine
-that does not hold the rule.
+that does not hold the rule — mid-run included: a rule the user binds to a live run brings its
+assists with the note that delivers its prose, and one they unbind takes its assists with it
+(`assist.rules_bound` / `rules_unbound`, called from `engine/switches.py`). An unbind that left
+them firing had the rule still holding actions and deferring the finish of a run it no longer
+bound.
 
 `DEFAULT_RULES` is not empty, so this layer is live in most routines from the day it ships —
 which is why precision, not coverage, is the budget, and why only four of the eight assists
@@ -207,6 +212,11 @@ AND an irreversible cost to skipping. It fires on the FIRST such write only, whi
 makes "no checkpoint yet" true without having to DETECT a checkpoint commit — that happens
 inside a util or a shell command, where the engine sees a command string and an exit code and
 nothing more. It is overridable like every payload: re-emit the action and it runs.
+
+A tree clean at HEAD is already an undo point, so a write into one is not held — and it stays
+one for the whole run, because HEAD restores what the run found. The predicate remembers each
+repo it found clean (`loop.assist_undo_points`); asking `git status` afresh at every write read
+the run's OWN first edit as uncommitted work, and held its second edit into the same clean repo.
 
 Three predicates read signals the engine already keeps, which is why they are cheap:
 `asks-piling-up` reads `ctx.asks_deferred` (the churn telemetry for a decision thrown over the

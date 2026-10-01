@@ -1,11 +1,11 @@
 """Turn-boundary SWITCHES — what the user changed while the run was already going.
 
-Split out of `control.py` (F393). One discipline, four signals (model, deliberation, bound
-rules, config): the WEB layer writes `control.json`, the engine only ever reads it, and an
-applied-ts ledger stops a resumed leg re-firing a stale signal. The composed prompt is
-immutable under the caching contract, so a switch reaches the model as an APPENDED engine note
-rather than a rewrite — which is also why the run can see, in its own transcript, that the
-ground moved under it.
+Split out of `control.py` (F393). One discipline, five signals (a model switch, a deliberation
+switch, a bound rule, an unbound rule, a config change): the WEB layer writes `control.json`,
+the engine only ever reads it, and an applied-ts ledger stops a resumed leg re-firing a stale
+signal. The composed prompt is immutable under the caching contract, so a switch reaches the
+model as an APPENDED engine note rather than a rewrite — which is also why the run can see, in
+its own transcript, that the ground moved under it.
 """
 
 from __future__ import annotations
@@ -13,22 +13,21 @@ from __future__ import annotations
 import logging
 
 from ..config import DELIBERATION_LEVELS
-from ..paths import read_json
-from . import deliberation, enginenote
+from ..paths import atomic_write_json, read_json
+from . import assist, deliberation, enginenote
 
 log = logging.getLogger("rsched.control")
-
 
 
 def _applied_path(loop):
     return loop.ctx.root_run_dir / "control-applied.json"
 
+
 def load_applied_baselines(loop) -> None:
     """Seed the mid-run-switch edge-triggers from the run's applied ledger. control.json is
     web-owned (the engine never writes it), so a consumed signal can't be cleared there —
-    without this ledger every RESUME leg would re-fire the run's stale switch_model /
-    set_deliberation / add_rules signals (re-pinning models the user has since changed
-    back, and re-injecting the same engine notes every leg).
+    without this ledger every RESUME leg would re-fire the run's stale signals (re-pinning
+    models the user has since changed back, and re-injecting the same engine notes every leg).
     """
     applied = read_json(_applied_path(loop))
     if isinstance(applied, dict):
@@ -38,27 +37,33 @@ def load_applied_baselines(loop) -> None:
         loop._last_rule_drop_ts = str(applied.get("drop_rules") or "")
         loop._last_config_ts = str(applied.get("config_change") or "")
 
-def _mark_applied(loop, signal: str, ts: str) -> None:
-    from ..paths import atomic_write_json
 
+def _fresh(loop, signal: str, last_ts: str) -> dict | None:
+    """The payload of `signal` when control.json carries one newer than `last_ts` — the `ts`
+    this run last applied — recorded in the applied ledger; else None. The edge-trigger every
+    signal shares: the engine never has to write control.json, which stays web-owned. The
+    caller advances its own `last_ts` from the payload.
+    """
+    obj = read_json(loop.ctx.root_run_dir / "control.json")
+    sw = obj.get(signal) if isinstance(obj, dict) else None
+    if not isinstance(sw, dict) or not sw.get("ts") or str(sw["ts"]) == last_ts:
+        return None
     applied = read_json(_applied_path(loop))
     applied = applied if isinstance(applied, dict) else {}
-    applied[signal] = ts
+    applied[signal] = str(sw["ts"])
     atomic_write_json(_applied_path(loop), applied)
+    return sw
+
 
 def apply_model_switch(loop) -> None:
     """Turn-boundary: honour a mid-run model switch written to control.json by the web layer.
-    Edge-triggered on the signal's `ts` so the engine never has to write control.json (which
-    stays web-owned). The switch lands on the NEXT completion, since for_model re-resolves
-    ctx.routine.models every turn — the model, its context size, and effort all self-correct.
+    The switch lands on the NEXT completion, since for_model re-resolves ctx.routine.models
+    every turn — the model, its context size, and effort all self-correct.
     """
     ctx = loop.ctx
-    obj = read_json(ctx.root_run_dir / "control.json")
-    sw = obj.get("switch_model") if isinstance(obj, dict) else None
-    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_switch_ts:
+    if (sw := _fresh(loop, "switch_model", loop._last_switch_ts)) is None:
         return
     loop._last_switch_ts = str(sw["ts"])
-    _mark_applied(loop, "switch_model", str(sw["ts"]))
     applied = []
     for kind in ("main", "tool_call", "uncensored"):
         name = sw.get(kind)   # a catalog model NAME; roles re-resolve every turn via for_model
@@ -69,25 +74,23 @@ def apply_model_switch(loop) -> None:
         enginenote.append(loop, "model switched mid-run: " + "; ".join(applied)
                           + ". Continue the run on the new model.")
 
+
 def apply_deliberation_switch(loop) -> None:
     """Turn-boundary: honour a mid-run deliberation switch written to control.json by the
-    web layer. Same edge-trigger discipline as apply_model_switch — the engine never
-    writes control.json. The composed prompt is immutable (prompt-caching contract), so
-    the new say contract reaches the model as an appended engine note instead.
+    web layer. The composed prompt is immutable (prompt-caching contract), so the new say
+    contract reaches the model as an appended engine note instead.
     """
     ctx = loop.ctx
-    obj = read_json(ctx.root_run_dir / "control.json")
-    sw = obj.get("set_deliberation") if isinstance(obj, dict) else None
-    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_deliberation_ts:
+    if (sw := _fresh(loop, "set_deliberation", loop._last_deliberation_ts)) is None:
         return
     loop._last_deliberation_ts = str(sw["ts"])
-    _mark_applied(loop, "set_deliberation", str(sw["ts"]))
     level = sw.get("level")
     if level not in DELIBERATION_LEVELS or level == ctx.deliberation:
         return
     note = deliberation.switch_note(ctx.deliberation, level)
     ctx.deliberation = level
     enginenote.append(loop, note)
+
 
 def apply_config_change(loop) -> None:
     """Turn-boundary: a config PATCH made while this run is LIVE (F337).
@@ -105,13 +108,9 @@ def apply_config_change(loop) -> None:
     """
     from ..configflow import ADOPTABLE, change_note
 
-    ctx = loop.ctx
-    obj = read_json(ctx.root_run_dir / "control.json")
-    sw = obj.get("config_change") if isinstance(obj, dict) else None
-    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_config_ts:
+    if (sw := _fresh(loop, "config_change", loop._last_config_ts)) is None:
         return
     loop._last_config_ts = str(sw["ts"])
-    _mark_applied(loop, "config_change", str(sw["ts"]))
     fields = [str(f) for f in (sw.get("fields") or [])]
     raw_values = sw.get("values")
     values: dict = raw_values if isinstance(raw_values, dict) else {}
@@ -122,6 +121,7 @@ def apply_config_change(loop) -> None:
             _adopt(loop, field, values.get(field))
     if note := change_note(fields, values):
         enginenote.append(loop, note)
+
 
 def _adopt(loop, field: str, value: object) -> None:
     """Apply ONE live-classified field to the running context. Best-effort per field: a value
@@ -152,26 +152,25 @@ def _adopt(loop, field: str, value: object) -> None:
         log.warning("config_change: could not adopt %r live (%s) — it lands at the next run",
                     field, exc)
 
+
 def apply_rule_additions(loop) -> None:
     """Turn-boundary: honour general rules the USER bound to a LIVE run from the web layer.
 
-    Same edge-trigger discipline as the model/deliberation switches — the engine never writes
-    control.json. Recording the slug in routine.yaml is the web layer's job (rules.py); what
-    cannot wait is the prose reaching the model, and the composed prompt is immutable
-    (prompt-caching contract), so each added rule arrives as an appended engine note read
-    straight from the library. From the next run it is an ordinary standing practice.
+    Recording the slug in routine.yaml is the web layer's job (rules.py); what cannot wait is
+    the prose reaching the model, and the composed prompt is immutable (prompt-caching
+    contract), so each added rule arrives as an appended engine note read straight from the
+    library — and its assists start firing with it (`assist.rules_bound`). From the next run it
+    is an ordinary standing practice.
     """
     from .. import library_docs
 
     ctx = loop.ctx
-    obj = read_json(ctx.root_run_dir / "control.json")
-    sw = obj.get("add_rules") if isinstance(obj, dict) else None
-    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_rules_ts:
+    if (sw := _fresh(loop, "add_rules", loop._last_rules_ts)) is None:
         return
     loop._last_rules_ts = str(sw["ts"])
-    _mark_applied(loop, "add_rules", str(sw["ts"]))
-    for slug in sw.get("slugs") or []:
-        if not isinstance(slug, str) or slug in ctx.consulted_rules:
+    slugs = [s for s in (sw.get("slugs") or []) if isinstance(s, str)]
+    for slug in slugs:
+        if slug in ctx.consulted_rules:
             continue
         raw = library_docs.read_doc(ctx.server.rules_home, slug)
         if raw is None:
@@ -181,6 +180,7 @@ def apply_rule_additions(loop) -> None:
         note = (f"the user bound the general rule {slug!r} to this routine — it applies from "
                 f"now on; every later run holds it too:\n\n{text}")
         enginenote.append(loop, note)
+    assist.rules_bound(loop, slugs)
 
 
 # The two carriers of a rule's prose inside a live thread. A bound rule is NOT inlined in the
@@ -198,7 +198,8 @@ def apply_rule_drop(loop) -> None:
     reasoning that prose already in a context cannot be unsaid. That is true of the TEXT and
     false of its authority: the run can simply be told the rule no longer binds, which costs
     one appended note and nothing else. So an unbind now takes effect immediately, symmetric
-    with a bind.
+    with a bind — and the rule's assists stop with it (`assist.rules_unbound`), or the rule
+    would go on holding actions and deferring the finish of a run it no longer binds.
 
     `erase` is the escalation, for when the prose itself is the problem rather than its
     standing. It rewrites the messages that carry the rule into a tombstone — content, never
@@ -209,15 +210,13 @@ def apply_rule_drop(loop) -> None:
     things allowed to break it.
     """
     ctx = loop.ctx
-    obj = read_json(ctx.root_run_dir / "control.json")
-    sw = obj.get("drop_rules") if isinstance(obj, dict) else None
-    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_rule_drop_ts:
+    if (sw := _fresh(loop, "drop_rules", loop._last_rule_drop_ts)) is None:
         return
     loop._last_rule_drop_ts = str(sw["ts"])
-    _mark_applied(loop, "drop_rules", str(sw["ts"]))
     slugs = [s for s in (sw.get("slugs") or []) if isinstance(s, str)]
     if not slugs:
         return
+    assist.rules_unbound(loop, slugs)
     erase = bool(sw.get("erase"))
     erased = 0
     if erase:

@@ -47,6 +47,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .paths import atomic_write_json, read_json
 
@@ -169,27 +170,39 @@ def local_path(routine_dir: Path) -> Path:
     return Path(routine_dir) / "state" / LOCAL_FILE
 
 
+def _count(value: Any) -> int:
+    """One tally field as a count — 0 for whatever a hand edit left that is not one."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _stats(raw: object) -> dict:
     got = raw if isinstance(raw, dict) else {}
-    return {f: int(got.get(f) or 0) for f in STAT_FIELDS}
+    return {f: _count(got.get(f)) for f in STAT_FIELDS}
 
 
 def load_local(routine_dir: Path) -> tuple[list[Reminder], dict[str, dict]]:
     """This routine's own reminders, plus its tally about GLOBAL ones. Lenient: a hand-broken
-    file reads as an empty store rather than failing a run at boot.
+    file reads as an empty store rather than failing a run at boot — down to a single field,
+    because this is read while the run is being constructed (`engine/remind.load`), where a
+    `"fires": "many"` used to raise and the run never started.
     """
     raw = read_json(local_path(routine_dir), {})
     if not isinstance(raw, dict):
         return [], {}
+    records = raw.get("reminders")
     out = []
-    for rec in raw.get("reminders") or []:
+    for rec in records if isinstance(records, list) else []:
         if not isinstance(rec, dict) or not rec.get("id") or not rec.get("regex"):
             continue
         out.append(Reminder(id=str(rec["id"]), regex=str(rec["regex"]),
                             description=str(rec.get("description") or ""), scope="local",
                             created_run=str(rec.get("created_run") or ""),
                             stats=_stats(rec.get("stats"))))
-    gstats = {str(k): _stats(v) for k, v in (raw.get("global_stats") or {}).items()
+    tallies = raw.get("global_stats")
+    gstats = {str(k): _stats(v) for k, v in (tallies if isinstance(tallies, dict) else {}).items()
               if isinstance(v, dict)}
     return out, gstats
 
