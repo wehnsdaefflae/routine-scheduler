@@ -230,6 +230,34 @@ export async function apiBlobUrl(path) {
 let openStreams = 0;
 export function openStreamCount() { return openStreams; }
 
+// F606: the operator could not open more than three console tabs — the fourth "didn't load". The
+// arithmetic is the gauge above: each tab holds the global bus plus up to MAX_TAIL_STREAMS tails,
+// so a few tabs reach the ~6-per-origin ceiling, and then the ticket POST every connection must
+// make FIRST has no socket left. It hung forever with no error, which is why the tab painted its
+// shell and stopped — and because a RECONNECT needs a ticket too, a starved tab could not recover
+// on its own: the recovery path needs the resource it is out of. Two measures here, both about
+// LEGIBILITY rather than capacity (the capacity fix is one bus connection per BROWSER):
+//   - the ticket POST is bounded, so a starved connection FAILS instead of hanging; its handler's
+//     own backoff then runs and the page is never silently dead;
+//   - at STREAM_PRESSURE open streams the console says what is wrong and what to do about it, once
+//     per page, because "close a tab" is an instruction nobody can guess from a blank page.
+const TICKET_TIMEOUT_MS = 12000;
+const STREAM_PRESSURE = 5;          // of ~6 per origin — one short of the wall
+let pressureSaid = false;
+
+function sayStreamPressure() {
+  if (pressureSaid) return;
+  pressureSaid = true;
+  const message = `This browser is at its connection limit (${openStreams} live streams of about 6 `
+                  + "per origin). Close a console tab, or a run/conversation view inside one — "
+                  + "otherwise the next page may not load at all.";
+  // The rail listens on this bus already; a console that cannot reach the bus still gets the line
+  // in its own log, which is where a stall is read first.
+  window.dispatchEvent(new CustomEvent("rsched-bus",
+    { detail: { event: "stream-pressure", streams: openStreams, message } }));
+  console.warn(`[rsched] ${message}`);
+}
+
 export function sse(path, handlers) {
   let source = null;
   let closed = false;
@@ -237,8 +265,22 @@ export function sse(path, handlers) {
   const release = () => { if (counted) { counted = false; openStreams -= 1; } };
   (async () => {
     let ticket;
-    try { ticket = (await api("/api/sse-ticket", { method: "POST" })).ticket; }
-    catch (err) { handlers.onerror?.(err); return; }
+    if (openStreams >= STREAM_PRESSURE) sayStreamPressure();
+    try {
+      // A BOUNDED ticket: without the timeout this `await` is where a console tab dies silently
+      // at the per-origin connection ceiling (F606).
+      ticket = (await Promise.race([
+        api("/api/sse-ticket", { method: "POST" }),
+        new Promise((_resolve, reject) => setTimeout(
+          () => reject(Object.assign(
+            new Error(`the SSE ticket request did not answer in ${TICKET_TIMEOUT_MS} ms — this `
+                      + "browser is probably at its per-origin connection limit "
+                      + `(${openStreams} live streams open); close a tab or a live view`),
+            { status: 0, streamPressure: true })),
+          TICKET_TIMEOUT_MS)),
+      ])).ticket;
+    }
+    catch (err) { if (err?.streamPressure) sayStreamPressure(); handlers.onerror?.(err); return; }
     if (closed) return;
     const sep = path.includes("?") ? "&" : "?";
     source = new EventSource(`${path}${sep}ticket=${encodeURIComponent(ticket)}`);

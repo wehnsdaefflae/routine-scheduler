@@ -189,6 +189,40 @@ def test_a_settings_section_that_reloads_declares_the_reload_it_was_handed():
                           "(ReferenceError at runtime):\n" + "\n".join(problems))
 
 
+def test_one_module_constructs_every_eventsource_and_the_ticket_is_bounded():
+    """F606: the operator could not open more than three console tabs — the fourth did not load.
+
+    The arithmetic: a browser allows ~6 HTTP/1.1 connections per origin, every `EventSource` holds
+    one for its whole life, and each tab holds the global bus plus its live tails. At the ceiling
+    the `POST /api/sse-ticket` that every connection (and every RECONNECT) must make first has no
+    socket, so it hung with NO error — the tab painted its shell and stopped, and could not recover,
+    because the recovery path needs the resource it is out of.
+
+    Two properties are pinned, both the ones a change could silently break:
+
+    - **every stream goes through `api.js`'s `sse()`**, which is the only place that counts them
+      (`openStreamCount`) and the only place that can warn. A second `new EventSource` anywhere else
+      is a socket nobody counts — exactly how 2-per-tab could become 3 unnoticed.
+    - **the ticket request is bounded.** Without a timeout that `await` is where a starved tab dies
+      silently; with one it fails, the handler's backoff runs, and the console can say what is wrong.
+    """
+    offenders = []
+    for path in _js_files():
+        text = _without_comments(path.read_text(encoding="utf-8"))
+        if "new EventSource" in text and path.name != "api.js":
+            line = text[: text.find("new EventSource")].count("\n") + 1
+            offenders.append(f"{path.relative_to(STATIC.parent)}:{line}")
+    assert not offenders, (
+        "an EventSource is constructed outside static/api.js, so nothing counts it against the "
+        "~6-per-origin ceiling (F606): " + ", ".join(offenders))
+
+    api_js = _without_comments((STATIC / "api.js").read_text(encoding="utf-8"))
+    assert "TICKET_TIMEOUT_MS" in api_js, (
+        "the /api/sse-ticket POST must be bounded: an unbounded one is where a tab at the "
+        "connection ceiling hangs with no error (F606)")
+    assert "STREAM_PRESSURE" in api_js and "openStreamCount" in api_js
+
+
 def test_a_helper_named_only_in_prose_is_not_a_call():
     """The check reads what the browser executes. A module that explains why it renders with
     one helper rather than the other names the other one, and that sentence is worth writing.

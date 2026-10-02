@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.374.4] — 2026-10-02
+
+### Fixed — a console tab at the browser's connection limit says so instead of not loading
+
+items: F606 (part — the legibility half) (operator, 2026-10-01; R2135)
+
+- **The operator's report:** *"i cannot open more than three tabs of the routine-scheduler webui. if I
+  do, it doesn't load."* The arithmetic was already written in the console's own comments (F263): a
+  browser allows ~6 HTTP/1.1 connections per origin, every `EventSource` holds one for its whole life,
+  and each tab holds the global bus plus its live tails — so a few tabs reach the ceiling, and then
+  the `POST /api/sse-ticket` that every connection **and every reconnect** must make first has no
+  socket and hangs with no error at all. A starved tab therefore could not even recover: the recovery
+  path needs the resource it is out of.
+- **Two measures, both about making the ceiling legible.** The ticket request is now bounded
+  (`TICKET_TIMEOUT_MS`, 12 s), so a starved connection FAILS and its handler's own backoff runs
+  instead of the tab silently dying; and at `STREAM_PRESSURE` (5 of about 6) open streams the console
+  says what is wrong and what to do — *"close a console tab, or a run/conversation view inside one"* —
+  once per page, on the rail's bus and in the browser log. A fast-suite test pins both, plus the
+  property that makes the gauge trustworthy: every `EventSource` is constructed in `static/api.js`'s
+  `sse()` and nowhere else, so no socket exists that nothing counts (that is how 2-per-tab could have
+  become 3 unnoticed).
+- **This does not raise the ceiling.** The capacity fix is one bus connection per BROWSER (a
+  `BroadcastChannel` leader election halves the per-tab cost), which is still open; serving HTTP/2
+  removes the class entirely but needs TLS, so it is a deployment decision — and the same decision
+  replaces `deploy/DOCKER.md`'s retired Tailscale HTTPS section (F607).
+
 ## [0.374.3] — 2026-10-02
 
 ### Fixed — a failed nightly backup now reaches the operator, and a stale one is visible
