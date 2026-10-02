@@ -54,6 +54,10 @@ def configure(loop) -> None:
     loop.reminder_pending = []       # fires still owed a label — what the nudge names
     loop.reminder_owed = {}          # id → holds this run not yet labelled; one label per hold
     loop.reminder_nudge = 0
+    # the `turn:answer` watermark: how many user replies had arrived when this layer last
+    # looked, so the moment is the ARRIVAL EDGE rather than "a reply exists" (the same shape
+    # `assist.at_boundary` uses for its own arrival edge)
+    loop.reminder_user_replies = int(getattr(loop.ctx, "user_replies", 0) or 0)
 
 
 def replay_key(field: str, payload: object) -> str:
@@ -117,19 +121,11 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
     """
     if not loop.reminders:
         return None
-    hits = store.matching(loop.reminders, rendered)
+    hits = store.matching(loop.reminders, rendered, kind="action")
     if not hits or hold_seam.held_before(loop, SOURCE, rendered):
         return None
     hold_seam.mark_held(loop, SOURCE, rendered)
-    for hit in hits:
-        # the tally is disk-owned (store.record); mirror it back so the in-memory set — which
-        # is what a later definition write is built from — never carries a stale count
-        _replace(loop, hit, stats=store.record(loop.ctx.routine.dir, hit, "fires"))
-        loop.reminder_owed[hit.id] = loop.reminder_owed.get(hit.id, 0) + 1
-    # the label this hold is owed, and how long the model has to volunteer it before the
-    # engine asks once (a `did`/`didnt` can only be known a turn AFTER the action ran)
-    loop.reminder_pending = [h.id for h in hits]
-    loop.reminder_nudge = 2
+    _count_fires(loop, hits)
     # the tally rides the observation: `store.looks_too_broad` is what turns a hold into the
     # moment its own evidence is readable, and obs_hold renders the line
     live = {h.id: h for h in loop.reminders}
@@ -137,6 +133,107 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
             "reminders": [{"id": h.id, "scope": h.scope, "description": h.description,
                            "stats": dict(live.get(h.id, h).stats)}
                           for h in hits]}
+
+
+def _count_fires(loop, hits: list[Reminder]) -> None:
+    """Record a fire on every reminder that just matched, and arm the label it is owed.
+
+    Shared by every fire point so the tally means one thing whatever the trigger kind was: the
+    denominator the four-way labels are read against. The tally is disk-owned
+    (`store.record`); the result is mirrored back into the in-memory set, which is what a later
+    definition write is rebuilt from, so it never carries a stale count.
+    """
+    for hit in hits:
+        _replace(loop, hit, stats=store.record(loop.ctx.routine.dir, hit, "fires"))
+        loop.reminder_owed[hit.id] = loop.reminder_owed.get(hit.id, 0) + 1
+    # the label this fire is owed, and how long the model has to volunteer it before the
+    # engine asks once (a `did`/`didnt` can only be known a turn AFTER the action ran)
+    loop.reminder_pending = [h.id for h in hits]
+    loop.reminder_nudge = 2
+
+
+def _fired_line(hit: Reminder, target_name: str) -> str:
+    """One line, one shape, for every non-holding kind — what fired, on what, and the caution."""
+    return (f"[REMINDER {hit.id} — your own caution, on this turn's {target_name}] "
+            f"{hit.description} (label it with remind_feedback: {LABEL_HELP})")
+
+
+def at_observation(loop, action: dict, obs: dict) -> str:
+    """The tail appended to an observation for the kinds that CANNOT hold — "" when nothing
+    fired. Costs no turn.
+
+    `result`, `prose` and the `turn:*` moments all describe something that has already
+    happened, so there is nothing to prevent and no reason to spend a turn; they ride the
+    observation exactly as an observation-moment rule assist does (`engine/assist`), which is
+    the shape this codebase already uses for "what just came back".
+
+    The targets, each a plain string so one regex engine serves every kind:
+    - `result` — the observation as the model is shown it (`format_observation` is applied by
+      the caller for display; the match target is the same text, so a pattern can name an exit
+      code or an error the model will read);
+    - `prose` — the turn's own `say`;
+    - `turn:finish` / `turn:question` / `turn:error` / `turn:first` — the moment's own name plus
+      that same observation text, so a pattern may anchor on the moment alone (`^turn:finish`)
+      or on something inside it.
+    """
+    if not loop.reminders:
+        return ""
+    from .observations import format_observation
+
+    result = format_observation(obs)
+    prose = str(action.get("say") or "")
+    fired: list[Reminder] = []
+    targets = [("result", result, "result"), ("prose", prose, "prose")]
+    for moment, text in _turn_moments(loop, action, obs):
+        targets.append((f"turn:{moment}", f"turn:{moment}\n{text}", f"{moment} turn"))
+    for kind, target, _name in targets:
+        for hit in store.matching(loop.reminders, target, kind=kind):
+            if hit not in fired:
+                fired.append(hit)      # one line per reminder, however many kinds it matched
+    if not fired:
+        return ""
+    _count_fires(loop, fired)
+    names = {k: n for k, _t, n in targets}
+    return "\n" + "\n".join(_fired_line(h, names.get(h.kind, h.kind)) for h in fired)
+
+
+def _turn_moments(loop, action: dict, obs: dict) -> list[tuple[str, str]]:
+    """Which special moments THIS turn is, as (moment, text) pairs — usually none.
+
+    `first` is the opening turn of the run; `finish` is checked by `at_finish` instead (the
+    finish never reaches an observation); `question` is an `ask_user`; `answer` is a user reply
+    that arrived with this turn; `error` is an observation reporting a failure.
+    """
+    from .observations import format_observation, is_failure
+
+    text = format_observation(obs)
+    out: list[tuple[str, str]] = []
+    if int(getattr(loop.ctx, "turn", 0) or 0) <= 1:
+        out.append(("first", text))
+    if action.get("kind") == "ask_user":
+        out.append(("question", text))
+    if int(getattr(loop, "reminder_user_replies", 0) or 0) < int(
+            getattr(loop.ctx, "user_replies", 0) or 0):
+        loop.reminder_user_replies = int(getattr(loop.ctx, "user_replies", 0) or 0)
+        out.append(("answer", text))
+    if is_failure(obs):
+        out.append(("error", text))
+    return out
+
+
+def at_finish(loop, action: dict) -> str:
+    """The `turn:finish` moment — the tail the finish observation carries, "" when nothing
+    fired. The finish produces no ordinary observation, so this is its own fire point; it never
+    holds, because the finish gate owns what defers a finish.
+    """
+    if not loop.reminders:
+        return ""
+    target = f"turn:finish\n{action.get('summary') or ''!s}"
+    fired = store.matching(loop.reminders, target, kind="turn:finish")
+    if not fired:
+        return ""
+    _count_fires(loop, fired)
+    return "\n" + "\n".join(_fired_line(h, "finish turn") for h in fired)
 
 
 def field_problems(action: dict, grants) -> list[str]:
@@ -171,15 +268,20 @@ def _remind_problems(op: object, grants) -> list[str]:
     problems: list[str] = []
     if grants is not None and (denial := grants.reminder_denial(scope)):
         return [denial]
+    # the TRIGGER: omitted means `action`, the kind every reminder had before D152-C
+    kind = store.DEFAULT_KIND if op.get("kind") is None else op.get("kind")
+    if (p := checks.kind_problem(kind)) and verb != "delete":
+        return [p]          # every further check depends on which moment this watches
+    kind = kind if isinstance(kind, str) and kind in store.KINDS else store.DEFAULT_KIND
     if verb == "add":
-        problems += [p for p in (checks.regex_problem(op.get("regex")),
+        problems += [p for p in (checks.regex_problem(op.get("regex"), kind),
                                  checks.description_problem(op.get("description"))) if p]
         if scope == "global" and (p := checks.reach_problem(op.get("reach"))):
             problems.append(p)
     else:
         if not str(op.get("id") or "").strip():
             problems.append(f"`remind.op={verb}` needs the `id` of the reminder it changes")
-        if op.get("regex") is not None and (p := checks.regex_problem(op["regex"])):
+        if op.get("regex") is not None and (p := checks.regex_problem(op["regex"], kind)):
             problems.append(p)
         if op.get("description") is not None and (
                 p := checks.description_problem(op["description"])):
@@ -187,9 +289,9 @@ def _remind_problems(op: object, grants) -> list[str]:
         if op.get("reach") is not None and (p := checks.reach_problem(op["reach"])):
             problems.append(p)
         if verb == "revise" and all(op.get(k) is None for k in ("regex", "description",
-                                                                  "reach")):
+                                                                  "reach", "kind")):
             problems.append("`remind.op=revise` needs what changes: a new `regex`, "
-                            "`description` or `reach`")
+                            "`description`, `kind` or `reach`")
     if scope == "local" and op.get("reach") is not None:
         problems.append("`remind.reach` belongs to a GLOBAL reminder — a local one reaches only "
                         "this routine")
@@ -326,11 +428,13 @@ def _apply_op(loop, op: dict, poll_s: float) -> str:
                        stats=target.stats,
                        regex=str(op.get("regex") or target.regex),
                        description=str(op.get("description") or target.description),
-                       reach=str(op.get("reach") or target.reach))
+                       reach=str(op.get("reach") or target.reach),
+                       kind=store.read_kind(op.get("kind")) if op.get("kind") else target.kind)
     _replace(loop, target, regex=revised.regex, description=revised.description,
-             reach=revised.reach)
+             reach=revised.reach, kind=revised.kind)
     _persist(loop, revised, f"revise reminder {rid}")
-    return f"{rid} revised ({target.scope}) — now /{revised.regex}/ {revised.description}"
+    return (f"{rid} revised ({target.scope}, {revised.kind}) — now /{revised.regex}/ "
+            f"{revised.description}")
 
 
 def _add(loop, op: dict, scope: str, poll_s: float) -> str:
@@ -349,18 +453,26 @@ def _add(loop, op: dict, scope: str, poll_s: float) -> str:
     # same pattern is the union's designed precedence, and PROMOTION is exactly that overlap
     # for one turn — `add` the global copy, then delete the local one. Checking across both
     # stores made the engine's own promotion instructions impossible to follow.
-    if any(regex == op.get("regex") for _rid, regex in joined):
-        return (f"a {scope} reminder with that exact pattern is already live — revise it "
-                "instead of adding a second one that would hold the same actions")
+    kind = store.read_kind(op.get("kind"))
+    # the duplicate test is per (pattern, KIND): the same pattern on a different trigger is a
+    # different consequence class, exactly as the union's dedupe key says. The scan stays over
+    # the SAME store's live set (`joined` carries that store's ids for the collision check).
+    if any(r.regex == op.get("regex") and r.kind == kind and r.scope == scope
+           for r in loop.reminders):
+        return (f"a {scope} {kind} reminder with that exact pattern is already live — revise it "
+                "instead of adding a second one that would fire on the same moments")
     rid = store.new_id(ctx.run_ts, {r.id for r in loop.reminders} | {i for i, _ in joined})
     reminder = Reminder(id=rid, regex=str(op["regex"]), description=str(op["description"]),
                         scope=scope, created_run=ctx.run_id, stats=store.blank_stats(),
-                        reach=str(op.get("reach") or "") if scope == "global" else "")
+                        reach=str(op.get("reach") or "") if scope == "global" else "",
+                        kind=kind)
     if scope == "global" and (gate := _approve_global(loop, "add", reminder, op, poll_s)):
         return gate
     loop.reminders.append(reminder)
     _persist(loop, reminder, f"add reminder {rid}")
-    return (f"added {rid} ({scope}) — /{reminder.regex}/ holds a matching action from your next "
+    effect = ("holds a matching action" if reminder.holds
+              else f"fires on a matching {kind}")
+    return (f"added {rid} ({scope}, {kind}) — /{reminder.regex}/ {effect} from your next "
             "turn on")
 
 

@@ -75,7 +75,8 @@ ACTION_SCHEMA: dict = {
                 "id": {"type": "string",
                        "description": "revise/delete: the reminder's id (rem-…)"},
                 "regex": {"type": "string",
-                          "description": "the pattern, matched against the CANONICAL "
+                          "description": "the pattern, matched against what `kind` names. For "
+                                         "the default kind (action) that is the CANONICAL "
                                          "one-line rendering of an action: "
                                          "'util:<name> <args…>', 'script:<name> <args…>', "
                                          "'shell: <command>', 'write_file path=<path>', "
@@ -84,6 +85,18 @@ ACTION_SCHEMA: dict = {
                                          "anchor is never part of it. Anchor it to the class "
                                          "of calls that can cause the consequence, e.g. "
                                          '"^util:fs-ops mv "'},
+                "kind": {"type": "string",
+                         "enum": ["action", "result", "prose", "turn:first", "turn:finish",
+                                  "turn:question", "turn:answer", "turn:error"],
+                         "description": "what the pattern WATCHES (default action). action = "
+                                        "the canonical action string, tested BEFORE the "
+                                        "action runs — the only kind that can HOLD it. The "
+                                        "others watch what has already happened, so they "
+                                        "cost no turn and ride the observation instead: "
+                                        "result = the observation that came back (an exit "
+                                        "code, an error); prose = this turn's own `say`; "
+                                        "turn:<moment> = that special turn (first, finish, "
+                                        "question, answer, error)"},
                 "description": {"type": "string",
                                 "description": "the caution shown when it fires — what the "
                                                "CONSEQUENCE is and what to check, not that "
@@ -101,7 +114,10 @@ ACTION_SCHEMA: dict = {
             "description": "OPTIONAL, on any action: leave yourself a CONSEQUENCE REMINDER "
                            "the same turn you notice an action had an unintended effect. "
                            "From then on, an action matching `regex` is HELD before it runs "
-                           "and you are shown `description` to decide again. Costs no turn "
+                           "and you are shown `description` to decide again. `kind` chooses "
+                           "what the pattern watches instead: a result, this turn's prose, or "
+                           "a special turn — those fire on the observation and never hold. "
+                           "Costs no turn "
                            "to write. Also revises or deletes one (op + id) as your own "
                            "tally teaches you which patterns earn their interruptions.",
         },

@@ -164,7 +164,7 @@ def test_the_union_is_local_over_global_by_regex(tmp_path):
     assert [r.id for r in store.active(tmp_path, lib, "global")] == ["rem-l", "rem-g2"]
     # the library copy carries the definition only — the evidence about it is per-routine
     rec = json.loads((lib / "rem-g1.json").read_text(encoding="utf-8"))
-    assert set(rec) == {"id", "regex", "description", "reach", "created_run"}
+    assert set(rec) == {"id", "regex", "description", "reach", "kind", "created_run"}
 
 
 def test_a_listed_reminder_reaches_only_the_routines_that_list_it(tmp_path):
@@ -373,7 +373,7 @@ def test_revise_and_delete_are_reported_back_to_the_run(make_routine, scripted):
         local=[reminder(rid="rem-p", regex="^util:danger", desc="vague")])
     assert store.load_local(d)[0] == []
     shown = prompt_text(ep)
-    assert "rem-p revised (local)" in shown and "rem-p deleted (local)" in shown
+    assert "rem-p revised (local, action)" in shown and "rem-p deleted (local)" in shown
     assert "no reminder 'rem-gone' is live" in shown
     assert status == "ok"
 

@@ -1,9 +1,19 @@
 """Consequence REMINDERS — the store behind the just-in-time caution layer.
 
-A reminder is `(regex → consequence)`: a pattern over the canonical one-line rendering of an
-action (`engine/actionschema.canon`) plus the short caution that pattern is worth interrupting
-for. Before an action executes, the engine tests it against every live reminder and HOLDS the
-matching ones (`engine/remind.py`) so the model re-decides with the caution in front of it.
+A reminder is `(trigger → consequence)`: a pattern, a KIND saying what that pattern is tested
+against, and the short caution the match is worth interrupting for.
+
+The original and default kind is `action` — the canonical one-line rendering of an action
+(`engine/actionschema.canon`), tested BEFORE the action executes, so the engine HOLDS it
+(`engine/remind.py`) and the model re-decides with the caution in front of it. A caution that
+arrives afterwards arrives after the consequence, which is why that kind holds and the others
+cannot.
+
+The other kinds (`KINDS`, decided as D152 option C) watch moments nothing could watch before:
+`result` the observation that came back, `prose` the turn's own `say`, and `turn:first` /
+`turn:finish` / `turn:question` / `turn:answer` / `turn:error` the special turns. All of them
+describe something that has already happened, so they INFORM at no turn cost — the caution
+rides the observation tail the way an engine note does — and never hold.
 
 This file owns only the STORE — what a reminder IS, where the two of them live, how the union
 is formed, and how the four-way outcome tally accumulates. The interception, the authoring ops
@@ -54,6 +64,26 @@ from .paths import atomic_write_json, read_json
 LOCAL_FILE = "reminders.json"       # under <routine>/state/
 GLOBAL_DIR = "reminders"            # under libraries_home
 SCOPES = ("local", "global")
+#: What a reminder WATCHES — its trigger. `action` is the original and the default: the
+#: canonical one-line rendering of an action, tested BEFORE it runs, so a hold can still
+#: prevent the consequence. The others are moments nothing could watch before (D152, option C):
+#:
+#: - `result`   — the OBSERVATION that came back. Knowable only after the action ran, so it
+#:                never holds; the caution rides the observation at no turn cost.
+#: - `prose`    — the turn's own `say`. What the run SAID it was doing, which is where a
+#:                drift ("I will force push") is visible before the call that does it.
+#: - `turn:*`   — the special turns: `first` (the opening turn of a run), `finish`,
+#:                `question` (an ask_user), `answer` (a user reply arriving), `error` (an
+#:                observation reporting failure).
+#:
+#: A record whose kind is unreadable reads as `action`: the store must never be able to break
+#: a run, and `action` is the one kind every pre-change record meant.
+TURN_MOMENTS = ("first", "finish", "question", "answer", "error")
+KINDS = ("action", "result", "prose", *(f"turn:{m}" for m in TURN_MOMENTS))
+DEFAULT_KIND = "action"
+#: The kinds that are tested BEFORE the action runs and can therefore HOLD it. Every other
+#: kind describes something that has already happened, so it can only inform.
+HOLDING_KINDS = ("action",)
 #: The authoring dial, least → most reach (see the module docstring): `global` adds writing the
 #: shared store; a routine curating shared cautions still keeps its own.
 LEVELS = ("none", "local", "global")
@@ -137,13 +167,18 @@ class Reminder:
     created_run: str
     stats: dict
     reach: str = ""          # a global reminder's REACHES entry; "" for a local one
+    kind: str = DEFAULT_KIND  # what it WATCHES (see KINDS); "action" for every older record
 
     def matches(self, canon: str) -> bool:
-        """Does this reminder's pattern fire on that canonical action string?
+        """Does this reminder's pattern fire on that match target?
 
         `re.search`, so a pattern says where it anchors (`^util:fs-ops mv `) instead of having
         to describe the whole line. A pattern that no longer compiles never fires — the store
         must not be able to break a run, and the write gate already rejected it once.
+
+        The TARGET depends on `kind` and is chosen by the caller (`matching`): the canonical
+        action string, an observation's rendering, the turn's prose. This method only applies
+        the pattern — it cannot know which moment it was asked at.
         """
         try:
             return bool(re.search(self.regex, canon[:MATCH_TARGET_CHARS]))
@@ -153,7 +188,23 @@ class Reminder:
     def as_record(self) -> dict:
         return {"id": self.id, "regex": self.regex, "description": self.description,
                 "scope": self.scope, "created_run": self.created_run, "stats": dict(self.stats),
-                "reach": self.reach}
+                "reach": self.reach, "kind": self.kind}
+
+    @property
+    def holds(self) -> bool:
+        """Is this reminder's moment BEFORE the action runs? (only then can it be held)"""
+        return self.kind in HOLDING_KINDS
+
+
+def read_kind(raw: object) -> str:
+    """The kind a stored record means — `action` for anything unreadable.
+
+    Lenient on purpose, and in the same way the rest of this loader is: a hand-edited file, a
+    git sync from an older instance, or a record from before the kinds existed must read as the
+    one kind it could have meant, never fail the run that loads it. The WRITE gate
+    (`reminder_checks.kind_problem`) is where an unknown kind is refused.
+    """
+    return raw if isinstance(raw, str) and raw in KINDS else DEFAULT_KIND
 
 
 def new_id(run_ts: str, taken: set[str]) -> str:
@@ -200,7 +251,7 @@ def load_local(routine_dir: Path) -> tuple[list[Reminder], dict[str, dict]]:
         out.append(Reminder(id=str(rec["id"]), regex=str(rec["regex"]),
                             description=str(rec.get("description") or ""), scope="local",
                             created_run=str(rec.get("created_run") or ""),
-                            stats=_stats(rec.get("stats"))))
+                            stats=_stats(rec.get("stats")), kind=read_kind(rec.get("kind"))))
     tallies = raw.get("global_stats")
     gstats = {str(k): _stats(v) for k, v in (tallies if isinstance(tallies, dict) else {}).items()
               if isinstance(v, dict)}
@@ -255,7 +306,8 @@ def load_global(reminders_home: Path, stats: dict[str, dict] | None = None) -> l
         out.append(Reminder(id=rid, regex=str(rec["regex"]),
                             description=str(rec.get("description") or ""), scope="global",
                             created_run=str(rec.get("created_run") or ""),
-                            stats=_stats(tally.get(rid)), reach=str(rec["reach"])))
+                            stats=_stats(tally.get(rid)), reach=str(rec["reach"]),
+                            kind=read_kind(rec.get("kind"))))
     return out
 
 
@@ -272,6 +324,7 @@ def records(reminders_home: Path) -> list[dict]:
         out.append({"id": path.stem, "regex": str(rec.get("regex") or ""),
                     "description": str(rec.get("description") or ""),
                     "reach": str(rec.get("reach") or ""),
+                    "kind": read_kind(rec.get("kind")),
                     "created_run": str(rec.get("created_run") or "")})
     return out
 
@@ -283,7 +336,7 @@ def write_global(reminders_home: Path, reminder: Reminder) -> Path:
     path = global_path(reminders_home, reminder.id)
     rec = reminder.as_record()
     atomic_write_json(path, {k: rec[k] for k in ("id", "regex", "description", "reach",
-                                                  "created_run")})
+                                                  "kind", "created_run")})
     return path
 
 
@@ -310,19 +363,30 @@ def active(routine_dir: Path, reminders_home: Path, level: str,
     reaches it (universal, or named in `listed`), with LOCAL OVERRIDING GLOBAL. Empty when the
     layer is off.
 
-    Dedupe is by regex — the only "same consequence class" test available to a machine, and
-    the same one the authoring heuristic implies (the match target signals the scope).
+    Dedupe is by (regex, KIND) — the "same consequence class" test available to a machine. The
+    kind belongs in the key because the same pattern on two different triggers is two different
+    consequences: `^util:fs-ops mv ` as an `action` is "you are about to move a file", as a
+    `result` it is "a move just reported something". Deduping those together would silence one
+    of them for no reason a holder could see.
     """
     if LEVEL_RANK.get(level, 0) < LEVEL_RANK["local"]:
         return []
     local, gstats = load_local(routine_dir)
-    seen = {r.regex for r in local}
+    seen = {(r.regex, r.kind) for r in local}
     return local + [g for g in load_global(reminders_home, gstats)
-                    if g.regex not in seen and (g.reach == "universal" or g.id in listed)]
+                    if (g.regex, g.kind) not in seen
+                    and (g.reach == "universal" or g.id in listed)]
 
 
-def matching(reminders: list[Reminder], canon: str) -> list[Reminder]:
-    return [r for r in reminders if r.matches(canon)]
+def matching(reminders: list[Reminder], target: str,
+             kind: str = DEFAULT_KIND) -> list[Reminder]:
+    """Every reminder of THAT kind whose pattern fires on that target.
+
+    The kind is the caller's statement of which moment this is, so a `result` hook can never be
+    tested against an action string and vice versa — the subjects are different and a pattern
+    aimed at one says nothing about the other.
+    """
+    return [r for r in reminders if r.kind == kind and r.matches(target)]
 
 
 def record(routine_dir: Path, reminder: Reminder, field: str) -> dict:

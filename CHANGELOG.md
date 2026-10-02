@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.377.0] — 2026-10-02
+
+### Added — a consequence reminder can watch the RESULT, the turn's prose or a special turn, not only the action
+
+items: D152 option C (operator, 2026-09-27) — step 1 of the `hooks` campaign
+
+**What it is.** A reminder was always `(regex → consequence)` over the canonical one-line
+rendering of an ACTION, tested before dispatch so the action could be held. That is the only
+moment anything in the engine could watch. D152-C asks for `hooks` as a general concept, and
+the trigger is the first half of it: `remind.kind` now names WHAT the pattern is tested
+against. Docs: docs/reminders.md ("The trigger kinds"), docs/prompt-anatomy.md.
+
+- **`action` (the default) is unchanged**, including every stored reminder: a record with no
+  `kind` field reads as `action`, so nothing written before this release behaves differently.
+  It remains the only kind that can HOLD an action — holding is only possible before the thing
+  happens.
+- **Four new triggers, all of them non-holding**: `result` (the observation as the model is
+  shown it — an exit code, an error), `prose` (the turn's own `say`, where a drift is visible
+  before the call that acts on it), and `turn:first|finish|question|answer|error` (the special
+  turns; `answer` is the arrival EDGE of a user reply, not "a reply exists"). They ride the
+  observation tail at no turn cost, the way an observation-moment rule assist does, and they
+  count a `fires` and ask for a `remind_feedback` label exactly as a hold does — the tally
+  means one thing whatever the trigger was.
+- **The kind is part of a reminder's identity.** The union and the duplicate check dedupe by
+  `(regex, kind)`: the same pattern on two triggers is two different consequences.
+- **The write gate refuses an unknown kind** (an author who believed their hook watched the
+  observation would otherwise get a silent action hook that never fires), while the LOADER
+  defaults to `action` — a record on disk must never be able to fail the run that loads it.
+  The canonical-action-form check now applies only to `action` patterns, so `^exit 2` is a
+  valid `result` pattern.
+
 ## [0.376.0] — 2026-10-02
 
 ### Changed — the console's live streams are WebSockets, so any number of tabs loads (F606)

@@ -1,9 +1,9 @@
 # Consequence reminders — a caution that fires at the action, not at the boot
 
-A **reminder** is `(regex → consequence)`: a pattern over the canonical one-line rendering of an
-action, plus the short caution that pattern is worth interrupting for. Before a matching action
-executes, the engine HOLDS it — it does not run — shows the model the caution, and lets it decide
-again.
+A **reminder** is `(trigger → consequence)`: a pattern, the KIND saying what that pattern is tested
+against, and the short caution the match is worth interrupting for. At the default kind — `action`,
+the canonical one-line rendering of an action — a matching action is HELD before it executes: it
+does not run, the model is shown the caution, and it decides again.
 
 The layer exists because the framework's other "learn from surprise" surfaces are all
 *just-in-case*. `.memory/` puts its INDEX in the boot digest and asks the model to recall the right
@@ -20,8 +20,9 @@ avoided. There is deliberately no cheaper passive tier.
 
 ## The match target
 
-Everything rests on `engine/actionschema.canon(action)` — THE canonical one-line rendering of an
-action, the documented thing a pattern matches:
+At the `action` kind — the default, and the only one that can hold — everything rests on
+`engine/actionschema.canon(action)`: THE canonical one-line rendering of an action, the documented
+thing a pattern matches. (The other kinds match their own targets; see *The trigger kinds* below.)
 
 ```
 util:fs-ops mv a b            a util call carries its ARGUMENTS (`util:fs-ops` alone
@@ -45,6 +46,42 @@ can see as arguments grow. Matching happens with `re.search` against the first
 than describing a whole line. Precision and recall are only tunable if the match target is stable
 and legible — which is why `canon` has ONE implementation, shared by the interceptor and by every
 surface that shows a person or a model what matched.
+
+## The trigger kinds
+
+`kind` says what the pattern is tested against. It is the one field that decides whether a
+reminder can HOLD, because holding is only possible before the thing happens.
+
+| kind | match target | when | holds? |
+|---|---|---|---|
+| `action` (default) | the canonical action string above | before the action is dispatched | **yes** |
+| `result` | the observation as the model is shown it | with the observation | no |
+| `prose` | the turn's own `say` | with the observation | no |
+| `turn:first` | the opening turn of the run | with that turn's observation | no |
+| `turn:finish` | the finish and its summary | at the finish | no |
+| `turn:question` | an `ask_user` turn | with the observation | no |
+| `turn:answer` | the turn a user reply arrived on (the arrival edge, not "a reply exists") | with the observation | no |
+| `turn:error` | an observation reporting failure | with the observation | no |
+
+Everything but `action` describes something that has ALREADY happened, so there is nothing to
+prevent and no reason to spend a turn: those fire as a line on the observation tail, the way an
+observation-moment rule assist does, and they still count a `fires` and still ask for a
+`remind_feedback` label — the tally means the same thing whatever the trigger was.
+
+Two consequences of the kind being part of the identity:
+
+- the union and the duplicate check dedupe by **(regex, kind)**, not by regex alone. The same
+  pattern on two triggers is two different consequences — `^util:fs-ops mv ` as an `action` is
+  "you are about to move a file", as a `result` it is "a move just reported something".
+- the write gate's canonical-form check (below) applies only to `action` patterns. An observation
+  or a `say` is not an action string, so `^exit 2` is a fine `result` pattern and would be refused
+  as an `action` one.
+
+A stored record whose kind is missing or unreadable reads as `action` — every reminder written
+before the kinds existed meant exactly that, and the store must never be able to fail the run that
+loads it. The WRITE gate is stricter: an unknown kind is refused there, because a hook its author
+believed watched the observation, silently stored as an action hook, would never fire and the
+author would never learn why.
 
 ## The two stores
 

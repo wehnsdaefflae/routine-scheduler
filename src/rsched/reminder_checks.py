@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from .reminders import REACHES
+from .reminders import DEFAULT_KIND, KINDS, REACHES
 
 MAX_REGEX_CHARS = 200
 MAX_DESCRIPTION_CHARS = 400
@@ -19,11 +19,31 @@ _FORMS = ("the forms are 'util:<name> <args…>', 'script:<name> <args…>', 'sh
           "and '<kind> <field>=<value>'")
 
 
-def regex_problem(pattern: object) -> str | None:
+def kind_problem(kind: object) -> str | None:
+    """Why this trigger kind may not be stored — or None when it is one of `reminders.KINDS`.
+
+    Refused at the WRITE gate rather than defaulted silently: a hook the author believed watched
+    the observation, stored as an `action` hook, would never fire and the author would never
+    learn why. (The LOADER defaults instead, because a record already on disk must not be able
+    to fail a run — `reminders.read_kind` says so.)
+    """
+    if kind in KINDS:
+        return None
+    return (f"remind.kind must be one of {', '.join(KINDS)} — it says WHAT the pattern is "
+            f"tested against ({DEFAULT_KIND}: the canonical action string, before the action "
+            "runs, the only kind that can HOLD it; result: the observation that came back; "
+            "prose: this turn's `say`; turn:<moment>: that special turn)")
+
+
+def regex_problem(pattern: object, kind: str = DEFAULT_KIND) -> str | None:
     """Why this pattern may not be stored — or None when it is usable.
 
     Checked at the WRITE gate (inside the schema-retry cycle) so a malformed pattern is
     corrected before it becomes a turn, never silently dropped afterwards.
+
+    `kind` selects which checks apply: the canonical-form check below is about what an ACTION
+    renders as, so it is meaningless for a pattern aimed at an observation or at prose — and
+    applying it there would refuse `^exit 2` for naming no action kind.
     """
     if not isinstance(pattern, str) or not pattern.strip():
         return "remind.regex must be a non-empty pattern over the canonical action string"
@@ -37,7 +57,7 @@ def regex_problem(pattern: object) -> str | None:
     if compiled.search(""):
         return ("remind.regex matches the EMPTY string, so it would hold every action you "
                 'take — anchor it to the action class you mean (e.g. "^util:fs-ops mv ")')
-    return canon_problem(pattern)
+    return canon_problem(pattern) if kind == DEFAULT_KIND else None
 
 
 def canon_problem(pattern: str) -> str | None:

@@ -289,6 +289,9 @@ class EngineLoop:
         # `did`/`didnt` label on the turn AFTER the held action ran, and that is very often
         # this one.
         remind_note = remind.apply_ops(self, action, poll_s=POLL_S, replayable=True)
+        # …and the `turn:finish` trigger fires here, its own fire point: the finish produces no
+        # ordinary observation, so there is no tail for `at_observation` to ride.
+        remind_note += remind.at_finish(self, action)
         outcome = finishgate.check_finish(self, action, self.ctx)
         if outcome is None and remind_note and self.messages:
             self.messages[-1]["content"] += remind_note   # rides the guard's own message
@@ -355,6 +358,10 @@ class EngineLoop:
         # applied AFTER the interception check so a reminder authored this turn can
         # never hold the very action it rode on.
         text = remind.apply_ops(self, action, poll_s=POLL_S)
+        # …and the reminders whose TRIGGER is not an action — `result` (what just came back),
+        # `prose` (what this turn said), the `turn:*` moments. They cannot hold (the thing they
+        # watch has already happened), so they ride the tail at no turn cost.
+        text += remind.at_observation(self, action, obs)
         # …and the observation-moment assists ride the same tail, for the rules whose
         # moment is "what just came back" rather than "what you are about to do" — asked
         # before the observation was recorded (`_observe`), read here in their place.
