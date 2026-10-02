@@ -51,8 +51,8 @@ for _ in $(seq 1 50); do
 done
 
 # x11vnc listens on loopback only. The way in is the noVNC page below, whose port compose
-# publishes to the HOST's loopback — so reaching the browser means an SSH tunnel or a tailnet
-# proxy, never an open VNC port on the LAN.
+# publishes to the HOST's loopback — so reaching the browser means an SSH tunnel or a VPN,
+# never an open VNC port on the LAN.
 log "starting x11vnc (loopback :5900)"
 x11vnc -display "$DISPLAY_NUM" -rfbport 5900 -localhost -forever -shared -nopw -quiet &
 

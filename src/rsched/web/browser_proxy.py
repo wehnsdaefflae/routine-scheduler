@@ -104,7 +104,7 @@ def ws_upstream_for(server) -> str | None:
 
     Plain `ws://` upstream is correct and is not the leak it looks like: the TLS the user
     needs is between the BROWSER and this console, which the console already terminates.
-    The upstream hop is loopback-or-tailnet to a port that speaks no TLS at all.
+    The upstream hop is loopback or a private network, to a port that speaks no TLS at all.
     """
     base = _base(getattr(server, "browser_view_url", "") or "")
     if base is None:

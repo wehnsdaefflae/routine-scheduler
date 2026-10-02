@@ -250,8 +250,8 @@ services:
                                       # service name. Change it here and in docs/browser-sessions.md.
     ports:
       # noVNC, bound to the HOST'S LOOPBACK. This is a keyboard and mouse on a browser holding
-      # live site sessions, so it is never a LAN port. Reach it over an SSH tunnel or a tailnet
-      # proxy — see docs/browser-sessions.md.
+      # live site sessions, so it is never a LAN port. Reach it over an SSH tunnel or a VPN
+      # — see docs/browser-sessions.md.
       - "127.0.0.1:${RSCHED_VNC_PORT:-6080}:6080"
     # Chrome's own renderer sandbox needs unshare(); Docker's default seccomp profile blocks it.
     # Relaxing seccomp KEEPS that sandbox working, which is the stronger of the two options —

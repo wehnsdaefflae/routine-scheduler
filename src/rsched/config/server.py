@@ -51,7 +51,8 @@ class ServerConfig(_Config):
     source_repo: HomePath = Field(default_factory=lambda: Path(__file__).resolve().parents[3])
     source_remote: BlankableStr = ""     # optional: self-audit's push target for code commits
     github_client_id: BlankableStr = ""  # OAuth client_id for the device flow (default: gh CLI's)
-    # External base URL a browser reaches this instance at (e.g. a Tailscale Serve https URL),
+    # External base URL a browser reaches this instance at (a DNS name fronted by a
+    # TLS-terminating proxy — deploy/DOCKER.md, "HTTPS for the console"),
     # used to build OAuth redirect URIs: f"{public_url}/oauth/callback". NOT derivable from
     # bind/port (those are the listen address). Empty until set in Settings; the connect flow
     # refuses to start an auth-code flow without it. See docs/oauth-connections.md.
@@ -60,7 +61,7 @@ class ServerConfig(_Config):
     # page served by the container's websockify (e.g. http://<host>:6080/vnc.html). Like
     # `public_url` this is an address of the deployment, not of the process: nothing in the
     # config can derive it, because whether that port is reachable at all depends on the
-    # host's networking (here, an opened Tailscale port). Empty = the console shows no
+    # host's networking (a published port, an SSH tunnel or a VPN). Empty = the console shows no
     # browser screen, which is the honest state for an instance that never published one.
     browser_view_url: BlankableStr = ""
     # The run semaphore's size: 0 would start no run ever, and a negative one cannot be built.

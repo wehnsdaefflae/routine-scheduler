@@ -346,7 +346,8 @@ daemon-owned connection store (one `connections.json` beside `config.yaml`, keye
 `authorize-start` (authed, mints PKCE + `state`) → the user consents → the PUBLIC `GET
 /oauth/callback` (mounted WITHOUT the bearer dep, like `api_hooks.hooks_router` — the unguessable
 per-flow `state` is the CSRF guard) exchanges the code and writes the connection; the new
-`ServerConfig.public_url` (external https URL, e.g. Tailscale Serve) builds the redirect_uri.
+`ServerConfig.public_url` (the external https base a browser reaches this instance at) builds
+the redirect_uri.
 `daemon/oauth_refresh.py` (`OAuthRefreshManager`, started by each scheduler tick and run beside it,
 one pass at a time, so a provider that is down never holds a fire) refreshes EXPIRING tokens near
 expiry, persists rotation and flags `needs_reauth` on

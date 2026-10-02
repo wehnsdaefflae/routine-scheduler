@@ -51,7 +51,7 @@ export function renderConnections(view) {
     // Pre-fill from THIS browser's origin (the URL you reached the console at) when it's https and
     // nothing is saved yet — so you almost never have to type it.
     const originGuess = location.origin.startsWith("https://") ? location.origin : "";
-    const urlIn = el("input", { type: "text", placeholder: "https://host.ts.net", style: "flex:1", value: d.public_url || originGuess });
+    const urlIn = el("input", { type: "text", placeholder: "https://rsched.example.org", style: "flex:1", value: d.public_url || originGuess });
     const urlSave = el("button", { class: "btn small" }, "save");
     urlSave.onclick = () => act(urlSave, async () => {
       await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } });
@@ -71,7 +71,7 @@ export function renderConnections(view) {
     connBox.append(...[
       el("div", { class: "mt small", style: "font-weight:600" }, "Public URL"),
       el("div", { class: "muted small" },
-        "Your instance's external https BASE url (e.g. your Tailscale Serve URL) — the base, ",
+        "Your instance's external https BASE url (e.g. https://rsched.example.org) — the base, ",
         "not a path. Providers redirect back to ", el("code", {}, "<this>/oauth/callback"), "."),
       el("div", { class: "row mt", "data-conn-url": "" }, urlIn, urlSave),
       (!d.public_url && originGuess)

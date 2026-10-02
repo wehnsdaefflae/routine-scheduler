@@ -528,26 +528,30 @@ is a `docker compose up -d`, not a rebuild. The states:
   START after one try (a vanished bind source is the one that has happened): `docker ps -a`, then
   check every bind source exists before starting it again.
 
-## HTTPS via Tailscale (Web Push needs a secure context)
+## HTTPS for the console (Web Push needs a secure context)
 
-The console serves plain HTTP on the LAN. For HTTPS — required for Web Push notifications
-and generally nicer — front it with the `tailscale/tailscale` container that already runs
-on the server with `network_mode: host` (so `127.0.0.1:8321` inside it IS the published
-rsched port):
+The console serves plain HTTP on `:8321`. Everything works that way — the API, SSE, the
+browser screen — with ONE exception: **Web Push needs a secure context**, which is a
+property of the URL, not of the network. A VPN gives you REACH, not a secure context, so
+`http://<lan-ip>:8321` over a VPN still cannot subscribe a device to push. That is the
+state this host is in; the rest of the console is unaffected and no deploy step is pending.
 
-```
-# one-time, per tailnet: enable the Serve feature (and HTTPS certificates when prompted)
-# in the admin console — `tailscale serve` prints the exact approval URL if it's off.
-docker exec tailscale tailscale serve --bg 8321
-docker exec tailscale tailscale serve status      # shows the https URL it now fronts
-```
+To get push working, terminate TLS in front of the port and point the instance at the
+result:
 
-The console then lives at `https://<node>.<tailnet>.ts.net` (here:
-`https://ubuntuserver.taild5768c.ts.net`) with a Let's Encrypt certificate Tailscale
-provisions and renews itself — reachable from every tailnet device (phone included),
-invisible to everyone else. SSE and Web Push work through it unchanged; subscribe each
-device under **Settings → Notifications**. Undo with
-`docker exec tailscale tailscale serve reset`.
+1. A DNS name for the instance — a DynDNS name is enough; a public IPv4 is not
+   required if the name resolves inside your VPN.
+2. A TLS-terminating reverse proxy in front of `127.0.0.1:8321` with a certificate for
+   that name. **This compose file ships no proxy**: which one, and where its certificate
+   comes from, is host-specific, so it is yours to run.
+3. Set `public_url` to that https BASE (no path) in **Settings → server process**. It is
+   also the OAuth redirect target — providers are sent to `<public_url>/oauth/callback`
+   and most refuse a non-https redirect URI — so OAuth connections need this same step.
+4. Subscribe each device under **Settings → Notifications**.
+
+Whatever terminates TLS must pass `X-Forwarded-Proto`: the app reads it to decide the
+`secure` flag on the browser-screen cookie (`web/api_browser_view.py`), because behind a
+proxy the request it sees is plain `http`.
 
 ## When the console goes slow
 

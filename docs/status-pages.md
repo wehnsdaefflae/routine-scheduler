@@ -512,8 +512,8 @@ the routine has *not consumed*, not merely what you changed in this sitting, so 
 tomorrow to an unsent note still offers to wake the routine. Where a project has no webhook, the
 panel is a sentence rather than a dead control.
 
-The reach is the remaining half: the hook URLs point at the console's Tailscale name, so a
-submission only arrives from the tailnet until `/api/hooks/*` is published.
+The reach is the remaining half: the hook URLs are built from `public_url`, so a submission
+only arrives from wherever that base resolves until `/api/hooks/*` is published.
 
 ## The design
 

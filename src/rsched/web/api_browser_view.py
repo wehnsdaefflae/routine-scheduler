@@ -101,7 +101,7 @@ def grant_pass(request: Request) -> JSONResponse:
     marked HttpOnly + SameSite=Strict: it authenticates one embedded screen, not the console.
 
     `secure` reads the FORWARDED scheme as well as the request's own: behind a
-    TLS-terminating proxy (tailscale serve --https, a reverse proxy) the app sees `http`, so
+    TLS-terminating reverse proxy the app sees `http`, so
     the flag came off exactly where the connection the user makes is the encrypted one.
     """
     if not request.app.state.server.browser_view_url:

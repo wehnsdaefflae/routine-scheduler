@@ -184,7 +184,8 @@ A routine can act against a third-party service (Notion first) on behalf of an e
 account. Connect the account once in **Settings → Connections**: OAuth consent happens in your
 browser and the instance stores the resulting token (the redirect lands on a public
 `/oauth/callback`, guarded by a per-flow `state` + PKCE, so the instance needs to be reachable
-at an https URL — a Tailscale Serve URL is enough). Bind the account on a routine's page
+at an https URL: a DNS name fronted by a TLS-terminating proxy, see deploy/DOCKER.md).
+Bind the account on a routine's page
 (`connections:` provider→account, a resource like `models:`); any util that declares the token
 var then receives a fresh access token at run time — injected only under that declared-var +
 bound-connection gate, never sitting in the prompt or a transcript. Expiring tokens are

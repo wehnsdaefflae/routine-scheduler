@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.375.0] — 2026-10-02
+
+### Changed — the console's https guidance no longer names a VPN that is gone
+
+- Tailscale was the only https path this repo documented. It was retired on 2026-10-02 in
+  favour of the router's own VPN. Fourteen surfaces still told a reader to front the console with
+  `tailscale serve`, to paste a Tailscale Serve URL into **Settings → Connections**, or presumed a
+  tailnet hop in a comment — and `deploy/DOCKER.md` pointed at a `tailscale/tailscale` container
+  that this compose file has never defined.
+- `deploy/DOCKER.md`'s section is now "HTTPS for the console" and says the thing that actually
+  decides the matter: a secure context is a property of the URL, so a VPN buys REACH and still
+  leaves `http://<lan-ip>:8321` unable to subscribe a device to Web Push. The replacement is a DNS
+  name plus a TLS-terminating reverse proxy, which this compose file deliberately does not ship.
+- `docs/browser-sessions.md` stated its noVNC warning as a Tailscale problem. It is not: ANY raw
+  TCP forward of that port performs no HTTP auth and hands out a keyboard and a mouse on the
+  browser holding the operator's signed-in sessions. Restated generically, with a check that does
+  not depend on a vendor's CLI.
+- Swept with it: `README.md`, `docs/oauth-connections.md`, `docs/architecture.md`,
+  `docs/status-pages.md`, `config/server.py`'s two field comments, `web/settings/oauth.py`'s
+  refusal text, `web/browser_proxy.py`, `web/api_browser_view.py`,
+  `static/views/settings-connections.js` (hint + placeholder), `docker-compose.yml` and
+  `deploy/chrome-entrypoint.sh`.
+- No behaviour changes. `public_url` stays the operator's to set. Historical narration in this
+  changelog and in test docstrings records real incidents, so it stays as written.
+
 ## [0.374.5] — 2026-10-02
 
 ### Fixed — a lint slip in the new backup check

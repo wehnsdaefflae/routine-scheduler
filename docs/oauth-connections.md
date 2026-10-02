@@ -66,9 +66,11 @@ OAuth has two halves that live in different places, because a routine run is hea
 1. **Create a Notion integration** (a *public* OAuth integration) at notion.so/my-integrations;
    note its client id + secret and its redirect URI requirement.
 2. **Settings → Secrets**: set `NOTION_OAUTH_CLIENT_ID` and `NOTION_OAUTH_CLIENT_SECRET`.
-3. **Settings → Connections → Public URL**: set the instance's external https BASE url (e.g. a
-   Tailscale Serve URL — the redirect is browser-side, so tailnet-reachable is enough) — the base,
-   not a path. The card then shows the exact callback (`<that>/oauth/callback`) to register as the
+3. **Settings → Connections → Public URL**: set the instance's external https BASE url — the
+   base, not a path. The redirect is browser-side, so the base only has to be reachable from
+   the BROWSER that consents (a name resolvable inside your VPN is enough); it does have to be
+   https, because most providers refuse any other redirect URI. See deploy/DOCKER.md,
+   "HTTPS for the console". The card then shows the exact callback (`<that>/oauth/callback`) to register as the
    integration's redirect URI. This base is persisted as `public_url` in config.yaml.
 4. **Connect**: enter an account label (e.g. `personal`), click *connect*, consent in the new tab.
    The connection appears under "Connected accounts".

@@ -131,14 +131,15 @@ ssh -N -L 6080:127.0.0.1:6080 mark@192.168.0.128
 then open `http://127.0.0.1:6080/vnc.html` and click Connect. That works from the machine with
 the tunnel and nowhere else.
 
-A `tailscale serve --set-path /browser http://127.0.0.1:6080` mount is the other historical
-form, and it is the one to avoid: `tailscale serve` in raw `tcp://` mode forwards bytes and
-performs no HTTP auth, so **on this deployment the screen has been reachable from every tailnet
-peer with no credential at all** — a keyboard and a mouse on the browser holding the operator's
-signed-in sessions. Treat "loopback only" as a claim to CHECK (`docker exec tailscale tailscale
-serve status`) rather than a property of the design. The console relay above is careful, but it
-is not the boundary while a second unauthenticated path to the same port exists; closing that
-is a deployment change — drop the raw serve entry, or put the console relay in front of it.
+**Never publish that port through a raw TCP forward.** Any forward that moves bytes without
+speaking HTTP — a VPN or appliance "expose this port" feature, an `ncat` relay, a stream proxy
+block — performs no HTTP auth, so the screen becomes a keyboard and a mouse on the browser
+holding the operator's signed-in sessions, reachable by everyone on that network with no
+credential. This deployment shipped exactly that for several releases through a raw `tcp://`
+mount. Treat "loopback only" as a claim to CHECK (`docker inspect` the published port, then
+reach it from another host) rather than a property of the design: the console relay above is
+careful, yet it is not the boundary while a second unauthenticated path to the same port
+exists. Put the relay in front, or do not publish the port.
 
 **What a run may claim about it.** Only what is configured. There is no API that reports the
 public address, so a run that needs to hand a person a link must be TOLD the base URL rather

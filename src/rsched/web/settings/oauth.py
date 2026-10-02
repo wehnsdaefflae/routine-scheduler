@@ -90,7 +90,8 @@ def _redirect_uri(request: Request) -> str:
     base = server_of(request).public_url.rstrip("/")
     if not base:
         raise HTTPException(400, "set the instance public_url in Settings first — it is the OAuth "
-                                 "redirect target (e.g. your Tailscale https URL)")
+                                 "redirect target: the external https base a browser reaches "
+                                 "this instance at")
     return f"{base}/oauth/callback"
 
 
