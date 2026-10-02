@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.374.5] — 2026-10-02
+
+### Fixed — a lint slip in the new backup check
+
+items: F602 (follow-up)
+
+- `daemon/backup_watch.py`'s unknown-state message ran two characters past the 100-column budget and
+  failed the release gate's quality stage. Reflowed; the wording and behaviour are unchanged.
+
 ## [0.374.4] — 2026-10-02
 
 ### Fixed — a console tab at the browser's connection limit says so instead of not loading

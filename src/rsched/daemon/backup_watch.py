@@ -95,8 +95,9 @@ def staleness(now: datetime | None = None, roots: list[Path] | None = None) -> t
     moment = now or datetime.now(UTC)
     if when is None:
         looked = ", ".join(str(r) for r in (roots if roots is not None else backup_roots()))
-        return "unknown", (f"no readable {COMPLETED_STAMP} under any backup root ({looked or 'none'})"
-                           " — the share may not be mounted where this process can see it")
+        return "unknown", (f"no readable {COMPLETED_STAMP} under any backup root "
+                           f"({looked or 'none'}) — the share may not be mounted where this "
+                           "process can see it")
     age = moment - when
     if age <= timedelta(days=STALE_AFTER_DAYS):
         return "ok", f"last complete snapshot {when.isoformat()} ({stamp})"
