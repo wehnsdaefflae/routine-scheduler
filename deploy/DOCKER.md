@@ -149,6 +149,18 @@ mirror, because a mirror copies DAMAGE as faithfully as work: a run that wrecked
 was copied over the last good copy at 03:30, and a deleted conversation lived in it only until
 the next night.
 
+The closing line says **what the snapshot cost**, in two figures: the bytes `rsync` reports having
+transferred (summed from its own `--stats`, free — it already computed them), and how far the
+share's used space moved across the run (`df` before and after). The first is the honest cost; the
+second is the check on it, and it carries the alarm: a share that stopped hard-linking would make
+rsync copy instead of link, so its used space would grow by a FULL snapshot while the transfer
+stayed small — the run warns when the delta exceeds four times the transfer and a gigabyte. Until
+0.374.2 that line was a `du -sh <yesterday> <today>` instead, which was wrong on the default share
+and nowhere else: `/mnt/sshd_volume1` is `fuse.sshfs`, which gives every path a synthetic inode, so
+`du` cannot recognise a hard link and counted every linked file again — it reported "14G new on the
+share" for a night that transferred ~1.7 GB and moved the share's used space 539G → 540G, and spent
+about seven minutes of network stat calls to get there.
+
 A snapshot is built under a temporary name (`snapshots/.in-progress`) and takes its date only
 once every home copied, so a failed or interrupted run never leaves a half snapshot that a
 restore could pick or a later run could build on, and `latest` stays where it was. After a

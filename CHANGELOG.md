@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.374.2] — 2026-10-02
+
+### Fixed — the snapshot's cost figure is rsync's own, checked against the share's used space
+
+items: F603 (operator, 2026-10-01: "do it according to your recommendations"; R2130)
+
+- **`deploy/backup.sh` no longer walks the share with `du`.** The closing line claimed what the
+  night cost by `du -sh <yesterday> <today>` — valid reasoning (du counts a hard-linked file once
+  per invocation, so the second figure is what the previous snapshot does not already hold) and
+  wrong on this share: `/mnt/sshd_volume1` is `fuse.sshfs`, which hands every path a SYNTHETIC
+  inode, so `du` cannot recognise a hard link and counted every linked file again. It printed
+  **"14G new on the share"** for a night that transferred **~1.7 GB** and moved the share's used
+  space **539G → 540G**, and it spent **~7 minutes** of network stat calls nightly to be wrong.
+- **The cost is now rsync's own `--stats` transferred total**, summed across the homes — free,
+  because rsync already computed it — **plus the share's `df` delta across the run**. The ALARM the
+  old line existed for, a share that cannot hard-link and makes rsync copy instead, survives as the
+  stronger test: the run warns when the `df` delta exceeds `HARDLINK_ALARM_RATIO` (4) times the
+  transfer **and** `HARDLINK_ALARM_FLOOR_KB` (1 GiB), which is what a full copy looks like and an
+  ordinary night never is. Both bounds are overridable so the arithmetic is testable without a
+  gigabyte of real bytes. `deploy/DOCKER.md` describes the new measure.
+
 ## [0.374.1] — 2026-10-02
 
 ### Fixed — the credential-store guard accepts the narrowing its own advisory asks for

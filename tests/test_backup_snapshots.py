@@ -55,9 +55,11 @@ def root(tmp_path) -> Iterator[Path]:
 
 
 def _backup(home: Path, root: Path, today: str, rsync: str | None = None,
-            ) -> subprocess.CompletedProcess:
+            overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     """One run of the real script on the day `today` — a stub answers `date +%F` and hands every
-    other call to the real date — optionally through an `rsync` stub."""
+    other call to the real date — optionally through an `rsync` stub, and with `overrides` merged
+    over the script's environment (the hard-link alarm's two bounds are overridable so the
+    arithmetic can be driven without writing a gigabyte of real bytes)."""
     bin_dir = home.parent / "bin"
     write_executable(
         bin_dir / "date",
@@ -66,7 +68,7 @@ def _backup(home: Path, root: Path, today: str, rsync: str | None = None,
         (bin_dir / "rsync").unlink(missing_ok=True)
     else:
         write_executable(bin_dir / "rsync", rsync)
-    env = _env(home)
+    env = {**_env(home), **(overrides or {})}
     env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
     with TEST_LOCK.open("w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
@@ -348,6 +350,60 @@ def test_the_tarball_and_the_snapshot_carry_the_same_files(home, root, tmp_path)
     assert not EXCLUDED & copied, f"the snapshot carried excluded files: {EXCLUDED & copied}"
     assert "routines/r1/apps/kept.txt" in tarred   # a workspace's exclude stays in its home
     assert copied == tarred, f"only in the snapshot: {copied - tarred}; only tarred: {tarred - copied}"
+
+
+def test_the_cost_line_reports_rsyncs_own_transfer_and_the_shares_delta(home, root):
+    """F603: what a snapshot COST used to be a `du -sh yesterday today`, which counts a
+    hard-linked file once per invocation. On the live share — `fuse.sshfs`, where every path gets
+    a synthetic inode — du cannot recognise a link and counted every linked file again: it
+    reported "14G new on the share" for a night that transferred ~1.7 GB and moved the share's
+    used space 539G → 540G, and spent ~7 minutes of network stat calls to be wrong. rsync already
+    computes the honest figure (`--stats`), and `df` before/after is the check on it that keeps the
+    alarm the du line existed for.
+    """
+    _plant(root, "2026-09-30")
+    proc = _backup(home, root, "2026-10-01")
+    _ok(proc)
+    assert "rsync transferred" in proc.stdout, proc.stdout
+    assert "its own --stats total" in proc.stdout
+    assert "the share's used space moved" in proc.stdout
+    # the misleading claim is gone, in both of its spellings
+    assert "new on the share" not in proc.stdout
+    assert "the rest shared with" not in proc.stdout
+
+
+def test_a_share_that_stopped_hard_linking_is_called_out(home, root):
+    """The alarm the du line existed for, now carried by the df delta: a share unable to
+    hard-link makes rsync COPY, so its used space grows by a full snapshot while the transfer
+    stays small.
+
+    Driven through the two alarm bounds rather than by writing real bytes — a first version of
+    this test wrote 32 MiB per home into the /dev/shm root and filled the tmpfs, which failed the
+    script for a reason that had nothing to do with what is being tested.
+    """
+    _plant(root, "2026-09-30")
+    stub = ('#!/bin/sh\n'
+            'for a in "$@"; do dest="$a"; done\n'
+            'mkdir -p "${dest}"\n'
+            'head -c 262144 /dev/urandom > "${dest}/filler-$$" 2>/dev/null\n'
+            'echo "Number of regular files transferred: 1"\n'
+            'echo "Total transferred file size: 1,024 bytes"\n'
+            'exit 0\n')
+    proc = _backup(home, root, "2026-10-01", rsync=stub,
+                   overrides={"HARDLINK_ALARM_RATIO": "1", "HARDLINK_ALARM_FLOOR_KB": "1"})
+    _ok(proc)
+    assert "WARNING" in proc.stderr, proc.stdout + proc.stderr
+    assert "UNABLE TO HARD-LINK" in proc.stderr
+
+
+def test_a_normal_night_never_cries_wolf_about_hard_links(home, root):
+    """The other direction, which is the one that matters daily: the production bounds (4x the
+    transfer AND a gigabyte of room) must stay silent on an ordinary snapshot.
+    """
+    _plant(root, "2026-09-30")
+    proc = _backup(home, root, "2026-10-01")
+    _ok(proc)
+    assert "UNABLE TO HARD-LINK" not in proc.stderr, proc.stderr
 
 
 def test_the_help_says_how_to_restore_without_touching_a_share(tmp_path):

@@ -67,6 +67,27 @@ Never edit a file inside a snapshot: an unchanged file is ONE file every snapsho
 EOF
 }
 
+# The share's used space in KiB, "" when df cannot answer (a share that vanished mid-run must not
+# take the script down over a cost report). Read before and after the transfer: the delta is what
+# the snapshot actually cost the share, which is the check on rsync's own figure (F603).
+share_used_kb() { df -P -k "${SNAPS}" 2>/dev/null | awk 'NR==2 {print $3}'; }
+
+# KiB → a human figure, so the cost line reads like the du line it replaces.
+human_kb() {
+  awk -v kb="${1:-0}" 'BEGIN {
+    split("K M G T", u, " ");
+    v = kb; i = 1;
+    while (v >= 1024 && i < 4) { v /= 1024; i++ }
+    printf (v < 10 && i > 1) ? "%.1f%s\n" : "%.0f%s\n", v, u[i];
+  }'
+}
+
+# When the df delta means "this share stopped hard-linking" rather than "another writer touched
+# it": BOTH bounds must be crossed. Overridable so the arithmetic can be exercised without a
+# gigabyte of real bytes; nothing in production sets them.
+HARDLINK_ALARM_RATIO="${HARDLINK_ALARM_RATIO:-4}"
+HARDLINK_ALARM_FLOOR_KB="${HARDLINK_ALARM_FLOOR_KB:-1048576}"   # 1 GiB
+
 # The complete snapshots, oldest first. Only a run that finished gives a folder a date for a
 # name, so this is exactly what a run may link against, `latest` may name and retention counts.
 snapshot_names() {
@@ -195,6 +216,8 @@ echo
 
 mkdir "${WORK}"
 started=$(date +%s)
+share_used_before="$(share_used_kb)"   # the other half of the snapshot's cost report (F603)
+transferred_kb=0                       # summed from each home's rsync --stats, the honest cost
 failed=()
 for p in "${STATE_PATHS[@]}"; do
   printf '  %-42s ' "${p}"
@@ -233,6 +256,12 @@ for p in "${STATE_PATHS[@]}"; do
   if [ "${rc}" -eq 0 ] || [ "${rc}" -eq 24 ]; then
     xfer=$(echo "${out}" | awk -F': *' '/Number of regular files transferred/ {print $2}')
     sent=$(echo "${out}" | awk -F': *' '/Total transferred file size/ {print $2}')
+    # The same figure in KiB, summed across homes: rsync's own answer to "what did this snapshot
+    # cost", which replaces the du walk (F603). `sent` is formatted for people ("1,234 bytes"), so
+    # the digits are taken from the stats line directly.
+    home_kb=$(echo "${out}" | awk -F': *' '/Total transferred file size/ {
+                 gsub(/[^0-9]/, "", $2); if ($2 != "") printf "%d\n", $2 / 1024; }')
+    transferred_kb=$(( transferred_kb + ${home_kb:-0} ))
     vanished=""
     if [ "${rc}" -eq 24 ]; then
       vanished=", $(echo "${out}" | grep -c '^file has vanished' || true) vanished mid-copy"
@@ -283,18 +312,35 @@ point_latest_at "${TODAY}"
 date -Iseconds > "${ROOT}/.rsched-backup-completed"
 rm -rf "${DISCARD}"
 
-# What the snapshot cost the share: du counts a hard-linked file once per invocation, so the
-# second figure is only what the previous snapshot does not already hold. Were the share unable
-# to hard-link, rsync would quietly copy instead — and this is the line that would show it.
-prev=""
-while read -r name; do if [[ "${name}" < "${TODAY}" ]]; then prev="${name}"; fi; done \
-  < <(snapshot_names)
-if [ -n "${prev}" ]; then
-  added="$(du -sh "${SNAPS}/${prev}" "${SNAPS}/${TODAY}" 2>/dev/null | tail -1 | cut -f1 || true)"
-  echo "snapshot ${TODAY}: ${added:-?} new on the share, the rest shared with ${prev}   elapsed: ${elapsed}s"
-else
-  size="$(du -sh "${SNAPS}/${TODAY}" 2>/dev/null | cut -f1 || true)"
-  echo "snapshot ${TODAY}: ${size:-?}, a full copy   elapsed: ${elapsed}s"
+# What the snapshot cost the share — rsync's OWN figure, and the share's used space as the check
+# on it. This used to be a `du -sh prev today`, counting a hard-linked file once per invocation so
+# the second figure was "what the previous snapshot does not already hold". On the default share
+# that figure is a nightly false alarm: /mnt/sshd_volume1 is fuse.sshfs, which hands every path a
+# SYNTHETIC inode, so du cannot tell a hard link from a copy and counts every linked file again —
+# it printed "14G new on the share" for a night rsync transferred ~1.7 GB while the share's used
+# space moved 539G → 540G, and it cost ~7 minutes of stat calls over the network to do it
+# (measured 2026-10-01, F603).
+#
+# So: rsync already told us what it sent (summed from the per-home --stats above), and `df` tells
+# us what the share actually lost. The ALARM the du line existed for survives in the comparison,
+# and is now the stronger test: if the share ever stopped hard-linking, rsync's transfer would stay
+# small while the df delta grew to the size of a FULL copy. A delta far above the transfer is that
+# fault; a delta at or below it is a working snapshot (below is normal — the share has other
+# writers and its own bookkeeping moves either way).
+share_used_after="$(share_used_kb)"
+echo "snapshot ${TODAY}: rsync transferred $(human_kb "${transferred_kb}") (its own --stats total)   elapsed: ${elapsed}s"
+if [ -n "${share_used_before}" ] && [ -n "${share_used_after}" ]; then
+  delta_kb=$(( share_used_after - share_used_before ))
+  if [ "${delta_kb}" -lt 0 ]; then delta_kb=0; fi
+  echo "           the share's used space moved $(human_kb "${delta_kb}") — hard links intact when that is not far above the transfer"
+  if [ "${transferred_kb}" -gt 0 ] \
+     && [ "${delta_kb}" -gt $(( transferred_kb * HARDLINK_ALARM_RATIO )) ] \
+     && [ "${delta_kb}" -gt "${HARDLINK_ALARM_FLOOR_KB}" ]; then
+    echo "WARNING: the share grew $(human_kb "${delta_kb}") for a $(human_kb "${transferred_kb}") transfer." >&2
+    echo "         That is what a share UNABLE TO HARD-LINK looks like: rsync copies instead of" >&2
+    echo "         linking, so every snapshot costs a full copy and retention will fill the share." >&2
+    echo "         Check that ${SNAPS} is on a filesystem supporting hard links." >&2
+  fi
 fi
 
 prune_snapshots
