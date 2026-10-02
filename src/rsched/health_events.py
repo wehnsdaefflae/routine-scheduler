@@ -8,7 +8,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"scheduler_tick_error"
-        |"commit_failed"|"git_lock_cleared",
+        |"commit_failed"|"git_lock_cleared"|"backup_stale",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -45,6 +45,16 @@ kept (`gitlock.IndexLock.kept_because`). The files stay on disk and the next com
 takes them, so nothing is lost; what is lost until then is the history. Before this event a
 stale lock made EVERY later commit in that repo fail the same silent way: on 2026-09-30 the
 migration record said 0 failed while two routines' edits sat staged under one.
+
+backup_stale: the nightly state snapshot has not COMPLETED for longer than
+`daemon/backup_watch.STALE_AFTER_DAYS` (3) — read from the `.rsched-backup-completed` stamp
+`deploy/backup.sh` writes as its last act. routine and run_id are empty: it is an instance fact,
+not a routine's. Filed at most once a day while the condition holds, and nothing is claimed when
+the stamp cannot be read at all (an unmounted share reads as unknown, never as stale).
+`rsched-backup.service` failed every night from 2026-09-12 to 2026-10-01 and nothing anywhere in
+this product read backup state, so three weeks of no backup passed with zero signal (F602). The
+other half of that fix is the unit's own `OnFailure=` push, which still works when this daemon is
+down — a single mechanism would have had to be the one that was up.
 
 git_lock_cleared: a provably stale `index.lock` was removed before a write (`gitlock` — the
 commit lock was held, no git process worked in the repo, the lock was empty and older than

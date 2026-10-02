@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.374.3] — 2026-10-02
+
+### Fixed — a failed nightly backup now reaches the operator, and a stale one is visible
+
+items: F602 (operator, 2026-10-01: "do it according to your recommendations"; R2130)
+
+- **`rsched-backup.service` failed every night from 2026-09-12 to 2026-10-01** — nineteen nights with
+  no snapshot — and nobody saw it until a deploy session happened to read the journal. The indicator
+  was ABSENT, not broken: a grep for `rsched-backup` / `backup-completed` / `backup_completed` over
+  `src/` and `static/` returned **zero hits**, so nothing anyone clicks in the console, and no
+  routine, could tell a healthy instance from an unbacked one.
+- **Two mechanisms close it, deliberately not sharing a failure mode.** (1) `OnFailure=` on the backup
+  unit starts the new `deploy/rsched-backup-failed.service`, which POSTs one high-priority ntfy
+  notification naming the host and the `journalctl --user -u rsched-backup -n 80` line to read next.
+  Its credentials come from `~/.config/routine-scheduler/secrets.env` via `EnvironmentFile=` — the
+  store the `ntfy` util already reads, which systemd can parse as-is — so no second credential path
+  exists and no token lives in a unit; with `NTFY_URL`/`NTFY_TOPIC` unset it logs that and exits 0,
+  because failing to REPORT a failure must not look like a different fault. This is the half that
+  still works when the scheduler daemon is down, which is when a backup failure matters most. (2) The
+  daemon reads the `.rsched-backup-completed` stamp `backup.sh` writes and files a new `backup_stale`
+  health event when the last COMPLETE snapshot is older than 3 days (`daemon/backup_watch.py`, off the
+  tick beside the OAuth and library upkeep, at most one row a day while it holds, and never raising
+  into the tick). An unreadable stamp reports **unknown, never stale** — a backup failure is not
+  claimed from a share this process cannot see. The event is in `health_events.py`'s machine-checked
+  vocabulary and in `health_stream.BLOCKED_EVENTS`, so the console's blocked-work surface renders it
+  without being recompiled. `deploy/DOCKER.md` installs the third unit and documents both halves.
+
 ## [0.374.2] — 2026-10-02
 
 ### Fixed — the snapshot's cost figure is rsync's own, checked against the share's used space

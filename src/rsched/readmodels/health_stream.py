@@ -58,6 +58,8 @@ BLOCKED_EVENTS: dict[str, str] = {
     "trigger_capped": "a trigger hit its daily cap: the routine is dark until the cap resets",
     "commit_failed": "a commit into a versioned repo did not land — the files are on disk and "
                      "out of its history until a later commit takes them",
+    "backup_stale": "the nightly state snapshot has not completed for days — the instance is "
+                    "running unbacked",
 }
 
 #: Partial finishes, split by whether a budget forced them (health_events.py's own

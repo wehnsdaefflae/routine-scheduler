@@ -1,0 +1,39 @@
+[Unit]
+Description=Push a failed rsched state snapshot to the operator's phone (ntfy)
+Documentation=file:%h/git-repos/routine-scheduler/deploy/DOCKER.md
+
+# Started by rsched-backup.service's OnFailure=, so it runs exactly when a snapshot failed —
+# including when the scheduler daemon is down, which is the case the console and the health stream
+# cannot cover and the whole reason this unit exists (F602: the backup failed every night from
+# 2026-09-12 to 2026-10-01 and nothing told anyone).
+
+[Service]
+Type=oneshot
+
+# The instance's central secrets store, which already holds NTFY_URL and NTFY_TOPIC for the `ntfy`
+# util. systemd reads it as a plain KEY=VALUE file — which is exactly what it is — so the push needs
+# no second credential path and no secret in this unit. The `-` prefix because a missing file must
+# not turn a backup failure into a failure to REPORT a backup failure: without the topic the unit
+# still runs and says so in the journal.
+EnvironmentFile=-%h/.config/routine-scheduler/secrets.env
+
+# One POST, no pipeline that could hide its own failure. The journal of the failed run is what the
+# operator reads next, so the push carries the command rather than the log: a push is a WAKE-UP, not
+# a report. `--fail` so a 4xx/5xx is a non-zero exit visible in this unit's own journal instead of a
+# silent success, and short timeouts because a wedged NAS is the likeliest cause of the failure being
+# reported.
+ExecStart=/bin/bash -c '\
+  if [ -z "${NTFY_URL}" ] || [ -z "${NTFY_TOPIC}" ]; then \
+    echo "NTFY_URL/NTFY_TOPIC not set in ~/.config/routine-scheduler/secrets.env — no push sent" >&2; \
+    exit 0; \
+  fi; \
+  curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+       -H "Title: rsched backup FAILED on $(hostname)" \
+       -H "Priority: high" \
+       -H "Tags: warning,floppy_disk" \
+       -d "The nightly state snapshot did not complete. Read it with: journalctl --user -u rsched-backup -n 80" \
+       "${NTFY_URL%/}/${NTFY_TOPIC}"'
+
+# A push that cannot be delivered is its own row in `systemctl --user status`; the backup unit's own
+# failed state is untouched either way.
+TimeoutStartSec=1m

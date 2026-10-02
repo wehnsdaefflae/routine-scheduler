@@ -23,6 +23,7 @@ from ..config import ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from . import pause, restart, runner_reap
+from .backup_watch import BackupWatch
 from .detached import DetachedManager
 from .events import EventBus
 from .lane_runs import LaneRunManager
@@ -77,6 +78,11 @@ class Scheduler:
         # bundle — with no writer to gate. This notices and files the breakage as a
         # decision (daemon/library_watch.py).
         self.library = LibraryWatch(server)
+        # The nightly state snapshot is the one thing this product never read about itself: the
+        # backup unit failed nineteen nights running and no surface anywhere could say so. This
+        # reads the stamp `deploy/backup.sh` writes and files staleness into the health stream
+        # (daemon/backup_watch.py, F602).
+        self.backup = BackupWatch(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
         # D71: lanes with a cron of their own. A due lane fire ARMS the sequential
@@ -332,6 +338,11 @@ class Scheduler:
                 # library change — awaited here, either held every fire behind it.
                 self._off_tick("oauth", self.oauth.tick)
                 self._off_tick("library-watch", self.library.tick)
+                # …and the one reader of backup state: a nightly snapshot that stopped
+                # completing is reported into the health stream, where the console already
+                # renders "something due did not happen" (F602 — nineteen unbacked nights
+                # passed unseen because nothing in this product read it at all).
+                self._off_tick("backup-watch", self.backup.tick)
             except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
             except Exception as exc:

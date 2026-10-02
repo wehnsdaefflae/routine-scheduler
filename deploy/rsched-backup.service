@@ -2,6 +2,14 @@
 Description=rsched state snapshot — a dated, hard-linked backup of every data home
 Documentation=file:%h/git-repos/routine-scheduler/deploy/DOCKER.md
 
+# A failed snapshot reaches the operator's phone, because nothing else does: this unit failed every
+# night from 2026-09-12 to 2026-10-01 and the silence held for nineteen nights (F602). systemd is
+# the right carrier for THIS half — it still works when the scheduler daemon is down, which is
+# exactly when a backup failure matters most. The daemon's own backup-watch covers the other half (a
+# snapshot that stopped completing for days, filed into the health stream), so neither mechanism
+# being up is a single point of silence.
+OnFailure=rsched-backup-failed.service
+
 [Service]
 Type=oneshot
 

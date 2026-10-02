@@ -244,12 +244,31 @@ checkout's `backup.sh`, so an update reaches the next firing by itself; re-copy 
 only when they change.
 
 ```bash
-install -m 0644 deploy/rsched-backup.service ~/.config/systemd/user/
-install -m 0644 deploy/rsched-backup.timer   ~/.config/systemd/user/
+install -m 0644 deploy/rsched-backup.service        ~/.config/systemd/user/
+install -m 0644 deploy/rsched-backup-failed.service ~/.config/systemd/user/
+install -m 0644 deploy/rsched-backup.timer          ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now rsched-backup.timer
 systemctl --user start rsched-backup.service     # prove it once, then read the journal
 journalctl --user -u rsched-backup.service -n 30
+```
+
+**A failed backup now says so, twice over, and the two paths fail independently.** The backup unit's
+`OnFailure=` starts `rsched-backup-failed.service`, which POSTs one high-priority ntfy notification
+naming the host and the `journalctl` command to read next. It takes `NTFY_URL` and `NTFY_TOPIC` from
+`~/.config/routine-scheduler/secrets.env` through `EnvironmentFile=` — the same store the `ntfy` util
+reads, so there is no second credential path and no secret in the unit; with neither set it logs that
+and exits 0, because failing to REPORT a failure must not look like a different fault. That half is
+systemd's deliberately: it still works when the scheduler daemon is down, which is exactly when a
+backup failure matters. Separately the daemon reads the `.rsched-backup-completed` stamp and files a
+`backup_stale` health event when the last COMPLETE snapshot is more than three days old
+(`src/rsched/daemon/backup_watch.py`), which the console's blocked-work surface renders. Before
+0.374.3 neither existed: this unit failed every night from 2026-09-12 to 2026-10-01, nothing in the
+product read backup state at all, and nineteen unbacked nights passed in silence until someone
+happened to read the journal.
+
+```bash
+systemctl --user start rsched-backup-failed.service   # prove the push path once, on purpose
 ```
 
 Needs `loginctl enable-linger <user>` (which `install.sh` already does) or the timer only runs
