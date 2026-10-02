@@ -50,6 +50,27 @@ def test_a_bare_checkout_creates_private_state_with_fresh_keys(tmp_path):
     assert {_mode(state / "config.yaml"), _mode(state / "client.env")} == {0o600}
 
 
+def test_a_fresh_install_prunes_its_error_logs(tmp_path):
+    """`error-logs-max-files: 0` DISABLES cleanup upstream — it does not mean "keep none".
+
+    In the pinned CLIProxyAPI v7.2.156 (`internal/logging/request_logger_writer.go`)
+    `cleanupOldErrorLogs` returns early when `errorLogsMaxFiles <= 0`, so nothing is ever
+    deleted; upstream's own default is 10. The example config said 0 and the live config copied
+    it, which left 1,685 `error-v1-*.log` files — ~793 MB of full request/response dumps
+    (prompts, routine content, up to 6 MB each) — under `cliproxy/auth/logs` since 2026-09-10.
+    That directory sits inside `~/.config/routine-scheduler`, a REQUIRED backup home, so every
+    nightly snapshot carried all of it.
+
+    Asserted on the config the script actually WRITES, not on the example, because what seeds a
+    new install is what matters. Upstream offers no "keep none", so 1 is the floor.
+    """
+    proc, state = _init(tmp_path)
+    assert proc.returncode == 0, proc.stderr
+    config = yaml.safe_load((state / "config.yaml").read_text())
+    assert config["error-logs-max-files"] >= 1, \
+        "0 disables cleanup — a fresh install would accumulate request dumps in a backup home"
+
+
 def test_a_second_run_keeps_the_keys_it_made(tmp_path):
     first, state = _init(tmp_path)
     assert first.returncode == 0, first.stderr

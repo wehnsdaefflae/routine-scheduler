@@ -245,8 +245,12 @@ export function createChat(container, opts = {}) {
         ? p.files.map((f) => `--- ${f.path}\n${f.error || f.content || ""}`).join("\n\n")
         : (p.content ?? "");
     } else if (p.kind === "view_image") {
+      // The THUMBNAIL for an image the run looked at lives in the transcript renderer's own
+      // observation branch (components/transcript.js, F559) — that is what draws a
+      // conversation's observations. THIS branch renders a USER-TYPED command's result, where
+      // the paths and any vision description are the whole answer.
       body = (p.files || []).map((f) => f.error ? `${f.path}: ${f.error}`
-        : f.text ? `${f.path}:\n${f.text}` : `${f.path} — attached for the assistant`).join("\n\n");
+        : f.text ? `${f.path}:\n${f.text}` : f.path).join("\n\n");
     } else if (p.kind === "write_file") body = `wrote ${p.bytes} bytes to ${p.path}`;
     else if (p.kind === "edit_file") body = `replaced ${p.replacements} occurrence(s) in ${p.path}`;
     else if (p.kind === "llm") body = p.reply || "";

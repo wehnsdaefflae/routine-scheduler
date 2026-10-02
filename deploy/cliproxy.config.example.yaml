@@ -14,7 +14,15 @@ remote-management:
 debug: false
 request-log: false
 logging-to-file: false
-error-logs-max-files: 0
+# 0 does NOT mean "keep none" — it DISABLES cleanup. In the pinned v7.2.156
+# (internal/logging/request_logger_writer.go) `cleanupOldErrorLogs` returns early when
+# errorLogsMaxFiles <= 0, so nothing is ever deleted; upstream's own default is 10. This file
+# said 0 and the live config copied it, which left 1,685 error-v1-*.log files (~793 MB of full
+# request/response dumps — prompts, routine content, up to 6 MB each) under
+# cliproxy/auth/logs, accumulating since 2026-09-10. That directory is inside
+# ~/.config/routine-scheduler, a REQUIRED backup home, so every snapshot carried them.
+# Upstream has no "keep none" setting: 1 is the smallest bound that still prunes.
+error-logs-max-files: 1
 # The scheduler owns retries and model failover.
 request-retry: 0
 max-retry-credentials: 1

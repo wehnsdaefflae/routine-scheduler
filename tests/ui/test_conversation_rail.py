@@ -34,16 +34,25 @@ def _write_handle(conv_dir, *, port: int, pid: int = 999_999_999) -> None:
         "view": "state/browser-view.png", "started": 1754700000.0}), encoding="utf-8")
 
 
-def test_browser_section_renders_and_close_clears_session(ui, ui_page):
-    """With a live-looking handle (a really-listening port) the rail grows a 'browser'
-    section: url line, screenshot, and a ✕ that hits the stop endpoint — after which the
-    handle is gone and the section hides again."""
-    _slug, conv_dir = start_conversation(ui, ui_page, ASK)
-    cap = ui_page.locator(".conv-view .rail-cap", has_text="browser")
-    expect(cap).to_be_hidden()   # no session yet
+def test_the_rail_grows_no_browser_section_even_with_a_live_session(ui, ui_page):
+    """The rail carries NO browser preview, and a live session does not bring one back.
 
-    # a listening socket makes the liveness probe (one TCP connect) report alive=True,
-    # which is what arms the close control
+    Operator, 2026-10-01: "we wanna remove the browser preview in the sidebar. it is redundant
+    now that we have the browser preview chip" — F561. The rail used to grow a `browser`
+    section from the `browser-session` util's persisted handle (D86 / R262 pt2): a status chip,
+    the url line, the blob-rendered screenshot and a ✕ hitting the stop endpoint. The permanent
+    read-only dock (#browser-dock, components/browserdock.js) shows the shared browser live on
+    every page, so the rail copy was a second view of the same thing — and a staler one: it
+    kept reading "● RUNNING" over an empty preview box after `browser-session stop` had
+    returned `{"stopped": true}`, because its rows came from persisted handles on an 8 s timer
+    rather than from the screen.
+
+    A live-looking handle is written here deliberately: the section was CONTENT-driven, so the
+    only way to prove it is gone rather than merely empty is to supply exactly what used to
+    reveal it. The stop endpoint itself is untouched and still covered by
+    tests/test_api_browser.py.
+    """
+    _slug, conv_dir = start_conversation(ui, ui_page, ASK)
     srv = socket.socket()
     try:
         srv.bind(("127.0.0.1", 0))
@@ -51,23 +60,12 @@ def test_browser_section_renders_and_close_clears_session(ui, ui_page):
         _write_handle(conv_dir, port=srv.getsockname()[1])
         ui_page.reload()
 
-        expect(cap).to_be_visible()
-        expect(ui_page.locator(".browser-line")).to_contain_text("https://example.com")
-        # the screenshot arrives via an authed fetch -> blob URL, never a bare <img src>
-        shot = ui_page.locator(".browser-shot")
-        expect(shot).to_be_visible()
-        assert shot.evaluate("el => el.src.startsWith('blob:')")
-        # clicking it opens the file through the one new-tab rule (blobtab.js): an image is a
-        # passive type, so the tab is the image itself, never a page with the console's origin
-        with ui_page.context.expect_page() as popup:
-            shot.click()
-        assert popup.value.url == shot.evaluate("el => el.src")
-        popup.value.close()
-
-        ui_page.locator(".browser-sess .bg-cancel").click()
-        # the stop endpoint deletes the model-written handle (the fake pid kills nothing)
-        expect(cap).to_be_hidden()
-        assert not (conv_dir / "state" / "browser-session.json").exists()
+        expect(ui_page.locator(".conv-view .rail-cap", has_text="browser")).to_have_count(0)
+        for gone in (".browser-sess", ".browser-line", ".browser-shot"):
+            expect(ui_page.locator(gone)).to_have_count(0)
+        # the sections people do use are still there, so this removed one thing and not the rail
+        expect(ui_page.locator(".conv-view .rail-cap", has_text="state").first).to_be_visible()
+        expect(ui_page.locator(".conv-view .rail-cap", has_text="artifacts")).to_be_visible()
     finally:
         srv.close()
 

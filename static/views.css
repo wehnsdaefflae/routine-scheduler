@@ -794,14 +794,9 @@ pre.hl-json .tok-const { color: var(--warn); }
 }
 .bg-cancel:hover { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
 .bg-cancel:disabled { opacity: 0.5; cursor: default; }
-/* the live browser session (D86): screenshot + close control in the conversation rail */
-.browser-sess { display: flex; flex-direction: column; gap: 4px; font-family: var(--f-display); }
-.browser-line { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
-.browser-url {
-  color: var(--ink-2); flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.browser-shot { width: 100%; border: 1px solid var(--rule-2); border-radius: 6px; cursor: zoom-in; }
+/* The conversation rail's live-browser-session styles are gone with the section itself (F561,
+   operator 2026-10-01): the permanent read-only dock (#browser-dock, base.css) is the one
+   browser preview now. The session API and `gu browser-session` are untouched. */
 .stategraph { display: flex; flex-direction: column; font-family: var(--f-display); }
 .sg-node {
   display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2);

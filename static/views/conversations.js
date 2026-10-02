@@ -11,13 +11,12 @@ import { referChip } from "/static/components/referchip.js";
 import { filePicker } from "/static/components/filepicker.js";
 import { mountComposerOnly, prefillComposer } from "/static/views/conversations-new.js";
 import { renderHead } from "/static/views/conversations-head.js";
-import { api, apiBlobUrl, apiUpload } from "/static/api.js";
+import { api, apiUpload } from "/static/api.js";
 import { questionPanel } from "/static/components/answerform.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
 import { forkAt, rewindTo } from "/static/components/branches.js";
-import { newTabHref } from "/static/components/blobtab.js";
 import { flagRefusal } from "/static/components/refusalflag.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
@@ -256,10 +255,14 @@ export async function render(view, slug, _query = {}) {
     const graphBody = rail.add("state", el("div", {}));
     const treeBody = detail.run_id ? rail.add("tasks", el("div", {})) : el("div", {});
     const filesBody = detail.run_id ? rail.add("files", el("div", {})) : el("div", {});
-    // the live browser session (D86, R262 pt2): the browser-session util's persisted handle
-    // + latest screenshot view, with a close control. Hidden until a session exists.
-    const brBody = rail.add("browser", el("div", { class: "browser-sess" }));
-    rail.toggle("browser", false);
+    // NO browser section here (F561, operator 2026-10-01: "we wanna remove the browser preview
+    // in the sidebar. it is redundant now that we have the browser preview chip"). The rail used
+    // to carry the browser-session handle, a status chip and the latest screenshot (D86, R262
+    // pt2). The permanent read-only dock (#browser-dock, components/browserdock.js) now shows
+    // the shared browser live on every page, so the rail copy was a second, POLLED, and
+    // demonstrably staler view of the same thing: it kept reading "● RUNNING" with an empty
+    // preview box after `browser-session stop` had returned `{"stopped": true}`, because its
+    // rows came from persisted handles refreshed on an 8 s timer rather than from the screen.
     // detached background tasks the assistant launched (the `detach` action): a flat cross-run
     // list with a cancel affordance. Hidden until there is at least one.
     const bgBody = rail.add("background", el("div", { class: "bg-tasks" }));
@@ -302,13 +305,14 @@ export async function render(view, slug, _query = {}) {
       try { paintBackground(await api(`/api/conversations/${slug}/background`)); } catch { /* transient */ }
     }
 
-    // #/conversations is the console's DEFAULT route, and both rail sections below are hidden
-    // until they have a row — so an idle tab parked where it opens used to spend ~600 requests
-    // an hour asking two endpoints about lists that were empty and could not fill, because
-    // nothing was running. Each timer is therefore armed by CONTENT — rows that exist now, or
-    // a live run that could create some — and disarmed again the moment neither holds.
-    let bgTimer = null, brTimer = null;
-    let bgRows = [], brRows = [];
+    // #/conversations is the console's DEFAULT route, and the background rail section is hidden
+    // until it has a row — so an idle tab parked where it opens used to spend ~600 requests an
+    // hour asking endpoints about lists that were empty and could not fill, because nothing was
+    // running. The timer is therefore armed by CONTENT — rows that exist now, or a live run that
+    // could create some — and disarmed again the moment neither holds. The browser section's own
+    // 8 s poll is gone with the section (F561); the dock reads the screen directly.
+    let bgTimer = null;
+    let bgRows = [];
     const arm = (timer, on, fn, ms) => {
       if (on && !timer) return setInterval(fn, ms);
       if (!on && timer) clearInterval(timer);
@@ -317,64 +321,10 @@ export async function render(view, slug, _query = {}) {
     function armPolls() {
       const live = WORKING.has(curState);
       bgTimer = arm(bgTimer, bgRows.length > 0 || live, refreshBackground, 15000);
-      brTimer = arm(brTimer, brRows.length > 0 || live, refreshBrowser, 8000);
     }
     paintBackground(detail.background || []);
 
-    // ---- the browser section (D86): rows from the persisted session handles; the view PNG
-    // is fetched WITH the auth header and blob-rendered (an <img src> can't carry the bearer)
-    let brBlobs = [];
-    let brLast = "";
-    const freeBrBlobs = () => { for (const u of brBlobs.splice(0)) URL.revokeObjectURL(u); };
-    function paintBrowser(rows) {
-      freeBrBlobs();
-      rail.toggle("browser", !!rows.length);
-      brBody.replaceChildren();
-      for (const s of rows) {
-        const line = el("div", { class: "browser-line" },
-          chip(s.alive ? "running" : "finished", s.alive ? "live" : "dead"),
-          el("span", { class: "browser-url", title: s.cdp }, s.url || s.name));
-        if (s.alive) {
-          const btn = el("button", { class: "bg-cancel", title: "close this browser session" }, "✕");
-          btn.onclick = async () => {
-            btn.disabled = true;
-            try { await api(`/api/conversations/${slug}/browser/${encodeURIComponent(s.name)}/stop`, { method: "POST" }); }
-            catch (err) { toastError(err); btn.disabled = false; return; }
-            toast("browser session closed");
-            brLast = "";
-            refreshBrowser();
-          };
-          line.append(btn);
-        }
-        brBody.append(line);
-        if (s.view) {
-          const img = el("img", { class: "browser-shot", alt: "latest browser view",
-                                  title: "latest screenshot — click to open full-size" });
-          apiBlobUrl(`/api/conversations/${slug}/browser/view?name=${encodeURIComponent(s.name)}&t=${s.view.mtime}`)
-            .then(({ url, type }) => {
-              brBlobs.push(url); img.src = url;
-              // through the one new-tab rule (blobtab.js): an image opens as itself, and a type
-              // that could carry script never reaches a tab with the console's origin
-              const tab = newTabHref(url, type, s.name);
-              if (tab.href !== url) brBlobs.push(tab.href);   // a wrapper is freed with its file
-              img.onclick = () => window.open(tab.href, "_blank");
-            })
-            .catch(() => img.remove());
-          brBody.append(img);
-        }
-      }
-    }
-    async function refreshBrowser() {
-      try {
-        const rows = await api(`/api/conversations/${slug}/browser`);
-        brRows = rows;
-        armPolls();
-        const key = JSON.stringify(rows);
-        if (key !== brLast) { brLast = key; paintBrowser(rows); }
-      } catch { /* transient */ }
-    }
-    refreshBrowser();
-    cleanup.push(() => { clearInterval(bgTimer); clearInterval(brTimer); freeBrBlobs();
+    cleanup.push(() => { clearInterval(bgTimer);
                          artifacts.destroy(); taskTree?.stop(); });
 
     const chat = createChat(chatBox, {
@@ -420,7 +370,7 @@ export async function render(view, slug, _query = {}) {
       stateGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
       if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); taskTree?.refresh();
-                             fileActivity?.refresh(); refreshBrowser(); }
+                             fileActivity?.refresh(); }
       armPolls();            // the run going live or terminal changes what is worth polling for
       refreshBackground();   // a finished detached task wakes the conversation → catch it here
     };

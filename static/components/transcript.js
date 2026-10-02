@@ -468,8 +468,25 @@ export function createTranscript(container, opts = {}) {
     } else {
       text = JSON.stringify(o, null, 1);
     }
+    // F559 (operator 2026-10-01: "i still want images that the system looks at previewed in the
+    // message as thumbnail"). view_image had no case above, so it fell through to the JSON dump
+    // and the person reading the transcript saw a path where the MODEL was shown the picture.
+    // The image is the evidence for everything the run says next, so it renders as a real
+    // thumbnail — through attachmentRow, the same authenticated blob route the user's own
+    // attachments use, because an <img src> cannot carry the Authorization header.
+    let thumbs = null;
+    if (o.kind === "view_image") {
+      const files = o.files || [];
+      // `text` is the vision util's description where a text-only model got one — that IS what
+      // the run reasoned about, so it is kept; an unreadable file reports its error instead.
+      text = files.map((f) => f.error ? `${f.path}: ${f.error}`
+        : f.text ? `${f.path}:\n${f.text}` : f.path).join("\n\n") || "no image";
+      thumbs = attachmentRow(files.filter((f) => !f.error).map((f) => f.path),
+                             opts.fileUrl, blobs);
+    }
     const obs = obsBody(text, (o.kind === "llm" && !o.error)
       || (o.kind === "memory_read" && !o.missing), obsState(o));
+    if (thumbs) obs.append(thumbs);
     openClock?.stop(ev.ts);
     openClock = null;
     if (openTurn) { openTurn.append(obs); openTurn = null; }
