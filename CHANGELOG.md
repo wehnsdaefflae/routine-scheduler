@@ -15,6 +15,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.374.0] — 2026-10-02
+
+### Fixed — a deploy script could drive another host's Docker daemon, and two failures said nothing
+
+items: F598, F599, F600, F601, F559, F561 (self-audit:20261001-223859)
+
+- **A deploy script refuses a Docker daemon that is not on this host.** `./deploy/nat64.sh off`
+  run on omen-laptop inside the sshfs mount of the SERVER's checkout rewrote the server's `.env`
+  through the mount, then talked to the laptop's Docker Desktop. The laptop had no containers, so
+  nat64.sh's only safety check — "does the selection leave out a service that has a container
+  here?" — passed on an empty list, and `docker compose up -d` built rsched, rsched-tor and
+  rsched-chrome on the laptop (~5.2 GB) and created the project's browser network there. It
+  stopped only because the default network's address pool overlapped a laptop network; with a free
+  subnet the laptop would have started a SECOND scheduler daemon bound to its stale July copy of
+  `~/routines`. Meanwhile the server stayed on NAT64 while the script printed "NAT64 off", and
+  `status` run from the laptop listed no containers and reported nothing wrong. New
+  `deploy/docker-host-guard.sh` refuses on either of two signals: `docker info --format
+  '{{.Name}}'` not matching `hostname` (a remote `DOCKER_HOST` reports the remote name too), or a
+  checkout on fuse.sshfs/nfs/cifs, where every bind path resolves on the wrong machine. It runs
+  before `switch` writes `.env` — so a refusal leaves `.env` untouched, that function's own
+  promise — at the head of `status`, and in `cliproxy-migrate-uid.sh` before its stop/chown, whose
+  `sed -i` would otherwise rewrite the server's `config.yaml` while acting on the laptop's
+  containers. `backup.sh`, `bundle.sh` and `install.sh` carry docker only in usage text.
+
+- **Two silent `except Exception: pass` bodies now say what they lost.** Of 76 broad excepts in
+  `src/`, a sweep found 7 silent and exactly these 2 losing information a reader needs.
+  `engine/capabilities.py` wrapped the capabilities digest's FIRST line — the model and its
+  context window — so a resolution failure deleted it entirely and the run planned its reads
+  against a window nobody had told it, with nothing in the prompt or transcript naming the fault.
+  It now says the window is UNKNOWN and why, and the rest of the digest still arrives.
+  `engine/window.py` swallowed the `tool_call` archival candidate's failure eight lines below the
+  branch that records the identical failure into `archival_selection_fallback`, so an archival run
+  that LOST a candidate looked like one that never had it.
+
+- **A web edit commits the file it edited, not the routine's whole tree.**
+  `pending_edits.apply_file` called `libgit.commit` with no `paths=`, so library-sync's commit
+  `5baf069` "edit stages/export.md via web" carries that routine's pending run-retention changes —
+  old `runs/*` deleted and gzipped, plus a `status.json`. A routine's tree is dirty routinely,
+  because its own runs write to it while a web edit sits queued. `_write_triggers` (shared by the
+  three trigger appliers) had the same shape. Both now pass `paths=` + `only=True`.
+
+- **A fresh cliproxy install prunes its error logs.** `deploy/cliproxy.config.example.yaml` set
+  `error-logs-max-files: 0`, and the live config copied it. In the pinned CLIProxyAPI v7.2.156
+  `cleanupOldErrorLogs` returns early when the value is `<= 0`, so 0 DISABLES cleanup rather than
+  keeping none (upstream's default is 10). That left 1,685 `error-v1-*.log` files — ~793 MB of
+  full request/response dumps, prompts and routine content included — under `cliproxy/auth/logs`
+  since 2026-09-10, inside `~/.config/routine-scheduler`, a REQUIRED backup home, so every
+  nightly snapshot carried all of it. The example is now `1`, the smallest bound upstream still
+  prunes at. Editing the LIVE config stays the operator's: the proxy hot-reloads it.
+
+### Changed — the image a run looked at is shown, and the rail's duplicate browser preview is gone
+
+- **A `view_image` observation renders the image.** It had no case in the transcript renderer's
+  per-kind chain, so it fell through to the `result — {json}` dump: the model was shown the
+  picture and the person was shown a path, while the image is the evidence for everything the run
+  says next. It now renders through `attachmentRow` — the same authenticated blob route the user's
+  own attachments use, because an `<img src>` cannot carry the Authorization header — and any
+  `text` is kept beside it, since that description is what a text-only model was actually given to
+  reason about.
+
+- **The conversation rail no longer carries a browser preview.** It read persisted session handles
+  on an 8-second timer while `#browser-dock` shows the shared browser live on every page, so it
+  was a second and staler view of one thing: it read "RUNNING" over an empty preview box after
+  `browser-session stop` had returned `{"stopped": true}`. The section, its painter, its
+  screenshot blob bookkeeping, its poll, four now-dead CSS rules and two orphaned imports are
+  gone. The session API, the stop endpoint, `gu browser-session` and the dock are untouched.
+
 ## [0.373.1] — 2026-10-01
 
 ### Fixed — every nightly backup failed: a file the subscription proxy wrote as root, and symlinks
