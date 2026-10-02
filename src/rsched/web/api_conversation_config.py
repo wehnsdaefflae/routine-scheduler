@@ -153,7 +153,8 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
     # the roots it booted with.
     for roots_key in ("fs_read_roots", "fs_write_roots"):
         if roots_key in updates:
-            raw[roots_key] = validate_roots(roots_key, updates[roots_key])
+            raw[roots_key] = validate_roots(roots_key, updates[roots_key],
+                                            current=raw.get(roots_key))
     # Every one of these five is validated by `web/config_fields`, which both this PATCH and
     # the routine PATCH call: a conversation is routine-shaped, and two copies of one check
     # drift (the window-fit refusal lived here alone, so a ROUTINE could be bound to a model

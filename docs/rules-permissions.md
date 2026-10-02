@@ -725,7 +725,13 @@ refuses one, and creation leaves the root out — `patterns/store.problems`,
 `patterns/apply.routine_yaml`), and REPORTED by the loader for a
 file that already lists one — that last one deliberately does not drop the root, because a
 routine that has legitimately been reading it would otherwise fail its next run with nothing
-naming the cause. Every one of them compares a root as written AND as resolved
+naming the cause. That report asks the operator to NARROW the grant, so the two PATCH edges take
+exactly that step: a guarded value already in the file, or strictly INSIDE a root already there,
+does not widen what the routine reaches and is accepted (`config_fields._already_held_or_narrower`,
+which those edges feed with the current list). Nothing else moves — a routine holding no store
+still cannot acquire one, the read list and the write list are separate grants, a widening back to
+the store is refused, and the create edges pass no current list at all, so every value they see is
+a new grant (F582; it is what blocked the narrowing the report itself demanded). Every one of them compares a root as written AND as resolved
 (`entities.never_grantable_fs`): the jail opens a root to build its rule, opening follows
 symlinks, so a link into a store — `/tmp` is writable in every jail — is the store.
 

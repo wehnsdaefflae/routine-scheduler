@@ -257,8 +257,12 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
     for roots_key in ("fs_read_roots", "fs_write_roots"):
         if roots_key in updates:
             # absolute, deduplicated, and never a credential store (SEC-1) — the one
-            # enforcer every grant edge calls (config_fields.validate_roots)
-            updates[roots_key] = validate_roots(roots_key, updates[roots_key])
+            # enforcer every grant edge calls (config_fields.validate_roots). `current` is
+            # what the FILE holds for this key, which is how a guarded root can be NARROWED
+            # (F582): the enforcer allows a value already there or strictly inside it, and
+            # refuses a new one and a widening exactly as before.
+            updates[roots_key] = validate_roots(roots_key, updates[roots_key],
+                                                current=raw.get(roots_key))
     if "schedule" in updates:
         # typed by SchedulePatch: catchup, a raw cron and its tz arrive valid
         sched_patch = updates.pop("schedule") or {}

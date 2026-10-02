@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.374.1] — 2026-10-02
+
+### Fixed — the credential-store guard accepts the narrowing its own advisory asks for
+
+items: F582, unblocking D159 (operator, 2026-10-01: "Fix F582 first, then narrow"; R2129)
+
+- **A guarded root can now be NARROWED, and only narrowed.** `entities.NEVER_GRANTABLE` (the
+  instance config dir, `~/.credentials`, `~/.ssh`) is refused at every edge where an operator
+  MAKES a grant, while the loader REPORTS one already in a file and keeps it — and that report
+  asks the operator to narrow the grant. He could not: `config_fields.validate_roots` validated a
+  value in isolation, so a PATCH naming a strict SUB-PATH of the very store it complains about was
+  refused exactly like a new grant. The operator hit it applying a proposed narrowing for
+  config-optimizer's `fs_read_roots`. The two PATCH edges (`api_routine_patch`,
+  `api_conversation_config`) now pass the list the FILE currently holds for that key, and the one
+  enforcer allows a guarded value that is already there or strictly inside it
+  (`_already_held_or_narrower`, comparing RESOLVED paths because a file may spell the same store
+  with `~` or absolutely).
+- **Four directions are pinned, the security one as its own test.** Narrowing a held store →
+  accepted. RE-SENDING a value the file already holds → accepted, because nothing changes;
+  refusing it blocked every unrelated edit to that same list for exactly the routines the guard
+  complains about. A guarded root on a routine holding none → refused, unchanged — and the read
+  list and the write list are separate grants, so holding the store for reads opens no write. A
+  widening from a sub-path back to the store (or up to `~/.config`) → refused. The conversation
+  CREATE form and the composer pass no current list, so every guarded value they see is a new
+  grant: the allowance is unreachable from an edge making the grant for the first time.
+  `docs/rules-permissions.md` states the exception beside the promise it qualifies.
+
 ## [0.374.0] — 2026-10-02
 
 ### Fixed — a deploy script could drive another host's Docker daemon, and two failures said nothing
