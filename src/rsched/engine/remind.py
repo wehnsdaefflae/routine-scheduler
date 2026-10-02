@@ -30,6 +30,7 @@ tally that shows which reminders earn their turns. There is deliberately no chea
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from .. import reminder_checks as checks
 from .. import reminders as store
@@ -131,6 +132,7 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
     live = {h.id: h for h in loop.reminders}
     return {"kind": "reminder_hold", "action": rendered,
             "reminders": [{"id": h.id, "scope": h.scope, "description": h.description,
+                           "owner": h.owner,
                            "stats": dict(live.get(h.id, h).stats)}
                           for h in hits]}
 
@@ -153,9 +155,16 @@ def _count_fires(loop, hits: list[Reminder]) -> None:
 
 
 def _fired_line(hit: Reminder, target_name: str) -> str:
-    """One line, one shape, for every non-holding kind — what fired, on what, and the caution."""
-    return (f"[REMINDER {hit.id} — your own caution, on this turn's {target_name}] "
-            f"{hit.description} (label it with remind_feedback: {LABEL_HELP})")
+    """One line, one shape, for every non-holding kind — what fired, on what, and the caution.
+
+    A FOREIGN hook says so and names its owner, because the disposition choice (keep / mute /
+    remove) is only the target's to make if the target can tell the hook is not its own.
+    """
+    whose = f"set by `{hit.owner}`" if hit.foreign else "your own caution"
+    tail = (f" ({hit.owner} set this: carry remind_feedback with disposition keep/mute/remove to "
+            f"decide its fate, and {LABEL_HELP})" if hit.foreign
+            else f" (label it with remind_feedback: {LABEL_HELP})")
+    return f"[REMINDER {hit.id} — {whose}, on this turn's {target_name}] {hit.description}{tail}"
 
 
 def at_observation(loop, action: dict, obs: dict) -> str:
@@ -273,6 +282,22 @@ def _remind_problems(op: object, grants) -> list[str]:
     if (p := checks.kind_problem(kind)) and verb != "delete":
         return [p]          # every further check depends on which moment this watches
     kind = kind if isinstance(kind, str) and kind in store.KINDS else store.DEFAULT_KIND
+    # the TARGET: another routine's slug. Setting a hook on someone else is a different act
+    # from leaving one for yourself, so it is checked here and refused outright for the two
+    # verbs that cannot mean it (a foreign hook is the TARGET's to revise or delete).
+    if (target := op.get("target")) is not None:
+        from ..ids import is_slug
+
+        if verb != "add":
+            problems.append(f"`remind.target` belongs to `op=add` — a hook another routine "
+                            f"holds is ITS to {verb}, which is what its disposition does")
+        elif not is_slug(str(target or "")):
+            problems.append("`remind.target` must be another routine's kebab-case slug — the "
+                            "routine whose runs this hook fires in")
+        elif scope == "global":
+            problems.append("`remind.target` and `scope=global` are two different reaches: a "
+                            "global reminder already reaches every routine it is curated for, "
+                            "so a target would mean nothing")
     if verb == "add":
         problems += [p for p in (checks.regex_problem(op.get("regex"), kind),
                                  checks.description_problem(op.get("description"))) if p]
@@ -309,6 +334,14 @@ def _feedback_problems(fb: object) -> list[str]:
     if str(fb.get("label") or "") not in store.LABELS:
         problems.append(f"`remind_feedback.label` must be one of {list(store.LABELS)} — "
                         f"{LABEL_HELP}")
+    # the DISPOSITION rides the same field (D152-C step 2): the moment a foreign hook fires is
+    # the moment its usefulness to its target is observable, so the say and the label are one act
+    if (disp := fb.get("disposition")) is not None and disp not in store.DISPOSITIONS:
+        problems.append(f"`remind_feedback.disposition` must be one of "
+                        f"{list(store.DISPOSITIONS)} — keep (leave it live), mute (silence it "
+                        "for the rest of this run), remove (delete it, and its owner cannot set "
+                        "that pattern on you again). It applies only to a hook ANOTHER routine "
+                        "set on you")
     return problems
 
 
@@ -393,7 +426,46 @@ def _apply_feedback(loop, fb: dict) -> str:
     tally = store.record(loop.ctx.routine.dir, target, label)
     _replace(loop, target, stats=tally)
     counts = " / ".join(f"{n} {f}" for f in store.LABELS if (n := tally.get(f)))
-    return f"{rid} labelled {label} ({tally.get('fires', 0)} fires: {counts or 'none labelled'})"
+    note = f"{rid} labelled {label} ({tally.get('fires', 0)} fires: {counts or 'none labelled'})"
+    return note + _apply_disposition(loop, target, fb.get("disposition"))
+
+
+def _apply_disposition(loop, target: Reminder, disposition: object) -> str:
+    """The TARGET's say over a hook ANOTHER routine set on it (D152-C step 2).
+
+    Applied at the fire, on the same field as the label, because that is the one moment the
+    hook's usefulness is observable. It outranks its owner: `remove` also records the refusal,
+    so the owner's next run cannot simply set the same pattern again.
+
+    A disposition on a hook the routine wrote ITSELF is refused rather than silently applied —
+    its own reminder is revised or deleted with a `remind` op, and conflating the two would make
+    `mute` a second, undocumented way to disable one.
+    """
+    if disposition is None:
+        return ""
+    if not target.foreign:
+        return (f"; no disposition applied — {target.id} is your own reminder, not one another "
+                "routine set on you: revise or delete it with a `remind` op")
+    applied = store.dispose(loop.ctx.routine.dir, target.id, str(disposition))
+    if not applied:
+        return f"; no disposition applied — {target.id} is no longer in your store"
+    if applied == "remove":
+        _remove_from_set(loop, target)
+        return (f"; REMOVED (set by {target.owner}) — it fires no more and {target.owner} cannot "
+                "set that pattern on you again")
+    _replace(loop, target, disposition=applied)
+    if applied == "mute":
+        loop.reminders = [r for r in loop.reminders if r.id != target.id]
+        return f"; MUTED for the rest of this run (set by {target.owner}, who still sees it)"
+    return f"; kept (set by {target.owner})"
+
+
+def _remove_from_set(loop, target: Reminder) -> None:
+    """Drop a disposed-of hook from this run's live set. The STORE write is `store.dispose`'s;
+    this only keeps the in-memory set — which a later definition write is rebuilt from — in step
+    with it, the same split `_save_local` documents.
+    """
+    loop.reminders = [r for r in loop.reminders if r.id != target.id]
 
 
 def _apply_op(loop, op: dict, poll_s: float) -> str:
@@ -437,7 +509,40 @@ def _apply_op(loop, op: dict, poll_s: float) -> str:
             f"{revised.description}")
 
 
+def _set_for_other(loop, op: dict, target: str) -> str:
+    """Set a hook in ANOTHER routine's store (D152-C step 2) — the note the run reads back.
+
+    The authority a `report` has, with the target's say added: the hook lands in the target's own
+    local store, its runs meet it from the next one on, and the TARGET disposes of it on a fire
+    (`reminders.dispose`). The sender does not hold it, so it is not added to this run's live set
+    and never fires here — a caution about someone else's actions could not fire here anyway.
+
+    Every refusal is the target's: its cap, a pattern it already holds, or one it removed before.
+    They come back as the note rather than as an exception, because a refused hook is not a
+    failed turn — the run reads why and carries on.
+    """
+    ctx = loop.ctx
+    if ctx.depth > 0:
+        return ("sub-workflows cannot set a hook on another routine — it binds a run nobody in "
+                "this tree supervises; name it in your summary instead")
+    target_dir = Path(ctx.server.routines_home) / target
+    if not target_dir.is_dir():
+        return f"no routine '{target}' is installed — nothing was set"
+    try:
+        hook = store.set_for(target_dir, regex=str(op["regex"]),
+                             description=str(op["description"]),
+                             kind=store.read_kind(op.get("kind")), owner=ctx.routine.slug,
+                             run_ts=ctx.run_ts)
+    except store.ReminderWriteError as exc:
+        return str(exc)
+    return (f"set {hook.id} on {target} ({hook.kind}) — /{hook.regex}/ fires in ITS runs from "
+            f"its next one on, and {target} decides on each fire whether to keep, mute or "
+            "remove it; you cannot revise or delete it")
+
+
 def _add(loop, op: dict, scope: str, poll_s: float) -> str:
+    if target := str(op.get("target") or ""):
+        return _set_for_other(loop, op, target)
     ctx = loop.ctx
     local = [r for r in loop.reminders if r.scope == "local"]
     if scope == "local" and len(local) >= store.MAX_LOCAL:
@@ -568,11 +673,18 @@ def _save_local(loop) -> None:
     every `fires` this run recorded back to its boot-time value, because a frozen in-memory
     `Reminder` never saw the increment — the global tallies were already merged this way, and
     the local half needed the same treatment.
+
+    MUTED records are the one exception to "memory owns the definitions", and for the reason
+    mute exists: it silences a foreign hook for the rest of this run WITHOUT destroying the
+    definition its owner can still see, so the live set no longer holds it — and a rewrite from
+    memory alone would then delete it from the file, turning every mute into a removal.
     """
     on_disk, gstats = store.load_local(loop.ctx.routine.dir)
     tallies = {r.id: r.stats for r in on_disk}
+    live_ids = {r.id for r in loop.reminders}
     merged = [Reminder(**{**r.as_record(), "stats": tallies[r.id]}) if r.id in tallies else r
               for r in loop.reminders]
+    merged += [r for r in on_disk if r.disposition == "mute" and r.id not in live_ids]
     store.save_local(loop.ctx.routine.dir, merged, gstats)
 
 

@@ -5,6 +5,10 @@ against, and the short caution the match is worth interrupting for. At the defau
 the canonical one-line rendering of an action — a matching action is HELD before it executes: it
 does not run, the model is shown the caution, and it decides again.
 
+A routine writes reminders for ITSELF, and may also set one on ANOTHER routine (`remind.target`):
+the hook then fires in that routine's runs, and that routine — not the one that set it — decides
+on each fire whether it stays.
+
 The layer exists because the framework's other "learn from surprise" surfaces are all
 *just-in-case*. `.memory/` puts its INDEX in the boot digest and asks the model to recall the right
 note at the right moment out of a large, always-present context. `note` files a line to
@@ -82,6 +86,38 @@ before the kinds existed meant exactly that, and the store must never be able to
 loads it. The WRITE gate is stricter: an unknown kind is refused there, because a hook its author
 believed watched the observation, silently stored as an action hook, would never fire and the
 author would never learn why.
+
+## Setting a hook on ANOTHER routine
+
+`remind {op: add, target: <slug>}` writes the hook into that routine's own local store. It is the
+delivery shape a [report](messages.md) already has — the sender writes a file in the target's
+directory, the target picks it up on its next run, nothing is started and nobody is interrupted —
+with one addition a report does not need: **the target's say**.
+
+| | who decides |
+|---|---|
+| that the hook exists at all | the owner (the routine that set it), once |
+| whether it stays, after any fire | **the target**, and its decision outranks the owner |
+| revising or deleting it | the target only — the owner cannot `revise` or `delete` a hook it set on someone else |
+
+A foreign hook's fire says who set it and offers three dispositions, carried on
+`remind_feedback` beside the label (one act: the moment the hook fires is the only moment its
+usefulness to the target is observable):
+
+- **keep** — leave it live. The default; omitting a disposition changes nothing.
+- **mute** — silence it for the rest of THIS run. The definition stays in the store, where its
+  owner can still see it; it leaves the live set.
+- **remove** — delete it, and remember the refusal: the `(owner, regex, kind)` triple goes into
+  the store's `refused` ledger, so the owner's next run cannot set that same pattern again. That
+  memory is what makes the target's decision outlast the run it was made in.
+
+Three refusals meet a cross-routine write, and all three are about the TARGET rather than the
+sender: its local cap (the cap exists to bound that routine's turns), a live `(regex, kind)` it
+already holds, and a pattern it has removed before. A sub-workflow cannot set one at all — it
+would bind a run nobody in its tree supervises.
+
+An `owner` of `""` means "mine": every reminder written before cross-routine assignment existed
+is its holder's own, and nothing about it changed.
 
 ## The two stores
 

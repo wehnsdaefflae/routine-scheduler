@@ -14,6 +14,7 @@ import json
 import pytest
 
 from conftest import finish, util, write_file
+from helpers import prompt_text, server_for, set_capabilities
 from rsched import reminder_checks as checks
 from rsched import reminders as store
 from rsched.engine.actions import validate_action
@@ -21,7 +22,7 @@ from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
 from rsched.policyload import load_policy
 from rsched.reminders import Reminder
-from test_reminders import TS, _capabilities, _prompt_text, _server
+from test_reminders import TS
 
 
 def _rem(rid="rem-1", regex="^util:danger", desc="it deletes the target", kind="action",
@@ -117,20 +118,20 @@ def test_a_result_hook_fires_on_the_observation_and_does_not_hold_the_action(
     """The distinguishing test of step 1: the action RUNS (a result is only knowable after it
     did), and the caution rides the observation at no turn cost — no `reminder_hold` event."""
     d = make_routine(slug="remkind")
-    _capabilities(d, reminders="local")
+    set_capabilities(d, reminders="local")
     # the target is the OBSERVATION as the model is shown it — "wrote N bytes to <path>"
     store.save_local(d, [_rem(rid="rem-res", regex=r"wrote \d+ bytes to state/probe",
                               kind="result",
                               desc="the probe wrote the sibling routine's input")], {})
     ep = scripted([write_file("state/probe.txt", content="probe-one"), finish()])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
 
     holds = [e for e in events if e["type"] == "observation"
              and e["payload"].get("kind") == "reminder_hold"]
     assert holds == []                                   # nothing was held
     assert (d / "state" / "probe.txt").read_text(encoding="utf-8") == "probe-one"  # it RAN
-    shown = _prompt_text(ep)
+    shown = prompt_text(ep)
     assert "the probe wrote the sibling routine's input" in shown
     assert store.load_local(d)[0][0].stats["fires"] == 1
     assert status == "ok"
@@ -140,11 +141,11 @@ def test_a_result_hook_does_not_fire_on_the_action_that_produced_it(make_routine
     """A pattern that would match the ACTION rendering must stay silent at kind=result: the
     two targets are different subjects, and conflating them is the bug this step prevents."""
     d = make_routine(slug="remkind2")
-    _capabilities(d, reminders="local")
+    set_capabilities(d, reminders="local")
     store.save_local(d, [_rem(rid="rem-res2", regex=r"^util:danger", kind="result",
                               desc="should never fire — no observation renders that way")], {})
     scripted([util("danger"), write_file("state/x.txt", content="x"), finish()])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     kinds = [e["payload"].get("kind") for e in events if e["type"] == "observation"]
     assert "reminder_hold" not in kinds
@@ -154,13 +155,13 @@ def test_a_result_hook_does_not_fire_on_the_action_that_produced_it(make_routine
 
 def test_a_prose_hook_matches_what_the_model_said_that_turn(make_routine, scripted):
     d = make_routine(slug="remprose")
-    _capabilities(d, reminders="local")
+    set_capabilities(d, reminders="local")
     store.save_local(d, [_rem(rid="rem-pr", regex="force.push", kind="prose",
                               desc="a force push rewrites what the remote already served")], {})
     ep = scripted([{**write_file("state/y.txt", content="y"),
                     "say": "I will force push after this"}, finish()])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
-    assert "a force push rewrites what the remote already served" in _prompt_text(ep)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
+    assert "a force push rewrites what the remote already served" in prompt_text(ep)
     assert store.load_local(d)[0][0].stats["fires"] == 1
     assert status == "ok"
 
@@ -168,12 +169,12 @@ def test_a_prose_hook_matches_what_the_model_said_that_turn(make_routine, script
 def test_an_action_kind_hook_still_holds_before_execution(make_routine, scripted):
     """The regression guard: everything the layer did before this change, unchanged."""
     d = make_routine(slug="remsame")
-    _capabilities(d, reminders="local")
+    set_capabilities(d, reminders="local")
     store.save_local(d, [_rem(rid="rem-act", regex=r"^write_file path=state/probe",
                               desc="it clobbers the sibling run's input")], {})
     scripted([write_file("state/probe.txt", content="one"),
               write_file("state/probe.txt", content="one"), finish()])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     holds = [e for e in events if e["type"] == "observation"
              and e["payload"].get("kind") == "reminder_hold"]

@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.378.0] — 2026-10-02
+
+### Added — one routine can set a consequence hook on ANOTHER, and the target decides its fate
+
+items: D152 option C (operator, 2026-09-27) — step 2 of the `hooks` campaign
+
+**What it is.** The second novelty of D152-C after the trigger kinds (0.371.0): a hook may be set
+for a routine other than the one writing it. `remind {op: add, target: <slug>}` writes it into
+that routine's own local store — the delivery shape a `report` already uses, where the sender
+writes a file in the target's directory and the target picks it up on its next run, with nothing
+started and nobody interrupted. Docs: docs/reminders.md ("Setting a hook on ANOTHER routine"),
+docs/prompt-anatomy.md.
+
+- **The authority is split, deliberately.** The owner decides the hook exists, once. The TARGET
+  decides, on any fire, whether it stays — and its decision outranks the owner's. A hook carries
+  `owner` (`""` means the holder's own, which every pre-existing reminder is) and `disposition`.
+- **`remind_feedback.disposition`** rides the label on a foreign hook's fire, because the moment
+  it fires is the only moment its usefulness to the target is observable: `keep` (leave it live),
+  `mute` (silence it for the rest of THIS run; the definition stays where its owner can see it,
+  and a later definition write cannot erase it), `remove` (delete it).
+- **A removal is remembered.** `remove` records the `(owner, regex, kind)` triple in the store's
+  new `refused` ledger, and `set_for` refuses that triple from then on — otherwise the owner's
+  next run sets the same hook again and the target's decision means nothing beyond the run it was
+  made in.
+- **Three refusals, all about the target**: its local cap (which exists to bound ITS turns), a
+  live `(regex, kind)` it already holds, and a pattern it removed before. A sub-workflow cannot
+  set a cross-routine hook at all — it would bind a run nobody in its tree supervises. The owner
+  cannot `revise` or `delete` a hook it set on someone else; that is the target's, through its
+  disposition.
+- A `disposition` on the routine's OWN reminder is refused rather than silently applied: its own
+  reminders are revised or deleted with a `remind` op, and conflating the two would make `mute` a
+  second, undocumented way to disable one.
+
 ## [0.377.0] — 2026-10-02
 
 ### Added — a consequence reminder can watch the RESULT, the turn's prose or a special turn, not only the action

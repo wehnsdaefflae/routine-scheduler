@@ -110,6 +110,14 @@ ACTION_SCHEMA: dict = {
                                          "whose action matches (a consequence any caller "
                                          "meets); listed = held only for routines whose "
                                          "settings list it (a caution for one kind of work)"},
+                "target": {"type": "string",
+                           "description": "op=add only: ANOTHER routine's slug — set this hook "
+                                          "on that routine instead of yourself. It fires in ITS "
+                                          "runs from its next one on, and that routine decides "
+                                          "on each fire whether to keep, mute or remove it; you "
+                                          "cannot revise or delete it, and a pattern it removed "
+                                          "you cannot set again. Use it for a consequence YOU "
+                                          "observed that will land on THAT routine's work"},
             },
             "description": "OPTIONAL, on any action: leave yourself a CONSEQUENCE REMINDER "
                            "the same turn you notice an action had an unintended effect. "
@@ -119,7 +127,9 @@ ACTION_SCHEMA: dict = {
                            "a special turn — those fire on the observation and never hold. "
                            "Costs no turn "
                            "to write. Also revises or deletes one (op + id) as your own "
-                           "tally teaches you which patterns earn their interruptions.",
+                           "tally teaches you which patterns earn their interruptions. With "
+                           "`target` it sets the hook on ANOTHER routine, whose runs then meet "
+                           "it and whose disposition over it outranks yours.",
         },
         "remind_feedback": {
             "type": "object", "additionalProperties": False,
@@ -132,10 +142,20 @@ ACTION_SCHEMA: dict = {
                                          "would_have = it was on track and you avoided it · "
                                          "did = you went ahead and it happened · didnt = you "
                                          "went ahead and nothing bad happened"},
+                "disposition": {"type": "string", "enum": ["keep", "mute", "remove"],
+                                "description": "only for a hook ANOTHER routine set on you "
+                                               "(the fire says who): your say over its fate — "
+                                               "keep (leave it live), mute (silence it for the "
+                                               "rest of THIS run; its owner still sees it), "
+                                               "remove (delete it, and its owner cannot set "
+                                               "that pattern on you again). Your decision "
+                                               "outranks the routine that set it"},
             },
             "description": "OPTIONAL, on any action: label how a reminder's HOLD turned out. "
                            "Costs no turn and is the only evidence that tunes the pattern — "
-                           "carry it as soon as you know the outcome.",
+                           "carry it as soon as you know the outcome. For a hook another "
+                           "routine set on you, `disposition` is where you keep, mute or "
+                           "remove it.",
         },
         "kind": {"type": "string", "enum": list(KINDS)},
         # util / write_util (how a run executes code)

@@ -30,6 +30,15 @@ def _caution(r: dict) -> str:
     in the moment rather than a thing it must remember to come back for.
     """
     line = f"- [{r['id']} · {r['scope']}] {r['description']}"
+    if owner := str(r.get("owner") or ""):
+        # A FOREIGN hook (D152-C step 2): another routine set this on you, so the caution comes
+        # with the one thing a self-authored one does not need — your say over whether it stays.
+        # Put where the fire is, because that is the only moment its usefulness is observable.
+        line += (f"\n  ↳ SET BY `{owner}`, not by you. You decide its fate on this fire: carry "
+                 f"`remind_feedback` with id {r['id']} and `disposition` = keep (leave it live) "
+                 f"/ mute (silence it for the rest of THIS run, {owner} still sees it) / remove "
+                 f"(delete it — and {owner} cannot set that pattern on you again). Without a "
+                 "disposition it stays as it is.")
     stats = r.get("stats") or {}
     if not looks_too_broad(stats):
         return line

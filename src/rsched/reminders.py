@@ -84,6 +84,29 @@ DEFAULT_KIND = "action"
 #: The kinds that are tested BEFORE the action runs and can therefore HOLD it. Every other
 #: kind describes something that has already happened, so it can only inform.
 HOLDING_KINDS = ("action",)
+
+#: What the TARGET of a foreign hook may decide about it, met on every fire. `keep` is the
+#: default and means nothing was decided; `mute` silences it for the rest of this run without
+#: destroying the definition its owner can still see; `remove` deletes it AND is remembered, so
+#: the owner cannot simply set it again (see `set_for`).
+DISPOSITIONS = ("keep", "mute", "remove")
+DEFAULT_DISPOSITION = "keep"
+
+
+class ReminderWriteError(Exception):
+    """A cross-routine hook write the target's store refuses. Carries the reason as its text."""
+
+
+class ReminderCapError(ReminderWriteError):
+    """The target already holds MAX_LOCAL reminders — the cap is about ITS turns."""
+
+
+class ReminderDuplicateError(ReminderWriteError):
+    """The target already holds this (regex, kind) — revise it instead of stacking a second."""
+
+
+class ReminderRefusedError(ReminderWriteError):
+    """The target REMOVED this hook before: its disposition stands over its owner's wish."""
 #: The authoring dial, least → most reach (see the module docstring): `global` adds writing the
 #: shared store; a routine curating shared cautions still keeps its own.
 LEVELS = ("none", "local", "global")
@@ -168,6 +191,12 @@ class Reminder:
     stats: dict
     reach: str = ""          # a global reminder's REACHES entry; "" for a local one
     kind: str = DEFAULT_KIND  # what it WATCHES (see KINDS); "action" for every older record
+    #: The routine that SET this hook. "" means the holder's own — which every reminder written
+    #: before cross-routine assignment existed is. A non-empty owner different from the holder
+    #: makes the hook FOREIGN, and a foreign hook is the target's to dispose of (DISPOSITIONS).
+    owner: str = ""
+    #: What the TARGET decided about it, the last time it met one of its fires.
+    disposition: str = DEFAULT_DISPOSITION
 
     def matches(self, canon: str) -> bool:
         """Does this reminder's pattern fire on that match target?
@@ -188,12 +217,18 @@ class Reminder:
     def as_record(self) -> dict:
         return {"id": self.id, "regex": self.regex, "description": self.description,
                 "scope": self.scope, "created_run": self.created_run, "stats": dict(self.stats),
-                "reach": self.reach, "kind": self.kind}
+                "reach": self.reach, "kind": self.kind, "owner": self.owner,
+                "disposition": self.disposition}
 
     @property
     def holds(self) -> bool:
         """Is this reminder's moment BEFORE the action runs? (only then can it be held)"""
         return self.kind in HOLDING_KINDS
+
+    @property
+    def foreign(self) -> bool:
+        """Was this hook set by ANOTHER routine? (then its fires carry the disposition choice)"""
+        return bool(self.owner)
 
 
 def read_kind(raw: object) -> str:
@@ -205,6 +240,17 @@ def read_kind(raw: object) -> str:
     (`reminder_checks.kind_problem`) is where an unknown kind is refused.
     """
     return raw if isinstance(raw, str) and raw in KINDS else DEFAULT_KIND
+
+
+def read_disposition(raw: object) -> str:
+    """The disposition a stored record means — `keep` for anything unreadable.
+
+    Lenient for the same reason `read_kind` is, and safe in the same direction: the fallback is
+    the one value that changes nothing, so a corrupted field can never silence a hook the target
+    never muted nor resurrect one it removed (a removal is not a disposition on a live record —
+    it deletes the record and is remembered in the `refused` ledger).
+    """
+    return raw if isinstance(raw, str) and raw in DISPOSITIONS else DEFAULT_DISPOSITION
 
 
 def new_id(run_ts: str, taken: set[str]) -> str:
@@ -251,19 +297,113 @@ def load_local(routine_dir: Path) -> tuple[list[Reminder], dict[str, dict]]:
         out.append(Reminder(id=str(rec["id"]), regex=str(rec["regex"]),
                             description=str(rec.get("description") or ""), scope="local",
                             created_run=str(rec.get("created_run") or ""),
-                            stats=_stats(rec.get("stats")), kind=read_kind(rec.get("kind"))))
+                            stats=_stats(rec.get("stats")), kind=read_kind(rec.get("kind")),
+                            owner=str(rec.get("owner") or ""),
+                            disposition=read_disposition(rec.get("disposition"))))
     tallies = raw.get("global_stats")
     gstats = {str(k): _stats(v) for k, v in (tallies if isinstance(tallies, dict) else {}).items()
               if isinstance(v, dict)}
     return out, gstats
 
 
+def load_refused(routine_dir: Path) -> list[dict]:
+    """The (owner, regex, kind) triples this routine has REMOVED a foreign hook for.
+
+    The memory that makes a target's disposition stick: without it, the owner's next run sets the
+    same hook again and the target's decision means nothing beyond the run it was made in.
+    """
+    raw = read_json(local_path(routine_dir), {})
+    rows = raw.get("refused") if isinstance(raw, dict) else None
+    return [{"owner": str(row.get("owner") or ""), "regex": str(row["regex"]),
+             "kind": read_kind(row.get("kind"))}
+            for row in rows or [] if isinstance(row, dict) and row.get("regex")]
+
+
 def save_local(routine_dir: Path, reminders: list[Reminder],
-               global_stats: dict[str, dict]) -> None:
+               global_stats: dict[str, dict], refused: list[dict] | None = None) -> None:
+    """Rewrite this routine's local store.
+
+    `refused` defaults to what is already on disk rather than to empty: it is a ledger of the
+    target's own decisions, and every caller that rewrites the definitions (the engine's op
+    appliers, a tally merge) would otherwise silently drop it and let a removed foreign hook
+    come straight back.
+    """
+    rows = load_refused(routine_dir) if refused is None else refused
     atomic_write_json(local_path(routine_dir), {
         "reminders": [{k: v for k, v in r.as_record().items() if k != "scope"}
                       for r in reminders if r.scope == "local"],
+        "refused": rows,
         "global_stats": {k: _stats(v) for k, v in sorted(global_stats.items())}})
+
+
+# --- cross-routine assignment: one routine sets a hook on another -------------------------
+
+def set_for(target_dir: Path, *, regex: str, description: str, kind: str, owner: str,
+            run_ts: str) -> Reminder:
+    """Write a hook into ANOTHER routine's local store and return it.
+
+    The delivery shape a `report` already uses: the sender writes a file in the target's own
+    directory and the target picks it up on its next run, with nothing started and nobody
+    interrupted. What a report does not need, and this does, is the TARGET'S SAY: it meets this
+    hook on every fire, so it can dispose of it (`dispose`), and its decision outranks the
+    owner's — a removed hook cannot be set again (`ReminderRefusedError`).
+
+    Three refusals, each about the target rather than the sender:
+    - the local cap, because the cap exists to bound the TARGET's turns;
+    - a live (regex, kind) duplicate, the same test the self-authoring path applies;
+    - a pattern this target has already removed for this owner.
+
+    Raises `ReminderWriteError` (one of its three subclasses) rather than returning a string, so
+    a caller cannot mistake a refusal for a write.
+    """
+    live, gstats = load_local(target_dir)
+    refused = load_refused(target_dir)
+    kind = read_kind(kind)
+    if any(r["owner"] == owner and r["regex"] == regex and r["kind"] == kind for r in refused):
+        raise ReminderRefusedError(
+            f"{target_dir.name} removed that hook before — its disposition stands; raise it with "
+            "the routine instead of setting it again")
+    if len(live) >= MAX_LOCAL:
+        raise ReminderCapError(
+            f"{target_dir.name} already holds {MAX_LOCAL} local reminders, its cap — the cap is "
+            "about that routine's turns, so nothing may be added over it")
+    if any(r.regex == regex and r.kind == kind for r in live):
+        raise ReminderDuplicateError(
+            f"{target_dir.name} already holds a {kind} reminder with that exact pattern — revise "
+            "it instead of stacking a second one that fires on the same moments")
+    rid = new_id(run_ts, {r.id for r in live})
+    hook = Reminder(id=rid, regex=regex, description=description, scope="local",
+                    created_run=run_ts, stats=blank_stats(), kind=kind, owner=owner)
+    save_local(target_dir, [*live, hook], gstats, refused)
+    return hook
+
+
+def dispose(routine_dir: Path, rid: str, disposition: str) -> str:
+    """The TARGET's decision about a hook it holds — returns the disposition actually applied.
+
+    `keep` and `mute` are recorded on the record (mute leaves it in the store, where its owner
+    can still see it, and out of the live set). `remove` deletes it AND remembers the
+    (owner, regex, kind) in the `refused` ledger, which is what makes the decision outlast the
+    run it was made in.
+
+    Returns "" when the id names nothing this routine holds — a disposition is only ever an
+    answer to a fire the run has seen, so there is nothing to report but that it did not apply.
+    """
+    disposition = disposition if disposition in DISPOSITIONS else DEFAULT_DISPOSITION
+    live, gstats = load_local(routine_dir)
+    refused = load_refused(routine_dir)
+    target = find(live, rid)
+    if target is None:
+        return ""
+    if disposition == "remove":
+        row = {"owner": target.owner, "regex": target.regex, "kind": target.kind}
+        if target.foreign and row not in refused:
+            refused = [*refused, row]
+        save_local(routine_dir, [r for r in live if r.id != rid], gstats, refused)
+        return disposition
+    updated = Reminder(**{**target.as_record(), "disposition": disposition})
+    save_local(routine_dir, [updated if r.id == rid else r for r in live], gstats, refused)
+    return disposition
 
 
 # --- the global (library) store -----------------------------------------------------------
@@ -371,7 +511,10 @@ def active(routine_dir: Path, reminders_home: Path, level: str,
     """
     if LEVEL_RANK.get(level, 0) < LEVEL_RANK["local"]:
         return []
-    local, gstats = load_local(routine_dir)
+    stored, gstats = load_local(routine_dir)
+    # a hook the holder MUTED is not live — the definition stays in the store, where the routine
+    # that set it can still see it, but it fires nothing (`dispose`)
+    local = [r for r in stored if r.disposition != "mute"]
     seen = {(r.regex, r.kind) for r in local}
     return local + [g for g in load_global(reminders_home, gstats)
                     if (g.regex, g.kind) not in seen
