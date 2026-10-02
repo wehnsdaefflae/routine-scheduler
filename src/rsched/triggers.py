@@ -3,7 +3,9 @@
 A trigger fires a routine on an EXTERNAL EVENT, alongside cron: routine.yaml grows one
 canonical `triggers:` list (user config — created/deleted on the routine page, never by a
 run), each entry `{id, type, ...}` carrying its type's own keys. Two types are
-implemented: `webhook` (POST /api/hooks/<slug>/<token>) and `report` — fire when a
+implemented: `webhook` (POST /api/webhooks/<slug>/<token>; `/api/hooks/...` is the
+deprecated spelling of the same route, served and recorded by api_hooks) and `report` — fire
+when a
 report/inbox message lands for this routine, so a delivered hand-off is worked within the
 cooldown window instead of waiting for the next scheduled run (the durable inbox file IS
 the event; no spool entry exists, the daemon watches the inbox directly). `imap` (mail
@@ -79,8 +81,13 @@ def new_report_trigger(*, cooldown_s: int = DEFAULT_REPORT_COOLDOWN_S,
 
 
 def hook_path(slug: str, trigger: dict) -> str:
-    """The URL path a third party POSTs to (the UI prefixes its own origin)."""
-    return f"/api/hooks/{slug}/{trigger.get('token', '')}"
+    """The URL path a third party POSTs to (the UI prefixes its own origin).
+
+    The CANONICAL spelling only. `/api/hooks/...` still reaches the same handler so every URL
+    already in a third party's hands keeps working, but nothing hands that spelling out any
+    more — a deprecation whose URL builder keeps minting the old path can never end.
+    """
+    return f"/api/webhooks/{slug}/{trigger.get('token', '')}"
 
 
 def default_cooldown(ttype: str) -> int:

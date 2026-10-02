@@ -170,7 +170,7 @@ messenger; opt-in browser push carries the same open-decisions record to your ph
 
 Besides cron and the run-now button, a routine can fire on an **external event**: add a
 **webhook trigger** on its routine page and POST anything to the generated
-`/api/hooks/<slug>/<token>` URL (CI finished, a monitor alerted, a form landed). The URL's
+`/api/webhooks/<slug>/<token>` URL (CI finished, a monitor alerted, a form landed). The URL's
 server-generated token is the only auth — no console bearer for third parties — and the
 payload reaches the run verbatim as an injected message. Bursts coalesce: events arriving
 while a run is active (or within the trigger's cooldown) queue into **one** follow-up run

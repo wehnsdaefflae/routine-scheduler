@@ -8,7 +8,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"scheduler_tick_error"
-        |"commit_failed"|"git_lock_cleared"|"backup_stale",
+        |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -55,6 +55,16 @@ the stamp cannot be read at all (an unmounted share reads as unknown, never as s
 this product read backup state, so three weeks of no backup passed with zero signal (F602). The
 other half of that fix is the unit's own `OnFailure=` push, which still works when this daemon is
 down — a single mechanism would have had to be the one that was up.
+
+deprecated_route: a request ARRIVED on an API path that has been renamed and is served only for
+compatibility (`web/api_hooks.py`: the old webhook spelling `/api/hooks/<slug>/<token>`, whose
+canonical path is `/api/webhooks/<slug>/<token>`). routine = the slug the call was for, run_id
+empty; carries `route` and `replacement`. It is NOT blocked work — the call was accepted and
+did everything it asked for — so it is deliberately absent from
+`readmodels/health_stream.BLOCKED_EVENTS`; what it answers is the only question a deprecation
+cannot be ended without: who is still calling the old path. Filed on ACCEPTED calls alone,
+past every rejection: a 404 probe or a wrong token is not a caller to migrate, and the hook
+route is unauthenticated, so recording rejections would let anyone fill this stream.
 
 git_lock_cleared: a provably stale `index.lock` was removed before a write (`gitlock` — the
 commit lock was held, no git process worked in the repo, the lock was empty and older than

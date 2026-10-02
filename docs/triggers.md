@@ -48,15 +48,21 @@ token for as long as its bounds stay the same. Changing a webhook's cooldown or 
 it with a new one under a NEW URL — the row says so before you accept.
 
 ```
-POST /api/hooks/<slug>/<token>
+POST /api/webhooks/<slug>/<token>
 ```
 
 ```bash
-curl -X POST "https://sched.example.org:8321/api/hooks/arxiv-radar/kJ8…Qw" \
+curl -X POST "https://sched.example.org:8321/api/webhooks/arxiv-radar/kJ8…Qw" \
      -H 'content-type: application/json' \
      -d '{"event": "new-feed-items", "count": 3}'
 → 202 {"ok": true}
 ```
+
+`POST /api/hooks/<slug>/<token>` is the **deprecated** spelling of the same route. Every URL
+already in a third party's hands keeps working, and nothing hands that spelling out any more —
+the row on the routine page shows the canonical path. Each accepted call on the old path files
+one `deprecated_route` health event naming the slug, so what is left to migrate is countable
+rather than guessed; a rejected call (unknown slug, wrong token, oversized body) files none.
 
 Any body (or none) is accepted up to 64 KiB and reaches the run **verbatim as an injected
 user message**, one message per event, headed by a provenance line

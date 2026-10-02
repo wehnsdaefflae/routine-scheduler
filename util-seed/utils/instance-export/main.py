@@ -547,7 +547,8 @@ def _selftest_credentials(tmp: Path) -> None:
         "name: Hooked\ntriggers:\n- id: t-1\n  type: webhook\n  token: " + hook + "\n"
         "budgets:\n  max_total_tokens: -1\n"
         "run_gate:\n  checks:\n  - kind: mail\n    password_secret: FAU_PASSWORD\n")
-    (home / "hooked" / "scripts" / "post.py").write_text(f"URL = '/api/hooks/hooked/{hook}'\n")
+    (home / "hooked" / "scripts" / "post.py").write_text(
+        f"URL = '/api/webhooks/hooked/{hook}'\n")
     leaks = {"state/config.yaml.proposed": config_text,          # the 2026-09-25 incident
              "state/ftp.json": json.dumps({"pass": "ftp-pass-9876"}),
              "state/keys.jsonl": json.dumps({"key": pem}) + "\n",   # JSON-escaped multi-line key

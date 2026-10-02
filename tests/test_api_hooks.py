@@ -9,6 +9,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from helpers import health_events
 from rsched import registry, triggers
 from rsched.daemon.triggers import TriggerManager
 from rsched.paths import atomic_write_json, read_json
@@ -39,7 +40,7 @@ def test_hook_accepts_without_bearer_and_never_echoes(api_client, make_routine):
     make_routine(slug="testr")
     _add_trigger(tmp, "testr")
     bare = TestClient(c.app)   # NO Authorization header — the URL token is the auth
-    r = bare.post(f"/api/hooks/testr/{TOK}", content=b'{"event": "push"}',
+    r = bare.post(f"/api/webhooks/testr/{TOK}", content=b'{"event": "push"}',
                   headers={"content-type": "application/json"})
     assert r.status_code == 202
     assert r.json() == {"ok": True}                     # the payload is NEVER echoed back
@@ -56,8 +57,8 @@ def test_hook_generic_404_for_slug_token_and_disabled(api_client, make_routine):
     make_routine(slug="testr")
     _add_trigger(tmp, "testr")
     bare = TestClient(c.app)
-    wrong_token = bare.post(f"/api/hooks/testr/{'x' * 32}", content=b"x")
-    unknown_slug = bare.post(f"/api/hooks/ghost/{TOK}", content=b"x")
+    wrong_token = bare.post(f"/api/webhooks/testr/{'x' * 32}", content=b"x")
+    unknown_slug = bare.post(f"/api/webhooks/ghost/{TOK}", content=b"x")
     assert wrong_token.status_code == unknown_slug.status_code == 404
     # one indistinguishable answer — no existence oracle
     assert wrong_token.json() == unknown_slug.json()
@@ -65,7 +66,7 @@ def test_hook_generic_404_for_slug_token_and_disabled(api_client, make_routine):
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     raw["enabled"] = False
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
-    disabled = bare.post(f"/api/hooks/testr/{TOK}", content=b"x")
+    disabled = bare.post(f"/api/webhooks/testr/{TOK}", content=b"x")
     assert disabled.status_code == 404 and disabled.json() == wrong_token.json()
     assert triggers.pending_events(tmp / "routines", "testr") == []
 
@@ -81,9 +82,9 @@ def test_hook_refuses_a_retired_routine_like_a_disabled_one(api_client, make_rou
     finishline.save(routine, {"outcomes": [{"text": "shipped", "judge": "you",
                                             "status": "met"}]}, now="2026-10-01T09:00:00")
     bare = TestClient(c.app)
-    r = bare.post(f"/api/hooks/testr/{TOK}", content=b"x")
+    r = bare.post(f"/api/webhooks/testr/{TOK}", content=b"x")
     assert r.status_code == 404
-    assert r.json() == bare.post(f"/api/hooks/ghost/{TOK}", content=b"x").json()
+    assert r.json() == bare.post(f"/api/webhooks/ghost/{TOK}", content=b"x").json()
     assert triggers.pending_events(tmp / "routines", "testr") == []
 
 
@@ -95,9 +96,9 @@ def test_hook_non_ascii_token_is_the_same_404(api_client, make_routine):
     make_routine(slug="testr")
     _add_trigger(tmp, "testr")
     bare = TestClient(c.app)
-    wrong = bare.post(f"/api/hooks/testr/{'x' * 32}", content=b"x")
+    wrong = bare.post(f"/api/webhooks/testr/{'x' * 32}", content=b"x")
     for slug in ("testr", "ghost"):           # with candidates, and on the equalised path
-        r = bare.post(f"/api/hooks/{slug}/%C3%A9t%C3%A9", content=b"x")
+        r = bare.post(f"/api/webhooks/{slug}/%C3%A9t%C3%A9", content=b"x")
         assert r.status_code == 404 and r.json() == wrong.json()
     assert triggers.pending_events(tmp / "routines", "testr") == []
 
@@ -121,9 +122,71 @@ def test_hook_walks_the_catalog_off_the_event_loop(api_client, make_routine, mon
 
     monkeypatch.setattr(registry, "scan", spy)
     bare = TestClient(c.app)
-    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"x").status_code == 202
-    assert bare.post(f"/api/hooks/ghost/{TOK}", content=b"x").status_code == 404
+    assert bare.post(f"/api/webhooks/testr/{TOK}", content=b"x").status_code == 202
+    assert bare.post(f"/api/webhooks/ghost/{TOK}", content=b"x").status_code == 404
     assert on_loop == [False, False]
+
+
+def test_both_spellings_reach_the_same_handler(api_client, make_routine):
+    """`/api/webhooks/...` is canonical and `/api/hooks/...` is the deprecated spelling of the
+    same route: every URL a third party already holds has to keep working, or a rename breaks
+    callers nobody in this instance can reach."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _add_trigger(tmp, "testr", cooldown_s=0)
+    bare = TestClient(c.app)
+    assert bare.post(f"/api/webhooks/testr/{TOK}", content=b"new").status_code == 202
+    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"old").status_code == 202
+    events = triggers.pending_events(tmp / "routines", "testr")
+    assert [read_json(e)["payload"] for e in events] == ["new", "old"]
+
+
+def test_an_accepted_call_on_the_deprecated_path_is_countable(api_client, make_routine):
+    """The only question a deprecation cannot be ended without is who still calls the old
+    path, so an ACCEPTED old-path call files one `deprecated_route` event naming the slug and
+    the canonical replacement. The canonical path files none."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _add_trigger(tmp, "testr", cooldown_s=0)
+    bare = TestClient(c.app)
+    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"x").status_code == 202
+    rows = health_events(tmp / "routines", event="deprecated_route")
+    assert len(rows) == 1
+    assert rows[0]["routine"] == "testr" and rows[0]["run_id"] == ""
+    assert rows[0]["route"] == "/api/hooks/{slug}/{token}"
+    assert rows[0]["replacement"] == "/api/webhooks/{slug}/{token}"
+    assert "/api/webhooks/testr/" in rows[0]["detail"]
+
+    assert bare.post(f"/api/webhooks/testr/{TOK}", content=b"y").status_code == 202
+    assert len(health_events(tmp / "routines", event="deprecated_route")) == 1
+
+
+def test_a_rejected_call_on_the_deprecated_path_files_nothing(api_client, make_routine):
+    """Filed past every rejection, on purpose: a 404 probe or a wrong token is not a caller to
+    migrate, and the hook route is the one unauthenticated API route — recording rejections
+    would let anyone fill the health stream through it."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _add_trigger(tmp, "testr")
+    bare = TestClient(c.app)
+    assert bare.post(f"/api/hooks/testr/{'x' * 32}", content=b"x").status_code == 404
+    assert bare.post(f"/api/hooks/ghost/{TOK}", content=b"x").status_code == 404
+    oversize = b"x" * (triggers.MAX_PAYLOAD_BYTES + 1)
+    assert bare.post(f"/api/hooks/testr/{TOK}", content=oversize).status_code == 413
+    assert health_events(tmp / "routines", event="deprecated_route") == []
+
+
+def test_the_url_handed_out_is_the_canonical_one_only(api_client, make_routine):
+    """The other half of a deprecation that can END: nothing mints the old spelling any more,
+    so the set of old-path callers can only shrink. `hook_path` is the one URL builder and the
+    routine page renders its `url_path` verbatim."""
+    c, tmp = api_client
+    make_routine(slug="testr")
+    _add_trigger(tmp, "testr")
+    path = triggers.hook_path("testr", {"token": TOK})
+    assert path == f"/api/webhooks/testr/{TOK}"
+    rows = c.get("/api/routines/testr").json()["triggers"]
+    assert [r["url_path"] for r in rows] == [path]
 
 
 def test_hook_payload_size_cap(api_client, make_routine):
@@ -131,11 +194,11 @@ def test_hook_payload_size_cap(api_client, make_routine):
     make_routine(slug="testr")
     _add_trigger(tmp, "testr")
     bare = TestClient(c.app)
-    r = bare.post(f"/api/hooks/testr/{TOK}",
+    r = bare.post(f"/api/webhooks/testr/{TOK}",
                   content=b"x" * (triggers.MAX_PAYLOAD_BYTES + 1))
     assert r.status_code == 413
     assert triggers.pending_events(tmp / "routines", "testr") == []
-    ok = bare.post(f"/api/hooks/testr/{TOK}", content=b"x" * 512)
+    ok = bare.post(f"/api/webhooks/testr/{TOK}", content=b"x" * 512)
     assert ok.status_code == 202
 
 
@@ -151,7 +214,7 @@ def test_hook_streaming_body_cap_without_content_length(api_client, make_routine
         for _ in range(triggers.MAX_PAYLOAD_BYTES // 1024 + 2):
             yield b"x" * 1024
 
-    r = bare.post(f"/api/hooks/testr/{TOK}", content=_huge())
+    r = bare.post(f"/api/webhooks/testr/{TOK}", content=_huge())
     assert r.status_code == 413
     assert triggers.pending_events(tmp / "routines", "testr") == []
 
@@ -162,9 +225,9 @@ def test_hook_rate_limit(api_client, make_routine, monkeypatch):
     _add_trigger(tmp, "testr")
     monkeypatch.setattr("rsched.web.api_hooks.RATE_MAX_ACCEPTS", 2)
     bare = TestClient(c.app)
-    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"1").status_code == 202
-    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"2").status_code == 202
-    r = bare.post(f"/api/hooks/testr/{TOK}", content=b"3")
+    assert bare.post(f"/api/webhooks/testr/{TOK}", content=b"1").status_code == 202
+    assert bare.post(f"/api/webhooks/testr/{TOK}", content=b"2").status_code == 202
+    r = bare.post(f"/api/webhooks/testr/{TOK}", content=b"3")
     assert r.status_code == 429
     assert len(triggers.pending_events(tmp / "routines", "testr")) == 2
 
@@ -175,8 +238,8 @@ def test_hook_spool_cap(api_client, make_routine, monkeypatch):
     _add_trigger(tmp, "testr")
     monkeypatch.setattr("rsched.triggers.MAX_PENDING_EVENTS", 1)
     bare = TestClient(c.app)
-    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"1").status_code == 202
-    assert bare.post(f"/api/hooks/testr/{TOK}", content=b"2").status_code == 429
+    assert bare.post(f"/api/webhooks/testr/{TOK}", content=b"1").status_code == 202
+    assert bare.post(f"/api/webhooks/testr/{TOK}", content=b"2").status_code == 429
     assert len(triggers.pending_events(tmp / "routines", "testr")) == 1
 
 
@@ -188,7 +251,7 @@ def test_hook_to_daemon_handoff(api_client, make_routine):
     _add_trigger(tmp, "testr", cooldown_s=0)
     bare = TestClient(c.app)
     for n in range(2):
-        assert bare.post(f"/api/hooks/testr/{TOK}", content=f"evt-{n}".encode()).status_code == 202
+        assert bare.post(f"/api/webhooks/testr/{TOK}", content=f"evt-{n}".encode()).status_code == 202
 
     from conftest import FakeRunner
 
@@ -230,7 +293,7 @@ def test_an_accepted_webhook_has_a_working_url_until_it_is_removed(api_client, m
     [trig] = _saved_triggers(tmp)
     assert trig["type"] == "webhook" and trig["cooldown_s"] == 120
     assert len(trig["token"]) >= 24                      # server-generated, never client-supplied
-    url = f"/api/hooks/testr/{trig['token']}"
+    url = f"/api/webhooks/testr/{trig['token']}"
     row = c.get("/api/routines/testr").json()["triggers"][0]     # the card's row
     assert row["url_path"] == url and row["last_fired"] == "" and row["pending"] == 0
     assert TestClient(c.app).post(url, content=b"hi").status_code == 202
@@ -296,8 +359,8 @@ def test_changing_a_webhooks_bounds_mints_a_new_url(api_client, make_routine):
     [trig] = _saved_triggers(tmp)
     assert trig["cooldown_s"] == 300 and trig["token"] != old
     bare = TestClient(c.app)
-    assert bare.post(f"/api/hooks/testr/{old}", content=b"x").status_code == 404
-    assert bare.post(f"/api/hooks/testr/{trig['token']}", content=b"x").status_code == 202
+    assert bare.post(f"/api/webhooks/testr/{old}", content=b"x").status_code == 404
+    assert bare.post(f"/api/webhooks/testr/{trig['token']}", content=b"x").status_code == 202
 
 
 def test_trigger_edits_are_bearer_gated_and_wait_for_an_active_run(api_client, make_routine):

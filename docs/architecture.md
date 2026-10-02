@@ -1347,7 +1347,9 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
     outcome and in the `stopping_update` event. The engine gets one intervention, the model keeps
     the last word, and the operator gets the audit trail.
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
-  (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
+  (`web/api_hooks.py`, POST `/api/webhooks/<slug>/<token>`, with `/api/hooks/...` served as a
+  deprecated alias whose accepted calls file a `deprecated_route` event — the ONE
+  unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,
   payload never echoed) only RECORDS events durably in the `.control/triggers/<slug>/` spool
   (request-file idiom, like restart.request); the scheduler-ticked **`TriggerManager`**

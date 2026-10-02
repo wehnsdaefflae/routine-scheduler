@@ -1,6 +1,6 @@
 """Webhook ingest (the ONE unauthenticated API route) + the routine page's trigger list.
 
-POST /api/hooks/<slug>/<token> is called by THIRD PARTIES (CI, monitors, IFTTT-style
+POST /api/webhooks/<slug>/<token> is called by THIRD PARTIES (CI, monitors, IFTTT-style
 services), so it deliberately takes no global bearer: the per-trigger URL token —
 server-generated, compared constant-time — IS the auth. The handler's only job is to
 RECORD the event durably in the trigger spool (rsched.triggers.write_event — the same
@@ -10,6 +10,14 @@ max_concurrent_runs, and coalescing in one place. Hardening: one generic 404 for
 slug / wrong token / a routine that may not fire (no existence oracle), a payload size cap,
 a per-slug accept rate limit + a durable spool cap so a leaked URL can't fill the disk,
 the payload is never echoed back, and every rejection is logged (never the payload).
+
+`/api/hooks/<slug>/<token>` is the DEPRECATED spelling of the same route, served by the same
+handler so every URL a third party already holds keeps working. Two halves make a deprecation
+end rather than run forever: `triggers.hook_path` mints only the canonical path, so no new
+caller is ever handed the old one; and an ACCEPTED old-path call files one `deprecated_route`
+health event naming the slug, so the callers still to migrate are countable. Only ACCEPTED
+calls — a 404 probe or a wrong token is not a caller to migrate, and recording rejections
+would let anyone fill the stream through the one unauthenticated route.
 
 `hooks_router` is wired in app.py WITHOUT the auth dependency. The trigger list itself is a
 field of the settings page (0.369.0): added, re-bounded and removed in the draft and landed by
@@ -28,6 +36,7 @@ from typing import NoReturn
 from fastapi import APIRouter, HTTPException, Request
 
 from .. import registry, triggers
+from ..health_events import log_health_event
 from ..patterns import fields
 
 log = logging.getLogger("rsched.hooks")
@@ -95,11 +104,15 @@ def _rate_window(request: Request, slug: str) -> deque[float]:
     return window
 
 
-@hooks_router.post("/hooks/{slug}/{token}", status_code=202)
+@hooks_router.post("/webhooks/{slug}/{token}", status_code=202)
+@hooks_router.post("/hooks/{slug}/{token}", status_code=202)   # deprecated spelling
 async def receive_hook(request: Request, slug: str, token: str) -> dict:
     """Record one webhook event. Accepts any body (stored as text, capped); replies
     202 {"ok": true} and NOTHING else — the payload is never echoed. The daemon picks
     the event up at its next tick (≤~5s) and fires/coalesces per docs/triggers.md.
+
+    Both spellings reach here; `/api/hooks/...` is the deprecated one and an ACCEPTED call
+    on it files a `deprecated_route` event (see the module docstring).
     """
     server = request.app.state.server
     client = request.client.host if request.client else "?"
@@ -135,6 +148,15 @@ async def receive_hook(request: Request, slug: str, token: str) -> dict:
                          payload=body.decode("utf-8", "replace"),
                          content_type=request.headers.get("content-type", ""),
                          client=client)
+    if request.url.path.startswith("/api/hooks/"):
+        # Accepted on the deprecated spelling: a caller to migrate, and the only way the
+        # count of them is knowable. Past every rejection on purpose — see the docstring.
+        log_health_event(server.routines_home, "deprecated_route", routine=slug, run_id="",
+                         detail=f"POST /api/hooks/<slug>/<token> is deprecated: the same "
+                                f"trigger is served at /api/webhooks/{slug}/<token>. Update "
+                                f"the caller (client {client}); the old path keeps working.",
+                         route="/api/hooks/{slug}/{token}",
+                         replacement="/api/webhooks/{slug}/{token}")
     return {"ok": True}
 
 

@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.379.0] — 2026-10-02
+
+### Changed — the webhook route is `/api/webhooks/…`, and the old spelling is countable
+
+items: D152 option C (operator, 2026-09-27) — step 3, the last step of the `hooks` campaign
+
+**What it is.** The ingest route was `POST /api/hooks/<slug>/<token>` while everything around it
+— the config type, the UI card, the docs, this product's whole vocabulary — calls the thing a
+*webhook*. The canonical path is now `POST /api/webhooks/<slug>/<token>`.
+
+- **The old path keeps working**, served by the same `receive_hook()` through a second route
+  decorator: a URL a third party holds was handed out by this instance and breaking it is not
+  the user's problem to discover. Nothing about the auth, the caps or the spool changes — there
+  is one handler, so the two spellings cannot drift.
+- **A deprecation that can END, which needs both halves.** `triggers.hook_path()` mints only the
+  canonical path, so no new caller is ever handed the old one and the set of old-path callers can
+  only shrink. And an ACCEPTED call on the old path files one new `deprecated_route` health event
+  naming the slug, the route and its replacement — who is still calling is the one question a
+  deprecation cannot be ended without, and before this it was unanswerable.
+- **Only accepted calls are recorded.** The event is filed past every rejection: a 404 probe or a
+  wrong token is not a caller to migrate, and this is the one unauthenticated API route, so
+  recording rejections would let anyone fill the health stream through it. `deprecated_route` is
+  in `health_events.py`'s machine-checked vocabulary and deliberately NOT in
+  `health_stream.BLOCKED_EVENTS` — the call was accepted and did everything it asked for, so it
+  is not blocked work.
+- Tests: four new cases in `tests/test_api_hooks.py` — both spellings reach the same handler and
+  both payloads land in the spool; an accepted old-path call files exactly one event with its
+  fields, and the canonical path files none; a rejected old-path call (wrong token, unknown slug,
+  oversized body) files nothing; and `hook_path` plus the routine page's `url_path` carry the
+  canonical path alone. Swept: `docs/triggers.md`, `docs/architecture.md`, `docs/status-pages.md`,
+  `README.md`, `util-seed/utils/instance-export/main.py`, and the literal path in
+  `tests/test_triggers.py` and the browser suite's `tests/ui/test_triggers.py`.
+
 ## [0.378.0] — 2026-10-02
 
 ### Added — one routine can set a consequence hook on ANOTHER, and the target decides its fate

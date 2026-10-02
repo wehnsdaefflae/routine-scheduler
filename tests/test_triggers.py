@@ -110,7 +110,7 @@ def test_describe_triggers_rows(tmp_path):
     imap = {"id": "t-mail", "type": "imap", "cooldown_s": 60}
     rows = triggers.describe_triggers(home, "webby", [dict(WEBHOOK), imap])
     hook, mail = rows
-    assert hook["url_path"] == f"/api/hooks/webby/{WEBHOOK['token']}"
+    assert hook["url_path"] == f"/api/webhooks/webby/{WEBHOOK['token']}"
     assert hook["last_fired"] == "2026-07-17T09:00:00+00:00"
     assert hook["events"] == 4 and hook["pending"] == 1
     assert mail["url_path"] == "" and mail["pending"] == 0

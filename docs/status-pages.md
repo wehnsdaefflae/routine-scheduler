@@ -513,7 +513,7 @@ tomorrow to an unsent note still offers to wake the routine. Where a project has
 panel is a sentence rather than a dead control.
 
 The reach is the remaining half: the hook URLs are built from `public_url`, so a submission
-only arrives from wherever that base resolves until `/api/hooks/*` is published.
+only arrives from wherever that base resolves until `/api/webhooks/*` is published.
 
 ## The design
 

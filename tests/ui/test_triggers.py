@@ -27,7 +27,7 @@ def test_triggers_render_and_a_new_one_is_created_on_accept(ui, ui_page):
     expect(row).to_contain_text("t-uiseed01")
     expect(row).to_contain_text("last fired · never")
     expect(row.locator("input.cooldown-in")).to_have_value("60")   # editable in place
-    expect(row.locator('input[type="text"]')).to_have_value(f"{ui.url}/api/hooks/uir/{SEED_TOKEN}")
+    expect(row.locator('input[type="text"]')).to_have_value(f"{ui.url}/api/webhooks/uir/{SEED_TOKEN}")
     expect(row.get_by_role("button", name="copy")).to_be_visible()
 
     panel.get_by_role("button", name="+ add webhook trigger").click()
