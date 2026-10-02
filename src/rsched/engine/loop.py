@@ -50,6 +50,7 @@ from .control import (
     drain_injections,
     pause_gate,
 )
+from .ladder import at_boundary as _ladder_at_boundary
 from .loopconst import POLL_S
 from .loopend import SCHEMA_STORM_TURNS
 from .loopnudge import REPEAT_FAIL
@@ -228,6 +229,11 @@ class EngineLoop:
         Each only appends to the message list — the boundary never rewrites it.
         """
         pause_gate(self, poll_s=POLL_S)
+        # The escalation ladder's trigger, after the pause gate and before the inbox drain:
+        # a rung that is due runs HERE, so its directive is filed as ordinary freight and
+        # drained by the very same `drain_injections` below — an append at a boundary, never
+        # a prefix rewrite. Off unless the routine's config enables it (engine/ladder.py).
+        _ladder_at_boundary(self)
         apply_model_switch(self)
         apply_deliberation_switch(self)
         apply_rule_additions(self)
