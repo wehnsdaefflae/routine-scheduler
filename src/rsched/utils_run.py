@@ -47,7 +47,17 @@ TIMEOUT_EXIT = 124
 #: reason: the group ends on the abort's SIGTERM, whose -15 would otherwise reach
 #: `_note_if_killed` as a kernel kill.
 ABORT_EXIT = 130
-#: How often a jailed call's wait asks whether its run was aborted (`run_jailed`'s `aborted`).
+#: What a call A PERSON CANCELLED exits with (D160-C, operator 2026-09-30): its OWN code, not
+#: the deadline's. The decision turns on what the run is told -- a run that reads "timed out"
+#: sensibly retries, and retrying a call a human just stopped is the one behaviour the feature
+#: exists to prevent. POSITIVE for the same reason as the other two: the group ends on a
+#: SIGTERM whose -15 would otherwise reach `_note_if_killed` as a kernel kill and file a
+#: `util_killed` health event for a deliberate human act.
+CANCEL_EXIT = 125
+#: How often a jailed call's wait asks whether its run was aborted (`run_jailed`'s `aborted`)
+#: -- and, on the same look, whether THIS call was cancelled (`cancelled`). One poll interval
+#: serves both: a cancel that needed its own loop would put a second wait in the hottest
+#: process runner in the system, which is what made F586 a decision instead of a button.
 ABORT_POLL_S = 0.25
 
 # Vars scrubbed from every jailed subprocess UNCONDITIONALLY (declared or not). LLM-auth: a
@@ -197,17 +207,26 @@ class Jailed:
     stderr: CapturedOutput
     timed_out: bool
     aborted: bool = False
+    cancelled: bool = False
 
     @property
     def exit_code(self) -> int:
-        """What the callable reports: `TIMEOUT_EXIT` for a deadline, `ABORT_EXIT` for its run's
-        abort, the command's own code otherwise — one mapping, so the three kinds cannot report
-        an ended call three ways.
+        """What the callable reports: `CANCEL_EXIT` for a person's cancel, `ABORT_EXIT` for its
+        run's abort, `TIMEOUT_EXIT` for a deadline, the command's own code otherwise — one
+        mapping, so the three kinds cannot report an ended call four ways.
+
+        The ORDER is the contract. A cancel outranks both, and the abort outranks the deadline,
+        because a call can satisfy two at one look (the deadline passes in the same 0.25 s poll
+        that sees the cancel) and the ending the run must LEARN about is the deliberate one: a
+        run told "timed out" sensibly retries, and retrying what a human just stopped is
+        precisely what D160 was decided to prevent.
         """
-        if self.timed_out:
-            return TIMEOUT_EXIT
+        if self.cancelled:
+            return CANCEL_EXIT
         if self.aborted:
             return ABORT_EXIT
+        if self.timed_out:
+            return TIMEOUT_EXIT
         return self.returncode
 
 
@@ -247,6 +266,7 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
                label: str = "", cap: int = OUTPUT_CAP,
                config_seal: Path | None = None,
                aborted: Callable[[], bool] | None = None,
+               cancelled: Callable[[], bool] | None = None,
                secrets: Mapping[str, str] | None = None) -> Jailed:
     """Run one already-jailed command (`sandbox.wrap` composed `cmd`) and bring back at most
     `cap` characters of each stream. The ONE runner behind `util`, `script` and `shell`.
@@ -283,9 +303,16 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
     carry it into the observation, the transcript and the spill file (`shell` passes none: it
     is handed no store secret).
 
-    `label` names the callable in the timeout, abort and spawn-failure notes ("util 'x'",
-    "script 'x'", "the command"). `config_seal` is a routine directory whose `routine.yaml`
-    must not move across the call (`_seal_broken`).
+    `cancelled` is THIS CALL's "did a person stop me?" (F586, decided as D160-C), asked on the
+    same `ABORT_POLL_S` look as `aborted` and ending the group the same way. It differs from
+    `aborted` in scope and in what the run is told: an abort ends the whole run, a cancel ends
+    one action and the run carries on, so the outcome is `CANCEL_EXIT` with a note saying a
+    person did it — a run that read a cancel as a deadline would retry the very call someone
+    just stopped.
+
+    `label` names the callable in the timeout, cancel, abort and spawn-failure notes ("util
+    'x'", "script 'x'", "the command"). `config_seal` is a routine directory whose
+    `routine.yaml` must not move across the call (`_seal_broken`).
     """
     name = label or "the command"
     if aborted is not None and aborted():
@@ -304,7 +331,7 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
                           CapturedOutput(f"could not run {name}: {exc}"), False)
         started = time.monotonic()
         try:
-            stop = _wait(proc, timeout, aborted)
+            stop = _wait(proc, timeout, aborted, cancelled)
         except BaseException:
             procgroup.terminate(proc)
             raise
@@ -313,28 +340,47 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
             ran = int(time.monotonic() - started)
             ended = ("terminated" if procgroup.terminate(proc)
                      else f"killed {procgroup.TERM_GRACE_S}s after SIGTERM")
-            notes.append(f"{name} timed out after {timeout}s (process group {ended})"
-                         if stop == "timeout" else
-                         f"{name} was ended by the run's abort after {ran}s "
-                         f"(process group {ended})")
+            # The note is what the RUN reads, so each ending says which one it was in its own
+            # words: a cancel that read like a deadline would be retried (D160-C).
+            notes.append(
+                f"{name} timed out after {timeout}s (process group {ended})"
+                if stop == "timeout" else
+                f"{name} was cancelled by the user after {ran}s (process group {ended}) — a "
+                f"person stopped this call deliberately, so do not simply run it again: take "
+                f"the cancel as the instruction it is"
+                if stop == "cancel" else
+                f"{name} was ended by the run's abort after {ran}s (process group {ended})")
         notes += [n for n in (_seal_broken(config_seal, before, label),) if n]
         return Jailed(proc.returncode, read_capped(out_f, cap, secrets=secrets),
                       read_capped(err_f, cap, diagnostic="; ".join(notes), secrets=secrets),
-                      stop == "timeout", aborted=stop == "abort")
+                      stop == "timeout", aborted=stop == "abort",
+                      cancelled=stop == "cancel")
 
 
 def _wait(proc: subprocess.Popen[str], timeout: int,
-          aborted: Callable[[], bool] | None) -> str:
+          aborted: Callable[[], bool] | None,
+          cancelled: Callable[[], bool] | None = None) -> str:
     """Wait for `proc` and say why the wait ended: "" when the command exited, "timeout" when
-    its deadline passed, "abort" when its run was aborted — which outranks a deadline reached
-    at the same look, since the run is stopping either way.
+    its deadline passed, "abort" when its run was aborted, "cancel" when a person stopped this
+    one call (F586/D160-C).
+
+    Both interruptions outrank a deadline reached at the same look, and a cancel outranks an
+    abort, because the three can be true in one 0.25 s poll and `Jailed.exit_code` must report
+    the most deliberate of them: the run is stopping either way on an abort, but only a cancel
+    carries the instruction "this call, and not the clock".
+
+    One loop, one poll interval. A cancel polled in a loop of its own would be a second wait in
+    the one function every util, script and shell action goes through.
     """
     deadline = time.monotonic() + timeout
+    polled = aborted is not None or cancelled is not None
     while True:
         left = max(0.0, deadline - time.monotonic())
         try:
-            proc.wait(timeout=left if aborted is None else min(left, ABORT_POLL_S))
+            proc.wait(timeout=min(left, ABORT_POLL_S) if polled else left)
         except subprocess.TimeoutExpired:
+            if cancelled is not None and cancelled():
+                return "cancel"
             if aborted is not None and aborted():
                 return "abort"
             if time.monotonic() >= deadline:
