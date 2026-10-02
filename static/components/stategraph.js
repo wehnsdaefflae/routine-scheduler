@@ -1,7 +1,7 @@
 // A routine's state graph as a simple highlighted chain: one node per stage module
 // (server-side, /stategraph — the modules ARE the states, nothing parsed from prose),
 // the CURRENT phase lit up, states before it dimmed as done. setPhase() re-highlights
-// live — the run SSE `state` events carry phase transitions (the engine stamps the
+// live — the run tail's `state` events carry phase transitions (the engine stamps the
 // stage module each read_file enters into status.json).
 // A recorded phase that matches no stage module is appended as its own node: the diagram
 // never lies about where the run says it is. With a `statsUrl` (/api/runs/…/phases) each
@@ -103,7 +103,7 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
   refresh();
   return {
     refresh,
-    setPhase(p) {                      // live: an SSE state event carried a new phase
+    setPhase(p) {                      // live: a stream state event carried a new phase
       if (p == null || p === phase) return;
       phase = p;
       renderInto();

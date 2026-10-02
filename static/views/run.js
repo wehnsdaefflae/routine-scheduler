@@ -1,4 +1,4 @@
-// Run view: live transcript (resilient SSE tail with visible reconnect state), intervention
+// Run view: live transcript (resilient live tail with visible reconnect state), intervention
 // controls, and a sub-run selector. Which sub-run you're reading — and the transcript offset —
 // live in the URL (#/run/{id}?sub=N), so a deep link reopens the exact view.
 
@@ -96,7 +96,7 @@ export async function render(view, runId, query = {}) {
   const questionBox = el("div", {});
   col.append(questionBox);
 
-  // Side rail: the routine's state graph (current phase lit, updates on SSE phase
+  // Side rail: the routine's state graph (current phase lit, updates on live phase
   // transitions) + its artifacts. The second grid column beside the main column from 760px
   // up (resizable, hideable — its grip is the sibling wireRunRail inserts), an ordinary
   // collapsible block below the main column on a phone.
@@ -408,7 +408,7 @@ export async function render(view, runId, query = {}) {
 
   let shownQid = null;
   function showQuestion(q) {
-    // Diagnostic (F93): trace only real transitions of the shown question (SSE state events
+    // Diagnostic (F93): trace only real transitions of the shown question (live-stream state events
     // fire often) — captures whether/when the run page rendered a given clarify question.
     const qid = q ? q.qid : null;
     if (qid !== shownQid) { trace("run-question", qid || "none", curState); shownQid = qid; }

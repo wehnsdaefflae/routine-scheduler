@@ -1,4 +1,4 @@
-"""In-process event bus feeding the global SSE stream (and dashboard badges).
+"""In-process event bus feeding the global live stream (and dashboard badges).
 
 Events: {"event": "run_started"|"run_state"|"run_finished"|"question_asked",
          "routine": slug, "run_id": ..., ...}. Fire-and-forget; slow subscribers drop

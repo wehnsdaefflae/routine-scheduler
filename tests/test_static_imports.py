@@ -112,7 +112,7 @@ def _imported_from(text: str, module: str) -> set[str]:
 
 
 def test_api_stream_gauge_is_imported_where_used():
-    """F263: openStreamCount (the concurrent-EventSource gauge stamped into reconnect/freeze
+    """F263: openStreamCount (the open live-stream gauge stamped into reconnect/freeze
     traces) is defined in api.js; any module calling it must import it — same ReferenceError
     class the md-helper guard catches. api.js itself DEFINES it, so it is excluded."""
     problems = []
@@ -189,38 +189,42 @@ def test_a_settings_section_that_reloads_declares_the_reload_it_was_handed():
                           "(ReferenceError at runtime):\n" + "\n".join(problems))
 
 
-def test_one_module_constructs_every_eventsource_and_the_ticket_is_bounded():
+#: Files allowed to build a WebSocket, each with the reason it is not a live stream.
+SOCKETS_ELSEWHERE = {
+    "api.js": "liveStream() — every live stream, and the gauge that counts them",
+    "browserdock.js": "relayReachable() — a probe of the noVNC relay, closed on its first frame",
+}
+
+
+def test_every_live_stream_is_a_websocket_built_in_api_js():
     """F606: the operator could not open more than three console tabs — the fourth did not load.
 
-    The arithmetic: a browser allows ~6 HTTP/1.1 connections per origin, every `EventSource` holds
-    one for its whole life, and each tab holds the global bus plus its live tails. At the ceiling
-    the `POST /api/sse-ticket` that every connection (and every RECONNECT) must make first has no
-    socket, so it hung with NO error — the tab painted its shell and stopped, and could not recover,
-    because the recovery path needs the resource it is out of.
+    The arithmetic: a browser allows ~6 HTTP/1.1 connections per origin, every `EventSource`
+    held one for its whole life, and each tab held the global bus plus its live tails — so a
+    few tabs filled the pool and the next page's fetches had no socket at all. The streams are
+    WebSockets now, which the browser counts against a separate, far larger limit.
 
     Two properties are pinned, both the ones a change could silently break:
 
-    - **every stream goes through `api.js`'s `sse()`**, which is the only place that counts them
-      (`openStreamCount`) and the only place that can warn. A second `new EventSource` anywhere else
-      is a socket nobody counts — exactly how 2-per-tab could become 3 unnoticed.
-    - **the ticket request is bounded.** Without a timeout that `await` is where a starved tab dies
-      silently; with one it fails, the handler's backoff runs, and the console can say what is wrong.
+    - **no `EventSource` anywhere.** One would take a per-origin connection again, and enough
+      of them bring the wall back with nothing on the page saying why.
+    - **every stream socket is built in `api.js`'s `liveStream()`**, the only place the
+      open-stream gauge (`openStreamCount`) is kept — a socket built elsewhere is one the traces
+      never count. `SOCKETS_ELSEWHERE` names the one other socket and why it is not a stream.
     """
     offenders = []
     for path in _js_files():
         text = _without_comments(path.read_text(encoding="utf-8"))
-        if "new EventSource" in text and path.name != "api.js":
-            line = text[: text.find("new EventSource")].count("\n") + 1
-            offenders.append(f"{path.relative_to(STATIC.parent)}:{line}")
+        for ctor in ("new EventSource", "new WebSocket"):
+            if ctor in text and (ctor == "new EventSource" or path.name not in SOCKETS_ELSEWHERE):
+                line = text[: text.find(ctor)].count("\n") + 1
+                offenders.append(f"{path.relative_to(STATIC.parent)}:{line} ({ctor})")
     assert not offenders, (
-        "an EventSource is constructed outside static/api.js, so nothing counts it against the "
-        "~6-per-origin ceiling (F606): " + ", ".join(offenders))
-
+        "a live stream is built outside static/api.js's liveStream(), or as an EventSource "
+        "that would hold one of the ~6 per-origin HTTP connections again (F606): "
+        + ", ".join(offenders))
     api_js = _without_comments((STATIC / "api.js").read_text(encoding="utf-8"))
-    assert "TICKET_TIMEOUT_MS" in api_js, (
-        "the /api/sse-ticket POST must be bounded: an unbounded one is where a tab at the "
-        "connection ceiling hangs with no error (F606)")
-    assert "STREAM_PRESSURE" in api_js and "openStreamCount" in api_js
+    assert "new WebSocket" in api_js and "openStreamCount" in api_js
 
 
 def test_a_helper_named_only_in_prose_is_not_a_call():

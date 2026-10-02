@@ -197,7 +197,7 @@ the limits (single-writer status.json preserved).
   UI's state-graph diagram from the routine's own `stages/*.md`,
   in main.md first-mention order (nothing parsed from prose, so every routine has a diagram), and
   the engine tracks the run's live position from its stage-module READS: a `read_file` of
-  `stages/<name>.md` stamps `ctx.phase` (executor) → status.json (every turn) → the run SSE `state`
+  `stages/<name>.md` stamps `ctx.phase` (executor) → status.json (every turn) → the run tail's `state`
   event, which also fires on phase change (`/stategraph` endpoints,
   `static/components/stategraph.js` — rendered in the run view's rail and the conversation artifact
   rail, current phase highlighted live). The transcript renderer chapters the say stream with
@@ -1389,11 +1389,16 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   exactly what its Landlock roots forbid — any directory listing on the host, every central
   secret NAME with the utils declaring it, every routine's OWN secret names with the store's
   host path, the daemon's own stacks, and full-text search over every routine's transcripts and
-  notes. Every tier decision (and the SSE ticket's scope) reads the path the ROUTER dispatches
-  on (`app._route_path`), never `request.url.path`, which Starlette re-parses from the decoded
-  path so that an encoded `?` or `#` in a segment ends it early. Cross-routine FILE reads
-  (`/api/routines/{slug}/file`, `/api/runs/{id}/file`) are the same class and deliberately NOT
-  denied yet: one routine was granted a sibling's transcripts on purpose, and that grant has to
+  notes. Every tier decision reads the path the ROUTER dispatches on (`app._route_path`), never `request.url.path`, which Starlette re-parses from the decoded
+  path so that an encoded `?` or `#` in a segment ends it early. No HTTP route accepts a
+  stream ticket at all: the console's two live streams — the global bus (`/api/events`) and a
+  run's tail (`/api/runs/{id}/events`) — are WebSockets (`web/streams.py`), each admitted by ONE
+  single-use, 60 s ticket spent on its own handshake (`streams.admits`). They are WebSockets
+  because an EventSource holds one of the ~6 HTTP/1.1 connections a browser keeps per origin,
+  and the bus plus a tail per live view filled that pool by the fourth tab (F606).
+  Cross-routine FILE reads (`/api/routines/{slug}/file`, `/api/runs/{id}/file`) are the same
+  class and deliberately NOT denied yet: one routine was granted a sibling's transcripts on
+  purpose, and that grant has to
   be re-expressed as an fs-read root before the door closes. What they reach stays inside the
   run homes, though: every web file read (and an artifact delete) proves containment on the file
   as OPENED (`web/artifacts.open_within`, the kernel's `/proc/self/fd` name for the descriptor),
@@ -1531,8 +1536,8 @@ The web process records its own slowness (0.332.0): a timing middleware in `web/
 requests in flight and keeps the last 50 that exceeded `SLOW_REQUEST_S` (2 s), each logged as a
 `slow request` WARNING, and `web/api_debug.py` serves `GET /api/debug/slow` (that ring) and
 `GET /api/debug/threads` (every Python thread's stack, the threadpool's borrowed tokens, the
-in-flight count) to the operator's primary token only. SSE streams are exempt from the timing —
-they are slow by design. The container also carries `SYS_PTRACE` so `py-spy dump` works inside it
+in-flight count) to the operator's primary token only. The live streams never reach the timing:
+they are WebSockets, which an http middleware does not see. The container also carries `SYS_PTRACE` so `py-spy dump` works inside it
 (deploy/DOCKER.md). All of it exists because on 2026-09-12 every sync handler took 20-50 s for
 an hour with one worker thread at 70% CPU, and the daemon could name neither the thread nor the
 requests it had starved. It named them the same afternoon (0.334.0): the dashboard reloading five

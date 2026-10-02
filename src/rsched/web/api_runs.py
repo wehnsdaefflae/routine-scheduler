@@ -1,4 +1,4 @@
-"""Run access: index, transcripts (paged + SSE live tail), the per-run read models, and
+"""Run access: index, transcripts (paged + the live WebSocket tail), the per-run read models, and
 the one reader of a run's state (`run_state` + the two guards every control route in
 api_run_control uses).
 """
@@ -8,8 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from sse_starlette import EventSourceResponse
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket
+from starlette.requests import HTTPConnection
 
 from .. import registry
 from ..config import load_routine
@@ -17,18 +17,22 @@ from ..engine.transcript import read_events
 from ..ids import is_slug, parse_run_id
 from ..paths import read_json
 from ..registry import TERMINAL_STATES
-from .sse import traced_run_stream
+from .streams import serve, traced_run_stream
 
 router = APIRouter(tags=["runs"])
+#: The live tail is a WebSocket, so it sits on a router with NO bearer dependency — an HTTP
+#: dependency fails on a websocket scope — and is admitted by its stream ticket inside
+#: `streams.serve` instead (appwiring mounts it separately, beside the noVNC socket).
+ws_router = APIRouter(tags=["runs"])
 
 #: A transcript byte offset. Only ever one the server handed out, so never negative — a
 #: negative one reached a text-mode seek and came back a 500.
 Offset = Annotated[int, Query(ge=0)]
 
 
-def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
+def _run_dir(request: HTTPConnection, run_id: str) -> tuple[str, Path]:
     """Resolve a run id in any of the three run homes — a conversation's or a detached task's
-    run is a run like any other (transcript, SSE, inject, converse, abort all apply). The
+    run is a run like any other (transcript, live tail, inject, converse, abort all apply). The
     owning routine/conversation dir is always run_dir.parent.parent.
     """
     try:
@@ -139,10 +143,17 @@ def run_transcript(request: Request, run_id: str, offset: Offset = 0,
     return {"events": events, "offset": new_offset}
 
 
-@router.get("/runs/{run_id}/events")
-async def run_events(request: Request, run_id: str, offset: Offset = 0):
-    _, run_dir = _run_dir(request, run_id)
-    return EventSourceResponse(traced_run_stream(run_dir, offset, request.app.state.server))
+@ws_router.websocket("/runs/{run_id}/events")
+async def run_events(ws: WebSocket, run_id: str, offset: Offset = 0) -> None:
+    """The run's live tail from `offset`: transcript events, state changes, then `end`."""
+    def open_stream():
+        try:
+            _, run_dir = _run_dir(ws, run_id)
+        except HTTPException as exc:   # an unknown or malformed run: the socket says "gone"
+            raise LookupError(exc.detail) from exc
+        return traced_run_stream(run_dir, offset, ws.app.state.server)
+
+    await serve(ws, open_stream)
 
 
 @router.get("/runs/{run_id}/phases")

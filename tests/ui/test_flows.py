@@ -107,7 +107,7 @@ def test_decisions_inbox_groups(ui, ui_page):
 
 
 def test_decisions_answer_keeps_focus_across_bus_refresh(ui, ui_page):
-    """A live-run SSE bus tick must NOT rebuild the inbox out from under the answer field
+    """A live-run bus tick must NOT rebuild the inbox out from under the answer field
     you are mid-typing: renderList's list.replaceChildren would drop focus, and on mobile
     that dismisses the keyboard so the answer never lands. The deferred-reload guard keeps
     the focused input alive across the tick."""
@@ -1734,37 +1734,36 @@ def test_conversations_is_the_landing_page_and_first_in_nav(ui, ui_page):
     expect(ui_page.locator("[data-nav=dashboard]")).to_have_class(re.compile(r"\bactive\b"))
 
 
-def test_global_stream_remints_ticket_on_reconnect(ui, ui_page):
+def test_global_stream_remints_ticket_on_reconnect(ui, ui_page, monkeypatch):
     """F253: the global /api/events stream drives every view's live refresh (dashboard
-    routine states, decision badges, run toasts). SSE tickets have a 60s TTL and are purged
-    whenever the daemon restarts, but EventSource's native auto-reconnect reuses the SAME
-    ?ticket= URL — so after any drop the reconnect 401s forever, the bus goes silent, and
-    the console freezes with stale routine states (the daemon lamp stuck off). globalStream
-    must own the reconnect: mint a FRESH ticket and reopen under backoff. Here the stream is
-    routed so a reused ticket is rejected (as an expired/purged one would be) and the first
-    connection is dropped; only re-minting recovers the daemon lamp."""
+    routine states, decision badges, run toasts). A stream ticket opens ONE socket and every
+    ticket is purged when the daemon restarts, so a reconnect that reused the old URL would be
+    refused forever — the bus silent, the console frozen on stale routine states, the daemon
+    lamp stuck off (as it was when EventSource reconnected by itself). globalStream must own
+    the reconnect: mint a FRESH ticket and reopen under backoff. Here the server ends every bus
+    stream the moment it opens, as a restart does, so only re-minting yields a second distinct
+    ticket. Observed with a passive listener: a routed socket closed from its handler blocks
+    the sync API until the test times out."""
     from urllib.parse import parse_qs, urlparse
 
+    from rsched.web import streams
+
+    async def ends_at_once(_bus):
+        for _ in ():
+            yield {}
+
+    monkeypatch.setattr(streams, "bus_stream", ends_at_once)   # the server runs in-process
     seen: set[str] = set()
 
-    def handle(route):
-        ticket = parse_qs(urlparse(route.request.url).query).get("ticket", [""])[0]
-        if ticket in seen:
-            route.abort()          # a reused (expired/purged) ticket is rejected
-        else:
-            seen.add(ticket)
-            route.abort()          # accept the ticket once, then drop it — forces a reconnect
-    ui_page.route("**/api/events*", handle)
+    def on_socket(ws):
+        if "/api/events" in ws.url:
+            seen.add(parse_qs(urlparse(ws.url).query).get("ticket", [""])[0])
+    ui_page.on("websocket", on_socket)
 
     ui.seed_run("uir", "20260729-070000", "finished", summary="ok")
     ui_page.goto(f"{ui.url}/#/routines")
-    # Every ticket is dropped, so the lamp never stays on in EITHER version — the
-    # discriminator is whether the client RE-MINTS. The unfixed client lets EventSource
-    # retry the SAME dead ticket, so `seen` never grows past 1; the fix mints a fresh ticket
-    # on each reconnect under backoff (first retry at ~1s), so distinct tickets accumulate.
-    # The unfixed client lets EventSource retry the SAME dead ticket, so `seen` never grows
-    # past 1; wait for the second DISTINCT ticket rather than for a clock, so the test costs
-    # the backoff it actually needs (~1 s) instead of three seconds every run.
+    # Wait for the second DISTINCT ticket rather than for a clock, so the test costs the
+    # backoff it actually needs (~1 s) instead of a fixed sleep every run.
     until(lambda: len(seen) >= 2, what="a re-minted ticket", page=ui_page, timeout_s=8)
     assert len(seen) >= 2, (
         f"client did not re-mint a fresh ticket after the stream dropped (saw {len(seen)})")

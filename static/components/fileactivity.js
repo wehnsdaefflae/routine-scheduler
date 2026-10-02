@@ -3,7 +3,7 @@
 // subruns and user slash commands count too). The transcript shows every touch in
 // order; this rail card answers "what did this run touch" at a glance, rows in
 // first-touched order. poke() coalesces a live burst of file observations into one
-// refetch, so the SSE tail can call it per event without hammering the endpoint.
+// refetch, so the live tail can call it per event without hammering the endpoint.
 
 import { api, apiBlobUrl } from "/static/api.js";
 import { newTabHref } from "/static/components/blobtab.js";

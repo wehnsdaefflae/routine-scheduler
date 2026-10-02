@@ -530,7 +530,7 @@ is a `docker compose up -d`, not a rebuild. The states:
 
 ## HTTPS for the console (Web Push needs a secure context)
 
-The console serves plain HTTP on `:8321`. Everything works that way — the API, SSE, the
+The console serves plain HTTP on `:8321`. Everything works that way — the API, the live streams, the
 browser screen — with ONE exception: **Web Push needs a secure context**, which is a
 property of the URL, not of the network. A VPN gives you REACH, not a secure context, so
 `http://<lan-ip>:8321` over a VPN still cannot subscribe a device to push. That is the

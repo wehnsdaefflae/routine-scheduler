@@ -77,7 +77,7 @@ def _append(server, records: list[dict]) -> int:
 def record_server_trace(server, *, kind: str, target: str = "", detail: str = "",
                         view: str = "server") -> None:
     """A SERVER-originated trace event, appended to the same day file the browser batches
-    land in — one evidence stream for the audits. First use: `sse-close` (F175), so client
+    land in — one evidence stream for the audits. First use: `stream-close` (F175), so client
     `reconnect` traces can be matched against what the server saw at the same moment.
     """
     _append(server, [{"kind": kind, "view": view, "target": target, "detail": detail}])

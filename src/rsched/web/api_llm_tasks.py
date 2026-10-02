@@ -1,7 +1,7 @@
 """LLM task manager reconcile endpoint: a snapshot of open processes + in-flight/recent tasks.
 
 The overlay streams live via the `llm_task`/`llm_process` bus events (see llm_tasks.TaskCenter);
-it fetches this snapshot on boot and after an SSE reconnect, since the bus drops events for a
+it fetches this snapshot on boot and after a stream reconnect, since the bus drops events for a
 slow subscriber. The TaskCenter lives on app.state (set by app.py's `create_app`).
 """
 

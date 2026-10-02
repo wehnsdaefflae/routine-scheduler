@@ -188,26 +188,33 @@ def test_a_dead_lifespan_task_does_not_fail_the_shutdown(tmp_path, monkeypatch):
     # leaving the block ran the shutdown: reaching this line is the assertion
 
 
-def test_sse_ticket_flow(client):
-    """EventSource auth: a short-lived ticket minted over the authed channel authenticates
-    the SSE endpoints ONLY — a URL-carriable credential must never be a full-API bearer
-    substitute. Garbage and expired tickets fail even there."""
+def test_stream_ticket_flow(client):
+    """Live-stream auth: a short-lived ticket minted over the authed channel admits ONE
+    WebSocket and nothing else — a URL-carriable credential must never be a full-API bearer
+    substitute, so no HTTP route reads it at all. Expired tickets are purged at the next mint."""
+    from starlette.websockets import WebSocketDisconnect
+
+    from rsched.web.streams import CLOSE_GONE
+
     c, _tmp = client
     bare = TestClient(c.app)
-    minted = c.post("/api/sse-ticket").json()
+    minted = c.post("/api/stream-ticket").json()
     assert minted["ttl"] == 60
     ticket = minted["ticket"]
-    # valid ONLY on the SSE surfaces: auth passes there (the handler then 404s on the
-    # unknown run — a 404, not a 401, proves the ticket authenticated)
-    assert bare.get(f"/api/runs/ghost:00000000-000000/events?ticket={ticket}").status_code == 404
-    assert bare.get("/api/runs/ghost:00000000-000000/events").status_code == 401
-    # every other route still requires the bearer — ticket or not
+    # no HTTP route accepts it — the stream's own path included, which is no longer HTTP
     assert bare.get(f"/api/routines?ticket={ticket}").status_code == 401
+    assert bare.get(f"/api/runs/ghost:00000000-000000/transcript?ticket={ticket}"
+                    ).status_code == 401
     assert bare.post(f"/api/settings/restart?ticket={ticket}").status_code == 401
-    assert bare.get("/api/routines?ticket=bogus").status_code == 401
-    c.app.state.sse_tickets[ticket] = 0.0   # fast-forward: long expired
-    c.post("/api/sse-ticket")               # expired tickets are purged at the next mint
-    assert ticket not in c.app.state.sse_tickets
+    # it admits the socket it exists for (CLOSE_GONE, not 1008: authenticated, no such run)
+    with bare.websocket_connect(f"/api/runs/ghost:00000000-000000/events?ticket={ticket}"
+                                ) as ws, pytest.raises(WebSocketDisconnect) as gone:
+        ws.receive_json()
+    assert gone.value.code == CLOSE_GONE
+    stale = c.post("/api/stream-ticket").json()["ticket"]
+    c.app.state.stream_tickets[stale] = 0.0   # fast-forward: long expired
+    c.post("/api/stream-ticket")              # expired tickets are purged at the next mint
+    assert stale not in c.app.state.stream_tickets
 
 
 def test_routine_cards_and_detail(client):
@@ -673,7 +680,12 @@ def test_run_reads_validate_their_query(client):
     _mk_run(tmp / "routines", "apir", "20260708-140000", "finished")
     rid = "apir:20260708-140000"
     assert c.get(f"/api/runs/{rid}/transcript", params={"offset": -1}).status_code == 422
-    assert c.get(f"/api/runs/{rid}/events", params={"offset": -1}).status_code == 422
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect) as refused, \
+            c.websocket_connect(f"/api/runs/{rid}/events?offset=-1"):
+        pass
+    assert refused.value.code == 1008             # FastAPI's validation close on a socket
     assert c.get("/api/runs", params={"limit": 0}).status_code == 422
     assert c.get("/api/runs", params={"routine": "../routines/apir"}).status_code == 400
     assert [r["run_id"] for r in c.get("/api/runs", params={"routine": "apir"}).json()] == [rid]
@@ -936,7 +948,7 @@ def test_answering_files_off_the_event_loop(client, monkeypatch):
     try:
         assert entered.wait(5)
         prober = threading.Thread(target=lambda: probe.update(
-            r=c.get("/api/runs/not-a-run-id/events")))     # an ASYNC route: runs on the loop
+            r=c.get("/api/llm-tasks")))     # an ASYNC route: runs on the loop
         prober.start()
         prober.join(3)
         loop_was_free = not prober.is_alive()
@@ -945,7 +957,7 @@ def test_answering_files_off_the_event_loop(client, monkeypatch):
         filing.join(10)
     prober.join(10)
     assert loop_was_free, "the answer route held the event loop while filing"
-    assert probe["r"].status_code == 400 and answered["r"].status_code == 200
+    assert probe["r"].status_code == 200 and answered["r"].status_code == 200
 
 
 def test_question_events_are_delivered_on_the_loop(client, monkeypatch):

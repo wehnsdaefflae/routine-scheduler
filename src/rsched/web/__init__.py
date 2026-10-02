@@ -1,4 +1,4 @@
-"""FastAPI web layer: the ops console's JSON API + SSE streams + static frontend.
+"""FastAPI web layer: the ops console's JSON API + live WebSocket streams + static frontend.
 
 Routers are grouped by surface: routines, conversations, background tasks, runs,
 schedule, stats, summary, questions (decisions), audit, traces, settings (incl. oauth +

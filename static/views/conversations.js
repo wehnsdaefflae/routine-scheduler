@@ -251,7 +251,7 @@ export async function render(view, slug, _query = {}) {
     // one, so per-section collapse (F296, R262 pt1) is one implementation, not two.
     const rail = createRail(artBody);
     // the state graph rides at the top of the artifact rail: current phase lit up,
-    // re-highlighted live on the SSE state events below
+    // re-highlighted live on the live-stream state events below
     const graphBody = rail.add("state", el("div", {}));
     const treeBody = detail.run_id ? rail.add("tasks", el("div", {})) : el("div", {});
     const filesBody = detail.run_id ? rail.add("files", el("div", {})) : el("div", {});

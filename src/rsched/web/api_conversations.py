@@ -3,7 +3,7 @@ the state graph, and artifact + attachment serving.
 
 A conversation is a routine-shaped dir under conversations_home (see conversations.py);
 its ONE run is continued in place — a message to a live run is an ordinary injection, a
-message to a finished run resumes it (converse semantics). Transcript/SSE/abort ride the
+message to a finished run resumes it (converse semantics). Transcript/live tail/abort ride the
 existing /api/runs endpoints (run resolution is home-aware). Attachments upload as
 multipart files into <conv>/attachments/ and travel as an `[attached files]` block in the
 message text; deliverables the model writes into <conv>/artifacts/ are listed and served

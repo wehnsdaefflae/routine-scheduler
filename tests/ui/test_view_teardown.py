@@ -126,7 +126,7 @@ def test_a_run_view_that_fails_mid_render_leaves_no_broken_callback(ui, ui_page)
 def test_leaving_right_after_a_send_does_not_remount_the_conversation(ui, ui_page):
     """A send that wakes a DIFFERENT run remounts the conversation 700 ms later. Left inside
     that window, the remount ran anyway — into a view already torn down, arming a live tail
-    (an SSE socket), two rail pollers and a scroll listener that nothing would ever stop."""
+    (a live-stream socket), two rail pollers and a scroll listener that nothing would ever stop."""
     slug, _conv_dir = start_conversation(ui, ui_page, "Plan the trip.")
     # the run the view follows is NOT the one the stub runner resumes into, so the send takes
     # the fresh-run remount branch rather than re-attaching the tail in place

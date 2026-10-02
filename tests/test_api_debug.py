@@ -66,14 +66,16 @@ def test_slow_requests_are_recorded_and_logged(client, caplog):
     assert client.get("/api/debug/threads").json()["in_flight"] == 1   # only this request
 
 
-def test_sse_streams_are_never_counted_as_slow(client):
-    """A stream is slow by design; counting it would bury the real entries."""
+def test_live_streams_are_never_counted_as_slow(client):
+    """A stream is slow by design; counting it would bury the real entries. The streams are
+    WebSockets, and an http middleware never sees a websocket scope — held open past the
+    threshold here, the socket leaves no entry while the ticket mint beside it does."""
     app = client.app
     app.state.slow_request_s = 0.0
-    r = client.post("/api/sse-ticket")
+    r = client.post("/api/stream-ticket")
     assert r.status_code == 200
-    # the ticket endpoint is an ordinary request and IS recorded; the two stream paths are
-    # exempt — asserted on the predicate the middleware uses, rather than by holding a stream open
-    from rsched.web.app import _is_sse_path
-    assert _is_sse_path("/api/events")
-    assert not _is_sse_path("/api/lanes")
+    with client.websocket_connect(f"/api/events?ticket={r.json()['ticket']}"):
+        time.sleep(0.05)
+    paths = [e["path"] for e in client.get("/api/debug/slow").json()["requests"]]
+    assert "/api/stream-ticket" in paths
+    assert "/api/events" not in paths

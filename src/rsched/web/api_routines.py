@@ -303,7 +303,7 @@ def revert_recipe(request: Request, slug: str, body: RevertBody) -> dict:
 def stategraph(request: Request, slug: str) -> dict:
     """The routine's state graph (its stage modules, in main.md mention order) + the
     current phase (the stage module the latest run last read) — the UI's live diagram;
-    phase transitions arrive over the run SSE `state` events.
+    phase transitions arrive over the run tail's `state` events.
     """
     from ..readmodels import statemap
 

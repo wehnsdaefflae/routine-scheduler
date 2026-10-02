@@ -15,6 +15,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.376.0] — 2026-10-02
+
+### Changed — the console's live streams are WebSockets, so any number of tabs loads (F606)
+
+- **The capacity fix for F606** (the operator, 2026-10-01: "i cannot open more than three tabs
+  of the routine-scheduler webui. if i do, it doesnt load."). Over plain HTTP/1.1 a browser keeps
+  ~6 connections per origin and every `EventSource` held one for its whole life: the global bus
+  plus a tail per live run/conversation view filled the pool by the fourth tab, whose fetches then
+  had no socket at all. Both streams — `/api/events` (the bus) and `/api/runs/{id}/events` (a
+  run's tail) — are now WebSocket routes at the same paths. Browsers count WebSockets against a
+  separate, far larger limit, so no number of tabs or live views starves the page, over plain
+  `http://<lan-ip>:8321`, with no TLS and nothing to set up on any device. Measured in a real
+  Chrome before the change: tab 7 never loaded with one stream per tab, tab 4 with two.
+- `web/sse.py` is `web/streams.py`. The generators are unchanged except that they yield the
+  payload dict itself; `streams.pump` sends each item as one JSON text frame
+  `{"event", "data"}`, a `ping` frame after 15 s of silence, and closes 1000 when the stream
+  ends (1011 if it failed). A departed peer cancels the generator at once and `aclose()`s it on
+  every exit, so the bus subscription and the run tail's close trace never wait for garbage
+  collection.
+- **The ticket is single-use and admits only a socket.** `POST /api/sse-ticket` is
+  `POST /api/stream-ticket` (`app.state.stream_tickets`); `streams.admits` SPENDS a ticket on the
+  handshake, so a URL that leaked opens nothing a second time. `require_auth` no longer reads a
+  ticket at all — no HTTP route accepts one, which is strictly narrower than the old "SSE paths
+  only" scope. A refused socket is accepted and then closed 1008 (and an unknown run 4404, only
+  after admission), because a browser reports every rejected handshake as a bare 1006.
+- Client: `static/api.js`'s `sse()` is `liveStream()` (same handler contract). It reports a
+  drop once per stream, and also a socket that went SILENT for three ping intervals — a
+  suspended laptop or a changed network leaves a socket that looks open forever.
+- **Removed, because the limit they worked around is gone:** `stream.js`'s three-tail ration
+  and its REST-polling fallback (`MAX_TAIL_STREAMS`, `POLL_MS`, F263), and 0.374.4's
+  connection-limit warning and bounded ticket request (`STREAM_PRESSURE`, `TICKET_TIMEOUT_MS`).
+  The open-stream gauge stays and is still stamped into `reconnect` and `freeze` traces.
+- The server-side close trace is `stream-close` (was `sse-close`); older day files keep the
+  old kind. The `sse-starlette` dependency is dropped; the slow-request middleware needs no
+  stream exemption, since an http middleware never sees a websocket scope.
+- Tests: `tests/test_streams.py` (frame contract, ticket single-use, admission before
+  existence, keepalive, peer departure, failure close), the reconnect test drives
+  `route_web_socket`, and `test_static_imports` forbids any `EventSource` and any `WebSocket`
+  built outside `liveStream()`. Swept: `docs/architecture.md`, `deploy/DOCKER.md`,
+  `docs/triggers.md`, `README.md`, `CLAUDE.md` and the comments that named the transport.
+
 ## [0.375.0] — 2026-10-02
 
 ### Changed — the console's https guidance no longer names a VPN that is gone

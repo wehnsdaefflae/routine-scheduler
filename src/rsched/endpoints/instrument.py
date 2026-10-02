@@ -46,7 +46,7 @@ def make_record(phase: str, *, id: str, endpoint: str, model: str, purpose: str,
                 usage: dict | None = None, provider: str | None = None,
                 error: str | None = None) -> dict:
     """One lifecycle line. The descriptive fields ride every phase so a record is
-    self-describing even if an earlier phase's event was dropped by a full SSE queue.
+    self-describing even if an earlier phase's event was dropped by a full bus queue.
     """
     rec: dict = {"id": id, "phase": phase, "ts": now_iso(), "endpoint": endpoint,
                  "model": model, "purpose": purpose}

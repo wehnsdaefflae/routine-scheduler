@@ -671,7 +671,7 @@ by a test, by the engine, or by a past incident.
 
 - One responsibility per file, ≤ ~350 lines. Split rather than grow.
 - Prefer a fitting, well-maintained package over hand-rolled plumbing (pydantic validates config,
-  tenacity retries, python-frontmatter parses frontmatter, sse-starlette speaks SSE). The bar is net
+  tenacity retries, python-frontmatter parses frontmatter, websockets relays the browser screen). The bar is net
   reduction AND net clarity — `paths.atomic_write` and `schema_guard` stay bespoke on purpose.
 - Cross-process files are written atomic (tmp+rename) via `paths.atomic_write` — never ad-hoc, and
   through its typed pairs where one fits: `atomic_write_json`/`read_json`, and

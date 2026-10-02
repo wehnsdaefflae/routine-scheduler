@@ -1,7 +1,7 @@
 // The recursive task tree: a run's SEQUENTIAL subtasks (→) and PARALLEL subruns (⇉), each a
 // node with a state icon, its workflow pattern, and a per-node turn-budget meter (amber ≥85%,
 // red over). Fed by the read-model at /api/runs/<id>/tree (a walk of the on-disk sub/ tree).
-// Refreshes on demand (the run view calls refresh() on SSE state events) and polls itself while
+// Refreshes on demand (the run view calls refresh() on live-stream state events) and polls itself while
 // the run is live — the sibling of the state-graph rail card, but for within-run decomposition.
 
 import { api } from "/static/api.js";

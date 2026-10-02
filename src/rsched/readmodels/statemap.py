@@ -6,7 +6,7 @@ every routine with stage modules has a diagram, unconditionally. Node order is m
 own routing: modules sort by where main.md first mentions them (its `## Run flow` list
 references each one); unmentioned extras sort last, alphabetically. The CURRENT node is
 the engine's live phase — the stage module the run last read (the executor stamps it into
-ctx.phase → status.json → the run SSE `state` event) — so a recipe owes the diagram
+ctx.phase → status.json → the run tail's `state` event) — so a recipe owes the diagram
 nothing; its state/phase.json remains a private state file (the digest shows it), not a
 UI contract.
 """
@@ -119,7 +119,7 @@ def stage_coverage(routine_dir: Path, entered: list[str],
 def current_phase(routine_dir: Path) -> str:
     """The latest run's recorded phase (status.json `phase` — the stage module the run
     last read). The routine-level graph's initial highlight; live transitions ride the
-    run SSE `state` events, which carry the same field.
+    run tail `state` events, which carry the same field.
     """
     runs = routine_dir / "runs"
     try:

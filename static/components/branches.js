@@ -55,7 +55,7 @@ export async function rewindTo(slug, runId, turn, { isLive } = {}) {
     const r = await api(`/api/runs/${runId}/rewind`, { method: "POST", body: { turn } });
     toast(`rewound to turn ${r.kept_through_turn} — reopening…`);
     // remount(), not a page reload: the rewind changes THIS view's transcript and nothing
-    // else, while a reload drops the SSE bus, the LLM dock and the browser dock and re-runs
+    // else, while a reload drops the live bus, the LLM dock and the browser dock and re-runs
     // the whole boot sequence.
     setTimeout(remount, 800);
     return r;

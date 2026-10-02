@@ -262,7 +262,7 @@ user-facing here.
 ## Layout
 
 - `src/rsched/` — `engine/` (the run loop), `endpoints/` (direct API adapters),
-  `daemon/` (cron scheduler + subprocess runner), `web/` (FastAPI + SSE),
+  `daemon/` (cron scheduler + subprocess runner), `web/` (FastAPI + WebSockets),
   `workflows/` (library, lint, adapt, scaffold, suggest, generate)
 - `static/` — no-build vanilla-JS frontend; `docs/` — hand-written guides, rendered into
   the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot, from the

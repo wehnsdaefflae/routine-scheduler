@@ -1,7 +1,7 @@
-// Fetch + SSE wrappers with bearer-token auth. The token lives in localStorage; when it is
-// missing or rejected, an in-page gate overlay collects it and pending requests retry — no
-// window.prompt, no lost navigation. SSE mints a short-lived ticket per connection (EventSource has no
-// headers).
+// Fetch + live-stream wrappers with bearer-token auth. The token lives in localStorage; when it
+// is missing or rejected, an in-page gate overlay collects it and pending requests retry — no
+// window.prompt, no lost navigation. A live stream is a WebSocket that mints a short-lived ticket
+// per connection (the WebSocket API sends no headers).
 
 import { storage } from "/static/util.js";
 
@@ -214,82 +214,73 @@ export async function apiBlobUrl(path) {
   return { url: URL.createObjectURL(await resp.blob()), type: resp.headers.get("content-type") || "" };
 }
 
-// EventSource wrapper. Handlers are keyed by SSE event name; "onerror"/"onopen" are the
-// EventSource callbacks. EventSource cannot send an Authorization header, and the bearer
-// token in a query string would leak into access logs — so every connection first mints
-// a SHORT-LIVED ticket (POST /api/sse-ticket) and sends that instead; reconnects (via
-// stream.js liveTail, which re-invokes this) mint fresh tickets. Returns { close() } —
-// usable before the connection is even up. Prefer liveTail for transcript tails.
-// Concurrent open-EventSource gauge (F263). Browsers cap ~6 HTTP/1.1 connections per origin,
-// and every EventSource holds one open for its whole life — so several live SSE streams (one
-// per open run/conversation tail + the global bus) can approach the cap, at which point every
-// new fetch (navigation, even the sse-ticket POST) stalls with NO error and NO main-thread long
-// task: a NETWORK-stall "freeze" the F218 longtask observer structurally can't see. This gauge
-// is stamped into `reconnect` and `freeze` traces so an audit can correlate a freeze with how
-// many streams were open when it happened, instead of guessing.
+// Live stream over a WebSocket (web/streams.py). Handlers are keyed by event name ("bus",
+// "transcript", "state", "end"); "onopen"/"onerror" are the connection callbacks. The WebSocket
+// API cannot send an Authorization header, and the bearer token in a query string would leak
+// into access logs — so every connection first mints a SHORT-LIVED, single-use ticket
+// (POST /api/stream-ticket) and sends that instead; a reconnect (app.js globalStream,
+// stream.js liveTail) calls this again and mints a fresh one. Returns { close() } — usable
+// before the connection is even up. Prefer liveTail for transcript tails.
+//
+// WebSockets, not EventSource (F606): over HTTP/1.1 a browser keeps ~6 connections per origin
+// and an EventSource holds one for its whole life, so the global bus plus a tail per live view
+// filled the pool by the fourth tab, which then never loaded. WebSockets are counted against a
+// separate, far larger limit, so no number of tabs or live views starves the page's fetches.
+//
+// onerror fires ONCE per stream, for a close this side did not ask for (the daemon restarting,
+// a refused ticket, the network) — and also when the socket goes SILENT: the server pings every
+// KEEPALIVE_MS while idle, so STALE_MS without a frame is a dead socket nobody closed (a
+// suspended laptop, a changed network), which would otherwise look live forever.
+//
+// The open-stream gauge (F263) counts this page's live sockets; it is stamped into the
+// `reconnect` and `freeze` traces so an audit can correlate either with how many were open.
+const KEEPALIVE_MS = 15000;          // web/streams.py KEEPALIVE_S
+const STALE_MS = 3 * KEEPALIVE_MS;
+
 let openStreams = 0;
 export function openStreamCount() { return openStreams; }
 
-// F606: the operator could not open more than three console tabs — the fourth "didn't load". The
-// arithmetic is the gauge above: each tab holds the global bus plus up to MAX_TAIL_STREAMS tails,
-// so a few tabs reach the ~6-per-origin ceiling, and then the ticket POST every connection must
-// make FIRST has no socket left. It hung forever with no error, which is why the tab painted its
-// shell and stopped — and because a RECONNECT needs a ticket too, a starved tab could not recover
-// on its own: the recovery path needs the resource it is out of. Two measures here, both about
-// LEGIBILITY rather than capacity (the capacity fix is one bus connection per BROWSER):
-//   - the ticket POST is bounded, so a starved connection FAILS instead of hanging; its handler's
-//     own backoff then runs and the page is never silently dead;
-//   - at STREAM_PRESSURE open streams the console says what is wrong and what to do about it, once
-//     per page, because "close a tab" is an instruction nobody can guess from a blank page.
-const TICKET_TIMEOUT_MS = 12000;
-const STREAM_PRESSURE = 5;          // of ~6 per origin — one short of the wall
-let pressureSaid = false;
-
-function sayStreamPressure() {
-  if (pressureSaid) return;
-  pressureSaid = true;
-  const message = `This browser is at its connection limit (${openStreams} live streams of about 6 `
-                  + "per origin). Close a console tab, or a run/conversation view inside one — "
-                  + "otherwise the next page may not load at all.";
-  // The rail listens on this bus already; a console that cannot reach the bus still gets the line
-  // in its own log, which is where a stall is read first.
-  window.dispatchEvent(new CustomEvent("rsched-bus",
-    { detail: { event: "stream-pressure", streams: openStreams, message } }));
-  console.warn(`[rsched] ${message}`);
-}
-
-export function sse(path, handlers) {
-  let source = null;
-  let closed = false;
+export function liveStream(path, handlers) {
+  let socket = null;
+  let closed = false;   // this side closed it: nothing more is reported
+  let failed = false;   // onerror already ran for this stream
   let counted = false;
+  let watchdog = null;
   const release = () => { if (counted) { counted = false; openStreams -= 1; } };
+  const fail = (err) => {
+    if (closed || failed) return;
+    failed = true;
+    clearTimeout(watchdog);
+    try { socket?.close(); } catch { /* already closed */ }
+    handlers.onerror?.(err);   // before release(): the gauge still counts the dying stream
+    release();
+  };
+  const arm = () => {
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => fail(new Error(`the live stream went silent for ${STALE_MS} ms`)),
+                          STALE_MS);
+  };
   (async () => {
     let ticket;
-    if (openStreams >= STREAM_PRESSURE) sayStreamPressure();
-    try {
-      // A BOUNDED ticket: without the timeout this `await` is where a console tab dies silently
-      // at the per-origin connection ceiling (F606).
-      ticket = (await Promise.race([
-        api("/api/sse-ticket", { method: "POST" }),
-        new Promise((_resolve, reject) => setTimeout(
-          () => reject(Object.assign(
-            new Error(`the SSE ticket request did not answer in ${TICKET_TIMEOUT_MS} ms — this `
-                      + "browser is probably at its per-origin connection limit "
-                      + `(${openStreams} live streams open); close a tab or a live view`),
-            { status: 0, streamPressure: true })),
-          TICKET_TIMEOUT_MS)),
-      ])).ticket;
-    }
-    catch (err) { if (err?.streamPressure) sayStreamPressure(); handlers.onerror?.(err); return; }
+    try { ticket = (await api("/api/stream-ticket", { method: "POST" })).ticket; }
+    catch (err) { fail(err); return; }
     if (closed) return;
     const sep = path.includes("?") ? "&" : "?";
-    source = new EventSource(`${path}${sep}ticket=${encodeURIComponent(ticket)}`);
+    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+    socket = new WebSocket(`${scheme}//${location.host}${path}${sep}ticket=${encodeURIComponent(ticket)}`);
     counted = true; openStreams += 1;
-    for (const [event, fn] of Object.entries(handlers)) {
-      if (event === "onerror") source.onerror = fn;
-      else if (event === "onopen") source.onopen = fn;
-      else source.addEventListener(event, (e) => fn(JSON.parse(e.data)));
-    }
+    arm();
+    socket.onopen = () => { arm(); handlers.onopen?.(); };
+    socket.onmessage = (msg) => {
+      arm();
+      let frame;
+      try { frame = JSON.parse(msg.data); } catch { return; }
+      if (frame.event === "ping" || frame.event === "onopen" || frame.event === "onerror") return;
+      handlers[frame.event]?.(frame.data);
+    };
+    socket.onclose = (e) => fail(Object.assign(
+      new Error(`the live stream closed (${e.code}${e.reason ? `: ${e.reason}` : ""})`),
+      { code: e.code }));
   })();
-  return { close: () => { closed = true; release(); source?.close(); } };
+  return { close: () => { closed = true; clearTimeout(watchdog); release(); socket?.close(); } };
 }

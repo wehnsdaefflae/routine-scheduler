@@ -68,7 +68,7 @@ def cmd_daemon(_args) -> int:
     # without editing the mounted config; unset → the config's bind/port as before.
     host = os.environ.get("RSCHED_BIND") or server.bind
     port = int(os.environ.get("RSCHED_PORT") or server.port)
-    # Bound graceful shutdown: the web UI holds long-lived SSE streams that never close on
+    # Bound graceful shutdown: the web UI holds long-lived WebSocket streams that never close on
     # their own, so an unbounded graceful shutdown hangs (a manual `systemctl restart` waited
     # the full TimeoutStopSec; the self-update restart, which SIGTERMs itself, would hang with
     # no systemd timeout at all). 10s force-closes idle streams while letting real requests finish.

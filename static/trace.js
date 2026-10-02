@@ -72,7 +72,7 @@ function installFreezeObserver() {
         pending = setTimeout(() => {
           pending = null; lastReport = Date.now();
           const ms = worst; worst = 0;
-          // F263: stamp the concurrent open-EventSource count so a freeze can be correlated
+          // F263: stamp the concurrent open-stream count so a freeze can be correlated
           // with stream fan-out (the connection-exhaustion / network-stall hypothesis).
           trace("freeze", "main-thread", `blocked ${ms}ms, ${openStreamCount()} streams open`);
         }, wait);

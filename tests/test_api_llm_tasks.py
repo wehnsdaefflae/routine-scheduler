@@ -1,5 +1,5 @@
 """The /api/llm-tasks reconcile route + its app wiring: the overlay fetches this snapshot on
-boot and after an SSE reconnect. Also asserts the daemon sink is installed for the app's life."""
+boot and after a stream reconnect. Also asserts the daemon sink is installed for the app's life."""
 
 import pytest
 

@@ -1,4 +1,4 @@
-"""FastAPI app factory: bearer-token auth, API routers, SSE, static frontend, and the
+"""FastAPI app factory: bearer-token auth, API routers, live streams, static frontend, and the
 scheduler running as a startup task — one process serves everything.
 """
 
@@ -10,7 +10,7 @@ import secrets
 import time
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette._utils import get_route_path
@@ -48,19 +48,6 @@ def build_stamp(repo: Path | None) -> str:
         return out.stdout.strip() if out.returncode == 0 else ""
     except Exception:
         return ""
-
-
-SSE_TICKET_TTL_S = 60
-
-
-def _is_sse_path(path: str) -> bool:
-    """The ONLY endpoints an SSE ticket may authenticate: the global event stream and a
-    run's transcript stream — the two EventSource surfaces the frontend opens. A ticket is
-    a URL-carriable credential (it leaks into logs/history far more easily than a bearer
-    header), so it must never be a full-API bearer substitute: scoped to these read-only
-    streams, a leaked ticket can at worst read events for its 60s TTL.
-    """
-    return path == "/api/events" or (path.startswith("/api/runs/") and path.endswith("/events"))
 
 
 def _is_browser_view_path(path: str) -> bool:
@@ -142,9 +129,9 @@ def _route_path(request: Request) -> str:
 
     Not `request.url.path`: that is a URL Starlette RE-PARSES out of the already-decoded path,
     so an encoded `?` or `#` inside a segment ends the path early. `/api/runs/events%3Fx/file`
-    routes to `/runs/{run_id}/file` while its `url.path` reads `/api/runs/events` — an SSE
-    path, which a URL-carriable ticket then admits. A credential is only as narrow as the
-    path it is checked against, so that path has to be the one that runs.
+    routes to `/runs/{run_id}/file` while its `url.path` reads `/api/runs/events` — once a
+    stream path, which a URL-carriable ticket then admitted. A credential is only as narrow as
+    the path it is checked against, so that path has to be the one that runs.
     """
     return get_route_path(request.scope)
 
@@ -179,14 +166,9 @@ def require_auth(request: Request) -> None:
                    "read is reached with read_file, and one outside its jail is an fs-read "
                    "access request.",
             headers={"WWW-Authenticate": 'Bearer error="insufficient_scope"'})
-    # EventSource cannot send headers, and the bearer token in a query string would leak
-    # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead,
-    # valid ONLY for the SSE GET endpoints themselves (never a general API credential).
-    if request.method == "GET" and _is_sse_path(path):
-        ticket = request.query_params.get("ticket") or ""
-        expiry = request.app.state.sse_tickets.get(ticket)
-        if ticket and expiry is not None and expiry >= time.monotonic():
-            return
+    # No HTTP route accepts a stream ticket: the live streams are WebSockets, admitted by
+    # `streams.admits` on their own handshake (F606), so a ticket that leaks into a URL can
+    # never stand in for the bearer here.
     # The relayed browser screen carries its own PASS, in a cookie (F530). A query ticket
     # cannot work here and shipping one was the bug: an <iframe src> is a naked GET, and
     # noVNC then builds its own asset URLs (app/ui.js, app/styles/base.css, the images), so
@@ -214,8 +196,8 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     runner = Runner(server, bus, task_center)   # runs are processes; llm-calls their children
     scheduler = Scheduler(server, runner, bus)
     app.state.server = server
-    app.state.sse_tickets = {}   # ticket → monotonic expiry (see require_auth / sse-ticket)
-    # pass → monotonic expiry for the relayed browser screen (F530). Separate from the SSE
+    app.state.stream_tickets = {}   # ticket → monotonic expiry (see streams.admits / stream-ticket)
+    # pass → monotonic expiry for the relayed browser screen (F530). Separate from the stream
     # tickets on purpose: a different lifetime, a different scope, and a different failure if
     # one is ever mistaken for the other.
     app.state.browser_view_passes = {}
@@ -271,14 +253,17 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
             marker.write_text("done\n", encoding="utf-8")
         return {"ok": True}
 
-    @app.post("/api/sse-ticket", dependencies=deps)
-    def sse_ticket() -> dict:
-        """A short-lived, unguessable query-string credential for EventSource connections
-        (which cannot send an Authorization header). Multi-use within its TTL so the
-        browser's automatic reconnects keep working; expired tickets are purged here.
+    @app.post("/api/stream-ticket", dependencies=deps)
+    def stream_ticket() -> dict:
+        """A short-lived, unguessable query-string credential for ONE live-stream socket (the
+        WebSocket API cannot send an Authorization header). `streams.admits` spends it on the
+        handshake, so every connection and every reconnect mints its own; expired, unspent
+        tickets are purged here.
         """
+        from .streams import STREAM_TICKET_TTL_S
+
         now = time.monotonic()
-        tickets = app.state.sse_tickets
+        tickets = app.state.stream_tickets
         # A sync route runs on a worker thread, so two mints can purge at once — every
         # browser tab reconnecting after a restart asks together. Both see the same expired
         # ticket, and a bare `del` made the slower one a 500; the snapshot keeps the
@@ -287,16 +272,16 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
             if exp < now:
                 tickets.pop(stale, None)
         ticket = secrets.token_urlsafe(24)
-        tickets[ticket] = now + SSE_TICKET_TTL_S
-        return {"ticket": ticket, "ttl": SSE_TICKET_TTL_S}
+        tickets[ticket] = now + STREAM_TICKET_TTL_S
+        return {"ticket": ticket, "ttl": STREAM_TICKET_TTL_S}
 
-    @app.get("/api/events", dependencies=deps)
-    async def global_events():
-        from sse_starlette import EventSourceResponse
+    # A WebSocket route takes no `deps`: an HTTP dependency fails on a websocket scope (it
+    # has no Request), so the socket is admitted by its stream ticket inside `serve`.
+    @app.websocket("/api/events")
+    async def global_events(ws: WebSocket) -> None:
+        from .streams import bus_stream, serve
 
-        from .sse import bus_stream
-
-        return EventSourceResponse(bus_stream(bus))
+        await serve(ws, lambda: bus_stream(bus))
 
     @app.get("/", include_in_schema=False)
     def index():
@@ -327,15 +312,14 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     # Slow-request evidence (2026-09-12): every sync handler took 20-50 s for an hour while five
     # runs were active, and nothing recorded it — no access log, no stack. The in-flight count
     # and a ring of the slow ones are what /api/debug reads; the WARNING is what `docker logs`
-    # shows the morning after. SSE streams are excluded: they are slow by design.
+    # shows the morning after. The live streams cannot be counted here: they are WebSockets,
+    # and an http middleware never sees a websocket scope.
     app.state.in_flight = 0
     app.state.slow_request_s = SLOW_REQUEST_S
     app.state.slow_requests = collections.deque(maxlen=SLOW_KEEP)
 
     @app.middleware("http")
     async def slow_requests(request, call_next):
-        if _is_sse_path(_route_path(request)):
-            return await call_next(request)
         app.state.in_flight += 1
         started = time.monotonic()
         try:

@@ -1,8 +1,8 @@
 // Entry: hash router (path + query), location indicators (active nav + breadcrumb), the
 // in-flight setup banner, the first-launch self-improvement notice, the rail's clock and theme
-// control, the watch ribbon, and the global SSE stream (badges + daemon lamp).
+// control, the watch ribbon, and the global live stream (badges + daemon lamp).
 
-import { api, sse } from "/static/api.js";
+import { api, liveStream } from "/static/api.js";
 import { parseHash } from "/static/router.js";
 import { installTracing } from "/static/trace.js";
 import { installFormPersistence } from "/static/formpersist.js";
@@ -252,12 +252,11 @@ function paintBadge({ items, proposals = [] }) {
 
 function globalStream() {
   // The global event stream drives every view's live refresh (dashboard routine states,
-  // decision badges, run toasts). EventSource's OWN auto-reconnect reuses the same
-  // ?ticket= URL, but SSE tickets have a 60s TTL and are purged whenever the daemon
-  // restarts — so a naive reconnect 401s forever, the bus goes silent, and the console
-  // freezes with stale routine states (the daemon lamp stuck off). So we own the
-  // reconnect the way stream.js/liveTail does: on error, close the dead source and reopen
-  // via a fresh sse() (which mints a NEW ticket) under capped exponential backoff.
+  // decision badges, run toasts). A stream ticket opens ONE socket and every ticket is purged
+  // when the daemon restarts, so a reconnect must mint a new one — reusing the old URL is how
+  // the bus once went silent with the daemon lamp stuck off (F253, back when EventSource
+  // reconnected by itself). So we own the reconnect the way stream.js/liveTail does: on error,
+  // drop the dead stream and reopen via a fresh liveStream() under capped exponential backoff.
   let source = null, timer = null, retry = 0, opened = false;
   const dot = () => document.getElementById("daemon-dot");
   const handlers = {
@@ -286,14 +285,14 @@ function globalStream() {
     },
     onerror: () => {
       dot()?.classList.remove("on");
-      if (source) { source.close(); source = null; }   // stop EventSource retrying the dead ticket
+      if (source) { source.close(); source = null; }
       clearTimeout(timer);
       const delay = Math.min(15000, 1000 * 2 ** retry);   // capped exponential backoff
       retry += 1;
       timer = setTimeout(connect, delay);
     },
   };
-  function connect() { source = sse("/api/events", handlers); }
+  function connect() { source = liveStream("/api/events", handlers); }
   connect();
 }
 

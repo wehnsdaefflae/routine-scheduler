@@ -235,7 +235,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     ctx.seen_paths.add(str(path))
     # Reading a stage module IS the run's state transition — every recipe routes by
     # "read the module for where you are" — so the engine tracks the live phase right
-    # here (→ status.json → the SSE state event) with zero recipe cooperation; the
+    # here (→ status.json → the live tail's state event) with zero recipe cooperation; the
     # stage modules are the state graph's nodes (statemap), so the names always match.
     if (path.suffix == ".md" and path.parent.name == STAGES_DIR
             and path.parent.parent == _own_dir(ctx)):

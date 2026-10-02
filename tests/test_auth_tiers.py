@@ -110,17 +110,25 @@ def test_a_star_segment_stands_for_exactly_one_segment():
 def test_the_tier_judges_the_path_the_router_dispatches(client):
     """An encoded `?` (or `#`) inside a segment used to end the path the tier judged:
     `request.url.path` is RE-PARSED from the decoded path, so `/api/runs/events%3Fx/transcript`
-    routed to the transcript route while auth read `/api/runs/events` — an SSE path, which a
-    URL-carriable ticket admits. Auth passed (the handler's own 400 proved it); a ticket is now
-    judged against the route it would actually reach."""
-    ticket = client.post("/api/sse-ticket",
-                         headers={"Authorization": f"Bearer {TEST_TOKEN}"}).json()["ticket"]
+    routed to the transcript route while auth read `/api/runs/events` — then a stream path,
+    which a URL-carriable ticket admitted. Auth passed (the handler's own 400 proved it). A
+    ticket now admits no HTTP route at all, and only the socket it was minted for."""
+    from starlette.websockets import WebSocketDisconnect
+
+    from rsched.web.streams import CLOSE_GONE
+
+    def mint() -> str:
+        return client.post("/api/stream-ticket",
+                           headers={"Authorization": f"Bearer {TEST_TOKEN}"}).json()["ticket"]
+
     for encoded in ("%3F", "%23"):
-        r = client.get(f"/api/runs/events{encoded}x/transcript?ticket={ticket}")
+        r = client.get(f"/api/runs/events{encoded}x/transcript?ticket={mint()}")
         assert r.status_code == 401, (encoded, r.status_code, r.text)
-    # the stream the ticket exists for still opens on it (404: authenticated, no such run)
-    assert client.get(f"/api/runs/ghost:00000000-000000/events?ticket={ticket}"
-                      ).status_code == 404
+    # the stream the ticket exists for still opens on it (CLOSE_GONE: admitted, no such run)
+    with client.websocket_connect(f"/api/runs/ghost:00000000-000000/events?ticket={mint()}"
+                                  ) as ws, pytest.raises(WebSocketDisconnect) as gone:
+        ws.receive_json()
+    assert gone.value.code == CLOSE_GONE
 
 
 def test_two_mints_purging_one_expired_ticket_do_not_collide(client):
@@ -138,7 +146,7 @@ def test_two_mints_purging_one_expired_ticket_do_not_collide(client):
                     super().pop(key, None)
             return listed
 
-    client.app.state.sse_tickets = RacingStore({"expired": 0.0})
-    r = client.post("/api/sse-ticket", headers={"Authorization": f"Bearer {TEST_TOKEN}"})
+    client.app.state.stream_tickets = RacingStore({"expired": 0.0})
+    r = client.post("/api/stream-ticket", headers={"Authorization": f"Bearer {TEST_TOKEN}"})
     assert r.status_code == 200
-    assert "expired" not in client.app.state.sse_tickets
+    assert "expired" not in client.app.state.stream_tickets

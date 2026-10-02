@@ -12,7 +12,7 @@ Three facts, and each one alone is fatal:
 2. Even ticketing the document is not enough: noVNC then fetches its OWN siblings
    (`app/ui.js`, `app/styles/base.css`, the images) with no query string at all, because the
    page builds those paths itself. Every one of them would 401.
-3. An SSE ticket lives 60 seconds. A browser session is watched for minutes or hours, so any
+3. A stream ticket lives 60 seconds. A browser session is watched for minutes or hours, so any
    short-TTL credential in the URL dies mid-session and the screen goes blank later instead
    of immediately — which is worse, because it looks intermittent.
 
@@ -81,7 +81,7 @@ def test_a_granted_pass_admits_the_document_and_its_siblings(client):
         assert r.status_code == 502, f"{asset} was refused: {r.status_code} {r.text[:120]}"
 
 
-def test_the_pass_outlives_a_short_lived_sse_ticket(client):
+def test_the_pass_outlives_a_short_lived_stream_ticket(client):
     """A watched session lasts far longer than 60s; a credential that expires mid-session
     fails LATER, which reads as flakiness rather than as a bug."""
     from rsched.web import api_browser_view

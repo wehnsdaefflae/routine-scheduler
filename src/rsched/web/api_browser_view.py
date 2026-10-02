@@ -41,7 +41,7 @@ log = logging.getLogger("rsched.web.browser_view")
 #: sub-resource of a frame without the page being involved at all.
 SCREEN_COOKIE = "rsched_browser_view"
 
-#: How long the pass lives. An SSE ticket is 60s, which is right for a stream the console
+#: How long the pass lives. A stream ticket is 60s, which is right for a stream the console
 #: reopens on its own and catastrophic here: a watched browser session lasts minutes to
 #: hours, and a credential that expires mid-session makes the screen fail LATER — which
 #: reads as flakiness rather than as a bug, and is harder to diagnose than an instant refusal.
@@ -70,7 +70,7 @@ ASSET_TIMEOUT_S = 15.0
 
 
 def _issue_pass(request: Request) -> str:
-    """Mint a screen pass and remember it on the app, like the SSE tickets beside it."""
+    """Mint a screen pass and remember it on the app, like the stream tickets beside it."""
     passes = request.app.state.browser_view_passes
     now = time.monotonic()
     for token, expiry in list(passes.items()):   # purge on issue; the set is tiny

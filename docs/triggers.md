@@ -197,7 +197,7 @@ These are the trigger analog of the schedule's catchup/overrun rules:
   arrival, are dropped with a log line — the hook itself already rejects new ones in those
   states.
 - **Interplay with cron.** A trigger fire is an ordinary run (`reason: "trigger"` in the
-  log/SSE); the schedule keeps its own rhythm. Boot catchup (`run_once`) considers cron
+  log/live stream); the schedule keeps its own rhythm. Boot catchup (`run_once`) considers cron
   fires only.
 
 The Triggers card shows the per-trigger fire ledger (last fired, delivered events, pending

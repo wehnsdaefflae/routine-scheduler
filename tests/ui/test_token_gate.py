@@ -46,7 +46,7 @@ def test_routine_token_browser_regates_instead_of_stranding(ui, page):
     page.goto(ui.url)
     page.wait_for_selector(".topbar", timeout=15000)     # reads pass: the console renders
 
-    # a config-mutating call — not awaited, so a gate already opened by the boot SSE ticket
+    # a config-mutating call — not awaited, so a gate already opened by the boot stream ticket
     # (also a POST) cannot deadlock this evaluate on its pending promise
     page.evaluate("""() => { import('/static/api.js').then(
         (m) => m.api('/api/lanes', { method: 'POST', body: { name: 'L' } }).catch(() => {})); }""")
