@@ -232,6 +232,19 @@ A fold is judged by what the ledger actually takes over under its lock, not by w
 for: rows another filing folded first leave it a plain new thread, and the cap applies.
 That pairing is the whole design: the cap is only fair because the fold exists.
 
+**A target that would never READ it.** A targeted report is delivered into
+`<routines_home>/<target>/inbox` and read on that routine's next SCHEDULED run — so a routine that
+starts no run accepts rows forever and reads none. 24 such reports were found open, the oldest six
+weeks (F614). `report` now refuses at FILING, which is the only moment a sender still has the
+context to redirect it, and the refusal names **which kind of off** and **the last run date**:
+`enabled: false` is the operator's switch and may be a pause (one of those 24 targets had run two
+days before the count, so `disabled` is not `defunct`), while `retired` is the routine's own finish
+line reached and is permanent. Nothing is written and nothing is dropped — the row comes back as an
+observation, and the sender re-files it to the owner that holds the problem now, or leaves `target`
+out so it goes to triage, which is read. A routine whose `routine.yaml` cannot be PARSED also reads
+as disabled in the registry, and is deliberately let through: a report about a config that no longer
+parses is exactly the report that gets it fixed.
+
 **Deferrals whose carrier closed without delivering them.** An item routinely defers part of its
 scope into another ("the sidebar panel ships with F324's shared component"). The carrier then
 ships its OWN scope and closes, the changelog `items` join records the carrier as addressed, and

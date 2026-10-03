@@ -206,6 +206,84 @@ def test_report_refuses_self_target_and_unknown_target(tmp_path):
     assert _rows(home) == []                                    # and files nothing
 
 
+def _disabled_routine(home, slug: str, *, retired: bool = False, yaml: str = ""):
+    """A routine the daemon will never fire — the operator's switch, or its finish line."""
+    d = bare_routine(home, slug)
+    (d / "routine.yaml").write_text(yaml or f"slug: {slug}\nenabled: false\n", encoding="utf-8")
+    if retired:
+        # RETIRED is derived, never written: engine/finishline reads state/finish-line.json and
+        # an `until` date in the past is reached by the calendar with no write at all. The
+        # routine stays ENABLED here, so what the refusal reports can only come from `retired`.
+        (d / "routine.yaml").write_text(f"slug: {slug}\n", encoding="utf-8")
+        (d / "state").mkdir(exist_ok=True)
+        (d / "state" / "finish-line.json").write_text(
+            json.dumps({"outcomes": [], "until": "2026-08-20"}), encoding="utf-8")
+    return d
+
+
+def test_a_report_to_a_disabled_routine_is_refused_at_filing_naming_the_state_and_the_date(
+        tmp_path):
+    """F614: a targeted report is read on the TARGET's next scheduled run, and a routine that
+    is switched off starts none — so it accepted rows forever and read none (24 open, oldest six
+    weeks). Filing is the only place with a sender who still has the context to redirect it.
+
+    The refusal names the STATE and the LAST RUN DATE because `disabled` may be a pause: one of
+    those 24 targets had run two days before the count, so `disabled` is not `defunct`.
+    """
+    loop, home = _loop(tmp_path, slug="self-audit")
+    target = _disabled_routine(home, "eye-stabilize-folder")
+    (target / "runs" / "20261001-030000").mkdir(parents=True)
+    (target / "runs" / "20261001-030000" / "status.json").write_text(
+        json.dumps({"run_id": "eye-stabilize-folder:20261001-030000", "state": "finished",
+                    "turn": 9, "updated": "2026-10-01T03:20:00+02:00"}), encoding="utf-8")
+
+    obs = handle_report(loop, {"target": "eye-stabilize-folder", "title": "t", "detail": "d"})
+    assert obs["target_unreachable"] is True
+    assert obs["state"] == "disabled"
+    assert obs["last_run"] == "20261001-030000"
+    assert obs["last_run_state"] == "finished"
+    # nothing was filed and nothing was delivered — the row is never dropped silently
+    assert _rows(home) == []
+    assert not list((target / "inbox").glob("msg-*.json"))
+    # and the observation says both moves that work
+    text = format_observation(obs)
+    assert "is disabled" in text
+    assert "20261001-030000" in text
+    assert "leave `target` out entirely to send it to triage" in text
+
+
+def test_the_refusal_distinguishes_retired_from_disabled(tmp_path):
+    """Two different \"off\"s calling for different moves: the operator's switch may be a pause,
+    a reached finish line is permanent."""
+    loop, home = _loop(tmp_path, slug="self-audit")
+    _disabled_routine(home, "vodafone-outage-claims", retired=True)
+    obs = handle_report(loop, {"target": "vodafone-outage-claims", "title": "t"})
+    assert obs["target_unreachable"] is True
+    assert obs["state"] == "retired"
+    assert "finish line" in obs["because"]
+    assert obs["last_run_state"] == "it has never run"
+
+
+def test_a_routine_whose_config_cannot_be_parsed_is_still_reachable(tmp_path):
+    """The registry substitutes a DISABLED config for an unloadable routine.yaml, so a naive
+    `fireable` check would refuse the one report that can get it fixed."""
+    loop, home = _loop(tmp_path, slug="self-audit")
+    _disabled_routine(home, "half-written", yaml=": : not yaml : :\n")
+    obs = handle_report(loop, {"target": "half-written",
+                               "title": "its routine.yaml no longer parses"})
+    assert "target_unreachable" not in obs
+    assert obs["filed"] is True
+    assert len(list((home / "half-written" / "inbox").glob("msg-rep-*.json"))) == 1
+
+
+def test_an_enabled_target_is_unaffected(tmp_path):
+    """The check must cost a normal report nothing."""
+    loop, home = _loop(tmp_path, slug="self-audit")
+    bare_routine(home, "routine-improver")
+    obs = handle_report(loop, {"target": "routine-improver", "title": "t", "detail": "d"})
+    assert obs["filed"] is True and "target_unreachable" not in obs
+
+
 # -- delivery stamp: the target's own drain reports back --------------------------------------
 
 

@@ -116,7 +116,8 @@ def observation_text(ids: list[str], decision: str) -> str:
 # handler bounced it back for correction (unknown target, a failed file read, a missing
 # util). A once-grant survives those: it is spent by USE, not by attempt.
 _UNDISPATCHED_KEYS = ("declined", "declined_secrets", "pending_secrets",
-                      "unknown_target", "self_target", "bad_fire_at", "error", "missing")
+                      "unknown_target", "self_target", "target_unreachable",
+                      "bad_fire_at", "error", "missing")
 
 
 def _once_match(eid: str, action: dict, ctx) -> bool:

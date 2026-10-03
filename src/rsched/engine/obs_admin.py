@@ -176,6 +176,16 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                     f"{obs.get('suggestions') or 'none'}; all routines: "
                     f"{obs.get('valid_targets')}. Retry with one of those, or drop `target` "
                     "to send it to triage.)")
+        if obs.get("target_unreachable"):
+            # F614: 24 reports sat open against routines that start no run, the oldest six
+            # weeks. The STATE and the LAST RUN DATE are the refusal's substance — `disabled`
+            # is the operator's switch and may be a pause (one such routine had run two days
+            # before the count), `retired` is a finish line reached and is permanent.
+            when = (f"it last ran {obs['last_run']} ({obs.get('last_run_state')})"
+                    if obs.get("last_run") else f"{obs.get('last_run_state')}")
+            return (f"OBSERVATION (report REFUSED — {obs.get('target')!r} is "
+                    f"{obs.get('state')}: {obs.get('because')}, and {when}. "
+                    f"{obs.get('reason')})")
         if cap := obs.get("thread_cap"):
             return (f"OBSERVATION (report REFUSED — you already have {len(obs['open_to_target'])} "
                     f"reports open to {obs.get('target')!r}, and {cap} parallel threads to one "

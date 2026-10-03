@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.381.1] — 2026-10-03
+
+### Fixed — a report to a routine that will never read it is refused at FILING, naming why
+
+F614: 24 open reports were addressed to routines that start no run, the oldest six weeks. A
+targeted report is delivered into `<routines_home>/<target>/inbox` and read on that routine's next
+SCHEDULED run — so a switched-off routine accepts rows forever and reads none, and the row is
+invisible to everyone but a person reading the ledger.
+
+`report` now refuses at filing, which is the only moment a sender still has the context to redirect
+it. The refusal names **which kind of off** and **the last run date**, because the two call for
+different moves: `enabled: false` is the operator's switch and may be a pause (one of those 24
+targets had run two days before the count, so `disabled` is not `defunct`), while `retired` is the
+routine's own finish line reached and is permanent. **Nothing is written and nothing is dropped** —
+the row comes back as an observation naming the two moves that work: re-file it to the owner that
+holds the problem now, or leave `target` out so it goes to triage, which is read.
+
+- `engine/admin_handlers.py` — a third check beside the self-target and unknown-target ones, off
+  `registry.info` (the memoized one-routine read, no home walk).
+- A routine whose `routine.yaml` cannot be PARSED also reads as disabled in the registry
+  (`_entry` substitutes a disabled config), and is deliberately **let through**: a report about a
+  config that no longer parses is exactly the report that gets it fixed.
+- `engine/requests.py` — `target_unreachable` joins `_UNDISPATCHED_KEYS`, so a bounced report does
+  not spend a once-grant it never used.
+- `engine/obs_admin.py` renders it; `docs/items.md` § Reports documents it. 4 new tests.
+
 ## [0.381.0] — 2026-10-03
 
 ### Added — the escalation ladder is VISIBLE: a rung's records, its label, its icon and its strip

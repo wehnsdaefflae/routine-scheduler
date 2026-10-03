@@ -14,7 +14,7 @@ from __future__ import annotations
 import difflib
 from pathlib import Path
 
-from .. import report_threads, reports, schedule_once
+from .. import registry, report_threads, reports, schedule_once
 
 
 def _unknown_target(kind: str, target: str, home: Path) -> dict:
@@ -27,6 +27,48 @@ def _unknown_target(kind: str, target: str, home: Path) -> dict:
     return {"kind": kind, "target": target, "unknown_target": True,
             "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
             "valid_targets": slugs}
+
+
+def _target_cannot_read(kind: str, target: str, server, home: Path) -> dict | None:
+    """The refusal for a target that exists but will never READ what is filed to it — or None.
+
+    A targeted report is delivered into `<home>/<target>/inbox` and read on that routine's next
+    SCHEDULED run. A routine that starts no run therefore accepts rows forever and reads none:
+    24 such reports were found open, the oldest six weeks (F614). Filing is where this is
+    catchable, because the sender still has the context to redirect it.
+
+    TWO different "off"s, and the refusal says WHICH, because they call for different moves:
+    `enabled: false` is the operator's switch — the routine may be paused for a day, so the row
+    may simply be early (one such routine had run two days before the count); `retired` is the
+    routine's own finish line reached, which means permanently done. The LAST RUN DATE is named
+    for the same reason: it is what tells the sender whether this is a pause or an ending.
+
+    The row is never dropped — nothing is written at all, the observation comes back instead, and
+    the sender decides: another owner, or triage (no `target`), which every routine can read.
+    """
+    info = registry.info(server, home, target)
+    if info is None or info.fireable:
+        return None
+    # An UNLOADABLE routine.yaml also reads `enabled=False` (registry._entry substitutes a
+    # disabled config and says so in `problems`) — and a report about a routine whose config no
+    # longer parses is exactly the report someone needs to file. Refusing it would silence the
+    # one channel that can fix it, so a target that is off only because it could not be READ is
+    # let through.
+    if any("unloadable routine.yaml" in p for p in info.problems):
+        return None
+    last = info.last_run
+    return {"kind": kind, "target": target, "target_unreachable": True,
+            "state": "retired" if info.retired else "disabled",
+            "because": ("the routine reached its finish line and is done for good"
+                        if info.retired
+                        else "the operator switched this routine off (`enabled: false`)"),
+            "last_run": last.ts if last else "",
+            "last_run_state": last.state if last else "it has never run",
+            "reason": f"a report filed to {target!r} would be delivered to its inbox and read on "
+                      "its next scheduled run — and it starts none, so nothing would ever read "
+                      "it. Nothing was filed and nothing was lost: re-file it to the routine that "
+                      "owns the problem now, or leave `target` out entirely to send it to triage, "
+                      "which is read."}
 
 
 def handle_schedule_run(loop, action: dict) -> dict:
@@ -98,6 +140,8 @@ def handle_report(loop, action: dict) -> dict:
         target_dir = home / target
         if not (target_dir / "routine.yaml").is_file():
             return _unknown_target("report", target, home)
+        if (unreadable := _target_cannot_read("report", target, ctx.server, home)) is not None:
+            return unreadable
     answers = str(action.get("answers") or "").strip()
     wanted = [str(i).strip().upper() for i in (action.get("supersedes") or [])]
     folded: list[str] = []
