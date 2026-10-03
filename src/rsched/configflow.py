@@ -61,6 +61,17 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
                                   "handed to every util subprocess; widening it mid-run would "
                                   "not reach the jails already created")),
     "keep_runs": (NEXT_RUN, "retention is applied after a run, never during one"),
+    # The escalation ladder. `engine/ladder.ladder_settings` runs at every turn boundary, which
+    # makes it LOOK live — but it reads `ctx.routine`, the config object composed at boot, so a
+    # config edit mid-run never reaches the ladder of the run already going. Declaring these
+    # LIVE would promise an adoption that does not happen.
+    "ladder": (NEXT_RUN, ("whether a run is supervised is read from the config composed at its "
+                          "boot, so switching it on reaches the NEXT run; a run already going "
+                          "keeps the ladder it started with")),
+    "ladder_rung_height": (NEXT_RUN, ("the rung interval is read from the tuning composed at "
+                                      "boot, together with the rung's own turn cap")),
+    "oversight_turns": (NEXT_RUN, ("a rung's turn cap is read from the tuning composed at boot; "
+                                   "a rung already dispatched keeps the budget it was given")),
     "improve": (NEXT_RUN, "it is read by the improver, not by the run"),
     "workflow": (NEXT_RUN, "the recipe was decomposed into the prompt at boot"),
     "pattern": (NEXT_RUN, ("a reference: which library pattern this routine's settings are read "
@@ -90,6 +101,8 @@ ROUTINE_PATCH_FIELDS = frozenset({
     "machines", "name", "description", "tags", "pattern", "hub_tab", "permissions",
     "capabilities", "rules", "shared_reminders", "improve", "deliberation", "keep_runs",
     "fs_read_roots", "fs_write_roots",
+    # the escalation ladder: its config block, and its two tuning knobs
+    "ladder", "ladder_rung_height", "oversight_turns",
 })
 CONVERSATION_PATCH_FIELDS = frozenset({
     "title", "tags", "workdir", "budgets", "models", "machines", "connections",

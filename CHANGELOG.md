@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.382.1] — 2026-10-03
+
+### Fixed — the ladder's three settings declare which half of a config change they are in
+
+0.382.0 added three fields to `RoutinePatch` without declaring them in
+`configflow.CLASSIFICATION`, and `tests/test_configflow.py` red-flagged it in three places —
+exactly the anti-drift mechanism that module exists to be: a config field whose live behaviour
+nobody decided is how the original divergence happened.
+
+All three are **NEXT_RUN**, and the reason is measured rather than assumed: `engine/ladder`'s
+`ladder_settings` runs at every turn boundary, which makes it *look* live, but it reads
+`ctx.routine` — the config composed at boot — so an edit mid-run never reaches the ladder of the
+run already going. Declaring them LIVE would have promised an adoption that does not happen.
+`ROUTINE_PATCH_FIELDS` gains them too, which is the vocabulary a decision's `config_patch` is
+checked against when it is FILED (the set the engine reads without importing the web layer).
+
 ## [0.382.0] — 2026-10-03
 
 ### Added — the escalation ladder has a complete UI: it is no longer a YAML-only feature
