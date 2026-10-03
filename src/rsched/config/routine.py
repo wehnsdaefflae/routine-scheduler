@@ -308,7 +308,14 @@ def load_tuning(routine_dir: Path) -> tuple[dict, list[str]]:
 
 def write_tuning(routine_dir: Path, updates: dict) -> None:
     """Merge updates into tuning.yaml (atomic). Callers validate values; the web layer's
-    slider and the creators (scaffold, conversations, clarify sessions) write through here.
+    controls and the creators (scaffold, conversations, clarify sessions) write through here.
+
+    A value of `None` REMOVES its key rather than storing a null. A knob whose default is
+    DERIVED — `oversight_turns` is `ladder_rung_height // 2 + 1`, floored — has no literal
+    value meaning "work it out again", so without a removal the only way back from a pinned
+    number was editing the file by hand. Absence is that knob's one spelling of its default
+    (`load_tuning` drops unknown keys and `engine/ladder` derives what is missing), so removal
+    is what a control clearing the field has to produce.
     """
     path = routine_dir / TUNING_FILE
     try:
@@ -316,7 +323,11 @@ def write_tuning(routine_dir: Path, updates: dict) -> None:
     except (OSError, yaml.YAMLError):
         raw = {}
     raw = raw if isinstance(raw, dict) else {}
-    raw.update(updates)
+    for key, val in updates.items():
+        if val is None:
+            raw.pop(key, None)
+        else:
+            raw[key] = val
     atomic_write_yaml(path, raw)
 
 

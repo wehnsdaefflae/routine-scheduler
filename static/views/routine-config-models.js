@@ -6,6 +6,7 @@ import { settingsSection } from "/static/components/settings-section.js";
 import { fieldBlock, settingsGroup } from "/static/components/settings-field.js";
 import { describe } from "/static/components/settings-digest.js";
 import { deliberationControl } from "/static/components/deliberation.js";
+import { ladderIntervals } from "/static/components/ladder-settings.js";
 
 // per routine: main / tool_call / uncensored; children run main by default, a spawn/subtask
 // call may override per child
@@ -48,11 +49,23 @@ export function modelsGroup(ctx) {
   const deliberation = fieldBlock(form, "deliberation", (value, set) =>
     deliberationControl(value || "standard", { onCommit: set }).node);
 
+  // The escalation ladder's TUNING half — how often a rung fires and how many turns it gets.
+  // It belongs beside Deliberation because both are tuning.yaml keys (recipe-classed, so a
+  // meta-routine may re-level them on measured evidence), unlike the ladder's on/off switch and
+  // depth ceiling, which are config and live in Limits & reach → Oversight.
+  // One control edits BOTH keys, which is what fieldBlock's list form is for: `value` arrives as
+  // {key: value} and `set` takes the same shape, so the two land as one decision.
+  const intervals = fieldBlock(form, ["ladder_rung_height", "oversight_turns"], (value, set) =>
+    ladderIntervals({ height: value.ladder_rung_height, turns: value.oversight_turns },
+                    { onCommit: set }).node,
+    { labels: { ladder_rung_height: "rung height", oversight_turns: "rung budget" } });
+
   return settingsGroup({
     form, title: "Models", hint: "which model runs each role",
-    keys: ["models", "deliberation"],
-    moreKeys: ["deliberation"],
-    digest: () => `deliberation ${describe("deliberation", form.get("deliberation"))}`,
+    keys: ["models", "deliberation", "ladder_rung_height", "oversight_turns"],
+    moreKeys: ["deliberation", "ladder_rung_height", "oversight_turns"],
+    digest: () => `deliberation ${describe("deliberation", form.get("deliberation"))}`
+      + ` · rung every ${form.get("ladder_rung_height") ?? 20} turns`,
     sections: [
       ...settingsSection({ title: "Models", id: "models" },
         catalog.length
@@ -65,6 +78,13 @@ export function modelsGroup(ctx) {
         "how much of the model's thinking lands on paper — the say and notes every action "
         + "carries. A live run is re-levelled from its own page.",
         deliberation.node),
+      ...settingsSection({ title: "Rung intervals", id: "ladder-intervals" },
+        ["how often the escalation ladder fires and what a rung costs. These are TUNING, so a "
+         + "meta-routine may re-level them on measured evidence; whether this routine is "
+         + "supervised at all is yours, in ",
+         el("strong", {}, "Limits & reach → Oversight"),
+         ". They change nothing while the ladder is off."],
+        intervals.node),
     ],
   });
 }

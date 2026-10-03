@@ -19,8 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from .. import rules as rules_mod
 from .. import schedule
 from ..config import DELIBERATION_LEVELS, write_tuning
-from ..config.base import _known_tz
+from ..config.base import DEFAULT_LADDER, LADDER_KEYS, TUNING_KEYS, _known_tz
 from ..config.routine import RunGateConfig, RunGatePatch
+from ..engine.ladder import MIN_OVERSIGHT_TURNS
 from ..paths import read_yaml
 from .config_fields import (
     BudgetsPatch,
@@ -116,6 +117,15 @@ class RoutinePatch(BaseModel):
     shared_reminders: list[str] | None = None  # the library's shared reminders this routine
     #                                          reads (ids) — REPLACE wholesale
     deliberation: str | None = None         # DELIBERATION_LEVELS — how much thinking lands on paper
+    ladder: dict | None = None              # the ESCALATION LADDER's user half:
+    #                                          {enabled, max_depth} — CONFIG, since authority
+    #                                          over being watched is the user's; merged partial
+    ladder_rung_height: int | None = None   # TUNING (`n`): turns between escalations, a ceiling
+    # TUNING: a rung's own turn cap. 0 is the one spelling of "DERIVE it" (`n // 2 + 1`, floored
+    # at 4) — `None` cannot carry that meaning here, because `patch_routine` dumps with
+    # `exclude_none`, under which a null reads as "not sent" and the knob would keep its old
+    # pinned value while the control showed an empty box. The web control sends 0 to clear.
+    oversight_turns: int | None = None
     keep_runs: int | None = None            # retention.keep_runs — how many run dirs to keep
     fs_read_roots: list[str] | None = None  # dirs the run may READ beyond its own
     fs_write_roots: list[str] | None = None  # dirs the run may WRITE (one covering the routine
@@ -125,6 +135,81 @@ class RoutinePatch(BaseModel):
     def _trim_hub_tab(cls, v: object) -> object:
         # trimmed BEFORE the length check, so surrounding whitespace never costs a 422
         return v.strip() if isinstance(v, str) else v
+
+
+#: The RECIPE-classed keys a settings patch may carry — they land in `tuning.yaml`, never in
+#: `routine.yaml`. Taken from the ENGINE's own vocabulary rather than restated: a knob added to
+#: `config.base.TUNING_KEYS` and given a control must not need a second edit here to be saved,
+#: and one removed there must stop being accepted here.
+TUNING_FIELDS = TUNING_KEYS
+#: Every tuning key must be DECLARED on RoutinePatch, or it is dropped by pydantic before
+#: `apply_updates` ever sees it — a control that saves nothing while the page reports success.
+#: Checked at import, because the two halves live in different files and the failure is silent:
+#: this is also the static reference to those fields, which are otherwise read only through the
+#: generic loop below.
+assert not set(TUNING_FIELDS) - set(RoutinePatch.model_fields), (  # noqa: S101
+    f"tuning keys missing from RoutinePatch: "
+    f"{sorted(set(TUNING_FIELDS) - set(RoutinePatch.model_fields))}")
+
+
+def _validate_tuning(tuning: dict) -> None:
+    """Judge every tuning field BEFORE anything is written (the all-or-nothing contract).
+
+    The ladder's two knobs are counted in TURNS, so the floors are the engine's own
+    (`engine/ladder.MIN_OVERSIGHT_TURNS`, `config.base.DEFAULT_RUNG_HEIGHT`): a rung height
+    below the floor cannot judge an interval, and a rung with fewer turns than that finishes
+    with nothing — which reads as `continue` and is the one failure mode that is invisible.
+    """
+    level = tuning.get("deliberation")
+    if level is not None and level not in DELIBERATION_LEVELS:
+        raise HTTPException(400, f"deliberation: unknown level {level!r} "
+                                 f"(expected one of {DELIBERATION_LEVELS})")
+    for key in ("ladder_rung_height", "oversight_turns"):
+        val = tuning.get(key)
+        if val is None:
+            continue
+        # `oversight_turns: 0` is the one spelling of "derive it again" and is written as a
+        # REMOVAL below, so it is sound here; a rung height of 0 is not — there is no interval
+        # to derive from.
+        if key == "oversight_turns" and val == 0:
+            continue
+        if isinstance(val, bool) or not isinstance(val, int) or val < MIN_OVERSIGHT_TURNS:
+            raise HTTPException(400, f"{key}: expected a whole number of turns of at least "
+                                     f"{MIN_OVERSIGHT_TURNS} (got {val!r}) — a shorter interval "
+                                     "cannot be judged, and a rung given fewer turns than that "
+                                     "hands back nothing, which reads as `continue`"
+                                     + (" (0 = derive it from the rung height)"
+                                        if key == "oversight_turns" else ""))
+
+
+def _apply_ladder(raw: dict, updates: dict) -> None:
+    """Merge a partial `ladder` block into the stored one and validate the RESULT.
+
+    CONFIG, not tuning: authority over being watched is the user's. A partial patch is the
+    normal case (the control toggles `enabled` without resending the depth), so the body alone
+    cannot be judged.
+
+    Every bad value is REFUSED here rather than left to `load_routine`, which degrades an
+    unreadable block toward OFF — the safe direction at load time, and the wrong one for a save:
+    a user who typed `max_depth: 0` and was told "saved" would get a silently disabled ladder.
+    """
+    block = raw.get("ladder")
+    merged = dict(block) if isinstance(block, dict) else dict(DEFAULT_LADDER)
+    patch = updates.pop("ladder") or {}
+    if not isinstance(patch, dict):
+        raise HTTPException(400, "ladder: expected a mapping of {enabled, max_depth}")
+    if unknown := sorted(set(patch) - LADDER_KEYS):
+        raise HTTPException(400, f"ladder: unknown key(s) {unknown} "
+                                 f"(expected {sorted(LADDER_KEYS)})")
+    merged.update(patch)
+    if not isinstance(merged.get("enabled"), bool):
+        raise HTTPException(400, "ladder.enabled: expected true or false")
+    depth = merged.get("max_depth")
+    if isinstance(depth, bool) or not isinstance(depth, int) or depth < 1:
+        raise HTTPException(400, f"ladder.max_depth: expected a whole number of rungs of at "
+                                 f"least 1 (got {depth!r}) — it is also floored by "
+                                 "budgets.max_subrun_depth at run time")
+    raw["ladder"] = merged
 
 
 def _apply_run_gate(raw: dict, updates: dict) -> None:
@@ -310,21 +395,26 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
     # config-patch apply verifies its patch keys against this list (R102: a key an
     # endpoint silently ignores must read as NOT applied, never as success).
     requested = list(updates)
-    # deliberation is TUNING, not config — it lands in tuning.yaml (recipe-classed), never in
+    # The TUNING keys are not config: they land in tuning.yaml (recipe-classed), never in
     # routine.yaml (the user's sealed authority surface). Judged FIRST, so a tuning-only patch
-    # returns without rewriting routine.yaml; in a mixed patch it is written only once every
-    # other field has passed.
-    level = updates.pop("deliberation", None)
-    if level is not None:
-        if level not in DELIBERATION_LEVELS:
-            raise HTTPException(400, f"deliberation: unknown level {level!r} "
-                                     f"(expected one of {DELIBERATION_LEVELS})")
+    # returns without rewriting routine.yaml; in a mixed patch they are written only once every
+    # other field has passed. `deliberation` was the only one and had this inline; the ladder's
+    # two interval knobs are tuning for the same reason (a meta-routine may re-level them on
+    # measured evidence), so the handling is one set rather than a special case per key.
+    tuning = {k: updates.pop(k) for k in TUNING_FIELDS if updates.get(k) is not None}
+    if tuning:
+        _validate_tuning(tuning)
+        # `oversight_turns: 0` means DERIVE it: written as a removal, because absence is that
+        # knob's one spelling of its derived default (engine/ladder.oversight_turns_for).
+        if tuning.get("oversight_turns") == 0:
+            tuning["oversight_turns"] = None
         if not updates:
-            write_tuning(info.cfg.dir, {"deliberation": level})
-            _git_commit(request, info.cfg.dir, "tuning.yaml edit via web (deliberation)")
+            write_tuning(info.cfg.dir, tuning)
+            _git_commit(request, info.cfg.dir,
+                        f"tuning.yaml edit via web ({', '.join(tuning)})")
             _state(request).scheduler.rescan()
-            live = signal_config_change(info, ["deliberation"], {"deliberation": level})
-            return {"ok": True, "updated": ["deliberation"],
+            live = signal_config_change(info, list(tuning), dict(tuning))
+            return {"ok": True, "updated": list(tuning),
                     **({"told_live_run": True} if live else {})}
     # Validate per-routine models: known kinds, each a catalog model NAME. Models REPLACE
     # wholesale (not merge) so blanking a kind clears it back to the system_model fallback.
@@ -356,6 +446,8 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
     if "run_gate" in updates:
         _apply_run_gate(raw, updates)
     _apply_resource_fields(raw, updates)
+    if "ladder" in updates:
+        _apply_ladder(raw, updates)
     if "tags" in updates:
         raw["tags"] = clean_tags(updates.pop("tags"))
     if "hub_tab" in updates and not updates["hub_tab"]:
@@ -371,8 +463,8 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
             raw[key].update(val)
         else:
             raw[key] = val
-    if level is not None:
-        write_tuning(info.cfg.dir, {"deliberation": level})
+    if tuning:
+        write_tuning(info.cfg.dir, tuning)
     # F337 rides in the shared writer: a run already in flight booted its policy, schema and
     # prompt from the OLD config, and is told what changed and which half reaches it now.
     live = write_routine_config(

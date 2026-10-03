@@ -17,6 +17,8 @@ from pydantic import BaseModel
 from .. import lanes, registry, schedule
 from .. import triggers as triggers_mod
 from ..config import MODEL_KINDS
+from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
+from ..engine.ladder import oversight_turns_for
 from ..readmodels.stats import monthly_spend
 from .decisions_read import _snooze_active
 from .routines_common import (
@@ -232,6 +234,19 @@ def routine_detail(request: Request, slug: str) -> dict:
                              "host": m.host, "user": m.user, "tags": list(m.tags)}
                             for m in server.machines.values()],
         "deliberation": info.cfg.deliberation,
+        # The ESCALATION LADDER, split across its two authority classes (docs/architecture.md):
+        # `ladder` is CONFIG — whether a run of this routine is supervised at all and the
+        # ceiling on ladder height — because authority over being watched is the user's, so it
+        # saves through the accept bar. The two INTERVAL knobs are tuning (recipe-classed), so a
+        # meta-routine may re-level them on measured evidence; `oversight_turns` is sent as the
+        # stored value or null, and null means DERIVED (`n // 2 + 1`, floored) rather than unset —
+        # the control says so instead of showing an empty box that looks like zero.
+        "ladder": {**DEFAULT_LADDER, **(info.cfg.ladder or {})},
+        "ladder_rung_height": info.cfg.tuning.get("ladder_rung_height") or DEFAULT_RUNG_HEIGHT,
+        "oversight_turns": info.cfg.tuning.get("oversight_turns"),
+        "oversight_turns_derived": oversight_turns_for(
+            int(info.cfg.tuning.get("ladder_rung_height") or DEFAULT_RUNG_HEIGHT)),
+        "max_subrun_depth": info.cfg.budgets.get("max_subrun_depth"),
         # The general rules binding this routine — routine.yaml's `rules:` IS the state
         # (see rules.py); the picker's options come from GET /api/library (`rules`).
         "rules": list(info.cfg.rules),

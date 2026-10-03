@@ -66,4 +66,9 @@ settings:
   machines: []
   models: {}
   deliberation: standard
+  ladder:
+    enabled: false
+    max_depth: 3
+  ladder_rung_height: 20
+  oversight_turns: null
   tags: []

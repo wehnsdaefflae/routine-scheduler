@@ -469,6 +469,17 @@ and the capabilities digest's catalog listing):
   `↑` for the `oversight` child mode, and the run rail's **oversight strip**
   (`readmodels/ladder.py` → the run detail's `ladder` field → `components/ladderstrip.js`),
   a section added only for a run that HAS a rung.
+  **Where a rung is SWITCHED ON**: the routine page, in the two groups its two authority classes
+  belong to — `ladder` under **Limits & reach → Oversight** (config, so it saves through the
+  page's one accept bar, and the section names `budgets.max_subrun_depth` when that already caps
+  the depth being chosen), and the interval knobs under **Models → Rung intervals** beside
+  Deliberation, the other tuning key (`components/ladder-settings.js`). All three are in the
+  settings vocabulary (`patterns/fields`), so a PATTERN may carry them — a family of routines that
+  should be supervised is exactly what a pattern says — and the page marks an override like any
+  other field. An empty `oversight_turns` shows the number the engine will DERIVE rather than a
+  blank that reads as zero; clearing it sends `0`, which the endpoint writes as a REMOVAL from
+  `tuning.yaml`, because absence is that knob's one spelling of its derived default (the routine
+  PATCH dumps with `exclude_none`, under which a null would read as "not sent").
   **One piece of the design is deliberately NOT built**: a `supervisor` MODEL ROLE beside main /
   tool_call / uncensored. `ladder.escalate` pins `"model": "main"`, which already satisfies the
   design's stated intent — an overseer on a weaker model than the worker it reads is the one

@@ -14,6 +14,7 @@ import { BUDGET_FIELDS, UNLIMITED_BUDGETS } from "/static/components/budgetfield
 import { connectionsCard } from "/static/components/connections.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { machinesCard } from "/static/components/machines.js";
+import { ladderSwitch } from "/static/components/ladder-settings.js";
 
 /** A number input that reports only a value it can stand behind; anything else snaps back. */
 function numberInput(value, { min, onValue, reject, attrs = {} }) {
@@ -68,9 +69,19 @@ export function limitsGroup(ctx) {
   const machines = fieldBlock(form, "machines", (value, set) =>
     machinesCard(d.machine_catalog || [], value || [], { onChange: set }));
 
+  // The escalation ladder's CONFIG half. It sits with the per-run ceilings because that is what
+  // it is — a ceiling on how deep oversight of this routine may go — and because authority over
+  // being watched is the user's, so it saves through this page's accept bar like every other
+  // config field. The two INTERVAL knobs are tuning and live in the Models group beside
+  // Deliberation, the other tuning key.
+  const ladder = fieldBlock(form, "ladder", (value, set) =>
+    ladderSwitch(value || d.ladder, { onCommit: set,
+      depthCeiling: d.max_subrun_depth }).node);
+
   return settingsGroup({
     form, title: "Limits & reach", hint: "per-run ceilings · filesystem reach",
-    keys: ["budgets", "fs_read_roots", "fs_write_roots", "keep_runs", "connections", "machines"],
+    keys: ["budgets", "fs_read_roots", "fs_write_roots", "ladder", "keep_runs", "connections",
+           "machines"],
     moreKeys: ["keep_runs", "connections", "machines"],
     digest: () => [describe("keep_runs", form.get("keep_runs")),
                    describe("connections", form.get("connections")),
@@ -91,6 +102,16 @@ export function limitsGroup(ctx) {
          "at the next run."],
         el("div", { class: "field" }, el("span", {}, "read-only roots"), readRoots.node),
         el("div", { class: "field mt" }, el("span", {}, "read-write roots"), writeRoots.node)),
+      ...settingsSection({ title: "Oversight", id: "ladder" },
+        ["the ESCALATION LADDER: every `rung height` turns, a supervisor run reads this run's ",
+         "recent progress — what it said, what it repeated, what failed — and may hand down a ",
+         "directive that redirects it. The supervisor cannot see the run's context and the run ",
+         "cannot see the supervisor's; its budget is its own, so the worker loses no turns. ",
+         el("strong", {}, "Off by default"), ": this is the switch that decides whether runs of ",
+         "this routine are watched at all, which is why it is yours and not machine-tunable. ",
+         "A rung that fires is visible on the run page — the transcript records it and the rail ",
+         "carries an oversight strip. How OFTEN it fires is tuning: Models → Rung intervals."],
+        ladder.node),
     ],
     more: [
       ...settingsSection({ title: "Retention", id: "retention" },

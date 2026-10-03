@@ -110,6 +110,16 @@ export function describe(key, v) {
     case "models": return Object.entries(v || {}).filter(([, m]) => m)
       .map(([k, m]) => `${k}: ${m}`).join(" · ") || "system default";
     case "deliberation": return String(v || "standard");
+    // The escalation ladder (engine/ladder.py). `enabled` is the whole substance — a depth
+    // nobody is watching under is noise — so the off state says only that.
+    case "ladder": {
+      const l = v || {};
+      return l.enabled ? `supervised, at most ${l.max_depth ?? 3} rungs` : "not supervised";
+    }
+    case "ladder_rung_height": return `a rung every ${v ?? 20} turns`;
+    // null is not "unset": the engine DERIVES it (n // 2 + 1, floored at 4), so saying "—" here
+    // would read as a knob nobody set rather than one the engine computes.
+    case "oversight_turns": return v ? `${v} turns per rung` : "rung budget derived from the interval";
     case "tags": return list(v, "no tags");
     case "hub_tab": return v ? String(v) : "no hub tab";
     default: return v === null || v === undefined || v === "" ? "—" : String(v);

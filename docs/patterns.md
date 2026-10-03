@@ -60,6 +60,12 @@ run whose output BINDS another run must be instructed in what a dispatch is and 
 answer; `engine/ladder.py` SKIPS the rung outright when the pattern is absent from the library
 rather than letting an unknown slug degrade to the builtin fallback recipe.
 
+That is about the RUNG's own workflow, not about being watched. A **watched** routine's pattern may
+carry the ladder's three settings like any other governed field — `ladder` (its on/off switch and
+depth ceiling, config) plus `ladder_rung_height` and `oversight_turns` (tuning) are all in the
+settings vocabulary, so "routines of this kind are supervised, a rung every 30 turns" is exactly
+the sort of thing a pattern says, and the routine page marks a departure from it as an override.
+
 ## A routine follows a pattern — it does not inherit from one
 
 `routine.yaml` names it (`pattern: watcher`) and holds **every value itself**: the pattern's

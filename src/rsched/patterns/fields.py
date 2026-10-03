@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config.base import DEFAULT_BUDGETS
+from ..config.base import DEFAULT_BUDGETS, DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
 
 
 @dataclass(frozen=True)
@@ -52,6 +52,13 @@ FIELDS: tuple[Field, ...] = (
     Field("machines", "reach", "Machines", "set"),
     Field("models", "models", "Models", "map"),
     Field("deliberation", "models", "Deliberation", "scalar"),
+    # The escalation ladder, split by authority class (docs/architecture.md): `ladder` is CONFIG
+    # (whether runs of this routine are supervised at all, and the ceiling on ladder height),
+    # the two interval knobs are TUNING. A pattern may carry all three — a family of routines
+    # that should be supervised is exactly the kind of thing a pattern says.
+    Field("ladder", "limits", "Oversight", "map"),
+    Field("ladder_rung_height", "models", "Rung height", "scalar"),
+    Field("oversight_turns", "models", "Rung budget", "scalar"),
     Field("tags", "identity", "Tags", "set"),
     Field("name", "identity", "Name", "scalar", governable=False),
     Field("description", "identity", "Description", "scalar", governable=False),
@@ -162,6 +169,15 @@ def snapshot(cfg) -> dict:
         "machines": list(cfg.machines or []),
         "models": dict(cfg.models or {}),
         "deliberation": cfg.deliberation,
+        # The ladder's config block, defaults filled in so a routine that never mentioned it
+        # compares equal to one that wrote the defaults out (the same reason budgets does it).
+        "ladder": {**DEFAULT_LADDER, **(cfg.ladder or {})},
+        # The two interval knobs read from TUNING, not routine.yaml. `oversight_turns` stays
+        # None when unset: None means DERIVED (n // 2 + 1, floored), and filling in the derived
+        # number here would make a routine that leaves it to the engine compare unequal to one
+        # that pinned the same value by hand — two different settings.
+        "ladder_rung_height": int(cfg.tuning.get("ladder_rung_height") or DEFAULT_RUNG_HEIGHT),
+        "oversight_turns": cfg.tuning.get("oversight_turns"),
         "tags": list(cfg.tags or []),
         "name": cfg.name,
         "description": cfg.description,

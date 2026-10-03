@@ -15,6 +15,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.382.0] — 2026-10-03
+
+### Added — the escalation ladder has a complete UI: it is no longer a YAML-only feature
+
+Operator, 2026-10-03: *"obviously it needs a complete ui"*. Since 0.381.0 a rung was fully visible
+once it fired and completely invisible until then — the only way to switch the ladder on was
+editing `routine.yaml` by hand. All three settings are now controls on the routine page, each in
+the group its AUTHORITY CLASS belongs to:
+
+- **Limits & reach → Oversight** — `ladder.enabled` + `ladder.max_depth`. Config, so it saves
+  through the page's one accept bar; the depth field is live only while the ladder is on, and the
+  section warns when `budgets.max_subrun_depth` already caps the depth being chosen (a setting
+  that cannot take effect says so where it is set).
+- **Models → Rung intervals** — `ladder_rung_height` + `oversight_turns`, beside Deliberation,
+  the other tuning key. An empty rung budget shows the number the engine will **derive**
+  (`n // 2 + 1`, floored at 4) rather than a blank that reads as zero, and it updates as the
+  interval changes.
+
+Under them, three things that were missing rather than merely unexposed:
+
+- **The settings vocabulary** (`patterns/fields`) now carries all three keys. `canonical` RAISES
+  on an unknown key, so without this a control for them would have broken the page — and with it
+  a PATTERN may carry them, which is how "routines of this kind are supervised" becomes sayable.
+  All 14 shipped library patterns now name them (ladder off, the engine's own default).
+- **The routine PATCH** accepts them: `ladder` as a validated partial merge (an unknown subkey, a
+  non-bool `enabled` or a `max_depth < 1` is refused with a reason, where `load_routine` would
+  have silently degraded it toward OFF — the right direction at load time and the wrong one for a
+  save that reported success), and the tuning keys through one `TUNING_FIELDS` set taken from
+  `config.base.TUNING_KEYS` rather than the single inline `deliberation` case it replaces. An
+  import-time assert pins the two halves together: a tuning key missing from `RoutinePatch` is
+  dropped by pydantic before `apply_updates` sees it, which is a control that saves nothing while
+  the page reports success.
+- **`write_tuning` can now REMOVE a key** (a `None` value). A knob whose default is *derived* has
+  no literal value meaning "work it out again", so clearing the rung budget had no spelling at
+  all; the control sends `0`, which the endpoint writes as a removal. (`patch_routine` dumps with
+  `exclude_none`, under which a null reads as "not sent" and the old pinned value would have
+  silently stood.)
+
+27 new tests (23 API/vocabulary, 4 browser). Docs: `architecture.md` gains where a rung is
+switched on beside where it is visible; `patterns.md` separates the rung's own
+pattern-less workflow from a watched routine's pattern-governable settings.
+
+Found by looking at the rendered page, not by a test: the rung-budget field's placeholder read
+`"deri"` at 72px — a clipped word that looks like a typo'd value. Both number fields are now
+110px and the placeholder is `auto`; the phone layout (390px) was measured per control rather
+than eyeballed, and nothing overflows.
+
 ## [0.381.2] — 2026-10-03
 
 ### Fixed — the oversight strip led with the least informative fact and hid the ruling in force
