@@ -35,8 +35,9 @@ def build_tree(run_dir: Path, depth_left: int = MAX_DEPTH) -> list[dict]:
     """The ordered list of a run's direct children, each with its live/final state and its own
     children nested (recursively). Node shape:
     {n, label, workflow, mode, budget:{turns,tokens}, state, turns, usage, summary, children:[…]}.
-    `mode` is "sequential" (a subtask) or "parallel" (a spawn); `state` is running|ok|partial|
-    failed|aborted.
+    `mode` is the child's kind, verbatim from its `subrun_start` (engine/child.py): "sequential"
+    (a subtask), "parallel" (a spawn) or "oversight" (an escalation ladder's rung, which
+    supervises the run that started it); `state` is running|ok|partial|failed|aborted.
 
     Memoized on the whole tree's transcript fingerprints — the rail polls this and used
     to re-read every transcript from byte 0 per tick.

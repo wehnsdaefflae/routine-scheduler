@@ -65,6 +65,29 @@ EVENTS = [
                  "user_message": "why does it need this key?"}},
     {"type": "observation", "turn": 8,
      "payload": {"kind": "script", "name": "tool", "declined_secrets": ["A_KEY", "B_KEY"]}},
+    # The escalation ladder's four shapes (engine/ladder.py). Three are its own event types,
+    # which had NO renderer and were therefore dropped by add() — an oversight mechanism whose
+    # records the page cannot show is not auditable. The fourth is the directive's PROSE, which
+    # arrives as an ordinary `user_injection` on the `oversight` channel and read as the
+    # operator speaking: a reader could not tell who had redirected the run.
+    {"type": "oversight_dispatch", "turn": 9,
+     "payload": {"rung": 1, "reason": "repeated_failure", "turn": 9, "since_turn": 1,
+                 "oversight_turns": 11}},
+    {"type": "oversight_directive", "turn": 9,
+     "payload": {"rung": 1, "verdict": "off_track", "disposition": "redirect",
+                 "next_rung_in": 6, "next_look": "whether the gate verdict was read back"}},
+    {"type": "user_injection", "turn": 9,
+     "payload": {"text": "OVERSIGHT DIRECTIVE (rung 1) — verdict: off_track · disposition: "
+                         "redirect\n- stop re-reading the same file and gate what you have",
+                 "via": "oversight", "source": "rung-1"}},
+    {"type": "oversight_skipped", "turn": 10,
+     "payload": {"rung": 2, "reason": "the supervise-a-run pattern is not in the library"}},
+    {"type": "oversight_no_directive", "turn": 11,
+     "payload": {"rung": 2, "status": "failed"}},
+    # the operator speaking, on no special channel — the contrast the rung's label needs to be
+    # worth anything: the channel DISTINGUISHES, it does not relabel every injection
+    {"type": "user_injection", "turn": 12,
+     "payload": {"text": "ignore the first half, the second one is what I meant"}},
 ]
 
 
@@ -122,6 +145,39 @@ def test_the_transcript_renders_every_event_shape_in_words(ui, ui_page):
     assert "the user replied without deciding: why does it need this key?" in body
     assert "tool NOT run — secret exposure declined for 2 secrets" in body
     assert "A_KEY" not in body                     # a declined request is counted, not named
+
+    # the escalation ladder's records — a rung's verdict, a skip's REASON, and a rung that
+    # cost turns and said nothing. All three were dropped before they had renderers.
+    assert "rung 1 fired at turn 9 (repeated_failure), judging turns 1–9 on 11 turns" in body
+    assert "rung 1: off_track · redirect · next rung in 6 turns" in body
+    assert "next look: whether the gate verdict was read back" in body
+    assert "oversight rung 2 skipped: the supervise-a-run pattern is not in the library" in body
+    assert "rung 2 handed back no directive (child failed)" in body
+
+
+def test_an_oversight_directive_is_not_shown_as_the_operator_speaking(ui, ui_page):
+    """A rung's directive binds the run it supervises, which no other child's output does — and
+    it reaches the worker through the SAME `user_injection` event the operator's own messages
+    use (engine/ladder.py files it via the `oversight` channel). Before the channel rode the
+    event payload, the page labelled it "📨 user:" and a reader could not tell whether the
+    operator or a rung above had redirected the run. The DIRECTIVE is what is asserted here, in
+    the words the page shows, not the attribute pointing at it."""
+    ts = _seed(ui, ts="20260905-140000")
+    ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
+    expect(ui_page.locator(".turn").first).to_be_visible()
+
+    directive = ui_page.locator(".ev.injection.oversight")
+    expect(directive).to_have_count(1)
+    shown = directive.text_content()
+    assert "oversight directive (rung-1)" in shown
+    assert "stop re-reading the same file and gate what you have" in shown
+    assert "\U0001F4E8 user" not in shown          # NOT the operator, and never labelled so
+
+    # and an ordinary injection keeps its own label — the channel distinguishes, it does not
+    # relabel everything (the attachment test's message has no `via`)
+    ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
+    plain = ui_page.locator(".ev.injection:not(.oversight)")
+    assert plain.count() == 0 or "\U0001F4E8 user" in plain.first.text_content()
 
 
 # A file that runs script when it is opened as a page. Served with its own type (image/svg+xml,

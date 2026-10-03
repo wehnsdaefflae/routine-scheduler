@@ -401,9 +401,14 @@ one you are about to touch, not all of them.
   pins the load-bearing strings and fails on drift.
 - **Transcript events** (`engine/transcript.py` `EVENT_TYPES` — append-only JSONL, the engine is
   the only writer): `header, assistant_action, observation, question, answer, user_injection,
-  subrun_start, subrun_end, compaction, error, refusal, stopping_update, stages_skipped, finish`
-  (14). This vocabulary is consumed by the web renderer AND the meta routine, so an unknown kind
+  subrun_start, subrun_end, compaction, error, refusal, stopping_update, stages_skipped, finish,
+  oversight_dispatch, oversight_directive, oversight_skipped, oversight_no_directive`
+  (18 — the last four are the escalation ladder's, `engine/ladder.py`). This vocabulary is
+  consumed by the web renderer AND the meta routine, so an unknown kind
   reads as corruption: extend the tuple and both readers together, never one alone.
+  `Transcript.event` ASSERTS membership, so a type the tuple does not carry is not a rendering
+  gap — it is an exception where the record would have been written, and a caller that swallows
+  exceptions (the ladder's boundary wrapper does, by design) then loses the record silently.
 
 ## Gotchas
 

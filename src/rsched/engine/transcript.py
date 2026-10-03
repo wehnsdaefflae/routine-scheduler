@@ -25,6 +25,14 @@ EVENT_TYPES = (
     # A finish that STOOD while declared stages went unentered (F521/R1681) — a notice,
     # never a refusal: skipping is sometimes right, going unnoticed never is.
     "stages_skipped", "finish",
+    # The escalation ladder's four records (engine/ladder.py). A rung is oversight: it must
+    # leave a trace whether it fired, ruled, ruled nothing, or never ran — an oversight
+    # mechanism nobody can audit is not oversight. `oversight_dispatch` is the rung STARTING
+    # (why it fired, over which interval, on what budget); `oversight_skipped` the reason it did
+    # not run at all (no supervisor pattern, the tree's ceiling, a spent budget, an error). The
+    # directive's TEXT reaches the worker as a `user_injection` on the `oversight` channel, so
+    # `oversight_directive` records the VERDICT, not the prose.
+    "oversight_dispatch", "oversight_directive", "oversight_skipped", "oversight_no_directive",
 )
 
 

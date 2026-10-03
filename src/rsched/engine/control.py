@@ -96,8 +96,17 @@ def inject_user_message(loop, m: dict) -> None:
     # The event carries the attachment rels so the transcript UI can render the files
     # (thumbnails / links) instead of the bare filename list inside the text block —
     # ALL of them, not just the media the model can view (a csv is still linkable).
+    #
+    # It also carries the DELIVERY CHANNEL (`via`, plus the `source` the writer stamped).
+    # Without it every injection read as the operator speaking, whatever filed it: an
+    # escalation ladder's directive — machine-authored, binding on the run, filed on the
+    # `oversight` channel by engine/ladder.py — rendered as a plain "📨 user:" message, so a
+    # transcript reader could not tell who had redirected the run. The payload says which
+    # channel spoke; the renderer decides how to label it.
     ctx.transcript.event("user_injection", {
         "text": m["text"],
+        **({"via": str(m["via"])} if m.get("via") else {}),
+        **({"source": str(m["source"])} if m.get("source") else {}),
         **({"report": True} if m.get("report") else {}),
         **({"attachments": m["attachments"]} if m.get("attachments") else {})})
     if inbox.user_authored(str(m.get("via") or "")):

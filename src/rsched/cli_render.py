@@ -47,7 +47,22 @@ def _render_event(obj: dict) -> str:  # noqa: PLR0911 — one return per event t
     if t == "answer":
         return f"    ! answered: {p.get('text', '')[:80]}"
     if t == "user_injection":
-        return f"    + injected: {p.get('text', '')[:80]}"
+        # the CHANNEL, not just the text: an escalation ladder's directive is filed as an
+        # injection too (engine/ladder.py, via="oversight") and it is not the operator speaking
+        who = f" ↑ {p.get('source') or 'a rung above'}" if p.get("via") == "oversight" else ""
+        return f"    + injected{who}: {p.get('text', '')[:80]}"
+    if t == "oversight_dispatch":
+        return (f"    ↑ rung {p.get('rung')} fired at turn {p.get('turn')} "
+                f"({p.get('reason') or 'interval'}), judging turns {p.get('since_turn')}–"
+                f"{p.get('turn')} on {p.get('oversight_turns')} turns of its own")
+    if t == "oversight_directive":
+        return (f"    ↑ rung {p.get('rung')}: {p.get('verdict')} · {p.get('disposition')} · "
+                f"next rung in {p.get('next_rung_in')} turns")
+    if t == "oversight_skipped":
+        rung = f" rung {p['rung']}" if p.get("rung") else ""
+        return f"    ↑ oversight{rung} skipped: {p.get('reason') or 'no reason recorded'}"
+    if t == "oversight_no_directive":
+        return f"    ↑ rung {p.get('rung')} handed back no directive ({p.get('status')})"
     if t == "error":
         return f"    ✗ error ({p.get('where')}): {p.get('message', '')[:120]}"
     if t == "compaction":

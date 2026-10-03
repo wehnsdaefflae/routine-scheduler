@@ -10,14 +10,22 @@ A run structures its work two ways, and they are deliberately different:
 
 **A child run is: an isolated run with its own directory, its own budget, its own recipe or
 pattern, and a declared relationship to its parent.** That is the whole concept, defined once in
-`engine/child.py`. `spawn`, `subtask` and (F325) a conversation `branch` are three scheduling
-**modes** of it:
+`engine/child.py`. `spawn`, `subtask`, (F325) a conversation `branch` and the escalation ladder's
+`oversight` rung are four scheduling **modes** of it:
 
 | mode | action | when it runs | who drives it |
 |------|--------|--------------|---------------|
 | `parallel` | `spawn` | concurrently — the parent keeps working | the engine |
 | `sequential` | `subtask` | the parent folds its result into the next step | the engine |
 | `branch` | a conversation fork (F325) | forked from a message, alongside the original | the user |
+| `oversight` | no action — the ladder fires it (`engine/ladder.py`) | at a turn boundary, while the parent waits | the engine |
+
+`oversight` is the one mode no action starts: a rung is dispatched BY the engine to supervise the
+run that started it, and its finish summary comes back as a directive binding on that run. So it
+inverts the usual direction — every other child works FOR its parent, a rung reports ON it. The
+tree draws it `↑` for that reason, and its directive reaches the worker on the `oversight` inbox
+channel, recorded as a `user_injection` carrying `via: "oversight"` so a reader can tell a rung
+from the operator.
 
 They are modes, **not** three concepts and **not** a fourth action kind. The action names stay,
 because each names a different scheduling intent a run genuinely chooses between; what they share
@@ -189,7 +197,7 @@ summary and re-plans — only the run-level budget hard-stops the whole tree.
 ## Visualization
 
 The run and conversation rails carry a **task-tree** card (below the state graph): the recursive
-tree of sequential subtasks (→) and parallel subruns (⇉), each a node with a state icon, its
+tree of sequential subtasks (→), parallel subruns (⇉) and oversight rungs (↑), each a node with a state icon, its
 workflow pattern, and a per-node turn-budget meter (amber ≥85%, red over), children nested. It is
 a read-model over the on-disk `sub/` transcripts — live while the run runs. In the transcript,
 each child unfolds in place; `run-once` prints the same tree as `↳ subtask …` / `↰ subtask …`

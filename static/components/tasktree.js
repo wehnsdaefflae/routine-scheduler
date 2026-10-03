@@ -8,7 +8,11 @@ import { api } from "/static/api.js";
 import { el } from "/static/util.js";
 
 const STATE_ICON = { running: "◐", ok: "●", partial: "◑", failed: "✕", aborted: "⊘" };
-const MODE_ICON = { sequential: "→", parallel: "⇉" };
+// `oversight` is the escalation ladder's rung (engine/child.OVERSIGHT): a child that supervises
+// the run that started it, drawn pointing UP because it reports on its parent rather than for it.
+// Without the entry a rung fell through to the "•" unknown-mode default — the tree showed a child
+// nobody could name.
+const MODE_ICON = { sequential: "→", parallel: "⇉", oversight: "↑" };
 
 export function createTaskTree(container, { treeUrl, isLive }) {
   const box = el("div", { class: "tasktree" });

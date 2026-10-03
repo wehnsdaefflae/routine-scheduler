@@ -173,6 +173,15 @@ through the SAME renderer the live path used — `control.injected_message`,
 resumed leg's prefix is byte-identical to the leg that wrote it, which is the whole point under
 a caching contract. Consequences worth stating:
 
+- **An injection names the CHANNEL that filed it.** Every `user_injection` event carries the
+  `via` of the inbox message behind it (and the `source` its writer stamped), because the event
+  type alone cannot say who spoke: an escalation ladder's directive is filed on the `oversight`
+  channel by `engine/ladder.py` — machine-authored, binding on the run — and without the channel
+  on the record it rendered as the operator speaking, so a transcript reader could not tell who
+  had redirected the run. The console labels an `oversight` injection as the rung's directive;
+  `run-once` prints `+ injected ↑ rung-<n>`. The channel is also what decides whether the run
+  counts the message as *the user having spoken* (`inbox.user_authored`), which it does not for a
+  rung.
 - **An engine note is not a user message.** A `user_injection` event whose `source` is `engine`
   was written by `enginenote.append`, which records the prose verbatim, and it replays as
   `ENGINE NOTE: <text>` — never as `USER MESSAGE (injected mid-run)`, which would both

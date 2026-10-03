@@ -462,6 +462,18 @@ and the capabilities digest's catalog listing):
   exhausted, and it is additionally floored by `budgets.max_subrun_depth`). It is config and not
   tuning because authority over being watched is the user's, not a meta-routine's; every
   unreadable value degrades toward OFF, since `true` is the field's only dangerous value.
+  **Where a rung is VISIBLE**: four transcript event types (`oversight_dispatch`,
+  `oversight_directive`, `oversight_skipped`, `oversight_no_directive` — in `EVENT_TYPES`, so the
+  console and `run-once` both render them), the directive's prose as a `user_injection` carrying
+  `via: "oversight"` (which is what lets a reader tell a rung from the operator), the task tree's
+  `↑` for the `oversight` child mode, and the run rail's **oversight strip**
+  (`readmodels/ladder.py` → the run detail's `ladder` field → `components/ladderstrip.js`),
+  a section added only for a run that HAS a rung.
+  **One piece of the design is deliberately NOT built**: a `supervisor` MODEL ROLE beside main /
+  tool_call / uncensored. `ladder.escalate` pins `"model": "main"`, which already satisfies the
+  design's stated intent — an overseer on a weaker model than the worker it reads is the one
+  configuration the role exists to prevent. A fourth role touches every settings pattern, and the
+  operator's 2026-10-02 decision did not authorize one, so it stays a separate decision.
 - `tuning.yaml` — the routine's machine-tunable BEHAVIOR parameters, classed with the RECIPE
   (editable by a routine holding `write_recipe`; config stays sealed — the file boundary IS the
   permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how

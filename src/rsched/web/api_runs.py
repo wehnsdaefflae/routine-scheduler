@@ -16,6 +16,7 @@ from ..config import load_routine
 from ..engine.transcript import read_events
 from ..ids import is_slug, parse_run_id
 from ..paths import read_json
+from ..readmodels import ladder as ladder_rm
 from ..registry import TERMINAL_STATES
 from .streams import serve, traced_run_stream
 
@@ -117,12 +118,17 @@ def run_detail(request: Request, run_id: str) -> dict:
     owner = run_dir.parent.parent.parent  # run_dir = <home>/<slug>/runs/<ts>
     home = ("conversation" if owner == server.conversations_home
             else "background" if owner == server.background_home else "routine")
+    # The escalation ladder's state, or None for the overwhelming majority of runs that have no
+    # rung at all — the rail HIDES the card on None rather than showing an empty one. A run whose
+    # ladder fired is the one that most needs saying so: a reader otherwise sees turns spent and
+    # a redirected worker with nothing naming the supervisor that did it.
+    ladder = ladder_rm.ladder_state(run_dir, turn=info.turn or 0)
     return {"run_id": info.run_id, "routine": slug, "ts": info.ts, "state": info.state,
             "turn": info.turn, "usage": info.usage, "elapsed_s": info.elapsed_s,
             "question": info.question, "model": model, "deliberation": deliberation or "",
             "summary": info.summary, "updated": info.updated, "subruns": subs,
             "home": home, "accounting": accounting if isinstance(accounting, list) else [],
-            "brief": brief or ""}
+            "brief": brief or "", "ladder": ladder}
 
 
 @router.get("/runs/{run_id}/transcript")

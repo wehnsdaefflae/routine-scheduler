@@ -15,6 +15,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.381.0] — 2026-10-03
+
+### Added — the escalation ladder is VISIBLE: a rung's records, its label, its icon and its strip
+
+The ladder's steps 6 and 7 (the design's last two). A supervised run is the one a reader most
+needs explained — turns were spent on a child nobody asked for, and the worker was redirected
+mid-run — and until now the page showed none of it.
+
+- **The four event types are in the vocabulary.** `oversight_dispatch`, `oversight_directive`,
+  `oversight_skipped` and `oversight_no_directive` joined `EVENT_TYPES` (18 now). They were
+  missing, and `Transcript.event` ASSERTS membership: **every ladder record path raised**, and
+  `ladder.at_boundary` catches broadly by design — so a rung that fired left no trace at all,
+  including the `oversight_skipped` its own error handler tries to write. The ladder's suite could
+  not see it: it stubs the transcript with a list-appending fake. `tests/test_oversight_surfaces.py`
+  now reads the types written by `engine/ladder.py` out of its source and checks them against the
+  tuple, which is what found the fourth one.
+- **A directive is no longer shown as the operator speaking.** `engine/control.inject_user_message`
+  built its `user_injection` event without the delivery channel, so a rung's directive — machine
+  authored, binding on the run — rendered as a plain `📨 user:` message. The event now carries
+  `via` and the writer's `source`; the console labels an `oversight` injection as the rung's
+  directive (its own class), and `run-once` prints `+ injected ↑ rung-<n>`.
+- **Renderers for all four**, in the console (`components/transcript.js`) and the CLI
+  (`cli_render.py`) — an event type with no renderer is silently DROPPED by the console's `add()`.
+  A skip shows its REASON: a run with the ladder on and no supervision in it is otherwise
+  indistinguishable from a healthy one.
+- **The task tree draws a rung `↑`** (`MODE_ICON` had no `oversight` entry, so it fell through to
+  the `•` unknown-mode default).
+- **The run rail's oversight strip** — current rung, turns to the next escalation (counted from
+  the dispatch turn, the way the engine counts it), and what the last rung ruled. New read-model
+  `readmodels/ladder.py` → the run detail's `ladder` field → `components/ladderstrip.js`. The
+  section is added only for a run that HAS a rung: an always-present empty card teaches a reader
+  to skip the one place supervision is reported.
+- **Docs**, in the same commit: `docs/child-runs.md`'s mode table gains the fourth mode (and its
+  inverted direction — every other child works for its parent, a rung reports on it),
+  `docs/prompt-anatomy.md` the channel on an injection, `CLAUDE.md` the 18-type list with the
+  assert that makes a missing type an exception rather than a rendering gap, and
+  `docs/architecture.md` where a rung is visible plus the one design piece deliberately not built
+  (the `supervisor` model role — `escalate` pins `main`, and a fourth role was never authorized).
+  The `docs/designs.md` entry is deleted in this commit, as the design asked.
+
+19 new tests (10 engine/read-model, 3 browser, 6 added to the UI transcript suite).
+
 ## [0.380.1] — 2026-10-03
 
 ### Fixed — the `remind.description` cap now shows the overflow, so the retry can see what to cut

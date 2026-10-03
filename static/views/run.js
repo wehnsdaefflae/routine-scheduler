@@ -19,6 +19,7 @@ import { createPlanStrip } from "/static/components/planstrip.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createRunAccounting } from "/static/components/run-accounting.js";
 import { createTaskTree } from "/static/components/tasktree.js";
+import { renderLadder } from "/static/components/ladderstrip.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtAbs, fmtDur, fmtTokens, skeleton, streamStatus,
          toast, toastError, toDate } from "/static/util.js";
@@ -503,6 +504,12 @@ export async function render(view, runId, query = {}) {
     accounting = createRunAccounting(goalBody, { slug });
   }
   accounting?.set(detail);
+  // The escalation ladder's strip — which rung is current, how long until the next escalation,
+  // what the last rung ruled. The section is ADDED only for a run that actually has a ladder
+  // record (the conversation rail's idiom for `browser`/`background`): the overwhelming majority
+  // of runs have no rung, and a card that is always present and always empty teaches a reader to
+  // skip the one place supervision is reported.
+  if (detail.ladder) renderLadder(rail.add("oversight", el("div", {})), rail, detail.ladder);
   let accountingRead = TERMINAL.has(detail.state);   // a finished run's read already carries it
   if (detail.brief) {
     briefLine.hidden = false;

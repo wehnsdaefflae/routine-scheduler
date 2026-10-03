@@ -505,9 +505,16 @@ export function createTranscript(container, opts = {}) {
         return el("div", { class: "ev system" }, `— ${ev.payload.text} —`);
       }
       const { ref, body } = splitRef(ev.payload.text);
-      return el("div", { class: "ev injection" },
+      // An escalation ladder's DIRECTIVE arrives on this same event (engine/ladder.py files it
+      // through the `oversight` channel), and it is not the operator speaking: it is a rung
+      // above redirecting the run, and the reader has to be able to tell who did. The channel
+      // in the payload is what says so — labelled by its rung, with its own class.
+      const rung = ev.payload.via === "oversight";
+      return el("div", { class: `ev injection${rung ? " oversight" : ""}`,
+                         ...(rung ? { "data-oversight-directive": "" } : {}) },
         ref ? el("div", { class: "reply-ref", title: ref }, "↩ ", ref) : null,
-        evlabel("\u{1F4E8} user: "), md(body),
+        evlabel(rung ? `\u2191 oversight directive (${ev.payload.source || "a rung above"}): `
+                     : "\u{1F4E8} user: "), md(body),
         attachmentRow(ev.payload.attachments, opts.fileUrl, blobs));
     },
     question: questionNode,
@@ -612,6 +619,32 @@ export function createTranscript(container, opts = {}) {
     stages_skipped: (ev) => el("div", { class: "ev compaction", "data-stages-skipped": "" },
       `— stages skipped: ${(ev.payload?.skipped || []).join(", ")} `
       + `(entered: ${(ev.payload?.entered || []).join(", ") || "none"}) —`),
+    // The escalation ladder's four records (engine/ladder.py). An event type with no renderer
+    // here is DROPPED by add() below, so a rung that fired left no trace a reader could find —
+    // which for an oversight mechanism is the one failure that must never be silent.
+    // A rung STARTING: why it fired, the interval it judges, and the budget it was given — the
+    // reader's only way to see that supervision cost turns and over what.
+    oversight_dispatch: (ev) => el("div", { class: "ev oversight", "data-oversight-dispatch": "" },
+      `— ↑ rung ${ev.payload?.rung ?? "?"} fired at turn ${ev.payload?.turn ?? "?"}`
+      + ` (${ev.payload?.reason || "interval"}), judging turns `
+      + `${ev.payload?.since_turn ?? "?"}–${ev.payload?.turn ?? "?"}`
+      + ` on ${ev.payload?.oversight_turns ?? "?"} turns of its own —`),
+    // The VERDICT; the directive's prose arrives as the `user_injection` above.
+    oversight_directive: (ev) => el("div", { class: "ev oversight", "data-oversight-verdict": "" },
+      `— ↑ rung ${ev.payload?.rung ?? "?"}: ${ev.payload?.verdict ?? "?"}`
+      + ` · ${ev.payload?.disposition ?? "?"} · next rung in ${ev.payload?.next_rung_in ?? "?"} turns`
+      + `${ev.payload?.next_look ? ` · next look: ${ev.payload.next_look}` : ""} —`),
+    // Not an error: the ordinary case on a tree at its depth ceiling or out of child budget,
+    // and the hard skip when the supervisor's workflow pattern is absent. The REASON is the
+    // whole point of the record.
+    oversight_skipped: (ev) => el("div", { class: "ev compaction", "data-oversight-skipped": "" },
+      `— ↑ oversight${ev.payload?.rung ? ` rung ${ev.payload.rung}` : ""} skipped: `
+      + `${ev.payload?.reason || "no reason recorded"} —`),
+    // A rung that ran and handed back no usable directive — supervision that cost turns and
+    // said nothing. Visible, because it reads like `continue` and is not.
+    oversight_no_directive: (ev) => el("div", { class: "ev compaction", "data-oversight-none": "" },
+      `— ↑ rung ${ev.payload?.rung ?? "?"} handed back no directive`
+      + `${ev.payload?.status ? ` (child ${ev.payload.status})` : ""} —`),
     header: (ev) => el("div", { class: "ev system" },
       // every half falls back — the workflow one always did, and the model one printed a
       // literal "undefined:undefined" on any header without an orchestrator block (a
