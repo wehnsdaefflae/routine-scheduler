@@ -52,6 +52,14 @@ of work is a new pattern. The library ships fourteen, each built on one abstract
 | `mirror-sync` | `sync-a-mirror` | keeping a copy in step with its source |
 | `one-job` | `do-one-job` | one dated piece of work, then done |
 
+One library workflow deliberately has **no settings pattern**: `supervise-a-run`, one rung of the
+escalation ladder. No person and no run ever chooses it — the engine starts a rung on it when a
+routine's `ladder.enabled` is true and an escalation is due — so there is nothing for a settings
+pattern to govern. It exists as a pattern because the recipe is the truth of what a run is, and a
+run whose output BINDS another run must be instructed in what a dispatch is and what it may
+answer; `engine/ladder.py` SKIPS the rung outright when the pattern is absent from the library
+rather than letting an unknown slug degrade to the builtin fallback recipe.
+
 ## A routine follows a pattern — it does not inherit from one
 
 `routine.yaml` names it (`pattern: watcher`) and holds **every value itself**: the pattern's

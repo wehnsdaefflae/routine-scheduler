@@ -53,6 +53,39 @@ def test_config_reads_the_level_from_tuning_yaml(make_routine):
     assert any("mystery" in p for p in problems)      # unknown tuning keys are reported
 
 
+def test_the_ladders_two_machine_tunable_knobs_load_from_tuning(make_routine):
+    """`n` and the rung's own turn cap live HERE and not in routine.yaml precisely so a
+    meta-routine can raise `n` for a routine whose supervisor keeps answering `continue` —
+    on measured evidence rather than on anyone's guess.
+    """
+    d = make_routine(slug="ladder-tuning")
+    cfg, problems = load_routine(d)
+    assert not problems and cfg.tuning == {}        # absent file: the formula's defaults apply
+
+    write_tuning(d, {"ladder_rung_height": 30, "oversight_turns": 12})
+    cfg, problems = load_routine(d)
+    assert not problems
+    assert cfg.tuning["ladder_rung_height"] == 30 and cfg.tuning["oversight_turns"] == 12
+
+
+def test_a_nonsense_ladder_knob_is_reported_and_dropped(make_routine):
+    d = make_routine(slug="ladder-tuning-bad")
+    (d / "tuning.yaml").write_text("ladder_rung_height: soon\noversight_turns: -3\n",
+                                   encoding="utf-8")
+    cfg, problems = load_routine(d)
+    assert "ladder_rung_height" not in cfg.tuning and "oversight_turns" not in cfg.tuning
+    assert any("ladder_rung_height" in p and "whole number" in p for p in problems), problems
+    assert any("oversight_turns" in p for p in problems), problems
+
+
+def test_the_default_rung_height_is_twenty():
+    """20, not the design's 15: escalating less often on an unproven mechanism is the cheaper
+    way to learn whether the verdicts are worth anything (operator, 2026-10-02)."""
+    from rsched.config.base import DEFAULT_RUNG_HEIGHT
+
+    assert DEFAULT_RUNG_HEIGHT == 20
+
+
 def test_routine_yaml_never_carries_deliberation(make_routine):
     """Canonical form: the key lives in tuning.yaml ONLY — a routine.yaml key is stale
     data, reported and ignored (never read)."""

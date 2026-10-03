@@ -456,13 +456,28 @@ and the capabilities digest's catalog listing):
   in the same shape), validated in `rsched/triggers.py`, added, edited and removed in the routine
   page's Triggers section and saved by its one accept (never by a run; the library-sync
   routine's export REDACTS trigger tokens).
+  `ladder:` — the ESCALATION LADDER's user half (`engine/ladder.py`, `engine/oversight.py`):
+  `enabled` (default **false**, so no live routine is supervised until someone opts it in) and
+  `max_depth` (default 3 — a SEMANTIC ceiling: by the third rung the distinct questions are
+  exhausted, and it is additionally floored by `budgets.max_subrun_depth`). It is config and not
+  tuning because authority over being watched is the user's, not a meta-routine's; every
+  unreadable value degrades toward OFF, since `true` is the field's only dangerous value.
 - `tuning.yaml` — the routine's machine-tunable BEHAVIOR parameters, classed with the RECIPE
   (editable by a routine holding `write_recipe`; config stays sealed — the file boundary IS the
   permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how
   much thinking lands on paper: words the say contract, `engine/deliberation.py`; creation-suggested
   per task, slider on the routine page / conversation header, mid-run via control.json
-  `set_deliberation` from the run view). Absent file = defaults; `config.load_tuning`/`write_tuning`
-  are the one reader/writer pair; future machine-tunable knobs land here, never in routine.yaml.
+  `set_deliberation` from the run view); `ladder_rung_height:` (`n`, default **20** — turns between
+  escalations, a CEILING on the interval and never a metronome, since three events pull a rung
+  forward) and `oversight_turns:` (a rung's OWN pinned turn cap; unset it is DERIVED as
+  `n // 2 + 1`, floored at 4). The two ladder knobs are tuning rather than config exactly so a
+  meta-routine can raise `n` for a routine whose supervisor keeps answering `continue`, on
+  measured evidence. The derived cap is a sublinear read plus a constant judge: `= n` prices a
+  rung's fixed judging as if it scaled (the 2×-the-worker ceiling the design calls its deciding
+  objection), a fixed cap starves the read at large `n` into `oversight_no_directive` —
+  supervision that silently does nothing. Absent file = defaults;
+  `config.load_tuning`/`write_tuning` are the one reader/writer pair, and a key not in
+  `config.base.TUNING_KEYS` is reported and dropped, never applied.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `stages/<name>.md` modules, read on demand) with its `## Done when` — what one finished run
   leaves behind, accounted at every main finish — and, where the operator named prohibitions, `## Never`. The clarified instruction is only a transient compile SEED —

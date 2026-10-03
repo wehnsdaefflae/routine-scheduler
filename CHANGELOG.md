@@ -15,6 +15,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.380.0] — 2026-10-03
+
+### Added — the escalation ladder is reachable: its knobs, its supervisor's recipe, and a hard skip instead of a silent degradation
+
+Step 5 of the ladder design (`docs/designs.md` § The escalation ladder), built on the operator's
+answers of 2026-10-02 to the two questions that had stalled it. Steps 1-4 shipped the dispatch /
+directive module, the fourth child mode, the `oversight` channel and the turn-boundary trigger —
+all dark, because nothing read a config field that did not exist.
+
+**The knobs, and who owns which.** `routine.yaml` gains `ladder:` — `enabled` (default **false**:
+no live routine's behaviour changes at this release) and `max_depth` (default 3, the design's
+semantic ceiling, additionally floored by `budgets.max_subrun_depth`). It is config rather than
+tuning because authority over being supervised is the user's; every unreadable value degrades
+toward OFF, since `true` is the field's only dangerous value. `tuning.yaml` gains
+`ladder_rung_height` (`n`, default **20**) and `oversight_turns` — machine-tunable precisely so a
+meta-routine can raise `n` for a routine whose supervisor keeps answering `continue`. Before this,
+both tuning keys were *rejected* by `load_tuning` as unknown and the `ladder:` block was reported
+as an unknown routine.yaml key: the feature could not be switched on at all.
+
+**The cost formula changed from the design's, on the operator's reasoning.** `oversight_turns` is
+derived **`n // 2 + 1`** (floor 4), not `= n`. A rung's cost has a READ term — the interval's `say`
+lines, which grows with `n` — and a JUDGE term — assemble one directive, fixed whatever `n` is.
+Pricing both as scaling is exactly the 2×-the-worker ceiling the design itself calls "the objection
+that decides the feature"; pricing both as fixed starves the read at large `n` and yields
+`oversight_no_directive`, i.e. supervision that silently does nothing — the one failure mode that
+is invisible from below. Sublinear read plus constant judge still grows with the interval (n=10→6,
+15→8, 20→11, 30→16) while holding the per-rung worst case at ~0.5× the worker's turns and the whole
+`m = 3` ladder at ~1.5× rather than ~6×. `MIN_OVERSIGHT_TURNS = 4` is kept as a guard even though
+the formula makes it redundant for any `n ≥ 6`: it costs nothing and catches someone setting `n = 2`.
+
+**`supervise-a-run` is now a library pattern** (`library-seed/workflows/`). One rung's whole recipe:
+read the dispatch, judge the worker's own account against the engine's counts — where the two
+disagree the counts are the evidence — and answer with ONE directive and nothing else. It is the
+first library workflow with no settings pattern, deliberately: no person and no run ever chooses
+it, the engine starts a rung on it, so there is nothing for a settings pattern to govern
+(`docs/patterns.md` says so, lest a future curator invent one).
+
+**An absent supervisor pattern now SKIPS the rung** and files `oversight_skipped`, checked before
+the dispatch is built and before the interval is closed. `childrun.materialize_to_disk` catches
+every failure and degrades an unknown slug to the builtin fallback recipe — the right trade for an
+ordinary child, and the worst outcome in this design: a generic child, instructed to "orient, do
+the work, record", holding authority over a live run. Instructing the rung from its prompt alone
+was rejected for a reason worth recording: this repo's standing contract is that the RECIPE is the
+truth of what a run is, and that option puts the recipe and the instruction in deliberate
+disagreement for the most authority-bearing run type in the system.
+
+Also: `engine/ladder.py` now reads its two shared defaults from `config.base` instead of restating
+them, with a test pinning the two layers to one set — a second copy of a knob's default is how a
+knob comes to mean two things, the page showing one number and the trigger using another. And
+`load_tuning` reads its vocabulary from `config.base.TUNING_KEYS` rather than from a hand-written
+list beside it.
+
+14 new tests (the formula's six points, the four skip cases, the config block's degradations, the
+two tuning keys); `library-seed` lints clean.
+
 ## [0.379.0] — 2026-10-02
 
 ### Changed — the webhook route is `/api/webhooks/…`, and the old spelling is countable

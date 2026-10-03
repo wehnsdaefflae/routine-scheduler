@@ -52,11 +52,25 @@ class _Budgets:
     max_subrun_depth = 2
 
 
+class _Server:
+    """Enough of ServerConfig for the ladder: where the workflow library lives. A library
+    holding the supervisor pattern is the ordinary case; `library=False` is the hard-skip one.
+    """
+
+    def __init__(self, tmp_path, *, library=True):
+        self.libraries_home = tmp_path / "library"
+        if library:
+            (self.libraries_home / "workflows").mkdir(parents=True, exist_ok=True)
+            (self.libraries_home / "workflows"
+             / f"{ladder.SUPERVISOR_WORKFLOW}.py").write_text("META = {}\n", encoding="utf-8")
+
+
 class _Ctx:
-    def __init__(self, tmp_path, *, turn=20, depth=0, **routine_attrs):
+    def __init__(self, tmp_path, *, turn=20, depth=0, library=True, **routine_attrs):
         self.transcript = _Transcript(tmp_path / "transcript.jsonl")
         self.transcript.path.write_text("", encoding="utf-8")
         self.routine = _Routine(tmp_path, **routine_attrs)
+        self.server = _Server(tmp_path, library=library)
         self.budgets = _Budgets()
         self.turn = turn
         self.depth = depth
@@ -112,13 +126,22 @@ def _directive(**over):
 
 
 def test_the_ladder_is_off_until_a_routine_enables_it(tmp_path):
-    """Ship it OFF by default: no live routine changes behaviour at the release, and the
-    config field step 5 adds does not exist yet — so the defaults must read as disabled rather
-    than raise on a routine object that has never heard of the ladder."""
+    """Ship it OFF by default: no live routine changes behaviour at the release, and a routine
+    object that has never heard of the ladder must read as disabled rather than raise."""
     settings = ladder.ladder_settings(_Ctx(tmp_path))
     assert settings["enabled"] is False
     assert settings["height"] == ladder.DEFAULT_RUNG_HEIGHT
     assert settings["max_depth"] == ladder.DEFAULT_MAX_DEPTH
+
+
+def test_the_engine_and_the_config_layer_share_one_set_of_defaults():
+    """A second copy of a knob's default in the engine is how a knob comes to mean two things:
+    the routine page would show one number and the trigger would use another."""
+    from rsched.config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
+
+    assert DEFAULT_LADDER["max_depth"] == ladder.DEFAULT_MAX_DEPTH
+    assert ladder.DEFAULT_RUNG_HEIGHT is DEFAULT_RUNG_HEIGHT
+    assert DEFAULT_LADDER["enabled"] is False
 
 
 def test_a_malformed_knob_leaves_the_ladder_off_rather_than_ending_the_run(tmp_path):
@@ -135,15 +158,38 @@ def test_a_nonsense_rung_height_falls_back(tmp_path, bad):
     assert ladder.ladder_settings(ctx)["height"] == ladder.DEFAULT_RUNG_HEIGHT
 
 
-def test_the_rung_budget_scales_with_the_interval_but_has_a_floor(tmp_path):
-    """`oversight_turns = n` keeps the judgement proportional to what it reads; the floor
-    exists because a rung with one turn spends it on the reading and finishes with nothing,
-    which reads as `continue` — the one failure mode that is invisible."""
-    big = _Ctx(tmp_path, ladder={"enabled": True}, tuning={"ladder_rung_height": 30})
-    assert ladder.ladder_settings(big)["oversight_turns"] == 30
+@pytest.mark.parametrize(("height", "expected"),
+                         [(2, 4), (6, 4), (10, 6), (15, 8), (20, 11), (30, 16)])
+def test_a_rungs_turn_cap_is_a_sublinear_read_plus_a_constant_judge(height, expected):
+    """The cost formula the operator chose over the design's `oversight_turns = n`
+    (2026-10-02), and the reason it is a FORMULA: every routine that opts in inherits it.
+
+    A rung's cost has a READ term (the interval's `say` lines, growing with `n`) and a JUDGE
+    term (assemble one directive, fixed). `= n` prices both as scaling — the 2×-the-worker
+    ceiling the design itself calls the objection that decides the feature. A fixed cap prices
+    both as fixed, starving the read at large `n` into `oversight_no_directive`: supervision
+    that silently does nothing. `n // 2 + 1` still grows, so a long interval is never starved,
+    while holding the per-rung worst case at ~0.5× and the whole m=3 ladder at ~1.5×.
+    """
+    assert ladder.oversight_turns_for(height) == expected
+
+
+def test_the_floor_catches_an_interval_too_short_to_judge(tmp_path):
+    """`MIN_OVERSIGHT_TURNS` is redundant for any n >= 6 once the cap is derived, and kept
+    anyway: it costs nothing and catches someone setting `n = 2`. A rung with one turn spends
+    it on the reading and finishes with nothing, which reads as `continue`."""
+    assert ladder.oversight_turns_for(2) == ladder.MIN_OVERSIGHT_TURNS
     small = _Ctx(tmp_path, ladder={"enabled": True},
                  tuning={"ladder_rung_height": 30, "oversight_turns": 1})
     assert ladder.ladder_settings(small)["oversight_turns"] == ladder.MIN_OVERSIGHT_TURNS
+
+
+def test_the_derived_cap_is_used_when_tuning_names_no_override(tmp_path):
+    big = _Ctx(tmp_path, ladder={"enabled": True}, tuning={"ladder_rung_height": 30})
+    assert ladder.ladder_settings(big)["oversight_turns"] == 16
+    tuned = _Ctx(tmp_path, ladder={"enabled": True},
+                 tuning={"ladder_rung_height": 30, "oversight_turns": 25})
+    assert ladder.ladder_settings(tuned)["oversight_turns"] == 25
 
 
 # -- when a rung is due ------------------------------------------------------------------
@@ -230,6 +276,56 @@ def test_a_rung_runs_as_an_oversight_child_on_the_main_model_with_a_pinned_budge
     assert call["overrides"] == {"turns": 12}
     assert call["action"]["model"] == "main"
     assert call["action"]["workflow"] == ladder.SUPERVISOR_WORKFLOW
+
+
+def test_an_absent_supervisor_pattern_skips_the_rung_rather_than_degrading_it(tmp_path):
+    """The HARD SKIP (operator, 2026-10-02 — option 1 + 3 together).
+
+    `childrun.materialize_to_disk` catches every failure and degrades an unknown slug to the
+    builtin fallback recipe. For an ordinary child that is the right trade; for a rung it is the
+    worst outcome in the design — a generic child, instructed to "orient, do the work, record",
+    holding authority over a live run. So the rung is skipped, countably, and the worker is left
+    exactly as it was.
+    """
+    ctx = _Ctx(tmp_path, library=False)
+    subs = _Subs(_Sub(summary=json.dumps(_directive())))
+    ladder.escalate(_Loop(ctx, subs), "interval",
+                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+    assert subs.calls == []                                   # no child was ever started
+    assert ctx.transcript.kinds() == ["oversight_skipped"]
+    reason = ctx.transcript.events[0][1]["reason"]
+    assert ladder.SUPERVISOR_WORKFLOW in reason
+    assert list((tmp_path / "inbox").glob("msg-*.json")) == []
+
+
+def test_a_skipped_rung_does_not_close_the_interval_it_never_read(tmp_path):
+    """Two rungs judging one interval is how a ladder becomes m copies of one audit — and the
+    converse matters just as much: a rung that could not run must not consume the turns it was
+    never shown, or the next one judges a window with a hole in it.
+    """
+    ctx = _Ctx(tmp_path, turn=40, library=False)
+    ctx.last_rung_turn = 10
+    ladder.escalate(_Loop(ctx, _Subs("unused")), "interval",
+                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+    assert ctx.last_rung_turn == 10
+
+
+def test_an_unreadable_library_skips_the_rung_instead_of_ending_the_run(tmp_path):
+    """Oversight may never fail the worker — a library that cannot be read is the ladder's
+    problem, not the run's."""
+    ctx = _Ctx(tmp_path, library=False)
+    ctx.server.libraries_home = None
+    assert ladder.supervisor_pattern_missing(ctx.server)
+    ladder.escalate(_Loop(ctx, _Subs("unused")), "interval",
+                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+    assert ctx.transcript.kinds() == ["oversight_skipped"]
+
+
+def test_the_supervisor_pattern_is_in_the_library_seed():
+    """The other half of the operator's answer: the pattern itself is AUTHORED, not merely
+    guarded against. Without it the hard skip above makes the feature permanently dark."""
+    seed = Path(__file__).resolve().parents[1] / "library-seed" / "workflows"
+    assert (seed / f"{ladder.SUPERVISOR_WORKFLOW}.py").is_file()
 
 
 def test_the_supervisor_runs_on_its_own_pattern_never_the_generic_one(tmp_path):

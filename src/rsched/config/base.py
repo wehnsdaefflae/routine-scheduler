@@ -88,6 +88,28 @@ MODEL_KINDS = ("main", "tool_call", "uncensored")
 # the routine page / creation flow / conversation panel; mid-run via control.json.
 DELIBERATION_LEVELS = ("terse", "standard", "deliberate", "think-on-paper")
 DEFAULT_DELIBERATION = "standard"
+# The escalation ladder's USER half (routine.yaml) — whether a run is supervised at all and how
+# high the ladder may go. Ships OFF: no live routine changes behaviour at the release, the fleet
+# is opted in per routine. `max_depth` 3 is the design's SEMANTIC ceiling, not a budget — by the
+# third rung the distinct questions (is the work drifting · is the supervision any good · is the
+# goal still worth it) are exhausted and a fourth re-derives one already answered. The interval
+# and the rung's own turn cap are machine-tunable and live in tuning.yaml instead.
+DEFAULT_LADDER = {"enabled": False, "max_depth": 3}
+LADDER_KEYS = frozenset(DEFAULT_LADDER)
+# `n`, the ladder's interval: turns between escalations, a CEILING on the interval and never a
+# metronome (three events pull a rung forward). 20 rather than the design's 15 — escalating less
+# often on an unproven mechanism is the cheaper way to learn whether the verdicts are worth
+# anything (operator, 2026-10-02). The rung's own turn cap is DERIVED from it
+# (engine/ladder.oversight_turns_for): a sublinear read plus a constant judge, because a rung's
+# cost has a read term that grows with `n` and a judging term that does not. The design's
+# `oversight_turns = n` priced both as scaling, which is the 2×-the-worker ceiling it itself
+# calls "the objection that decides the feature"; a fixed cap prices both as fixed and starves
+# the read at large `n` into `oversight_no_directive` — supervision that silently does nothing.
+DEFAULT_RUNG_HEIGHT = 20
+# tuning.yaml's whole vocabulary: a key not named here is reported and dropped, never applied.
+# `oversight_turns` is in it so the derived cap can be overridden per routine — the knobs live in
+# tuning rather than config precisely so a meta-routine can raise them on measured evidence.
+TUNING_KEYS = ("deliberation", "ladder_rung_height", "oversight_turns")
 CONVERSATION_DELIBERATION = "deliberate"  # chat is judgment-heavy — context on paper by default
 # Endpoints are stateless HTTP transports; subscription authentication lives in the proxy.
 EndpointKind = Literal["openai", "anthropic"]

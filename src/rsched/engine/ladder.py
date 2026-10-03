@@ -26,33 +26,55 @@ is the ordinary case on a deep tree, not an error.
 WHAT IS NOT HERE. `continue` injects nothing (constraint 1 of the design, and
 `oversight.render_directive` already renders it to the empty string): this module asks that
 question once, at the one place a message would be filed, so no future injection site can lose
-the guarantee. And nothing here reads `ladder.enabled`/`n` from config — step 5 writes those
-fields; until then `ladder_settings` reads the defaults and the ladder stays OFF, so this module
-ships dark exactly as the design requires.
+the guarantee.
+
+THE KNOBS AND WHO OWNS THEM (step 5). `ladder.enabled` and `ladder.max_depth` are the USER's and
+live in `routine.yaml` (`config.base.DEFAULT_LADDER`); `ladder_rung_height` (`n`) and the rung's
+own `oversight_turns` are machine-tunable and live in `tuning.yaml`, so a meta-routine can raise
+`n` for a routine whose supervisor keeps answering `continue`. `enabled` defaults FALSE, so no
+live routine changes behaviour at the release and the fleet is opted in one routine at a time.
 """
 
 from __future__ import annotations
 
 import logging
 
+from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
 from . import child, inbox, oversight
 
 log = logging.getLogger("rsched.engine.ladder")
 
-#: Turns between escalations when nothing has been tuned — the design's 15-20, at its low end:
-#: a ceiling on the interval, never a metronome (three events pull a rung forward, below).
-DEFAULT_RUNG_HEIGHT = 15
-
-#: The floor under a rung's own turn budget. `oversight_turns = n` scales the judgement with the
-#: interval it reads, but a rung with one or two turns cannot read a dispatch AND answer: it
-#: would spend its budget on the reading and finish with nothing, which reads as `continue` and
-#: is the one failure mode that is invisible.
+#: The floor under a rung's own turn budget. Redundant for any `n >= 6` once the cap is derived
+#: (below), and kept anyway: it costs nothing and catches someone setting `n = 2`. A rung with
+#: one or two turns cannot read a dispatch AND answer — it spends its budget on the reading and
+#: finishes with nothing, which reads as `continue` and is the one failure mode that is invisible.
 MIN_OVERSIGHT_TURNS = 4
 
-#: The semantic ceiling on ladder height. Three is not a budget: by the third rung the distinct
-#: questions (is the work drifting · is the supervision any good · is the goal still worth it)
-#: are exhausted, and a fourth re-derives one already answered.
-DEFAULT_MAX_DEPTH = 3
+
+def oversight_turns_for(height: int) -> int:
+    """A rung's own turn cap, derived from the interval it must read (operator, 2026-10-02).
+
+    A rung's cost has a READ term — the `say` lines of the interval, which grows with `n` — and
+    a JUDGE term — assemble one directive, fixed whatever `n` is. The design's `oversight_turns
+    = n` prices BOTH as if both scaled, which is exactly the 2×-the-worker ceiling the design
+    itself calls "the objection that decides the feature". A fixed cap prices both as fixed,
+    which starves the read at large `n` and yields `oversight_no_directive`: supervision that
+    silently does nothing.
+
+    `n // 2 + 1` is sublinear read + constant. It still grows with the interval, so a long
+    interval is never starved, while holding the per-rung worst case at a steady ~0.5× the
+    worker's turns (n=10→6, 15→8, 20→11, 30→16) and the whole `m = 3` ladder at ~1.5× rather
+    than ~6×. It is a FORMULA rather than a tuned constant because every routine that opts in
+    inherits it; `tuning.yaml`'s `oversight_turns` overrides it per routine, so a meta-routine
+    can raise it on measured evidence if real rungs are seen hitting the cap.
+    """
+    return max(height // 2 + 1, MIN_OVERSIGHT_TURNS)
+
+#: The two defaults the CONFIG layer owns, read from it rather than restated here: a routine's
+#: `ladder:` block already merges over `DEFAULT_LADDER`, and a second copy of `max_depth` in the
+#: engine is how a knob comes to mean two things. `n` likewise lives in `config.base` beside the
+#: tuning vocabulary that validates it.
+DEFAULT_MAX_DEPTH = int(DEFAULT_LADDER["max_depth"])
 
 #: The workflow pattern a supervisor rung runs on. NOT `general-task`: a run whose output BINDS
 #: another run must be instructed in what a dispatch is, what the four verdicts mean and that it
@@ -65,6 +87,35 @@ SUPERVISOR_WORKFLOW = "supervise-a-run"
 #: The three events that pull an escalation forward (the design: `n` is a ceiling on the
 #: interval, not a metronome). Each is a fact the engine already has at the boundary.
 PULL_FORWARD = ("repeat_failure", "outcome_claimed_met", "worker_requested")
+
+
+def supervisor_pattern_missing(server) -> str:
+    """An empty string if the supervisor's workflow pattern resolves in the library, else why
+    it does not.
+
+    THE HARD SKIP (operator, 2026-10-02: option 1 + 3 together). `childrun.materialize_to_disk`
+    catches every failure and degrades an unknown slug to the builtin fallback recipe — which
+    for an ordinary child is the right trade and for a rung is the worst outcome in the design:
+    a generic child, instructed to "orient, do the work, record", holding authority over a run.
+    So the rung is SKIPPED when the pattern is absent and the skip is countable
+    (`oversight_skipped`), rather than run on a recipe that never mentions supervision.
+
+    This repo's standing contract is that the RECIPE is the truth of what a run is. Instructing
+    the rung from `_supervisor_prompt` alone was rejected for that reason: it puts the recipe
+    and the instruction in deliberate disagreement for the most authority-bearing run type in
+    the system.
+    """
+    try:
+        from ..workflows.library import workflows_dir
+
+        home = getattr(server, "libraries_home", None)
+        if home is None:
+            return "no library home configured"
+        if not (workflows_dir(home) / f"{SUPERVISOR_WORKFLOW}.py").is_file():
+            return f"workflow pattern {SUPERVISOR_WORKFLOW!r} is not in the library"
+    except Exception as exc:                      # an unreadable library is not a worker's problem
+        return f"library unreadable ({exc})"
+    return ""
 
 
 def ladder_settings(ctx) -> dict:
@@ -83,7 +134,7 @@ def ladder_settings(ctx) -> dict:
     if not isinstance(tuning, dict):
         tuning = {}
     height = _positive(tuning.get("ladder_rung_height"), DEFAULT_RUNG_HEIGHT)
-    turns = _positive(tuning.get("oversight_turns"), height)
+    turns = _positive(tuning.get("oversight_turns"), oversight_turns_for(height))
     return {
         "enabled": bool(cfg.get("enabled", False)),
         "height": height,
@@ -217,6 +268,12 @@ def escalate(loop, reason: str, settings: dict) -> None:
     """
     ctx = loop.ctx
     rung = ctx.depth + 1
+    if missing := supervisor_pattern_missing(ctx.server):
+        # Checked BEFORE the dispatch is built and before the interval is closed: a rung that
+        # cannot legitimately run must cost the worker nothing and must not make the next rung
+        # re-judge turns this one never read.
+        ctx.transcript.event("oversight_skipped", {"rung": rung, "reason": missing})
+        return
     since = int(getattr(ctx, "last_rung_turn", 0))
     dispatch = oversight.build_dispatch(
         _transcript_path(ctx), goal=_goal(ctx), since_turn=since, turn=ctx.turn,

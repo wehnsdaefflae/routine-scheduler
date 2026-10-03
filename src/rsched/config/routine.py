@@ -24,10 +24,13 @@ from .base import (
     DEFAULT_BUDGETS,
     DEFAULT_CAPABILITIES,
     DEFAULT_DELIBERATION,
+    DEFAULT_LADDER,
     DEFAULT_PERMISSIONS,
     DEFAULT_RULES,
     DELIBERATION_LEVELS,
+    LADDER_KEYS,
     MODEL_KINDS,
+    TUNING_KEYS,
     BlankableStr,
     HomePath,
     _Config,
@@ -175,10 +178,21 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
+    # The escalation ladder (docs/designs.md § The escalation ladder): whether a run of this
+    # routine is supervised at all (`enabled`, default false — no live routine changes
+    # behaviour at the release) and the ceiling on ladder height (`max_depth`, default 3, a
+    # SEMANTIC ceiling). Both are the user's, which is why they are here and not in tuning:
+    # authority over being watched is not machine-tunable. The interval `n` and the rung's own
+    # turn cap are (tuning.yaml's `ladder_rung_height` / `oversight_turns`).
+    ladder: dict = Field(default_factory=lambda: dict(DEFAULT_LADDER))
     # How much thinking lands on paper (see DELIBERATION_LEVELS). The runtime handle
     # only: load_routine fills it from TUNING (tuning.yaml) — routine.yaml never carries
     # it (config = authority, tuning = machine-tunable behavior).
     deliberation: str = DEFAULT_DELIBERATION
+    # The whole of tuning.yaml as loaded, for the readers that want a knob by name rather than
+    # a promoted field (engine/ladder.ladder_settings). A runtime handle like `deliberation`:
+    # load_routine fills it, routine.yaml never carries it.
+    tuning: dict = Field(default_factory=dict)
 
     @field_validator("cron")
     @classmethod
@@ -236,6 +250,14 @@ class RoutineConfig(_Config):
         # an explicit mapping wins ({} = everything gated off); anything else → defaults
         return v if isinstance(v, dict) else cls._default_of("capabilities")
 
+    @field_validator("ladder", mode="before")
+    @classmethod
+    def _ladder_mapping(cls, v: object) -> object:
+        # a mapping wins (merged over the defaults in load_routine); a bare `ladder:` or
+        # garbage reads as the defaults, i.e. the ladder stays OFF — the safe direction for a
+        # field whose only dangerous value is `true`.
+        return v if isinstance(v, dict) else cls._default_of("ladder")
+
 
 TUNING_FILE = "tuning.yaml"
 #: What routine.yaml's `schedule:` mapping may hold — the keys `cron`, `tz` and `catchup` load
@@ -268,6 +290,18 @@ def load_tuning(routine_dir: Path) -> tuple[dict, list[str]]:
         else:
             problems.append(f"tuning.yaml deliberation: unknown level {level!r} "
                             f"(expected one of {DELIBERATION_LEVELS})")
+    # The escalation ladder's MACHINE-TUNABLE half: `n` (the interval) and the rung's own turn
+    # cap. Here rather than in routine.yaml precisely so a meta-routine can raise `n` for a
+    # routine whose supervisor keeps answering `continue`, on measured evidence.
+    for key in [k for k in TUNING_KEYS if k != "deliberation"]:
+        value = raw.pop(key, None)
+        if value is None:
+            continue
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            out[key] = value
+        else:
+            problems.append(f"tuning.yaml {key}: expected a whole number above zero, "
+                            f"got {value!r}")
     problems += [f"tuning.yaml {key}: unknown tuning key" for key in raw]
     return out, problems
 
@@ -380,8 +414,23 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     if "deliberation" in raw:
         problems.append("deliberation: belongs in tuning.yaml (machine-tunable behavior) "
                         "— the routine.yaml key is ignored")
+    for key in [k for k in cfg.ladder if k not in LADDER_KEYS]:
+        problems.append(f"ladder.{key}: unknown ladder key (expected one of "
+                        f"{sorted(LADDER_KEYS)})")
+        del cfg.ladder[key]
+    cfg.ladder = {**DEFAULT_LADDER, **cfg.ladder}
+    if not isinstance(cfg.ladder["enabled"], bool):
+        problems.append(f"ladder.enabled: expected true or false, got "
+                        f"{cfg.ladder['enabled']!r} (ignored)")
+        cfg.ladder["enabled"] = DEFAULT_LADDER["enabled"]
+    depth = cfg.ladder["max_depth"]
+    if not (isinstance(depth, int) and not isinstance(depth, bool) and depth > 0):
+        problems.append(f"ladder.max_depth: expected a whole number above zero, got "
+                        f"{depth!r} (ignored)")
+        cfg.ladder["max_depth"] = DEFAULT_LADDER["max_depth"]
     tuning, tuning_problems = load_tuning(routine_dir)
     problems += tuning_problems
+    cfg.tuning = tuning
     cfg.deliberation = tuning.get("deliberation", DEFAULT_DELIBERATION)
     from ..grants import normalize_capabilities  # function-level: grants imports engine.actions
 
