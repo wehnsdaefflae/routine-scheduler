@@ -30,6 +30,19 @@ function lastLine(st) {
 }
 
 /**
+ * The last VERDICT, when the headline is reporting something else. Seen in the rendered card:
+ * a run whose rung 1 ruled `off_track · redirect` and whose rung 2 then handed back nothing led
+ * with "rung 2 handed back no directive" and showed the verdict NOWHERE — the reader got the
+ * least informative fact in bold. A skip or a silent rung is worth saying; it is not worth
+ * displacing the ruling that is still in force.
+ */
+function verdictLine(st) {
+  if (!st.verdict || st.last === "ruled") return null;
+  return [VERDICT_CLASS[st.verdict] || "",
+          `last ruling: ${st.verdict} · ${st.disposition || "?"}`];
+}
+
+/**
  * Render the ladder strip into `host`. `state` is the run detail's `ladder` field; the caller
  * registers the rail's `oversight` section only for a run that HAS one, so a run with no rung
  * carries no extra card at all. A state that is nevertheless absent hides the section rather
@@ -42,6 +55,8 @@ export function renderLadder(host, rail, state) {
   }
   const [cls, last] = lastLine(state);
   const rows = [el("div", { class: `ls-last ${cls}` }, last)];
+  const ruling = verdictLine(state);
+  if (ruling) rows.push(el("div", { class: `ls-ruling ${ruling[0]}` }, ruling[1]));
   if (state.turns_to_next !== null && state.turns_to_next !== undefined) {
     rows.push(el("div", { class: "faint small" },
       `next escalation in ${state.turns_to_next} turn${state.turns_to_next === 1 ? "" : "s"}`));

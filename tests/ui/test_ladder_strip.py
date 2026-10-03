@@ -68,6 +68,25 @@ def test_a_skipped_rung_says_why_rather_than_showing_nothing(ui, ui_page):
     expect(strip).to_contain_text("1 skipped")
 
 
+def test_a_later_silent_rung_does_not_hide_the_ruling_still_in_force(ui, ui_page):
+    """Found by LOOKING at the rendered card: a run whose rung 1 ruled `off_track · redirect` and
+    whose rung 2 then handed back nothing led with "rung 2 handed back no directive" and showed
+    the verdict NOWHERE — the reader got the least informative fact in bold, while the ruling the
+    worker is still operating under was invisible."""
+    ts = "20260906-130000"
+    run = ui.seed_run("uir", ts, "running", summary="")
+    (run / "transcript.jsonl").write_text("".join(json.dumps(e) + "\n" for e in [
+        *LADDER_EVENTS,
+        {"type": "oversight_no_directive", "payload": {"rung": 2, "status": "failed"}},
+    ]), encoding="utf-8")
+
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
+    strip = ui_page.locator(".ladderstrip")
+    expect(strip).to_contain_text("rung 2 handed back no directive")
+    expect(strip).to_contain_text("last ruling: off_track · redirect")
+
+
 def test_a_run_with_no_rung_gains_no_oversight_card(ui, ui_page):
     """The rail's captions are unchanged for the overwhelming majority of runs."""
     ts = "20260906-120000"

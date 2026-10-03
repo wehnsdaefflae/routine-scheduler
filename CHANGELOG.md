@@ -15,6 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.381.2] — 2026-10-03
+
+### Fixed — the oversight strip led with the least informative fact and hid the ruling in force
+
+Found by **looking at the rendered card**, not by a test: a run whose rung 1 ruled
+`off_track · redirect` and whose rung 2 then handed back nothing showed, in bold,
+"rung 2 handed back no directive (failed)" — and the verdict the worker is still operating under
+appeared **nowhere on the card**. `last` is literally the newest event, so a later skip or a silent
+rung displaced the ruling entirely.
+
+The strip now keeps the last ruling as its own line under the headline (`last ruling: off_track ·
+redirect`), rendered secondary rather than as a second competing lead. A skip and a silent rung are
+still worth reporting — they are not worth erasing a directive that is still in force. One new
+browser test pins it.
+
 ## [0.381.1] — 2026-10-03
 
 ### Fixed — a report to a routine that will never read it is refused at FILING, naming why

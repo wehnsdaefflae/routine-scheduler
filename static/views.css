@@ -280,6 +280,9 @@ table.list tr.disabled-row td { opacity: 0.55; }
    Hidden entirely for a run with no rung — the card is registered for every run and toggled. */
 .ladderstrip { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
 .ladderstrip .ls-last { font-weight: 600; }
+/* the ruling still in force, under a headline reporting something else — secondary, not a
+   second lead (seen in the render: two bold lines read as two competing verdicts) */
+.ladderstrip .ls-ruling { opacity: 0.85; }
 /* An escalation ladder's rung speaking (engine/ladder.py). A rung is a child run, so it takes
    the subrun palette — but its DIRECTIVE binds the run it supervises, which no other child's
    output does, so the injection variant keeps the injection's weight and swaps in that colour.
