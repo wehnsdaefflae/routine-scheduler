@@ -262,8 +262,8 @@ def render_directive(directive: dict, *, rung: int) -> str:
     if directive.get("disposition") == "continue":
         return ""
 
-    lines = [f"OVERSIGHT DIRECTIVE (rung {rung}) — verdict: {directive.get('verdict')} · "
-             f"disposition: {directive.get('disposition')}"]
+    lines = [(f"OVERSIGHT DIRECTIVE (rung {rung}) — verdict: {directive.get('verdict')} · "
+              f"disposition: {directive.get('disposition')}")]
     lines.extend(f"- {line}" for line in directive.get("instruction") or [])
     if directive.get("next_look"):
         lines.append(f"Next rung will look at: {directive['next_look']}")

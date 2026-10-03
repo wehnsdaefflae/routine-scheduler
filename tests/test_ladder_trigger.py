@@ -87,7 +87,7 @@ class _Sub:
 
         class _Done:
             @staticmethod
-            def wait(timeout=None):
+            def wait(timeout=None):      # noqa: ARG004 — threading.Event.wait's signature
                 return True
 
         self.done = _Done()
@@ -173,7 +173,7 @@ def test_the_interval_is_counted_from_the_last_rung_not_from_the_runs_start(tmp_
     assert ladder.rung_is_due(loop, enabled) == "interval"
 
 
-@pytest.mark.parametrize("flag,expected", [
+@pytest.mark.parametrize(("flag", "expected"), [
     ("escalation_requested", "worker_requested"),
     ("outcome_claimed_met", "outcome_claimed_met"),
 ])
@@ -287,7 +287,7 @@ def test_a_supervisors_next_rung_in_shortens_its_own_interval_but_cannot_lengthe
 # -- oversight may never fail the worker -------------------------------------------------
 
 
-@pytest.mark.parametrize("sub,why", [
+@pytest.mark.parametrize(("sub", "why"), [
     (_Sub(summary="Looks fine to me, carry on!"), "prose that is not a directive"),
     (_Sub(summary='{"verdict": "nonsense", "disposition": "redirect"}'), "malformed"),
     (_Sub(status="failed", summary='{"verdict": "on_track"}'), "the rung failed"),

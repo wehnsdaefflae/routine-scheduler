@@ -107,12 +107,13 @@ def pull_forward_reason(loop) -> str | None:
     finish-line outcome reported `met`, and an explicit request to escalate — and they are read
     off the run's own flags rather than inferred here.
     """
+    repeat, claimed, requested = PULL_FORWARD
     if getattr(loop.ctx, "escalation_requested", False):
-        return "worker_requested"
+        return requested
     if getattr(loop.ctx, "outcome_claimed_met", False):
-        return "outcome_claimed_met"
+        return claimed
     signals = getattr(loop, "repeat_failure_signal", None)
-    return "repeat_failure" if signals else None
+    return repeat if signals else None
 
 
 def rung_is_due(loop, settings: dict) -> str | None:
