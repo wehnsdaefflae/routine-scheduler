@@ -15,6 +15,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.382.2] — 2026-10-04
+
+### Fixed — the recipe-hygiene check demanded a script the routine was never going to call (F533)
+
+`recipelint._missing_scripts` flagged every `scripts/<name>.py` a recipe mentioned, with no
+regard for what the sentence did with it. Measured on the live fleet it produced **six** notes
+across **two** routines, and every one was advice neither routine could take: writing the file
+would create something nothing calls, dropping the step would delete the lens.
+
+Two shapes are now excluded, and both are machine-certain — which is what this module's own
+charter demands (*"What is checked is what a machine can be SURE of… a regex has no business
+guessing at it"*):
+
+- **A path with a parent directory in front of it.** `<dir>/scripts/x.py` is by construction not
+  `<this routine>/scripts/x.py`, the only path the `script` action resolves, so no step here can
+  be calling it. That covers `routine-improver`'s census of who holds an admission predicate
+  (`ls -1 ~/routines/*/scripts/…`) and any reference to another routine's own directory.
+- **The admission predicate's own name**, taken from `daemon/gate_prepare.ADMIT` rather than
+  restated as a literal — a recipe naming it is describing the platform's contract, typically a
+  step that installs the predicate *into another routine*.
+
+The second exclusion had to be corrected while being written, which is worth recording: the
+obvious spelling is `gate`, and `gate_prepare.py`'s own comment says why that is wrong — *"Not
+`gate`: three routines already run a `scripts/gate.py` as an IN-RUN check runner; ticking the
+gate would have failed every one of their fires."* The name is **`admit`**.
+
+So the notes that **remain** are true positives of a different defect: `routine-improver` and
+`config-optimizer` teach `scripts/gate.py` / `scripts/run_gate.py` in their recipes while the
+daemon's predicate is `admit`. Those are recipe defects for their owners, not lint noise.
+
+`tests/test_recipelint_scripts.py` is **new**: this check had no test file at all. 12 tests cover
+both true-positive directions, five parent-directory shapes, the one-note-per-name dedupe, a real
+call surviving on the same line as a globbed one, and — deliberately — that the exclusion honours
+the **live** `gate_prepare.ADMIT` constant rather than a copy of its current value, so a future
+rename cannot silently restore the bug.
+
+Not pinned, deliberately: a bare `scripts/x.py` inside a sentence whose *meaning* is "the
+target's own" still produces a note. A regex cannot read that sentence, and this module says it
+should not try.
+
 ## [0.382.1] — 2026-10-03
 
 ### Fixed — the ladder's three settings declare which half of a config change they are in

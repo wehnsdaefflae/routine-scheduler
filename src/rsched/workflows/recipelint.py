@@ -28,6 +28,7 @@ from pathlib import Path
 import frontmatter
 import yaml
 
+from ..daemon import gate_prepare
 from ..grants import GATED_KINDS
 from ..readmodels.statemap import STAGES_DIR
 
@@ -40,7 +41,20 @@ MIN_BLOCK = 100
 RESTATED_RATIO = 0.85
 
 _STAGE_REF = re.compile(r"stages/([A-Za-z0-9._-]+)\.md")
-_SCRIPT_REF = re.compile(r"scripts/([A-Za-z0-9_-]+)\.py")
+#: A `scripts/<name>.py` a step would CALL. The path must stand on its own: a parent directory
+#: in front of it means it is NOT `<this routine>/scripts/<name>.py` — the only thing the
+#: `script` action resolves — so it cannot be a call this routine makes. F533 measured both
+#: shapes on the live fleet: a glob over other routines (`ls -1 ~/routines/*/scripts/gate.py`,
+#: routine-improver's census of who holds a run-gate predicate) and another routine's own dir.
+_SCRIPT_REF = re.compile(r"(?<![\w*./~-])scripts/([A-Za-z0-9_-]+)\.py")
+#: The admission predicate's script name, which the DAEMON owns in every routine
+#: (`daemon/gate_prepare.ADMIT`). A recipe naming it is describing the platform's contract —
+#: typically a step that INSTALLS the predicate into another routine — not calling its own
+#: tooling, so "write it, or drop the step that calls it" is advice neither routine can take.
+#: F533 measured it on the live fleet: routine-improver's run-gate lens ("the predicate is the
+#: target's own", "check that filename is free before you write it") and config-optimizer's
+#: surface lens both discuss it, and neither owns a file by that name.
+_DAEMON_OWNED_SCRIPTS = frozenset({gate_prepare.ADMIT})
 #: An action kind a recipe names the way recipes name kinds — in backticks. Bare words are
 #: prose ("the filter script", "a shell-driven agent") and matching them is pure noise.
 _KIND_REF = re.compile(r"`([a-z_]+)`")
@@ -138,7 +152,8 @@ def _missing_scripts(routine_dir: Path, files: dict[str, str]) -> list[str]:
         notes.extend(f"{rel}: names `scripts/{name}.py`, which this routine does not have — "
                      f"write it, or drop the step that calls it"
                      for name in sorted(set(_SCRIPT_REF.findall(body)))
-                     if not (routine_dir / "scripts" / f"{name}.py").is_file())
+                     if name not in _DAEMON_OWNED_SCRIPTS
+                     and not (routine_dir / "scripts" / f"{name}.py").is_file())
     return notes
 
 
