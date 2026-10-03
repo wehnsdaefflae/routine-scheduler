@@ -32,6 +32,42 @@ def test_regex_problems_are_caught_at_the_write_gate(pattern, fragment):
     assert problem and fragment in problem
 
 
+@pytest.mark.parametrize("text", [None, "", "   ", 42])
+def test_a_description_that_says_nothing_is_refused(text):
+    """The caution IS what the hold shows you, so an empty one makes the reminder useless at
+    the only moment it exists for."""
+    problem = checks.description_problem(text)
+    assert problem and "what the consequence IS" in problem
+
+
+def test_a_description_at_the_cap_passes():
+    assert checks.description_problem("x" * checks.MAX_DESCRIPTION_CHARS) is None
+
+
+def test_an_over_long_description_is_refused_with_its_overflow_shown():
+    """F612: the cap rejects the WHOLE action, so the author re-composes from memory of what it
+    wrote. Measured 2026-10-03: 14 routines hit it across their last four runs, self-audit in
+    three consecutive runs, each losing a turn to a refusal that was accurate and unactionable.
+
+    Naming the count alone says "too long"; naming the TAIL says which sentence to drop. The cap
+    itself is unchanged — truncating silently would keep the turn and lose the author's last
+    sentence without telling anyone.
+    """
+    tail = "and this last sentence is the part that must go."
+    text = "y" * checks.MAX_DESCRIPTION_CHARS + tail
+    problem = checks.description_problem(text)
+    assert problem
+    assert f"is {len(text)} characters" in problem
+    assert f"at most {checks.MAX_DESCRIPTION_CHARS}" in problem
+    assert f"Cut {len(tail)} characters" in problem
+    assert tail in problem                      # the author can see exactly what to remove
+
+
+def test_one_character_over_the_cap_is_counted_in_the_singular():
+    problem = checks.description_problem("z" * (checks.MAX_DESCRIPTION_CHARS + 1))
+    assert problem and "Cut 1 character:" in problem
+
+
 @pytest.mark.parametrize(("pattern", "fragment"), [
     ("^script name=store", "renders as 'script:<name> <args…>'"),
     ("^shell rm -rf", "renders as 'shell: <command>'"),

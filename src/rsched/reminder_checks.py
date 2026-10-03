@@ -139,6 +139,16 @@ def description_problem(text: object) -> str | None:
         return ("remind.description must say what the consequence IS — the caution is what "
                 "the hold shows you")
     if len(text) > MAX_DESCRIPTION_CHARS:
+        # The refusal SHOWS the overflow — the characters past the cap, verbatim — because the
+        # whole action is rejected and the author must re-compose from its own memory of what it
+        # wrote. Measured 2026-10-03 (F612): 14 routines hit this cap across their last four
+        # runs, self-audit in three consecutive runs, each losing a turn to a refusal that was
+        # accurate and unactionable. Naming the count alone says "too long"; naming the TAIL says
+        # which sentence to drop. The cap itself is unchanged — a silent truncation would keep
+        # the turn and lose the author's last sentence without telling anyone.
+        over = len(text) - MAX_DESCRIPTION_CHARS
         return (f"remind.description is {len(text)} characters — at most "
-                f"{MAX_DESCRIPTION_CHARS}; one or two sentences")
+                f"{MAX_DESCRIPTION_CHARS}; one or two sentences. Cut {over} "
+                f"character{'' if over == 1 else 's'}: everything from "
+                f"…{text[MAX_DESCRIPTION_CHARS:].strip()!r} is past the cap")
     return None

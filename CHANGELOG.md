@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.380.1] — 2026-10-03
+
+### Fixed — the `remind.description` cap now shows the overflow, so the retry can see what to cut
+
+`reminder_checks.description_problem` rejects the whole action when a caution runs past
+`MAX_DESCRIPTION_CHARS` (400), and the refusal named only the count — so the author had to
+re-compose from its own memory of what it had just written. F612 measured the cost across every
+routine's last four runs: **14 routines hit it**, `self-audit` in three consecutive runs
+(20260930-223148, 20261001-223859, 20261002-223233), `scheduler-builder`, `freelance-radar`,
+`folder-reorg` and `moltbook-heartbeat` twice each, nine others once — each losing a turn to a
+refusal that was accurate and unactionable.
+
+The refusal now carries the **overflow verbatim**: how many characters to cut, and the tail past
+the cap, so the next attempt can drop the exact sentence instead of guessing. The cap itself is
+unchanged and nothing is truncated silently — a silent truncation would keep the turn and lose the
+author's last sentence without telling anyone, which is worse than a refusal. `workflows/lint.py`
+shares the same check, so a pattern in the library gets the same teaching message.
+
+Six new tests, where none covered the description cap before: the empty/non-string cases, a
+description exactly at the cap, the overflow case asserting the tail is shown, and the
+one-character-over case asserting the count reads in the singular.
+
 ## [0.380.0] — 2026-10-03
 
 ### Added — the escalation ladder is reachable: its knobs, its supervisor's recipe, and a hard skip instead of a silent degradation
