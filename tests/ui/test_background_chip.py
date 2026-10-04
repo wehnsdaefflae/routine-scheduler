@@ -108,6 +108,26 @@ def test_a_result_the_run_never_read_is_marked_as_such(ui, ui_page):
     expect(box.locator(".obs-collapse").nth(1)).to_have_class("obs-collapse obs-lost")
 
 
+def test_an_unread_result_does_not_read_as_an_ordinary_success(ui, ui_page):
+    """Caught in the RENDER, not by a test (2026-10-04): with only a border colour to carry it,
+    this row's summary read `result — websearch → exit 0 …` — character for character the
+    ordinary success beside it — and its body showed the output with no hint that nothing had
+    acted on it. A transcript is read by scanning summaries, so that row was a clean result to
+    every reader. The class assertion passed the whole time, because the class was never what
+    was wrong: assert the WORDS.
+    """
+    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.wait_for_selector("h1")
+    ui_page.evaluate(_FIXTURE, [_UNREAD, _LANDED])
+    rows = ui_page.locator("#bg .obs-collapse")
+    unread_summary = rows.nth(0).locator("summary").inner_text()
+    landed_summary = rows.nth(1).locator("summary").inner_text()
+    assert unread_summary != landed_summary, (
+        f"the unread row is indistinguishable from the resolved one: {unread_summary!r}")
+    assert "NEVER READ" in unread_summary.upper(), unread_summary
+    expect(rows.nth(0)).to_contain_text("nothing acted on this result")
+
+
 def test_an_abandoned_call_says_its_result_is_gone(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("h1")

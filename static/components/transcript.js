@@ -400,6 +400,18 @@ export function createTranscript(container, opts = {}) {
     } else if (o.background && o.abandoned) {
       text = `${o.kind} ${o.handle} was still running when the run ended — its result is lost`
         + (o.llm_calls_abandoned ? ` (${o.llm_calls_abandoned} model call(s) closed)` : "");
+    } else if (o.background && o.unread) {
+      // A result that LANDED after the run's last turn. Seen in the render (2026-10-04) and
+      // fixed there: with only a border colour to go on, this row's summary read
+      // `result — websearch → exit 0 …`, character for character the ordinary success above
+      // it, and its body `42 hits` said nothing about nobody having read them. A reader
+      // scanning summaries — which is how a transcript is read — saw a clean result and had
+      // no way to know the run never acted on it. The class assertion in the browser test
+      // passed throughout, because the class was never what was wrong.
+      text = `NEVER READ BY THE RUN — ${o.kind} ${o.handle} finished after the last turn, so `
+        + "nothing acted on this result:\n"
+        + (o.name ? `${o.name} → exit ${o.exit}\n` : "")
+        + (o.stdout || "") + (o.stderr ? `\n[stderr] ${o.stderr}` : "");
     } else if ((o.kind === "util" || o.kind === "script") && (o.pending_secrets || o.declined_secrets)) {
       // The secret gate stopped the call before it ran — no exit code exists, and rendering one
       // read as "exit undefined". Names only for a PENDING request (the run's own ask); a

@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.385.1] — 2026-10-04
+
+### Fixed — a background result nobody read no longer looks like an ordinary success (D118)
+
+Found by LOOKING at the rendered transcript rather than by a test, which is the whole reason the
+look is required. 0.384.0 gave an `unread` row — a backgrounded call that landed after the run's
+last turn, so nothing acted on its result — its own amber dashed border and nothing else. Its
+summary read
+
+    result — websearch → exit 0 …
+
+character for character the ordinary success beside it, and its body showed the output with no hint
+that the run never saw it. A transcript is read by scanning summaries, so to every reader that row
+was a clean result. The row now opens `NEVER READ BY THE RUN — util bg2 finished after the last
+turn, so nothing acted on this result:` and keeps the output beneath it.
+
+The browser test asserted the row's CLASS and passed throughout, because the class was never what
+was wrong. It now asserts the WORDS, and that the unread row's summary differs from the resolved
+one's — the assertion that would have caught this.
+
 ## [0.385.0] — 2026-10-04
 
 ### Fixed — a killed child tells the AUTHOR what killed it, not only the operator (F622)
