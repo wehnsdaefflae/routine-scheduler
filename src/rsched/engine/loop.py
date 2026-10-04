@@ -342,6 +342,15 @@ class EngineLoop:
         ctx.transcript.event("observation",
                              assist.recorded(self, mediaops.without_bytes(obs), fired),
                              turn=ctx.turn)
+        if obs.get("cancelled"):
+            # F586 / D160-C's second half: a person reached into this run and stopped ONE call.
+            # The observation above already carries the flag, but an observation records what
+            # the RUN was told; this records that somebody OUTSIDE the run intervened, which is
+            # exactly what an audit cannot reconstruct later — a cancelled call and a call that
+            # failed fast are indistinguishable in a record of outcomes alone.
+            ctx.transcript.event("action_cancelled",
+                                 {"kind": action["kind"], "brief": brief_value(action)[:200],
+                                  "exit": obs.get("exit")}, turn=ctx.turn)
         if self.admin_leg:
             # D62: the capability bypass is never silent — one audit line per action.
             from .admin import log_admin_action

@@ -273,6 +273,11 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .ev.error { background: var(--err-dim); color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 38%, transparent); }
 /* a flagged refusal is inspection material, not a hard failure — same palette, dashed */
 .ev.refusal { background: var(--err-dim); color: var(--err); border: 1px dashed color-mix(in srgb, var(--err) 38%, transparent); }
+/* A person stopped ONE call (F586 / D160-C). The INJECTION palette, because that is what it is
+   — somebody outside the run reaching in — and not the error one: nothing failed. Solid, not
+   the refusal's dashed border, which this system uses for "nothing is known about this work";
+   a cancel is the opposite, the one ending we know the reason for. */
+.ev.cancelled { background: var(--signal-dim); color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 55%, transparent); text-align: center; }
 .ev.subrun { background: var(--plate-3); color: var(--iris); border: 1px solid var(--rule-2); }
 .ev.subrun summary { cursor: pointer; }
 .ev.compaction, .ev.system { background: transparent; color: var(--ink-3); text-align: center; border: none; }

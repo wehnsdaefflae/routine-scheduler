@@ -1,8 +1,10 @@
 """Run transcript: append-only JSONL, line-buffered, plus an offset-based reader/tailer.
 
-The event vocabulary is a CONTRACT consumed by the web renderer and the meta routine — the
-fourteen types in `EVENT_TYPES` below. An unknown type reads as corruption to both, so the
+The event vocabulary is a CONTRACT consumed by the web renderer and the meta routine — every
+type in `EVENT_TYPES` below and no other. An unknown type reads as corruption to both, so the
 tuple and both readers are extended together, never one alone, and no type is repurposed.
+(This line used to state the count in words. It said "fourteen" while the tuple held 18, which
+is what a written-out count does: `EVENT_TYPES` is the number, and `len()` is how to ask.)
 """
 
 from __future__ import annotations
@@ -33,6 +35,13 @@ EVENT_TYPES = (
     # directive's TEXT reaches the worker as a `user_injection` on the `oversight` channel, so
     # `oversight_directive` records the VERDICT, not the prose.
     "oversight_dispatch", "oversight_directive", "oversight_skipped", "oversight_no_directive",
+    # A PERSON stopped the call of one turn (F586, decided as D160-C: "B plus a transcript
+    # event, so an audit of the run afterwards SEES the human intervention instead of inferring
+    # it from a gap"). The observation already carries `cancelled`, but an observation says what
+    # the RUN was told; this says that somebody outside the run reached in, which is the thing
+    # an audit cannot reconstruct afterwards — a cancelled call and a call that failed fast look
+    # the same in a transcript that records only outcomes.
+    "action_cancelled",
 )
 
 

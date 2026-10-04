@@ -645,6 +645,13 @@ export function createTranscript(container, opts = {}) {
     oversight_no_directive: (ev) => el("div", { class: "ev compaction", "data-oversight-none": "" },
       `— ↑ rung ${ev.payload?.rung ?? "?"} handed back no directive`
       + `${ev.payload?.status ? ` (child ${ev.payload.status})` : ""} —`),
+    // A person stopped ONE call (F586 / D160-C). The INJECTION palette (views.css .ev.cancelled),
+    // because that is what it is — somebody outside the run reaching in — and not the error one:
+    // nothing failed. The record exists precisely so a reader afterwards can tell this apart
+    // from a call that died on its own, which a transcript of outcomes alone cannot show.
+    action_cancelled: (ev) => el("div", { class: "ev cancelled", "data-action-cancelled": "" },
+      `— ✕ cancelled by the user: ${ev.payload?.kind ?? "?"}`
+      + `${ev.payload?.brief ? ` · ${ev.payload.brief}` : ""} —`),
     header: (ev) => el("div", { class: "ev system" },
       // every half falls back — the workflow one always did, and the model one printed a
       // literal "undefined:undefined" on any header without an orchestrator block (a

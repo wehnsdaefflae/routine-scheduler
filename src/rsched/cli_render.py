@@ -63,6 +63,9 @@ def _render_event(obj: dict) -> str:  # noqa: PLR0911 — one return per event t
         return f"    ↑ oversight{rung} skipped: {p.get('reason') or 'no reason recorded'}"
     if t == "oversight_no_directive":
         return f"    ↑ rung {p.get('rung')} handed back no directive ({p.get('status')})"
+    if t == "action_cancelled":
+        brief = f" · {p['brief']}" if p.get("brief") else ""
+        return f"    ✕ cancelled by the user: {p.get('kind')}{brief}"
     if t == "error":
         return f"    ✗ error ({p.get('where')}): {p.get('message', '')[:120]}"
     if t == "compaction":

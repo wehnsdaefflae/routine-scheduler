@@ -402,8 +402,10 @@ one you are about to touch, not all of them.
 - **Transcript events** (`engine/transcript.py` `EVENT_TYPES` — append-only JSONL, the engine is
   the only writer): `header, assistant_action, observation, question, answer, user_injection,
   subrun_start, subrun_end, compaction, error, refusal, stopping_update, stages_skipped, finish,
-  oversight_dispatch, oversight_directive, oversight_skipped, oversight_no_directive`
-  (18 — the last four are the escalation ladder's, `engine/ladder.py`). This vocabulary is
+  oversight_dispatch, oversight_directive, oversight_skipped, oversight_no_directive,
+  action_cancelled`
+  (19 — `oversight_*` are the escalation ladder's, `engine/ladder.py`; `action_cancelled` is a
+  person stopping ONE call, F586/D160-C, written by `engine/loop._observe`). This vocabulary is
   consumed by the web renderer AND the meta routine, so an unknown kind
   reads as corruption: extend the tuple and both readers together, never one alone.
   `Transcript.event` ASSERTS membership, so a type the tuple does not carry is not a rendering
