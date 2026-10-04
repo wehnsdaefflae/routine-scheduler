@@ -318,7 +318,10 @@ export function createTranscript(container, opts = {}) {
         el("pre", { class: "hl-json" }, highlightJson(JSON.stringify(a, null, 1)))),
       referBtn(`turn ${ev.turn ?? "?"} (${a.kind}${a.kind === "util" && a.name ? ` ${a.name}` : ""})`,
         a.say || brief));
-    const clock = actionTime(ev, opts.isLive);
+    // F586/D160-C: the × that stops a running util/script/shell call. The view supplies the
+    // POST (opts.cancelAction); actionTime decides when the control may show itself, because it
+    // is what knows the row is still running and the view is live.
+    const clock = actionTime(ev, opts.isLive, opts.cancelAction);
     turn.append(clock.node);
     root.append(turn);
     openClock = clock;

@@ -1511,7 +1511,16 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   run told "timed out" sensibly retries, and retrying the call somebody just stopped is the one
   behaviour the feature exists to prevent. Cancel outranks abort outranks timeout when more than
   one is true at a single look. A cancelled call is no more a util failure than an aborted one:
-  no reliability tick, no `usage` block, no repair route (`executor._ended_by_a_person`).
+  no reliability tick, no `usage` block, no repair route (`executor._ended_by_a_person`). The
+  intervention also leaves its own transcript record, `action_cancelled` (written by
+  `loop._observe` off that flag), because an observation says what the RUN was told while an
+  audit afterwards needs to see that somebody outside it reached in — a cancelled call and a
+  call that failed fast are otherwise indistinguishable in a record of outcomes. The control is
+  the ✕ on the running action's row (`components/actiontime.js`, which is where the two facts it
+  needs already live: the view is live, and this call has not ended). It is offered only for
+  `util` / `script` / `shell` — the kinds that run a jailed child the engine polls — and takes
+  itself away the moment the observation lands, since its turn is then in the past and the
+  endpoint keys by turn.
 
 ## Git writes (libgit.py, gitlock.py)
 

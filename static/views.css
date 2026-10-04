@@ -8,6 +8,16 @@
 .action-time-bar::-webkit-progress-value { background: var(--signal); border-radius: 3px; }
 .action-time.running .action-time-bar::-webkit-progress-value { transition: width 250ms linear; }
 .action-time-label { font-variant-numeric: tabular-nums; }
+/* The ✕ that stops the RUNNING call (F586 / D160-C, components/actiontime.js). Quiet until it is
+   reached for: it sits on every running row, so a permanently red button would read as an alarm
+   about ordinary work. The destructive colour arrives on hover/focus, where the intent is. */
+.action-cancel { margin-left: auto; padding: 0 7px; line-height: 1.6; font-size: 12px;
+  background: transparent; color: var(--ink-3); border: 1px solid var(--rule-2);
+  border-radius: var(--r2); cursor: pointer; }
+.action-cancel:hover:not(:disabled), .action-cancel:focus-visible {
+  color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, transparent);
+  background: var(--err-dim); }
+.action-cancel:disabled { cursor: progress; opacity: 0.6; }
 @media (prefers-reduced-motion: reduce) {
   .action-time.running .action-time-bar::-webkit-progress-value { transition: none; }
 }

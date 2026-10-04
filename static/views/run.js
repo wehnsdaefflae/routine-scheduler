@@ -527,6 +527,10 @@ export async function render(view, runId, query = {}) {
     loadSub: (n, o) => api(`/api/runs/${runId}/transcript?sub=${n}&offset=${o}`),
     isLive: runLive,
     onRefer: setRef,
+    // …and the running call gets its ✕ (F586, decided as D160-C). The TURN is what travels, so
+    // a cancel can never land on the call after the one the operator was looking at.
+    cancelAction: (turn) =>
+      api(`/api/runs/${runId}/cancel-action`, { method: "POST", body: { turn } }),
     // message attachments render inline: the run file route serves attachments/ rels
     fileUrl: (rel) => `/api/runs/${runId}/file?path=${encodeURIComponent(rel)}`,
   });
