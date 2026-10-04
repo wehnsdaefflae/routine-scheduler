@@ -25,7 +25,13 @@ export function actionTime(ev, isLive = () => false, cancelAction = null) {
   // The turn is what the cancel travels as (the endpoint keys it, so a cancel can never land on
   // the NEXT call), which means a row without a turn cannot offer the control at all.
   const turn = Number.isFinite(Number(ev.turn)) ? Number(ev.turn) : null;
-  const cancelable = cancelAction && turn !== null && CANCELLABLE.includes(action.kind);
+  // `isLive()` is answerable right now, so a REPLAYED row never builds the control at all
+  // rather than building it hidden. Absent is a stronger guarantee than hidden: a hidden button
+  // is still in the DOM, still in the keyboard focus order, and still one `hidden = false` away
+  // from offering a cancel for a turn that ended weeks ago. (The run rail learned the same thing
+  // the hard way — `rail.toggle(name, false)` only sets `cap.hidden` and the element stayed.)
+  const cancelable = cancelAction && turn !== null && CANCELLABLE.includes(action.kind)
+    && isLive();
   const cancel = cancelable
     ? el("button", { class: "action-cancel", type: "button", hidden: true,
         title: `Stop this ${action.kind} call (turn ${turn}). The run itself carries on.`,

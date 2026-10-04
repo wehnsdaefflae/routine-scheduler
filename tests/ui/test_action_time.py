@@ -74,9 +74,17 @@ def test_the_cancel_is_absent_where_there_is_no_call_to_stop(ui, ui_page):
                               {kind:'read_file', path:'note.md', say:'x'});
       window.noHandler = mk({isLive: () => true}, {kind:'shell', command:'sleep 9', say:'x'});
     }""")
+    # ABSENT, not merely hidden. A hidden button is still in the DOM, still in the keyboard
+    # focus order, and one `hidden = false` away from offering a cancel for a turn that has
+    # long since passed — so the count is the assertion, and this is what caught the first
+    # draft of the component building the control for a replayed row and hiding it.
     for box in ("notLive", "notAProcess", "noHandler"):
         count = ui_page.evaluate(f"window.{box}.querySelectorAll('.action-cancel').length")
         assert count == 0, f"{box} offered a cancel there is no running process for"
+        visible = ui_page.evaluate(
+            f"[...window.{box}.querySelectorAll('.action-cancel')]"
+            f".filter((b) => b.offsetParent !== null).length")
+        assert visible == 0, f"{box} SHOWS a cancel there is no running process for"
 
 
 def test_a_failed_cancel_does_not_read_as_a_successful_one(ui, ui_page):
