@@ -177,8 +177,8 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # state: this function has no business knowing their field names, and the statement
     # ceiling said so before the fourth one landed. (A resumed leg's boot then re-seeds the
     # once-only ledgers among them from the transcript — engine/guardscope.py.)
-    from . import archival, assist, hold, recall, remind
-    for layer in (hold, remind, assist, recall, archival):
+    from . import archival, assist, background, hold, recall, remind
+    for layer in (hold, remind, assist, recall, archival, background):
         layer.configure(loop)
     # Once the conversation has been archived to on-disk history, the model is reminded
     # to consult its index — right after each compaction, then every 10th turn (NOT every

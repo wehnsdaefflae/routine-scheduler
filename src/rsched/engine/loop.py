@@ -26,6 +26,7 @@ from . import (
     actionroute,
     archival,
     assist,
+    background,
     finishgate,
     hold,
     loopend,
@@ -248,6 +249,11 @@ class EngineLoop:
         # …and a background archival that finished since the last turn
         # announces itself here, where the message list is appended to.
         archival.collect(self)
+        # …as does a BACKGROUNDED ACTION whose real observation has landed (D118 phase 1):
+        # the run marked a read or a fetch `background`, got its turn back at once, and this
+        # is where the actual observation arrives — the same start-now/collect-later shape
+        # `announce_finished_subruns` above uses for a child run, sized to one action.
+        background.collect(self)
 
     def _land(self, action: dict, usage: dict) -> None:
         """The accepted action becomes the turn: counted, recorded with the phase it was

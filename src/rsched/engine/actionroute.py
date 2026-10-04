@@ -7,6 +7,7 @@ import logging
 from . import (
     admin_handlers,
     authoring,
+    background,
     create_routine,
     detach,
     executor,
@@ -36,6 +37,14 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
     not a failure, and passes through, as does every BaseException (an interpreter exit).
     """
     try:
+        if action.get("background"):
+            # D118 phase 1: a read or a fetch the run asked not to wait for. It starts in a
+            # thread and the turn comes back AT ONCE; the real observation is appended at a
+            # later turn boundary (engine/background.py). Which kinds may do this is
+            # `actions.BACKGROUNDABLE_KINDS`, enforced by `validate_action` inside the
+            # schema-retry cycle — so an action reaching here with the flag has already been
+            # judged safe to defer, and this branch does not re-litigate it.
+            return background.start(loop, action, ctx)
         return _route(loop, action, ctx)
     except RunAborted:
         raise

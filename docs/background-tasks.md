@@ -89,13 +89,45 @@ is idempotent and driven from disk, so a task that finished just before the exit
 - A detached run's transcript / task-tree resolve on the generic `/api/runs/{run_id}` endpoints
   (`_run_dir` searches `background_home` too).
 
+## A single action in the background — `background: true`
+
+The other half of backgrounding, and the opposite end of the scale from `detach`: not a whole job
+deserving its own run, but ONE slow step the run should not sit through. A read or a fetch marked
+`background: true` starts in a thread, returns a *started* observation naming a handle on the same
+turn, and its REAL observation is appended at a later turn boundary, tagged with that handle. The
+context is unchanged — same run, same budget, same conversation — which is precisely what `detach`
+cannot offer.
+
+- **Which kinds.** `engine/actions.BACKGROUNDABLE_KINDS`: `util`, `script`, `shell`, `llm`,
+  `read_file`, `view_image`, `memory_read`, `read_rule`. Every one is a read or a fetch whose only
+  effect is its observation. A mutation (`write_file`, `edit_file`, `write_util`, `memory_write`, …)
+  is REFUSED with its reason inside the schema-retry cycle, because a later synchronous action
+  would read what the deferred one has not written yet; widening that needs a dependency/barrier
+  model. A control kind (`finish`, `ask_user`, `report`, `spawn`, `subtask`, `wait`, `kill`) is
+  refused too — it either steers the run or is already asynchronous in its own right.
+- **The mechanics** live in `engine/background.py`, shaped on `engine/archival.py` rather than on
+  the detached machinery above: `configure` / `start` / `collect` / `settle`. `actionroute.dispatch_action`
+  intercepts the flagged action; `loop._turn_boundary` calls `collect`, which appends the real
+  observation where every other boundary feed appends; `loopend.finish_run` calls `settle`.
+- **The thread runs the ORDINARY dispatch path** (`executor.dispatch`), so a backgrounded `util` is
+  the same call it would have been synchronously — there is no second code path to keep in step.
+- **Nothing vanishes.** A background call that RAISES delivers an error observation like any other.
+  One that lands with no turn left to read it is recorded with `unread: true`. One still running at
+  run end is recorded `abandoned: true`, its in-flight model calls closed through
+  `instrument.abandon_open_calls`, and named in the run's own summary — a result the run never read
+  is a loss only a reader of the result can judge.
+- **No new transcript event types**: the started record and the real observation are both
+  `observation` events carrying `background` and `handle` (plus `started_turn` on the delivery).
+
 ## Contrast with subtasks/subruns
 
 | | lives | blocks the reply | reports via | survives reply-finish |
 |---|---|---|---|---|
+| `background: true` (one action) | a thread in the reply | no (the turn returns at once) | the turn-boundary collector | no |
 | `subtask` (sequential) | a thread in the reply | no (you `wait`) | the finished-hook / `wait` | no |
 | `spawn` (parallel) | a thread in the reply | no | the finished-hook | no |
 | `detach` (background) | its OWN daemon process | no (you `finish`) | an inbox message + wake | **yes** |
 
 Reach for `detach` only when a job is genuinely long and independent; anything you can finish within the
-reply should stay a direct step or a `subtask`.
+reply should stay a direct step or a `subtask`. Reach for `background: true` when the step belongs in
+THIS context and only its waiting is the problem.

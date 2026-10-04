@@ -112,11 +112,31 @@ KIND_EXAMPLES: dict[str, dict] = {
                "summary": "<detailed 8-20 line result summary>"},
 }
 
+# The kinds a run may mark `background: true` (D118 phase 1). Every member is a READ or a
+# FETCH whose only effect is the observation it returns, which is what makes deferring it safe:
+# the one-action-per-turn contract exists to keep STATE CHANGES ordered, and these change no
+# state a later action could read stale. Deliberately NOT here:
+#   · the mutations — write_file, edit_file, write_util, remove_util, memory_write, write_rule,
+#     delete, move, mkdir — where a later synchronous action would read what the background
+#     call has not written yet (that needs the dependency/barrier model, D118 phase 3);
+#   · the control kinds — finish, ask_user, report, spawn, subtask, wait, kill, detach,
+#     create_routine, manage_lane, schedule_run — which either steer the run (so they must be
+#     synchronous) or are already asynchronous in their own right (the children).
+# `shell` IS here, as the one member worth arguing about: a shell command can obviously write.
+# It is included because the design's motivating example — a ten-minute test run — reaches the
+# host through `shell`/`script`, and because the alternative is a run that backgrounds its
+# reads and still sits for the one call that actually takes minutes. The honest statement of
+# the rule, then: these kinds are backgroundable, and marking a WRITING shell command
+# `background` is the caller's own ordering hazard, the same one it already owns when it runs a
+# write through a util.
+BACKGROUNDABLE_KINDS = ("util", "script", "shell", "llm",
+                        "read_file", "view_image", "memory_read", "read_rule")
+
 # kind → (required fields, allowed extra fields beyond say/kind)
 KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "util": (("name",), ("args", "timeout_s")),
-    "script": (("name",), ("args", "timeout_s")),
-    "shell": (("command",), ("timeout_s", "path")),
+    "util": (("name",), ("args", "timeout_s", "background")),
+    "script": (("name",), ("args", "timeout_s", "background")),
+    "shell": (("command",), ("timeout_s", "path", "background")),
     "write_util": (("name",), ("content", "path", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
@@ -124,18 +144,18 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                        ("workflow", "pattern", "setup", "done_when", "finish_line", "never")),
     "manage_lane": (("verb",), ("target", "name", "members", "on_failure", "cron",
                                  "paused")),
-    "read_file": ((), ("path", "paths", "start_line", "max_lines")),
-    "view_image": ((), ("path", "paths", "prompt")),
+    "read_file": ((), ("path", "paths", "start_line", "max_lines", "background")),
+    "view_image": ((), ("path", "paths", "prompt", "background")),
     "write_file": (("path", "content"), ("append",)),
     "delete": (("path",), ("recursive",)),
     "move": (("src", "dst"), ()),
     "mkdir": (("path",), ("parents",)),
     "edit_file": (("path", "anchor"), ("replacement", "all")),
-    "memory_read": (("name",), ()),
+    "memory_read": (("name",), ("background",)),
     "memory_write": (("name",), ("content", "about", "delete")),
-    "read_rule": (("name",), ()),
+    "read_rule": (("name",), ("background",)),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
-    "llm": (("prompt",), ("system", "response_schema", "model")),
+    "llm": (("prompt",), ("system", "response_schema", "model", "background")),
     "spawn": (("prompt",), ("workflow", "label", "model")),
     "subtask": (("prompt",), ("workflow", "label", "turns", "model")),
     "detach": (("prompt",), ("workflow", "label")),
@@ -198,6 +218,14 @@ def normalize_action(obj: dict) -> dict:
                        for f in req)
         if complete:
             allowed = {"say", "kind", *SIDE_FIELDS, *req, *opt}   # side fields ride ANY kind
+            # …except `background` on a kind that may not defer (D118 phase 1). Dropping it
+            # here is the one silent failure this field must never have: the action would run
+            # SYNCHRONOUSLY while the model believes it was deferred, and nothing would say
+            # so — measured on this very path, where `write_file` + background validated
+            # clean. Keeping it makes `validate_action` refuse it with the reason, inside the
+            # schema-retry cycle, so the turn is corrected rather than quietly reinterpreted.
+            if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
+                allowed.add("background")
             out = {k: v for k, v in out.items() if k in allowed}
     return out
 
@@ -398,7 +426,20 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     # kind), so this runs outside the ALWAYS_KINDS exemption above: a `remind` on a `report`
     # must meet the same bar as one on a `util`.
     problems += reminder_field_problems(obj, grants)
+    # `background` is refused on the kinds that may not defer, with the REASON and the list
+    # (D118 phase 1). The stray-field check below would already reject it — but as one name
+    # inside "fields [...] do not belong to kind=write_file (allowed: [thirty names])", which
+    # teaches the model nothing about why deferring a write is unsafe, and a retry that does
+    # not know the rule spends the same turn again.
+    if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
+        problems.append(
+            f"kind={kind} cannot run in the background: only reads and fetches may be "
+            f"deferred ({', '.join(BACKGROUNDABLE_KINDS)}), because a later action would "
+            f"otherwise read state this one has not finished changing. Drop 'background' and "
+            f"run it synchronously")
     allowed = {"say", "kind", *SIDE_FIELDS, *required, *optional}   # side fields ride ANY kind
+    if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
+        allowed.add("background")   # the specific refusal above said it; don't say it twice
     stray = [k for k in obj if k not in allowed]
     if stray:
         problems.append(

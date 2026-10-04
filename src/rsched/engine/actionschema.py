@@ -182,6 +182,22 @@ ACTION_SCHEMA: dict = {
                            "shell: seconds before the command is killed (default 120) · "
                            "wait: max seconds to block (default 600)",
         },
+        "background": {
+            "type": "boolean",
+            "description": "util/script/shell/llm/read_file/view_image/memory_read/read_rule: "
+                           "this call is a READ or a FETCH, so run it in the "
+                           "BACKGROUND and get the turn back at once. The observation you "
+                           "receive names a handle and says the call is running; the REAL "
+                           "observation is appended at a later turn boundary, tagged with "
+                           "that handle. Use it for a call that would make a waiting human "
+                           "sit — a heavy fetch, a long `llm`, a slow test run — and keep "
+                           "working or keep talking meanwhile. NOT available on anything that "
+                           "writes (write_file, edit_file, write_util, memory_write) or that "
+                           "steers the run (finish, ask_user, report, spawn, subtask, wait, "
+                           "kill): a later action would read state the background call has "
+                           "not written yet. Do not background a call whose result your VERY "
+                           "NEXT action needs — you would only have to wait for it anyway",
+        },
         "command": {
             "type": "string",
             "description": "shell: the ONE command line to run, as a single string — it is "

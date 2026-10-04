@@ -145,6 +145,16 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
     kind = obs.get("kind")
     if (not_run := _not_executed(obs, str(kind or ""))) is not None:
         return not_run
+    if obs.get("background") and obs.get("started"):
+        # D118 phase 1: the call was HANDED to a background thread, so it has produced nothing
+        # yet — no exit code, no stdout, none of the fields its kind's own renderer reads. It
+        # must be rendered here, ABOVE the per-kind chain, for the same reason `_not_executed`
+        # is: a renderer that assumes its kind's output shape raises on an observation that
+        # has no output yet, and a KeyError in here kills the engine mid-turn (and every later
+        # resume, which re-renders the stored observation). The real observation arrives later
+        # and is rendered by its kind's own branch, in the ordinary way.
+        return (f"OBSERVATION ({kind} STARTED IN THE BACKGROUND as "
+                f"`{obs.get('handle')}`): {obs.get('note') or ''}").rstrip()
     if kind == "shell":
         # No advisory tail: a non-zero exit here is usually the answer, not a mistake (do_shell).
         where = f", in {obs['cwd']}" if obs.get("cwd") else ""
