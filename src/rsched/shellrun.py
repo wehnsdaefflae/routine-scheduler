@@ -37,11 +37,15 @@ SHELL_DEFAULT_TIMEOUT_S = 120
 
 def run_shell(command: str, *, policy: sandbox.SandboxPolicy, libraries_home: Path,
               cwd: Path, timeout: int = SHELL_DEFAULT_TIMEOUT_S,
-              aborted: Callable[[], bool] | None = None) -> dict:
+              aborted: Callable[[], bool] | None = None,
+              cancelled: Callable[[], bool] | None = None) -> dict:
     """Run ONE command through `bash -c` inside the run's jail. Returns
-    {exit, stdout, stderr, truncated, timed_out, aborted} — never raises for the command's own
-    failure, which is data the run must see, not an engine error. `aborted` is the run's own
-    abort check: the command ends with its run (`utils_run.run_jailed`).
+    {exit, stdout, stderr, truncated, timed_out, aborted, cancelled} — never raises for the
+    command's own failure, which is data the run must see, not an engine error. `aborted` is
+    the run's own abort check: the command ends with its run (`utils_run.run_jailed`).
+    `cancelled` is the per-call one (F586/D160): a person stopped THIS command and the run
+    carries on, which the dict reports as its own flag beside `timed_out` and `aborted`
+    because the three endings call for three different next moves.
 
     The library root is on PATH (and `GLOBAL_UTILS_HOME` is set) because it always was: the
     jail mounts the library read-only for every callable kind, so a command could reach `gu`
@@ -49,7 +53,7 @@ def run_shell(command: str, *, policy: sandbox.SandboxPolicy, libraries_home: Pa
     """
     if not command.strip():
         return {"exit": 2, "stdout": "", "stderr": "empty command", "truncated": False,
-                "timed_out": False, "aborted": False}
+                "timed_out": False, "aborted": False, "cancelled": False}
     env = scoped_env(set())          # no declared secrets: the store is scrubbed wholesale
     env["PATH"] = f"{libraries_home}:{env.get('PATH', '')}"
     env["GLOBAL_UTILS_HOME"] = str(libraries_home)
@@ -58,10 +62,11 @@ def run_shell(command: str, *, policy: sandbox.SandboxPolicy, libraries_home: Pa
                            libraries_home=libraries_home, net=True, fs_roots=True, fs_paths=())
     except sandbox.SandboxRefusal as exc:
         return {"exit": 2, "stdout": "", "stderr": str(exc), "truncated": False,
-                "timed_out": False, "aborted": False}
+                "timed_out": False, "aborted": False, "cancelled": False}
     res = run_jailed(cmd, env=env, cwd=cwd, timeout=timeout, label="the command",
-                     config_seal=policy.own_dir, aborted=aborted)
+                     config_seal=policy.own_dir, aborted=aborted, cancelled=cancelled)
     return {"exit": res.exit_code,
             "stdout": res.stdout, "stderr": res.stderr,
             "truncated": res.stdout.capture_truncated or res.stderr.capture_truncated,
-            "timed_out": res.timed_out, "aborted": res.aborted}
+            "timed_out": res.timed_out, "aborted": res.aborted,
+            "cancelled": res.cancelled}

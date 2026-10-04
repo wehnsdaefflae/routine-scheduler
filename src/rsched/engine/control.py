@@ -5,16 +5,18 @@ rule bindings, a live config change — are `switches.py`.
 
 Everything here runs BETWEEN turns and mutates only the loop's message list / context —
 never the model call itself. control.json stays web-owned: the engine only reads it (here, its
-`pause`) and reacts at the next turn boundary. The abort flag is the one thing read MID-turn as
-well: a util, script or shell command in flight asks it through `RunContext.aborted` and ends
-with the run (`utils_run.run_jailed`) — the command's own session keeps every abort signal away
-from it.
+`pause`) and reacts at the next turn boundary. Two things are read MID-turn as well, both by a
+util, script or shell command in flight: the abort flag, which it asks through
+`RunContext.aborted` and ends the whole run with (`utils_run.run_jailed`; the command's own
+session keeps every abort signal away from it), and control.json's `cancel_action`, which
+`cancelled_for_turn` turns into the per-call cancel — one call stopped, the run carrying on.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 
 from .. import reports
 from ..paths import read_json
@@ -75,6 +77,51 @@ def pause_gate(loop, poll_s: float) -> None:
         # booked as active wall-clock in the final status
         ctx.credit_suspended(time.monotonic() - started)
     ctx.write_status("running")
+
+
+def cancelled_for_turn(ctx) -> Callable[[], bool]:
+    """The per-call cancel check a jailed command polls (F586, decided as D160-C): control.json's
+    `cancel_action` names the TURN whose call the operator stopped, and this returns True only
+    while that turn is the one running.
+
+    KEYED BY TURN, and that is the whole safety property. A bare `{"cancel": true}` flag is read
+    by whatever call is in flight when the engine next looks — which, for a cancel clicked just
+    as a long call finishes, is the NEXT call, one the operator never asked to stop. The turn is
+    what the UI's red × already knows (it renders a specific action's row), so the intent
+    travels as "stop the call of turn N" and expires by itself.
+
+    It is a POLLED FILE READ, not the abort's mechanism: `request_abort`'s flag is process-wide
+    and set by a signal handler, while a cancel arrives from the web with the engine blocked
+    inside `run_jailed`'s wait — there is no signal and no turn boundary to read it at. So this
+    mirrors `pause_gate` above: `paths.read_json` on the run's own control.json, which is
+    web-owned and engine-read. A missing or malformed file reads as "not cancelled" — the file
+    is advisory, and a command must never be killed by a parse error. So does a value that is
+    not a plain int, BOOLS INCLUDED: `True == 1` in Python, so a bare `{"cancel_action": true}`
+    would otherwise stop turn 1's call. And a context with no run dir at all (a test, a CLI
+    call) never cancels, the way `run_context._never_aborted` answers for the abort.
+    """
+    run_dir = getattr(ctx, "root_run_dir", None)
+    turn = getattr(ctx, "turn", 0)
+    if run_dir is None:
+        # A context no loop drives (a test, a CLI call, a selftest) has no run dir to read, and
+        # the right answer there is `_never_aborted`'s: never cancelled. Raising instead would
+        # make the cancel's presence break every caller that never had one.
+        return lambda: False
+    control = run_dir / "control.json"
+
+    def cancelled() -> bool:
+        wanted = read_json(control)
+        if not isinstance(wanted, dict):
+            return False
+        value = wanted.get("cancel_action")
+        # `isinstance(True, int)` and `True == 1` are both true in Python, so a BARE FLAG —
+        # exactly the `{"cancel_action": true}` shape this design rejects — would otherwise
+        # cancel turn 1's call. Found by this step's own test, not by review.
+        if isinstance(value, bool) or not isinstance(value, int):
+            return False
+        return value == turn
+
+    return cancelled
 
 
 def inject_user_message(loop, m: dict) -> None:

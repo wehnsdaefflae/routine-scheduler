@@ -1495,6 +1495,23 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   SIGKILL to the backstop `terminate` armed, so a stop during a model call is never made to wait
   out a grace sized to the disk. Lengthening the daemon's grace to "fix" the order would cost
   exactly that.
+- **Cancelling the one CALL that is running**, without ending the run (F586, decided as D160-C):
+  `POST /api/runs/{id}/cancel-action` with the turn, which the web records as control.json
+  `cancel_action` — the one intent in that file the engine reads MID-turn, because it is blocked
+  inside the very call the cancel must stop and would otherwise apply it at a boundary reached
+  only after that call had ended. `engine/control.cancelled_for_turn` turns it into the
+  `cancelled` callback `run_jailed` polls on the SAME quarter-second look as the abort check, so
+  the hottest process runner in the system grows no second wait. It is KEYED BY TURN and that is
+  the correctness: a bare flag is read by whichever call is in flight when the engine next looks,
+  which for a cancel clicked as a long call ends is the NEXT call, one nobody asked to stop. A
+  turn number the run has passed can never match again, so nothing has to clear the flag. The
+  outcome is its own, never the deadline's: exit `CANCEL_EXIT` (125, positive so
+  `executor._note_if_killed` does not file a `util_killed` health event for a human act), the
+  observation flag `cancelled`, and a note saying a person stopped this call deliberately — a
+  run told "timed out" sensibly retries, and retrying the call somebody just stopped is the one
+  behaviour the feature exists to prevent. Cancel outranks abort outranks timeout when more than
+  one is true at a single look. A cancelled call is no more a util failure than an aborted one:
+  no reliability tick, no `usage` block, no repair route (`executor._ended_by_a_person`).
 
 ## Git writes (libgit.py, gitlock.py)
 

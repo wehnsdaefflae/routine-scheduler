@@ -413,7 +413,8 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
              extra_secrets: dict[str, str] | None = None,
              withhold_secrets: set[str] | None = None,
              cwd: Path | None = None,
-             aborted: Callable[[], bool] | None = None) -> tuple[int, str, str]:
+             aborted: Callable[[], bool] | None = None,
+             cancelled: Callable[[], bool] | None = None) -> tuple[int, str, str]:
     """Controlled runner: only a named util from THIS library, uv-run, scoped env (declared
     secrets only, plus any `extra_secrets` the engine resolved for this run — same declared-only
     rule), library root on PATH (so the util can call siblings via `gu`), inside the Landlock jail
@@ -422,7 +423,10 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     run-scoped calls, so relative paths a routine passes to a util resolve against ITS dir like
     read_file/write_file do — or the library `home` when unset (CLI, selftest, notify, settings).
     A call made inside a run passes the run's `aborted` check, so the util ends with its run
-    (`run_jailed`); a caller outside any run passes none. Returns (exit, out, err).
+    (`run_jailed`); a caller outside any run passes none. `cancelled` is the narrower of the
+    two (F586/D160): the run carries on, only THIS call is stopped, and it reports
+    `CANCEL_EXIT` so the run is told a person stopped it rather than that it timed out.
+    Returns (exit, out, err).
     """
     if not is_slug(name):
         return 2, "", f"invalid util name {name!r}"
@@ -470,7 +474,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # bounded read; `exit_code` maps a deadline and an abort to their own codes, the same two
     # for all three kinds.
     res = run_jailed(cmd, env=env, cwd=cwd or home, timeout=timeout, label=f"util {name!r}",
-                     config_seal=policy.own_dir, aborted=aborted,
+                     config_seal=policy.own_dir, aborted=aborted, cancelled=cancelled,
                      secrets=injected_secrets(env, extra_secrets))
     return res.exit_code, res.stdout, res.stderr
 

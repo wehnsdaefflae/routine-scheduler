@@ -1,4 +1,4 @@
-"""CONTROLLING a run in flight — inject, converse, pause, switch, rewind, abort.
+"""CONTROLLING a run in flight — inject, converse, pause, switch, rewind, cancel a call, abort.
 
 Split out of `api_runs.py` (F393): reading a run and steering one are different jobs, and only
 these routes write.
@@ -7,6 +7,11 @@ They share one discipline worth stating once: the WEB layer records an intent an
 acts on it. A model or deliberation switch, or a newly bound rule, goes into the run's
 `control.json` and is applied at the next turn boundary — never written into the run's state
 from out here, because the engine is the single writer of everything under `runs/`.
+
+`cancel-action` is the one intent read MID-turn, and for a reason the others do not have: the
+engine is blocked inside the running call, so a boundary-applied cancel would arrive only after
+the thing it was meant to stop had ended. It is still only recorded here; the engine polls it
+(`engine.control.cancelled_for_turn`, inside `utils_run.run_jailed`'s existing abort poll).
 """
 
 from __future__ import annotations
@@ -197,6 +202,32 @@ def switch_deliberation(request: Request, run_id: str, body: DeliberationSwitch)
     require_active(run_dir, "switch")
     merge_control(run_dir, {"set_deliberation": {"level": body.level, "ts": now_iso()}})
     return {"ok": True, "switch": f"deliberation → {body.level}"}
+
+class ActionCancel(BaseModel):
+    turn: int   # the turn whose util/script/shell call is to be stopped
+
+@router.post("/runs/{run_id}/cancel-action")
+def cancel_action(request: Request, run_id: str, body: ActionCancel) -> dict:
+    """Stop the util, script or shell command RUNNING RIGHT NOW, without ending the run (F586,
+    decided as D160-C). Writes control.json; the call itself is polled out of it by
+    `engine.control.cancelled_for_turn` inside `utils_run.run_jailed`'s existing wait, so the
+    cancel is read mid-turn rather than at a boundary the blocked engine has not reached.
+
+    THE TURN IS REQUIRED, and it is the whole correctness of this endpoint. A bare "cancel the
+    current call" flag is read by whichever call is in flight when the engine next looks — for a
+    cancel clicked as a long call finishes, that is the NEXT call, which nobody asked to stop.
+    The UI's red × renders on one action's row and therefore knows its turn, so the intent
+    travels as "stop the call of turn N" and expires by itself when the run moves on.
+
+    Nothing is cleared afterwards: a stale `cancel_action` names a turn that will never run
+    again. A finished run is a 409, like the pause — there is no call left to stop.
+    """
+    _, run_dir = _run_dir(request, run_id)
+    if body.turn < 1:
+        raise HTTPException(400, "turn must be the 1-based turn whose call to cancel")
+    require_active(run_dir, "cancel")
+    merge_control(run_dir, {"cancel_action": body.turn, "ts": now_iso()})
+    return {"ok": True, "cancel_action": body.turn}
 
 @router.post("/runs/{run_id}/resume-run")
 async def resume_run(request: Request, run_id: str) -> dict:

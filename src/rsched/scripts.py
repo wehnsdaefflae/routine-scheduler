@@ -298,14 +298,18 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
                policy: sandbox.SandboxPolicy, libraries_home: Path,
                env_secrets: dict[str, str] | None = None,
                timeout: int = SCRIPT_TIMEOUT_S,
-               aborted: Callable[[], bool] | None = None) -> tuple[int, str, str]:
+               aborted: Callable[[], bool] | None = None,
+               cancelled: Callable[[], bool] | None = None) -> tuple[int, str, str]:
     """Controlled runner: the routine's own venv python on the script, ONLY the caller's
     `env_secrets` injected (the caller filters to declared+granted names; every other
     store key is scrubbed — `utils_run.scoped_env`), the shared jail (`sandbox.wrap` —
     run fs roots), working directory = the routine dir so relative paths resolve like
     read_file/write_file. `gu` is on PATH only for a script that DECLARES the utils it
     calls. `aborted` is the run's abort check: the script and the venv build before it end
-    with the run (`utils_run.run_jailed`). Returns (exit, out, err).
+    with the run (`utils_run.run_jailed`). `cancelled` is the per-call one (F586/D160) and
+    reaches the SCRIPT only, not the venv build before it: a cancel is aimed at the call the
+    operator is watching, and killing the build instead would leave the same action to be
+    cancelled again. Returns (exit, out, err).
     """
     if not exists(routine_dir, name):
         have = ", ".join(p["name"] for p in list_scripts(routine_dir)) or "(none yet)"
@@ -345,5 +349,5 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     # a script that dumps a large file must not be buffered whole in the daemon's memory.
     res = utils_run.run_jailed(cmd, env=env, cwd=routine_dir, timeout=timeout,
                                label=f"script {name!r}", config_seal=routine_dir,
-                               aborted=aborted, secrets=env_secrets)
+                               aborted=aborted, cancelled=cancelled, secrets=env_secrets)
     return res.exit_code, res.stdout, res.stderr

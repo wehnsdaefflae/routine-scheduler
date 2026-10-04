@@ -21,6 +21,7 @@ from ..ids import is_slug
 from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
 from .actions import could_be_util
+from .control import cancelled_for_turn
 from .exec_env import _extra_secrets, _unbound_connection_request
 from .fileops import UTIL_DEFAULT_TIMEOUT_S, do_edit_file, do_read_file, do_write_file
 from .fsops import do_delete, do_mkdir, do_move
@@ -85,6 +86,30 @@ def _ended_by_abort(ctx: RunContext, code: int) -> bool:
     have been, a quarter-second later.
     """
     return code == utils_run.ABORT_EXIT and ctx.aborted()
+
+
+def _ended_by_cancel(code: int) -> bool:
+    """Whether a PERSON stopped this call (F586, decided as D160-C). Unlike `_ended_by_abort`
+    this needs no second look at the run's state: `CANCEL_EXIT` is reported by `run_jailed`
+    only when its own `cancelled` callback said so, so the code alone is the evidence. The
+    observation says it in a field for the same reason the abort does — the three endings a
+    call can have (deadline, abort, cancel) call for three different next moves, and a run told
+    the wrong one retries a call a person deliberately stopped.
+    """
+    return code == utils_run.CANCEL_EXIT
+
+
+def _ended_by_a_person(ctx: RunContext, code: int) -> str | None:
+    """Which DELIBERATE ending this call had, as the observation field that names it — or None
+    for every other outcome. The two share one answer because they share one consequence: a
+    call a person ended is not a util failure, so it earns no reliability tick, no `usage`
+    block and no repair route, and the only thing the run needs is to be told which it was.
+    """
+    if _ended_by_abort(ctx, code):
+        return "aborted"
+    if _ended_by_cancel(code):
+        return "cancelled"
+    return None
 
 
 def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/show dispatch, many small exits
@@ -182,20 +207,21 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
         policy=sandbox.policy_for_ctx(ctx),
         extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld),
-        cwd=ctx.routine.dir, aborted=ctx.aborted)
+        cwd=ctx.routine.dir, aborted=ctx.aborted,
+        cancelled=cancelled_for_turn(ctx))
     _note_if_killed(ctx, "util", name, code)
-    stopped = _ended_by_abort(ctx, code)
-    # Per-util reliability telemetry (util_stats → the Stats tab). A call the run's abort ended
-    # says nothing about the util, so it is not counted at all.
-    if not stopped:
+    ended = _ended_by_a_person(ctx, code)
+    # Per-util reliability telemetry (util_stats → the Stats tab). A call a person ended — the
+    # run's abort or this one call's cancel — says nothing about the util, so it is not counted.
+    if ended is None:
         ctx.count_util(name, "ok" if code == 0
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
            **command_output(ctx, name, out, err, code), **_withheld_note(ctx, withheld)}
-    if stopped:
+    if ended is not None:
         # Not a failure, so no repair route: a resumed run replays this observation, and
         # "the util itself may be broken — fix it" would send it after a util that is fine.
-        obs["aborted"] = True
+        obs[ended] = True
     elif code != 0:
         # A failed call teaches the correct one — and the repair path. Without this nudge
         # the model's rational move is a silent workaround, and the next routine hits the
@@ -269,13 +295,14 @@ def do_script(action: dict, ctx: RunContext) -> dict:
         ctx.routine.dir, name, args,
         timeout=int(action.get("timeout_s") or scripts.SCRIPT_TIMEOUT_S),
         policy=sandbox.policy_for_ctx(ctx), libraries_home=ctx.server.libraries_home,
-        env_secrets=env_secrets, aborted=ctx.aborted)
+        env_secrets=env_secrets, aborted=ctx.aborted,
+        cancelled=cancelled_for_turn(ctx))
     _note_if_killed(ctx, "script", name, code)
     obs = {"kind": "script", "name": name, "args": args, "exit": code,
            **command_output(ctx, f"script-{name}", out, err, code),
            **_withheld_note(ctx, withheld_optional(ctx, optional))}
-    if _ended_by_abort(ctx, code):
-        obs["aborted"] = True
+    if ended := _ended_by_a_person(ctx, code):
+        obs[ended] = True
     return obs
 
 
@@ -343,7 +370,7 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
         command, policy=sandbox.policy_for_ctx(ctx),
         libraries_home=ctx.server.libraries_home, cwd=cwd,
         timeout=int(action.get("timeout_s") or shellrun.SHELL_DEFAULT_TIMEOUT_S),
-        aborted=ctx.aborted)
+        aborted=ctx.aborted, cancelled=cancelled_for_turn(ctx))
     _note_if_killed(ctx, "shell", command[:60], int(result["exit"]))
     obs = {"kind": "shell", "command": command, "exit": result["exit"],
            **command_output(ctx, "shell", result["stdout"], result["stderr"], result["exit"])}
@@ -357,6 +384,8 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
         obs["timed_out"] = True
     if result["aborted"]:
         obs["aborted"] = True
+    if result.get("cancelled"):
+        obs["cancelled"] = True
     return obs
 
 
