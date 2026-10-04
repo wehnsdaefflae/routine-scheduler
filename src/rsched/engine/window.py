@@ -42,6 +42,12 @@ _EVICT_WARN_HEADROOM = 0.9
 #: window to a third on one bad sample.
 _RATIO_BOUNDS = (1.0, 2.0)
 
+#: How much of the PROVIDER'S refusal the media-fallback error event keeps (F623). The old
+#: 120 cut the Anthropic 400 for an oversized image at `messages.696.content.2.image.` — one
+#: character before the name of the limit it refused on, so the only fact worth recording was
+#: the only one lost. Written at most once per run, on a path that has already failed.
+MEDIA_ERROR_CHARS = 1200
+
 #: Only a prompt already occupying this much of the window calibrates. The provider counts
 #: things the message list never carries — the request framing around every message — so the
 #: gap is roughly FIXED and `reported / estimate` explodes on a short prompt: an early
@@ -379,9 +385,18 @@ def apply_media_fallback(loop, exc: EndpointError) -> bool:
     # event used to carry a 120-char excerpt of the exception and nothing else, and a run
     # reporting "the vision fallback returned empty text" could be neither confirmed nor
     # refuted from disk.
+    #
+    # F623: and the PROVIDER'S OWN MESSAGE is kept whole-enough to name the constraint it
+    # refused on. At 120 characters the Anthropic 400 for an oversized image read
+    # `messages.696.content.2.image.` and stopped — one character before the limit's name, so
+    # the one fact a reader needs (WHICH bound was exceeded, and what it is) was the one fact
+    # cut off. The width is generous rather than tuned: this string is written once per run, on
+    # a path that has already failed, and a truncation that loses the diagnosis costs an entire
+    # investigation, while a long line costs nothing. The cap stays, because an arbitrarily
+    # long provider body does not belong in a transcript event either.
     loop.ctx.transcript.event("error", {"where": "media",
         "message": f"this run's model could not show {files} file(s) in {converted} message(s) "
-                   f"({str(exc)[:120]}); fell back to the vision util",
+                   f"({str(exc)[:MEDIA_ERROR_CHARS]}); fell back to the vision util",
         "descriptions": [m["content"][-2000:] for m in loop.messages
                          if "description from the vision util]" in m["content"]][-3:]})
     return True

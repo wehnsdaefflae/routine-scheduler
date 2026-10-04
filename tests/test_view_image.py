@@ -327,6 +327,38 @@ def test_apply_media_fallback_converts_every_message_not_just_the_tail(
     assert "DESCRIBED" in loop.messages[0]["content"]
 
 
+def test_the_media_fallback_keeps_the_limit_the_provider_named(
+        make_routine, tmp_path, monkeypatch):
+    """F623: the provider's refusal is recorded far enough to say WHICH bound it refused on.
+
+    The real Anthropic 400 for an oversized image is long, and the part a reader needs — the
+    constraint's name and its value — sits well past the 120 characters the event used to
+    keep. The recorded message stopped at `messages.696.content.2.image.`, one character
+    before the name, so the one fact worth having was the one fact lost and the finding could
+    be neither confirmed nor refuted from disk.
+    """
+    from rsched.engine.transcript import read_events
+    from rsched.engine.window import apply_media_fallback
+
+    monkeypatch.setattr(mediaops, "vision_describe", lambda ctx, _ab, pr: "DESCRIBED")
+    loop = _loop(make_routine, tmp_path)
+    loop.messages = [{"role": "user", "content": "OBS",
+                      "media": [{"path": str(tmp_path / "x.png"), "media_type": "image/png"}]}]
+    real_400 = (
+        "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+        "'message': 'messages.696.content.2.image.source.base64.data: At least one of the "
+        "image dimensions exceed max allowed size for many-image requests: 2000 pixels'}}")
+    assert apply_media_fallback(loop, EndpointError(real_400)) is True
+
+    events, _off = read_events(loop.ctx.run_dir / "transcript.jsonl")
+    message = next(e["payload"]["message"] for e in events
+                   if e["type"] == "error" and e["payload"].get("where") == "media")
+    assert "exceed max allowed size" in message, (
+        f"the provider's own diagnosis was truncated away: {message}")
+    assert "2000 pixels" in message, (
+        f"the LIMIT the provider refused on is what a reader needs: {message}")
+
+
 def test_view_image_native_end_to_end(make_routine, scripted, tmp_path):
     """A scripted run: view_image on a multimodal endpoint → the observation carries media,
     and the loop attaches it to the NEXT completion's tail user message (the model sees it)."""
