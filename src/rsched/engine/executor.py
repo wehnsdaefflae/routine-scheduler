@@ -33,8 +33,23 @@ from .output_compression import command_output
 from .run_context import RunContext
 
 
-def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> None:
-    """A child command the KERNEL stopped: emit `util_killed` (best-effort).
+def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> dict:
+    """A child command the KERNEL stopped: emit `util_killed`, and SAY SO IN THE OBSERVATION.
+
+    Returns the fields the author's observation needs (empty for an ordinary exit), so the one
+    measurement taken here reaches both surfaces. F622: this function already computed the
+    signal and the peak child memory and spent them on the health stream alone — the
+    OPERATOR's surface — while all three call sites built the observation from `code` alone.
+    The author therefore read `exit: -9` with empty output, which is indistinguishable from an
+    ordinary crashed command, and a run told that RETRIES: conversation c-20261002-194128
+    re-ran `classify_candidates` at turn 93 and again at turn 95, six minutes apart, with an
+    identical 5,103,384 kB high-water mark. An author told "killed by SIGKILL, peak child
+    memory 4.9 GB, the cgroup OOM killer" chunks the work instead.
+
+    The verdict comes from `runner_reap.classify_cause` — the SAME classifier the daemon
+    applies to a dying engine, deliberately not a second one. It already encodes F569's lesson
+    (`_OOM_PLAUSIBLE_FRACTION`: a 60 MB peak is not called an OOM), and the child case feeds it
+    better data than the engine case ever had, measured at the moment of death.
 
     A negative exit status is a signal, and -9 inside this container is the cgroup OOM
     killer. The engine survives it — only the child died — so the run reports an ordinary
@@ -52,16 +67,33 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> None:
     too low.
     """
     if code >= 0:
-        return
+        return {}
     import resource
+    import signal as signalmod
 
+    from ..daemon.runner_reap import classify_cause
     from ..health_events import log_health_event
+
+    peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss or None
     log_health_event(
         ctx.server.routines_home, "util_killed",
         routine=getattr(ctx.routine, "slug", "") or "", run_id=getattr(ctx, "run_id", "") or "",
         detail=f"{kind} {name} was killed by signal {-code} (run turn {ctx.turn})",
         kind=kind, util=name, signal=-code,
-        children_vm_hwm_kb=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss or None)
+        children_vm_hwm_kb=peak)
+    try:
+        signame = signalmod.Signals(-code).name
+    except ValueError:            # a signal number this platform does not name
+        signame = f"signal {-code}"
+    cause = classify_cause(code, vm_hwm_kb=peak)
+    fields: dict = {"killed_by": signame, "signal": -code, "kill_cause": cause}
+    if cause == "oom_kill":
+        # The peak rides the observation ONLY where it supports the verdict. On a
+        # `signal_kill` it is the run's whole-children high-water mark and says nothing about
+        # the death — putting a number there invites the author to diagnose memory for a
+        # deploy or a manual stop.
+        fields["children_vm_hwm_kb"] = peak
+    return fields
 
 
 def _withheld_note(ctx: RunContext, withheld: list[str]) -> dict:
@@ -209,7 +241,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld),
         cwd=ctx.routine.dir, aborted=ctx.aborted,
         cancelled=cancelled_for_turn(ctx))
-    _note_if_killed(ctx, "util", name, code)
+    killed = _note_if_killed(ctx, "util", name, code)
     ended = _ended_by_a_person(ctx, code)
     # Per-util reliability telemetry (util_stats → the Stats tab). A call a person ended — the
     # run's abort or this one call's cancel — says nothing about the util, so it is not counted.
@@ -217,7 +249,8 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         ctx.count_util(name, "ok" if code == 0
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
-           **command_output(ctx, name, out, err, code), **_withheld_note(ctx, withheld)}
+           **command_output(ctx, name, out, err, code), **_withheld_note(ctx, withheld),
+           **killed}
     if ended is not None:
         # Not a failure, so no repair route: a resumed run replays this observation, and
         # "the util itself may be broken — fix it" would send it after a util that is fine.
@@ -297,10 +330,10 @@ def do_script(action: dict, ctx: RunContext) -> dict:
         policy=sandbox.policy_for_ctx(ctx), libraries_home=ctx.server.libraries_home,
         env_secrets=env_secrets, aborted=ctx.aborted,
         cancelled=cancelled_for_turn(ctx))
-    _note_if_killed(ctx, "script", name, code)
+    killed = _note_if_killed(ctx, "script", name, code)
     obs = {"kind": "script", "name": name, "args": args, "exit": code,
            **command_output(ctx, f"script-{name}", out, err, code),
-           **_withheld_note(ctx, withheld_optional(ctx, optional))}
+           **_withheld_note(ctx, withheld_optional(ctx, optional)), **killed}
     if ended := _ended_by_a_person(ctx, code):
         obs[ended] = True
     return obs
@@ -371,9 +404,10 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
         libraries_home=ctx.server.libraries_home, cwd=cwd,
         timeout=int(action.get("timeout_s") or shellrun.SHELL_DEFAULT_TIMEOUT_S),
         aborted=ctx.aborted, cancelled=cancelled_for_turn(ctx))
-    _note_if_killed(ctx, "shell", command[:60], int(result["exit"]))
+    killed = _note_if_killed(ctx, "shell", command[:60], int(result["exit"]))
     obs = {"kind": "shell", "command": command, "exit": result["exit"],
-           **command_output(ctx, "shell", result["stdout"], result["stderr"], result["exit"])}
+           **command_output(ctx, "shell", result["stdout"], result["stderr"], result["exit"]),
+           **killed}
     obs["truncated"] = obs["truncated"] or result["truncated"]
     if marks_a_write(command):
         # D158: no gate saw this write, so the record is the only place it exists.

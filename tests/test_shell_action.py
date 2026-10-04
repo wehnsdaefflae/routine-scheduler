@@ -133,6 +133,73 @@ def test_a_signalled_child_reaches_the_health_stream(shell_ctx, tmp_path):
     assert events[0]["routine"] == "sheller"
 
 
+def test_a_signalled_child_tells_the_author_too_not_only_the_operator(shell_ctx, tmp_path):
+    """F622: the same kill must reach the run that made the call, in words with a next move.
+
+    The health event above is the OPERATOR's surface. The author read `exit: -9` with empty
+    output — indistinguishable from an ordinary crashed command — and a run told that RETRIES:
+    conversation c-20261002-194128 re-ran `classify_candidates` at turn 93 and again at turn
+    95, six minutes apart, with an identical 5,103,384 kB high-water mark. Everything needed
+    to prevent that was already measured at the moment of death and spent on one surface.
+    """
+    shell_ctx.server.routines_home = tmp_path / "rhome"
+    obs = dispatch({"kind": "shell", "command": "kill -9 $$"}, shell_ctx)
+    assert obs["exit"] < 0
+    assert obs["killed_by"] == "SIGKILL", obs          # the NAME, not just the number
+    assert obs["signal"] == 9
+    assert obs["kill_cause"] in ("oom_kill", "signal_kill")
+    text = format_observation(obs)
+    assert "[killed]" in text, text
+    assert "SIGKILL" in text, text
+
+
+def test_an_oom_kill_names_the_cause_the_peak_and_the_way_out(shell_ctx, tmp_path, monkeypatch):
+    """The verdict comes from the daemon's own `classify_cause`, not a second classifier, and
+    the peak rides the observation only where it SUPPORTS that verdict — on a plain
+    signal_kill the run-wide high-water mark says nothing about this death, and a number
+    there would send the author diagnosing memory for a deploy or a manual stop.
+    """
+    import rsched.daemon.runner_reap as reap
+
+    monkeypatch.setattr(reap, "_host_ram_kb", lambda: 8 * 1024 * 1024)   # 8 GB host
+    monkeypatch.setattr("resource.getrusage",
+                        lambda _who: type("R", (), {"ru_maxrss": 5_103_384})())
+    shell_ctx.server.routines_home = tmp_path / "rhome"
+    obs = dispatch({"kind": "shell", "command": "kill -9 $$"}, shell_ctx)
+    assert obs["kill_cause"] == "oom_kill", obs
+    assert obs["children_vm_hwm_kb"] == 5_103_384
+    text = format_observation(obs)
+    assert "OUT-OF-MEMORY" in text, text
+    assert "4.9 GB" in text, text                       # the peak, in a unit a person reads
+    assert "killed again" in text, text                 # and why re-running is the wrong move
+
+
+def test_a_peak_far_below_the_ceiling_is_not_called_an_oom(shell_ctx, tmp_path, monkeypatch):
+    """F569's lesson, already encoded in `classify_cause`: a 60 MB peak under an 8 GB ceiling
+    is not evidence of an out-of-memory kill, and claiming it would be a confident wrong
+    diagnosis — worse than none. No peak is quoted in that case either.
+    """
+    import rsched.daemon.runner_reap as reap
+
+    monkeypatch.setattr(reap, "_host_ram_kb", lambda: 8 * 1024 * 1024)
+    monkeypatch.setattr("resource.getrusage",
+                        lambda _who: type("R", (), {"ru_maxrss": 60_000})())
+    shell_ctx.server.routines_home = tmp_path / "rhome"
+    obs = dispatch({"kind": "shell", "command": "kill -9 $$"}, shell_ctx)
+    assert obs["kill_cause"] == "signal_kill", obs
+    assert "children_vm_hwm_kb" not in obs
+    text = format_observation(obs)
+    assert "OUT-OF-MEMORY" not in text, text
+    assert "something outside it ended it" in text, text
+
+
+def test_an_ordinary_exit_carries_no_kill_fields(shell_ctx):
+    """The negative case: nothing is added to the overwhelming majority of observations."""
+    obs = dispatch({"kind": "shell", "command": "exit 1"}, shell_ctx)
+    assert "killed_by" not in obs and "kill_cause" not in obs
+    assert "[killed]" not in format_observation(obs)
+
+
 def test_timeout_ends_the_process_group_and_reports_124(shell_ctx):
     obs = dispatch({"kind": "shell", "command": "sleep 30", "timeout_s": 1}, shell_ctx)
     assert obs["exit"] == utils_run.TIMEOUT_EXIT == 124

@@ -111,6 +111,34 @@ def _run_body(obs: dict) -> str:
     return body
 
 
+def _killed_note(obs: dict) -> str:
+    """The tail that turns `exit: -9` into a diagnosis with a next move (F622).
+
+    A negative exit is a SIGNAL, and the engine already knew which one and — for a SIGKILL
+    whose peak supports it — that the cgroup OOM killer took the child. All of it went to the
+    health stream, i.e. the OPERATOR's surface, while the author got an exit code with empty
+    output: indistinguishable from an ordinary crashed command, and a run told that RETRIES
+    (c-20261002-194128 re-ran one script at turns 93 and 95 with an identical 5,103,384 kB
+    high-water mark). The next move is the point of saying it — an author told the work was
+    too big for the memory ceiling chunks it; one told "it crashed" runs it again.
+
+    Empty for every ordinary exit, so nothing is added to the 99% of observations that ran.
+    """
+    if not obs.get("killed_by"):
+        return ""
+    if obs.get("kill_cause") == "oom_kill":
+        peak = obs.get("children_vm_hwm_kb")
+        gb = f"{peak / 1024 / 1024:.1f} GB" if peak else "unknown"
+        return ("\n[killed] the child was stopped by "
+                f"{obs['killed_by']} and the peak memory across this run's children was "
+                f"{gb} — this is the OUT-OF-MEMORY killer, not a fault in the command. "
+                "Re-running it unchanged will be killed again: process the work in smaller "
+                "chunks, stream instead of loading everything, or raise the memory ceiling.")
+    return (f"\n[killed] the child was stopped by {obs['killed_by']} — it did not fail on its "
+            "own, something outside it ended it (a supervisor, a deploy, a manual kill). The "
+            "command's own correctness is not what this exit code reports.")
+
+
 def _secret_gate(obs: dict, kind: str) -> str:
     """D39's secret-exposure gate stopped a util or script call: it was NOT run — say why and
     what to do next.
@@ -158,7 +186,8 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
     if kind == "shell":
         # No advisory tail: a non-zero exit here is usually the answer, not a mistake (do_shell).
         where = f", in {obs['cwd']}" if obs.get("cwd") else ""
-        return f"OBSERVATION (shell, exit {obs['exit']}{where}):\n" + _run_body(obs)
+        return (f"OBSERVATION (shell, exit {obs['exit']}{where}):\n" + _run_body(obs)
+                + _killed_note(obs))
     if kind in ("util", "script"):
         if kind == "util" and obs.get("name") == "search":
             return (f"OBSERVATION (util search {obs.get('query')!r} — closest utils "
@@ -224,6 +253,7 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
                      + "; ".join(bits))
         if obs.get("hint"):
             body += f"\n[hint] {obs['hint']}"
+        body += _killed_note(obs)
         return f"{head}:\n{body}"
     # Each domain module keeps EVERY string for its own kinds; this only owns the order and
     # the fallback, so a kind's wording is still in exactly one place.

@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.385.0] — 2026-10-04
+
+### Fixed — a killed child tells the AUTHOR what killed it, not only the operator (F622)
+
+`engine/executor._note_if_killed` already knew everything worth knowing. A negative exit is a
+signal; a SIGKILL inside this container with a peak that supports it is the cgroup OOM killer; and
+`children_vm_hwm_kb` from `getrusage(RUSAGE_CHILDREN)` says which ceiling refused the work. All of
+it was logged as a `util_killed` health event — the **operator's** surface — and then all three
+call sites built the observation the **author** reads from `code` alone.
+
+So the run that made the call saw `exit: -9` with empty output, which is indistinguishable from an
+ordinary crashed command. A run told that retries: conversation `c-20261002-194128` re-ran
+`classify_candidates` at turn 93 and again at turn 95, six minutes apart, with an identical
+5,103,384 kB high-water mark, across four kills in three scripts in one run.
+
+- **One measurement, both surfaces.** `_note_if_killed` now RETURNS the observation fields beside
+  logging the event, so `util`, `script` and `shell` all carry `killed_by` (the signal's NAME, not
+  just its number), `signal`, and `kill_cause`.
+- **The verdict comes from `runner_reap.classify_cause`** — the same classifier the daemon applies
+  to a dying engine, deliberately not a second one. It already encodes F569's lesson
+  (`_OOM_PLAUSIBLE_FRACTION`): a 60 MB peak under an 8 GB ceiling is **not** called an
+  out-of-memory kill, because a confident wrong diagnosis is worse than none. The child case feeds
+  that classifier better data than the engine case ever had — measured at the moment of death.
+- **The peak rides the observation only where it supports the verdict.** On a plain `signal_kill`
+  the run-wide high-water mark says nothing about this death, and a number there would send the
+  author diagnosing memory for a deploy or a manual stop.
+- **It is said in WORDS, with the next move**, as a `[killed]` tail beside the existing
+  `[usage]`/`[note]`/`[hint]` ones: for an OOM, the signal, the peak in GB, that re-running
+  unchanged will be killed again, and the three ways out (chunk the work, stream it, raise the
+  ceiling); otherwise, that something outside the command ended it and its own correctness is not
+  what the exit code reports. An author told the work was too big for the ceiling chunks it; one
+  told "it crashed" runs it again.
+
+Nothing is added to an ordinary exit, which is the overwhelming majority of observations.
+
 ## [0.384.1] — 2026-10-04
 
 ### Fixed — the provider's refusal is no longer cut off before it names the limit (F623, half 1 of 2)
