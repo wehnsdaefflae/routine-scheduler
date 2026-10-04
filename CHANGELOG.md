@@ -15,6 +15,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.384.0] — 2026-10-04
+
+### Added — one slow read or fetch runs in the BACKGROUND and the turn comes back (D118, phases 1-2)
+
+Decided 2026-09-04, operator verbatim: *"okay if it's too big for now then you plan the full
+feature and its implementation."* The plan sat a month in `docs/designs.md`; these are its first
+two phases.
+
+A run advances one action per turn and dispatch is synchronous. For a scheduled routine that is
+right — nobody is watching it work. In a **conversation** it freezes the human: a heavy fetch, a
+long `llm`, a ten-minute test run, and a message sent meanwhile is only *injected*, read after the
+call finally lands. `detach` was the only backgrounding there was, and it is the opposite tool — a
+whole child RUN with its own budget and context, for a big self-contained job.
+
+`background: true` on a read or a fetch now starts it in a thread and **returns the turn at once**
+with a *started* observation naming a handle; the real observation is appended at a later turn
+boundary, tagged with that handle. Same run, same context, same budget — only the waiting is gone.
+
+- **The safety matrix is the crux, not the plumbing.** `BACKGROUNDABLE_KINDS` admits `util`,
+  `script`, `shell`, `llm`, `read_file`, `view_image`, `memory_read`, `read_rule` — reads and
+  fetches whose only effect IS the observation, so deferring one reorders nothing. Every mutation
+  (`write_file`, `edit_file`, `write_util`, `memory_write`, …) and every control kind (`finish`,
+  `ask_user`, `report`, `spawn`, `subtask`, `wait`, `kill`) is **refused with its reason** inside
+  the schema-retry cycle: a deferred write could be read stale by the next synchronous action, and
+  widening that needs a dependency/barrier model — its own decision, deliberately not taken here.
+- **Built on the ARCHIVAL shape, not the detached machinery** the design proposed. Measured against
+  the code, `daemon/detached.py` is a daemon-TICKED multi-process manager whose unit is a
+  routine-shaped dir with its own `routine.yaml`, budget and run process: a call backgrounded inside
+  one reply would not start until the next daemon tick, by which time the reply's process — the
+  thing waiting to read the observation — is gone. `engine/archival.py` already *is*
+  start-now/collect-at-the-boundary, and had already paid for the abandonment and instrumentation
+  lessons. `engine/background.py` is that pattern, parameterised by action.
+- **The thread runs the ORDINARY dispatch path.** `executor.dispatch` is a pure `(action, ctx)`
+  call, so a backgrounded `util` is byte-for-byte the call it would have been synchronously: no
+  second code path to keep in step, and no class of bug that appears only in the background.
+- **Nothing vanishes.** A background call that RAISES delivers an error observation like any other.
+  One that lands with no turn left to read it is recorded `unread`. One still running at run end is
+  recorded `abandoned`, its in-flight model calls closed through `instrument.abandon_open_calls`
+  (the leak archival paid for once, where a daemon thread dies without unwinding), and **named in
+  the run's own summary** — a result the run never read is a loss only a reader of the result can
+  judge.
+- **No new transcript event types.** Both records are `observation` events carrying
+  `background` / `handle` / `started_turn` — payload extensions. A new type needs five coupled
+  changes or it records nothing, and the design's own wording asked for exactly this.
+- **Visible in the conversation.** Two new meanings in the transcript's state vocabulary:
+  `running` (signal, dashed — the machine at work, no verdict yet, and quiet weight because unlike
+  a HELD row the run did not stop on it) and `lost` (warn, not error — nothing failed, the result
+  may be sitting right there, and what is wrong is that nothing acted on it). A started row gets
+  its own renderer branch above the per-kind ones, or the util branch prints `exit undefined`.
+
+Three defects were found and fixed in the building, each at its cause rather than its symptom: the
+flag was **silently stripped** by `normalize_action` on a non-backgroundable kind, so
+`write_file` + `background` validated clean and would have run synchronously while the model
+believed it was deferred; a defaulting accessor read `getattr(…) or []`, and since an empty list
+is falsy it handed out a **fresh throwaway** every call, so every backgrounded call ran and had its
+result discarded; and `format_observation` reached for a util observation's `name`/`exit` on a
+started observation that has neither, raising `KeyError` **inside the engine mid-turn** — and in
+every later resume, which re-renders the stored observation.
+
+Phases 3 (mutation ordering) and 4 (concurrency cap, cancellation, budget accounting) are not in
+this release. Phase 4's three parameters are questions the design refuses to answer for itself and
+are with the operator as a decision; phase 3 is its own item.
+
 ## [0.383.0] — 2026-10-04
 
 ### Added — the util that is running can be CANCELLED, without losing the run (F586, D160-C)
