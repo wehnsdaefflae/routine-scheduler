@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.384.1] — 2026-10-04
+
+### Fixed — the provider's refusal is no longer cut off before it names the limit (F623, half 1 of 2)
+
+The media-fallback error event kept `str(exc)[:120]` of the endpoint's exception. The real
+Anthropic 400 for an oversized image was therefore recorded as `messages.696.content.2.image.`
+and stopped — one character before the name of the constraint it refused on. The one datum a run
+needs to correct itself was the one datum dropped, and the finding it came from could be *neither
+confirmed nor refuted from disk*.
+
+The width is now a named `MEDIA_ERROR_CHARS = 1200` — generous rather than tuned, because the
+string is written at most once per run on a path that has already failed, and a truncation that
+loses the diagnosis costs a whole investigation while a long line costs nothing. A test drives the
+real 400 text and asserts both `exceed max allowed size` and the limit's value survive.
+
+**F623's half 2 is still open**: the engine does not PRE-FLIGHT an image against the endpoint's
+limit, so one oversized file still 400s a whole message and takes the innocent images in it down
+with it. That needs the providers' real per-endpoint limits — which this change is what makes
+visible.
+
 ## [0.384.0] — 2026-10-04
 
 ### Added — one slow read or fetch runs in the BACKGROUND and the turn comes back (D118, phases 1-2)
