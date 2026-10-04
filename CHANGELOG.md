@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.385.2] — 2026-10-05
+
+### Fixed — the browser page no longer offers to open an upstream no browser can open
+
+The operator reported it plainly: *"'open the upstream directly' for the sidecar browser does not
+work"*. It could never have worked. The upstream port answers
+
+```
+HTTP/1.1 401 Unauthorized
+this browser port needs `Authorization: Bearer <BROWSER_CDP_TOKEN>`.
+```
+
+and a browser attaches no bearer header to a top-level navigation, so the only possible outcome
+of that click was the 401 body. The embedded screen beside it works for the opposite reason:
+`grantPass()` mints a path-scoped HttpOnly cookie and `api_browser_view.relay_asset` fetches the
+upstream **server-side**, which is where the token can be supplied.
+
+This is F527/F530's mistake in a third place — a request the BROWSER makes carries none of the
+credentials the relay supplies — and the existing browser test already held the rule for the two
+frames (*"Neither frame may point at `browser_view_url` directly"*); only the `<a href>` had
+escaped it. The dead link is replaced by **copy upstream address**, which is what someone
+diagnosing a blank screen actually wants, with the reason in its tooltip. The address itself is
+still printed beside it, as the thing being relayed. One new browser test loads the page and
+asserts no element navigates to the upstream while the address is still shown (F632).
+
 ## [0.385.1] — 2026-10-04
 
 ### Fixed — a background result nobody read no longer looks like an ordinary success (D118)

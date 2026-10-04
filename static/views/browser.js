@@ -82,7 +82,21 @@ export async function render(view) {
     el("div", { class: "row", style: "gap:8px;align-items:center" },
       el("span", { class: "faint small" }, "relayed through this console · ",
         el("code", { class: "small" }, url)),
-      el("a", { class: "btn small", href: url, target: "_blank", rel: "noreferrer" },
-        "open the upstream directly")),
+      // NOT a link to `url`. The upstream port answers 401 with "this browser port needs
+      // `Authorization: Bearer <BROWSER_CDP_TOKEN>`", and a browser cannot attach a bearer
+      // header to a top-level navigation — so an <a href> here could never open anything, which
+      // is exactly what the operator reported (F632). It is the same mistake as F527/F530 in a
+      // third place: a request the BROWSER makes carries none of the credentials the relay
+      // supplies server-side. What someone diagnosing actually wants is the address, so hand
+      // them that instead of a door that is bolted.
+      el("button", { class: "btn small", type: "button",
+        title: "the upstream needs a bearer token, so it cannot be opened from a browser tab — "
+               + "the screen above is relayed through this console instead",
+        onclick: async (ev) => {
+          const btn = ev.currentTarget;
+          try { await navigator.clipboard.writeText(url); btn.textContent = "copied"; }
+          catch { btn.textContent = url; }           // no clipboard permission: show it to select
+          setTimeout(() => { btn.textContent = "copy upstream address"; }, 2000);
+        } }, "copy upstream address")),
     el("div", { class: "mt browser-screen-wrap" }, frame));
 }

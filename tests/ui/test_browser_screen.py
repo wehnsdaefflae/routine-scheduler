@@ -114,6 +114,36 @@ def test_both_surfaces_load_through_the_console_not_the_raw_upstream(ui, ui_page
     expect(ui_page.locator("#view")).to_contain_text("198.51.100.9")
 
 
+def test_no_control_offers_to_open_the_bearer_gated_upstream(ui, ui_page):
+    """F632, the operator's report: "'open the upstream directly' for the sidecar browser does
+    not work".
+
+    It could never have worked. The upstream port answers `401` with "this browser port needs
+    `Authorization: Bearer <BROWSER_CDP_TOKEN>`", and a browser attaches no bearer header to a
+    top-level navigation — so the page offered a control whose only possible outcome was the
+    401 body. That is F527/F530's mistake in a third place: the relay supplies the credential
+    SERVER-side, which is exactly why nothing the browser requests itself can reach the
+    upstream.
+
+    So: no element on the page may NAVIGATE to `browser_view_url` — while the address itself
+    must still be shown, because naming what is being relayed is what makes a blank screen
+    diagnosable (the sibling test above depends on that too).
+    """
+    ui.server_cfg.browser_view_url = "http://198.51.100.9:6080/vnc.html"
+
+    ui_page.goto(f"{ui.url}/#/browser")
+    expect(ui_page.locator("iframe.browser-screen")).to_have_count(1)
+
+    # nothing anywhere on the page may be a navigation to the raw upstream
+    for href in ui_page.locator("#view a[href]").evaluate_all(
+            "els => els.map(e => e.getAttribute('href'))"):
+        assert "198.51.100.9" not in (href or ""), f"a control still navigates to the upstream: {href}"
+
+    # the address is still NAMED, and the control beside it hands it over instead of opening it
+    expect(ui_page.locator("#view code")).to_contain_text("198.51.100.9")
+    expect(ui_page.get_by_role("button", name="copy upstream address")).to_have_count(1)
+
+
 def test_the_relay_actually_serves_the_frame_instead_of_a_401_body(ui, ui_page):
     """F530 — the test that was missing, and the reason the bug shipped.
 
