@@ -15,6 +15,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.383.0] — 2026-10-04
+
+### Added — the util that is running can be CANCELLED, without losing the run (F586, D160-C)
+
+The operator, 2026-09-28: *"i want the option to cancel a util run. just the once currently
+running. via a red x or sth on the message."* Until now the only lever was aborting the whole
+run, so a single wedged call cost every turn that run had left.
+
+The ✕ now sits on the running action's row. Clicking it stops that call and nothing else: the
+run carries on with an observation telling it what happened.
+
+- **Its own outcome, never the deadline's.** `CANCEL_EXIT` (125) beside `TIMEOUT_EXIT` (124)
+  and `ABORT_EXIT` (130), with the precedence **cancel > abort > timeout > the command's own
+  code** when more than one is true at a single look. This is the point of the feature, not a
+  detail: a run told *"timed out"* sensibly retries, and retrying the call a person just
+  stopped is the one behaviour it exists to prevent. The note says so in words too. Positive,
+  like the other two, so a deliberate human act never reaches `_note_if_killed` as a kernel
+  kill and files a `util_killed` health event.
+- **Keyed by TURN.** `POST /api/runs/{id}/cancel-action` records `cancel_action: <turn>` in the
+  run's `control.json`; the engine matches it against the turn it is running. A bare flag would
+  be read by whichever call is in flight when the engine next looks — for a cancel clicked just
+  as a long call finishes, that is the *next* call, one nobody asked to stop. A turn the run has
+  passed can never match again, so nothing has to clear it.
+- **Read mid-turn, and it had to be.** `control.json`'s other intents apply at a turn boundary;
+  this one cannot, because the engine is blocked inside the very call it must stop. It rides the
+  quarter-second poll `utils_run.run_jailed` already gives the abort check — no second wait in
+  the one function every util, script and shell action goes through — and `control.json` stays
+  web-written, engine-read.
+- **All three callable kinds**, including `shell`, whose result dict grows `cancelled` beside
+  `timed_out` and `aborted`. A script's cancel reaches the script, not the venv build before it.
+- **It leaves a trace an audit can find**: the new `action_cancelled` transcript event (the 19th
+  type), rendered in the console and the CLI. The observation says what the *run* was told; this
+  says somebody outside the run reached in — which is exactly what a later reader cannot
+  reconstruct, since a cancelled call and a call that failed fast look identical in a record of
+  outcomes alone.
+- A cancelled call is **no more a util failure than an aborted one**: no reliability tick on the
+  Stats tab, no `usage` block, no repair route.
+
+The control is offered only where there is something to stop — `util` / `script` / `shell`, on a
+live view, on a row that has not yet got its observation — and it reports honestly: *"cancel sent
+for turn N — stopping…"* rather than *"cancelled"*, because the engine ends the call a fraction of
+a second later; and a cancel the server refuses leaves the button there, enabled, with the reason
+on the row.
+
+### Fixed — a written-out count in `transcript.py`'s docstring had been stale since the ladder
+
+It said *"the fourteen types in `EVENT_TYPES`"* while the tuple held 18. Replaced with the
+invariant rather than a new number: `EVENT_TYPES` **is** the count, and a prose count goes stale
+every time the vocabulary grows.
+
 ## [0.382.2] — 2026-10-04
 
 ### Fixed — the recipe-hygiene check demanded a script the routine was never going to call (F533)
