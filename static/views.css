@@ -276,6 +276,22 @@ table.list tr.disabled-row td { opacity: 0.55; }
 }
 .obs-held > summary::before { content: "⦿ "; color: var(--signal); }
 .obs-held[open] > summary::before { content: "⦿ "; }
+/* RUNNING (D118) — a backgrounded read whose turn already came back. SIGNAL, like `held`,
+   because it is the machine at work and nothing waits on a person; DASHED, like `timeout`,
+   because no verdict exists yet — and quiet weight, not full, because unlike `held` the run is
+   not stopped on it: it carried on, which is the entire point of the feature. */
+.obs-running > summary {
+  border-left: 3px dashed var(--signal); color: var(--signal);
+  background: color-mix(in srgb, var(--signal-dim) 40%, var(--deck));
+}
+/* LOST (D118) — a background result the run never read: it landed after the last turn, or was
+   still running when the run ended. WARN, not error: nothing failed, and the result may be
+   right there in the row — what is wrong is that nothing acted on it, which is the run's own
+   shape to plan around. */
+.obs-lost > summary {
+  border-left: 3px dashed var(--warn); color: var(--warn);
+  background: color-mix(in srgb, var(--warn-dim) 40%, var(--deck));
+}
 .ev { padding: 9px 13px; border-radius: var(--r2); font-size: 12px; overflow-wrap: anywhere; }
 .ev.injection { background: var(--signal-dim); color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 38%, transparent); }
 .ev.question { background: var(--summons-dim); color: var(--summons); border: 1px solid color-mix(in srgb, var(--summons) 38%, transparent); }

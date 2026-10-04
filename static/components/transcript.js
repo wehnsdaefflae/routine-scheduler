@@ -355,6 +355,15 @@ export function createTranscript(container, opts = {}) {
 
   function obsState(o) {
     if (!o) return "";
+    //   running — D118: the call was handed to a background thread and the turn came back at
+    //             once. Nothing is known about its outcome yet, which is a different thing
+    //             from success and from failure; the REAL observation arrives as its own row
+    //             at a later turn and carries the ordinary state.
+    if (o.background && o.started) return "running";
+    //   lost    — a background call the run never read: it landed after the last turn
+    //             (`unread`) or was still running when the run ended (`abandoned`). The result
+    //             may be right there in the row, and still nothing acted on it.
+    if (o.background && (o.unread || o.abandoned)) return "lost";
     if (o.kind === "reminder_hold" || o.kind === "assist_hold") return "held";
     if (o.missing || o.declined || o.rejected || o.callers) return "refused";
     if (o.kind === "util" || o.kind === "script" || o.kind === "shell") {
@@ -381,7 +390,17 @@ export function createTranscript(container, opts = {}) {
   function addObservation(ev) {
     const o = ev.payload;
     let text;
-    if ((o.kind === "util" || o.kind === "script") && (o.pending_secrets || o.declined_secrets)) {
+    if (o.background && o.started) {
+      // D118: the call is RUNNING. It has no exit code and no output yet, so it must be
+      // rendered here, above the per-kind branches — the util branch below would print
+      // "exit undefined", which is exactly the misrender the secret-gate branch exists to
+      // prevent for the other callable-with-no-exit case.
+      text = `⏳ ${o.kind} running in the background as ${o.handle}`
+        + ` — ${o.brief || ""}\nits result arrives as its own row at a later turn`;
+    } else if (o.background && o.abandoned) {
+      text = `${o.kind} ${o.handle} was still running when the run ended — its result is lost`
+        + (o.llm_calls_abandoned ? ` (${o.llm_calls_abandoned} model call(s) closed)` : "");
+    } else if ((o.kind === "util" || o.kind === "script") && (o.pending_secrets || o.declined_secrets)) {
       // The secret gate stopped the call before it ran — no exit code exists, and rendering one
       // read as "exit undefined". Names only for a PENDING request (the run's own ask); a
       // declined one is counted, as the model is told (observations._secret_gate).

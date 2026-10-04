@@ -661,10 +661,29 @@ and the capabilities digest's catalog listing):
   unit's default `KillMode=control-group` kills the cgroup). The wait it costs is bounded by the
   task's own 60-minute budget, and a background task uses deferred asks only, so it can never park
   on a user and the gap always comes. Structural, not a permission: a root conversation gets it at
-  setup and nothing else does; action = `detach` (never call it
-  "background" — that means the within-reply subtask). Monitor/cancel via `web/api_background.py`
+  setup and nothing else does; action = `detach`. Monitor/cancel via `web/api_background.py`
   (`GET/POST …/background`, `…/background/{id}/cancel`); the rail renders the tasks. See
   docs/background-tasks.md.
+- **A SINGLE ACTION in the background (`background: true`, D118)** is the third and smallest unit,
+  and the one that keeps the SAME context: not a child run and not a detached job, just one slow
+  step the run should not sit through. `engine/actions.BACKGROUNDABLE_KINDS` — `util`, `script`,
+  `shell`, `llm`, `read_file`, `view_image`, `memory_read`, `read_rule` — may carry the flag;
+  `actionroute.dispatch_action` hands the action to `engine/background.py`, which runs the
+  ORDINARY `executor.dispatch` in a daemon thread and returns a *started* observation (a handle,
+  the kind, a note) at once, so the turn ends and the conversation keeps its speaking turn. The
+  real observation is appended at a later turn boundary by `background.collect`, beside
+  `archival.collect` and `announce_finished_subruns`; `loopend` calls `background.settle`, which
+  records a result that landed too late (`unread`) or a call still running (`abandoned`, its
+  in-flight model calls closed via `instrument.abandon_open_calls`) and names the loss in the run's
+  summary. Both records are `observation` events carrying `background`/`handle`/`started_turn` —
+  payload EXTENSIONS, no new event types. Built on the ARCHIVAL shape, deliberately not on
+  `DetachedManager`: a daemon-ticked multi-process unit would not start until the next tick, by
+  which time the reply's process is gone. A MUTATION may not carry the flag (a later synchronous
+  action could read state the deferred one has not written yet — that needs a dependency/barrier
+  model and is its own decision), nor may a control kind; both are refused WITH THE REASON inside
+  the schema-retry cycle. **Three things now share the word "background" and the distinction is
+  load-bearing**: a within-reply `subtask`/`spawn` thread, a cross-reply `detach` task, and this
+  per-action flag. Name the mechanism, never the adjective alone.
 - **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_min`, then the run
   CONTINUES on the action's stated `default` and the record stays open as deferred) or `deferred`
   (filed to `questions/pending/`, surfaced in a later run's state digest). An ask may carry
