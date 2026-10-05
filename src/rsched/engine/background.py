@@ -22,6 +22,15 @@ append-only at the turn boundary, with the two lessons it learned the hard way (
 at run end, and `instrument.abandon_open_calls` so an abandoned thread's in-flight model call
 cannot leak a permanently-`running` task). This module is that pattern, parameterised by action.
 
+**Every call-time gate runs on the STARTING turn, synchronously, before anything is deferred**
+(F633). `util` and `script` are the two backgroundable kinds whose dispatch `engine/actionroute`
+owns rather than `executor.DISPATCH`, because D39 decided secret exposure at CALL time and that
+decision is answered by the user while the run waits — which a thread cannot do, having no turn to
+block on. Backgrounding one used to walk straight past that: a `script` raised `KeyError: 'script'`
+(DISPATCH has no entry for it, on purpose) and a `util` RAN with its exposure gate never asked.
+So the flag now defers the WORK and never the DECISION, and `_runner` reads the dispatch choice off
+the same routing table the foreground consults.
+
 **The ordering contract is preserved, not weakened.** One action still starts per turn and one
 observation still comes back for it; only the arrival is deferred. What keeps that safe is the
 KIND allowlist, not anything here: `actions.BACKGROUNDABLE_KINDS` admits reads and fetches, whose
@@ -90,15 +99,34 @@ def _pendings(loop) -> list[Pending]:
     return loop._background
 
 
+def _runner(kind: str):
+    """The callable the FOREGROUND would have used for `kind` — the one the thread must use.
+
+    F633: this used to be `executor.dispatch` for every kind, on the premise that "the executor
+    is a pure (action, ctx) call, so a backgrounded util is byte-for-byte the same call". The
+    premise is false for exactly the two kinds `engine/actionroute._route` owns rather than
+    `executor.DISPATCH`: `script` is absent from DISPATCH on purpose (its call-time secret gate
+    is in front of it in `_route`), so a backgrounded one raised `KeyError: 'script'` every
+    single time — reported from a live run. `util` IS in DISPATCH, so it ran, with its D39 gate
+    skipped. The gate now runs on the starting turn (`actionroute._gate_for_background`) and the
+    dispatch choice is made here, from the same reading of the routing table.
+    """
+    from . import executor
+
+    if kind == "script":
+        return executor.do_script
+    return executor.dispatch
+
+
 def start(loop, action: dict, ctx) -> dict:
     """Run `action` in a thread and return the *started* observation for this turn.
 
-    The thread runs the ORDINARY dispatch path (`executor.dispatch`), not a copy of it: the
-    executor is a pure `(action, ctx)` call, so a backgrounded `util` is byte-for-byte the same
-    call it would have been synchronously — there is no second code path to keep in step, and no
-    class of bug that only appears in the background.
+    The thread runs the ORDINARY dispatch path for the action's kind — `_runner` reads it off
+    the same routing table the foreground consults, so a backgrounded call is the same call it
+    would have been synchronously. What a background thread CANNOT do is ask the user anything,
+    so every call-time gate has already run on this turn, before `start` was reached.
     """
-    from .executor import dispatch
+    dispatch = _runner(action["kind"])
 
     loop._background_seq = getattr(loop, "_background_seq", 0) + 1
     handle = f"bg{loop._background_seq}"

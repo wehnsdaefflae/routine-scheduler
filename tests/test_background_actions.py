@@ -235,3 +235,138 @@ def test_a_call_still_running_at_finish_is_named_in_the_summary(
     abandoned = [e for e in events if e["type"] == "observation"
                  and e["payload"].get("abandoned")]
     assert abandoned, "an abandoned background call left no record"
+
+
+# ---- F633: the flag goes through the SAME per-kind routing the foreground goes through ---------
+#
+# `actionroute.dispatch_action` took the background branch BEFORE `_route`, and `background.start`
+# called `executor.dispatch` for every kind. Two of the eight backgroundable kinds are owned by
+# `_route` rather than by `executor.DISPATCH`, both because they need the D39 call-time secret
+# gate: `script` is absent from DISPATCH entirely (so a backgrounded one raised
+# `KeyError: 'script'` — reported from a live run, R2255) and `util` is present (so it RAN, with
+# the gate skipped). One is a crash and one is silent; the silent one is the serious one, because
+# an ergonomics flag relocated a security decision out of the user's reach.
+
+PROBE_SCRIPT = '''# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+"""probe — a trivial script for the background routing test.
+
+net: none
+fs: roots
+secrets: (none)
+"""
+print("probe ran")
+'''
+
+
+def test_the_background_runner_matches_the_foreground_routing_table():
+    """The unit statement of the defect: for every backgroundable kind, the callable the thread
+    uses must be the callable the synchronous path uses. `script` is the case that proves it —
+    `executor.DISPATCH` has no entry for it on purpose, because `_route` puts the secret gate in
+    front of it, so a runner that consults DISPATCH alone cannot run it at all."""
+    from rsched.engine import background, executor
+
+    assert "script" not in executor.DISPATCH, (
+        "DISPATCH gained a `script` entry — that fixes the crash and CEMENTS the gate bypass, "
+        "which is exactly why the table omits it; route through actionroute._route instead")
+    assert background._runner("script") is executor.do_script
+    for kind in BACKGROUNDABLE_KINDS:
+        if kind == "script":
+            continue
+        assert background._runner(kind) is executor.dispatch, kind
+        assert kind in executor.DISPATCH, (
+            f"{kind} is backgroundable, is not in DISPATCH, and has no runner of its own — "
+            "it would raise KeyError the moment a run backgrounds it")
+
+
+def test_every_kind_route_owns_is_gated_before_it_may_be_backgrounded():
+    """The structural guard. `_route` owns a branch for a kind only where something must happen
+    BEFORE the executor sees it; for `util` and `script` that something is the D39 call-time
+    secret gate, which a background thread cannot run (it files a BLOCKING ask and a thread has
+    no turn to block on). So every backgroundable kind that `_route` gates must also appear in
+    `_BACKGROUND_GATES` — otherwise the flag is a way around the gate."""
+    from rsched.engine import actionroute
+
+    assert set(actionroute._BACKGROUND_GATES) == {"util", "script"}
+    for kind, gate in actionroute._BACKGROUND_GATES.items():
+        assert kind in BACKGROUNDABLE_KINDS, kind
+        assert gate is not None
+
+
+def test_a_backgrounded_script_actually_runs(make_routine, scripted, monkeypatch):
+    """The live crash, through a real run: `script` + `background: true` used to raise
+    `KeyError: 'script'` inside the thread, which the run read as an engine error instead of its
+    result. It must now land the script's real output."""
+    d = make_routine(slug="bgsc")
+    (d / "scripts").mkdir(exist_ok=True)
+    (d / "scripts" / "probe.py").write_text(PROBE_SCRIPT, encoding="utf-8")
+    monkeypatch.setattr("rsched.scripts.run_script",
+                        lambda rd, name, args, **kw: (0, "probe ran", ""))
+    scripted([
+        {"say": "Backgrounding my own helper.", "kind": "script", "name": "probe",
+         "background": True},
+        util("list", say="Working while it runs."),
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    obs = [e for e in events if e["type"] == "observation"]
+    started = [e for e in obs if e["payload"].get("started")]
+    assert len(started) == 1 and started[0]["payload"]["kind"] == "script", obs
+    handle = started[0]["payload"]["handle"]
+    landed = [e for e in obs if e["payload"].get("handle") == handle
+              and not e["payload"].get("started")]
+    assert len(landed) == 1, "the backgrounded script's result never landed"
+    assert landed[0]["payload"].get("engine_error") is not True, (
+        f"the backgrounded script raised instead of running: {landed[0]['payload']}")
+    assert landed[0]["payload"]["stdout"] == "probe ran"
+    assert landed[0]["payload"]["exit"] == 0
+
+
+def test_a_denied_secret_refuses_a_backgrounded_util_on_the_starting_turn(
+        make_routine, scripted, monkeypatch):
+    """The silent half. The D39 gate is the user's answer to "may this call see this
+    credential"; backgrounding the call used to skip it entirely. The refusal must arrive on the
+    turn that asked — not as a deferred observation, and not at all as a completed call."""
+    import yaml
+
+    import rsched.engine.executor as executor_mod
+
+    ran: list[str] = []
+
+    def record(action, _ctx):
+        ran.append(str(action.get("name")))
+        return {"kind": "util", "name": action.get("name"), "exit": 0, "stdout": "ran",
+                "stderr": ""}
+
+    monkeypatch.setitem(executor_mod.DISPATCH, "util", record)
+    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"BG_TOKEN": "v-1"})
+    monkeypatch.setattr("rsched.utils_lib.exists", lambda _home, _name: True)
+    monkeypatch.setattr(
+        "rsched.utils_run.util_needs",
+        lambda _home, _name: type("N", (), {"secrets": {"BG_TOKEN"}, "optional": set()})())
+
+    d = make_routine(slug="bgdeny")
+    cfg = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
+    cfg["grants"] = {"secret:BG_TOKEN": False}
+    (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    scripted([
+        {**util("mailer", say="Backgrounding a credential-using call."), "background": True},
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    assert ran == [], (
+        "the backgrounded util RAN with a secret the user had declined — the flag walked "
+        f"around the D39 call-time gate: {ran}")
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    obs = [e for e in events if e["type"] == "observation"]
+    assert not [e for e in obs if e["payload"].get("started")], (
+        "nothing may be backgrounded once the gate refuses the call")
+    refusal = next(e for e in obs if e["payload"].get("declined_secrets"))
+    assert refusal["turn"] == 1, "the refusal must reach the turn that asked for the call"
+    assert "declined" in refusal["payload"]["reason"]

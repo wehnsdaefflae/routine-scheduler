@@ -44,6 +44,19 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
             # `actions.BACKGROUNDABLE_KINDS`, enforced by `validate_action` inside the
             # schema-retry cycle — so an action reaching here with the flag has already been
             # judged safe to defer, and this branch does not re-litigate it.
+            #
+            # F633: it does, however, go through the SAME per-kind routing the foreground
+            # goes through. Two of the backgroundable kinds are owned by `_route` and not by
+            # `executor.DISPATCH` — `script` has no DISPATCH entry at all (a backgrounded one
+            # raised `KeyError: 'script'` every time) and `util`'s D39 call-time secret gate
+            # lives in `_route`, so backgrounding one relocated a security decision out of
+            # the run's reach. `_gate_for_background` runs that gate HERE, on the starting
+            # turn: it can ask the user a blocking question and a background thread has no
+            # turn to block on. A refusal or a pending request becomes THIS turn's
+            # observation and nothing is backgrounded.
+            gated = _gate_for_background(loop, action)
+            if gated is not None:
+                return gated
             return background.start(loop, action, ctx)
         return _route(loop, action, ctx)
     except RunAborted:
@@ -57,6 +70,28 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
                 "error": f"{message} — a defect in the engine, not in your input. Do not "
                          "repeat the identical action; work around it, and report it if "
                          "the task depends on it."}
+
+
+#: The call-time secret gate each kind needs BEFORE it may be backgrounded (F633). Exactly the
+#: two kinds `_route` owns for that reason — keep this table and `_route`'s two gated branches
+#: in step: a kind gated in one and not the other is a gate a flag can walk around.
+_BACKGROUND_GATES = {
+    "util": secretgate.gate_util_secrets,
+    "script": secretgate.gate_script_secrets,
+}
+
+
+def _gate_for_background(loop, action: dict) -> dict | None:
+    """The gate a backgroundable kind must pass on the STARTING turn, or None.
+
+    D39 decided secret exposure at CALL time, deliberately: the question is about this call's
+    declarations, and it is answered by the user while the run waits. That makes it impossible
+    to run inside the background thread — `gate_*_secrets` files a BLOCKING ask and a thread
+    has no turn to block on — so it runs here instead, synchronously, before anything starts.
+    The flag then defers only the work, never the decision.
+    """
+    gate = _BACKGROUND_GATES.get(action["kind"])
+    return gate(loop, action, poll_s=POLL_S) if gate else None
 
 
 def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->handler table; one branch per action

@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.385.3] — 2026-10-05
+
+### Fixed — a backgrounded action now goes through the same routing, and the same gate, as a foreground one
+
+`background: true` (D118 phase 1) was intercepted in `actionroute.dispatch_action` *above* the
+per-kind routing table, and the thread called `executor.dispatch` for every kind. Two of the eight
+backgroundable kinds are owned by `_route` rather than by `DISPATCH`, both because they need the
+D39 **call-time secret gate**:
+
+- **`script` crashed every time** — `executor.DISPATCH` has no `script` entry on purpose (its gate
+  sits in front of it in `_route`), so a backgrounded one raised `KeyError: 'script'` and the run
+  read an engine error where its result should have been. Reported from a live run by
+  `folder-reorg`; diagnosed by `self-audit` as F633.
+- **`util` ran, with its exposure gate never asked** — the silent half, and the serious one: an
+  ergonomics flag had relocated a security decision out of the user's reach.
+
+The gate now runs on the **starting turn**, synchronously (`actionroute._gate_for_background`): it
+can file a blocking question and a background thread has no turn to block on, so a refusal or a
+pending request becomes that turn's observation and nothing is backgrounded. The thread's dispatch
+choice is read off the same table the foreground consults (`background._runner`). The flag defers
+the work, never the decision. Adding `script` to `DISPATCH` would have fixed the crash and cemented
+the bypass; a test now asserts that it stays absent.
+
+Four cases in `tests/test_background_actions.py`, two of them structural — the runner table must
+match the foreground's for every backgroundable kind, and every kind `_route` gates must appear in
+`_BACKGROUND_GATES`, so the next backgroundable kind cannot walk around its gate. Doc surfaces that
+stated the old premise ("there is no second code path to keep in step") corrected in
+`docs/background-tasks.md`, `docs/architecture.md`, `CLAUDE.md` and the module docstring.
+
 ## [0.385.2] — 2026-10-05
 
 ### Fixed — the browser page no longer offers to open an upstream no browser can open

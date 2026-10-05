@@ -668,8 +668,12 @@ and the capabilities digest's catalog listing):
   and the one that keeps the SAME context: not a child run and not a detached job, just one slow
   step the run should not sit through. `engine/actions.BACKGROUNDABLE_KINDS` — `util`, `script`,
   `shell`, `llm`, `read_file`, `view_image`, `memory_read`, `read_rule` — may carry the flag;
-  `actionroute.dispatch_action` hands the action to `engine/background.py`, which runs the
-  ORDINARY `executor.dispatch` in a daemon thread and returns a *started* observation (a handle,
+  `actionroute.dispatch_action` runs the kind's CALL-TIME GATE first and synchronously
+  (`_gate_for_background` → the D39 secret gate for `util`/`script`, which a thread cannot run
+  because it files a blocking ask and a thread has no turn to block on — F633), then hands the
+  action to `engine/background.py`, which runs the ordinary dispatch path for that kind in a daemon
+  thread (`background._runner`: `executor.do_script` for `script`, `executor.dispatch` otherwise)
+  and returns a *started* observation (a handle,
   the kind, a note) at once, so the turn ends and the conversation keeps its speaking turn. The
   real observation is appended at a later turn boundary by `background.collect`, beside
   `archival.collect` and `announce_finished_subruns`; `loopend` calls `background.settle`, which

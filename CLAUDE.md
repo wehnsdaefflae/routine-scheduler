@@ -388,7 +388,10 @@ one you are about to touch, not all of them.
   (8+ characters, `captured_output.read_capped`) before an observation, the transcript, a spill
   file or the search index sees it; a slash command (`/util …`) goes through the same
   `dispatch_action` seam as a model action, so the D39 secret gate holds for both, and a handler
-  that raises becomes an error observation instead of ending the run.
+  that raises becomes an error observation instead of ending the run. **A `background: true` call
+  passes that gate on its STARTING turn, before the thread exists** (F633): the gate asks the user
+  and a thread has no turn to block on, so a deferral that skipped it would have moved a security
+  decision out of reach — every call-time gate a kind has runs synchronously first.
   **Util output too large for its observation is SAVED, not lost** — `engine/outputs.py` spills the
   full captured text to `.util_outputs/<run-ts>/t<turn>-<util>.out` and the observation that lost the
   middle carries the path (so the store needs no index). ONLY truncated output is kept: an

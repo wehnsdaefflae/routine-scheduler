@@ -109,8 +109,19 @@ cannot offer.
   the detached machinery above: `configure` / `start` / `collect` / `settle`. `actionroute.dispatch_action`
   intercepts the flagged action; `loop._turn_boundary` calls `collect`, which appends the real
   observation where every other boundary feed appends; `loopend.finish_run` calls `settle`.
-- **The thread runs the ORDINARY dispatch path** (`executor.dispatch`), so a backgrounded `util` is
-  the same call it would have been synchronously — there is no second code path to keep in step.
+- **The thread runs the ORDINARY dispatch path for the kind**, read off the same routing table the
+  foreground consults (`background._runner`), so a backgrounded call is the same call it would have
+  been synchronously. Two kinds are NOT `executor.dispatch`: `script` is dispatched by
+  `executor.do_script` (it has no `DISPATCH` entry, on purpose — see the next bullet), and the
+  asymmetry is asserted by `tests/test_background_actions.py::test_the_background_runner_matches_the_foreground_routing_table`.
+- **Every CALL-TIME GATE runs on the starting turn, synchronously — the flag defers the work, never
+  the decision** (F633). `util` and `script` are the two backgroundable kinds `actionroute._route`
+  owns rather than `executor.DISPATCH`, because D39 decided secret exposure at call time and the
+  user answers it while the run waits; a thread has no turn to block on, so the gate cannot live
+  there. `actionroute._gate_for_background` runs it before anything starts, and a refusal or a
+  pending request becomes that turn's observation with nothing backgrounded. Before this, a
+  backgrounded `script` raised `KeyError: 'script'` every time and a backgrounded `util` ran with
+  its exposure gate never asked — an ergonomics flag had relocated a security decision.
 - **Nothing vanishes.** A background call that RAISES delivers an error observation like any other.
   One that lands with no turn left to read it is recorded with `unread: true`. One still running at
   run end is recorded `abandoned: true`, its in-flight model calls closed through
