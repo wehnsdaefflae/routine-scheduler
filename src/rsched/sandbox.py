@@ -19,6 +19,11 @@ The server-config `sandbox:` mode is the escape hatch (docs/sandboxing.md):
 
 The child wrapper itself is always strict (landlock.py exits 97 rather than run unjailed);
 every degradation decision is taken HERE, before launch, so it is loggable and testable.
+
+A granted ROOT can also be broken rather than the kernel: a dead or flaky mount whose stat
+raises. Composition is total about that (R2260) — a read root that cannot be stat'd is dropped
+with its path named, a write root refuses the call naming it — because one `EIO` root used to
+abort the launch of every util in the run, `sandbox-inspect` included.
 """
 
 from __future__ import annotations
@@ -140,6 +145,88 @@ def _toolchain() -> tuple[list[str], list[str]]:
         ro.append(str(Path(uv).resolve().parent))
     rw = [*_SYSTEM_RW, tempfile.gettempdir(), *(str(home / rel) for rel in _HOME_RW)]
     return ro, rw
+
+
+def _unreadable(root: Path | str) -> bool:
+    """True when the kernel cannot stat this granted root at all — a half-dead mount.
+
+    THE ONE PROBE every granted-root touch point in `wrap` asks (R2260). It exists because
+    the composition used to touch each root in five separate places (the planted-link guard,
+    the write-root mkdir, the read-root existence warning and the two mount comprehensions),
+    every one of which propagated the `OSError` out of `wrap`: a single `EIO` root cost the
+    run EVERY util, including `sandbox-inspect`, which takes no path argument and opens
+    nothing under it. The failure was in composing the jail, never in the util's work.
+
+    A path that merely DOES NOT EXIST is not unreadable: that case is already handled (write
+    roots are created, read roots warned about once), and conflating them would start
+    dropping the typo'd roots whose visibility is the point of that warning.
+    """
+    try:
+        Path(root).stat()
+    except FileNotFoundError:
+        return False          # missing, not unreadable — the existing handling owns it
+    except OSError:
+        return True
+    return False
+
+
+def unreadable_roots(policy: SandboxPolicy) -> tuple[str, ...]:
+    """The granted roots of `policy` the kernel cannot stat, for the OBSERVATION the run reads.
+
+    The warning `wrap` logs reaches the operator's daemon log; it does not reach the run, and a
+    run that is not told a grant was dropped reasons from a jail it believes it has — exactly
+    the silent-omission failure R2260's fix must not trade the loud one for. So the engine asks
+    this of the same policy it passes to `wrap` and names the dropped roots in the call's
+    observation (`engine/executor.py`, the `_withheld_note` precedent).
+
+    Read AND write roots are reported, because a run wants to know either is dead; what differs
+    is what the JAIL does with them (read: dropped, write: the call is refused).
+    """
+    return tuple(str(root) for root in (*policy.read_roots, *policy.write_roots)
+                 if _unreadable(root))
+
+
+def _drop_unreadable_read_roots(policy: SandboxPolicy) -> SandboxPolicy:
+    """The policy with every READ root the kernel cannot stat dropped, each one NAMED.
+
+    Degrade, do not abort: a util that genuinely needed the dead root then fails on its own
+    merits — a true statement about that util — instead of every util failing with an `EIO`
+    traceback that blames the whole tool surface. Loudly, because a silently omitted grant
+    would be worse than the old failure: the run would reason from a jail it believes it has.
+
+    A WRITE root is deliberately NOT degraded here (see `_refuse_unreadable_write_roots`).
+    """
+    kept, dropped = [], []
+    for root in policy.read_roots:
+        if _unreadable(root):
+            dropped.append(root)
+            _warn_once(f"eio:{root}", f"granted read root {root} cannot be read "
+                                      f"(the kernel cannot stat it — a dead or flaky mount): "
+                                      f"dropped from the util jail for this call, so the rest "
+                                      f"of the run's tools keep working")
+            continue
+        kept.append(root)
+    if not dropped:
+        return policy
+    return replace(policy, read_roots=tuple(kept))
+
+
+def _refuse_unreadable_write_roots(policy: SandboxPolicy) -> None:
+    """Raise `SandboxRefusal` naming any WRITE root the kernel cannot stat.
+
+    Asymmetric with the read side on purpose (R2271/R2298): dropping a dead READ root costs
+    the run a read it can discover it lost, while dropping a dead WRITE root means a write
+    silently lands nowhere it was meant to. So the call is refused — but it is refused NAMING
+    that root, instead of an `EIO` traceback that implicates every util in the run.
+    """
+    dead = [str(root) for root in policy.write_roots if _unreadable(root)]
+    if dead:
+        raise SandboxRefusal(
+            f"granted write root(s) {', '.join(dead)} cannot be read (the kernel cannot stat "
+            f"them — a dead or flaky mount), so the jail cannot grant the write they exist for. "
+            f"A write root is not degraded the way a read root is: a write under it would land "
+            f"nowhere it was meant to. Remove the root from this routine's fs_write_roots, or "
+            f"repair the mount.")
 
 
 def _ensure_write_roots(policy: SandboxPolicy) -> None:
@@ -265,6 +352,13 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
     `fs_paths` names private stores (a messenger's session directory) that are mounted only
     for the declarer, so granting one no longer hands it to every util in the run.
     """
+    # R2260 — FIRST, before any other site touches a granted root: a root the kernel cannot
+    # stat is decided here, once, so none of the sites below can propagate its `OSError` and
+    # cost the run every util. Read roots degrade (dropped + named); write roots refuse by
+    # name. Keeping this ahead of the planted-link guard also stops a dead root being
+    # misreported as a symlink into a credential store.
+    _refuse_unreadable_write_roots(policy)
+    policy = _drop_unreadable_read_roots(policy)
     # before anything else touches a root — `_ensure_write_roots` would mkdir inside a store
     policy = _without_planted_links(policy)
     _ensure_write_roots(policy)   # mode-independent: the grant implies the directory

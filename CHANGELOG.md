@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.386.2] — 2026-10-05
+
+### Fixed — one dead filesystem root no longer costs a run its ENTIRE tool surface
+
+Once a path in a routine's `fs_read_roots` became unreadable at the OS level (a flaky mount
+returning `EIO`), **every `util` action in the run failed** — whether or not the util had anything
+to do with that path. The proof was `util sandbox-inspect`, which takes no path argument and opens
+nothing under the root, failing identically: the fault was in composing the Landlock jail, never in
+the util's work. Five separate places in `sandbox.wrap` resolved or stat'd each granted root (the
+planted-link guard, the write-root mkdir, the read-root existence warning and the two mount
+comprehensions), and each propagated the `OSError` out of composition. The run kept its turns and
+lost every tool, including the ones that could have diagnosed the situation.
+
+Composition is now **total**, decided by one probe (`sandbox._unreadable`), and the two halves are
+deliberately asymmetric:
+
+- a **read** root the kernel cannot stat is **dropped** from that call's jail, named in a logged
+  warning. A util that genuinely needed it then fails on its own merits — a true statement about
+  that util instead of a false one about the whole tool surface.
+- a **write** root the kernel cannot stat **refuses the call** (`SandboxRefusal` naming that root,
+  not an `EIO` traceback). Dropping a dead read root costs a read the run can discover it lost;
+  dropping a dead write root means a write lands nowhere it was meant to.
+
+Both are also named in the RUN's own observation — `dead_fs_roots`, on the `util`, `script` and
+`shell` kinds — because the log is the operator's surface, not the run's: a run told nothing would
+reason from a jail it believes it has, and would read a later "no such file" as the file being gone
+rather than the root being dropped. A root that merely does not *exist* is unchanged (write roots
+are created, missing read roots warned about once). A structural test keeps every granted-root
+touch point in `wrap` behind the single probe, so a sixth one cannot reintroduce the abort.
+
+Reported from conversation `c-20261002-165425` (R2260); the degrade-loudly shape and the
+read/write asymmetry were agreed with `self-audit` (R2271 → R2298) before the build.
+
 ## [0.386.1] — 2026-10-05
 
 ### Added — a MIGRATION marker's deadline now arrives 21 days early, not on the morning it turns red

@@ -201,3 +201,53 @@ def test_util_show_full_and_range_page_the_whole_source(util_ctx):
     assert window["truncated"] is True
     bad = dispatch({"kind": "util", "name": "show", "args": ["big", "--range", "x"]}, util_ctx)
     assert "[bad --range]" in bad["source"]
+
+
+def test_a_dead_fs_root_leaves_the_tool_surface_working_and_names_itself(util_ctx,
+                                                                        monkeypatch, tmp_path):
+    """R2260 end-to-end: one granted read root the kernel cannot stat (a flaky mount returning
+    EIO) used to make EVERY util action fail while composing the jail — including a util that
+    takes no path argument and opens nothing under it. The call must now SUCCEED, and the
+    observation must NAME the dropped root: a run told nothing would reason from a jail it
+    believes it has, and would read a later "no such file" as the file being gone.
+    """
+    import errno
+    import os as _os
+    from pathlib import Path as _Path
+
+    from rsched import sandbox
+
+    dead = tmp_path / "mnt" / "flaky"
+    real_stat, real_resolve = _os.stat, _Path.resolve
+
+    def fake_stat(path, *a, **kw):
+        if str(path).startswith(str(dead)):
+            raise OSError(errno.EIO, "Input/output error", str(path))
+        return real_stat(path, *a, **kw)
+
+    def fake_resolve(self, *a, **kw):
+        if str(self).startswith(str(dead)):
+            raise OSError(errno.EIO, "Input/output error", str(self))
+        return real_resolve(self, *a, **kw)
+
+    monkeypatch.setattr(_os, "stat", fake_stat)
+    monkeypatch.setattr(_Path, "resolve", fake_resolve)
+    monkeypatch.setattr(sandbox, "_warned", set())
+    monkeypatch.setattr(util_ctx, "read_roots", lambda: [dead], raising=False)
+
+    obs = dispatch({"kind": "util", "name": "echoer", "args": ["still", "here"]}, util_ctx)
+    assert obs["exit"] == 0                                   # the tool surface survives
+    assert "echo: still here" in obs["stdout"]
+    assert str(dead) in obs["dead_fs_roots"]["paths"]         # and the run is TOLD
+    assert "dropped" in obs["dead_fs_roots"]["note"]
+
+
+def test_healthy_roots_add_no_dead_root_note(util_ctx, tmp_path):
+    """The note exists for the broken case only: a run whose roots are all fine must not carry
+    a field about them (one stat per root, no observation noise)."""
+    good = tmp_path / "data"
+    good.mkdir()
+    util_ctx.read_roots = lambda: [good]
+    obs = dispatch({"kind": "util", "name": "echoer", "args": ["ok"]}, util_ctx)
+    assert obs["exit"] == 0
+    assert "dead_fs_roots" not in obs

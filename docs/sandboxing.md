@@ -97,6 +97,27 @@ call, live run included:
   (`entities.reaches_store_only_through_a_link`) — a link planted after the approval. A root
   that names a store openly stays mounted, for the reason above.
 
+  **A root the kernel cannot stat at all** (a dead or flaky mount returning `EIO`) is the other
+  thing assembly can meet, and it used to cost the run everything: every granted root was
+  resolved while the jail was composed, in five separate places, so one broken mount aborted the
+  launch of EVERY util in the run — including `sandbox-inspect`, which takes no path argument and
+  opens nothing under it. That is the proof the failure was composition, never the util's work
+  (R2260). Composition is now total, decided by one probe (`sandbox._unreadable`), and the two
+  halves are deliberately asymmetric:
+
+  - a **read** root that cannot be stat'd is **dropped** from that call's jail, with a warning
+    naming the path and saying it was dropped. A util that genuinely needed it then fails on its
+    own merits — a true statement about that util instead of a false one about the whole tool
+    surface.
+  - a **write** root that cannot be stat'd **refuses the call** (`SandboxRefusal` naming that
+    root). Dropping a dead read root costs the run a read it can discover it lost; dropping a
+    dead write root means a write lands nowhere it was meant to.
+
+  Both halves are also named in the RUN's own observation (`dead_fs_roots`, on the `util`,
+  `script` and `shell` kinds), because the log is the operator's surface: a run told nothing
+  would reason from a jail it believes it has. A root that merely **does not exist** is not this
+  case — write roots are created, missing read roots warned about once (above).
+
 Known tradeoffs, accepted and documented: `/proc` is readable (headless chromium needs
 it), so keep secrets out of the daemon's environment — the compose file already prefers
 file-based credentials; `~/.config/gh` is readable so utils can push over the gh

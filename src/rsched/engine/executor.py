@@ -110,6 +110,28 @@ def _withheld_note(ctx: RunContext, withheld: list[str]) -> dict:
                                   "denied": len(withheld) - len(undecided)}}
 
 
+def _dead_root_note(policy) -> dict:
+    """The observation field naming a granted fs root the kernel cannot stat (R2260).
+
+    `sandbox.wrap` drops an unreadable READ root so one dead mount cannot cost the run every
+    util, and logs it — but the log is the operator's surface, not the run's. A run told
+    nothing would reason from a jail it believes it has, and would read a util's "no such
+    file" as the file being gone rather than the root being dropped. So the drop is named
+    HERE too, in the call's own observation. Empty when every granted root is healthy, which
+    is the normal case and costs one stat per root.
+    """
+    dead = sandbox.unreadable_roots(policy)
+    if not dead:
+        return {}
+    return {"dead_fs_roots": {
+        "paths": list(dead),
+        "note": "the kernel cannot stat these granted fs roots (a dead or flaky mount). A "
+                "READ root is dropped from this call's jail so the rest of your tools keep "
+                "working — a util needing it fails on its own merits; a WRITE root refuses "
+                "the call instead, because a write under it would land nowhere. Repair the "
+                "mount or ask for the root to be removed from this routine's config."}}
+
+
 def _ended_by_abort(ctx: RunContext, code: int) -> bool:
     """Whether the run's abort ended this util or script call (`utils_run.run_jailed`). The
     runner's own note on stderr says so in words; the observation also says it in a field
@@ -235,9 +257,12 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     # call learns to request exposure explicitly (denied ones stay unenumerated, R17).
     from .secretgate import withheld_optional_secrets
     withheld = withheld_optional_secrets(ctx, name)
+    # One policy object, used twice: for the jail itself and for the dead-root note (R2260) —
+    # so what the run is told about its roots is what the jail actually decided about them.
+    policy = sandbox.policy_for_ctx(ctx)
     code, out, err = utils_run.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
-        policy=sandbox.policy_for_ctx(ctx),
+        policy=policy,
         extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld),
         cwd=ctx.routine.dir, aborted=ctx.aborted,
         cancelled=cancelled_for_turn(ctx))
@@ -250,7 +275,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
            **command_output(ctx, name, out, err, code), **_withheld_note(ctx, withheld),
-           **killed}
+           **_dead_root_note(policy), **killed}
     if ended is not None:
         # Not a failure, so no repair route: a resumed run replays this observation, and
         # "the util itself may be broken — fix it" would send it after a util that is fine.
@@ -324,16 +349,18 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     env_secrets = {k: v for k, v in load_secrets().items()
                    if k in declared and secret_state(ctx, k) == "granted"}
     env_secrets |= {k: v for k, v in _extra_secrets(ctx).items() if k in declared}
+    policy = sandbox.policy_for_ctx(ctx)   # the jail AND the dead-root note (R2260)
     code, out, err = scripts.run_script(
         ctx.routine.dir, name, args,
         timeout=int(action.get("timeout_s") or scripts.SCRIPT_TIMEOUT_S),
-        policy=sandbox.policy_for_ctx(ctx), libraries_home=ctx.server.libraries_home,
+        policy=policy, libraries_home=ctx.server.libraries_home,
         env_secrets=env_secrets, aborted=ctx.aborted,
         cancelled=cancelled_for_turn(ctx))
     killed = _note_if_killed(ctx, "script", name, code)
     obs = {"kind": "script", "name": name, "args": args, "exit": code,
            **command_output(ctx, f"script-{name}", out, err, code),
-           **_withheld_note(ctx, withheld_optional(ctx, optional)), **killed}
+           **_withheld_note(ctx, withheld_optional(ctx, optional)),
+           **_dead_root_note(policy), **killed}
     if ended := _ended_by_a_person(ctx, code):
         obs[ended] = True
     return obs
@@ -399,15 +426,16 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
     if raw := str(action.get("path") or "").strip():
         candidate = expand(raw)
         cwd = candidate if candidate.is_absolute() else (ctx.routine.dir / candidate)
+    policy = sandbox.policy_for_ctx(ctx)   # the jail AND the dead-root note (R2260)
     result = shellrun.run_shell(
-        command, policy=sandbox.policy_for_ctx(ctx),
+        command, policy=policy,
         libraries_home=ctx.server.libraries_home, cwd=cwd,
         timeout=int(action.get("timeout_s") or shellrun.SHELL_DEFAULT_TIMEOUT_S),
         aborted=ctx.aborted, cancelled=cancelled_for_turn(ctx))
     killed = _note_if_killed(ctx, "shell", command[:60], int(result["exit"]))
     obs = {"kind": "shell", "command": command, "exit": result["exit"],
            **command_output(ctx, "shell", result["stdout"], result["stderr"], result["exit"]),
-           **killed}
+           **_dead_root_note(policy), **killed}
     obs["truncated"] = obs["truncated"] or result["truncated"]
     if marks_a_write(command):
         # D158: no gate saw this write, so the record is the only place it exists.

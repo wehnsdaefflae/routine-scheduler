@@ -422,3 +422,139 @@ def test_a_root_naming_a_credential_store_openly_stays_mounted(tmp_path, monkeyp
     spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
                                    fs_roots=True, fs_paths=())[2])
     assert str(store) in spec["ro"]
+
+
+def _make_unreadable(monkeypatch, victim: Path) -> None:
+    """Present `victim` the way a flaky mount does: every kernel probe of it raises EIO.
+
+    R2260's live case (`/mnt/laptop/.../profiles` returning Errno 5) cannot be reproduced by
+    permissions — an unreadable DIRECTORY still stats fine, and the root of the live failure
+    was the stat itself failing. So the three calls the jail assembler makes on a granted root
+    — stat (behind `exists`/`is_dir`), `mkdir` and `resolve` — are made to raise for that one
+    path and to behave normally for every other, which is what a half-dead mount does.
+    """
+    import errno
+    import os as _os
+
+    real_stat, real_mkdir, real_resolve = _os.stat, Path.mkdir, Path.resolve
+    vic = str(victim)
+
+    def _is_victim(p) -> bool:
+        return str(p).startswith(vic)
+
+    def fake_stat(path, *a, **kw):
+        if _is_victim(path):
+            raise OSError(errno.EIO, "Input/output error", str(path))
+        return real_stat(path, *a, **kw)
+
+    def fake_mkdir(self, *a, **kw):
+        if _is_victim(self):
+            raise OSError(errno.EIO, "Input/output error", str(self))
+        return real_mkdir(self, *a, **kw)
+
+    def fake_resolve(self, *a, **kw):
+        if _is_victim(self):
+            raise OSError(errno.EIO, "Input/output error", str(self))
+        return real_resolve(self, *a, **kw)
+
+    monkeypatch.setattr(_os, "stat", fake_stat)
+    monkeypatch.setattr(Path, "mkdir", fake_mkdir)
+    monkeypatch.setattr(Path, "resolve", fake_resolve)
+
+
+def test_an_unreadable_read_root_is_dropped_from_the_jail_and_named(tmp_path, monkeypatch,
+                                                                   caplog):
+    """R2260: a granted read root the kernel cannot stat (a flaky mount returning EIO) is
+    DROPPED from the policy and the drop is named. Before this, every root was resolved while
+    the jail was composed, so one EIO root aborted the launch of EVERY util in the run."""
+    _force_abi(monkeypatch, 4)
+    monkeypatch.setattr(sandbox, "_warned", set())
+    good = tmp_path / "data"
+    good.mkdir()
+    dead = tmp_path / "mnt" / "flaky"
+    _make_unreadable(monkeypatch, dead)
+    policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(good, dead))
+    with caplog.at_level("WARNING", logger="rsched.sandbox"):
+        spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False,
+                                       fs_roots=True, fs_paths=())[2])
+    assert str(good) in spec["ro"]                   # the healthy grant is untouched
+    assert str(dead) not in spec["ro"]               # the dead one is dropped, not fatal
+    assert str(dead) in caplog.text and "dropped" in caplog.text
+    assert "cannot be read" in caplog.text
+
+
+def test_an_unreadable_read_root_does_not_break_a_util_that_never_touches_it(tmp_path,
+                                                                            monkeypatch):
+    """The shape that proved R2260: `sandbox-inspect` takes no path argument and opens nothing
+    under the dead root, yet failed identically to a util that did — so the failure could only
+    be the jail. Composition must stay total: wrap() returns a command, it does not raise."""
+    _force_abi(monkeypatch, 4)
+    monkeypatch.setattr(sandbox, "_warned", set())
+    dead = tmp_path / "mnt" / "flaky"
+    _make_unreadable(monkeypatch, dead)
+    policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(dead,),
+                                   own_dir=tmp_path / "own")
+    cmd = sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False,
+                       fs_roots=True, fs_paths=())
+    assert cmd[-len(CMD):] == CMD                    # the util still runs
+    spec = json.loads(cmd[2])
+    assert str(tmp_path / "own") in spec["rw"]       # and keeps its own dir
+
+
+def test_an_unreadable_write_root_refuses_the_call_naming_that_root(tmp_path, monkeypatch):
+    """A vanished READ root costs a read the run can discover it lost; a vanished WRITE root
+    means a write lands nowhere it was meant to, so it is NOT degraded (R2271/R2298). The call
+    is refused — but naming that root, instead of an EIO traceback blaming every util."""
+    _force_abi(monkeypatch, 4)
+    monkeypatch.setattr(sandbox, "_warned", set())
+    dead = tmp_path / "mnt" / "flaky"
+    _make_unreadable(monkeypatch, dead)
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(dead,))
+    with pytest.raises(sandbox.SandboxRefusal) as excinfo:
+        sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False,
+                     fs_roots=True, fs_paths=())
+    assert str(dead) in str(excinfo.value)
+    assert "write" in str(excinfo.value)
+
+
+def test_an_unreadable_root_is_not_mistaken_for_a_planted_credential_link(tmp_path,
+                                                                         monkeypatch, caplog):
+    """The planted-link guard runs FIRST on every root (`_without_planted_links`). An EIO root
+    must be reported as unreadable — not as a symlink into a credential store, and not as an
+    OSError out of the guard."""
+    _force_abi(monkeypatch, 4)
+    monkeypatch.setattr(sandbox, "_warned", set())
+    dead = tmp_path / "mnt" / "flaky"
+    _make_unreadable(monkeypatch, dead)
+    policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(dead,))
+    with caplog.at_level("WARNING", logger="rsched.sandbox"):
+        sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False,
+                     fs_roots=True, fs_paths=())
+    assert "credential store" not in caplog.text
+
+
+def test_every_granted_root_probe_in_wrap_goes_through_one_decision(tmp_path, monkeypatch):
+    """STRUCTURAL: R2260 existed because five separate places in the composition touched every
+    granted root and each could raise. The probe is now ONE function; a sixth touch point added
+    later must use it too, or this test fails and the abort cannot come back.
+
+    `_unreadable` is made to record every root it was asked about; then wrap() runs with a
+    granted read AND write root, and both must have been asked about before any mount list or
+    mkdir used them."""
+    _force_abi(monkeypatch, 4)
+    monkeypatch.setattr(sandbox, "_warned", set())
+    asked: list[str] = []
+    real = sandbox._unreadable
+
+    def probe(root):
+        asked.append(str(root))
+        return real(root)
+
+    monkeypatch.setattr(sandbox, "_unreadable", probe)
+    rd, wr = tmp_path / "rd", tmp_path / "wr"
+    rd.mkdir()
+    policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(rd,), write_roots=(wr,),
+                                   own_dir=tmp_path / "own")
+    sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False,
+                 fs_roots=True, fs_paths=())
+    assert str(rd) in asked and str(wr) in asked
