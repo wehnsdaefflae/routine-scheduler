@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from .. import sandbox, utils_lib, utils_run
-from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, guess_media_type, read_media_b64
+from ..endpoints.base import guess_media_type, oversize_reason, read_media_b64
 from ..paths import resolve_rel
 from .fileops import UTIL_DEFAULT_TIMEOUT_S, _memory_gate, _runs_read_gate
 from .observations import truncate
@@ -84,8 +84,17 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
         return {"path": rel_path, "error": "not a viewable image/PDF (png/jpeg/webp/gif/pdf) — "
                                            "read text files with read_file instead"}
     ctx.seen_paths.add(str(path))   # viewed = seen: grounds a later overwrite of this file
-    native = (endpoint is not None and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
+    # F623: the PRE-FLIGHT. `oversize_reason` is the one shared predicate — bytes AND the
+    # provider's per-side pixel bound — so a file that would make the provider refuse the whole
+    # message is described by the vision util instead of being sent and failing. The reason is
+    # carried into the observation, because "the model could not see it" without the limit and
+    # the file's measured size leaves the run no way to fix it.
+    too_big = oversize_reason(path, mime) if endpoint is not None else None
+    native = (endpoint is not None and too_big is None
               and endpoint.supports_media(mime, multimodal=multimodal))
+    if too_big and endpoint is not None and endpoint.supports_media(mime, multimodal=multimodal):
+        viewed = _view_via_vision(rel_path, str(path), prompt, ctx)
+        return {**viewed, "oversize": too_big}
     if native:
         # R1493: capture the BYTES here, not just the path. The media entry rides the
         # observation's message and stays in the conversation, so the endpoint re-renders it on
@@ -138,7 +147,11 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
         except (OSError, PermissionError):
             continue
         mime = guess_media_type(path)
-        if (mime and path.is_file() and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
+        # the SAME pre-flight view_image uses (F623): one predicate, so a bound added there is
+        # never missing here. An oversized attachment is skipped, exactly as a too-big or
+        # unsupported one always was — the model can still `view_image` it, which routes it
+        # through the vision util and says why.
+        if (mime and path.is_file() and oversize_reason(path, mime) is None
                 and endpoint.supports_media(mime, multimodal=ref.multimodal)):
             out.append({"path": str(path), "media_type": mime})
     return out

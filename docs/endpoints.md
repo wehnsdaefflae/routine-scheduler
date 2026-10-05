@@ -145,6 +145,18 @@ default. Routines and the system model reference a model by its catalog **name**
   it explicitly to turn native vision *on* for an `openai` vision model (GPT-4o, Gemini) or
   *off* for a text-only one. When off, images/PDFs a routine views route to the `vision` util
   instead — vision still works, just indirectly.
+  **`multimodal` is not the only gate: a file must also be small enough to send.** One predicate
+  decides it for both `view_image` and conversation auto-attach — `endpoints/base.oversize_reason`
+  — and it checks two bounds: `NATIVE_MEDIA_MAX_BYTES` (7 MiB raw; base64 inflates ~33% into most
+  providers' ~10 MB request limit) and `NATIVE_MEDIA_MAX_PIXELS_PER_SIDE` (2000 px per side,
+  F623). The pixel bound exists because bytes do not predict it: a 2 MB 12000x9000 screenshot
+  clears the byte ceiling and then makes the provider refuse the **whole message** — every image
+  in it and the text with them — on `At least one of the image dimensions exceed max allowed size
+  for many-image requests: 2000 pixels`. An over-bound file routes to the `vision` util and the
+  run is told the limit and the file's own measured size, so it can downscale and look properly.
+  Dimensions are read from the file header (`image_dimensions`, PNG/JPEG/GIF/WEBP, no Pillow); an
+  unmeasurable header means "unknown", never "within the limit". A PDF has no pixel size and is
+  judged by bytes alone.
 - `context_tokens` — an optional override for this model's full input + output token window.
   Leave blank to use provider discovery, then the endpoint fallback. Compaction compares an
   explicitly estimated input token count against this window and reserves `max_tokens` for

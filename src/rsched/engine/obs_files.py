@@ -38,8 +38,14 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 # R1493: a failed view must read as a failure and invite nothing. The report's
                 # author described a rendered page twice on the strength of a line that opened
                 # with "look at it now" and appended the failure at its end.
+                #
+                # F623: a file that was TOO LARGE to show natively and then also failed to be
+                # described keeps its measurement. Without it the run is told only "cannot be
+                # described" — the same dead end F623 exists to end — when the actionable fact
+                # is that the file is over the limit and downscaling it would work.
+                why = f" It was also {f['oversize']}." if f.get("oversize") else ""
                 parts.append(f"--- {f['path']} NOT SHOWN — {f['error']}. You have not seen this "
-                             "file: describe nothing from it.")
+                             f"file: describe nothing from it.{why}")
             elif f.get("native") and obs.get("media_replayed"):
                 # On RESUME the image is not re-attached (the replay rebuilds text-only
                 # messages), so "look at it now" would tell the model to look at what is not
@@ -50,6 +56,12 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             elif f.get("native"):
                 parts.append(f"--- {f['path']} ({f['media_type']}) — shown to you below; "
                              "look at it now.")
+            elif f.get("via") == "vision-util" and f.get("oversize"):
+                # F623: the model CAN see images — this one was too big to send, and saying
+                # "can't view it directly" would be false and unactionable. The measured size and
+                # the limit are what let the run downscale and look properly.
+                parts.append(f"--- {f['path']} (described by the vision util — TOO LARGE to show "
+                             f"you directly: {f['oversize']}):\n{f.get('text', '')}")
             elif f.get("via") == "vision-util":
                 parts.append(f"--- {f['path']} (described by the vision util — this run's model "
                              f"can't view it directly):\n{f.get('text', '')}")

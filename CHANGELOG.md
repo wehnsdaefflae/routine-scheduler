@@ -15,6 +15,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.386.0] — 2026-10-05
+
+### Added — an oversized image is caught BEFORE the request, instead of 400-ing the whole message
+
+F623's second half. The engine's only pre-flight on a native attachment was
+`NATIVE_MEDIA_MAX_BYTES` (7 MiB), which cannot express the bound providers actually refuse on. A
+2 MB 12000x9000 screenshot clears the byte ceiling and then makes the provider reject the
+**entire message** — every image in it, and the text with them — on:
+
+> `messages.696.content.2.image.source.base64.data: At least one of the image dimensions exceed max allowed size for many-image requests: 2000 pixels`
+
+That sentence is readable only because half 1 (0.384.1) stopped truncating the provider's refusal
+at 120 characters, so **the limit this half checks against is the provider's own number, not a
+guess**: `NATIVE_MEDIA_MAX_PIXELS_PER_SIDE = 2000`.
+
+- **One shared predicate.** `endpoints/base.oversize_reason(path, mime)` returns why a file may
+  not ride a message natively — or None. `view_image` and conversation auto-attach both call it;
+  they previously carried duplicate eligibility conditions, so a bound added to one would have
+  been missing from the other.
+- **Dimensions without a new dependency.** `endpoints/base.image_dimensions` reads PNG, JPEG
+  (walking the markers to the first SOF), GIF and WEBP (VP8 / VP8L / VP8X) headers. An
+  unmeasurable header means *unknown*, never *within the limit*. A PDF has no pixel size and is
+  judged by bytes alone.
+- **The run is told the limit AND the file's measured size** — `6000x2001 px exceeds the
+  provider's limit of 2000 pixels per side …`, with what to do about it. A run told only "too
+  big" cannot act; a run told its file is 2001 px downscales it and looks properly.
+- **The measurement survives a failed description too.** Building this surfaced a second loss one
+  layer in: when the `vision` util is unavailable the error branch rendered *only*
+  "cannot be described", discarding the measurement — the same dead end, re-created. The
+  `NOT SHOWN` line now keeps it.
+- A multimodal run is no longer told *"this run's model can't view it directly"* about a file its
+  model can see perfectly well. That wording was false and unactionable.
+
+Nine cases in `tests/test_view_image.py`, including all four header formats and the wide-side case.
+`test_do_view_image_oversize_uses_vision` was retargeted at `endpoints.base`, where the byte bound
+is now read — left on `mediaops` it would have passed while proving nothing. Doc surfaces:
+`docs/endpoints.md` (the native-media contract) and `docs/prompt-anatomy.md` (the observation
+wording, which moves with any change to it).
+
 ## [0.385.3] — 2026-10-05
 
 ### Fixed — a backgrounded action now goes through the same routing, and the same gate, as a foreground one

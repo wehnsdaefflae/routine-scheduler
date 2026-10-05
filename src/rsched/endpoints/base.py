@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -41,6 +42,121 @@ RETRY_AFTER_CAP_S = 30.0
 IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 PDF_MIME = "application/pdf"
 NATIVE_MEDIA_MAX_BYTES = 7 * 1024 * 1024
+
+#: F623: the per-DIMENSION pixel ceiling, which the byte cap above cannot express and which is
+#: what providers actually refuse on. The number is the provider's own, read off a real 400:
+#: `messages.696.content.2.image.source.base64.data: At least one of the image dimensions exceed
+#: max allowed size for many-image requests: 2000 pixels`. A 2 MB 12000x9000 screenshot passes
+#: the 7 MiB gate comfortably and then 400s the WHOLE message — every image in it, and the text
+#: too — because one file was too tall. So the engine checks BEFORE the request instead of
+#: recovering after it: an image over this bound routes to the vision util like any other file
+#: the endpoint cannot show, and the run is told the limit AND the file's own measured size.
+#: "many-image requests" is the strictest form of the bound, and a prompt accumulating
+#: observations is exactly that, so the strict value is the safe one to pre-flight against.
+NATIVE_MEDIA_MAX_PIXELS_PER_SIDE = 2000
+
+
+def image_dimensions(path: str | Path) -> tuple[int, int] | None:
+    """`(width, height)` in pixels for a PNG / JPEG / GIF / WEBP, or None if unreadable.
+
+    Deliberately dependency-free: reading four header shapes is a few lines, where adding Pillow
+    to the engine's own import path for one measurement is a dependency every deployment carries.
+    None means "could not measure", never "within the limit" — the caller decides what an
+    unmeasurable file is allowed to do, so a header this cannot parse never silently passes a
+    bound it was never checked against.
+    """
+    try:
+        with Path(path).open("rb") as fh:
+            head = fh.read(32)
+            if head[:8] == b"\x89PNG\r\n\x1a\n" and head[12:16] == b"IHDR":
+                w, h = struct.unpack(">II", head[16:24])
+                return int(w), int(h)
+            if head[:6] in (b"GIF87a", b"GIF89a"):
+                w, h = struct.unpack("<HH", head[6:10])
+                return int(w), int(h)
+            if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+                return _webp_dimensions(head)
+            if head[:2] == b"\xff\xd8":
+                return _jpeg_dimensions(fh)
+    except (OSError, struct.error, ValueError):
+        return None
+    return None
+
+
+def _webp_dimensions(head: bytes) -> tuple[int, int] | None:
+    """WEBP, the three chunk layouts: VP8 (lossy), VP8L (lossless), VP8X (extended)."""
+    chunk = head[12:16]
+    if chunk == b"VP8X":
+        w = int.from_bytes(head[24:27], "little") + 1
+        h = int.from_bytes(head[27:30], "little") + 1
+        return w, h
+    if chunk == b"VP8 ":
+        w, h = struct.unpack("<HH", head[26:30])
+        return w & 0x3FFF, h & 0x3FFF
+    if chunk == b"VP8L":
+        bits = int.from_bytes(head[21:25], "little")
+        return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+    return None
+
+
+def _jpeg_dimensions(fh) -> tuple[int, int] | None:
+    """JPEG, by walking the markers to the first SOFn frame header — the only place the size
+    is stated. Bounded: a file whose markers do not lead to a frame returns None rather than
+    reading forever.
+    """
+    fh.seek(2)
+    for _ in range(256):                       # a real JPEG reaches its SOF in a handful
+        marker = fh.read(2)
+        if len(marker) < 2 or marker[0] != 0xFF:
+            return None
+        kind = marker[1]
+        if kind in (0xD8, 0xD9) or 0xD0 <= kind <= 0xD7:
+            continue
+        size_bytes = fh.read(2)
+        if len(size_bytes) < 2:
+            return None
+        size = struct.unpack(">H", size_bytes)[0]
+        # SOF0..SOF15, excluding the DHT/DAC/DNL markers that share the range
+        if kind in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                    0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+            frame = fh.read(5)
+            if len(frame) < 5:
+                return None
+            h, w = struct.unpack(">HH", frame[1:5])
+            return int(w), int(h)
+        fh.seek(size - 2, 1)
+    return None
+
+
+def oversize_reason(path: str | Path, mime: str) -> str | None:
+    """Why this file may NOT ride a message natively, as a sentence naming the LIMIT and the
+    file's own measured size — or None when it may (F623).
+
+    One predicate, shared by `view_image` and conversation auto-attach, because the two used to
+    carry duplicate eligibility conditions and a bound added to one would have been missing from
+    the other. A PDF is not measured in pixels and is judged by bytes alone.
+    """
+    try:
+        size = Path(path).stat().st_size
+    except OSError as exc:
+        return f"could not be measured: {exc}"
+    if size > NATIVE_MEDIA_MAX_BYTES:
+        return (f"{size / 1024 / 1024:.1f} MiB exceeds the "
+                f"{NATIVE_MEDIA_MAX_BYTES / 1024 / 1024:.0f} MiB native-attachment ceiling")
+    if mime == PDF_MIME:
+        return None
+    dims = image_dimensions(path)
+    if dims is None:
+        return None            # unmeasurable: the byte cap stays the only bound it must clear
+    width, height = dims
+    if max(width, height) > NATIVE_MEDIA_MAX_PIXELS_PER_SIDE:
+        return (f"{width}x{height} px exceeds the provider's limit of "
+                f"{NATIVE_MEDIA_MAX_PIXELS_PER_SIDE} pixels per side for a request carrying "
+                f"several images — one such file makes the provider refuse the WHOLE message, "
+                f"so it is described by the vision util instead. Downscale it (e.g. "
+                f"`gu img-fetch`'s resize, or any tool that bounds the long side to "
+                f"{NATIVE_MEDIA_MAX_PIXELS_PER_SIDE} px) to have the model see it directly")
+    return None
 
 
 def guess_media_type(path: str | Path) -> str | None:

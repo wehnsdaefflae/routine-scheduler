@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import base64
 import json
+import struct as _struct
+import zlib as _zlib
+from pathlib import Path as _Path
 from types import SimpleNamespace
 
 from helpers import run_context, server_config
@@ -167,7 +170,10 @@ def test_do_view_image_missing_file(tmp_path):
 
 
 def test_do_view_image_oversize_uses_vision(tmp_path, monkeypatch):
-    monkeypatch.setattr("rsched.engine.mediaops.NATIVE_MEDIA_MAX_BYTES", 4)
+    # F623: the byte bound is read by `endpoints.base.oversize_reason`, the ONE predicate both
+    # view_image and auto-attach now share, so that is where it must be patched. Patched on
+    # `mediaops` it would have no effect and this test would pass having proved nothing.
+    monkeypatch.setattr("rsched.endpoints.base.NATIVE_MEDIA_MAX_BYTES", 4)
     monkeypatch.setattr(mediaops, "vision_describe", lambda *a: "described")
     (tmp_path / "shot.png").write_bytes(b"toolong")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"},
@@ -409,3 +415,190 @@ def test_read_file_end_truncates_and_resumes_in_sequence(tmp_path):
     nxt = fileops._read_one("big.txt", {"start_line": obs["end_line"] + 1, "max_lines": 500}, ctx)
     assert nxt["start_line"] == obs["end_line"] + 1         # resumes in sequence
     assert f"line-{obs['end_line']:05d}-" in nxt["content"]  # the next line is now shown
+
+
+# ---- F623 half 2: the PRE-FLIGHT, so one oversized image cannot 400 a whole message -----------
+#
+# Half 1 (0.384.1) widened the recorded provider message far enough to read the constraint, and
+# the number this half checks against is the provider's own, quoted from that very 400:
+# "At least one of the image dimensions exceed max allowed size for many-image requests: 2000
+# pixels". The engine's only pre-flight before this was NATIVE_MEDIA_MAX_BYTES (7 MiB), which
+# cannot express a pixel bound at all — a 2 MB 12000x9000 screenshot passes it and then makes the
+# provider refuse the ENTIRE message: every image in it, and the text with them.
+
+
+
+def _png(path, width, height):
+    """A real, structurally valid PNG of the given dimensions — header fields the reader parses
+    plus a CRC'd IHDR, written without Pillow so the test has no dependency the engine lacks."""
+    ihdr = _struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    chunk = b"IHDR" + ihdr
+    data = (b"\x89PNG\r\n\x1a\n"
+            + _struct.pack(">I", len(ihdr)) + chunk + _struct.pack(">I", _zlib.crc32(chunk))
+            + _struct.pack(">I", 0) + b"IEND" + _struct.pack(">I", _zlib.crc32(b"IEND")))
+    path.write_bytes(data)
+    return path
+
+
+def _gif(path, width, height):
+    path.write_bytes(b"GIF89a" + _struct.pack("<HH", width, height) + b"\x00" * 10)
+    return path
+
+
+def _jpeg(path, width, height):
+    """SOI, one APP0 to be skipped, then an SOF0 frame header — the marker walk's real shape."""
+    app0 = b"\xff\xe0" + _struct.pack(">H", 16) + b"JFIF\x00" + b"\x00" * 9
+    sof0 = b"\xff\xc0" + _struct.pack(">H", 17) + b"\x08" + _struct.pack(">HH", height, width) \
+        + b"\x03" + b"\x00" * 9
+    path.write_bytes(b"\xff\xd8" + app0 + sof0 + b"\xff\xd9")
+    return path
+
+
+def _webp_vp8x(path, width, height):
+    body = b"WEBPVP8X" + _struct.pack("<I", 10) + b"\x00" * 4 \
+        + (width - 1).to_bytes(3, "little") + (height - 1).to_bytes(3, "little")
+    path.write_bytes(b"RIFF" + _struct.pack("<I", len(body)) + body)
+    return path
+
+
+def test_image_dimensions_reads_every_native_format(tmp_path):
+    """All four IMAGE_MIMES formats, because a bound that only works for PNG would pass exactly
+    the file that slipped through before (a screenshot) and miss a photo."""
+    from rsched.endpoints.base import image_dimensions
+
+    assert image_dimensions(_png(tmp_path / "a.png", 1234, 567)) == (1234, 567)
+    assert image_dimensions(_gif(tmp_path / "b.gif", 640, 480)) == (640, 480)
+    assert image_dimensions(_jpeg(tmp_path / "c.jpg", 4032, 3024)) == (4032, 3024)
+    assert image_dimensions(_webp_vp8x(tmp_path / "d.webp", 800, 600)) == (800, 600)
+
+
+def test_an_unmeasurable_file_reads_as_unknown_and_never_as_within_the_limit(tmp_path):
+    """None means "could not measure". If it meant "fine", a header this cannot parse would pass
+    a bound it was never checked against — which is the failure mode being fixed, inverted."""
+    from rsched.endpoints.base import image_dimensions
+
+    broken = tmp_path / "truncated.png"
+    broken.write_bytes(b"\x89PNG\r\n\x1a\n")          # header only, no IHDR
+    assert image_dimensions(broken) is None
+    assert image_dimensions(tmp_path / "absent.png") is None
+    nonsense = tmp_path / "x.png"
+    nonsense.write_bytes(b"not an image at all")
+    assert image_dimensions(nonsense) is None
+
+
+def test_the_pixel_limit_is_the_one_the_provider_named():
+    """The constant is not a guess. It is the number in the 400 half 1 preserved, and
+    test_the_media_fallback_keeps_the_limit_the_provider_named above holds that text."""
+    from rsched.endpoints.base import NATIVE_MEDIA_MAX_PIXELS_PER_SIDE
+
+    assert NATIVE_MEDIA_MAX_PIXELS_PER_SIDE == 2000
+
+
+def test_oversize_reason_names_the_limit_and_the_files_own_size(tmp_path):
+    """The whole point of the pre-flight: a run told only "too big" cannot act, and a run told
+    "12000x9000 px exceeds 2000 per side" downscales and looks at it. Both numbers, every time."""
+    from rsched.endpoints.base import oversize_reason
+
+    ok = _png(tmp_path / "small.png", 1000, 800)
+    assert oversize_reason(ok, "image/png") is None
+
+    tall = _png(tmp_path / "tall.png", 1200, 9000)
+    reason = oversize_reason(tall, "image/png")
+    assert reason and "9000" in reason and "2000" in reason, reason
+    assert "1200x9000" in reason, reason
+    assert "whole message" in reason.lower() or "WHOLE message" in reason, reason
+
+    wide = _png(tmp_path / "wide.png", 12000, 300)
+    assert "12000x300" in (oversize_reason(wide, "image/png") or ""), "the WIDE side counts too"
+
+
+def test_oversize_reason_judges_a_pdf_by_bytes_alone(tmp_path, monkeypatch):
+    """A PDF has no pixel dimensions to measure, so the pixel bound must not be applied to one —
+    a PDF that reads as unmeasurable must not be refused for being unmeasurable."""
+    from rsched.endpoints import base as base_mod
+    from rsched.endpoints.base import oversize_reason
+
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.7\n" + b"x" * 2048)
+    assert oversize_reason(pdf, "application/pdf") is None
+    monkeypatch.setattr(base_mod, "NATIVE_MEDIA_MAX_BYTES", 16)
+    assert "ceiling" in (oversize_reason(pdf, "application/pdf") or "")
+
+
+def test_an_oversized_image_is_described_instead_of_sent_and_the_run_is_told_why(tmp_path):
+    """The behaviour through `do_view_image` on a MULTIMODAL endpoint: the model can see images,
+    this one is simply too large to send, so it routes to the vision util carrying the measured
+    reason — and crucially NO media entry is produced, because that entry is what would have made
+    the provider refuse the whole message."""
+    from rsched.endpoints.base import NATIVE_MEDIA_MAX_PIXELS_PER_SIDE
+
+    endpoint = SimpleNamespace(multimodal=True,
+                               supports_media=lambda _m, *, multimodal: True)
+    ctx = _ctx(tmp_path, endpoint)
+    _png(tmp_path / "huge.png", 6000, NATIVE_MEDIA_MAX_PIXELS_PER_SIDE + 1)
+
+    obs = mediaops.do_view_image({"kind": "view_image", "path": "huge.png"}, ctx)
+    assert "media" not in obs, (
+        "the oversized image was still attached — the pre-flight did not prevent the 400")
+    f = obs["files"][0]
+    assert f.get("via") == "vision-util"
+    assert f.get("native") is not True
+    assert "2001" in f["oversize"] and "2000" in f["oversize"], f["oversize"]
+
+    # The measurement must reach the model through BOTH renderings, because which one it gets
+    # depends on whether the vision util is installed — and in neither case may the run be left
+    # with an unactionable "could not" when the actionable fact is a size it can reduce.
+    rendered = obs_files.format_files(obs, "view_image")
+    assert "2001" in rendered, (
+        "the file's measured size never reached the model, so the run cannot know to downscale "
+        f"it: {rendered}")
+    assert "can't view it directly" not in rendered, (
+        "a multimodal run told its model cannot view images is told something false — the file "
+        f"was too big, which is actionable: {rendered}")
+
+    # (a) the description SUCCEEDED → the line says it was too large to show directly
+    described = {**obs, "files": [{**f, "error": None, "text": "DESCRIBED",
+                                   "via": "vision-util"}]}
+    described["files"][0].pop("error")
+    text_ok = obs_files.format_files(described, "view_image")
+    assert "TOO LARGE to show you directly" in text_ok, text_ok
+    assert "2001" in text_ok and "2000" in text_ok, text_ok
+
+    # (b) the description FAILED too → the failure still reads as a failure (R1493) and the
+    # measurement rides along, which is the half F623 would otherwise lose one layer further in
+    failed = {**obs, "files": [{"path": "huge.png", "via": "vision-util",
+                                "error": "the `vision` util is not installed",
+                                "oversize": f["oversize"]}]}
+    text_bad = obs_files.format_files(failed, "view_image")
+    assert "NOT SHOWN" in text_bad and "describe nothing from it" in text_bad, text_bad
+    assert "2001" in text_bad, (
+        "a file too large to send AND impossible to describe left the run with no measurement "
+        f"at all — the F623 dead end, one layer in: {text_bad}")
+
+
+def test_a_within_limit_image_still_rides_the_message_natively(tmp_path):
+    """The pre-flight must not cost the ordinary case. A normal screenshot is still attached."""
+    endpoint = SimpleNamespace(multimodal=True,
+                               supports_media=lambda _m, *, multimodal: True)
+    ctx = _ctx(tmp_path, endpoint)
+    _png(tmp_path / "fine.png", 1600, 900)
+    obs = mediaops.do_view_image({"kind": "view_image", "path": "fine.png"}, ctx)
+    assert obs["files"][0].get("native") is True
+    assert obs["media"] and obs["media"][0]["media_type"] == "image/png"
+    assert "oversize" not in obs["files"][0]
+
+
+def test_auto_attach_uses_the_same_pre_flight_as_view_image(tmp_path, monkeypatch):
+    """The two sites carried duplicate eligibility conditions, so a bound added to one would have
+    been missing from the other — which is how a conversation's auto-attached screenshot would
+    have 400'd a message `view_image` had learned to protect."""
+    endpoint = SimpleNamespace(multimodal=True,
+                               supports_media=lambda _m, *, multimodal: True)
+    ctx = _ctx(tmp_path, endpoint)
+    monkeypatch.setattr(ctx.registry, "for_model",
+                        lambda _role, _models: (endpoint, SimpleNamespace(multimodal=True)),
+                        raising=False)
+    _png(tmp_path / "ok.png", 1024, 768)
+    _png(tmp_path / "giant.png", 9000, 9000)
+    got = mediaops.media_from_paths(ctx, ["ok.png", "giant.png"])
+    assert [_Path(m["path"]).name for m in got] == ["ok.png"], got
