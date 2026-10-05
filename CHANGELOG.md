@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.386.1] — 2026-10-05
+
+### Added — a MIGRATION marker's deadline now arrives 21 days early, not on the morning it turns red
+
+F628. The enforcement was never missing and is unchanged: `tests/test_policy.py` still FAILS the
+whole suite the day a `MIGRATION(expires=YYYY-MM-DD)` marker passes, and a pre-commit hook runs the
+same file. The gap was **lead time**. The signal was binary and landed the morning it was already
+too late, on the gate every release must pass — in front of whoever happened to ship that day
+rather than whoever wrote the migration.
+
+Measured on this tree today: **six markers expire within 21 days** — `pending_edits.py` on
+2026-10-15, then **five in one day** on 2026-10-20 (`cli_daemon.py`,
+`migrate_settings_patterns{,_domains,_goal,_spec}.py`) — and six more on 2026-11-15. Whoever met
+that red had five modules to understand before anything of theirs could ship.
+
+- A second check WARNS — **never fails** — for every marker inside `MIGRATION_WARN_DAYS` (21),
+  naming the file, the date and the days left. A warning that can fail would be a second hard
+  deadline under another name, and the existing one is deliberately the only one.
+- **The notice is WRITTEN, not only warned.** Building this walked straight into the defect's own
+  shape: a warning emitted by a *passing* test is folded into a summary that the gate's xdist run
+  suppresses, so a check that only warned would have delivered no lead time at all. The window is
+  written to `.audit-wt/.gate-evidence/migration-warn-window.txt`, which outlives the run; a
+  cleared window removes its stale notice. A test asserts the **delivery**, not the computation.
+- One shared marker reader (`_migration_markers`) feeds the hard check and the warning, so the two
+  can never disagree about what is declared.
+
+Documented beside the policy in `CLAUDE.md` and `docs/architecture.md`.
+
 ## [0.386.0] — 2026-10-05
 
 ### Added — an oversized image is caught BEFORE the request, instead of 400-ing the whole message

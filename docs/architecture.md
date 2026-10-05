@@ -1075,7 +1075,11 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   each runs once on the production instance and is deleted after convergence — a pre-0.8
   backup converts by booting the matching older tag first. MACHINE-CHECKED: migration code
   must carry a `MIGRATION(expires=YYYY-MM-DD)` marker comment; `tests/test_policy.py` fails
-  once the date passes (and on migration-shaped code without a marker).
+  once the date passes (and on migration-shaped code without a marker). It also WARNS — never
+  fails — for every marker inside `MIGRATION_WARN_DAYS` (21 days, F628), naming the file, the date
+  and the days left: the hard fail is correct enforcement but a binary signal arriving on the
+  morning it is already too late, in front of whoever happens to ship that day rather than whoever
+  wrote the migration. Six markers in four modules once came due on one single date.
 - **Playbooks** (`library-seed/playbooks/<slug>/`, `MAIN.md` + optional on-demand detail files):
   reusable, generalized **conversation briefs** — the in-app analog of the save-instruction /
   use-instruction pattern. A playbook is NOT a workflow (the `converse` workflow stays the harness);
