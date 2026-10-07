@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.391.1] — 2026-10-08
+
+### Fixed
+- **A shared schema field's clauses each carry their own kind lead — F639.** `kindsurface`
+  trims a description to the clauses whose lead names a kind the run can use, and KEEPS a
+  clause whose lead it does not recognize (the rule that lets universal prose through). The
+  `verb` field led only the FIRST clause of each kind's verb list, so the five that followed
+  named no kind and were kept for every kind: a run holding `manage_lane` and not `task` was
+  shown `create (id + title + brief)`, `update (…)`, `open (…)`, `checkpoint (…)` and
+  `delete (id)` as `manage_lane` verbs, and a `task` run saw `manage_lane`'s five the same
+  way. Found in a live self-audit prompt, which rendered exactly that. Every clause is now
+  led. The shared `enum` is deliberate and unchanged — `actions.py` validates each kind's
+  verbs separately; only the prose had to be per-kind.
+  New guard `test_a_shared_fields_clauses_each_carry_their_own_lead`, scoped to fields
+  SEVERAL kinds accept: `answer_type` (decide), `state` and `outcome` (task) continue their
+  lists unled with no other kind to leak to, and demanding leads there would be churn on
+  prose that reads perfectly. The existing
+  `test_a_shared_field_describes_every_kind_that_accepts_it` only compared the named and
+  accepting SETS, which `verb` satisfied — both kinds were named somewhere.
+- **The desktop screen's pass test no longer reaches the network — F638.** `main` was red:
+  `test_the_desktop_pass_is_its_own_cookie_on_its_own_path` asserted `!= 401` on a relayed
+  asset without stubbing the upstream. The pass itself was always correct (minted, scoped to
+  `/desktop-view`, HttpOnly, accepted by `require_auth`); the 401 was the UPSTREAM door's,
+  forwarded verbatim as the relay is meant to, because `auth_headers` cannot read
+  `DESKTOP_OPERATOR_TOKEN` from a secrets store the sandbox hides. Its browser twin passed
+  only because its configured upstream is unreachable and answers 502 instead. The test now
+  uses the stub helper its own file already provides and asserts what its comment says it
+  pins: that the pass admits the frame's request.
+
 ## [0.391.0] — 2026-10-07
 
 ### Added — agent desktops: a desktop computer of its own for every routine

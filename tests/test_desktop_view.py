@@ -147,15 +147,23 @@ def test_an_unconfigured_desktop_screen_says_which_field_to_set(client):
     assert client.post("/api/desktop-view/pass", headers=AUTH).status_code == 503
 
 
-def test_the_desktop_pass_is_its_own_cookie_on_its_own_path(client):
+def test_the_desktop_pass_is_its_own_cookie_on_its_own_path(client, monkeypatch):
     granted = client.post("/api/desktop-view/pass", headers=AUTH)
     assert granted.status_code == 200, granted.text
     jar = [ck for ck in client.cookies.jar if ck.name == "rsched_desktop_view"]
     assert jar and jar[0].path == "/desktop-view", [(c.name, c.path) for c in client.cookies.jar]
     cookie = granted.headers["set-cookie"]
     assert "HttpOnly" in cookie and "samesite=strict" in cookie.lower()
-    # the frame's own requests carry the cookie and nothing else, and are admitted
-    assert client.get("/desktop-view/app/ui.js").status_code != 401
+    # The frame's own requests carry the cookie and nothing else, and are admitted. The
+    # upstream is STUBBED: the relay forwards whatever status the door answers, and the
+    # configured desktop upstream is a real host on the compose network that answers 401
+    # without `DESKTOP_OPERATOR_TOKEN` — a bearer `auth_headers` cannot read when the
+    # secrets store is outside the sandbox. Unstubbed, this pinned the door's reply rather
+    # than the pass, and reached the network from a unit test to do it.
+    _stub_upstream(monkeypatch, httpx.Response(200, content=b"// noVNC"))
+    admitted = client.get("/desktop-view/app/ui.js")
+    assert admitted.status_code == 200, admitted.text
+    assert admitted.content == b"// noVNC"
 
 
 def test_a_pass_opens_only_the_screen_it_was_minted_for(client):

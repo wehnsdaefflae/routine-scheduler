@@ -100,6 +100,51 @@ def test_a_shared_field_describes_every_kind_that_accepts_it():
         assert named <= accepting, f"{field!r}: clause for non-accepting {sorted(named - accepting)}"
 
 
+def test_a_shared_fields_clauses_each_carry_their_own_lead():
+    """Set equality above is not enough, and a live prompt proved it.
+
+    `_project_description` keeps a clause whose lead it does not recognize — the rule that
+    lets universal prose through, and deliberately so: trimming never drops prose it did not
+    positively understand. The trap is a clause-led list that CONTINUES past its lead without
+    re-naming its kind. Those continuations name no kind, so they are kept for EVERY kind.
+
+    `verb` shipped that way. `task:` led only the first of six task clauses, and a run holding
+    `manage_lane` and not `task` was shown `create (id + title + brief)`, `update (id + what
+    changes)`, `open (…)`, `checkpoint (…)` and `delete (id)` as manage_lane's own verbs —
+    measured in a live self-audit prompt. Both kinds appeared somewhere, so the set-equality
+    assertion above was satisfied.
+
+    So the invariant is about the DESCRIPTION, not the projection: once a SHARED field's
+    prose has started leading clauses with kinds, every later clause must carry a lead too.
+
+    Scoped to fields SEVERAL kinds accept, because that is the only place the harm exists. A
+    field just one kind takes (`answer_type` → decide, `state` and `outcome` → task) may
+    continue its list unled: those clauses are kept for every kind, but no other kind is ever
+    shown the field at all, so there is nowhere for them to leak to. Widening this test to
+    them would demand churn on prose that reads perfectly, which is how a guard stops being
+    believed.
+    """
+    from rsched.engine.kindsurface import _clause_kinds
+
+    for field, spec in ACTION_SCHEMA["properties"].items():
+        accepting = {k for k, (req, opt) in KIND_FIELDS.items() if field in (*req, *opt)}
+        if len(accepting) < 2:
+            continue                       # one taker: an unled clause reaches nobody else
+        clauses = str(spec.get("description") or "").split(" · ")
+        if not any(_clause_kinds(c) for c in clauses):
+            continue                       # universal prose: nothing is kind-scoped
+        seen_lead = False
+        for clause in clauses:
+            if _clause_kinds(clause):
+                seen_lead = True
+                continue
+            assert not seen_lead, (
+                f"{field!r} has an unled clause after a kind-led one: "
+                f"{clause.strip()[:80]!r} — it names no kind, so the projection keeps it for "
+                f"EVERY kind that takes {field!r}. Lead it with its own kind "
+                f"(`task: create (…)`), the way the clause before it is led.")
+
+
 def test_every_kind_but_script_has_one_prose_bullet():
     """The harness contract glosses each kind a run can use; `script`'s gloss lives in
     CAPABILITIES beside the scripts themselves — the one documented exception."""

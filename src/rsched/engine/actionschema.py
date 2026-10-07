@@ -334,14 +334,24 @@ ACTION_SCHEMA: dict = {
         "verb": {"type": "string",
                  "enum": ["list", "create", "update", "delete", "set-default", "run", "open",
                           "checkpoint"],
-                 "description": "manage_lane: the operation — list (the whole store) · create "
-                                "(needs name) · update (needs target) · delete (needs target) · "
-                                "set-default (needs on_failure) · run (needs target; arms a "
-                                "sequential fire of the lane) · task: the operation — list · "
-                                "create (id + title + brief) · update (id + what changes) · "
-                                "open (id, or none for the next due task) · checkpoint (id + "
-                                "outcome + summary: closes the open task and opens the next "
-                                "due one) · delete (id)"},
+                 # EVERY clause carries its kind's lead. `kindsurface._project_description`
+                 # splits on " · " and KEEPS a clause that names no kind, so an un-led
+                 # continuation of task's list survives into a run that holds manage_lane and
+                 # not task — and reads there as a manage_lane verb. Measured in a live
+                 # self-audit prompt, which rendered task's create/update/open/checkpoint/delete
+                 # as manage_lane's own (the lead clause was dropped correctly; its orphans
+                 # were not). The shared `enum` above is deliberate (actions.py validates each
+                 # kind's verbs separately); only the prose must be per-kind.
+                 "description": "manage_lane: the operation — list (the whole store) · "
+                                "manage_lane: create (needs name) · manage_lane: update (needs "
+                                "target) · manage_lane: delete (needs target) · manage_lane: "
+                                "set-default (needs on_failure) · manage_lane: run (needs "
+                                "target; arms a sequential fire of the lane) · task: the "
+                                "operation — list · task: create (id + title + brief) · task: "
+                                "update (id + what changes) · task: open (id, or none for the "
+                                "next due task) · task: checkpoint (id + outcome + summary: "
+                                "closes the open task and opens the next due one) · task: "
+                                "delete (id)"},
         "members": {"type": "array", "items": {"type": "string"},
                     "description": "manage_lane create/update: the ORDERED routine slugs in the "
                                    "lane (deduped; each must name a real routine) — the fire "
