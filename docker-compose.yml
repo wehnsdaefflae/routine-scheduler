@@ -268,6 +268,101 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
 
+  # The AGENT DESKTOPS — one Cloud Hypervisor microVM per routine (Debian + XFCE), booted by the
+  # broker on a routine's first `desktop` call and stopped when idle (docs/desktop-sessions.md).
+  # OPT-IN through its profile: it needs /dev/kvm, a ~3 GB image and RAM per running desktop,
+  # so a host enables it by adding `desktop` to COMPOSE_PROFILES in .env rather than getting it
+  # with every `up`.
+  #
+  # It sits on the browser's network at a FIXED address for the browser's reason: neither
+  # container may depend on the other's uptime. Like chrome, both of its ports are fronted by
+  # the bearer-token proxy — the broker port drives whole computers — and the entrypoint refuses
+  # to start without DESKTOP_VM_TOKEN. The token is `:-` here rather than chrome's `:?` because
+  # compose interpolates EVERY service on every command, profile or not: a `:?` would stop a
+  # host that never enabled the desktop from running compose at all.
+  desktop:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.desktop
+      args:
+        UID: "${RSCHED_UID:-1000}"
+        GID: "${RSCHED_GID:-1000}"
+    image: rsched-desktop:latest
+    profiles: ["desktop"]
+    init: true
+    container_name: rsched-desktop
+    restart: unless-stopped
+    # The broker presses every guest's power button and waits up to 25 s for a clean shutdown,
+    # so no home disk is cut off mid-write.
+    stop_grace_period: 45s
+    environment:
+      DESKTOP_VM_TOKEN: "${DESKTOP_VM_TOKEN:-}"
+      # The operator's: every screen and the fleet listing. Never granted to a routine.
+      DESKTOP_OPERATOR_TOKEN: "${DESKTOP_OPERATOR_TOKEN:-}"
+      # RAM is the limit: at most this many desktops run at once, each this size. A routine
+      # asking when all are taken is told who holds them and carries on without a screen.
+      DESKTOP_MAX_VMS: "${RSCHED_DESKTOP_MAX_VMS:-2}"
+      DESKTOP_CPUS: "${RSCHED_DESKTOP_CPUS:-2}"
+      DESKTOP_MEM_MB: "${RSCHED_DESKTOP_MEM_MB:-3072}"
+      DESKTOP_IDLE_MIN: "${RSCHED_DESKTOP_IDLE_MIN:-20}"
+      # The folders a routine may mount into its desktop (`gu desktop mount`) live under these —
+      # exactly the targets of the shareable binds below, which mirror the engine's own.
+      DESKTOP_SHARE_ROOTS: "/home/mark/routines:/home/mark/conversations:/home/mark/background:/home/mark/git-repos/LLMSecTest_agentic:/home/mark/git-repos/pytest-sarif-demo:/mnt:/srv"
+    # /dev/kvm is the VMs; /dev/net/tun + NET_ADMIN build each guest's tap, the NAT and the
+    # firewall that keeps every guest off private networks and off each other — all inside
+    # THIS container's own network namespace, the only one NET_ADMIN reaches.
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    networks:
+      browser:
+        ipv4_address: 172.30.7.20     # broker endpoint http://172.30.7.20:8790 — named in the
+                                      # `desktop` util and docs/desktop-sessions.md
+    ports:
+      # noVNC, on the HOST'S LOOPBACK only — the same rule as chrome's screen. The console
+      # relays it (/desktop-view), which is how a person watches and takes over.
+      - "127.0.0.1:${RSCHED_DESKTOP_VNC_PORT:-6082}:6080"
+    volumes:
+      # The VMs' disks: each routine's HOME disk (kept), the per-boot system overlays and the
+      # guests' console logs. Not carried by backup/bundle — see deploy/state-paths.sh.
+      - ${RSCHED_HOME:-/home/mark}/desktop-vm:/home/mark/desktop-vm
+      # THE SHAREABLE HOMES, mirrored from the engine at the SAME paths and modes: a run names a
+      # folder as the engine sees it, the broker checks the run's proof against the same file,
+      # and virtiofsd serves it. Never wider than the engine's — tests/test_desktop_compose.py
+      # holds every line here to an identical engine bind, including the read-only grant
+      # folder beneath /srv, which would otherwise be writable through the /srv bind.
+      - ${RSCHED_HOME:-/home/mark}/routines:/home/mark/routines
+      - ${RSCHED_HOME:-/home/mark}/conversations:/home/mark/conversations
+      - ${RSCHED_HOME:-/home/mark}/background:/home/mark/background
+      - type: bind
+        source: ${RSCHED_HOME:-/home/mark}/git-repos/LLMSecTest_agentic
+        target: /home/mark/git-repos/LLMSecTest_agentic
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${RSCHED_HOME:-/home/mark}/git-repos/pytest-sarif-demo
+        target: /home/mark/git-repos/pytest-sarif-demo
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: /mnt
+        target: /mnt
+        bind: { propagation: rslave }
+      - type: bind
+        source: /srv
+        target: /srv
+        bind: { propagation: rslave }
+      - type: bind
+        source: /srv/ObsidianVault/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest
+        target: /srv/ObsidianVault/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest
+        read_only: true
+        bind: { create_host_path: false }
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
   # Tor SOCKS proxy — egress for the `darknet` util (docs/darknet.md). Its own service, so the
   # engine image stays engine-only and the daemon does not supervise a second process. Reached
   # at socks5h://tor:9050 over the compose network; deliberately NO `ports:` mapping, or it

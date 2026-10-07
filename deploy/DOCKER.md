@@ -21,6 +21,13 @@ images of this repository (the engine, `tor`, `chrome`); `cliproxy` is a pinned 
   `${RSCHED_HOME}/chrome-profile` is a **bind mount and part of the tarball** — lose it and every
   site is signed out. A person signs in over noVNC, published on the host's loopback only. See
   `docs/browser-sessions.md`.
+- **`desktop`** (`deploy/Dockerfile.desktop`, behind the `desktop` profile) — the agent
+  desktops: one Cloud Hypervisor microVM per routine running XFCE, booted on demand and
+  stopped when idle, which the `desktop` util drives. It needs `/dev/kvm` on the host. Two
+  tokens, never equal: `DESKTOP_VM_TOKEN` (the routines', in front of the broker) and
+  `DESKTOP_OPERATOR_TOKEN` (the console's, in front of every screen). Its disks under
+  `${RSCHED_HOME}/desktop-vm` are deliberately NOT carried — see
+  [The agent desktops](#the-agent-desktops) and `docs/desktop-sessions.md`.
 - **`cliproxy`** (behind the `claude-proxy` profile, which `.env` names on a host that runs it —
   [one compose selection per host](#one-compose-selection-per-host)) — the CLIProxyAPI
   transport a Claude or Codex subscription is billed through. Its
@@ -552,6 +559,30 @@ result:
 Whatever terminates TLS must pass `X-Forwarded-Proto`: the app reads it to decide the
 `secure` flag on the browser-screen cookie (`web/api_browser_view.py`), because behind a
 proxy the request it sees is plain `http`.
+
+## The agent desktops
+
+Opt-in per host (`docs/desktop-sessions.md` says what they are). The host needs hardware
+virtualisation (`ls -l /dev/kvm`) and RAM for `RSCHED_DESKTOP_MAX_VMS` × `RSCHED_DESKTOP_MEM_MB`
+(defaults 2 × 3072 MiB) on top of everything else; add a `mem_limit` for the `desktop` service
+to this host's `docker-compose.override.yml` with that headroom.
+
+```bash
+cd ~/git-repos/routine-scheduler
+# two DIFFERENT tokens; the entrypoint refuses to start with either missing or with them equal
+grep -q '^DESKTOP_VM_TOKEN=' .env || printf 'DESKTOP_VM_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
+grep -q '^DESKTOP_OPERATOR_TOKEN=' .env || printf 'DESKTOP_OPERATOR_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
+# add `desktop` to the host's profile list (keep whatever is there)
+sed -i 's/^COMPOSE_PROFILES=\(.*\)$/COMPOSE_PROFILES=\1,desktop/' .env
+docker compose build desktop          # ~3 min: the guest OS, its disk image, the VMM
+docker compose up -d desktop
+docker logs rsched-desktop | tail     # "[broker] listening on … — 2 slot(s)"
+```
+
+Then put the SAME two values into **Settings → Secrets** under the same names: the console's
+relay reads both, and a routine is granted `DESKTOP_VM_TOKEN` — never the operator's. Like every
+code change, a rebuild of the guest only reaches a desktop at its next boot: `gu desktop stop`
+from the routine, or the console's Stop, starts the next one on the new image.
 
 ## When the console goes slow
 

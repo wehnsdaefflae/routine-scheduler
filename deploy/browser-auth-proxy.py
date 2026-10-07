@@ -104,12 +104,14 @@ def _refuse(writer: asyncio.StreamWriter, status: str, detail: str) -> None:
 
 
 async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
-                  target: tuple[str, int], token: str, label: str) -> None:
+                  target: tuple[str, int], token: str, label: str, *,
+                  token_env: str = "BROWSER_CDP_TOKEN",  # noqa: S107 — an env var NAME
+                  ) -> None:
     peer = writer.get_extra_info("peername")
     try:
         if not token:
             _refuse(writer, "503 Service Unavailable",
-                    "the browser proxy has no BROWSER_CDP_TOKEN configured, so it refuses "
+                    f"this proxy has no {token_env} configured, so it refuses "
                     "every connection rather than forwarding an unauthenticated one")
             await writer.drain()
             return
@@ -122,8 +124,8 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
         if not _authorized(head, token):
             _log(f"{label}: refused {peer} — no valid bearer token")
             _refuse(writer, "401 Unauthorized",
-                    "this browser port needs `Authorization: Bearer <BROWSER_CDP_TOKEN>`. A "
-                    "util reaches it by declaring BROWSER_CDP_TOKEN on its `secrets:` line; "
+                    f"this port needs `Authorization: Bearer <{token_env}>`. A "
+                    f"util reaches it by declaring {token_env} on its `secrets:` line; "
                     "the routine must also be granted that secret.")
             await writer.drain()
             return
@@ -145,9 +147,10 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
 
 
 async def _serve(listen: tuple[str, int], target: tuple[str, int], token: str,
-                 label: str) -> None:
+                 label: str, token_env: str) -> None:
     server = await asyncio.start_server(
-        lambda r, w: _handle(r, w, target, token, label), listen[0], listen[1])
+        lambda r, w: _handle(r, w, target, token, label, token_env=token_env),
+        listen[0], listen[1])
     _log(f"{label}: {listen[0]}:{listen[1]} -> {target[0]}:{target[1]} (bearer required)")
     async with server:
         await server.serve_forever()
@@ -164,6 +167,7 @@ async def _main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--map", action="append", required=True, metavar="LISTEN=TARGET:LABEL",
                     help="one listener, e.g. 0.0.0.0:9222=127.0.0.1:9223:cdp (repeatable)")
+    # The desktop sidecar runs this same door with its own token (DESKTOP_VM_TOKEN).
     ap.add_argument("--token-env", default="BROWSER_CDP_TOKEN")
     args = ap.parse_args()
     token = os.environ.get(args.token_env, "").strip()
@@ -173,7 +177,8 @@ async def _main() -> int:
     for spec in args.map:
         listen_s, _, rest = spec.partition("=")
         target_s, _, label = rest.rpartition(":")
-        jobs.append(_serve(_hostport(listen_s), _hostport(target_s), token, label or "proxy"))
+        jobs.append(_serve(_hostport(listen_s), _hostport(target_s), token, label or "proxy",
+                           args.token_env))
     await asyncio.gather(*jobs)
     return 0
 

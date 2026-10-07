@@ -104,8 +104,12 @@ one you are about to touch, not all of them.
   `docs/messages.md` — a routine's four message folders (the Messages page/D74), the
   per-folder write surface, and the outbox-retraction decision
 - `docs/sandboxing.md`, `docs/endpoints.md`, `docs/decision-models.md`, `docs/oauth-connections.md`,
-  `docs/remote-machines.md`, `docs/browser-sessions.md`, `docs/darknet.md`, `docs/usenet.md`, `docs/notifications.md` — the outward-facing
-  surfaces
+  `docs/remote-machines.md`, `docs/browser-sessions.md`, `docs/desktop-sessions.md`, `docs/darknet.md`, `docs/usenet.md`, `docs/notifications.md` — the outward-facing
+  surfaces. The agent DESKTOPS are one VM per routine (one pointer and one focus per screen —
+  the shared browser needs no such split, each caller owns a tab); the broker learns WHICH
+  routine calls from a one-time file the util writes into its own jailed working directory,
+  and a folder mount is proved the same way against the folder, so a run mounts exactly what
+  its sandbox may touch. The screens answer a second, operator-only token no routine is granted
 - `docs/search.md`, `docs/run-analytics.md`, `docs/authoring.md`, `docs/examples.md`,
   `docs/getting-started.md` — read models, authoring, onboarding
 - `docs/designs.md` — specs for work DECIDED BUT UNBUILT (one entry per queued finding, or
@@ -495,19 +499,23 @@ by a test, by the engine, or by a past incident.
   of every run.
 - **Global chrome is positioned by `base.css` ALONE, and losing that fails silently.** The
   components mounted outside `#view` so they survive navigation — the navigation rail (which now
-  carries the side table-of-contents, `components/toc.js`), the LLM activity dock
-  (`components/taskmanager.js`) and the browser dock (`components/browserdock.js`) — set no
-  `position` of their own. Delete their stylesheet block and nothing throws: the component still
-  builds, still fetches, still updates, and lands in the document flow at the foot of every page —
-  a palette migration once deleted both blocks and only an operator reading a screenshot caught
-  it, releases later. `tests/ui/test_global_chrome.py` pins the
-  three to `position: fixed` — put any new out-of-view chrome in that list the same day.
-  Being fixed is not the same as being WELCOME: the browser dock is an OVERLAY, and the console's
+  carries the side table-of-contents, `components/toc.js`) and the `#docks` column holding the
+  LLM activity dock (`components/taskmanager.js`), the browser dock and the desktop dock (both
+  `components/screendock.js`) — set no `position` of their own. Delete their stylesheet block and
+  nothing throws: the component still builds, still fetches, still updates, and lands in the
+  document flow at the foot of every page — a palette migration once deleted both blocks and only
+  an operator reading a screenshot caught it, releases later. `tests/ui/test_global_chrome.py`
+  pins each to the viewport (fixed itself, or through the fixed `#docks`) — put any new
+  out-of-view chrome in that list the same day. The docks are ONE flex column, never separately
+  positioned boxes: three independently fixed docks covered one another whenever two were open,
+  so opening one now pushes the others up, the LLM panel shrinks and scrolls when height runs
+  out, and `test_open_docks_never_cover_each_other` holds it at three widths.
+  Being fixed is not the same as being WELCOME: a screen dock is an OVERLAY, and the console's
   reading column (`--rail-w` 212 + `--shell-max` 1240 = 1452px) reaches the right edge at every
   width between 861 and 1900px, so an open dock lies on the Routines page's run-now column and on
   an endpoint card's save-key row. It therefore rests open only at ≥1900px, where the side TOC
   also lives and now ends above it; below that it starts collapsed and a click-open folds again
-  on the next route change (`components/browserdock.js`).
+  on the next route change (`components/screendock.js`).
 - **A run never writes its own config through an ACTION.** `routine.yaml` is blocked by FILENAME
   anywhere a run can write, external repos included, on the action path (`grantpolicy`,
   `fileops._write_gate`, `grants`) — which is the only path that CAN block it: the file sits in
@@ -820,8 +828,9 @@ schedule that names no zone runs in that one, `config.default_tz()`). Server con
 first boot by `bootstrap.ensure_config`, so a fresh deploy is never an open API). Web UI on `:8321`,
 two-tier bearer auth (the operator token, plus a generated `routine_token` — what runs get injected
 as `RSCHED_API_TOKEN` — which is refused on config-mutating routes AND on three read subtrees
-the sandbox forbids, `/api/fs`, `/api/settings`, `/api/debug`, `/api/search` plus
-`/api/routines/*/secrets` (`web/app.ROUTINE_TOKEN_DENIED_READS`, matched on the path the ROUTER
+the sandbox forbids, `/api/fs`, `/api/settings`, `/api/debug`, `/api/search`,
+`/api/routines/*/secrets`, `/api/desktops` and the two screen relays `/browser-view` and
+`/desktop-view` (`web/app.ROUTINE_TOKEN_DENIED_READS`, matched on the path the ROUTER
 dispatches, not the re-parsed URL): "read-only" is not "may read anything", since a util
 subprocess is handed that token inside a Landlock jail and those GETs list any directory on the
 host, name every secret with its declaring utils, dump the daemon's stacks, search every

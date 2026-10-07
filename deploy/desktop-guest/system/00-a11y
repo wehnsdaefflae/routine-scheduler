@@ -1,0 +1,6 @@
+# GTK and GNOME applications read this before deciding to talk to the accessibility bus.
+[org/gnome/desktop/interface]
+toolkit-accessibility=true
+
+[org/gnome/desktop/a11y]
+always-show-universal-access-status=false

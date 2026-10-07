@@ -10,34 +10,20 @@
 // https: the frame itself loaded, but noVNC then opened `ws://…/websockify`, and a page served
 // over https may not open an insecure websocket — so no framebuffer ever arrived. Same-origin
 // means the browser upgrades to `wss://` by itself, under the TLS the console already
-// terminates: no certificate on the noVNC port, no second hostname to publish (F527).
+// terminates: no certificate on the noVNC port, no second hostname to publish (F527). The URL,
+// the pass and the reachability probe are components/screen.js, shared with the desktops.
 //
 // This page is the INTERACTIVE one (the right-rail dock is the read-only mirror): signing a
 // session in is the reason the screen exists, and that needs a keyboard.
 
 import { api } from "/static/api.js";
 import { el, emptyState, skeleton } from "/static/util.js";
+import { BROWSER, grantPass as grantScreenPass, screenSrc } from "/static/components/screen.js";
 
-// Mint the screen's PASS before any frame is created (F530). The first shipped version put an
-// SSE ticket in the URL, which could never have worked: an <iframe src> is a naked GET, and
-// noVNC then fetches its OWN siblings (app/ui.js, app/styles/base.css, the images) with URLs it
-// builds itself — so no parameter chosen here reaches them, and every one 401'd. The frame then
-// displayed this app's error body: `{"detail":"missing or invalid token"}`. A cookie is the one
-// credential a browser attaches to a frame's sub-resources unasked.
-export async function grantPass() {
-  await api("/api/browser-view/pass", { method: "POST", body: {} });
-}
-
-// noVNC takes its websocket location from `path` — relative to the page it was loaded from,
-// which is now this console, so the socket is same-origin and inherits the console's TLS. No
-// credential rides in the URL: the pass cookie covers the document, its assets and the socket
-// handshake alike.
-export function frameSrc({ viewOnly = false } = {}) {
-  const q = new URLSearchParams({ autoconnect: "1", resize: "scale",
-    path: "browser-view/websockify" });
-  if (viewOnly) q.set("view_only", "1");
-  return `/browser-view/vnc.html?${q}`;
-}
+// The browser's own bindings of the shared screen builder (components/screen.js) — the dock and
+// this page open the same screen, so they share these two rather than repeating the prefix.
+export const grantPass = () => grantScreenPass(BROWSER);
+export const frameSrc = ({ viewOnly = false } = {}) => screenSrc(BROWSER, { viewOnly });
 
 export async function render(view) {
   view.append(el("div", { class: "page-head" },

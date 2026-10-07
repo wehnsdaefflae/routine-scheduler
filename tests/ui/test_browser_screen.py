@@ -70,7 +70,7 @@ def test_publishing_a_screen_reveals_the_nav_link_and_the_preview(ui, ui_page):
     assert "view_only=1" in src, src
     inert = ui_page.evaluate(
         """() => { const f = document.createElement('iframe');
-                   f.className = 'browser-dock-frame';
+                   f.className = 'sd-frame';
                    document.getElementById('browser-dock').append(f);
                    const pe = getComputedStyle(f).pointerEvents;
                    f.remove(); return pe; }""")
@@ -183,14 +183,14 @@ def test_the_preview_can_be_collapsed_and_stays_collapsed(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")
     dock = ui_page.locator("#browser-dock")
     expect(dock).to_be_visible()
-    expect(dock).not_to_have_class(re.compile(r"\bbd-collapsed\b"))
+    expect(dock).not_to_have_class(re.compile(r"\bsd-collapsed\b"))
     dock.get_by_role("button", name="hide").click()
-    expect(dock).to_have_class(re.compile(r"\bbd-collapsed\b"))
+    expect(dock).to_have_class(re.compile(r"\bsd-collapsed\b"))
 
     ui_page.reload()
     dock = ui_page.locator("#browser-dock")
     expect(dock).to_be_visible()
-    expect(dock).to_have_class(re.compile(r"\bbd-collapsed\b"))
+    expect(dock).to_have_class(re.compile(r"\bsd-collapsed\b"))
     expect(dock.get_by_role("button", name="show")).to_be_visible()
 
 
@@ -209,14 +209,14 @@ def test_the_preview_rests_collapsed_where_it_would_lie_on_the_content(ui, ui_pa
     ui_page.goto(f"{ui.url}/#/routines")
     dock = ui_page.locator("#browser-dock")
     expect(dock).to_be_visible()
-    expect(dock).to_have_class(re.compile(r"\bbd-collapsed\b"))
+    expect(dock).to_have_class(re.compile(r"\bsd-collapsed\b"))
 
-    dock.locator(".bd-toggle").click()
-    expect(dock).not_to_have_class(re.compile(r"\bbd-collapsed\b"))
+    dock.locator(".sd-toggle").click()
+    expect(dock).not_to_have_class(re.compile(r"\bsd-collapsed\b"))
     # transient: a narrow console's dock is an overlay over live controls, so remembering it
     # open would park it on the Routines page's run-now column for good
     ui_page.evaluate("() => { location.hash = '#/settings'; }")
-    expect(dock).to_have_class(re.compile(r"\bbd-collapsed\b"))
+    expect(dock).to_have_class(re.compile(r"\bsd-collapsed\b"))
 
 
 def _screen_dials(page) -> list[str]:
@@ -242,15 +242,15 @@ def test_a_folded_dock_does_not_take_the_screen_until_it_is_opened(ui, ui_page):
     expect(dock.get_by_role("button", name="show")).to_be_visible()
     ui_page.wait_for_timeout(800)            # the old dock dialled within a tick of painting
     assert sockets == [], f"a folded dock dialled the screen: {sockets}"
-    expect(dock.locator(".bd-note")).to_have_count(0)
+    expect(dock.locator(".sd-note")).to_have_count(0)
 
     dock.get_by_role("button", name="show").click()
-    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    expect(dock.locator(".sd-note")).to_contain_text("screen unreachable")
     assert len(sockets) == 1, sockets
 
     dock.get_by_role("button", name="hide").click()
     dock.get_by_role("button", name="show").click()
-    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    expect(dock.locator(".sd-note")).to_contain_text("screen unreachable")
     ui_page.wait_for_timeout(400)
     assert len(sockets) == 1, f"re-opening dialled the screen again: {sockets}"
 
@@ -264,7 +264,7 @@ def test_a_dock_resting_open_connects_at_load_and_a_folded_one_waits(ui, ui_page
     sockets = _screen_dials(ui_page)
     ui_page.goto(f"{ui.url}/#/routines")
     dock = ui_page.locator("#browser-dock")
-    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    expect(dock.locator(".sd-note")).to_contain_text("screen unreachable")
     assert len(sockets) == 1, sockets
 
     dock.get_by_role("button", name="hide").click()
@@ -273,7 +273,7 @@ def test_a_dock_resting_open_connects_at_load_and_a_folded_one_waits(ui, ui_page
     ui_page.wait_for_timeout(800)
     assert len(sockets) == 1, f"a dock folded by choice dialled the screen at load: {sockets}"
     dock.get_by_role("button", name="show").click()
-    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    expect(dock.locator(".sd-note")).to_contain_text("screen unreachable")
     assert len(sockets) == 2, sockets
 
 
@@ -288,13 +288,13 @@ def test_the_dock_does_not_dial_the_screen_from_under_the_full_page(ui, ui_page)
     ui_page.goto(f"{ui.url}/#/browser")
     expect(ui_page.locator("iframe.browser-screen")).to_have_count(1)
     dock = ui_page.locator("#browser-dock")
-    expect(dock.locator(".bd-head")).to_have_count(1)        # mounted, and hidden on this page
+    expect(dock.locator(".sd-head")).to_have_count(1)        # mounted, and hidden on this page
     expect(dock).to_be_hidden()
     ui_page.wait_for_timeout(800)
     assert sockets == [], f"the hidden dock dialled the screen: {sockets}"
 
     ui_page.evaluate("() => { location.hash = '#/routines'; }")
-    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    expect(dock.locator(".sd-note")).to_contain_text("screen unreachable")
     assert len(sockets) == 1, sockets
 
 
@@ -312,8 +312,8 @@ def test_an_unreachable_screen_is_a_note_not_a_red_vnc_frame(ui, ui_page):
     ui_page.set_viewport_size({"width": 1960, "height": 950})
     ui_page.goto(f"{ui.url}/#/routines")
     dock = ui_page.locator("#browser-dock")
-    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
-    expect(dock.locator("iframe.browser-dock-frame")).to_have_count(0)
+    expect(dock.locator(".sd-note")).to_contain_text("screen unreachable")
+    expect(dock.locator("iframe.sd-frame")).to_have_count(0)
     # and the reader is left somewhere to go, which the pinned error never was
     expect(dock.get_by_role("link", name="open the full page")).to_have_attribute(
         "href", "#/browser")

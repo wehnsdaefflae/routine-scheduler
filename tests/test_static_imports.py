@@ -192,7 +192,7 @@ def test_a_settings_section_that_reloads_declares_the_reload_it_was_handed():
 #: Files allowed to build a WebSocket, each with the reason it is not a live stream.
 SOCKETS_ELSEWHERE = {
     "api.js": "liveStream() — every live stream, and the gauge that counts them",
-    "browserdock.js": "relayReachable() — a probe of the noVNC relay, closed on its first frame",
+    "screen.js": "relayReachable() — a probe of a noVNC relay, closed on its first frame",
 }
 
 

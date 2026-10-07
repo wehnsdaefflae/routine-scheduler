@@ -1,0 +1,14 @@
+[Unit]
+Description=Apply this VM's identity from the kernel command line (address, DNS, zone)
+DefaultDependencies=no
+After=local-fs.target
+Before=systemd-networkd.service network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/desktop-boot
+
+[Install]
+WantedBy=sysinit.target

@@ -20,12 +20,19 @@ export function renderServerConfig(view) {
     // appears — an instance that never published the port should not show a dead link.
     const vncIn = el("input", { type: "text", value: c.browser_view_url || "",
       placeholder: "http://host:6080/vnc.html", style: "width:100%;max-width:420px" });
+    // The agent desktops: the broker the console asks for the fleet, and the noVNC page every
+    // desktop's screen is relayed from. Both, or the console shows no Desktops section at all.
+    const deskBrokerIn = el("input", { type: "text", value: c.desktop_broker_url || "",
+      placeholder: "http://172.30.7.20:8790", style: "width:100%;max-width:420px" });
+    const deskVncIn = el("input", { type: "text", value: c.desktop_view_url || "",
+      placeholder: "http://172.30.7.20:6080/vnc.html", style: "width:100%;max-width:420px" });
     const save = el("button", { class: "btn small primary" }, "save server settings");
     save.onclick = () => act(save, async () => {
       const r = await api("/api/settings/server", { method: "PUT", body: {
         sandbox: sandboxSel.value, max_concurrent_runs: Number(concIn.value),
         registry_rescan_s: Number(rescanIn.value), github_client_id: ghIn.value.trim(),
-        browser_view_url: vncIn.value.trim() } });
+        browser_view_url: vncIn.value.trim(), desktop_broker_url: deskBrokerIn.value.trim(),
+        desktop_view_url: deskVncIn.value.trim() } });
       toast(r.restart_for?.length ? "server settings saved — restart to resize concurrency" : "server settings saved");
     });
     srvCfgBox.replaceChildren(
@@ -45,6 +52,14 @@ export function renderServerConfig(view) {
         "browser screen: the noVNC page showing the shared signed-in browser the routines ",
         "drive. Set it and a Browser section appears in the nav with a live preview in the ",
         "right rail; leave it empty and neither is shown."),
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "desktop broker URL"), deskBrokerIn),
+        el("label", { class: "field" }, el("span", {}, "desktop screen (noVNC) URL"), deskVncIn)),
+      el("div", { class: "faint small", style: "margin-top:6px" },
+        "agent desktops: the broker that runs one desktop per routine, and the noVNC page their ",
+        "screens are served from. Set both and a Desktops section appears in the nav, with a ",
+        "preview of the busiest desktop beside the browser's; the screens open with the ",
+        "DESKTOP_OPERATOR_TOKEN secret and the fleet with DESKTOP_VM_TOKEN as well."),
       el("div", { class: "row mt" }, save),
       el("div", { class: "faint small", style: "margin-top:6px" },
         "sandbox: strict = refuse to run a util unsandboxed · permissive = jail when the kernel ",

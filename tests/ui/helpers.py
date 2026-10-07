@@ -105,3 +105,46 @@ def watch_requests(page, pattern) -> list[str]:
     seen: list[str] = []
     page.on("request", lambda r: seen.append(r.url) if pattern.search(r.url) else None)
     return seen
+
+
+#: A desktop noVNC with NOTHING behind it (port 1 refuses at once), like the browser tests'
+#: DEAD_SCREEN: a preview then settles on "screen unreachable" instead of waiting out a timeout.
+DEAD_DESKTOP = "http://127.0.0.1:1/vnc.html"
+
+
+def desktop(name: str, vnc: str, *, idle_s: int = 5, ready: bool = True,
+            folders: list[dict] | None = None) -> dict:
+    """One `/fleet` row as the broker reports it."""
+    return {"name": name, "slot": 0, "ready": ready, "stopping": False, "up_s": 300,
+            "idle_s": idle_s, "shares": [f["name"] for f in folders or []], "vnc": vnc,
+            "folders": folders or []}
+
+
+class FakeBroker:
+    """The desktop broker's two operator operations, answered from a list the test edits.
+
+    It replaces `api_desktops._broker` — the one outbound hop — so the console's real route,
+    owner mapping and token filtering all run; only the sidecar is absent.
+    """
+
+    def __init__(self, rows: list[dict]):
+        self.desktops = list(rows)
+        self.stopped: list[str] = []
+
+    async def __call__(self, _request, op: str, body: dict) -> dict:
+        if op == "fleet":
+            return {"slots": 2, "idle_limit_s": 1200, "desktops": list(self.desktops)}
+        self.stopped.append(body["name"])
+        self.desktops = [d for d in self.desktops if d["name"] != body["name"]]
+        return {"stopped": True}
+
+
+def run_desktops(ui, monkeypatch, *rows: dict) -> FakeBroker:
+    """Point the fixture console at a desktop service running `rows`."""
+    from rsched.web import api_desktops
+
+    broker = FakeBroker(list(rows))
+    monkeypatch.setattr(api_desktops, "_broker", broker)
+    ui.server_cfg.desktop_broker_url = "http://127.0.0.1:1"
+    ui.server_cfg.desktop_view_url = DEAD_DESKTOP
+    return broker

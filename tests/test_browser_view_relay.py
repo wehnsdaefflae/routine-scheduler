@@ -16,7 +16,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from rsched.web import api_browser_view
+from rsched.web import api_screen_view
 from rsched.web.app import create_app
 
 
@@ -55,7 +55,7 @@ def _stub_upstream(monkeypatch, response: httpx.Response) -> dict:
             response.request = httpx.Request("GET", url)
             return response
 
-    monkeypatch.setattr(api_browser_view.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(api_screen_view.httpx, "AsyncClient", _Client)
     return seen
 
 
@@ -102,9 +102,11 @@ def test_the_relay_authenticates_to_the_sidecar(app_client, monkeypatch):
     Asserted on how the request is BUILT, like the redirect test beside it — the alternative is
     a live sidecar, which a unit test must not need.
     """
-    from rsched.web import browser_proxy
+    from rsched.web import screen_proxy
 
-    monkeypatch.setattr(browser_proxy, "auth_headers", lambda: {"Authorization": "Bearer t0k"})
+    monkeypatch.setattr(screen_proxy, "auth_headers",
+                        lambda key: {"Authorization": "Bearer t0k"} if key == "BROWSER_CDP_TOKEN"
+                        else {})
     client, _cfg = app_client
     built = _stub_upstream(monkeypatch, httpx.Response(200, content=b"ok",
                                                        headers={"content-type": "text/plain"}))

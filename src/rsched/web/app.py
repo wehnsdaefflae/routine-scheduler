@@ -22,6 +22,7 @@ from ..daemon.scheduler import Scheduler
 from ..ids import now_iso
 from ..llm_tasks import TaskCenter
 from .appwiring import _include_api_routers, _make_lifespan
+from .screen_proxy import screen_for_path
 
 log = logging.getLogger("rsched.web")
 
@@ -48,20 +49,6 @@ def build_stamp(repo: Path | None) -> str:
         return out.stdout.strip() if out.returncode == 0 else ""
     except Exception:
         return ""
-
-
-def _is_browser_view_path(path: str) -> bool:
-    """The relayed noVNC screen (F527), authenticated by its own PASS cookie (F530).
-
-    It shipped on the SSE ticket and that could never have worked: an `<iframe src>` is a
-    naked GET, and noVNC then requests its own siblings (`app/ui.js`, `app/styles/base.css`,
-    the images) with URLs the page builds itself — so no query parameter the console chooses
-    reaches them. Every one of those requests 401'd, and the frame rendered this app's own
-    error body at the user. A cookie is the only credential a browser attaches to a frame's
-    sub-resources unasked; it is path-scoped to this prefix, HttpOnly, and minted only for a
-    caller holding the console token.
-    """
-    return path == "/browser-view" or path.startswith("/browser-view/")
 
 
 # R94 (operator decision 2026-08-05: ENFORCE — this supersedes decision D68's 2026-08-03
@@ -100,8 +87,18 @@ ROUTINE_TOKEN_MUTATIONS: tuple[tuple[str, str], ...] = ()
 # class and are deliberately NOT here yet: at least one routine was granted another's
 # transcripts on purpose, and closing that door needs the grant re-expressed as an fs-read
 # root first, or a run loses a channel with no error it can act on.
+#
+# `/api/desktops` is the operator's view of the agent-desktop fleet, and it carries the random
+# token that OPENS each desktop's screen — a keyboard and a mouse on another routine's computer.
+# The broker keeps that view behind a second secret no routine is granted
+# (DESKTOP_OPERATOR_TOKEN), and this route would hand it to any run's RSCHED_API_TOKEN if it
+# were an ordinary read. The relayed screens themselves (`/browser-view`, `/desktop-view`) are
+# the operator's for the same reason: their sockets already need a pass only the primary token
+# mints, and their assets have no reader a run needs.
 ROUTINE_TOKEN_DENIED_READS: tuple[str, ...] = ("/api/fs", "/api/debug", "/api/settings",
-                                               "/api/search", "/api/routines/*/secrets")
+                                               "/api/search", "/api/routines/*/secrets",
+                                               "/api/desktops", "/browser-view",
+                                               "/desktop-view")
 
 
 def _in_subtree(path: str, prefix: str) -> bool:
@@ -160,8 +157,9 @@ def require_auth(request: Request) -> None:
             status_code=403,
             detail="the routine API token is read-only and reads no wider than the "
                    "sandbox (R94): config-mutating endpoints, the filesystem picker, the "
-                   "settings surface, a routine's secret names, cross-routine search and the "
-                   "daemon's stacks take the operator's primary token. A run that needs a "
+                   "settings surface, a routine's secret names, cross-routine search, the "
+                   "daemon's stacks, the desktop fleet and the relayed screens take the "
+                   "operator's primary token. A run that needs a "
                    "config change proposes it via ask_user with config_patch; a file it may "
                    "read is reached with read_file, and one outside its jail is an fs-read "
                    "access request.",
@@ -169,15 +167,17 @@ def require_auth(request: Request) -> None:
     # No HTTP route accepts a stream ticket: the live streams are WebSockets, admitted by
     # `streams.admits` on their own handshake (F606), so a ticket that leaks into a URL can
     # never stand in for the bearer here.
-    # The relayed browser screen carries its own PASS, in a cookie (F530). A query ticket
+    # A relayed noVNC screen (F527) carries its own PASS, in a cookie (F530). A query ticket
     # cannot work here and shipping one was the bug: an <iframe src> is a naked GET, and
     # noVNC then builds its own asset URLs (app/ui.js, app/styles/base.css, the images), so
     # no parameter the embedding page chooses ever reaches those requests. A cookie is the
-    # one credential the browser attaches to every sub-resource of the frame by itself.
-    if request.method == "GET" and _is_browser_view_path(path):
-        from .api_browser_view import SCREEN_COOKIE, pass_is_valid
+    # one credential the browser attaches to every sub-resource of the frame by itself — and
+    # each screen's is path-scoped to its own relay, so only THAT screen's pass admits it.
+    screen = screen_for_path(path) if request.method == "GET" else None
+    if screen is not None:
+        from .api_screen_view import pass_is_valid
 
-        if pass_is_valid(request.app, request.cookies.get(SCREEN_COOKIE) or ""):
+        if pass_is_valid(request.app, screen, request.cookies.get(screen.cookie) or ""):
             return
     raise HTTPException(status_code=401, detail="missing or invalid token")
 
@@ -197,10 +197,12 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     scheduler = Scheduler(server, runner, bus)
     app.state.server = server
     app.state.stream_tickets = {}   # ticket → monotonic expiry (see streams.admits / stream-ticket)
-    # pass → monotonic expiry for the relayed browser screen (F530). Separate from the stream
+    # pass → monotonic expiry, one store per relayed screen (F530). Separate from the stream
     # tickets on purpose: a different lifetime, a different scope, and a different failure if
     # one is ever mistaken for the other.
-    app.state.browser_view_passes = {}
+    from .api_screen_view import new_pass_stores
+
+    app.state.screen_passes = new_pass_stores()
     app.state.bus = bus
     app.state.runner = runner
     app.state.scheduler = scheduler
@@ -241,6 +243,11 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
                 # published a screen). The console shows the Browser section only when it
                 # is set, because a dead link to a port nobody opened is worse than no link.
                 "browser_view_url": server.browser_view_url,
+                # The agent desktops' two addresses, and whether BOTH are set — the Desktops
+                # page, its nav link and its dock show only then, on the same reasoning.
+                "desktop_broker_url": server.desktop_broker_url,
+                "desktop_view_url": server.desktop_view_url,
+                "desktops": server.desktops_configured,
                 "meta_routines": meta_routines, **scheduler.snapshot()}
 
     @app.post("/api/setup/complete", dependencies=deps)

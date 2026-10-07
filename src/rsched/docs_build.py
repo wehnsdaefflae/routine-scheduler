@@ -122,7 +122,8 @@ GUIDE_ORDER = ["getting-started", "examples", "authoring", "conversations", "pla
                "rule-assists",
                "reminders", "items", "messages", "status-pages", "run-analytics", "search",
                "notifications", "sandboxing", "admin", "endpoints", "decision-models",
-               "oauth-connections", "remote-machines", "browser-sessions", "darknet", "usenet",
+               "oauth-connections", "remote-machines", "browser-sessions", "desktop-sessions",
+               "darknet", "usenet",
                "output-compression", "revise-recipe", "claude-proxy-cutover",
                "prompt-anatomy", "architecture", "designs"]
 

@@ -207,6 +207,16 @@ polled), `push`/`pull` over SFTP. Host keys are pinned (a mismatch refuses to co
 key comes from the Secrets store (never `~/.ssh`) and reaches only the `remote` util of a routine
 that binds the machine. See `docs/remote-machines.md` (also on the Help tab).
 
+## Agent desktops
+
+A routine holding the opt-in `desktop-sessions` permission gets a desktop computer of its own: a
+Cloud Hypervisor microVM running Debian + XFCE (the `desktop` compose service, behind its own
+profile), booted on the routine's first command and stopped when idle. The `desktop` util covers
+everything a person does at a screen — clicks, drags, keys, windows, clipboard — and finds targets
+by NAME in the accessibility tree first, with numbered marks and a grid-and-zoom close-up for what
+has none. A routine's granted folders mount live inside it, proved by its own sandbox, and the
+operator watches and takes over any desktop from the console. See `docs/desktop-sessions.md`.
+
 ## Darknet access
 
 A routine holding the opt-in `darknet` permission can search Tor hidden services and read a

@@ -11,3 +11,9 @@
 # an ALLOWLIST (`*` then exceptions), so a new COPY source that is not named here fails the
 # build with "not found" on a file that is plainly present.
 !deploy/browser-auth-proxy.py
+# The agent desktop sidecar (deploy/Dockerfile.desktop): its entrypoint, and the guest OS's own
+# files — the control agent, the session scripts, the systemd units and the home skeleton.
+!deploy/desktop-entrypoint.sh
+!deploy/desktop-guest/
+# …and the broker that runs one desktop per routine inside the sidecar.
+!deploy/desktop-broker/

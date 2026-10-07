@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import pytest
 
-from rsched.web import browser_proxy
+from rsched.web.screen_proxy import BROWSER
 
 
 class _Cfg:
@@ -48,12 +48,12 @@ class _Cfg:
     ],
 )
 def test_upstream_url_resolves_against_the_configured_page(configured, path, expected):
-    assert browser_proxy.upstream_for(_Cfg(configured), path) == expected
+    assert BROWSER.upstream_for(_Cfg(configured), path) == expected
 
 
 def test_an_unset_url_has_no_upstream_at_all():
     """Nothing configured means the proxy refuses rather than inventing a target."""
-    assert browser_proxy.upstream_for(_Cfg(""), "vnc.html") is None
+    assert BROWSER.upstream_for(_Cfg(""), "vnc.html") is None
 
 
 @pytest.mark.parametrize("path", [
@@ -69,17 +69,17 @@ def test_a_path_that_escapes_the_upstream_is_refused(path):
     """The proxy forwards a path the BROWSER chose, so traversal is refused here rather
     than trusted to the upstream's own hygiene."""
     with pytest.raises(ValueError):
-        browser_proxy.upstream_for(_Cfg("http://10.0.0.5:6080/vnc.html"), path)
+        BROWSER.upstream_for(_Cfg("http://10.0.0.5:6080/vnc.html"), path)
 
 
 def test_the_websocket_upstream_is_the_ws_scheme_of_the_configured_host():
     """The relay talks plain ws:// to the upstream — the TLS the user needs is between the
     BROWSER and the console, which the console already terminates."""
-    assert browser_proxy.ws_upstream_for(_Cfg("http://10.0.0.5:6080/vnc.html")) == \
+    assert BROWSER.ws_upstream_for(_Cfg("http://10.0.0.5:6080/vnc.html")) == \
         "ws://10.0.0.5:6080/websockify"
-    assert browser_proxy.ws_upstream_for(_Cfg("https://novnc.example/vnc.html")) == \
+    assert BROWSER.ws_upstream_for(_Cfg("https://novnc.example/vnc.html")) == \
         "wss://novnc.example/websockify"
 
 
 def test_ws_upstream_is_none_when_nothing_is_configured():
-    assert browser_proxy.ws_upstream_for(_Cfg("")) is None
+    assert BROWSER.ws_upstream_for(_Cfg("")) is None

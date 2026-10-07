@@ -904,8 +904,9 @@ label.field > span, .field > .lbl {
    still fetches, still updates, and simply lands in the document flow at the foot of every
    page. The 0.277.0 palette migration deleted two such blocks at once; the side TOC was found
    three releases later, the LLM dock twenty, each time by an operator reading a screenshot.
-   `tests/ui/test_global_chrome.py` pins every one of them to `position: fixed` — add any new
-   out-of-view chrome to that list the same day. The side TOC has since moved INSIDE the
+   `tests/ui/test_global_chrome.py` pins every one of them to the viewport — fixed itself, or
+   riding the fixed #docks column the bottom-right docks share — so add any new out-of-view
+   chrome to that list the same day. The side TOC has since moved INSIDE the
    navigation rail, so it is no longer one of them: losing its block leaves it stacked in the
    rail where it is seen, not dropped off the foot of the page. */
 
@@ -950,6 +951,30 @@ label.field > span, .field > .lbl {
   .side-toc .toc-link.on { color: var(--signal); border-left-color: var(--signal); }
 }
 
+/* ── the docks: ONE fixed column for every piece of bottom-right chrome ─────────────────────
+   The LLM activity dock, the browser preview and the desktop preview all live in the
+   bottom-right corner. They used to be positioned one by one — the LLM dock at the corner, the
+   browser dock on a fixed 44px offset above it — so an OPENED dock grew into its neighbour: the
+   LLM panel rose up to 520px under the browser preview, and a third dock would have needed a
+   third guessed offset (operator-reported: the chips overlap when opened). Now the COLUMN is the
+   one fixed thing and the docks are its flex children, so their boxes cannot intersect at any
+   size, open or folded, at any width — a hidden dock takes no space, an opened one pushes the
+   others up.
+
+   The column is as tall as the viewport allows and no taller; when the open docks need more,
+   the LLM panel is what shrinks (it scrolls inside), because the screens keep their aspect.
+   `pointer-events: none` on the column and `auto` on each dock leaves the gaps between them to
+   the page underneath.
+
+   LAYER. Above the rail (30) and its drag handle (31), below the toast (100) and the token
+   gate (200): the docks mirror work, so they must never cover a message or a prompt. */
+#docks {
+  position: fixed; right: var(--s4); bottom: var(--s4); z-index: 60;
+  display: flex; flex-direction: column; align-items: flex-end; gap: var(--s2);
+  max-height: calc(100dvh - 2 * var(--s4)); pointer-events: none;
+}
+#docks > * { pointer-events: auto; flex: 0 0 auto; }
+
 /* The LLM activity dock (components/taskmanager.js): a hideable mirror of what LLM work is in
    flight across the whole backend, collapsed to a pill and expanded to a panel.
 
@@ -965,14 +990,13 @@ label.field > span, .field > .lbl {
    token count, a n/m tally — was emitted by a counter. The one exception is the panel's own
    heading, which is the console speaking and takes the display face.
 
-   LAYER. Above the rail (30) and its drag handle (31), below the toast (100) and the token
-   gate (200): the dock mirrors work, so it must never cover a message or a prompt. */
+   PLACE. It is the bottom of the #docks column (below), so it keeps the corner the eye returns
+   to, and it is the one dock that gives way when the column runs out of height: its panel
+   scrolls inside whatever the screens above it leave. */
 #llm-tasks {
-  position: fixed; right: var(--s4); bottom: var(--s4); z-index: 60;
   display: flex; flex-direction: column; align-items: flex-end; gap: var(--s2);
-  font-family: var(--f-mono); pointer-events: none;
+  font-family: var(--f-mono); flex: 0 1 auto; min-height: 0;
 }
-#llm-tasks > * { pointer-events: auto; }
 
 .lt-pill {
   display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
@@ -992,6 +1016,7 @@ label.field > span, .field > .lbl {
 /* the expanded panel is the same kind of object as the search popover, and takes its plate */
 .lt-panel {
   width: min(360px, calc(100vw - 2 * var(--s3))); max-height: min(60vh, 520px); overflow-y: auto;
+  min-height: 0;
   background: var(--plate); border: 1px solid var(--rule-2); border-radius: var(--r3);
   box-shadow: var(--lift-2); font-size: var(--t-s);
 }
@@ -1012,14 +1037,14 @@ label.field > span, .field > .lbl {
 .lt-list { padding: var(--s1); display: flex; flex-direction: column; gap: 2px; }
 .lt-empty { padding: var(--s4) var(--s3); color: var(--ink-3); text-align: center; }
 
-/* ── the browser preview dock ──────────────────────────────────────────────────────────────
-   A permanent, read-only window onto the shared signed-in browser, in the same right-rail
-   band as the LLM dock and stacked ABOVE it (the dock is a glance; the task list is a
-   reading surface, so the list keeps the corner your eye returns to).
+/* ── the screen docks: the browser preview and the desktop preview ─────────────────────────
+   Permanent, read-only windows onto a relayed noVNC screen (components/screendock.js — one
+   implementation, two docks), in the #docks column ABOVE the LLM dock (a dock is a glance; the
+   task list is a reading surface, so the list keeps the corner your eye returns to).
 
    READ-ONLY IS A PROPERTY OF THIS BLOCK, not a promise made in JS: `pointer-events: none` on
    the frame means a click passes through to the page instead of steering a live session a
-   run is in the middle of using. Taking over is a deliberate trip to #/browser.
+   run is in the middle of using. Taking over is a deliberate trip to #/browser or #/desktops.
 
    SIZE. 16:10, capped against the viewport, so the preview stays a thumbnail on a laptop and
    never becomes the page. Hidden entirely below the wide layout: a phone has no rail to
@@ -1028,40 +1053,51 @@ label.field > span, .field > .lbl {
    IT IS AN OVERLAY, and rests open only where there is a margin to rest in. rail 212 +
    --shell-max 1240 = 1452, so between 861px and 1900px an open dock lies ON the reading column
    — over the Routines page's first run-now buttons, over an endpoint card's save-key row. Below
-   1900px browserdock.js therefore starts it collapsed and folds a click-open again on the next
+   1900px screendock.js therefore starts it collapsed and folds a click-open again on the next
    route change; above it the open/closed choice is remembered. */
-#browser-dock {
-  position: fixed; right: var(--s4); bottom: calc(var(--s4) + 44px); z-index: 60;
+.screen-dock {
   width: min(300px, calc(100vw - 2 * var(--s3)));
   background: var(--plate); border: 1px solid var(--rule-2); border-radius: var(--r3);
   box-shadow: var(--lift-2); overflow: hidden;
 }
-#browser-dock.bd-collapsed { width: auto; }
-.bd-head {
+.screen-dock.sd-collapsed { width: auto; }
+.sd-head {
   display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
   border-bottom: 1px solid var(--rule);
 }
-#browser-dock.bd-collapsed .bd-head { border-bottom: none; }
-.bd-title {
+.screen-dock.sd-collapsed .sd-head { border-bottom: none; }
+.sd-title {
   font-family: var(--f-display); font-weight: 600; letter-spacing: 0.02em;
-  color: var(--ink); text-decoration: none; font-size: var(--t-s);
+  color: var(--ink); text-decoration: none; font-size: var(--t-s); flex: 0 0 auto;
 }
-.bd-title:hover { color: var(--signal); }
-.bd-toggle {
+.sd-title:hover { color: var(--signal); }
+/* which desktop: a name when one runs, a picker when several do */
+.sd-extra { display: flex; min-width: 0; }
+.sd-which {
+  font-family: var(--f-mono); font-size: var(--t-xs); color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sd-switch {
+  font-family: var(--f-mono); font-size: var(--t-xs); max-width: 150px; min-width: 0;
+  padding: 1px var(--s1); min-height: 0;
+}
+.sd-toggle {
   margin-left: auto; background: none; border: none; color: var(--ink-3); cursor: pointer;
-  font: inherit; font-size: var(--t-xs); padding: 0 var(--s1);
+  font: inherit; font-size: var(--t-xs); padding: 0 var(--s1); flex: 0 0 auto;
 }
-.bd-toggle:hover { color: var(--ink); }
-.bd-body { display: block; }
-.browser-dock-frame {
+.sd-toggle:hover { color: var(--ink); }
+.sd-body { display: block; }
+.sd-frame {
   display: block; width: 100%; aspect-ratio: 16 / 10; border: 0; background: var(--plate-2);
   pointer-events: none;   /* read-only: a glance can never steer a live session */
 }
-.bd-note { padding: 4px var(--s3) var(--s2); }
+.sd-note { padding: 4px var(--s3) var(--s2); }
 
-/* the full screen at #/browser — this one DOES take the keyboard */
-.browser-screen-wrap { border: 1px solid var(--rule-2); border-radius: var(--r3); overflow: hidden; }
-.browser-screen { display: block; width: 100%; height: min(72vh, 900px); border: 0; }
+/* the full screens at #/browser and #/desktops — these DO take the keyboard */
+.browser-screen-wrap, .desktop-screen-wrap {
+  border: 1px solid var(--rule-2); border-radius: var(--r3); overflow: hidden;
+}
+.browser-screen, .desktop-screen { display: block; width: 100%; height: min(72vh, 900px); border: 0; }
 
 /* the state mark, on the .chip vocabulary: running is signal and pulses because it is changing
    while you look at it; the halo is the daemon lamp's, not the old glow */
@@ -1107,18 +1143,21 @@ label.field > span, .field > .lbl {
   /* The quota chip's label is desktop-only: the chip itself is nowrap and already the widest
      thing in the phone header, and the chip's tooltip names its subject either way. */
   .quota-lbl { display: none; }
-  /* the rail has become the bottom bar, so the corner the dock lives in is taken. It clears the
+  /* the rail has become the bottom bar, so the corner the docks live in is taken. It clears the
      bar on the bar's own terms: 39px of fixed height plus the padding that grows with the
      safe-area inset on a notched phone, plus the 19px of air .workspace's 62px reserve leaves. */
-  #llm-tasks { right: var(--s3); bottom: calc(58px + max(4px, env(safe-area-inset-bottom))); }
+  #docks {
+    right: var(--s3); bottom: calc(58px + max(4px, env(safe-area-inset-bottom)));
+    max-height: calc(100dvh - 58px - max(4px, env(safe-area-inset-bottom)) - var(--s3));
+  }
   /* IDLE, the dock is a 100x34px dead zone over the bottom-right of every phone page — it sat
      on the lane default-on-failure select, on a routine's Setup check head, on a chart's remove
      button. Collapsed to its bolt it is ~30px and covers nothing that is not a margin; the
      moment there is work it wears the count again, which is when it is worth the space. */
   #llm-tasks .lt-pill:not(.active) .lt-pill-n { display: none; }
   #llm-tasks .lt-pill { padding: 6px var(--s2); gap: 4px; }
-  /* the preview is a rail affordance and there is no rail here — and a thumbnail small enough
-     to fit a phone shows nothing worth a live VNC connection. The nav link still reaches the
-     full screen, which is the part that works at this width. */
-  #browser-dock { display: none; }
+  /* the previews are a rail affordance and there is no rail here — and a thumbnail small
+     enough to fit a phone shows nothing worth a live VNC connection. The nav links still reach
+     the full screens, which is the part that works at this width. */
+  #docks .screen-dock { display: none; }
 }

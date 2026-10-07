@@ -115,11 +115,12 @@ def test_tags_on_library_elements():
         assert len(d["tags"]) >= 3, (d["slug"], d["tags"])
     assert set(rules["web-research"]["tags"]) >= {"web", "research"}
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
-    # seventeen: what every routine does (memory, scripts, run history) needs no permission;
+    # eighteen: what every routine does (memory, scripts, run history) needs no permission;
     # a doc that could not act (background tasks, workflow generation) is gone
     assert set(perms) == {"util-authoring", "util-removal", "rule-authoring",
                           "recipe-authoring", "scheduling", "shell", "outbound-mail",
-                          "steward-publishing", "browser-sessions", "darknet", "usenet",
+                          "steward-publishing", "browser-sessions", "desktop-sessions",
+                          "darknet", "usenet",
                           "notifications", "messaging-discord", "messaging-signal",
                           "messaging-telegram", "messaging-whatsapp", "messaging-zulip"}
     # `self-modification` was retired when own-recipe writes became a fixed engine rule; 0.261.0

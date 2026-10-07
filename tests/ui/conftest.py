@@ -370,8 +370,33 @@ def ui(tmp_path, monkeypatch, make_routine, library_template, test_tls) -> UiHar
                     docs=docs, runner=runner, server_cfg=server_cfg,
                     boot_s=time.monotonic() - started_at)
 
+    _let_sockets_close(uv_server)
     uv_server.should_exit = True
     thread.join(timeout=10)
+
+
+def _let_sockets_close(server, limit_s: float = 1.0) -> None:
+    """Give the page's websockets a moment to finish closing before the server shuts down.
+
+    The page (and its context) is torn down BEFORE this fixture, so the browser is closing the
+    bus socket and any screen socket as the server is told to exit. uvicorn's shutdown then
+    sends every websocket a 1012 close — and on one whose close handshake the browser has
+    already begun, its websockets-sansio protocol raises `InvalidState: connection is closing`
+    in the server thread. pytest reports that as an ERROR at teardown of a test that passed
+    (test_browser_screen.py's frame tests hit it in most runs, before and after the desktops
+    landed). Waiting until the websocket connections are gone — bounded, so a socket the
+    browser never closes costs one second, not a hang — takes the race away.
+    """
+    deadline = time.monotonic() + limit_s
+    while time.monotonic() < deadline:
+        try:
+            live = [c for c in list(server.server_state.connections)
+                    if type(c).__module__.startswith("uvicorn.protocols.websockets")]
+        except RuntimeError:          # the loop thread changed the set mid-copy: look again
+            live = [None]
+        if not live:
+            return
+        time.sleep(0.02)
 
 
 # ONE waiting ceiling for this suite — page actions, navigations and `expect()` alike.

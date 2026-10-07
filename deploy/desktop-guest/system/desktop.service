@@ -1,0 +1,21 @@
+[Unit]
+Description=The agent-driven X desktop (Xvnc + XFCE + control agent)
+After=network-online.target desktop-home-init.service
+Wants=network-online.target
+Requires=desktop-home-init.service
+
+[Service]
+User=mark
+Group=mark
+WorkingDirectory=/home/mark
+Environment=HOME=/home/mark XDG_RUNTIME_DIR=/run/desktop
+RuntimeDirectory=desktop
+RuntimeDirectoryMode=0700
+ExecStartPre=-/usr/bin/rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
+ExecStart=/usr/local/bin/desktop-session
+Restart=always
+RestartSec=2
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

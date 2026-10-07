@@ -1,0 +1,1 @@
+mark ALL=(root) NOPASSWD: /usr/local/sbin/desktop-mount

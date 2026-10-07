@@ -65,6 +65,15 @@ class ServerConfig(_Config):
     # host's networking (a published port, an SSH tunnel or a VPN). Empty = the console shows no
     # browser screen, which is the honest state for an instance that never published one.
     browser_view_url: BlankableStr = ""
+    # The agent desktops (docs/desktop-sessions.md): one VM per routine behind ONE broker and
+    # ONE noVNC. `desktop_broker_url` is the broker the console asks for the fleet (its
+    # operator-only `/fleet`, e.g. http://172.30.7.20:8790); `desktop_view_url` the noVNC
+    # page every desktop's screen is relayed from (e.g. http://172.30.7.20:6080/vnc.html).
+    # Addresses of the deployment, like `browser_view_url`, and the console shows the
+    # Desktops page and dock only when BOTH are set — one without the other is a fleet it
+    # cannot list or screens it cannot open.
+    desktop_broker_url: BlankableStr = ""
+    desktop_view_url: BlankableStr = ""
     # The run semaphore's size: 0 would start no run ever, and a negative one cannot be built.
     max_concurrent_runs: int = Field(2, ge=1)
     registry_rescan_s: int = Field(30, ge=1)
@@ -120,6 +129,13 @@ class ServerConfig(_Config):
         from ..reminders import reminders_home
 
         return reminders_home(self.libraries_home)
+
+    @property
+    def desktops_configured(self) -> bool:
+        """Both desktop addresses are set: the one condition the console's Desktops page,
+        its nav link and its dock appear on.
+        """
+        return bool(self.desktop_broker_url.strip() and self.desktop_view_url.strip())
 
 
 def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str]]:

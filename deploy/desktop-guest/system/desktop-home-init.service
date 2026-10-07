@@ -1,0 +1,11 @@
+[Unit]
+Description=Populate a fresh desktop home disk from /etc/skel
+RequiresMountsFor=/home/mark
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/desktop-home-init
+
+[Install]
+WantedBy=multi-user.target

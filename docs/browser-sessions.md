@@ -96,28 +96,45 @@ console**.
 ### From the console (F527/F530)
 
 The **Browser** tab (`#/browser`) is the screen, full height and interactive — a keyboard is
-what signing a session in needs. The right rail carries the same screen as a permanent
-READ-ONLY preview on every page (`components/browserdock.js`, `pointer-events: none`), so an
-unattended run can be watched without steering it; it rests open only at ≥1900px, where the
-reading column leaves a margin, and starts collapsed below that. It connects to the screen the
+what signing a session in needs. The bottom-right column of docks carries the same screen as a
+permanent READ-ONLY preview on every page (`components/browserdock.js` over the shared
+`components/screendock.js`, `pointer-events: none`), so an unattended run can be watched
+without steering it; it rests open only at ≥1900px, where the reading column leaves a margin,
+and starts collapsed below that. It shares that column (`#docks`, one fixed flex column in
+base.css) with the agent-desktop preview and the LLM activity dock, so opening any of them
+pushes the others up rather than lying on them. It connects to the screen the
 first time it is both open and visible — at load only where it rests open, otherwise on the
 first "show" — because the screen admits one viewer at a time and a folded preview held that
 seat on every page load. Once connected it keeps the seat while folded or hidden on
 `#/browser`; whether to release it then is an open decision (docs/designs.md).
 
 Both load through the console's OWN origin — `/browser-view/…`, relayed by
-`web/api_browser_view.py` to the sidecar's websockify — never from the configured address
+`web/api_screen_view.py` to the sidecar's websockify — never from the configured address
 directly. That is what makes it work over https: a page served over https may not open an
 insecure `ws://`, so an embedded raw screen stayed blank exactly where the operator uses it.
 Same-origin means the browser upgrades to `wss://` by itself under the TLS the console already
 terminates: no certificate on the noVNC port, no second hostname to publish.
+
+The relay is ONE implementation for every noVNC screen the console shows: each is a row in
+`web/screen_proxy.SCREENS` (mount prefix, config field, the secret its upstream's bearer door
+checks, the pass cookie's name), and the agent desktops' screens (`/desktop-view/…`,
+[desktop sessions](desktop-sessions.md)) go through the same traversal refusal, the same
+dropped hop-by-hop headers and the same refused redirect. What a desktop adds is a choice of
+screen: one websockify serves every desktop and the socket's `?token=` picks one, so that query
+— and only once it has the broker's shape, 32 hex — is forwarded upstream. The frame URL
+(`components/screen.js`) names the console's own `host` and `port` to noVNC explicitly: the
+desktop sidecar's noVNC 1.6 otherwise resolves `path` against the frame's own URL, where 1.3
+(the browser's) resolves it from the root.
 
 The relay authenticates the way a frame actually asks. An `<iframe src>` is a naked GET, and
 noVNC then fetches its own assets with URLs it builds itself, so no query parameter the
 embedding page chooses reaches them. The console therefore mints a **path-scoped HttpOnly
 `SameSite=Strict` cookie** (`POST /api/browser-view/pass`, 12 h) before the frame is created:
 the one credential a browser attaches to a frame's sub-resources and its websocket handshake
-unasked, reaching this screen and nothing else.
+unasked, reaching this screen and nothing else. Each screen has its own cookie, path and pass
+store, so a browser pass opens no desktop (`/api/desktop-view/pass` mints that one). A run's
+`RSCHED_API_TOKEN` can mint neither — both are POSTs — and the relay paths are among the
+routine token's denied reads.
 
 ### Fallbacks when the console is not the way in
 

@@ -164,6 +164,11 @@ ignore = [
 # The browser sidecar's auth proxy runs INSIDE the chrome image, which has no rsched install
 # and no logging config — stderr is its only output surface, and it is executed as a script.
 "deploy/browser-auth-proxy.py" = ["T201", "INP001"]
+# The agent desktop's two script trees run INSIDE their own images (the broker in the sidecar,
+# the agent inside every guest VM), as sibling modules beside each other — never a package this
+# repo imports — and stdout/stderr is their only log surface.
+"deploy/desktop-broker/*.py" = ["T201", "INP001"]
+"deploy/desktop-guest/agent/*.py" = ["T201", "INP001"]
 # The predator decision server is two files copied to a GPU box and run as a script there — a
 # directory of modules beside each other, never a package this repo imports.
 "deploy/decision-server/*.py" = ["INP001"]

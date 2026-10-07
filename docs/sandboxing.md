@@ -144,7 +144,10 @@ and every `shell` command reaches those ports directly. Closing it needs `net:` 
 destination term (an allowlisted port set, which Landlock ABI 4 does express) so that
 reaching the browser becomes a declaration only the reserved utils make; until then the
 boundary around a signed-in browser is the docker network, and the deployment has to put
-something in front of the port. Sibling calls resolve transitively: `util_needs` walks
+something in front of the port. The agent-desktop sidecar is reachable the same way and is
+fronted the same way — and since every desktop-holding routine has ITS token, the broker does
+not trust the token to say who is calling: identity and folder mounts are proved by a file
+the caller's own jail writes ([desktop sessions](desktop-sessions.md)). Sibling calls resolve transitively: `util_needs` walks
 the `calls:` graph, so a util calling a `net: outbound` sibling gets (and needs) the open
 network, and inherits the sibling's declared secrets.
 

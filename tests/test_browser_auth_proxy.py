@@ -128,3 +128,14 @@ def test_an_authorized_connection_reports_a_dead_upstream_rather_than_hanging():
                       _head("Authorization: Bearer sekrit"))
     assert got.startswith(b"HTTP/1.1 502")
     assert b"upstream" in got.lower()
+
+
+def test_the_desktop_sidecar_runs_the_same_door_under_its_own_token_name():
+    """The agent-desktop sidecar fronts its broker and its screens with this same proxy, each
+    under its own token; a refusal must name THAT token, or a run is sent to declare the wrong
+    secret."""
+    got = _serve_once({"target": ("127.0.0.1", 1), "token": "sekrit", "label": "broker",
+                       "token_env": "DESKTOP_VM_TOKEN"}, _head("Host: x"))
+    assert got.startswith(b"HTTP/1.1 401 Unauthorized")
+    assert b"DESKTOP_VM_TOKEN" in got
+    assert b"BROWSER_CDP_TOKEN" not in got

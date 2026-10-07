@@ -11,6 +11,7 @@ import { initNotifications } from "/static/notify.js";
 import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
 import { initTaskManager } from "/static/components/taskmanager.js";
 import { initBrowserDock } from "/static/components/browserdock.js";
+import { initDesktopDock } from "/static/components/desktopdock.js";
 import { initSearchBox } from "/static/components/searchbox.js";
 import { mountToc } from "/static/components/toc.js";
 import { mountRibbon } from "/static/components/ribbon.js";
@@ -31,6 +32,7 @@ const routes = [
   [/^#\/run\/([a-z0-9-]+:[0-9-]+)$/, () => import("/static/views/run.js")],
   [/^#\/questions$/, () => import("/static/views/questions.js")],
   [/^#\/browser$/, () => import("/static/views/browser.js")],
+  [/^#\/desktops$/, () => import("/static/views/desktops.js")],
   [/^#\/library(?:\/(.*))?$/, () => import("/static/views/library.js")],
   [/^#\/settings$/, () => import("/static/views/settings.js")],
   [/^#\/help(?:\/(.*))?$/, () => import("/static/views/help.js")],
@@ -89,6 +91,7 @@ function updateLocation(path) {
       || path.startsWith("#/run/") ? "dashboard"
     : path.startsWith("#/questions") ? "questions"
     : path.startsWith("#/browser") ? "browser"
+    : path.startsWith("#/desktops") ? "desktops"
     : path.startsWith("#/messages") ? "messages"
     : path.startsWith("#/stats") ? "stats"
     : path.startsWith("#/library") ? "library"
@@ -362,9 +365,10 @@ window.addEventListener("hashchange", route);
   if (ribbonHost) mountRibbon(ribbonHost);
   initNotifications();
   initTaskManager();
-  // The shared browser's read-only preview (and its nav link) — both appear only when this
-  // instance publishes a screen, so it self-hides on an install that never opened the port.
+  // The read-only screen previews (and their nav links) — each appears only when this instance
+  // is pointed at that screen, so it self-hides on an install that never set one up.
   initBrowserDock().catch(() => { /* a preview is a nicety, never fatal to the console */ });
+  initDesktopDock().catch(() => { /* likewise */ });
   initSearchBox();
   startTimeTicker();
   const s = await refreshStatus();   // renders version, meta banner, lamp and clock tooltip

@@ -12,7 +12,9 @@ Each denied prefix is denied for a stated reason, and the table below is the rea
 `/api/routines/*/secrets` every routine's OWN secret names and the store's host path,
 `/api/debug` samples the daemon's own stacks, and `/api/search` is full-text over EVERY
 routine's transcripts, notes and ledgers — observations are never redacted, so a util that
-printed a token once is queryable by every other routine forever.
+printed a token once is queryable by every other routine forever. `/api/desktops` and the two
+relayed screens (`/browser-view`, `/desktop-view`) are the operator's: the fleet carries every
+desktop's screen token, and tests/test_desktop_view_api.py pins those against a run's token.
 """
 
 from __future__ import annotations

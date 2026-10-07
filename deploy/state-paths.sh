@@ -64,6 +64,12 @@ STATE_PATHS_NOT_CARRIED=(
   .cache/ms-playwright                 # a ~170 MB browser download the `page-fetch` util
                                        # re-fetches on first use. Bind-mounted to survive a
                                        # RECREATE, worthless in a copy.
+  desktop-vm                           # the agent desktop's two DISK IMAGES (docs/desktop-
+                                       # sessions.md). The system disk is rebuilt from the image
+                                       # every start; the home disk is one multi-GB file that
+                                       # changes whenever the desktop is used, so a dated
+                                       # snapshot would store it whole every night. Bound to
+                                       # survive a recreate; a new host starts a fresh home.
 )
 #   tor-data (volume)     — Tor's guard/consensus state: regenerable, meaningless elsewhere.
 #   /srv/ObsidianVault    — the llmsectest grant documents, mounted read-only from the host's

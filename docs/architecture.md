@@ -1467,14 +1467,17 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   HTTP flank of "config is the user's" is sealed, mutating routes are primary-only BY
   DEFAULT, and opening one to routines is an explicit allowlist edit with its reason.
   **"Read-only" is not "may read anything"**: `ROUTINE_TOKEN_DENIED_READS`
-  (`/api/fs`, `/api/debug`, `/api/settings`, `/api/search`, `/api/routines/*/secrets`, matched
-  as SUBTREES segment by segment, `*` standing for any one segment) is refused to the routine
-  token with a 403 carrying `WWW-Authenticate: Bearer error="insufficient_scope"` and a detail
-  naming `read_file` as how a run reaches a file it may read. Those five hand a jailed util
-  exactly what its Landlock roots forbid — any directory listing on the host, every central
-  secret NAME with the utils declaring it, every routine's OWN secret names with the store's
-  host path, the daemon's own stacks, and full-text search over every routine's transcripts and
-  notes. Every tier decision reads the path the ROUTER dispatches on (`app._route_path`), never `request.url.path`, which Starlette re-parses from the decoded
+  (`/api/fs`, `/api/debug`, `/api/settings`, `/api/search`, `/api/routines/*/secrets`,
+  `/api/desktops`, `/browser-view`, `/desktop-view`, matched as SUBTREES segment by segment,
+  `*` standing for any one segment) is refused to the routine token with a 403 carrying
+  `WWW-Authenticate: Bearer error="insufficient_scope"` and a detail naming `read_file` as how a
+  run reaches a file it may read. The first five hand a jailed util exactly what its Landlock
+  roots forbid — any directory listing on the host, every central secret NAME with the utils
+  declaring it, every routine's OWN secret names with the store's host path, the daemon's own
+  stacks, and full-text search over every routine's transcripts and notes. `/api/desktops` is
+  the agent-desktop fleet WITH each desktop's screen token — a keyboard on another routine's
+  computer, which the broker itself keeps behind `DESKTOP_OPERATOR_TOKEN`, a secret no routine
+  is granted — and the two relayed screens are the operator's for the same reason. Every tier decision reads the path the ROUTER dispatches on (`app._route_path`), never `request.url.path`, which Starlette re-parses from the decoded
   path so that an encoded `?` or `#` in a segment ends it early. No HTTP route accepts a
   stream ticket at all: the console's two live streams — the global bus (`/api/events`) and a
   run's tail (`/api/runs/{id}/events`) — are WebSockets (`web/streams.py`), each admitted by ONE

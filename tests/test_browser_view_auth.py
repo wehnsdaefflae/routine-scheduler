@@ -84,9 +84,9 @@ def test_a_granted_pass_admits_the_document_and_its_siblings(client):
 def test_the_pass_outlives_a_short_lived_stream_ticket(client):
     """A watched session lasts far longer than 60s; a credential that expires mid-session
     fails LATER, which reads as flakiness rather than as a bug."""
-    from rsched.web import api_browser_view
+    from rsched.web import api_screen_view
 
-    assert api_browser_view.PASS_TTL_S >= 3600, api_browser_view.PASS_TTL_S
+    assert api_screen_view.PASS_TTL_S >= 3600, api_screen_view.PASS_TTL_S
 
 
 def test_the_pass_is_scoped_to_the_screen_and_not_a_console_credential(client):

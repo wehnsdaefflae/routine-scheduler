@@ -1,0 +1,155 @@
+# A whole desktop computer for an agent: a Cloud Hypervisor microVM running Debian + XFCE on an
+# X11 server that is itself a VNC server (Xvnc), with a control agent inside the X session.
+# See docs/desktop-sessions.md.
+#
+# WHY A VM AND NOT ANOTHER CONTAINER: a desktop is a whole operating system an agent clicks
+# around in — package installs, a browser rendering anything, files from anywhere. A container
+# shares this host's kernel; a KVM guest has its own, which is the boundary E2B, Fly and Lambda
+# put around untrusted workloads. Cloud Hypervisor because it is a small Rust VMM with
+# snapshots and virtio-fs, and because the desktop needs NO display device at all: Xvnc renders
+# into memory inside the guest, so the VMM only has to provide disk, network and a serial line.
+#
+# WHY X11 AND NOT GNOME/WAYLAND: everything a person does reaches an X server as XTEST input
+# (xdotool), window management is EWMH (wmctrl), and the accessibility tree reports SCREEN
+# coordinates. Under Wayland synthesized input needs a portal and a consent dialog, and AT-SPI
+# boxes come back window-relative — the very coordinates the agent needs. GNOME no longer ships
+# an X11 session; XFCE does, and its apps are GTK with a complete accessibility tree.
+#
+# Three stages. `guest` installs the guest OS as an ordinary image. `disk` turns that file tree
+# into an ext4 disk image plus the kernel and initrd the VMM boots directly. The final stage is
+# the sidecar itself: the VMM, the network plumbing, noVNC and the token proxy. The guest's
+# SYSTEM disk is rebuilt from this image on every start (so an image upgrade upgrades the
+# desktop); its HOME is a second disk that persists.
+#
+# All three bases are the browser sidecar's pinned Debian (deploy/DOCKER.md says how to bump).
+
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS guest
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# The initrd has to find the root disk before any module loader runs, so the virtio drivers
+# are named explicitly rather than left to initramfs-tools' guess about this build container.
+RUN mkdir -p /etc/initramfs-tools \
+    && printf '%s\n' virtio_pci virtio_blk virtio_net virtio_console ext4 \
+        > /etc/initramfs-tools/modules
+
+# linux-image + systemd   — a bootable OS (the VMM boots the kernel directly, no bootloader)
+# xfce4-*, thunar, …      — the desktop, its file manager, terminal and editor
+# tigervnc-standalone     — Xvnc: the X server AND the VNC server, rendering into memory
+# xdotool wmctrl xclip    — input, windows, clipboard: the agent's hands
+# python3-pyatspi + at-spi2-core — the accessibility tree: the agent's names for things
+# python3-pil scrot       — screenshots and the marks / grid / zoom overlays
+# firefox-esr             — a browser inside the desktop (not the shared signed-in Chrome)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        linux-image-amd64 initramfs-tools systemd systemd-sysv udev dbus dbus-bin dbus-x11 \
+        libpam-systemd kmod iproute2 procps ca-certificates less nano \
+        xfce4-session xfwm4 xfce4-panel xfdesktop4 xfce4-settings xfconf xfce4-notifyd \
+        xfce4-appfinder thunar xfce4-terminal mousepad ristretto \
+        elementary-xfce-icon-theme adwaita-icon-theme \
+        tigervnc-standalone-server x11-xserver-utils x11-utils \
+        xdotool wmctrl xclip scrot \
+        python3 python3-pil python3-gi python3-pyatspi gir1.2-atspi-2.0 at-spi2-core \
+        dconf-cli dconf-gsettings-backend sudo \
+        firefox-esr fonts-dejavu-core fonts-liberation fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g "${GID}" mark 2>/dev/null || true \
+    && useradd -m -u "${UID}" -g "${GID}" -s /bin/bash mark \
+    && passwd -l root
+
+COPY deploy/desktop-guest/agent/ /usr/local/lib/desktop-agent/
+COPY deploy/desktop-guest/desktop-session.sh /usr/local/bin/desktop-session
+COPY deploy/desktop-guest/desktop-inner.sh /usr/local/bin/desktop-inner
+COPY deploy/desktop-guest/desktop-home-init.sh /usr/local/bin/desktop-home-init
+COPY deploy/desktop-guest/desktop-boot.sh /usr/local/bin/desktop-boot
+COPY deploy/desktop-guest/desktop-mount.sh /usr/local/sbin/desktop-mount
+COPY deploy/desktop-guest/system/desktop.service deploy/desktop-guest/system/desktop-home-init.service deploy/desktop-guest/system/desktop-boot.service /etc/systemd/system/
+COPY deploy/desktop-guest/system/sudoers-desktop-mount /etc/sudoers.d/desktop-mount
+COPY deploy/desktop-guest/system/firefox-policies.json /usr/lib/firefox-esr/distribution/policies.json
+COPY deploy/desktop-guest/system/00-a11y /etc/dconf/db/local.d/00-a11y
+COPY deploy/desktop-guest/system/dconf-profile-user /etc/dconf/profile/user
+COPY deploy/desktop-guest/skel/ /etc/skel/
+
+# The panel's own default layout copied into the skeleton: without a user config XFCE opens on
+# a modal "first start of the panel" question, which is the first thing an agent would see.
+# Compositing off — it costs CPU in a guest with no GPU and adds nothing to a VNC picture.
+RUN chmod +x /usr/local/bin/desktop-session /usr/local/bin/desktop-inner \
+        /usr/local/bin/desktop-home-init /usr/local/bin/desktop-boot \
+    && chmod 0755 /usr/local/sbin/desktop-mount && chmod 0440 /etc/sudoers.d/desktop-mount \
+    && install -d /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml \
+    && cp /etc/xdg/xfce4/panel/default.xml \
+        /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml \
+    && dconf update \
+    && printf '%s\n' '/dev/vda / ext4 rw,relatime,x-systemd.growfs 0 1' \
+        'LABEL=desktop-home /home/mark ext4 rw,relatime,nofail 0 2' > /etc/fstab \
+    && systemctl enable systemd-networkd desktop-boot.service desktop.service \
+        desktop-home-init.service \
+    && systemctl set-default multi-user.target \
+    && systemctl mask apt-daily.timer apt-daily-upgrade.timer e2scrub_all.timer \
+        getty@tty1.service systemd-networkd-wait-online.service
+
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS disk
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN apt-get update && apt-get install -y --no-install-recommends e2fsprogs \
+    && rm -rf /var/lib/apt/lists/*
+
+# The guest stage is MOUNTED, not copied: a bind of the stage's own snapshot keeps every
+# owner, mode and setuid bit exactly as dpkg left them, which a COPY would not promise. It is
+# staged with `cp -a` because three files Docker manages during a build (hostname, hosts,
+# resolv.conf) have to be written for the guest, and the mount is read-only. The kernel and
+# initrd leave the tree: the VMM boots them directly, no bootloader involved.
+RUN --mount=type=bind,from=guest,source=/,target=/guest \
+    mkdir -p /out /rootfs \
+    && cp -a /guest/. /rootfs/ \
+    && cp "$(ls /rootfs/boot/vmlinuz-* | sort -V | tail -1)" /out/vmlinuz \
+    && cp "$(ls /rootfs/boot/initrd.img-* | sort -V | tail -1)" /out/initrd.img \
+    && rm -f /rootfs/.dockerenv \
+    && echo desktop > /rootfs/etc/hostname \
+    && printf '127.0.0.1 localhost\n127.0.1.1 desktop\n::1 localhost\n' > /rootfs/etc/hosts \
+    && rm -f /rootfs/etc/resolv.conf && touch /rootfs/etc/resolv.conf \
+    && size_mb=$(( $(du -sm /rootfs | cut -f1) * 115 / 100 + 256 )) \
+    && mkfs.ext4 -q -L desktop-root -d /rootfs /out/root.img "${size_mb}M" \
+    && rm -rf /rootfs
+
+# The sidecar itself is TRIXIE, not the guest's bookworm: virtiofsd (the folder server behind every
+# live share) is packaged from trixie on, and nothing here needs to match the guest's release.
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# iproute2 iptables dnsmasq-base — the guests' links: a tap per slot, NAT out, DNS forwarded
+# qemu-utils  — qemu-img: each desktop's system disk is a qcow2 overlay on the read-only base
+# e2fsprogs   — makes a routine's home disk on its first desktop
+# virtiofsd   — serves a shared folder into a running guest (`gu desktop mount`)
+# novnc websockify — a person's view of each screen, behind the token proxy
+# python3     — runs the broker and browser-auth-proxy.py, the bearer-token door (shared with
+#               the chrome image)
+ARG CH_VERSION=v53.0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl iproute2 iptables dnsmasq-base e2fsprogs qemu-utils \
+        virtiofsd novnc websockify python3 gosu procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && base="https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/${CH_VERSION}" \
+    && curl -fsSL -o /usr/local/bin/cloud-hypervisor "$base/cloud-hypervisor-static" \
+    && curl -fsSL -o /usr/local/bin/ch-remote "$base/ch-remote-static" \
+    && printf '%s\n' \
+        '448af3d4e59b22c2987f7df94c213ad40fb53a10d437e42b5ee6c4fce7c29ecc  /usr/local/bin/cloud-hypervisor' \
+        '13f32ba952e6791fd901f2279be2055fbacc64005f96c42a8e90d58860df84a7  /usr/local/bin/ch-remote' \
+        | sha256sum -c - \
+    && chmod +x /usr/local/bin/cloud-hypervisor /usr/local/bin/ch-remote
+
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g "${GID}" mark 2>/dev/null || true \
+    && useradd -m -u "${UID}" -g "${GID}" -s /bin/bash mark
+
+ENV HOME=/home/mark \
+    DESKTOP_STATE=/home/mark/desktop-vm
+
+COPY --from=disk /out/ /opt/desktop/
+COPY deploy/desktop-entrypoint.sh /usr/local/bin/desktop-entrypoint.sh
+COPY deploy/browser-auth-proxy.py /usr/local/bin/browser-auth-proxy.py
+COPY deploy/desktop-broker/ /usr/local/lib/desktop-broker/
+RUN chmod +x /usr/local/bin/desktop-entrypoint.sh /usr/local/bin/browser-auth-proxy.py
+
+ENTRYPOINT ["/usr/local/bin/desktop-entrypoint.sh"]

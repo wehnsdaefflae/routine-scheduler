@@ -15,6 +15,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.391.0] — 2026-10-07
+
+### Added — agent desktops: a desktop computer of its own for every routine
+
+Some work exists only as a graphical application. The new opt-in `desktop` compose service
+(profile `desktop`, needs `/dev/kvm`) gives each routine — each conversation, each background
+task — its own **Cloud Hypervisor microVM running Debian + XFCE**, booted on the routine's first
+command (~5 s to a ready desktop) and stopped when idle; the operator watches every desktop from
+the console and takes any of them over. See `docs/desktop-sessions.md`.
+
+- **One VM per routine, not a shared one.** A screen has one pointer and one keyboard focus, and
+  anything mounted into a shared VM is visible to everyone using it. A broker in the sidecar
+  runs a fixed number of slots (`RSCHED_DESKTOP_MAX_VMS`, default 2 × `RSCHED_DESKTOP_MEM_MB`
+  3072); a routine asking while all are held is told who holds them and carries on without a
+  screen. The system disk is a qcow2 overlay on the image (every boot is the image's system),
+  the home disk is the routine's own and persists. The shared browser keeps its single
+  instance: there each caller owns a tab, and the shared logins are the point.
+- **The `desktop` util** (reserved by the new `desktop-sessions` permission) covers everything a
+  person does at a screen on X11 — clicks with modifiers, drags, scrolls, key chords, typing
+  (any script, or pasted), windows, workspaces, clipboard, launching apps, files in and out — and
+  points at things by NAME first: the accessibility tree (GTK/Qt/Firefox/Electron) lists what a
+  person operates as numbered elements, clicked by number or driven by the widget's own action;
+  `read`/`set-text` read and write a field without OCR or typing. A screenshot with numbered
+  marks, and a grid plus a gridded close-up (`zoom`) for what nothing names, complete it. A
+  recursive quadrant search was considered and not built: ~20 vision calls per click and a
+  hidden loop of model calls inside one action.
+- **Folders mount live** (`gu desktop mount FOLDER [--rw]`): virtio-fs, hot-plugged into the
+  running VM. What a run may mount is exactly what its own Landlock jail may touch — a
+  read-write mount proves itself with a file written inside the folder, a read-only one with a
+  digest of its listing — and never a routine's root read-write.
+- **Identity from the sandbox, screens behind an operator token.** Every caller holds the same
+  `DESKTOP_VM_TOKEN`, so the broker learns WHICH routine is calling from a one-time file the util
+  writes into its own working directory. The screens (noVNC) and the fleet listing answer only
+  `DESKTOP_OPERATOR_TOKEN`, which no routine is ever granted. Guests reach the internet and
+  nothing private — not the LAN, the console, the signed-in browser or another routine's desktop.
+- **Console:** one relay now serves every noVNC screen (`web/screen_proxy.py`,
+  `web/api_screen_view.py` — the browser's and the desktops'); `desktop_broker_url` and
+  `desktop_view_url` in Settings → Server switch the feature on; a **Desktops** page
+  (`#/desktops`, interactive screens, Stop) and a read-only **Desktop** dock. `/api/desktops`
+  and both screen relays are routine-token denied reads.
+
+### Fixed — the bottom-right docks covered one another
+
+The LLM activity dock and the browser dock were separately fixed boxes, so opening both laid one
+over the other. All docks (LLM, browser, desktop) are now one flex column (`#docks`): opening one
+pushes the others up, and `test_open_docks_never_cover_each_other` holds it at three widths.
+
 ## [0.390.1] — 2026-10-07
 
 ### Fixed
