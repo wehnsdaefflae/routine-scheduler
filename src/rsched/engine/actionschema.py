@@ -36,7 +36,7 @@ KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_
          "delete", "move", "mkdir", "edit_file",
          "memory_read", "memory_write", "read_rule", "write_rule",
          "script", "shell",
-         "llm", "spawn", "subtask", "detach",
+         "llm", "decide", "spawn", "subtask", "detach",
          "schedule_run", "create_routine", "manage_lane",
          "list_models", "subruns", "kill", "wait", "ask_user", "report", "finish")
 
@@ -184,7 +184,8 @@ ACTION_SCHEMA: dict = {
         },
         "background": {
             "type": "boolean",
-            "description": "util/script/shell/llm/read_file/view_image/memory_read/read_rule: "
+            "description": "util/script/shell/llm/decide/read_file/view_image/memory_read/"
+                           "read_rule: "
                            "this call is a READ or a FETCH, so run it in the "
                            "BACKGROUND and get the turn back at once. The observation you "
                            "receive names a handle and says the call is running; the REAL "
@@ -371,6 +372,34 @@ ACTION_SCHEMA: dict = {
                                   "clarified task instruction, decomposed into the new routine's "
                                   "stages (say WHAT it should do, not when it runs)"},
         "system": {"type": "string", "description": "llm: optional system prompt"},
+        # decide — a typed question to a DECISION model (engine/decideaction.py). `question`,
+        # `options` and `model` are shared with ask_user / llm and described there too.
+        "answer_type": {"type": "string", "enum": ["yes_no", "choice", "score"],
+                        "description": "decide: yes_no (the answer is P(yes); no options) · "
+                                       "choice (one of `options`) · score (a position on "
+                                       "`options` read as ordered levels, LOWEST first). "
+                                       "Default: choice when options are given, else yes_no"},
+        "questions": {
+            "type": "array", "maxItems": 16,
+            "items": {"type": "object", "additionalProperties": False, "properties": {
+                "name": {"type": "string",
+                         "description": "snake_case id the answer is filed under"},
+                "question": {"type": "string", "description": "what to decide"},
+                "answer_type": {"type": "string", "enum": ["yes_no", "choice", "score"]},
+                "options": {"type": "array", "items": {"type": "string"}, "maxItems": 26}}},
+            "description": "decide: SEVERAL independent questions over the same evidence, in "
+                           "one call (instead of question/answer_type/options) — each with "
+                           "its own name, question, answer_type and options. One evidence, "
+                           "many questions is what these models are fastest and cheapest at",
+        },
+        "evidence": {"type": ["string", "object", "array"],
+                     "description": "decide: what the answer depends on — text, or a JSON "
+                                    "object/array of the facts. Self-contained: the model "
+                                    "sees nothing else of your context"},
+        "files": {"type": "array", "items": {"type": "string"}, "maxItems": 16,
+                  "description": "decide: files whose CONTENT is evidence — images "
+                                 "(png/jpeg/webp/gif) are shown to a decision model that takes "
+                                 "them (several judged together), text files are read in"},
         "response_schema": {"type": "object",
                             "description": "llm: optional JSON schema constraining the reply"},
         "model": {"type": "string",
@@ -379,7 +408,9 @@ ACTION_SCHEMA: dict = {
                                  "for a step the default refuses, rejected if unconfigured) OR "
                                  "a catalog model NAME from `list_models`. Defaults: children "
                                  "(spawn/subtask) run the routine's MAIN model, llm runs "
-                                 "tool_call"},
+                                 "tool_call · decide: OPTIONAL — a DECISION model's name "
+                                 "(list_models shows them; default: the instance's decision "
+                                 "model, its image default when the call carries images)"},
         "workflow": {"type": "string",
                      "description": "spawn/subtask/detach: library workflow slug for the child "
                                     "(default general-task) — pick the pattern matching its "
@@ -435,15 +466,18 @@ ACTION_SCHEMA: dict = {
         # ask_user
         "question": {"type": "string",
                      "description": "ask_user: the question, self-contained (simple Markdown "
-                                    "renders in the UI)"},
+                                    "renders in the UI) · decide: what to decide, phrased as "
+                                    "the question the options answer"},
         "mode": {
             "type": "string", "enum": ["blocking", "deferred"],
             "description": "ask_user: wait for the answer vs file it and continue "
                            "(default deferred)",
         },
         "options": {
-            "type": "array", "items": {"type": "string"}, "maxItems": 5,
-            "description": "ask_user: optional pick-one choices",
+            "type": "array", "items": {"type": "string"}, "maxItems": 26,
+            "description": "ask_user: optional pick-one choices (at most 5) · decide: the "
+                           "answers to choose between, or a score's levels LOWEST first — "
+                           "each 'value: what it means' (the value is what the answer names)",
         },
         "default": {
             "type": "string",
@@ -528,7 +562,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "write_file": "path", "delete": "path", "move": "src",
                "mkdir": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
-               "llm": "prompt", "spawn": "label", "subtask": "label",
+               "llm": "prompt", "decide": "question", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
                "manage_lane": "verb",
                "kill": "n", "wait": "n",

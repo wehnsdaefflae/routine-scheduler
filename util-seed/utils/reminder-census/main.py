@@ -52,7 +52,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "write_file": "path", "delete": "path", "move": "src",
                "mkdir": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
-               "llm": "prompt", "spawn": "label", "subtask": "label",
+               "llm": "prompt", "decide": "question", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
                "manage_lane": "verb",
                "kill": "n", "wait": "n",

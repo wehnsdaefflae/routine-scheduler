@@ -247,6 +247,11 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     kinds = effective_kinds(allowed_kinds, g)
     parts.append("Action kinds usable this run: " + ", ".join(kinds) + ". Anything else is "
                  "rejected by the engine before it becomes a turn.")
+    if "decide" in kinds:
+        from .decideaction import catalog_line
+        if line := catalog_line(ctx.server):
+            parts.append(line + " — a decide call's `model` picks one; without it the default "
+                         "for its payload answers.")
     if g is not None:
         cap_bits = []
         # Each line keys on `kinds` — the grant ∩ the workflow's `tools:` — never on the grant

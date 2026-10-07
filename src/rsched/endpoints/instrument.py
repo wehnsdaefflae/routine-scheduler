@@ -242,6 +242,32 @@ class InstrumentedEndpoint:
                                  cooldown_s=failover.cooldown_for(exc))
 
 
+def observe_call(call, *, endpoint: str, model: str, purpose: str, kind: str):
+    """Record a transport call that is not a chat completion — a decision model's
+    (endpoints/decisions.py) — with the same started/finished/failed lifecycle, so it shows in
+    the activity dock like any other model call. `call()` returns an object carrying `usage`
+    and `provider`; it is returned unchanged, and its exception re-raised.
+    """
+    sink = _sink
+    if sink is None:
+        return call()
+    common: dict = {"id": uuid.uuid4().hex[:12], "endpoint": endpoint, "model": model,
+                    "purpose": purpose, "kind": kind}
+    started = make_record("started", **common)
+    note_started(started)
+    _emit(sink, started)
+    try:
+        out = call()
+    except BaseException as exc:
+        _note_terminal(common["id"])
+        _emit(sink, make_record("failed", **common, error=str(exc)[:300]))
+        raise
+    _note_terminal(common["id"])
+    _emit(sink, make_record("finished", **common, usage=out.usage,
+                            provider=out.provider or None))
+    return out
+
+
 def _emit(sink, rec: dict) -> None:
     """Recording must never break a real LLM call (disk full, a slow subscriber…)."""
     try:

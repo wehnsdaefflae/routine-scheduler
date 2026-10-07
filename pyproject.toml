@@ -164,6 +164,9 @@ ignore = [
 # The browser sidecar's auth proxy runs INSIDE the chrome image, which has no rsched install
 # and no logging config — stderr is its only output surface, and it is executed as a script.
 "deploy/browser-auth-proxy.py" = ["T201", "INP001"]
+# The predator decision server is two files copied to a GPU box and run as a script there — a
+# directory of modules beside each other, never a package this repo imports.
+"deploy/decision-server/*.py" = ["INP001"]
 "src/rsched/engine/composer.py" = ["S608"]  # prompt f-strings contain SQL-like words; this file builds prompts, never SQL
 
 [tool.ruff.lint.mccabe]

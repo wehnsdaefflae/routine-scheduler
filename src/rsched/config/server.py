@@ -10,6 +10,7 @@ from pydantic import Field
 
 from ..paths import config_file, expand, read_yaml
 from .base import BlankableStr, HomePath, _Config, _validate_lenient
+from .decisionconf import DecisionEndpointConfig, DecisionModelConfig, decision_problems
 from .modelconf import EndpointConfig, MachineConfig, ModelConfig
 
 
@@ -89,6 +90,15 @@ class ServerConfig(_Config):
     system_model: str = ""
     # Background navigable-history archival only; blank preserves automatic tool-call/main routing.
     compaction_model: str = ""
+    # The DECISION catalog behind the `decide` action (config/decisionconf.py): typed
+    # classifiers that return probabilities, never text — so a catalog of their own, which no
+    # chat role can resolve into. `decision_model` is a call's default; `decision_media_model`
+    # the default for a call that carries images (blank → `decision_model`, which must then
+    # take them). An instance with no decision model never shows a run the action at all.
+    decision_endpoints: dict[str, DecisionEndpointConfig] = Field(default_factory=dict)
+    decision_models: dict[str, DecisionModelConfig] = Field(default_factory=dict)
+    decision_model: str = ""
+    decision_media_model: str = ""
     source: Path | None = None
 
     @property
@@ -138,7 +148,9 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
     problems.extend(f"{key}: unknown config.yaml key — check the spelling (ignored)"
                     for key in sorted(set(raw) - set(ServerConfig.model_fields)))
     for section, cls in (("endpoints", EndpointConfig), ("models", ModelConfig),
-                         ("machines", MachineConfig)):
+                         ("machines", MachineConfig),
+                         ("decision_endpoints", DecisionEndpointConfig),
+                         ("decision_models", DecisionModelConfig)):
         entries = raw.get(section)
         if isinstance(entries, dict):
             for name, entry in entries.items():
@@ -165,4 +177,5 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
         problems.append(f"compaction_model: {cfg.compaction_model!r} is not a catalog model")
     for name, mac in cfg.machines.items():
         mac.name = name
+    problems.extend(decision_problems(cfg))
     return cfg, problems

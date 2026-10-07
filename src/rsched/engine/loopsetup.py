@@ -134,6 +134,14 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # is the one reasoning with the user, and a child's proposal traces to nothing.
     if loop.allowed_tools is not None and ctx.depth == 0:
         loop.allowed_tools |= {"create_routine", "manage_lane"}
+    # `decide` needs a DECISION model, which an instance configures or does not: without one
+    # the kind is projected out like any kind the run may not use, so an instance that never
+    # set one up keeps exactly the prompt it had (engine/decideaction.py).
+    from .decideaction import available as decide_available
+    if not decide_available(ctx.server):
+        from .actionschema import KINDS
+        loop.allowed_tools = (set(KINDS) if loop.allowed_tools is None
+                              else loop.allowed_tools) - {"decide"}
     loop._recipe_unlocked = unlocked or revising
     build_base_policy(loop, ctx.routine.grants)
     loop.grants = ctx.grants = loop.base_grants.with_overlay(ctx.granted_now,

@@ -139,14 +139,15 @@ def prior_usage(events: list[dict]) -> dict:
     """Token spend recorded across ALL prior legs of a run's transcript. A resume starts a
     fresh budget window (ctx.usage), so without this base status.json under-reports resumed
     runs by however much the earlier legs spent. Sums every event that carries usage:
-    assistant actions, llm-subcall observations, and compaction calls.
+    assistant actions, llm-subcall and decide observations, and compaction calls.
     """
     total: dict = {"in": 0, "out": 0}
     for ev in events:
         etype = ev.get("type")
         if etype == "assistant_action":
             u = ev.get("usage")
-        elif ((etype == "observation" and (ev.get("payload") or {}).get("kind") == "llm")
+        elif ((etype == "observation"
+               and (ev.get("payload") or {}).get("kind") in ("llm", "decide"))
               or etype == "compaction"):
             u = (ev.get("payload") or {}).get("usage")
         else:

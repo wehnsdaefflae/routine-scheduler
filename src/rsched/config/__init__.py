@@ -31,12 +31,18 @@ from .base import (
     SchemaMode,
     default_tz,
 )
+from .decisionconf import (
+    DECISION_PROTOCOLS,
+    DecisionEndpointConfig,
+    DecisionModelConfig,
+)
 from .modelconf import EndpointConfig, MachineConfig, ModelConfig, ModelRef
 from .routine import RoutineConfig, load_routine, load_tuning, write_tuning
 from .server import ServerConfig, load_server_config
 
 __all__ = [
     "CONVERSATION_DELIBERATION",
+    "DECISION_PROTOCOLS",
     "DEFAULT_BUDGETS",
     "DEFAULT_CAPABILITIES",
     "DEFAULT_CONTEXT_TOKENS",
@@ -51,6 +57,8 @@ __all__ = [
     "NATIVE_MM_KINDS",
     "SCHEMA_MODES",
     "BlankableStr",
+    "DecisionEndpointConfig",
+    "DecisionModelConfig",
     "EndpointConfig",
     "EndpointKind",
     "HomePath",

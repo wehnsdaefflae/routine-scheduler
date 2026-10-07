@@ -54,7 +54,8 @@ class _Registry:
 
 
 def _server(catalog=("glm-5", "opus-4")):
-    return SimpleNamespace(models={n: SimpleNamespace(fallbacks=[]) for n in catalog})
+    return SimpleNamespace(models={n: SimpleNamespace(fallbacks=[]) for n in catalog},
+                           decision_models={})
 
 
 def _ctx(registry):

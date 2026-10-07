@@ -79,6 +79,8 @@ def test_transcript_js_brief_field_mirrors_python():
         {"say": "s", "kind": "shell", "command": "git log --oneline -5", "timeout_s": 60,
          "path": "state"},
         {"say": "s", "kind": "llm", "prompt": "p", "system": "sys", "response_schema": {"type": "object"}},
+        {"say": "s", "kind": "decide", "question": "Which queue?",
+         "options": ["access: account access", "billing: payments"], "evidence": "locked out"},
         {"say": "s", "kind": "spawn", "prompt": "do x", "label": "research", "workflow": "general-task"},
         {"say": "s", "kind": "subtask", "prompt": "do step x", "label": "step-1",
          "workflow": "general-task", "turns": 8},

@@ -143,7 +143,28 @@ def do_list_models(ctx: RunContext) -> dict:
                            "fallbacks": list(ctx.server.models[name].fallbacks)})
         except EndpointError as exc:
             models.append({"name": name, "error": str(exc)})
-    return {"kind": "list_models", "roles": roles, "models": models,
-            "note": ("a spawn/subtask/llm action's `model` field takes one of these "
-                     "catalog names, or a role (main/tool_call/uncensored); children "
-                     "default to main, llm to tool_call")}
+    out: dict = {"kind": "list_models", "roles": roles, "models": models,
+                 "note": ("a spawn/subtask/llm action's `model` field takes one of these "
+                          "catalog names, or a role (main/tool_call/uncensored); children "
+                          "default to main, llm to tool_call")}
+    if ctx.server.decision_models:
+        # The DECISION catalog is a different contract (endpoints/decisions.py) — listed apart
+        # so a name from it is never passed to llm/spawn, nor a chat model's to decide.
+        from ..endpoints.decisions import decision_catalog
+        out["decision_models"] = decision_catalog(ctx.server)
+        out["note"] += ("; a decide action's `model` takes a decision_models name instead "
+                        "(default: the one marked default for its payload)")
+    return out
+
+
+def format_models(obs: dict, kind: str) -> str | None:
+    """The list_models observation, whole. It used to fall through to the generic renderer,
+    which cuts every observation it does not know at 500 characters — on a 24-model catalog
+    that is the roles and the first two models, and none of the decision catalog.
+    """
+    if kind != "list_models":
+        return None
+    body = {k: v for k, v in obs.items() if k != "kind"}
+    text, _ = truncate(json.dumps(body, ensure_ascii=False, separators=(",", ":")))
+    return f"OBSERVATION (list_models):\n{text}"
+

@@ -3,7 +3,8 @@
 DISPATCH covers the EFFECT kinds: util and shell (the util runner and the one-off command
 live here), the file kinds (read_file / write_file / edit_file — fileops.py; delete / move /
 mkdir — fsops.py), view_image (mediaops.py), the name-addressed stores (memory_read /
-memory_write / read_rule — memops.py), llm and list_models (llmaction.py). `script`, the
+memory_write / read_rule — memops.py), llm and list_models (llmaction.py), decide
+(decideaction.py). `script`, the
 third way a run executes code, lives here too but is reached through actionroute.py, which
 puts the call-time secret gate in front of it and of `util`. Every other kind has its own
 handler there — the child-run kinds (spawn, subtask, subruns, kill, wait) in subruns.py,
@@ -22,6 +23,7 @@ from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
 from .actions import could_be_util
 from .control import cancelled_for_turn
+from .decideaction import do_decide
 from .exec_env import _extra_secrets, _unbound_connection_request
 from .fileops import UTIL_DEFAULT_TIMEOUT_S, do_edit_file, do_read_file, do_write_file
 from .fsops import do_delete, do_mkdir, do_move
@@ -465,6 +467,7 @@ DISPATCH = {
     "memory_write": do_memory_write,
     "read_rule": do_read_rule,
     "llm": do_llm,
+    "decide": do_decide,
     "list_models": lambda _action, ctx: do_list_models(ctx),
 }
 

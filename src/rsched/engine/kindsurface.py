@@ -3,8 +3,8 @@ projection of ACTION_SCHEMA onto them.
 
 `actions.py` stays the single source of truth for what a turn may do — this module only
 NARROWS what the model is shown to what the engine would accept anyway. A run whose
-workflow `tools:` allowlist and capabilities permit 8 of the 30 kinds was previously sent
-all 30 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
+workflow `tools:` allowlist and capabilities permit 8 of the 31 kinds was previously sent
+all 31 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
 model read, every turn, the full description of channels the validator would reject. The
 projection is derived from `actions.KIND_FIELDS` — the same map `validate_action` builds
 its allowed-field set from — so the shown schema and the enforced contract cannot drift.
@@ -216,6 +216,15 @@ delete: a rule that should go is a report or a deferred ask_user naming it."""),
 model; `model` overrides per call — a role or a catalog model name, `list_models` shows them). \
 It sees ONLY \
 your prompt/system — include everything it needs; set response_schema for structured replies."""),
+    (("decide",), """- decide: put a typed question to a DECISION model and get probabilities \
+back, never prose — `question` + `options` for a choice (each "value: what it means"; the \
+answer names the value), no options for a yes/no (the answer is P(yes)), `answer_type` "score" \
+to read the options as ordered levels, LOWEST first. `evidence` is what the answer depends on \
+(text or JSON, self-contained — the model sees nothing else) and `files` adds images, judged \
+together, or text files read in whole. Several independent questions about the SAME evidence \
+go in ONE call as `questions`: one reading of the evidence answers all of them. Use it where a \
+step is a classification — route, gate, screen, rate — and act on the probability with a \
+threshold you can name; it gives no reasons, so ask `llm` when you need one."""),
     (("spawn",), """- spawn: start a CHILD RUN scheduled in PARALLEL with you. Every child \
 run — however \
 scheduled — works the same way: its OWN directory (runs/<ts>/sub/<n>/, NOT your working tree — \

@@ -16,6 +16,7 @@ import re
 from ..ids import is_slug
 from ..reports import REPORT_ID_RE
 from .actionschema import KINDS, PSEUDO_UTILS
+from .decideaction import field_problems as decide_field_problems
 from .remind import field_problems as reminder_field_problems
 
 # The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine
@@ -34,6 +35,9 @@ ALWAYS_KINDS = ("finish", "report", "list_models")
 
 
 MEMORY_NOTE_MAX_LINES = 100
+#: ask_user's pick-one list. The shared schema field allows decide's longer lists, so this cap
+#: is held here rather than by the schema.
+ASK_OPTIONS_MAX = 5
 
 
 # kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
@@ -92,6 +96,10 @@ KIND_EXAMPLES: dict[str, dict] = {
                    "anchor": "<the exact sentence(s) to replace, copied verbatim>",
                    "replacement": "<the new wording, in the rule's own voice>"},
     "llm": {"say": "<why delegate>", "kind": "llm", "prompt": "<the subtask prompt>"},
+    "decide": {"say": "<why this decision now>", "kind": "decide",
+               "question": "<what to decide>",
+               "options": ["<value>: <what it means>", "<other value>: <what it means>"],
+               "evidence": "<the text or facts the answer depends on>"},
     "spawn": {"say": "<why a child>", "kind": "spawn",
               "prompt": "<self-contained instruction>", "label": "child-1"},
     "subtask": {"say": "<why this sequential step>", "kind": "subtask",
@@ -129,7 +137,7 @@ KIND_EXAMPLES: dict[str, dict] = {
 # the rule, then: these kinds are backgroundable, and marking a WRITING shell command
 # `background` is the caller's own ordering hazard, the same one it already owns when it runs a
 # write through a util.
-BACKGROUNDABLE_KINDS = ("util", "script", "shell", "llm",
+BACKGROUNDABLE_KINDS = ("util", "script", "shell", "llm", "decide",
                         "read_file", "view_image", "memory_read", "read_rule")
 
 # kind → (required fields, allowed extra fields beyond say/kind)
@@ -156,6 +164,8 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "read_rule": (("name",), ("background",)),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
     "llm": (("prompt",), ("system", "response_schema", "model", "background")),
+    "decide": ((), ("question", "answer_type", "options", "questions", "evidence", "files",
+                    "model", "background")),
     "spawn": (("prompt",), ("workflow", "label", "model")),
     "subtask": (("prompt",), ("workflow", "label", "turns", "model")),
     "detach": (("prompt",), ("workflow", "label")),
@@ -295,6 +305,12 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             if not str(obj.get("reason") or "").strip():
                 problems.append("kind=schedule_run requires 'reason' (why the one-shot fires) "
                                 "unless cancel: true")
+    if kind == "decide":
+        problems += decide_field_problems(obj)
+    # The schema's `options` cap is decide's (26); ask_user's pick-list stays a short one.
+    if kind == "ask_user" and len(obj.get("options") or []) > ASK_OPTIONS_MAX:
+        problems.append(f"kind=ask_user: at most {ASK_OPTIONS_MAX} 'options' — a longer list "
+                        "is a question to rephrase, not a menu")
     if kind == "create_routine" and not is_slug(str(obj.get("target") or "")):
         problems.append("kind=create_routine requires 'target' to be a kebab-case slug for the "
                         "new routine")

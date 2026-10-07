@@ -189,9 +189,9 @@ one you are about to touch, not all of them.
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, delete,
-  move, mkdir, edit_file, memory_read, memory_write, read_rule, write_rule, script, shell, llm, spawn,
-  subtask, detach, schedule_run, create_routine, manage_lane, list_models, subruns, kill, wait,
-  ask_user, report, finish` (30, `actionschema.KINDS`). **`script` runs
+  move, mkdir, edit_file, memory_read, memory_write, read_rule, write_rule, script, shell, llm, decide,
+  spawn, subtask, detach, schedule_run, create_routine, manage_lane, list_models, subruns, kill,
+  wait, ask_user, report, finish` (31, `actionschema.KINDS`). **`script` runs
   the routine's OWN `scripts/<name>.py`** — persistent helper TOOLING, deliberately NOT a co-equal
   interpreter of the routine: the recipe
   stays the single interpreter of the task and delegates only judgment-free sub-steps. A repeating
