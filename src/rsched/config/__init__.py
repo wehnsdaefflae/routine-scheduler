@@ -12,6 +12,7 @@ import X` is unchanged for every consumer.
 
 from .base import (
     CONVERSATION_DELIBERATION,
+    DECISION_ROLES,
     DEFAULT_BUDGETS,
     DEFAULT_CAPABILITIES,
     DEFAULT_CONTEXT_TOKENS,
@@ -24,6 +25,7 @@ from .base import (
     KEY_VAR_DEFAULTS,
     MODEL_KINDS,
     NATIVE_MM_KINDS,
+    ROUTINE_MODEL_ROLES,
     SCHEMA_MODES,
     BlankableStr,
     EndpointKind,
@@ -43,6 +45,7 @@ from .server import ServerConfig, load_server_config
 __all__ = [
     "CONVERSATION_DELIBERATION",
     "DECISION_PROTOCOLS",
+    "DECISION_ROLES",
     "DEFAULT_BUDGETS",
     "DEFAULT_CAPABILITIES",
     "DEFAULT_CONTEXT_TOKENS",
@@ -55,6 +58,7 @@ __all__ = [
     "KEY_VAR_DEFAULTS",
     "MODEL_KINDS",
     "NATIVE_MM_KINDS",
+    "ROUTINE_MODEL_ROLES",
     "SCHEMA_MODES",
     "BlankableStr",
     "DecisionEndpointConfig",

@@ -204,7 +204,8 @@ def do_decide(action: dict, ctx: RunContext) -> dict:
         return {"kind": "decide", "error": err}
     purpose = ("decide · " + str(action.get("say") or questions[0].question))[:80]
     try:
-        endpoint, ref = pick_decision_model(ctx.server, action.get("model"), images=bool(images))
+        endpoint, ref = pick_decision_model(ctx.server, action.get("model"), images=bool(images),
+                                            roles=ctx.routine.models)
         timeout = ctx.server.decision_endpoints[ref.endpoint].timeout_s
         result = decide(endpoint, ref, evidence, images, questions, timeout=timeout,
                         purpose=purpose)
@@ -243,9 +244,9 @@ def format_decide(obs: dict, kind: str) -> str | None:
     return "\n".join([head, *(_line(a) for a in obs.get("answers") or [])])
 
 
-def catalog_line(server) -> str:
+def catalog_line(server, roles: dict | None = None) -> str:
     """CAPABILITIES' one line naming the decision models a run may pick, or "" when none."""
-    rows = [r for r in decision_catalog(server) if "error" not in r]
+    rows = [r for r in decision_catalog(server, roles) if "error" not in r]
     if not rows:
         return ""
     parts = [f"{r['name']} ({'text + images' if r['images'] else 'text'}"

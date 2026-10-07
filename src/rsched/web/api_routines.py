@@ -16,11 +16,12 @@ from pydantic import BaseModel
 
 from .. import lanes, registry, schedule
 from .. import triggers as triggers_mod
-from ..config import MODEL_KINDS
+from ..config import ROUTINE_MODEL_ROLES
 from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
 from ..engine.ladder import oversight_turns_for
 from ..readmodels.stats import monthly_spend
 from .api_tasks import layer_on
+from .config_fields import decision_picker
 from .decisions_read import _snooze_active
 from .routines_common import (
     _catalog,
@@ -216,9 +217,12 @@ def routine_detail(request: Request, slug: str) -> dict:
                          "in_library": in_library},
         # Per-routine model roles (main/tool_call/uncensored) — each a catalog model
         # NAME, or null to fall back to the server system_model. `catalog` populates the picker.
-        "models": {k: (info.cfg.models.get(k) or None) for k in MODEL_KINDS},
+        # The two decision roles name a DECISION model, null falling back to the instance's
+        # decision defaults; their pickers read `decision_catalog` (empty → no rows at all).
+        "models": {k: (info.cfg.models.get(k) or None) for k in ROUTINE_MODEL_ROLES},
         "catalog": list(server.models.keys()),
         "system_model": server.system_model or None,
+        **decision_picker(server),
         # OAuth connection bindings {provider: account}; the picker's options come from
         # GET /api/settings/oauth (the connected accounts).
         "connections": dict(info.cfg.connections),

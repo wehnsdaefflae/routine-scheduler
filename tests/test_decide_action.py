@@ -9,6 +9,7 @@ network.
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from conftest import finish, write_file
 from helpers import server_for
@@ -186,3 +187,24 @@ def test_the_prompt_names_the_decision_models(make_routine, scripted):
     assert "- decide: put a typed question to a DECISION model" in system
     assert ("Decision models (decide): jev (text, default), vl8b (text + images, default for "
             "images)") in system
+
+
+def test_a_routines_decision_role_answers_its_calls(make_routine, scripted, monkeypatch):
+    d = make_routine(slug="roled")
+    raw = yaml.safe_load((d / "routine.yaml").read_text())
+    raw["models"] = {"decision": "vl8b"}
+    (d / "routine.yaml").write_text(yaml.safe_dump(raw))
+    asked: list = []
+
+    def fake_decide(self, evidence, images, questions, *, model, timeout):
+        asked.append(model)
+        return Decision([DecisionAnswer("answer", "yes_no", {"yes": 0.7, "no": 0.3},
+                                        probability=0.7)], usage={"in": 5, "out": 0})
+
+    monkeypatch.setattr(decisions_openai.OpenAIDecisions, "decide", fake_decide)
+    ep = scripted([_decide(question="Urgent?", evidence="down for days"), finish()])
+    status, _ = run_routine(d, _with_decision_models(server_for(d)), run_ts=TS)
+    assert status == "ok"
+    assert asked == ["qwen3-vl"]                  # the routine's vl8b, not the instance's jev
+    assert ("Decision models (decide): jev (text), vl8b (text + images, default · default "
+            "for images)") in ep.calls[0]["messages"][0]["content"]

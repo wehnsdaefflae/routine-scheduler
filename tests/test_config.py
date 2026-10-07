@@ -442,3 +442,17 @@ def test_unreadable_server_config_is_a_problem_line_not_a_traceback(tmp_path, mo
     server, problems = load_server_config(cfg)
     assert any("unreadable" in p for p in problems)
     assert server.source == cfg
+
+
+def test_routine_decision_roles_load_beside_the_chat_roles(tmp_path):
+    from rsched.config import load_routine
+    d = tmp_path / "r"
+    d.mkdir()
+    (d / "routine.yaml").write_text(yaml.safe_dump({
+        "name": "R", "description": "d", "schedule": {"cron": "0 7 * * *"},
+        "models": {"main": "m", "decision": "jev", "decision_media": "vl8b", "oracle": "x"}}))
+    cfg, problems = load_routine(d)
+    assert cfg.models == {"main": "m", "decision": "jev", "decision_media": "vl8b"}
+    assert [p for p in problems if "models." in p] == [
+        ("models.oracle: unknown model kind (expected one of ('main', 'tool_call', 'uncensored', "
+         "'decision', 'decision_media'))")]

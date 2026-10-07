@@ -1,5 +1,6 @@
-// Routine settings — MODELS: which catalog model runs each role. Behind "more": how much of the
-// model's thinking lands on paper (deliberation).
+// Routine settings — MODELS: which catalog model runs each role, and — once the instance has
+// decision models — which one answers this routine's decide calls. Behind "more": how much of
+// the model's thinking lands on paper (deliberation).
 
 import { el } from "/static/util.js";
 import { settingsSection } from "/static/components/settings-section.js";
@@ -13,32 +14,59 @@ import { ladderIntervals } from "/static/components/ladder-settings.js";
 const MODEL_KINDS = [["main", "the orchestrator loop (children inherit it by default)"],
                      ["tool_call", "the llm action"],
                      ["uncensored", "a refused llm call is referred here (opt-in)"]];
+// The decide action's two roles name a DECISION model (Settings → Decision endpoints), not a
+// chat one, so their pickers list the decision catalog — the image role only the models that
+// take images. A blank role falls back to the instance default for that payload.
+const DECISION_ROLES = [["decision", "the decide action"],
+                        ["decision_media", "decide calls that carry images"]];
 
 export function modelsGroup(ctx) {
   const { d, form } = ctx;
   const catalog = d.catalog || [];          // catalog model names (see Settings → Models)
   const sysM = d.system_model;              // the system model's catalog name (or null)
 
+  const decisions = d.decision_catalog || [];   // [{name, images}] — empty: no decide action
+  const decDefaults = d.decision_defaults || {};
+
   const models = fieldBlock(form, "models", (value, set) => {
     const current = { ...(value || {}) };
+    const commit = (kind, v) => {
+      if (v) current[kind] = v; else delete current[kind];
+      set({ ...current });
+    };
+    const roleRow = (kind, desc, sel) => el("div", { class: "row", style: "margin:5px 0" },
+      el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, kind),
+      el("span", { class: "muted small", style: "min-width:150px" }, desc), sel);
+    const decisionRows = !decisions.length ? [] : DECISION_ROLES.map(([kind, desc]) => {
+      const offered = decisions.filter((m) => kind !== "decision_media" || m.images);
+      // What a blank role means, worded as the engine resolves it (endpoints/decisions.py
+      // default_decision_model): an image call tries the routine's decision role first.
+      const inst = decDefaults[kind] || (kind === "decision_media" ? decDefaults.decision : null);
+      const blank = kind === "decision"
+        ? (inst ? `— instance default (${inst}) —` : "— instance default —")
+        : `— the decision role if it takes images, else ${inst ? `the instance default (${inst})` : "the instance default"} —`;
+      const sel = el("select", { "data-model-role": kind, "data-nopersist": true,
+        onchange: () => commit(kind, sel.value) },
+        el("option", { value: "" }, blank),
+        ...offered.map((m) => el("option", { value: m.name }, m.images ? `${m.name} · text + images` : m.name)),
+        ...(current[kind] && !offered.some((m) => m.name === current[kind])
+          ? [el("option", { value: current[kind] }, `${current[kind]} — not a decision model here`)] : []));
+      sel.value = current[kind] || "";
+      return roleRow(kind, desc, sel);
+    });
     const rows = MODEL_KINDS.map(([kind, desc]) => {
       const sel = el("select", { "data-model-role": kind, "data-nopersist": true,
-        onchange: () => {
-          if (sel.value) current[kind] = sel.value; else delete current[kind];
-          set({ ...current });
-        } },
+        onchange: () => commit(kind, sel.value) },
         el("option", { value: "" }, sysM ? `— system default (${sysM}) —` : "— system default —"),
         ...catalog.map((n) => el("option", { value: n }, n)),
         // a name the catalog no longer has stays visible, so it can be seen and changed
         ...(current[kind] && !catalog.includes(current[kind])
           ? [el("option", { value: current[kind] }, `${current[kind]} — not in the catalog`)] : []));
       sel.value = current[kind] || "";
-      return el("div", { class: "row", style: "margin:5px 0" },
-        el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, kind),
-        el("span", { class: "muted small", style: "min-width:150px" }, desc), sel);
+      return roleRow(kind, desc, sel);
     });
     const refMonth = d.spend?.current?.referrals || 0;
-    return el("div", {}, ...rows,
+    return el("div", {}, ...rows, ...decisionRows,
       d.referrals_total
         ? el("div", { class: "muted small mt",
             title: "turns or llm calls the main/tool model refused and the uncensored model answered instead (from the durable usage stream)" },
@@ -70,6 +98,7 @@ export function modelsGroup(ctx) {
       ...settingsSection({ title: "Models", id: "models" },
         catalog.length
           ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
+            + (decisions.length ? "; the decision roles pick from the decision models and fall back to the instance's decision defaults" : "")
           : "add a model in Settings first",
         models.node),
     ],

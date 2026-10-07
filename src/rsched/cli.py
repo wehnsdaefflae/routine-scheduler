@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .cli_daemon import LOG_FORMAT, cmd_daemon
 from .cli_render import _render_event
-from .config import MODEL_KINDS, load_server_config
+from .config import ROUTINE_MODEL_ROLES, load_server_config
 from .paths import expand
 
 #: A finished run's status → the process exit code (`run-once` and the daemon's `engine-run`).
@@ -30,8 +30,8 @@ def _parse_model_overrides(values: list[str]) -> dict[str, str]:
         kind, _, name = val.partition("=")
         if not (kind and name):
             raise SystemExit(f"--model expects kind=name (a catalog model), got {val!r}")
-        if kind not in MODEL_KINDS:
-            raise SystemExit(f"--model kind must be one of {MODEL_KINDS}, got {kind!r}")
+        if kind not in ROUTINE_MODEL_ROLES:
+            raise SystemExit(f"--model kind must be one of {ROUTINE_MODEL_ROLES}, got {kind!r}")
         out[kind] = name
     return out
 
@@ -321,8 +321,9 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("run-once", help="execute one routine run now, streaming events")
     r.add_argument("routine", help="routine slug (under routines_home) or a directory path")
     r.add_argument("--model", action="append",
-                   help="override a routine model role: kind=name (a catalog model; kind: "
-                        f"{'|'.join(MODEL_KINDS)}, repeatable)")
+                   help="override a routine model role: kind=name (a catalog model — a "
+                        "decision model for decision/decision_media; kind: "
+                        f"{'|'.join(ROUTINE_MODEL_ROLES)}, repeatable)")
     r.add_argument("--quiet", action="store_true", help="no event stream on stdout")
     r.set_defaults(fn=cmd_run_once)
 

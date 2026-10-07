@@ -118,3 +118,53 @@ def test_the_routine_token_cannot_read_the_catalog(tmp_path):
     server = make_test_server(tmp_path, routine_token="rt-token")
     with authed_client(server, token="rt-token") as c:
         assert c.get("/api/settings/decisions").status_code == 403
+
+
+# --- a routine's own decision roles ---------------------------------------------------------------
+_CATALOG = {
+    "decision_endpoints": {"predator": {"protocol": "openai", "base_url": "http://box:8790/v1"},
+                           "or-jev": {"protocol": "systemone"}},
+    "decision_models": {"vl8b": {"endpoint": "predator", "model": "qwen3-vl"},
+                        "jev": {"endpoint": "or-jev", "model": "typesafe/jev-1.13"}},
+    "decision_model": "jev", "decision_media_model": "vl8b"}
+
+
+def test_a_routine_binds_its_decision_roles(tmp_path, make_routine):
+    from conftest import authed_client, make_test_server
+    server = make_test_server(tmp_path, **_CATALOG)
+    d = make_routine(slug="roles")
+    with authed_client(server) as c:
+        view = c.get("/api/routines/roles").json()
+        assert view["models"]["decision"] is None
+        assert sorted(view["decision_catalog"], key=lambda m: m["name"]) == [
+            {"name": "jev", "images": False}, {"name": "vl8b", "images": True}]
+        assert view["decision_defaults"] == {"decision": "jev", "decision_media": "vl8b"}
+        ok = c.patch("/api/routines/roles", json={"models": {
+            "main": "m", "decision": "jev", "decision_media": "vl8b"}})
+        assert ok.status_code == 200, ok.text
+        saved = yaml.safe_load((d / "routine.yaml").read_text())["models"]
+        assert saved == {"main": "m", "decision": "jev", "decision_media": "vl8b"}
+        assert c.get("/api/routines/roles").json()["models"]["decision_media"] == "vl8b"
+        for models, fragment in (({"decision": "m"}, "must be a decision model"),
+                                 ({"decision_media": "jev"}, "takes text only"),
+                                 ({"main": "jev"}, "must be a catalog model name"),
+                                 ({"verdict": "jev"}, "unknown model kind")):
+            bad = c.patch("/api/routines/roles", json={"models": models})
+            assert bad.status_code == 400, models
+            assert fragment in bad.json()["detail"]
+
+
+def test_a_conversation_binds_a_decision_role(tmp_path):
+    from conftest import authed_client, seeded_server
+    from rsched.config.decisionconf import DecisionEndpointConfig, DecisionModelConfig
+    server = seeded_server(tmp_path)
+    server.decision_endpoints = {n: DecisionEndpointConfig(name=n, **e)
+                                 for n, e in _CATALOG["decision_endpoints"].items()}
+    server.decision_models = {n: DecisionModelConfig(name=n, **m)
+                              for n, m in _CATALOG["decision_models"].items()}
+    with authed_client(server) as c:
+        slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+        assert c.get(f"/api/conversations/{slug}").json()["decision_catalog"]
+        assert c.patch(f"/api/conversations/{slug}", json={"models": {
+            "main": "m", "decision": "vl8b"}}).status_code == 200
+        assert c.get(f"/api/conversations/{slug}").json()["models"]["decision"] == "vl8b"

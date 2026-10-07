@@ -51,6 +51,33 @@ an obvious answer, showing latency, P(yes) and usage.
 projected out of the schema, the prose and CAPABILITIES (`engine/loopsetup.py`), so configuring
 the first one is what switches it on.
 
+### Per routine
+
+A routine (or a conversation) can pick its own decision models, the way it picks its chat ones:
+the routine page's **Models** group carries two more roles once the instance has a decision
+model — `decision` (the decide action) and `decision_media` (decide calls that carry images,
+offering only the models that take them). A conversation's header carries the `decide` picker.
+They live in the same `models:` map in routine.yaml:
+
+```yaml
+models: {main: Opus medium, decision: predator-vl8b, decision_media: predator-vl8b}
+```
+
+A call that names no `model` takes the first configured model that can carry it — the routine's
+roles before the instance defaults (`endpoints/decisions.default_decision_model`):
+
+| call carries | asked in order |
+|---|---|
+| text only | the routine's `decision` → the instance `decision_model` |
+| images | the routine's `decision_media` → its `decision` if that takes images → the instance `decision_media_model` → `decision_model` |
+
+A text-only choice is passed over for an image call rather than refused, so a routine that picked
+Jev for its text still has its photos judged. The roles are checked where they are saved: a chat
+model in a decision role, a decision model in a chat role, and a text-only model in
+`decision_media` are all refused (`web/config_fields.validate_models`). `rsched run-once --model
+decision=<name>` overrides one for a single run. CAPABILITIES marks the defaults THIS routine
+gets, so a run reads its own picture.
+
 ## The two protocols
 
 Every provider speaks one of two wire shapes; one adapter each (`endpoints/decisions_*.py`)
@@ -90,9 +117,9 @@ booked when the provider reports it (OpenRouter does).
   text files are read in whole as named evidence fields, so a long document is classified without
   passing through the run's own context first. Paths resolve and gate exactly like `read_file`'s.
   At most 120,000 characters of text per call.
-- `model` names a decision model; without it the call goes to `decision_model`, or to
-  `decision_media_model` when it carries images. Images bound for a text-only model are refused
-  before any request, naming the models that take them.
+- `model` names a decision model; without it the call goes to the routine's own decision role,
+  else the instance default for its payload (see *Per routine* above). Images bound for a
+  text-only model are refused before any request, naming the models that take them.
 - `background: true` defers it like an `llm` call.
 
 The observation is numbers only:

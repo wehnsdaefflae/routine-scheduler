@@ -20,7 +20,7 @@ from fastapi import HTTPException
 from pydantic import AfterValidator
 
 from .. import entities
-from ..config import DEFAULT_BUDGETS, MODEL_KINDS
+from ..config import DECISION_ROLES, DEFAULT_BUDGETS, ROUTINE_MODEL_ROLES
 from ..paths import expand
 from .model_fit import model_window_problem
 
@@ -52,12 +52,17 @@ BudgetsPatch = Annotated[dict[str, int], AfterValidator(_check_budgets)]
 def validate_models(server, mapping: dict | None) -> dict:
     """Model-role bindings: a known role, a catalog model NAME, and a window that can
     actually run a turn. REPLACE wholesale, so blanking a role clears it back to the
-    instance `system_model`.
+    instance `system_model`. The two DECISION roles name a decision model instead
+    (`_decision_role_problem`) and fall back to the instance's decision defaults.
     """
     for kind, name in (mapping or {}).items():
-        if kind not in MODEL_KINDS:
-            raise HTTPException(400,
-                                f"unknown model kind {kind!r} (expected one of {MODEL_KINDS})")
+        if kind not in ROUTINE_MODEL_ROLES:
+            raise HTTPException(400, f"unknown model kind {kind!r} (expected one of "
+                                     f"{ROUTINE_MODEL_ROLES})")
+        if kind in DECISION_ROLES:
+            if wrong := _decision_role_problem(server, kind, name):
+                raise HTTPException(400, wrong)
+            continue
         if not isinstance(name, str) or name not in server.models:
             raise HTTPException(400, f"models.{kind}: must be a catalog model name")
         if problem := model_window_problem(server, name):
@@ -65,6 +70,37 @@ def validate_models(server, mapping: dict | None) -> dict:
             # first completion would die on `context_length_exceeded`. Refuse at the click.
             raise HTTPException(400, problem)
     return dict(mapping or {})
+
+
+def decision_picker(server) -> dict:
+    """What the two decision-role pickers need: every decision model with whether it takes
+    images, and the instance defaults a blank role falls back to.
+    """
+    from ..config.decisionconf import multimodal_effective
+
+    return {"decision_catalog": [
+                {"name": m.name, "images": multimodal_effective(
+                    m, server.decision_endpoints.get(m.endpoint))}
+                for m in server.decision_models.values()],
+            "decision_defaults": {"decision": server.decision_model or None,
+                                  "decision_media": server.decision_media_model or None}}
+
+
+def _decision_role_problem(server, kind: str, name: object) -> str:
+    """Why `name` cannot fill decision role `kind`, or "" — a decision model, and for the image
+    role one that takes images (a chat model here would be a name `decide` cannot find).
+    """
+    from ..config.decisionconf import multimodal_effective
+
+    model = server.decision_models.get(name) if isinstance(name, str) else None
+    if model is None:
+        return (f"models.{kind}: must be a decision model (Settings → Decision endpoints): "
+                f"{', '.join(sorted(server.decision_models)) or 'none configured'}")
+    if kind == "decision_media" and not multimodal_effective(
+            model, server.decision_endpoints.get(model.endpoint)):
+        return (f"models.{kind}: {name!r} takes text only — the image role needs one that "
+                "takes images")
+    return ""
 
 
 def validate_connections(mapping: dict | None) -> dict:

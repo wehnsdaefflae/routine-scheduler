@@ -305,7 +305,8 @@ Endpoints hold only transport + auth + those DEFAULTS; `multimodal` is NOT on th
 endpoint serves many models with different windows and vision support). Each **routine
 references models BY NAME** (`routine.yaml` `models:` maps a role → catalog name): `main` (the
 loop — and every spawned child's default), `tool_call` (the `llm` action), optional
-`uncensored`. A role left unset falls back to the server's single `system_model` (also a catalog
+`uncensored` — plus the two DECISION roles `decision` / `decision_media`, which name a decision
+model (below) and fall back to the instance's decision defaults instead. A chat role left unset falls back to the server's single `system_model` (also a catalog
 name) — the ONE model for pre-routine machine work (the clarify flow + workflow
 generation/suggestion). A single `llm`/`spawn`/`subtask` call may override its model per call
 (`model:` a role — main|tool_call|uncensored — or a CATALOG model name; D81, extended by

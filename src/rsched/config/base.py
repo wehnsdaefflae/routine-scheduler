@@ -78,6 +78,12 @@ DEFAULT_RULES = ["evidence-discipline", "ask-policy", "fix-the-cause", "problem-
 # the action's `model` field takes a role OR a catalog model name (`list_models` shows
 # them). The loader tolerates a leftover models.subroutine key as an advisory problem.
 MODEL_KINDS = ("main", "tool_call", "uncensored")
+# The two roles that name a DECISION model (config/decisionconf.py) instead of a chat one: the
+# routine's default for a `decide` call, and its default for a call that carries images. Kept
+# apart from MODEL_KINDS because every chat-role reader resolves through the chat catalog, and
+# a decision model there would be a name it cannot find. Both sit in the same `models:` map.
+DECISION_ROLES = ("decision", "decision_media")
+ROUTINE_MODEL_ROLES = MODEL_KINDS + DECISION_ROLES
 # How much of the model's thinking lands ON PAPER — the persistent prose channel (`say`,
 # plus a notes-file discipline at the top stop). Ordered stops, not a continuum: models
 # follow qualitatively distinct contracts, not "verbosity 0.7". Composer wording per stop

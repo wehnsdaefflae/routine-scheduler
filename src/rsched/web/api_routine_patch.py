@@ -94,7 +94,8 @@ class RoutinePatch(BaseModel):
     schedule: SchedulePatch | None = None   # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: BudgetsPatch | None = None     # the runaway backstops, by name — a misspelled
     #                                          key is a 422 here, never a silent revert at load
-    models: dict | None = None              # {main|tool_call|uncensored: catalog name}
+    models: dict | None = None              # {main|tool_call|uncensored: catalog name,
+    #                                          decision|decision_media: decision model}
     connections: dict | None = None         # {provider: account-label} OAuth connection bindings
     grants: dict | None = None              # {entity-id: bool} decision rows (secret exposure
     #                                          + deny-forever tombstones — entities.py)

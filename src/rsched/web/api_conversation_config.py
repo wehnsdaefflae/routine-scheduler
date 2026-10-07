@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from .. import conversations as conv_mod
-from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
+from ..config import DELIBERATION_LEVELS, ROUTINE_MODEL_ROLES, write_tuning
 from ..paths import atomic_write_yaml, read_yaml
 from .api_background import list_background_rows
 from .api_routine_edit import (
@@ -27,6 +27,7 @@ from .api_routine_edit import (
 from .config_fields import (
     BudgetsPatch,
     clean_tags,
+    decision_picker,
     validate_connections,
     validate_machines,
     validate_models,
@@ -74,8 +75,9 @@ def detail(request: Request, slug: str) -> dict:
         # Model roles are catalog model NAMES (null → system_model fallback);
         # `catalog` = the picker, `catalog_meta` its per-model window sizing (R112/R128:
         # the picker shows what fits instead of letting an impossible pick die at reply #1).
-        "models": {k: (info.cfg.models.get(k) or None) for k in MODEL_KINDS},
+        "models": {k: (info.cfg.models.get(k) or None) for k in ROUTINE_MODEL_ROLES},
         "system_model": server.system_model or None,
+        **decision_picker(server),
         "catalog": list(server.models.keys()),
         "catalog_meta": window_meta(server),
         # OAuth connection bindings {provider: account} — a conversation binds connections

@@ -107,7 +107,7 @@ def test_a_bad_pick_names_the_alternatives():
         pick_decision_model(s, "gpt-4o", images=False)
     with pytest.raises(EndpointError, match="Models that take images: vl8b"):
         pick_decision_model(s, "jev", images=True)
-    with pytest.raises(EndpointError, match="no default decision model"):
+    with pytest.raises(EndpointError, match="no decision model is set for this call"):
         pick_decision_model(_server(decision_model="", decision_media_model=""), None,
                             images=False)
 
@@ -247,3 +247,32 @@ def test_a_decision_is_recorded_like_a_completion(monkeypatch):
     assert [r["phase"] for r in records] == ["started", "finished"]
     assert records[1]["usage"] == {"in": 9, "out": 0}
     assert (records[0]["kind"], records[0]["endpoint"]) == ("decide", "predator")
+
+
+# --- the routine's own roles -------------------------------------------------------------------
+def test_a_routines_roles_come_before_the_instance_defaults():
+    from rsched.endpoints.decisions import default_decision_model as pick
+    s = _server()
+    assert pick(s, {}, images=False) == "jev"                       # the instance default
+    assert pick(s, {"decision": "luna-text"}, images=False) == "luna-text"
+    # an image call: the routine's image role first …
+    assert pick(s, {"decision_media": "vl8b", "decision": "jev"}, images=True) == "vl8b"
+    # … a text-only decision role is passed over, not refused, and the instance image default
+    # answers instead
+    assert pick(s, {"decision": "jev"}, images=True) == "vl8b"
+    s.decision_models["luna"] = DecisionModelConfig(name="luna", endpoint="luna",
+                                                    model="gpt-6-luna")
+    assert pick(s, {"decision": "luna"}, images=True) == "luna"     # it takes images: it wins
+    assert pick(_server(decision_model="", decision_media_model=""), {}, images=False) == ""
+
+
+def test_the_catalog_marks_what_this_routine_gets():
+    rows = {r["name"]: r.get("default") for r in decision_catalog(_server(),
+                                                                   {"decision": "luna-text"})}
+    assert rows == {"jev": None, "luna-text": "default", "vl8b": "default for images"}
+
+
+def test_an_unusable_routine_role_still_teaches(monkeypatch):
+    s = _server(decision_model="", decision_media_model="")
+    with pytest.raises(EndpointError, match="Models that take images: vl8b"):
+        pick_decision_model(s, None, images=True, roles={"decision": "jev"})

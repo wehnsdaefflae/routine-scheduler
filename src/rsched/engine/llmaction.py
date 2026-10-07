@@ -151,7 +151,7 @@ def do_list_models(ctx: RunContext) -> dict:
         # The DECISION catalog is a different contract (endpoints/decisions.py) — listed apart
         # so a name from it is never passed to llm/spawn, nor a chat model's to decide.
         from ..endpoints.decisions import decision_catalog
-        out["decision_models"] = decision_catalog(ctx.server)
+        out["decision_models"] = decision_catalog(ctx.server, ctx.routine.models)
         out["note"] += ("; a decide action's `model` takes a decision_models name instead "
                         "(default: the one marked default for its payload)")
     return out

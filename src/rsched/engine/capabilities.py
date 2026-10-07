@@ -249,7 +249,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                  "rejected by the engine before it becomes a turn.")
     if "decide" in kinds:
         from .decideaction import catalog_line
-        if line := catalog_line(ctx.server):
+        if line := catalog_line(ctx.server, ctx.routine.models):
             parts.append(line + " — a decide call's `model` picks one; without it the default "
                          "for its payload answers.")
     if g is not None:

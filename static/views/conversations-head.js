@@ -33,9 +33,21 @@ function modelControl(detail, slug, isLive) {
   const mainSel = mkSel(detail.models?.main || "", `default · ${sysLabel}`, "main model");
   const uncSel = mkSel(detail.models?.uncensored || "", "none · uncensored off",
     "uncensored model — where refused requests are delivered");
+  // The decide action's model, once the instance has decision models: one picker, for calls
+  // that carry no images. The image role is a routine-page setting; it is carried through
+  // untouched here, because the PATCH below replaces the whole role map.
+  const decisions = detail.decision_catalog || [];
+  const decDefault = detail.decision_defaults?.decision;
+  const decSel = !decisions.length ? null : el("select",
+    { title: "decision model — what this conversation's decide calls ask", class: "tight",
+      style: "width:auto;padding:3px 6px", "data-model-role": "decision" },
+    el("option", { value: "" }, `default · ${decDefault || "instance"}`),
+    decisions.map((m) => el("option", { value: m.name,
+      selected: detail.models?.decision === m.name || null }, m.name)));
   const apply = el("button", { class: "btn small primary", hidden: true }, "apply");
   const show = () => { apply.hidden = false; };
   mainSel.onchange = show; uncSel.onchange = show;
+  if (decSel) decSel.onchange = show;
   apply.onclick = async () => {
     const mainName = mainSel.value, uncName = uncSel.value;
     // wholesale-replace semantics (blank clears a role) — send the FULL role set so
@@ -43,6 +55,9 @@ function modelControl(detail, slug, isLive) {
     const models = {};
     if (mainName) { models.main = mainName; models.tool_call = mainName; }
     if (uncName) models.uncensored = uncName;
+    const decName = decSel ? decSel.value : detail.models?.decision;
+    if (decName) models.decision = decName;
+    if (detail.models?.decision_media) models.decision_media = detail.models.decision_media;
     const saved = await act(apply, async () => {
       const res = await api(`/api/conversations/${slug}`, { method: "PATCH", body: { models } });
       if (isLive() && detail.run_id) {
@@ -58,7 +73,8 @@ function modelControl(detail, slug, isLive) {
   };
   return el("span", { class: "conv-model" },
     el("span", { class: "faint small" }, "model"), mainSel,
-    el("span", { class: "faint small" }, "uncensored"), uncSel, apply);
+    el("span", { class: "faint small" }, "uncensored"), uncSel,
+    ...(decSel ? [el("span", { class: "faint small" }, "decide"), decSel] : []), apply);
 }
 
 export function renderHead(head, detail, stateChip, { slug, isLive, onListChanged }) {

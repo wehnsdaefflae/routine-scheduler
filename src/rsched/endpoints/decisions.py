@@ -142,9 +142,33 @@ def resolve_decision(server, name: str) -> tuple[DecisionEndpoint, DecisionRef]:
     return make_decision_endpoint(ep), ref
 
 
-def pick_decision_model(server, name: str | None, *, images: bool
+def default_decision_model(server, roles: dict | None, *, images: bool) -> str:
+    """The model a call that names none goes to, or "" when none is configured.
+
+    The routine's own roles come before the instance defaults, and the first configured model
+    that can CARRY the call wins: a text call asks the routine's `decision`, then the instance
+    `decision_model`; a call with images asks the routine's `decision_media`, then its
+    `decision` if that one takes images, then the instance `decision_media_model`, then
+    `decision_model`. A text-only choice is passed over for an image call rather than refused,
+    so a routine that picked Jev for its text still has its photos judged.
+    """
+    roles = roles or {}
+    if not images:
+        candidates = [roles.get("decision"), server.decision_model]
+    else:
+        candidates = [roles.get("decision_media"), roles.get("decision"),
+                      server.decision_media_model, server.decision_model]
+    named = [c for c in candidates if c]
+    for name in named:
+        if not images or _takes_images(server, name):
+            return name
+    return named[0] if named else ""
+
+
+def pick_decision_model(server, name: str | None, *, images: bool, roles: dict | None = None
                         ) -> tuple[DecisionEndpoint, DecisionRef]:
-    """The model a call goes to: the one it names, else the instance default for its payload.
+    """The model a call goes to: the one it names, else `default_decision_model` for its payload
+    under the routine's `roles` (its `models:` map).
 
     Raises a TEACHING EndpointError — every alternative named — when the choice cannot carry the
     call: a name not in the catalog, no default configured, or images for a text-only model.
@@ -156,11 +180,12 @@ def pick_decision_model(server, name: str | None, *, images: bool
                                 f"{', '.join(sorted(catalog)) or 'none configured'}")
         chosen = name
     else:
-        chosen = (server.decision_media_model if images else "") or server.decision_model
+        chosen = default_decision_model(server, roles, images=images)
         if not chosen:
-            raise EndpointError("no default decision model is configured (Settings → Decision "
-                                "endpoints); name one with `model`: "
-                                f"{', '.join(sorted(catalog)) or 'none configured'}")
+            raise EndpointError("no decision model is set for this call — name one with "
+                                "`model`, or have the user set this routine's decision role "
+                                "(routine page → Models) or the instance default (Settings → "
+                                f"Decision endpoints): {', '.join(sorted(catalog)) or 'none'}")
     endpoint, ref = resolve_decision(server, chosen)
     if images and not ref.multimodal:
         takes = [n for n in sorted(catalog) if _takes_images(server, n)]
@@ -177,8 +202,12 @@ def _takes_images(server, name: str) -> bool:
         return False
 
 
-def decision_catalog(server) -> list[dict]:
-    """Every decision model as one row — what `list_models` and CAPABILITIES show a run."""
+def decision_catalog(server, roles: dict | None = None) -> list[dict]:
+    """Every decision model as one row — what `list_models` and CAPABILITIES show a run. The
+    `default` marks are what a call naming no model gets under these routine `roles`.
+    """
+    text_default = default_decision_model(server, roles, images=False)
+    image_default = default_decision_model(server, roles, images=True)
     rows: list[dict] = []
     for name in sorted(server.decision_models):
         try:
@@ -186,9 +215,9 @@ def decision_catalog(server) -> list[dict]:
         except EndpointError as exc:
             rows.append({"name": name, "error": str(exc)})
             continue
-        defaults = [label for label, key in (("default", "decision_model"),
-                                             ("default for images", "decision_media_model"))
-                    if getattr(server, key) == name]
+        defaults = [label for label, chosen in (("default", text_default),
+                                                ("default for images", image_default))
+                    if chosen == name]
         rows.append({"name": name, "endpoint": ref.endpoint, "model": ref.model,
                      "protocol": ref.protocol, "images": ref.multimodal,
                      **({"default": " · ".join(defaults)} if defaults else {})})

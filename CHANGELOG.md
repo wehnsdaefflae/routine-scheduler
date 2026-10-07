@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.389.0] — 2026-10-07
+
+### Added — a routine picks its own decision models, like its chat models
+
+The routine page's **Models** group now carries two more roles once the instance has a decision
+model: `decision` (what the routine's `decide` calls ask) and `decision_media` (decide calls that
+carry images — its picker offers only the models that take them). A conversation's header gets a
+`decide` picker. Both land in the same `models:` map in routine.yaml, and `rsched run-once
+--model decision=<name>` overrides one for a single run.
+
+- **Which model answers** a call that names none: the first configured model that can carry it,
+  the routine's roles before the instance defaults — text: the routine's `decision`, then the
+  instance `decision_model`; images: the routine's `decision_media`, then its `decision` if that
+  takes images, then the instance `decision_media_model`, then `decision_model`. A text-only pick
+  is passed over for an image call instead of refused.
+- **Checked where it is saved**: a chat model in a decision role, a decision model in a chat role
+  and a text-only model in `decision_media` are refused by the routine and conversation PATCH,
+  each naming what would fit.
+- CAPABILITIES and `list_models` mark the defaults THIS routine gets.
+- The conversation header's model save replaces the whole role map, so it now carries the
+  decision roles through instead of dropping them.
+
+See docs/decision-models.md, "Per routine".
+
 ## [0.388.0] — 2026-10-07
 
 ### Added — TASKS: one routine whose regular duties are several pieces of standing work

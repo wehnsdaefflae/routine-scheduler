@@ -29,7 +29,7 @@ from .base import (
     DEFAULT_RULES,
     DELIBERATION_LEVELS,
     LADDER_KEYS,
-    MODEL_KINDS,
+    ROUTINE_MODEL_ROLES,
     TUNING_KEYS,
     BlankableStr,
     HomePath,
@@ -406,12 +406,12 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     if not cfg.description:
         problems.append("description is empty — every routine needs a one-line "
                         "description (shown in the UI)")
-    for kind in [k for k in cfg.models if k not in MODEL_KINDS]:
+    for kind in [k for k in cfg.models if k not in ROUTINE_MODEL_ROLES]:
         hint = (" — the subroutine role is retired: children run the routine's MAIN model "
                 "by default (a call overrides per child); remove this key"
                 if kind == "subroutine" else "")
         problems.append(f"models.{kind}: unknown model kind "
-                        f"(expected one of {MODEL_KINDS}){hint}")
+                        f"(expected one of {ROUTINE_MODEL_ROLES}){hint}")
         del cfg.models[kind]
     from ..oauth.providers import PROVIDERS  # function-level: oauth imports secrets, not config
     for prov in [p for p in cfg.connections if p not in PROVIDERS]:
