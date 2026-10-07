@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.390.1] — 2026-10-07
+
+### Fixed
+
+- A note refused for a switched-off sharer told the sender to name the carrying task "in the
+  title" — a note has none. It now says "in the note"; a report's refusal keeps "in the title".
+
 ## [0.390.0] — 2026-10-07
 
 ### Changed — a message for a routine that reads nothing is refused WITH where to send it

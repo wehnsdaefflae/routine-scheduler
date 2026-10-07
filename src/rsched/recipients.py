@@ -103,15 +103,17 @@ def suggest(server: ServerConfig, home: Path, target: str, *,
     return list(out.values())[:LIMIT]
 
 
-def render(suggestions: list[dict]) -> str:
-    """The suggestions as one sentence the refusal carries — the same words on both channels."""
+def render(suggestions: list[dict], *, naming: str = "in the title") -> str:
+    """The suggestions as one sentence the refusal carries — the same words on both channels.
+    `naming` says where the sender names the carrying task: a report's title, a note's text.
+    """
     if not suggestions:
         return "No routine that would read it is related to this one."
     parts = []
     for s in suggestions:
         line = f"{s['slug']!r} ({s['why']}"
         if s.get("task"):
-            line += f" — address {s['slug']!r} and name the task {s['task']!r} in the title"
+            line += f" — address {s['slug']!r} and name the task {s['task']!r} {naming}"
         parts.append(line + ")")
     return "Routines that would read it: " + "; ".join(parts) + "."
 
@@ -137,6 +139,7 @@ def note_refusal(server: ServerConfig, target: Path) -> str | None:
     sharing = set(sharedstores.sharers(home, store))
     here = [s.as_dict() for s in suggest(server, home, to) if s.slug in sharing]
     return (f"{to!r} shares the store {store.name} but is {state}: {because} — it starts no run, "
-            f"so it would never read this note. Nothing was written. {render(here)} A note "
+            f"so it would never read this note. Nothing was written. "
+            f"{render(here, naming='in the note')} A note "
             "reaches only the routines sharing the store; to reach any other routine, send an "
             "addressed `report`.")

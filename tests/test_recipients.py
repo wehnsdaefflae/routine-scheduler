@@ -127,6 +127,7 @@ def test_a_note_to_a_switched_off_sharer_is_refused_with_the_sharers_that_read(s
     assert "'old' shares the store grp-fau but is disabled" in refusal
     assert "'umbrella'" in refusal and "'peer'" in refusal
     assert "'cousin'" not in refusal          # shares tags, not the store — a report reaches it
+    assert "name the task 'old-work' in the note" in refusal     # a note has no title
     assert "addressed `report`" in refusal
     obs = do_write_file({"kind": "write_file", "path": str(path),
                          "content": json.dumps({"from": "peer", "text": "hi"})},
