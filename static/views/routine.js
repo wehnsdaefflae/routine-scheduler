@@ -8,6 +8,7 @@ import { setupCheck } from "/static/components/setupcheck.js";
 import { loadSettings } from "/static/components/settings-form.js";
 import { landOn } from "/static/components/settings-field.js";
 import { mountMessages } from "/static/views/routine-messages.js";
+import { mountTasks } from "/static/components/tasks-panel.js";
 import { routineHero } from "/static/views/routine-overview.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { summaryLine } from "/static/md.js";
@@ -122,6 +123,17 @@ export async function render(view, slug, query = {}) {
                  "answer")))));
   }
 
+  // -- tasks: a routine whose task layer is on keeps its standing work as TASKS
+  // (components/tasks-panel.js) — what each one is, what the last run did for it, and the
+  // operator's pause / resume / done. Overview zone: it is state, not a setting.
+  let tasksPane = null;
+  if (d.tasks_enabled) {
+    view.append(el("h2", { id: "sec-tasks" }, "Tasks"));
+    const tasksHost = el("div", {});
+    view.append(tasksHost);
+    tasksPane = mountTasks(tasksHost, slug, { active: Boolean(d.active_run) });
+  }
+
   // -- runs (recent activity — kept in the overview zone) --------------------------
   view.append(el("h2", {}, "Runs"));
   const runsBox = el("div", { class: "runs-box" });
@@ -168,6 +180,7 @@ export async function render(view, slug, query = {}) {
     // and once a run has finished, the runs table. It was read twice, a moment apart.
     const head = cfg.refreshHead();
     messagesPane?.reload();   // a run drains the inbox at boot and files reports as it works
+    tasksPane?.reload({ running: ev.event === "run_started" });   // a run decides what it owes
     if (ev.event === "run_finished") {
       cfg.health.reload();
       // a run moves the surface too: it can reach the finish line, write the phase file the

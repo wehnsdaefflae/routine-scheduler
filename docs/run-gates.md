@@ -18,7 +18,7 @@ answered "no work".
 | kind | work when | key parameters |
 |---|---|---|
 | `mail` | mail waits in a mailbox — unread, or new since the last ok run | `host`, the login secrets (or `accounts_secret` + `account`), `folders` (a special-use flag such as `\All` names a folder whatever the server calls it), a WATCH LIST (`senders_file`, `from_any`, `subject_any` — a message counts when it meets any of them), `from_domains_not` |
-| `hub_feedback` | feedback waits on the routine's Steward hub page that its last publish has not consumed | `project`, `source` |
+| `hub_feedback` | feedback waits on the routine's Steward hub page that its last publish has not consumed | `project`, `label` (only rows whose control id names it as a whole segment — one task's section of a shared page), `source` |
 | `url_changed` | a page, feed or API answers differently than at the last ok run | `url`, `select` (`body`, `feed`, `json:<dotted.path>`) |
 | `files_changed` | a file under a folder is new or changed since the last ok run | `paths`, `glob`, `nonempty` (an intake folder the routine empties) |
 | `unpaired_files` | a source file still has no output beside it | `path`, `match`, `output` (`{stem}`/`{suffix}`), `exclude` |
@@ -48,6 +48,16 @@ Malformed gate settings reject loading, even when disabled.
 skipped fire processed nothing and is passed over); the checks that compare contents keep a
 FINGERPRINT per check in that run's `gate.json`. No such run is itself work.
 
+## Checks that watch a task
+
+A routine that keeps TASKS (docs/tasks.md) tags a check with the task it watches: `task: <id>`
+beside `kind` and `id`, on any kind but the routine's own `max_quiet` backstop (a task's rest is
+its `quiet_days`). The kit never reads the tag; the engine does, from the run's `gate.json`: a
+tagged check that found work makes its task due this run, an untagged one that found work makes
+every task due. Such a routine's checks are asked even when a built-in reason below has already
+admitted the fire — the reason travels to the kit as `admit_reason`, the decision is "run", and
+every check still answers — because WHICH tasks have work is what the run needs from them.
+
 ## Reasons that run before any check is asked
 
 Built in, never configured, because each one is work by construction:
@@ -58,6 +68,9 @@ Built in, never configured, because each one is work by construction:
 - an answer to one of its questions waits to be read (an answer never STARTS a run, but a fired
   one must not be skipped past it);
 - a note from a routine sharing one of its stores waits (`rsched/sharedstores.py`);
+- for a routine that keeps tasks, a task is due by its OWN clock — work an earlier run left
+  (`carry`), a wake date that has come, a quiet limit passed, or no check watching it
+  (`rsched/tasks.clock_due`): nothing else would ever bring the routine back for it;
 - the last admitted run did not finish ok — it may have left work behind;
 - its configuration or recipe changed since the last ok run (`routine.yaml`, `tuning.yaml`,
   `main.md`, `stages/`, `state/finish-line.json`): a granted permission can unblock parked

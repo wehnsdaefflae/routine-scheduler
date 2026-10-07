@@ -517,6 +517,12 @@ and the capabilities digest's catalog listing):
   decomposed into the stages at creation and NOT persisted (a routine carries no `instruction.md`);
   the stages are the sole source of truth. The rules themselves are NOT here: they live once in the
   library and the run reads them with `read_rule`.
+- `tasks/<id>/` + `state/tasks.json` — only for a routine with the `tasks` SETTING on
+  (docs/tasks.md): each task's WORKSPACE (often a whole former routine — its own `main.md` +
+  `stages/`, sealed as recipe; its state files, scripts and `.memory/`) and the engine-owned
+  store holding the tasks, their checkpoints and the current run's processing ledger. An OPEN
+  task's workspace is the run's working directory (`run_context.work_dir`), and
+  `engine/taskops.py` holds the run's finish until every task due in it has a checkpoint.
 - `scripts/<name>.py` (`rsched/scripts.py`) — the routine's OWN persistent helper scripts:
   PEP 723 + the util docstring-header standard minus the catalog lines. There is no model
   channel — a judgment call belongs in the recipe — but the library IS reachable: the utils

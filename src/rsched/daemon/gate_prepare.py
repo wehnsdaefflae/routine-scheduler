@@ -3,10 +3,10 @@
 `daemon/run_gate.py` owns admission: the deadline, the process group, the protocol and what a
 decision does to the run. This module owns what happens between the child's start and the
 predicate's exec: the built-in run reasons (freight in the inbox, an answer waiting to be read, a
-note waiting in a store it shares), the BASELINE a check compares against (the last run that
-finished ok), and the two jails — one for the declarative checks (`gatekit.py`, built from what
-the listed check kinds need and nothing else) and one for a custom `scripts/admit.py` (built from
-that script's own header).
+note waiting in a store it shares, a TASK due by its own clock), the BASELINE a check compares
+against (the last run that finished ok), and the two jails — one for the declarative checks
+(`gatekit.py`, built from what the listed check kinds need and nothing else) and one for a
+custom `scripts/admit.py` (built from that script's own header).
 
 Everything here runs in a killable child process, never on the daemon's event loop: reading a
 routine's run history, resolving secrets and assembling a Landlock spec are filesystem work that
@@ -259,8 +259,33 @@ def _within(path: Path, roots: list[Path]) -> bool:
     return any(path == r or path.is_relative_to(r) for r in roots)
 
 
+def keeps_tasks(cfg: RoutineConfig) -> bool:
+    """Does this routine keep TASKS (rsched/tasks.py)? Then its checks are asked even when a
+    built-in reason already decided "run": which tasks have work is what its run needs from
+    them (`gate.json` → engine/taskops.py).
+    """
+    from ..grants import effective_settings, normalize_capabilities
+
+    return effective_settings(normalize_capabilities(cfg.capabilities)[0])["tasks"] == "on"
+
+
+def tasks_clock_reason(cfg: RoutineConfig) -> str:
+    """A task due by its OWN clock — work an earlier run left, a wake date that came, a quiet
+    limit passed, a task no check watches — admits the fire, whatever the checks would say:
+    nothing else would ever bring the routine back for it.
+    """
+    from .. import tasks
+
+    now = datetime.now(ZoneInfo(cfg.tz))
+    due = tasks.clock_due(cfg.dir, list(cfg.run_gate.checks), today=now.date(), now=now)
+    if not due:
+        return ""
+    return "task(s) due by their own clock: " + "; ".join(f"{tid} ({why})" for tid, why in due)
+
+
 def prepare_checks(cfg: RoutineConfig, server: ServerConfig, context: dict,
-                   current_run_id: str) -> tuple[list[str], dict, str]:
+                   current_run_id: str, *, admit: str = "",
+                   keep_going: bool = False) -> tuple[list[str], dict, str]:
     """The jail for the declarative checks and the argv context `gatekit.py` reads.
 
     The jail is exactly what the listed kinds need: the network only when a mail or url check
@@ -269,11 +294,15 @@ def prepare_checks(cfg: RoutineConfig, server: ServerConfig, context: dict,
     roots, so a check can never reach a path the routine itself could not — and, for
     `runs_since`, the fleet's run record. Returns `(cmd, env, early_run_reason)`; a non-empty
     reason means the baseline already decides "run" and no predicate needs to execute.
+
+    `keep_going` (a routine that keeps tasks) asks the checks even then, carrying the reason
+    that already decided — `admit`, or the baseline's — as the kit's `admit_reason`.
     """
     checks = [c for c in cfg.run_gate.checks if c.get("kind") != "script"]
     base, why_run = baseline_says_run(cfg, current_run_id)
-    if why_run:
+    if why_run and not keep_going:
         return [], {}, why_run
+    admit = admit or why_run
     root = cfg.dir.resolve()
     granted = [Path(p).resolve() for p in (*cfg.fs_read_roots, *cfg.fs_write_roots)]
     reads: list[Path] = []
@@ -298,7 +327,8 @@ def prepare_checks(cfg: RoutineConfig, server: ServerConfig, context: dict,
            "libraries_home": str(server.libraries_home),
            "now": datetime.now(ZoneInfo(cfg.tz)).isoformat(),
            "last_ok": base, "checks": [{**c, "id": str(c.get("id") or f"c{i + 1}")}
-                                       for i, c in enumerate(checks)]}
+                                       for i, c in enumerate(checks)],
+           **({"admit_reason": admit} if admit else {})}
     cmd = _wrap([sys.executable, "-I", str(gatekit.ENTRY), json.dumps(ctx)], policy, server,
                 net=gatekit.needs_net(checks), fs_roots=True)
     return cmd, _scrubbed_env(injected, declared), ""
@@ -315,26 +345,27 @@ def child_main() -> None:
         # parse is WORK) and counting closures — once a fire is due, any message is the run's
         # to read. `msg-*.json` only, so `atomic_write`'s in-flight temp is not freight.
         pending = inbox_mod.has_pending_messages(cfg.dir, on_unparseable=True)
-        if pending or mode == "inbox":
+        if mode == "inbox":
             sys.stdout.write(json.dumps({
                 "version": 1, "decision": "run" if pending else "skip",
                 "reason": "pending inbox" if pending else "inbox empty"}))
             return
-        if pending_answers(cfg.dir):
+        tasks_on = keeps_tasks(cfg)
+        builtin = ("pending inbox" if pending
+                   else "an answer to one of its questions is waiting to be read"
+                   if pending_answers(cfg.dir)
+                   else "a note from a routine sharing one of its stores is waiting"
+                   if pending_notes(cfg, server)
+                   else tasks_clock_reason(cfg) if tasks_on else "")
+        if builtin and not (tasks_on and mode == "checks"):
             sys.stdout.write(json.dumps({
-                "version": 1, "decision": "run",
-                "reason": "an answer to one of its questions is waiting to be read",
-                **({"checks": []} if mode == "checks" else {})}))
-            return
-        if pending_notes(cfg, server):
-            sys.stdout.write(json.dumps({
-                "version": 1, "decision": "run",
-                "reason": "a note from a routine sharing one of its stores is waiting",
-                **({"checks": []} if mode == "checks" else {})}))
+                "version": 1, "decision": "run", "reason": builtin,
+                **({"checks": []} if mode == "checks" and not pending else {})}))
             return
         if mode == "checks":
             cmd, env, early = prepare_checks(cfg, server, payload["context"],
-                                             payload["context"]["run_id"])
+                                             payload["context"]["run_id"],
+                                             admit=builtin, keep_going=tasks_on)
             if early:
                 sys.stdout.write(json.dumps({"version": 1, "decision": "run",
                                              "reason": early, "checks": []}))

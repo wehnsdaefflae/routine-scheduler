@@ -144,7 +144,8 @@ def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
     caps = capabilities_for(["util-authoring", "messaging-discord"], lib)
     assert caps == {"actions": ["write_util"], "utils": ["discord"],
                     "confirm": "always", "rule_confirm": "always",
-                    "remind_confirm": "always", "runs": "none", "reminders": "none"}
+                    "remind_confirm": "always", "runs": "none", "reminders": "none",
+                    "tasks": "off"}
     # the settings pass through untouched: the raise only ever adds means
     base = {"actions": ["shell"], "utils": [], "confirm": "never", "runs": "all"}
     caps2 = capabilities_for(["util-authoring"], lib, base)
@@ -164,18 +165,18 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     assert floor_capabilities([], lib, orphan) == {
         "actions": [], "utils": [], "confirm": "never",
         "rule_confirm": "always", "remind_confirm": "always", "runs": "all",
-        "reminders": "none"}
+        "reminders": "none", "tasks": "off"}
     # util-authoring held → write_util survives; discord is still floored
     assert floor_capabilities(["util-authoring"], lib, orphan) == {
         "actions": ["write_util"], "utils": [], "confirm": "never",
         "rule_confirm": "always", "remind_confirm": "always", "runs": "all",
-        "reminders": "none"}
+        "reminders": "none", "tasks": "off"}
     # raise THEN floor == exactly the held docs' requires + settings, no contradiction
     active = ["util-authoring", "messaging-discord"]
     assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
         "actions": ["write_util"], "utils": ["discord"], "confirm": "always",
         "rule_confirm": "always", "remind_confirm": "always", "runs": "none",
-        "reminders": "none"}
+        "reminders": "none", "tasks": "off"}
 
 
 def test_floor_keeps_gated_kind_via_default_source_when_doc_predates_it(tmp_path):

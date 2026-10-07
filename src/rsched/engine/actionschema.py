@@ -38,6 +38,7 @@ KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_
          "script", "shell",
          "llm", "decide", "spawn", "subtask", "detach",
          "schedule_run", "create_routine", "manage_lane",
+         "task",
          "list_models", "subruns", "kill", "wait", "ask_user", "report", "finish")
 
 ACTION_SCHEMA: dict = {
@@ -210,7 +211,9 @@ ACTION_SCHEMA: dict = {
         "path": {
             "type": "string",
             "description": "read_file/view_image/write_file/delete/mkdir/edit_file: path "
-                           "relative to the routine dir (or an allowed root) · write_util: "
+                           "relative to your working directory (or an allowed root) · task "
+                           "create/update: the task's workspace, relative to the routine (default "
+                           "tasks/<id>) · write_util: "
                            "install the util script from this file's EXACT bytes "
                            "(byte-faithful; instead of inline content) · shell: OPTIONAL "
                            "working directory for the command (default: your working "
@@ -323,15 +326,22 @@ ACTION_SCHEMA: dict = {
                    "description": "schedule_run: cancel armed one-shot(s) on target instead of "
                                   "arming (with id: cancel that one; without: cancel all)"},
         "id": {"type": "string",
-               "description": "schedule_run: the one-shot id (so-XXXX) to cancel"},
+               "description": "schedule_run: the one-shot id (so-XXXX) to cancel · task: the "
+                              "task's kebab-case id (create: the new one's; open without it "
+                              "opens the next due task)"},
         # manage_lane — CRUD/fire routine LANES from a conversation (D61). Offered to every
         # depth-0 run; a root conversation applies a verb, any other run queues a proposal (F328)
         "verb": {"type": "string",
-                 "enum": ["list", "create", "update", "delete", "set-default", "run"],
+                 "enum": ["list", "create", "update", "delete", "set-default", "run", "open",
+                          "checkpoint"],
                  "description": "manage_lane: the operation — list (the whole store) · create "
                                 "(needs name) · update (needs target) · delete (needs target) · "
                                 "set-default (needs on_failure) · run (needs target; arms a "
-                                "sequential fire of the lane)"},
+                                "sequential fire of the lane) · task: the operation — list · "
+                                "create (id + title + brief) · update (id + what changes) · "
+                                "open (id, or none for the next due task) · checkpoint (id + "
+                                "outcome + summary: closes the open task and opens the next "
+                                "due one) · delete (id)"},
         "members": {"type": "array", "items": {"type": "string"},
                     "description": "manage_lane create/update: the ORDERED routine slugs in the "
                                    "lane (deduped; each must name a real routine) — the fire "
@@ -510,7 +520,8 @@ ACTION_SCHEMA: dict = {
         # report — the ungated channel every routine holds
         "title": {
             "type": "string",
-            "description": "report: a one-line summary of the problem you are raising",
+            "description": "report: a one-line summary of the problem you are raising · task "
+                           "create/update: the task's one-line name",
         },
         "detail": {
             "type": "string",
@@ -519,6 +530,27 @@ ACTION_SCHEMA: dict = {
                            "'done' looks like. Whoever picks this up has none of your context, "
                            "so write it to stand alone",
         },
+        # task — the routine's standing units of work (only with the task layer switched on)
+        "brief": {"type": "string",
+                  "description": "task create/update: what the task is, what processing it "
+                                 "each run means and what done looks like — self-contained, "
+                                 "since a later run reads nothing else about it"},
+        "state": {"type": "string", "enum": ["active", "paused", "done"],
+                  "description": "task create/update: active (processed when due) · paused "
+                                 "(kept, never due) · done (finished for good)"},
+        "outcome": {"type": "string", "enum": ["advanced", "no-work", "blocked", "deferred"],
+                    "description": "task checkpoint: what became of the task this run — "
+                                   "advanced (work landed) · no-work (looked; nothing was due) · "
+                                   "blocked (waits on something outside your reach, named in "
+                                   "the summary) · deferred (work exists and you set it aside: "
+                                   "the next run is owed it)"},
+        "wake": {"type": "string",
+                 "description": "task create/update/checkpoint: YYYY-MM-DD — let the task rest "
+                                "until then unless one of its gate checks finds work; an "
+                                "empty string clears it"},
+        "quiet_days": {"type": "integer", "minimum": 1, "maximum": 365,
+                       "description": "task create/update: the task is due whenever it has "
+                                      "not been processed for this many days"},
         # finish
         "status": {"type": "string", "enum": ["ok", "partial", "failed"],
                    "description": "finish: ok = everything this run could do is done (a "
@@ -528,7 +560,9 @@ ACTION_SCHEMA: dict = {
                                   "done"},
         "summary": {
             "type": "string",
-            "description": "finish: a DETAILED 8-20 line result summary — concrete outcomes "
+            "description": "task checkpoint: what this run did for the task and what the next "
+                           "run should pick up — the task's whole memory of this run · "
+                           "finish: a DETAILED 8-20 line result summary — concrete outcomes "
                            "(numbers, names, links), decisions taken + why, files changed, "
                            "open ends and what the next run should pick up (becomes result.md, "
                            "the dashboard's last-outcome, and the next run's context; Markdown "
@@ -537,7 +571,10 @@ ACTION_SCHEMA: dict = {
         },
         "accounting": {
             "type": "array", "items": {"type": "string"},
-            "description": "finish: your verdict on each thing this run answers for — one "
+            "description": "task checkpoint: one entry per line of the open task's own "
+                           "recipe `## Done when` (`d1 met: <evidence>`, `d2 not due: <how "
+                           "established>` …) · finish: your verdict on each thing this run "
+                           "answers for — one "
                            "entry per line of your recipe's `## Done when` (`d1 met: "
                            "<evidence>`, `d2 unmet: <what remains>`, `d3 not due: <how that "
                            "was established>`) and per open outcome of the routine's finish "
@@ -564,7 +601,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "decide": "question", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
-               "manage_lane": "verb",
+               "manage_lane": "verb", "task": "id",
                "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
 #: The kinds that may name several files at once (`paths`) where BRIEF_FIELD names one — what
@@ -603,6 +640,7 @@ def canon(action: dict) -> str:
                                       `util:fs-ops` alone cannot tell `mv` from `rm`
         script:store stage --note x   the routine's own script, the same way and for the same
                                       reason: `script name=store` cannot tell `stage` from `drop`
+        task:checkpoint nanogeofeld   a task turn by its verb and the task it acts on
         shell: rm -rf build/          the command IS the action; a `command=` label adds nothing
         read_file paths=a.md,b.md     `read_file` and `view_image` carry a LIST (`paths`), not
                                       the singular field
@@ -614,6 +652,11 @@ def canon(action: dict) -> str:
     string would silently change what a regex can see as an action's arguments grow.
     """
     kind = str(action.get("kind") or "?")
+    if kind == "task":
+        # the verb is what the turn DID to the task — `task id=x` cannot tell an open from a
+        # checkpoint, the one distinction a reader of the turn needs
+        tid = str(action.get("id") or "")
+        return f"task:{action.get('verb') or '?'}{f' {tid}' if tid else ''}"
     if kind in ("util", "script"):
         args = action.get("args")
         tail = " ".join(str(a) for a in args) if isinstance(args, list) else ""

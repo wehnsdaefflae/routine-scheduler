@@ -15,9 +15,9 @@ import os
 import shutil
 from pathlib import Path
 
-from ..paths import expand, resolve_rel
+from ..paths import expand
 from .fileops import _own_dir, _write_gate
-from .run_context import RunContext
+from .run_context import RunContext, resolve_action_path
 
 
 def _entry(ctx: RunContext, raw: str) -> Path:
@@ -29,8 +29,8 @@ def _entry(ctx: RunContext, raw: str) -> Path:
     """
     p = expand(raw)
     if p.name in ("", ".", ".."):
-        return resolve_rel(ctx.routine.dir, raw, ctx.write_roots())
-    return resolve_rel(ctx.routine.dir, str(p.parent), ctx.write_roots()) / p.name
+        return resolve_action_path(ctx, raw, write=True)
+    return resolve_action_path(ctx, str(p.parent), write=True) / p.name
 
 
 def _tree_size(path) -> int:
@@ -126,7 +126,7 @@ def do_move(action: dict, ctx: RunContext) -> dict:
 
 def do_mkdir(action: dict, ctx: RunContext) -> dict:
     try:
-        path = resolve_rel(ctx.routine.dir, action["path"], ctx.write_roots())
+        path = resolve_action_path(ctx, action["path"], write=True)
         if err := _write_gate(ctx, path):
             return {"kind": "mkdir", "path": action["path"], "error": err}
         existed = path.is_dir()

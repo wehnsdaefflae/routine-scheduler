@@ -142,12 +142,13 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_search,
         api_settings,
         api_stats,
+        api_tasks,
         api_traces,
         api_workflows,
         settings,
     )
 
-    for module in (api_push, api_routines, api_routine_edit, api_routine_patch,
+    for module in (api_push, api_routines, api_tasks, api_routine_edit, api_routine_patch,
                    api_routine_files, api_routine_secrets, api_settings, api_gate,
                    api_conversation_create,   # before api_conversations: its
                    # /conversations/defaults must be matched before /{slug}

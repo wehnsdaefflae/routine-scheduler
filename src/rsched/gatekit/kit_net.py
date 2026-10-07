@@ -273,9 +273,27 @@ def hub_feedback(check: dict, ctx: dict) -> tuple[bool, str, str]:
     if not isinstance(answer, dict) or not answer.get("ok") or "count" not in answer:
         raise UnknownError(f"the hub refused the feedback read ({str(answer)[:120]})")
     count = int(answer["count"])
+    if label := str(check.get("label") or ""):
+        # one task's section of a shared page: only the rows its controls filed. The rows ride
+        # the same answer (`pending`); an answer that lists none cannot be narrowed, so its
+        # whole count stands — fail-open, like every read here
+        rows = answer.get("pending")
+        if isinstance(rows, list):
+            count = sum(1 for r in rows
+                        if isinstance(r, dict) and label in _id_segments(str(r.get("id"))))
+        where = f"in the '{label}' section of the hub page"
+    else:
+        where = "on the hub page"
     if count:
-        return True, f"{count} feedback entr{'y' if count == 1 else 'ies'} on the hub page", ""
-    return False, "no unconsumed feedback on the hub page", ""
+        return True, f"{count} feedback entr{'y' if count == 1 else 'ies'} {where}", ""
+    return False, f"no unconsumed feedback {where}", ""
+
+
+def _id_segments(control_id: str) -> list[str]:
+    """A control id's SEGMENTS — `fau · ards/doc/report` → fau, ards, doc, report. A label names
+    a whole segment, so `ards` is never found inside `standards`.
+    """
+    return [s for s in re.split(r"\s*·\s*|/", control_id) if s]
 
 
 def _hub_token(ctx: dict) -> str:

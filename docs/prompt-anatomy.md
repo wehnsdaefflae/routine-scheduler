@@ -65,6 +65,27 @@ FIND that out is the only turn you reliably still know it* — so on that same t
 inert; what makes it work is the pairing with "record it the turn you notice", because the
 realisation does not survive to a later turn. See [reminders](reminders.md).
 
+**The task layer** (only where the routine's `tasks` setting is on — docs/tasks.md). Four
+surfaces, each present only then. The harness contract's working-directory line gains
+` — except while a TASK is open: then they resolve in that task's workspace (the `task` action)`;
+the `task` kind gets its schema fields and its bullet (the verbs, and GATED PROCESSING: every task
+the digest lists as DUE must be opened and checkpointed before the engine lets the run finish,
+one at a time); the STATE DIGEST (7) opens with `TASKS — this routine's standing work (the
+`task` action manages them). GATED PROCESSING: …`, listing the tasks due this run in order with
+`due because:` — a gate check tagged with the task that found work, the task's own clock (a
+carry, a wake date, a quiet limit), or a fire whose checks were never asked — then the tasks
+resting this run; and the `task` observations themselves. `open` (and a `checkpoint`, which
+opens the next due task in the same observation) answers with the TASK BRIEFING, `TASK OPEN —
+<id>: <title> (due task n of m)`: why it is due, its brief, its workspace —
+`your WORKING DIRECTORY until you checkpoint this task` — its last checkpoint, ITS RECIPE (the workspace's own
+`main.md`, up to 24 000 chars — with the standing reading that where a task's recipe, often a
+former routine's, says to finish or close the run, the run CHECKPOINTS the task instead) and ITS
+STATE (its own phase, plan, `state/` listing, notes tail,
+stages, artifacts, LEDGER tail and `.memory/` index — the digest a routine gets at boot, for the
+task), ending in the exact checkpoint to send and, when its recipe has a `## Done when`, the ids
+its `accounting` owes. A briefing is an OBSERVATION, appended like any other, so the composed
+prompt stays untouched however many tasks a run opens.
+
 **The rule SET is the USER's; the rule TEXT is the library's.** The general rules binding a
 routine are `routine.yaml` `rules:` — slugs, never copies — named in (7) with the moment each
 applies; the prose has ONE copy under `<library>/rules/` and is read
@@ -436,6 +457,16 @@ one turn. Only a *second* violation (the reserve already spent — the model use
 `report` or `list_models`, which `ALWAYS_KINDS` keeps reachable) force-finishes. Any other
 kind emitted on that turn — a provider without constrained decoding can emit one — is refused
 at the dispatch seam and never runs (`loop.RESERVED_TURN_KINDS` is `ALWAYS_KINDS`).
+
+**Gated processing** (a routine with the task layer on): a finish is set aside while a task due
+this run has no checkpoint —
+`OBSERVATION (finish deferred): GATED PROCESSING — task(s) due this run have no checkpoint yet: <ids>. …`
+— before the accounting rung and with the same two exemptions (never the reserved turn, never a
+child; never a conversation either). No once-only limit — one `task` action settles each line,
+`deferred` with the reason when the run sets a task aside — so it cannot trap a run. Whatever a
+run was owed and never checkpointed (the reserved turn, a failure, an abort) is CARRIED to the
+next run, and the summary gains
+`[Task(s) carried to the next run — due this run and never checkpointed: <ids>.]`.
 
 Ends the model does not author (`engine/loopend.py`): a second budget violation (engine
 finishes `partial`), 5 identical actions (`failed`), 3 failed schema attempts (`failed`), a

@@ -22,14 +22,15 @@ directory, not the rest of `rsched`.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 #: The package's importable surface is this vocabulary alone. The jail-side scripts are not
 #: members: they import their siblings by bare name, so they load only after `run.py` has put
 #: this directory on the import path. Anything that lists a package's submodules by importing
 #: them (pdoc's Help build does) would otherwise try, and warn, in whatever order it walks.
-__all__ = ["DEFAULT_AUTH_SECRET", "ENTRY", "KINDS", "NET_KINDS", "SECRET_PARAMS", "needs_net",
-           "paths_named", "secrets_named", "validate"]
+__all__ = ["COMMON_KEYS", "DEFAULT_AUTH_SECRET", "ENTRY", "KINDS", "NET_KINDS", "SECRET_PARAMS",
+           "needs_net", "paths_named", "secrets_named", "validate"]
 
 #: The file the daemon executes inside the jail.
 ENTRY = Path(__file__).resolve().parent / "run.py"
@@ -67,6 +68,9 @@ KINDS: dict[str, tuple[str, dict[str, tuple[str, bool, str]]]] = {
         ("feedback waits on the routine's Steward hub page that its last publish has not "
          "consumed"),
         {"project": ("str", True, "the hub project slug the routine publishes"),
+         "label": ("str", False, ("only feedback whose control id names this label as a whole "
+                                  "segment counts (`fau · ards/doc/x` names fau, ards, doc, x) "
+                                  "— one task's section of a page several tasks share")),
          "source": ("str", False, ("which entry of the web-auth secret holds the hub login "
                                    "(default `steward`)")),
          "auth_secret": ("secret", False, ("the secret holding the web logins (default "
@@ -146,6 +150,16 @@ SECRET_PARAMS = frozenset({"user_secret", "password_secret", "accounts_secret", 
 DEFAULT_AUTH_SECRET = "WEB_AUTH_SOURCES"   # noqa: S105 — the secret's NAME, never its value
 
 
+#: Keys every check may carry beside its kind's own parameters: its id, and the TASK it watches
+#: (rsched/tasks.py) — a check that finds work makes that task due; one that names no task
+#: makes every task due. The kit never reads `task`; the engine does, from gate.json.
+COMMON_KEYS = ("kind", "id", "task")
+
+
+def _is_task_id(value: object) -> bool:
+    return isinstance(value, str) and bool(re.fullmatch(r"[a-z0-9][a-z0-9-]*", value))
+
+
 def validate(checks: object) -> list[str]:
     """Problems with a `run_gate.checks` list, as sentences — empty when it is sound.
 
@@ -173,7 +187,7 @@ def validate(checks: object) -> list[str]:
         seen.add(cid)
         spec = KINDS[kind][1]
         problems.extend(f"{where}: {kind} takes no parameter {name!r}"
-                        for name in check if name not in ("kind", "id") and name not in spec)
+                        for name in check if name not in COMMON_KEYS and name not in spec)
         for name, (typ, required, _help) in spec.items():
             value = check.get(name)
             if value in (None, "", []):
@@ -206,6 +220,13 @@ def _kind_problems(where: str, kind: str, check: dict) -> list[str]:
         out.append(f"{where}: weekdays.days are numbers 0 (Monday) to 6 (Sunday)")
     if kind == "max_quiet" and isinstance(check.get("days"), int) and check["days"] < 1:
         out.append(f"{where}: max_quiet.days must be at least 1")
+    if "task" in check and not _is_task_id(check["task"]):
+        out.append(f"{where}: task is the kebab-case id of the task this check watches")
+    elif kind in ("max_quiet", "script") and check.get("task"):
+        # how long a TASK may rest is its own clock (quiet_days, rsched/tasks.py): the last ok
+        # run is the routine's, so a max_quiet tagged to one task would never measure it
+        out.append(f"{where}: {kind} watches the routine, not one task — give the task "
+                   "quiet_days instead")
     if kind == "url_changed":
         sel = str(check.get("select") or "body")
         if sel not in ("body", "feed") and not sel.startswith("json:"):

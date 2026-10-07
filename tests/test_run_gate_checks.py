@@ -215,3 +215,49 @@ def test_the_last_ok_runs_own_finish_line_stamp_is_not_a_change(tmp_path):
     os.utime(stamp, (started + 900, started + 900))           # the operator edits it later
     _, why = gate_prepare.baseline_says_run(cfg, "me:20260929-080000")
     assert why == "state/finish-line.json changed since the last ok run"
+
+
+async def test_a_routine_that_keeps_tasks_has_its_checks_answered_behind_a_builtin_reason(
+        setup_gate, monkeypatch):
+    """Inbox freight admits the fire before any check — but a routine that keeps TASKS needs to
+    know WHICH tasks have work, so its checks are asked anyway and gate.json carries every
+    answer (rsched/tasks.due_for_run reads them); the decision stays "run"."""
+    from rsched import tasks
+
+    cfg, _, runner = setup_gate
+    cfg.capabilities = {"tasks": "on"}
+    use(cfg, {"kind": "state", "file": "state/nothing.json", "key": "rows", "id": "quiet",
+              "task": "alpha"})
+    ok_run(cfg, earlier())
+    (cfg.dir / "state").mkdir(exist_ok=True)
+    tasks.save(cfg.dir, {"version": 1, "deleted": [], "run": {}, "tasks": [
+        {"id": "alpha", "title": "a", "brief": "b", "state": "active",
+         "wake": "2099-01-01"}]})
+    (cfg.dir / "inbox").mkdir()
+    atomic_write_json(cfg.dir / "inbox" / "msg-1.json", {"text": "hello", "via": "web"})
+    marker = fake_engine(monkeypatch, cfg)
+    _, run, _ = await finish(runner, cfg)
+    assert marker.exists()
+    gate = read_json(run.run_dir / "gate.json")
+    assert gate["decision"] == "run" and gate["reason"].startswith("pending inbox")
+    assert [(c["id"], c["work"]) for c in gate["checks"]] == [("quiet", False)]
+
+
+async def test_a_task_due_by_its_own_clock_admits_a_fire_its_checks_would_skip(
+        setup_gate, monkeypatch):
+    from rsched import tasks
+
+    cfg, _, runner = setup_gate
+    cfg.capabilities = {"tasks": "on"}
+    use(cfg, {"kind": "max_quiet", "days": 30})
+    ok_run(cfg, earlier())
+    (cfg.dir / "state").mkdir(exist_ok=True)
+    tasks.save(cfg.dir, {"version": 1, "deleted": [], "run": {}, "tasks": [
+        {"id": "alpha", "title": "a", "brief": "b", "state": "active",
+         "carry": "deferred by gate-test:1: waits"}]})
+    marker = fake_engine(monkeypatch, cfg)
+    _, run, _ = await finish(runner, cfg)
+    assert marker.exists()
+    gate = read_json(run.run_dir / "gate.json")
+    assert gate["decision"] == "run" and "due by their own clock: alpha" in gate["reason"]
+    assert gate["checks"][0]["kind"] == "max_quiet"     # still answered, for the task ledger

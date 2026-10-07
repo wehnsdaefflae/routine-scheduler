@@ -20,7 +20,8 @@ ownership:
   capability TOKENS rather than emittable kinds), reserved utils or single VERBS of them (every
   entry a permission doc's `requires.utils:` names — `signal:send`, `gmail:send`,
   `fau-mail:send`, `usenet:post`, `ntfy`, `browser-session`, `darknet`), and the settings: the
-  approval dials, the previous-run read depth, the reminder layer. What every routine does —
+  approval dials, the previous-run read depth, the reminder layer, the task layer. What every
+  routine does —
   the `util` action, its memory, its own `scripts/` — is no capability at all. Held via
   `routine.yaml`'s `capabilities:` mapping, changed **only by you** (the routine page), and
   enforced when every single action is interpreted. A routine can never grant itself
@@ -447,6 +448,7 @@ capabilities:
   remind_confirm: always        # curated-reminder approval: always | creations | never
   runs: last                    # previous-run read depth: none | last | all
   reminders: local              # consequence reminders: none | local | global
+  tasks: off                    # the task layer: off | on (docs/tasks.md)
 ```
 
 A new routine's default is its settings pattern's; with no pattern at all it is
@@ -454,12 +456,16 @@ A new routine's default is its settings pattern's; with no pattern at all it is
 reserved utils, the last run readable, and `reminders: local`. `read_rule`, the `util` action,
 memory and the routine's own scripts are not listed because they are not gated.
 
-`runs`, `reminders` and the three approval dials are SETTINGS: yours per routine, never switched
+`runs`, `reminders`, `tasks` and the three approval dials are SETTINGS: yours per routine, never switched
 on by a permission and kept by the floor with none behind them. `reminders: local` is the
 default because a caution a run leaves itself about its own actions is ordinary conduct; at
 `local` a run writes its own reminders and applies them beside every curated one that reaches
 it; `global` also lets it write the curated store — the curator's setting, every write approved
-under `remind_confirm`. See [reminders](reminders.md).
+under `remind_confirm`. See [reminders](reminders.md). `tasks: on` makes the routine keep its
+standing work as TASKS it creates and manages with the `task` action, processing every task due
+in a run before that run may end — see [tasks](tasks.md). A settings pattern written before a
+setting existed compares as holding its all-off value (`patterns.fields.canonical`), so adding
+one never marks every follower as departing from its pattern.
 
 ### Where a routine's settings come from
 
@@ -518,7 +524,7 @@ expects:                       # the SOFT edge — presumed, never enforced (see
 <a SHORT body: shown in the UI, and appended to the prompt's CAPABILITIES section when held>
 ```
 
-(No setting in `requires:` — an approval level, a history depth or the reminder layer is your
+(No setting in `requires:` — an approval level, a history depth, the reminder or task layer is your
 choice per routine, never a doc's demand; the linter refuses one.)
 
 The shipped set — 17 docs, one file each in `library-seed/permissions/`, which is what a fresh

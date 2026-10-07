@@ -20,6 +20,7 @@ from ..config import MODEL_KINDS
 from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
 from ..engine.ladder import oversight_turns_for
 from ..readmodels.stats import monthly_spend
+from .api_tasks import layer_on
 from .decisions_read import _snooze_active
 from .routines_common import (
     _catalog,
@@ -256,6 +257,9 @@ def routine_detail(request: Request, slug: str) -> dict:
                                                    info.cfg.triggers),
         "permissions": permissions,
         "capabilities": capabilities,
+        # the task layer (rsched/tasks.py): on, the overview carries the routine's task list,
+        # read from GET …/tasks — the payload says only whether there is one to read
+        "tasks_enabled": layer_on(info.cfg),
         "ledger_tail": ledger_tail,
         "files": files,
         "questions": info.open_questions,

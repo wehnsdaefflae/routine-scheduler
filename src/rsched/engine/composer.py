@@ -68,7 +68,8 @@ def _plan_text(routine_dir: Path) -> str:
 def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict], *,
                  routines_home: Path | None = None, slug: str = "",
                  held_rules: list[str] | None = None,
-                 store_notes: list[dict] | None = None, brief: str = "") -> str:
+                 store_notes: list[dict] | None = None, brief: str = "",
+                 tasks_section: str = "") -> str:
     from ..paths import read_json
 
     parts: list[str] = []
@@ -86,6 +87,10 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     from ..sharedstores import digest_section as notes_section
     if notes_block := notes_section(store_notes or []):
         parts.append(notes_block)
+    # The TASKS this run owes (engine/taskops.py), before the phase: for a routine whose
+    # work is its tasks, the due list IS where the run starts ("" for every other run; the
+    # join below drops it).
+    parts.append(tasks_section)
     phase = read_json(routine_dir / "state" / "phase.json")
     parts.append(f"Current phase: {json.dumps(phase, ensure_ascii=False)}" if phase
                  else "Current phase: (none recorded — likely the first run)")
@@ -197,7 +202,7 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     if deferred_qa:
         alines = "\n".join(f"- Q: {p['question']}\n  A: {p['answer']}" for p in deferred_qa)
         parts.append(f"ANSWERS received to earlier questions (consume now):\n{alines}")
-    return "\n\n".join(parts)
+    return "\n\n".join(p for p in parts if p)
 
 
 def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,

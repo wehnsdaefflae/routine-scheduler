@@ -263,8 +263,9 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
     from .obs_children import format_children
     from .obs_files import format_files
     from .obs_library import format_library
+    from .taskops import format_task
     for fmt in (format_files, format_library, format_children, format_admin, format_decide,
-                format_models):
+                format_models, format_task):
         if (out := fmt(obs, str(kind or ""))) is not None:
             return out
     return f"OBSERVATION ({kind}): {json.dumps(obs, ensure_ascii=False)[:500]}"

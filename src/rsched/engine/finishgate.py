@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..ids import now_iso
-from . import accounting, brief, donewhen, finishline, inbox
+from . import accounting, brief, donewhen, finishline, inbox, taskops
 from .control import drain_injections
 from .finish_guard import unbacked_action_claims
 
@@ -60,6 +60,31 @@ def _claims(verdicts: dict, done: list[dict], outcomes: list[dict]) -> list[dict
             for x in lines if verdicts.get(x["id"], ("",))[0] == "met"]
 
 
+def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
+                verdicts: dict) -> tuple[str, dict] | None:
+    """`(message, keys)` for a finish that still owes work, or None.
+
+    GATED PROCESSING first (engine/taskops.py): a routine that keeps tasks may not end while a
+    task due this run has no checkpoint — before the accounting, because the routine's own
+    Done when is answered once its tasks are. No once-only limit: one action settles it (a
+    checkpoint, `deferred` if the run sets the task aside), so it can never trap a run.
+
+    Then THE ACCOUNTING: one entry per Done-when line of the recipe and per open outcome of the
+    finish line, as a FIELD — checked for presence and shape only (semantics stay the model's;
+    the verifier reads the `met` claims). The main finish only: a follow-up after the run ended
+    answers the person, not the recipe.
+
+    Both skip the reserved-finish turn (deferring it would force-finish with an engine string).
+    """
+    if (tasks_owed := taskops.finish_owed(loop)) is not None:
+        return tasks_owed, {"tasks_owed": True}
+    if owed is not None and not loop._finish_reserved:
+        found = accounting.problems(verdicts, *owed)
+        if any(found.values()):
+            return accounting.deferral(found), {"accounting": found}
+    return None
+
+
 def check_finish(loop, action: dict, ctx) -> str | None:
     # LADDER of guards: each rung is its own teaching deferral, and merging them would
     # make the reasons interchangeable at exactly the moment the model needs the specific
@@ -67,8 +92,9 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     """May this run END? Returns the run status when the finish stands, None when it is
     set aside for one turn (the R108 deferral shape) and the loop should go round again.
 
-    Split out of `EngineLoop.run` (F393). Seven guards, one question: an undrained user
-    message, an ask-back on an approval the finish itself filed, an incomplete accounting, a
+    Split out of `EngineLoop.run` (F393). Eight guards, one question: an undrained user
+    message, an ask-back on an approval the finish itself filed, a due task with no checkpoint
+    (gated processing), an incomplete accounting, a
     rule whose moment is the ending itself (`assist.at_finish`), a fabricated first-action
     finish, an unbacked action claim, and a `met` claim the run's own transcript does not
     support. Each costs one turn and says
@@ -106,18 +132,14 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                "Answer them, then finish again carrying the same `remind` op (or a revised "
                "one) — that re-submits the approval.", asked_back=True)
         return None   # deferred — the loop goes round again
-    # THE ACCOUNTING: one entry per Done-when line of the recipe and per open outcome of the
-    # finish line, as a FIELD — checked for presence and shape only (semantics stay the
-    # model's; the verifier below reads the `met` claims). The main finish only: a follow-up
-    # after the run ended answers the person, not the recipe. The reserved-finish turn is
-    # exempt (deferring it would force-finish with an engine string).
+    # What the run still OWES before it may end: its due tasks, then its accounting
+    # (`_unanswered`). One rung, two questions, asked in that order.
     owed = _owed(loop, ctx)
     verdicts = accounting.parse(action.get("accounting"))
-    if owed is not None and not loop._finish_reserved:
-        found = accounting.problems(verdicts, *owed)
-        if any(found.values()):
-            _defer(loop, ctx, accounting.deferral(found), accounting=found)
-            return None   # deferred — the loop goes round again
+    if (unanswered := _unanswered(loop, owed, verdicts)) is not None:
+        message, why = unanswered
+        _defer(loop, ctx, message, **why)
+        return None   # deferred — the loop goes round again
     # A general rule the routine PRACTISES whose moment is the ending itself (a ledger
     # entry not written, a review with no denominator). Same deferral shape as the rungs
     # around it, same two guards — never the reserved turn, never a child — plus its own:

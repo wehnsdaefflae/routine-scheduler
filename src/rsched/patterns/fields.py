@@ -82,7 +82,13 @@ def canonical(key: str, value: object) -> object:
     if f.shape == "set":
         return sorted({str(v) for v in value}) if isinstance(value, (list, tuple, set)) else []
     if key == "capabilities":
+        from ..grants import effective_settings
+
+        # what the mapping MEANS, setting by setting: a setting it leaves out holds its
+        # all-off value (`effective_capabilities` explains why) — so a pattern written before
+        # a setting existed still compares equal to a routine that never touched it
         caps = value if isinstance(value, dict) else {}
+        caps = {**caps, **effective_settings(caps)}
         return {k: (sorted({str(x) for x in v}) if isinstance(v, (list, tuple, set)) else v)
                 for k, v in sorted(caps.items()) if v not in (None, [], "")}
     if key == "triggers":

@@ -67,8 +67,10 @@ def problems(verdicts: dict[str, tuple[str, str]], done: list[dict],
     return {"missing": missing, "bare": bare, "refused": refused}
 
 
-def deferral(found: dict[str, list[str]]) -> str:
-    """The one observation a finish is set aside with when its accounting is incomplete."""
+def gaps(found: dict[str, list[str]]) -> str:
+    """What `problems` found, as one clause list — shared by the finish's deferral and a task
+    checkpoint's refusal (engine/taskops.py), which account for Done-when lines alike.
+    """
     parts = []
     if found["missing"]:
         parts.append(f"no entry for {', '.join(found['missing'])}")
@@ -77,8 +79,13 @@ def deferral(found: dict[str, list[str]]) -> str:
                      "its evidence, unmet and distance what remains, not due how that was "
                      "established")
     parts += found["refused"]
+    return "; ".join(parts)
+
+
+def deferral(found: dict[str, list[str]]) -> str:
+    """The one observation a finish is set aside with when its accounting is incomplete."""
     return ("OBSERVATION (finish deferred): your `accounting` is incomplete: "
-            + "; ".join(parts) + ". Carry one entry per line you owe — each line of your "
+            + gaps(found) + ". Carry one entry per line you owe — each line of your "
             "recipe's Done when (or `b1`, this run's brief) and each open outcome of the finish "
             "line: `d<n> met: <evidence>`, `d<n> unmet: <what remains>`, `d<n> not due: <how "
             "established>`, `g<n> distance: <what remains>` — then finish again.")

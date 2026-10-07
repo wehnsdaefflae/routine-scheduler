@@ -195,6 +195,15 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "[REMINDERS: ",
         "The labels: could_not",
         "fired and is STILL unlabelled",
+        # The TASK layer (engine/taskops.py, docs/tasks.md): the working-directory exception,
+        # the digest section, the briefing an open task answers with, the finish rung that holds
+        # a run to its due tasks, and the carry line a run's summary gains
+        "except while a TASK is open",
+        "TASKS — this routine's standing work",
+        "TASK OPEN —",
+        "your WORKING DIRECTORY until you checkpoint this task",
+        "GATED PROCESSING — task(s) due this run have no checkpoint yet",
+        "Task(s) carried to the next run",
         # NOTE: the F292 two-phase fire ("GROUP FIRE PHASE: ingest/outbound") was once pinned
         # here as a needle. D90 retired the machinery and the engine stopped emitting those
         # strings, but the doc kept describing them and this guard kept passing — it only checks

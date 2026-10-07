@@ -299,7 +299,8 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
                env_secrets: dict[str, str] | None = None,
                timeout: int = SCRIPT_TIMEOUT_S,
                aborted: Callable[[], bool] | None = None,
-               cancelled: Callable[[], bool] | None = None) -> tuple[int, str, str]:
+               cancelled: Callable[[], bool] | None = None,
+               seal_dir: Path | None = None) -> tuple[int, str, str]:
     """Controlled runner: the routine's own venv python on the script, ONLY the caller's
     `env_secrets` injected (the caller filters to declared+granted names; every other
     store key is scrubbed — `utils_run.scoped_env`), the shared jail (`sandbox.wrap` —
@@ -309,7 +310,9 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     with the run (`utils_run.run_jailed`). `cancelled` is the per-call one (F586/D160) and
     reaches the SCRIPT only, not the venv build before it: a cancel is aimed at the call the
     operator is watching, and killing the build instead would leave the same action to be
-    cancelled again. Returns (exit, out, err).
+    cancelled again. `seal_dir` is the routine whose `routine.yaml` the run is watched for
+    changing, when the script lives elsewhere — a TASK's workspace (engine/taskops.py) holds
+    scripts of its own but no config. Returns (exit, out, err).
     """
     if not exists(routine_dir, name):
         have = ", ".join(p["name"] for p in list_scripts(routine_dir)) or "(none yet)"
@@ -348,6 +351,6 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     # — it would hold the pipes open past the deadline and block the engine turn forever — and
     # a script that dumps a large file must not be buffered whole in the daemon's memory.
     res = utils_run.run_jailed(cmd, env=env, cwd=routine_dir, timeout=timeout,
-                               label=f"script {name!r}", config_seal=routine_dir,
+                               label=f"script {name!r}", config_seal=seal_dir or routine_dir,
                                aborted=aborted, cancelled=cancelled, secrets=env_secrets)
     return res.exit_code, res.stdout, res.stderr

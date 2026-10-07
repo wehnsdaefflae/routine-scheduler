@@ -16,6 +16,7 @@ observations.format_observation) the next user message.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from .. import sandbox, shellrun, utils_lib, utils_run
 from ..ids import is_slug
@@ -32,7 +33,34 @@ from .mediaops import do_view_image
 from .memops import do_memory_read, do_memory_write, do_read_rule
 from .observations import truncate
 from .output_compression import command_output
-from .run_context import RunContext
+from .run_context import RunContext, work_dir
+
+
+def script_home(ctx: RunContext, name: str) -> Path | None:
+    """The directory whose `scripts/<name>.py` a `script` action runs, or None when there is
+    none: the OPEN task's workspace first (its own scripts, run from where its own relative
+    paths resolve), then the routine's. A script always runs from the home it was found in —
+    its working directory, its venv, the place its `Path(__file__).parent.parent` names.
+    """
+    from .. import scripts
+
+    for home in _script_homes(ctx):
+        if scripts.exists(home, name):
+            return home
+    return None
+
+
+def _script_homes(ctx: RunContext) -> list[Path]:
+    # the open task's workspace first; `work_dir` is the routine's own when none is open
+    return list(dict.fromkeys((work_dir(ctx), ctx.routine.dir)))
+
+
+def available_scripts(ctx: RunContext) -> list[str]:
+    """Every script a `script` action could reach right now, by name."""
+    from .. import scripts
+
+    return list(dict.fromkeys(s["name"] for h in _script_homes(ctx)
+                              for s in scripts.list_scripts(h)))
 
 
 def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> dict:
@@ -249,8 +277,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         # R367: the name may be a ROUTINE-LOCAL script, which the util action never
         # resolves — say so, or the caller (told "scripts/ is the place for private
         # helpers") has no path from this miss to actually running the file.
-        from .. import scripts
-        if scripts.exists(ctx.routine.dir, name):
+        if script_home(ctx, name) is not None:
             obs["script_match"] = True
         return obs
     # F290: optional (`?`-declared) secrets the routine may not see are WITHHELD from the
@@ -266,7 +293,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
         policy=policy,
         extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld),
-        cwd=ctx.routine.dir, aborted=ctx.aborted,
+        cwd=work_dir(ctx), aborted=ctx.aborted,
         cancelled=cancelled_for_turn(ctx))
     killed = _note_if_killed(ctx, "util", name, code)
     ended = _ended_by_a_person(ctx, code)
@@ -329,35 +356,35 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     from .secretgate import secret_state, withheld_optional
     name = str(action.get("name") or "")
     args = [str(a) for a in action.get("args") or []]
-    if not scripts.exists(ctx.routine.dir, name):
+    home = script_home(ctx, name)
+    if home is None:
         return {"kind": "script", "name": name, "missing": True,
-                "available": [s["name"] for s in scripts.list_scripts(ctx.routine.dir)]}
-    if bad := scripts.misdeclared(ctx.routine.dir, name):
+                "available": available_scripts(ctx)}
+    if bad := scripts.misdeclared(home, name):
         return {"kind": "script", "name": name, "error":
                 f"declaration in the wrong place: {', '.join(bad)} — these are engine header "
                 "keys, but this script declares them inside the PEP 723 `# /// script` block, "
                 "which the engine never reads (the script would run with NO secrets and NO "
                 "network). Move them into the module DOCSTRING as header lines, exactly the "
                 "util model — e.g.\n    secrets: FTP_SOURCES\n    net: outbound\n— then rerun."}
-    if bad := scripts.call_problems(ctx.routine.dir, name, ctx.server.libraries_home):
+    if bad := scripts.call_problems(home, name, ctx.server.libraries_home):
         return {"kind": "script", "name": name, "error":
                 "; ".join(bad) + ". A script reaches the util library ONLY through its "
                 "docstring `calls:` line: that declaration is what folds each util's "
                 "secrets and network into the shared jail, so an undeclared or unknown "
                 "sibling would run without them. Fix the header — e.g.\n"
                 "    calls: gmail, ftp\n— then rerun."}
-    declared, _net, optional = scripts.needs(ctx.routine.dir, name,
-                                             ctx.server.libraries_home)
+    declared, _net, optional = scripts.needs(home, name, ctx.server.libraries_home)
     env_secrets = {k: v for k, v in load_secrets().items()
                    if k in declared and secret_state(ctx, k) == "granted"}
     env_secrets |= {k: v for k, v in _extra_secrets(ctx).items() if k in declared}
     policy = sandbox.policy_for_ctx(ctx)   # the jail AND the dead-root note (R2260)
     code, out, err = scripts.run_script(
-        ctx.routine.dir, name, args,
+        home, name, args,
         timeout=int(action.get("timeout_s") or scripts.SCRIPT_TIMEOUT_S),
         policy=policy, libraries_home=ctx.server.libraries_home,
         env_secrets=env_secrets, aborted=ctx.aborted,
-        cancelled=cancelled_for_turn(ctx))
+        cancelled=cancelled_for_turn(ctx), seal_dir=ctx.routine.dir)
     killed = _note_if_killed(ctx, "script", name, code)
     obs = {"kind": "script", "name": name, "args": args, "exit": code,
            **command_output(ctx, f"script-{name}", out, err, code),
@@ -424,10 +451,10 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
     "this did not".
     """
     command = str(action.get("command") or "")
-    cwd = ctx.routine.dir
+    cwd = work_dir(ctx)
     if raw := str(action.get("path") or "").strip():
         candidate = expand(raw)
-        cwd = candidate if candidate.is_absolute() else (ctx.routine.dir / candidate)
+        cwd = candidate if candidate.is_absolute() else (work_dir(ctx) / candidate)
     policy = sandbox.policy_for_ctx(ctx)   # the jail AND the dead-root note (R2260)
     result = shellrun.run_shell(
         command, policy=policy,
@@ -442,7 +469,7 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
     if marks_a_write(command):
         # D158: no gate saw this write, so the record is the only place it exists.
         obs["ungated_write"] = True
-    if str(cwd) != str(ctx.routine.dir):
+    if str(cwd) != str(work_dir(ctx)):
         obs["cwd"] = str(cwd)
     if result["timed_out"]:
         obs["timed_out"] = True

@@ -20,13 +20,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..grants import CONFIG_FILE
-from ..paths import atomic_write, read_json, resolve_rel
+from ..paths import atomic_write, read_json
 from ..readmodels.statemap import STAGES_DIR
+from ..tasks import TASKS_FILE
 from . import fileformat
 from .finishline import FILE as FINISH_LINE
 from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
-from .run_context import RunContext
+from .run_context import RunContext, resolve_action_path
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -217,7 +218,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
                     READ_WINDOW_MAX_LINES)
     directory = False
     try:
-        path = resolve_rel(ctx.routine.dir, rel_path, ctx.read_roots())
+        path = resolve_action_path(ctx, rel_path)
         if err := _memory_gate(ctx, path) or _runs_read_gate(ctx, path):
             return {"path": rel_path, "error": err}
         if path.is_dir():
@@ -295,8 +296,14 @@ def _memory_gate(ctx: RunContext, resolved) -> str | None:
     100-line note cap went with them — and a child, whose roots reach the routine's tree,
     walked into the ROUTINE's `.memory/` the same way.
     """
-    if any(_within(resolved, d / ".memory") for d in _routine_dirs(ctx)):
-        return MEMORY_REFUSAL
+    for d in _routine_dirs(ctx):
+        if _within(resolved, d / ".memory"):
+            return MEMORY_REFUSAL
+        # …and a TASK's notebook (rsched/tasks.py): an open task's memory actions resolve in
+        # its workspace, so every `.memory/` under the routine is the engine's alike
+        for base in (d, d.resolve()):
+            if resolved.is_relative_to(base) and ".memory" in resolved.relative_to(base).parts:
+                return MEMORY_REFUSAL
     return None
 
 
@@ -316,6 +323,21 @@ def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
     return None
 
 
+TASKS_REFUSAL = ("state/tasks.json is the engine's task store — change a task with the `task` "
+                 "action (create / update / checkpoint / delete), which keeps the run's ledger "
+                 "and the gate that holds your finish in step with it")
+
+
+def _tasks_gate(ctx: RunContext, resolved) -> str | None:
+    """The task store is the engine's (rsched/tasks.py): a generic write could clear a carry or
+    fake a checkpoint the gated processing reads, so it is reachable only through `task`.
+    """
+    if any(resolved in (d / TASKS_FILE, (d / TASKS_FILE).resolve())
+           for d in _routine_dirs(ctx)):
+        return TASKS_REFUSAL
+    return None
+
+
 def _removal_gate(ctx: RunContext, resolved: Path) -> str | None:
     """What a REMOVAL — delete, a move's source — may not take with it. Every other seal asks
     whether a path lies INSIDE something sealed; a removal also takes everything inside the
@@ -331,6 +353,9 @@ def _removal_gate(ctx: RunContext, resolved: Path) -> str | None:
         line = d / FINISH_LINE
         if line.exists() and line.is_relative_to(resolved):
             return f"this would remove {FINISH_LINE}: {FINISH_LINE_REFUSAL}"
+        store = d / TASKS_FILE
+        if store.exists() and store.is_relative_to(resolved):
+            return f"this would remove {TASKS_FILE}: {TASKS_REFUSAL}"
     return None
 
 
@@ -375,7 +400,8 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
     # All structural, not grants: they hold with no policy loaded — the memory seal, the finish
     # line, a note nobody would read (unread whatever the policy says), and a removal of a
     # routine dir.
-    err = _memory_gate(ctx, resolved) or _finish_line_gate(ctx, resolved)
+    err = (_memory_gate(ctx, resolved) or _finish_line_gate(ctx, resolved)
+           or _tasks_gate(ctx, resolved))
     if err is None and creates:
         from ..sharedstores import note_refusal
 
@@ -410,7 +436,7 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
 
 def do_write_file(action: dict, ctx: RunContext) -> dict:
     try:
-        path = resolve_rel(ctx.routine.dir, action["path"], ctx.write_roots())
+        path = resolve_action_path(ctx, action["path"], write=True)
         if err := _write_gate(ctx, path):
             return {"kind": "write_file", "path": action["path"], "error": err}
         # Grounding gate: write_file REPLACES a file wholesale. Overwriting one OUTSIDE
@@ -517,7 +543,7 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
     write_file counterpart for touching a few lines of a large file).
     """
     try:
-        path = resolve_rel(ctx.routine.dir, action["path"], ctx.write_roots())
+        path = resolve_action_path(ctx, action["path"], write=True)
         if err := _write_gate(ctx, path):
             return {"kind": "edit_file", "path": action["path"], "error": err}
         if not path.is_file():

@@ -15,6 +15,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.388.0] — 2026-10-07
+
+### Added — TASKS: one routine whose regular duties are several pieces of standing work
+
+A portfolio of related work — five projects for one employer, each with its partners, deadlines,
+documents and status page — used to be five routines: five configs drifting apart, five lane
+members, five pages, and nothing that saw the whole. A routine can now keep that work as
+**tasks** (docs/tasks.md).
+
+- **The setting** `capabilities.tasks: off | on`, on the routine page under *Abilities → Run
+  history, reminders & tasks*. A SETTING like `reminders`, not a permission: it changes how a
+  routine organises its own work, never what it may reach.
+- **The `task` action** (32 kinds now) — `list`, `create`, `update`, `open`, `checkpoint`,
+  `delete` — over the engine-owned store `state/tasks.json` (sealed against generic file
+  actions). Projected out of the schema entirely where the setting is off.
+- **Gated processing.** Each run decides at boot which tasks are DUE and lists them in the
+  digest; a task is opened (its briefing: why it is due, its brief, its own recipe and state
+  digest, its last checkpoint) and closed with a checkpoint — `advanced`, `no-work`, `blocked`
+  or `deferred`, with an accounting of the task recipe's own `## Done when` — one at a time; the
+  finish is set aside while a due task has no checkpoint, and what a run never checkpointed is
+  CARRIED to the next run (also after a crash).
+- **The workspace is the working directory.** While a task is open, relative paths, its own
+  scripts, shell and util calls, the memory notebook and the note channel resolve in its
+  workspace — so a whole routine (recipe, state, scripts, `.memory/`) becomes a task unchanged.
+  A task's `main.md` and `stages/` are sealed as recipe. Every seal stays anchored on the routine.
+- **Which tasks are due** comes from the run gate: a check may carry `task: <id>` (its work makes
+  that task due; an untagged check's work makes every task due), a task's own clock (carry, wake
+  date, quiet limit) admits a fire its checks would skip, and a routine that keeps tasks asks its
+  checks even when a built-in reason already admitted the fire (`admit_reason`), so its run
+  learns WHICH tasks have work. `hub_feedback` gains `label`, counting one task's section of a
+  shared page.
+- **The routine page** shows a Tasks panel (state, what the last run did for each, workspace,
+  the checks watching it) with pause / resume / done between runs
+  (`GET`/`PATCH /api/routines/{slug}/tasks…`).
+
+### Fixed — a settings pattern compares by what its capabilities MEAN
+
+`patterns.fields.canonical` read a pattern's capabilities literally while a routine's were read
+with every setting filled in, so a setting added to the vocabulary would have marked every routine
+as departing from its pattern. Both sides now hold a setting's all-off value where they leave it
+out.
+
 ## [0.387.0] — 2026-10-07
 
 ### Added — decision models, and the `decide` action that asks them (operator decision, R2190)

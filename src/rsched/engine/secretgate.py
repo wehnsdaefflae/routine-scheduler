@@ -125,12 +125,12 @@ def gate_script_secrets(loop, action: dict, poll_s: float) -> dict | None:
     the whole call tree.
     """
     from .. import scripts
+    from .executor import script_home
     ctx = loop.ctx
     name = str(action.get("name") or "")
-    if not scripts.exists(ctx.routine.dir, name):
+    if (home := script_home(ctx, name)) is None:
         return None                     # the missing-script path exposes no secrets
-    needed, _net, optional = scripts.needs(ctx.routine.dir, name,
-                                           ctx.server.libraries_home)
+    needed, _net, optional = scripts.needs(home, name, ctx.server.libraries_home)
     return _gate_secrets(loop, kind="script", name=name, needed=needed,
                          optional=optional, poll_s=poll_s)
 

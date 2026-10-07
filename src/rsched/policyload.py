@@ -68,6 +68,7 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        rule_confirm=settings["rule_confirm"],
                        remind_confirm=settings["remind_confirm"],
                        reminders=settings["reminders"],
+                       tasks=settings["tasks"],
                        # D96 (user decision 2026-08-20): own-runs read at 'last' depth is
                        # ALWAYS ON for a routine — baseline observability, like the state
                        # digest carrying the last result. The `runs: all` SETTING opens the

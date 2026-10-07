@@ -12,10 +12,9 @@ import json
 
 from .. import sandbox, utils_lib, utils_run
 from ..endpoints.base import guess_media_type, oversize_reason, read_media_b64
-from ..paths import resolve_rel
 from .fileops import UTIL_DEFAULT_TIMEOUT_S, _memory_gate, _runs_read_gate
 from .observations import truncate
-from .run_context import RunContext
+from .run_context import RunContext, resolve_action_path, work_dir
 
 VISION_UTIL = "vision"
 VIEW_DEFAULT_PROMPT = ("Describe this file in full detail — transcribe any text verbatim and "
@@ -49,7 +48,7 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
         home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,
         policy=sandbox.policy_for_ctx(ctx), extra_secrets=_extra_secrets(ctx),
         withhold_secrets=set(withheld_optional_secrets(ctx, VISION_UTIL)),
-        cwd=ctx.routine.dir, aborted=ctx.aborted)
+        cwd=work_dir(ctx), aborted=ctx.aborted)
     if code != 0:
         return f"error: vision util failed (exit {code}): {(err or out or '').strip()[:800]}"
     try:
@@ -70,7 +69,7 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
     else the vision util.
     """
     try:
-        path = resolve_rel(ctx.routine.dir, rel_path, ctx.read_roots())
+        path = resolve_action_path(ctx, rel_path)
         if err := _memory_gate(ctx, path) or _runs_read_gate(ctx, path):
             return {"path": rel_path, "error": err}
         if not path.is_file():
@@ -143,7 +142,7 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
     out: list[dict] = []
     for rel in rels:
         try:
-            path = resolve_rel(ctx.routine.dir, str(rel), ctx.read_roots())
+            path = resolve_action_path(ctx, str(rel))
         except (OSError, PermissionError):
             continue
         mime = guess_media_type(path)

@@ -83,7 +83,9 @@ one you are about to touch, not all of them.
   grant model (entities.py ids; allow/deny × now/forever, plus
   allow-once for the once-grantable classes: turn actions, secrets, fs-read and fs-write, D76), and each curated rule's provenance
 - `docs/child-runs.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
-  — the child-run and firing mechanisms
+  — the child-run and firing mechanisms; `docs/tasks.md` — the TASK layer (one routine whose
+  regular duties are several standing tasks: the setting, the store, the workspace as working
+  directory, gated processing, which tasks are due)
 - `docs/lanes-tags.md` — how routines relate to each other on THREE axes: a LANE is when
   they fire and in what order (daemon-owned, at most one, enforced), a SHARED STORE is which
   files they read and write together plus the notes channel between them (a directory under
@@ -190,8 +192,16 @@ one you are about to touch, not all of them.
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, delete,
   move, mkdir, edit_file, memory_read, memory_write, read_rule, write_rule, script, shell, llm, decide,
-  spawn, subtask, detach, schedule_run, create_routine, manage_lane, list_models, subruns, kill,
-  wait, ask_user, report, finish` (31, `actionschema.KINDS`). **`script` runs
+  spawn, subtask, detach, schedule_run, create_routine, manage_lane, task, list_models, subruns,
+  kill, wait, ask_user, report, finish` (32, `actionschema.KINDS`). **`task` is the TASK layer**
+  (docs/tasks.md), present only where the routine's `capabilities.tasks` SETTING is `on`: the
+  run keeps its standing work as tasks in the engine-owned `state/tasks.json` and the engine
+  enforces GATED PROCESSING — every task due this run (a `task:`-tagged gate check that found
+  work, the task's own clock, or a fire whose checks were never asked) is opened and
+  checkpointed before the finish stands, and what a run never checkpointed is CARRIED. An OPEN
+  task lends the run its WORKSPACE as the working directory (`run_context.work_dir` — paths,
+  scripts, shell, utils, memory, notes), which is how a whole routine becomes a task unchanged;
+  every seal stays anchored on the routine dir. **`script` runs
   the routine's OWN `scripts/<name>.py`** — persistent helper TOOLING, deliberately NOT a co-equal
   interpreter of the routine: the recipe
   stays the single interpreter of the task and delegates only judgment-free sub-steps. A repeating

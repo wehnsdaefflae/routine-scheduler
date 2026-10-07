@@ -6,8 +6,10 @@ this directory on the import path, so the entry puts it there itself — the `ki
 the only code the jail mounts.
 
 Protocol: argv[1] is `{version: 2, routine, routine_dir, routines_home, libraries_home, now,
-last_ok: {run_id, started, ended, fingerprints} | null, checks: [...]}`; stdout is
-`{version: 1, decision, reason, checks: [{id, kind, work, reason, fingerprint?}]}`.
+last_ok: {run_id, started, ended, fingerprints} | null, checks: [...], admit_reason?}`; stdout
+is `{version: 1, decision, reason, checks: [{id, kind, work, reason, fingerprint?}]}`. An
+`admit_reason` is a built-in reason the daemon already found (a routine that keeps tasks asks its
+checks anyway, to learn WHICH tasks have work): the decision is then "run" whatever they say.
 """
 
 from __future__ import annotations
@@ -59,6 +61,13 @@ def evaluate(ctx: dict) -> dict:
             row["fingerprint"] = fingerprint
         results.append(row)
     working = [r for r in results if r["work"]]
+    if admit := str(ctx.get("admit_reason") or ""):
+        # a reason the daemon found before any check (inbox freight, a task's own clock, …)
+        # already decided "run"; the checks were asked anyway, so a routine that keeps TASKS
+        # learns which of them have work (rsched/tasks.py reads the rows from gate.json)
+        found = "; ".join(f"{r['kind']}: {r['reason']}" for r in working)
+        return {"version": 1, "decision": "run",
+                "reason": _cap(admit + (f"; {found}" if found else "")), "checks": results}
     if working:
         reason = "; ".join(f"{r['kind']}: {r['reason']}" for r in working)
         decision = "run"

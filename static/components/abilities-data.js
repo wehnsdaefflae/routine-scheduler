@@ -7,9 +7,10 @@
 // ladders once led with an `off` the server has never accepted: a write_util that is off is a
 // missing ACTION, not an approval level.
 //
-// A doc's card carries the approval dial its gated action rides on. The other three are
+// A doc's card carries the approval dial its gated action rides on. The other four are
 // SETTINGS no doc switches on (a doc requires actions and utils alone), so they share a card of
-// their own: how far back a run reads, the reminder layer, and who approves a shared reminder.
+// their own: how far back a run reads, the reminder layer, who approves a shared reminder, and
+// the task layer.
 //
 // An option marked `heldOnly` is never OFFERED, only shown while it is what the mapping holds:
 // `runs: none` is a child run's scope, and a routine's own run reads its last run regardless
@@ -34,6 +35,13 @@ export const REMINDER_OPTIONS = [
   ["local", "local — leaves its own; heeds the shared ones"],
   ["global", "global — also writes the shared ones, as curator"],
 ];
+// The TASK layer (rsched/tasks.py, docs/tasks.md): on, the routine keeps its standing work as
+// tasks — the `task` action exists for it, an open task's workspace is the run's working
+// directory, and a run may not finish while a task due in it has no checkpoint.
+export const TASK_OPTIONS = [
+  ["off", "off — one recipe, no task list"],
+  ["on", "on — keeps tasks; every due task is processed before a run ends"],
+];
 // Who approves a write to the library's SHARED reminders — revealed only at `global`, the one
 // level that can make one.
 export const REMIND_CONFIRM_OPTIONS = [
@@ -43,10 +51,10 @@ export const REMIND_CONFIRM_OPTIONS = [
 ];
 // What a mapping that leaves a setting out holds once saved: the server fills a missing key
 // with its all-off value (grants.SETTING_DEFAULTS, through capabilities_for), so a dial
-// resting on it shows what the save would write. Every read the panel is given fills all five.
+// resting on it shows what the save would write. Every read the panel is given fills all six.
 export const SETTING_DEFAULTS = {
   confirm: "always", rule_confirm: "always", remind_confirm: "always",
-  runs: "none", reminders: "none",
+  runs: "none", reminders: "none", tasks: "off",
 };
 
 // What a gated capability MEANS, with a concrete example — a bare action kind told the reader

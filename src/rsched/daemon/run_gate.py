@@ -83,7 +83,7 @@ async def _execute(
         "mode": mode,
         "routine": cfg.model_dump(mode="json", include={
             "slug", "dir", "grants", "fs_read_roots", "fs_write_roots",
-            "run_gate"}),
+            "run_gate", "capabilities"}),
         "server": server.model_dump(
             mode="json", include={"libraries_home", "routines_home", "sandbox"}),
         "context": {"version": 1, "routine": cfg.slug, "run_id": run.run_id, "reason": reason},

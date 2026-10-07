@@ -19,7 +19,7 @@ from ..endpoints import EndpointRegistry
 from ..endpoints.base import fold_usage
 from ..ids import now_iso
 from ..ids import run_id as make_run_id
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write_json, read_json, resolve_rel
 from .budgets_config import Budgets, _vm_hwm_kb
 from .transcript import Transcript
 
@@ -35,6 +35,26 @@ def _never_aborted() -> bool:
     a direct dispatch) is never stopping.
     """
     return False
+
+
+def work_dir(ctx: RunContext) -> Path:
+    """Where a run's RELATIVE paths resolve right now: the OPEN task's workspace
+    (engine/taskops.py), or the routine's own dir. Every seal is anchored on the routine's dir,
+    not on this — a workspace is inside it, so moving the working directory moves nothing a
+    seal guards. A free function over any context-shaped object: the file kinds are driven by
+    lighter stand-ins too, and one with no task open simply has none.
+    """
+    return getattr(ctx, "task_dir", None) or ctx.routine.dir
+
+
+def resolve_action_path(ctx: RunContext, rel: str, *, write: bool = False) -> Path:
+    """An action's path, resolved where the run's relative paths resolve (`work_dir`) and held
+    to its roots — the routine's own dir always among them, so a routine file stays reachable
+    by its absolute path while a task's workspace is the working directory. Raises
+    PermissionError outside them (paths.resolve_rel).
+    """
+    roots = ctx.write_roots() if write else ctx.read_roots()
+    return resolve_rel(work_dir(ctx), rel, [*roots, ctx.routine.dir])
 
 
 @dataclass
@@ -197,6 +217,11 @@ class RunContext:
     # The operator's one-line JOB BRIEF for a run started by hand (engine/brief.py); "" for
     # every other run. A briefed run answers for it instead of its recipe's Done when.
     brief: str = ""
+    # The OPEN task (engine/taskops.py) and its workspace: while one is open, the run's
+    # relative paths, scripts, shell and util calls and its memory notebook resolve in the
+    # workspace instead of the routine's own dir (`work_dir`). Empty / None otherwise.
+    task_id: str = ""
+    task_dir: Path | None = None
     # User UTTERANCES this leg: a settled blocking answer, a held reply, a dialog turn, an
     # injected message, a slash command. Not telemetry, and deliberately NOT carried across
     # legs — `create_routine` reads it to tell "the user has spoken since I drafted" from
@@ -449,6 +474,9 @@ class RunContext:
             # dashboard and the next run's digest read about how this run went
             "accounting": self.accounting,
             **({"brief": self.brief} if self.brief else {}),
+            # the task the run is working on right now (engine/taskops.py) — the live tail's
+            # "where is it" for a routine whose work is several tasks
+            **({"task": self.task_id} if self.task_id else {}),
             # peak resident memory of the engine process (kB) — the rc=-9 post-mortem's
             # key datum (F348); the daemon reads the last write's value at close-out
             "vm_hwm_kb": _vm_hwm_kb(),

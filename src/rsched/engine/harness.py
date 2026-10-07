@@ -144,6 +144,10 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
             "show then. It costs no turn, and from then on a matching action is HELD before it "
             'runs so you decide again. Label every hold with "remind_feedback": that tally is '
             "what tells you which patterns to tighten and which to delete.")
+    # The one exception to "relative paths resolve in the working directory": an OPEN task
+    # (engine/taskops.py) lends the run its workspace until the task is checkpointed.
+    task_dir_line = (" — except while a TASK is open: then they resolve in that task's "
+                     "workspace (the `task` action)") if g is not None and g.tasks_on else ""
     level = ctx.deliberation or r.deliberation
     standing = deliberation.standing_note(level)
     # Only the kinds this run may emit get a bullet — the same projection the ACTION SCHEMA
@@ -182,7 +186,7 @@ The workflow below is your single entry point. Detailed, stage-specific instruct
 separate `stages/<name>.md` files (the state digest lists them) — read the one for the stage you \
 are on with read_file, ON DEMAND, instead of loading them all up front. Keep your context lean.
 
-Working directory: {r.dir}. All relative paths resolve there.{extra}
+Working directory: {r.dir}. All relative paths resolve there{task_dir_line}.{extra}
 
 {code_line} {authoring} \
 You never run git yourself: the engine commits your working directory automatically at run end.

@@ -14,6 +14,7 @@ from . import (
     interact,
     manage_lane,
     secretgate,
+    taskops,
 )
 from .control import RunAborted
 from .loopconst import POLL_S
@@ -131,6 +132,8 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->h
         return create_routine.handle_create_routine(ctx, action)
     if action["kind"] == "manage_lane":
         return manage_lane.handle_manage_lane(ctx, action)
+    if action["kind"] == "task":
+        return taskops.handle_task(loop, action)
     if action["kind"] == "subruns":
         return loop.subruns.status_table()
     if action["kind"] == "kill":

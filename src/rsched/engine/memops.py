@@ -14,7 +14,7 @@ from __future__ import annotations
 from ..ids import is_slug
 from ..paths import atomic_write
 from .observations import truncate
-from .run_context import RunContext
+from .run_context import RunContext, work_dir
 
 
 def _memory_topics(mem_dir) -> list[str]:
@@ -40,7 +40,7 @@ def _memory_index_upsert(mem_dir, name: str, about: str | None) -> None:
 
 def do_memory_read(action: dict, ctx: RunContext) -> dict:
     name = action["name"]
-    mem_dir = ctx.routine.dir / ".memory"
+    mem_dir = work_dir(ctx) / ".memory"
     path = mem_dir / f"{name}.md"
     if not path.is_file():
         return {"kind": "memory_read", "name": name, "missing": True,
@@ -85,7 +85,7 @@ def do_read_rule(action: dict, ctx: RunContext) -> dict:
 
 def do_memory_write(action: dict, ctx: RunContext) -> dict:
     name = action["name"]
-    mem_dir = ctx.routine.dir / ".memory"
+    mem_dir = work_dir(ctx) / ".memory"
     path = mem_dir / f"{name}.md"
     if action.get("delete"):
         existed = path.is_file()

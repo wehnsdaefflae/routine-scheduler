@@ -56,7 +56,11 @@ def capture(ctx: RunContext, action: dict) -> None:
     if len(note) > NOTE_MAX_CHARS:
         note = note[:NOTE_MAX_CHARS] + " …[truncated]"
     stamp = f"[{ctx.run_ts} · turn {ctx.turn} · {ctx.phase or '—'} · {_brief(action)}]"
-    path = ctx.routine.dir / "state" / NOTES_FILE
+    from .run_context import work_dir
+
+    # an open TASK's notes go to its own workspace (engine/taskops.py), where its next
+    # briefing reads their tail — the stamp's run id still addresses this run's transcript
+    path = work_dir(ctx) / "state" / NOTES_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:

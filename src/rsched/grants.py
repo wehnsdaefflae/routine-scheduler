@@ -31,6 +31,7 @@ demand):
       remind_confirm: always | creations | never  # GLOBAL consequence-reminder approval
       runs: last | all                 # previous-run read depth — a SETTING, no doc needed
       reminders: none | local | global # consequence-reminder stores — a SETTING too
+      tasks: off | on                  # the routine keeps TASKS (rsched/tasks.py) — a SETTING
 
 Which utils are "reserved" at all is library-defined: the union of every permission
 doc's `requires.utils`, at the grain the doc names — a bare `gmail` reserves every verb of
@@ -59,6 +60,7 @@ from pathlib import Path
 from .engine.actionschema import KINDS
 from .ids import is_slug
 from .reminders import LEVELS as REMINDER_LEVELS
+from .tasks import LEVELS as TASK_LEVELS
 
 # `read_rule` is deliberately NOT gated: a routine must be able to read the general rules
 # it holds, and reading library prose has no side effect worth a decision. The catalog
@@ -108,12 +110,15 @@ APPROVAL_DIALS = ("confirm", "rule_confirm", "remind_confirm")
 # longitudinal routine (self-audit, rules-review) is given. `none` exists for CHILD runs only,
 # which read their brief rather than the archive (loopsetup).
 RUN_HISTORY_LEVELS = ("none", "last", "all")
-# The SETTINGS half of a capabilities mapping — the approval dials, the previous-run read depth
-# and the reminder layer — each with its all-off value. The user's choice per routine: never a
-# permission doc's requirement, and kept through the floor with no permission behind it. ONE
-# vocabulary, read by the validator, the cascade and the floor alike.
+# The SETTINGS half of a capabilities mapping — the approval dials, the previous-run read depth,
+# the reminder layer and the task layer — each with its all-off value. The user's choice per
+# routine: never a permission doc's requirement, and kept through the floor with no permission
+# behind it. ONE vocabulary, read by the validator, the cascade and the floor alike. `tasks` is
+# a setting rather than a permission for the reason `reminders` is: it changes how a routine
+# ORGANISES its own work, not what it may reach — every act a task leads to still passes the
+# same capabilities and gates as before.
 SETTING_DEFAULTS = {**dict.fromkeys(APPROVAL_DIALS, "always"), "runs": "none",
-                    "reminders": "none"}
+                    "reminders": "none", "tasks": "off"}
 
 
 def effective_settings(caps: dict) -> dict:
@@ -262,6 +267,15 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
             out["reminders"] = raw["reminders"]
         else:
             problems.append(f"{label}.reminders must be {' or '.join(REMINDER_LEVELS)}")
+    if "tasks" in raw:
+        # YAML 1.1 reads a bare `on`/`off` as a boolean: that is the parser's spelling of the
+        # same word, not a second convention, so it lands on the one canonical string.
+        value = (("on" if raw["tasks"] else "off") if isinstance(raw["tasks"], bool)
+                 else raw["tasks"])
+        if value in TASK_LEVELS:
+            out["tasks"] = value
+        else:
+            problems.append(f"{label}.tasks must be {' or '.join(TASK_LEVELS)}")
     return out, problems
 
 
