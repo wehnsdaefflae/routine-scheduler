@@ -101,8 +101,11 @@ would sit there unread forever while its writer believed it delivered. The engin
 (`engine/fileops._write_gate` → `sharedstores.note_refusal`) therefore refuses a `write_file`,
 `edit_file`, `mkdir` or `move` destination inside `<store>/notes/<x>/` when `x` does not share
 that store, naming the routines that do and the channel that reaches any routine: an addressed
-`report` with target `x`. Deleting a stranded note, or moving one out, is never refused — that is
-the repair. A shell command, a script or a util writes past the action layer, which is why the
+`report` with target `x`. A sharer that starts no run — switched off, or retired — would never
+read it either, so the gate (`recipients.note_refusal`, which asks the store's rule first) refuses
+that note too, naming the sharers that DO read: the one carrying the addressee as a task first
+(docs/tasks.md, "Merging routines"). Deleting a stranded note, or moving one out, is never
+refused — that is the repair. A shell command, a script or a util writes past the action layer, which is why the
 contract says who shares each store.
 
 ## Tags

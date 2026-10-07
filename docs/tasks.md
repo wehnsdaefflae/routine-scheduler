@@ -32,6 +32,7 @@ A record in the engine-owned store `state/tasks.json` (`rsched/tasks.py`):
 | `wake` | rest until this date, unless one of its gate checks finds work |
 | `carry` | work an earlier run left unprocessed — the next run owes it |
 | `last`, `history` | the last checkpoint (`run`, `at`, `outcome`, `summary`, `accounting`) and the twelve before it |
+| `origin` | the routine this task WAS, when a routine was merged in as a task — see "Merging routines" |
 
 The store is sealed against generic file actions (`fileops._tasks_gate`, and the removal gate):
 a write that could clear a carry or fake a checkpoint would defeat the gate that reads them. The
@@ -109,4 +110,23 @@ The **Tasks** panel in the overview zone lists every task with its state, whethe
 last run owed it and what came of it, its workspace and the checks that watch it
 (`GET /api/routines/{slug}/tasks`). Pause, resume and done are the operator's
 (`PATCH /api/routines/{slug}/tasks/{id}`, between runs only — a live run decided at boot what it
-owes, and its finish is gated on exactly that). Creating and deleting are the run's.
+owes, and its finish is gated on exactly that). Creating and deleting are the run's. A task that
+used to be a routine says so on its row (`formerly the routine <slug>`).
+
+## Merging routines
+
+The layer exists so that several routines doing related standing work can become ONE: each
+former routine becomes a task whose workspace holds its whole working tree unchanged (recipe,
+state, scripts, notes), and the old routine is switched off — never deleted, so its runs and
+history stay where they were. The first merge (2026-10-07) made five FAU project stewards the
+tasks of `fau`.
+
+What the old routine RECEIVED does not stop arriving: other routines still know its slug and keep
+addressing reports — and shared-store notes — to it. A switched-off routine starts no run, so both
+channels refuse at sending (docs/items.md, "A target that would never READ it"; docs/lanes-tags.md
+for notes) and name where the message should go instead (`rsched/recipients.py`). The task's
+`origin` is what makes that answer exact: a report for `nanogeofeld` is refused with *"'fau'
+(carries 'nanogeofeld' as its task 'nanogeofeld' — address 'fau' and name the task
+'nanogeofeld' in the title)"* first, before the lane-mates, store-sharers and tag-sharers. The run
+never writes `origin`; whoever merges records it (`PATCH /api/routines/{slug}/tasks/{id}`
+`{"origin": "<old slug>"}`, which refuses a slug that is not another routine here).

@@ -14,22 +14,26 @@ from __future__ import annotations
 import difflib
 from pathlib import Path
 
-from .. import registry, report_threads, reports, schedule_once
+from .. import recipients, registry, report_threads, reports, schedule_once
 
 
-def _unknown_target(kind: str, target: str, home: Path) -> dict:
+def _unknown_target(kind: str, target: str, home: Path,
+                    valid: list[str] | None = None) -> dict:
     """The refusal for a target slug naming no routine — with the valid slugs and the close
     matches, not a bare rejection: a run guessing a sibling's slug (the train-seat friction)
-    has to be able to correct the guess on its next turn.
+    has to be able to correct the guess on its next turn. `valid` narrows the slugs offered
+    (a report offers only routines that would READ it); absent, every routine is valid.
     """
-    slugs = sorted(p.name for p in home.iterdir()
-                   if not p.name.startswith(".") and (p / "routine.yaml").is_file())
+    slugs = valid if valid is not None else sorted(
+        p.name for p in home.iterdir()
+        if not p.name.startswith(".") and (p / "routine.yaml").is_file())
     return {"kind": kind, "target": target, "unknown_target": True,
             "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
             "valid_targets": slugs}
 
 
-def _target_cannot_read(kind: str, target: str, server, home: Path) -> dict | None:
+def _target_cannot_read(kind: str, target: str, server, home: Path,
+                        sender: str = "") -> dict | None:
     """The refusal for a target that exists but will never READ what is filed to it — or None.
 
     A targeted report is delivered into `<home>/<target>/inbox` and read on that routine's next
@@ -44,26 +48,22 @@ def _target_cannot_read(kind: str, target: str, server, home: Path) -> dict | No
     for the same reason: it is what tells the sender whether this is a pause or an ending.
 
     The row is never dropped — nothing is written at all, the observation comes back instead, and
-    the sender decides: another owner, or triage (no `target`), which every routine can read.
+    the sender decides — helped by SUGGESTIONS (`recipients.suggest`): the routine that carries
+    the target's work as a task, then its lane-mates, store-sharers and tag-sharers, every one a
+    routine that would read it. Or triage (no `target`), which is always read. A target that is
+    off only because its routine.yaml could not be READ is let through (`recipients.reads`).
     """
     info = registry.info(server, home, target)
-    if info is None or info.fireable:
+    if info is None or recipients.reads(info):
         return None
-    # An UNLOADABLE routine.yaml also reads `enabled=False` (registry._entry substitutes a
-    # disabled config and says so in `problems`) — and a report about a routine whose config no
-    # longer parses is exactly the report someone needs to file. Refusing it would silence the
-    # one channel that can fix it, so a target that is off only because it could not be READ is
-    # let through.
-    if any("unloadable routine.yaml" in p for p in info.problems):
-        return None
+    state, because = recipients.why_off(info)
     last = info.last_run
     return {"kind": kind, "target": target, "target_unreachable": True,
-            "state": "retired" if info.retired else "disabled",
-            "because": ("the routine reached its finish line and is done for good"
-                        if info.retired
-                        else "the operator switched this routine off (`enabled: false`)"),
+            "state": state, "because": because,
             "last_run": last.ts if last else "",
             "last_run_state": last.state if last else "it has never run",
+            "suggestions": [s.as_dict() for s in recipients.suggest(server, home, target,
+                                                                    exclude=(sender,))],
             "reason": f"a report filed to {target!r} would be delivered to its inbox and read on "
                       "its next scheduled run — and it starts none, so nothing would ever read "
                       "it. Nothing was filed and nothing was lost: re-file it to the routine that "
@@ -123,8 +123,10 @@ def handle_report(loop, action: dict) -> dict:
     prose into your own next prompt is a loop with no reader in between. Works at any depth —
     subruns report too, and the row carries the run that saw the problem.
 
-    Three things can REFUSE a report here, each returning an observation instead of filing:
-    an unknown or self target; `supersedes` naming a row that cannot be taken over; and the
+    Four things can REFUSE a report here, each returning an observation instead of filing:
+    an unknown or self target; a target that would never read it (switched off or retired —
+    with suggestions where to send it instead); `supersedes` naming a row that cannot be taken
+    over; and the
     OPEN-THREAD CAP, which names the ids already open to this owner so the run has something
     to fold into rather than just a count (docs/items.md § Reports).
     """
@@ -139,8 +141,10 @@ def handle_report(loop, action: dict) -> dict:
             return {"kind": "report", "target": target, "self_target": True}
         target_dir = home / target
         if not (target_dir / "routine.yaml").is_file():
-            return _unknown_target("report", target, home)
-        if (unreadable := _target_cannot_read("report", target, ctx.server, home)) is not None:
+            return _unknown_target("report", target, home,
+                                   recipients.reader_slugs(ctx.server, home))
+        if (unreadable := _target_cannot_read("report", target, ctx.server, home,
+                                              ctx.routine.slug)) is not None:
             return unreadable
     answers = str(action.get("answers") or "").strip()
     wanted = [str(i).strip().upper() for i in (action.get("supersedes") or [])]

@@ -1324,9 +1324,10 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
     does not exist. **No approval, no ledger row, no Messages-page item**: a note lives in a
     store only its sharers can write. A note addressed to a routine that does NOT share the
     store would never be read, so the engine's write gate refuses it (`engine/fileops._write_gate`
-    → `sharedstores.note_refusal`, for write_file / edit_file / mkdir / a move's destination),
-    naming the routines that do share it and an addressed `report` as the channel that reaches
-    the one it meant; deleting a stranded note stays allowed. Sharing is read LIVE from the
+    → `recipients.note_refusal` → `sharedstores.note_refusal`, for write_file / edit_file / mkdir
+    / a move's destination), naming the routines that do share it and an addressed `report` as
+    the channel that reaches the one it meant — and so is a note to a sharer that starts no run,
+    with the sharers that do read suggested instead; deleting a stranded note stays allowed. Sharing is read LIVE from the
     routines' own files, so a routine that drops the root loses the channel in both directions at
     once. Delivery never starts a run: the addressee picks its notes up when it next runs, which
     for a lane chain is the same chain or the next.

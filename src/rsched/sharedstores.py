@@ -35,8 +35,10 @@ ledger row, no Messages-page item: the store is in its sharers' write roots and 
 The one mistake the channel can express is a note addressed to a routine that does NOT share the
 store: it would sit there unread forever while its writer believed it delivered. The engine's
 write gate refuses exactly that (`note_refusal`) and names the channel that reaches any routine —
-an addressed `report`. A shell command, a script or a util writes past that gate, which is why
-the harness contract says who shares each store.
+an addressed `report`. A sharer that starts no run would never read it either; that refusal needs
+the registry, so it lives in `recipients.note_refusal`, which the gate calls. A shell command, a
+script or a util writes past that gate, which is why the harness contract says who shares each
+store.
 """
 
 from __future__ import annotations
@@ -205,14 +207,8 @@ def contract_section(routines_home: Path, slug: str, fs_write_roots: Iterable[ob
             "reach any routine that shares no store with you.")
 
 
-def note_refusal(routines_home: Path, target: Path) -> str | None:
-    """Why a write creating `target` must not happen — None when it may.
-
-    Only a path inside `<store>/notes/<x>/` is judged; it is refused when `x` does not share
-    that store: a routine reads notes only from the stores among its own write roots, so the
-    note would never be read. Deleting one is never judged here — clearing a stranded note is
-    the repair, not the defect.
-    """
+def note_addressee(routines_home: Path, target: Path) -> tuple[Path, str] | None:
+    """`(store, addressee)` when `target` lies inside `<store>/notes/<addressee>/`, else None."""
     home, path = _resolved(stores_home(routines_home)), _resolved(target)
     if home is None or path is None:
         return None
@@ -222,7 +218,21 @@ def note_refusal(routines_home: Path, target: Path) -> str | None:
         return None
     if len(parts) < 3 or parts[1] != NOTES_DIRNAME:
         return None
-    store, to = home / parts[0], parts[2]
+    return home / parts[0], parts[2]
+
+
+def note_refusal(routines_home: Path, target: Path) -> str | None:
+    """Why a write creating `target` must not happen — None when it may.
+
+    Only a path inside `<store>/notes/<x>/` is judged; it is refused when `x` does not share
+    that store: a routine reads notes only from the stores among its own write roots, so the
+    note would never be read. Deleting one is never judged here — clearing a stranded note is
+    the repair, not the defect. A sharer that starts no run would never read it either; that
+    half needs the registry and is `recipients.note_refusal`, which the write gate calls.
+    """
+    if (hit := note_addressee(routines_home, target)) is None:
+        return None
+    store, to = hit
     who = sharers(routines_home, store)
     if to in who:
         return None

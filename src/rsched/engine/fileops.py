@@ -403,9 +403,9 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
     err = (_memory_gate(ctx, resolved) or _finish_line_gate(ctx, resolved)
            or _tasks_gate(ctx, resolved))
     if err is None and creates:
-        from ..sharedstores import note_refusal
+        from ..recipients import note_refusal
 
-        err = note_refusal(ctx.server.routines_home, resolved)
+        err = note_refusal(ctx.server, resolved)
     elif err is None:
         err = _removal_gate(ctx, resolved)
     if err:

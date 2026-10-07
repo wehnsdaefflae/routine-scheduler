@@ -327,7 +327,11 @@ one you are about to touch, not all of them.
   kind. A store is shared by naming it among a routine's OWN `fs_write_roots`, so a note cannot
   leave the routines sharing it; one written for a routine that does NOT share the store would
   never be read, so the engine's write gate refuses it (`sharedstores.note_refusal`) and names
-  an addressed `report` as the channel that reaches that routine. A note is coordination; a
+  an addressed `report` as the channel that reaches that routine. A note — or an addressed
+  report — to a routine that starts no run (switched off, retired) is refused the same way, and
+  every such refusal SUGGESTS where it goes instead (`rsched/recipients.py`): the routine
+  carrying the addressee as a task (`origin`, docs/tasks.md "Merging routines") first, then its
+  lane-mates, store-sharers and tag-sharers, each one a routine that reads. A note is coordination; a
   report is work an OWNER must act on.
   One `R<n>` namespace, one append-only
   ledger `.control/reports.jsonl` (order rows + `delivered` event rows), one Items type; the

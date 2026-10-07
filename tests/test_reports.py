@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from helpers import bare_routine
+from rsched import tasks
 from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, validate_action
 from rsched.engine.actionschema import KINDS
 from rsched.engine.admin_handlers import handle_report
@@ -250,6 +251,43 @@ def test_a_report_to_a_disabled_routine_is_refused_at_filing_naming_the_state_an
     assert "is disabled" in text
     assert "20261001-030000" in text
     assert "leave `target` out entirely to send it to triage" in text
+
+
+def test_the_refusal_suggests_where_the_work_went(tmp_path):
+    """"Disabled" alone left the sender guessing. The usual reason a routine is switched off is
+    that its work MOVED — the FAU merge made five routines the tasks of one — so the refusal
+    names the routines that would read it, the one carrying the work as a task first, with the
+    task to name; and never the sender itself, which a report may not address."""
+    loop, home = _loop(tmp_path, slug="self-audit")
+    _disabled_routine(home, "nanogeofeld", yaml="slug: nanogeofeld\nenabled: false\n"
+                                                  "tags: [fau]\n")
+    bare_routine(home, "fau")
+    (home / "fau" / "routine.yaml").write_text("slug: fau\ntags: [fau]\n", encoding="utf-8")
+    task = tasks.new_task("nanogeofeld", "NanoGeoFeld", "", by="operator")
+    task["origin"] = "nanogeofeld"
+    tasks.save(home / "fau", {**tasks.empty(), "tasks": [task]})
+    (home / "self-audit" / "routine.yaml").write_text("slug: self-audit\ntags: [fau]\n",
+                                                      encoding="utf-8")
+
+    obs = handle_report(loop, {"target": "nanogeofeld", "title": "stale util name"})
+    assert obs["target_unreachable"] is True
+    assert obs["suggestions"][0] == {"slug": "fau", "task": "nanogeofeld",
+                                     "why": "carries 'nanogeofeld' as its task 'nanogeofeld'"}
+    assert "self-audit" not in [s["slug"] for s in obs["suggestions"]]
+    text = format_observation(obs)
+    assert "Routines that would read it: 'fau'" in text
+    assert "name the task 'nanogeofeld' in the title" in text
+    assert _rows(home) == []
+
+
+def test_an_unknown_target_is_offered_only_routines_that_read(tmp_path):
+    loop, home = _loop(tmp_path, slug="self-audit")
+    _disabled_routine(home, "config-optimiser")
+    bare_routine(home, "config-optimizer-two")
+    obs = handle_report(loop, {"target": "config-optimizr", "title": "t"})
+    assert obs["unknown_target"] is True
+    assert "config-optimiser" not in obs["valid_targets"]
+    assert "config-optimizer-two" in obs["valid_targets"]
 
 
 def test_the_refusal_distinguishes_retired_from_disabled(tmp_path):

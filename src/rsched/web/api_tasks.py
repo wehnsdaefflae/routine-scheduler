@@ -2,7 +2,8 @@
 what the current or last run owed and did, and the operator's hand on a task's state.
 
 Read anywhere a routine is read. The ONE write — pausing, resuming, finishing a task, setting
-its wake date or quiet limit, rewording it — is the operator's and lands only between runs: a
+its wake date or quiet limit, rewording it, recording the routine it was before a merge
+(`origin`) — is the operator's and lands only between runs: a
 live run holds the ledger it decided at boot, and the gate that holds its finish reads the store,
 so an edit landing mid-run would change what the run owes under it (409, like every other
 between-runs edit, `guard_not_active`). Creating and deleting tasks is the run's job, done with
@@ -19,7 +20,7 @@ from pydantic import BaseModel, Field
 from .. import tasks
 from ..grants import effective_settings, normalize_capabilities
 from ..ids import now_iso
-from .routines_common import _info, guard_not_active
+from .routines_common import _info, _state, guard_not_active
 
 router = APIRouter(tags=["routines"])
 
@@ -57,6 +58,7 @@ class TaskPatch(BaseModel):
     brief: str | None = Field(None, max_length=tasks.BRIEF_MAX)
     wake: str | None = None            # "" clears it
     quiet_days: int | None = Field(None, ge=0, le=365)   # 0 clears it
+    origin: str | None = None          # the routine this task was before a merge; "" clears it
 
 
 @router.patch("/routines/{slug}/tasks/{tid}")
@@ -70,6 +72,11 @@ def patch_task(request: Request, slug: str, tid: str, body: TaskPatch) -> dict:
             date.fromisoformat(body.wake)
         except ValueError:
             raise HTTPException(422, "wake is a date YYYY-MM-DD, or empty to clear it") from None
+    if body.origin:
+        home = _state(request).server.routines_home
+        if body.origin == slug or not (home / body.origin / "routine.yaml").is_file():
+            raise HTTPException(422, f"origin names the routine this task was before a merge — "
+                                     f"{body.origin!r} is not another routine here")
     with tasks.editing(info.cfg.dir) as doc:
         task = tasks.find(doc, tid)
         if task is None:
@@ -93,6 +100,12 @@ def patch_task(request: Request, slug: str, tid: str, body: TaskPatch) -> dict:
             else:
                 task.pop("quiet_days", None)
             changed.append("quiet_days")
+        if body.origin is not None:
+            if body.origin:
+                task["origin"] = body.origin
+            else:
+                task.pop("origin", None)
+            changed.append("origin")
         if changed:
             task["updated"] = now_iso()
     return {"ok": True, "id": tid, "changed": changed}

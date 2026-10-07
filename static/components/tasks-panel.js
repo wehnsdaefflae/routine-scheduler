@@ -55,7 +55,8 @@ export function mountTasks(host, slug, { active = false } = {}) {
       el("td", {},
         el("div", { class: "strong" }, t.title || t.id),
         el("div", { class: "muted small mono" }, `${t.id} · ${t.workspace}/`
-          + (t.checks?.length ? ` · watched by ${t.checks.join(", ")}` : " · no gate check"))),
+          + (t.checks?.length ? ` · watched by ${t.checks.join(", ")}` : " · no gate check")
+          + (t.origin ? ` · formerly the routine ${t.origin}` : ""))),
       el("td", { class: "inline" }, chip(t.state, STATE_CHIP[t.state] || ""), " ", runMark(t)),
       el("td", { class: "inline" }, lastLine(t)),
       el("td", { class: "muted prose", title: summary,

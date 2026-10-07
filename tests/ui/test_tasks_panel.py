@@ -17,6 +17,7 @@ def _keep_tasks(ui, slug="uir"):
     (d / "routine.yaml").write_text(yaml.safe_dump(cfg))
     tasks.save(d, {"version": 1, "deleted": [], "run": {}, "tasks": [
         {"id": "nanogeofeld", "title": "NanoGeoFeld stewardship", "brief": "b", "state": "active",
+         "origin": "nanogeofeld",
          "last": {"run": "uir:1", "at": "2026-10-02T08:11:00+02:00", "outcome": "advanced",
                   "summary": "AP 3.4 revised"}},
         {"id": "ards", "title": "ARDS consulting", "brief": "b", "state": "active",
@@ -31,6 +32,9 @@ def test_the_tasks_panel_lists_tasks_and_pauses_one(ui, ui_page):
     row = ui_page.locator("[data-task='nanogeofeld']")
     expect(row).to_contain_text("NanoGeoFeld stewardship")
     expect(row).to_contain_text("advanced")
+    # a task that used to be a routine says so (docs/tasks.md, "Merging routines")
+    expect(row).to_contain_text("formerly the routine nanogeofeld")
+    expect(ui_page.locator("[data-task='ards']")).not_to_contain_text("formerly")
     expect(ui_page.locator("[data-task='ards']")).to_contain_text("carried: deferred by uir:1")
 
     row.locator("[data-task-action='paused']").click()

@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.390.0] — 2026-10-07
+
+### Changed — a message for a routine that reads nothing is refused WITH where to send it
+
+A report addressed to a routine that is switched off (or retired) has been refused at filing
+since F614, saying which kind of off and when it last ran — and then leaving the sender to guess
+where the work went. The usual answer is that it MOVED: on 2026-10-07 five FAU routines became the
+tasks of `fau`, and every routine that knew their slugs would have kept addressing them.
+
+- **The refusal suggests valid targets** (`rsched/recipients.py`), best first: the routine that
+  carries the target as a TASK (named, so the hand-off lands on the right work — *"'fau' (carries
+  'nanogeofeld' as its task 'nanogeofeld' — address 'fau' and name the task 'nanogeofeld' in the
+  title)"*), then its lane-mates, the routines sharing a store with it and those sharing a tag.
+  Every suggestion is a routine that would read it; the sender is never offered itself. Triage
+  (no `target`) stays named as the way that is always read.
+- **Shared-store notes** get the same rule: a note to a sharer that starts no run is refused at
+  the write gate (`recipients.note_refusal`), with the sharers that DO read suggested instead.
+- **An unknown target's** list of valid slugs now holds only routines that would read a report.
+- **A task's `origin`** — the routine it was before a merge — is what makes the first suggestion
+  exact. The run never writes it; the operator records it with
+  `PATCH /api/routines/{slug}/tasks/{id}` `{"origin": "<old slug>"}`, and the Tasks panel shows
+  `formerly the routine <slug>` on the row. docs/tasks.md gains "Merging routines".
+- Data: `fau`'s five tasks carry `origin` for the routines they were.
 ## [0.389.0] — 2026-10-07
 
 ### Added — a routine picks its own decision models, like its chat models

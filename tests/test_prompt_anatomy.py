@@ -204,6 +204,11 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "your WORKING DIRECTORY until you checkpoint this task",
         "GATED PROCESSING — task(s) due this run have no checkpoint yet",
         "Task(s) carried to the next run",
+        # A message for a routine that reads nothing is refused WITH where to send it instead
+        # (rsched/recipients.py): the report refusal's last sentence and the note gate's words
+        "Routines that would read it: ",
+        "No routine that would read it is related to this one.",
+        "so it would never read this note. Nothing was written.",
         # NOTE: the F292 two-phase fire ("GROUP FIRE PHASE: ingest/outbound") was once pinned
         # here as a needle. D90 retired the machinery and the engine stopped emitting those
         # strings, but the doc kept describing them and this guard kept passing — it only checks

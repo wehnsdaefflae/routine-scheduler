@@ -10,8 +10,14 @@ opened, worked, and closed with a checkpoint — before the run may finish (docs
 
 A task is a record, not a process:
 
-    {id, title, brief, state: active|paused|done, workspace, quiet_days, wake, carry,
+    {id, title, brief, state: active|paused|done, workspace, quiet_days, wake, carry, origin,
      created, updated, by, last: {run, at, outcome, summary, accounting}, history: [...]}
+
+`origin` is the routine this task WAS, when a routine was merged into this one as a task (docs/
+tasks.md, "Merging routines"). The run never writes it — the operator records it (the routine
+page's task PATCH) — and it is what lets a report or a shared-store note addressed to that
+switched-off routine be refused WITH the way here: `recipients.suggest` names this routine and
+this task first.
 
 Its WORKSPACE (default `tasks/<id>/`) is a directory inside the routine. While a task is OPEN the
 run works in it: relative paths, scripts, shell and util calls and the memory notebook resolve
@@ -107,6 +113,9 @@ def problems(routine_dir: Path) -> list[str]:
         seen.add(t["id"])
         if t.get("state", "active") not in STATES:
             out.append(f"{TASKS_FILE}: task {t['id']!r} has state {t.get('state')!r}")
+        if "origin" in t and not is_slug(str(t.get("origin") or "")):
+            out.append(f"{TASKS_FILE}: task {t['id']!r} has origin {t.get('origin')!r}, "
+                       "which is not a routine slug")
     return out
 
 

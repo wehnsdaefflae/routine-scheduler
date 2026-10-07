@@ -19,6 +19,8 @@ why the two cannot drift apart again.
 
 from __future__ import annotations
 
+from .. import recipients
+
 #: The kinds that can come back QUEUED — a scheduled run's proposal for the Decisions page
 #: (F328). Both carry the same three keys (`queued`, `id`, `next`) plus a self-describing
 #: `proposal` line written by the handler, so one branch renders both.
@@ -183,9 +185,12 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             # before the count), `retired` is a finish line reached and is permanent.
             when = (f"it last ran {obs['last_run']} ({obs.get('last_run_state')})"
                     if obs.get("last_run") else f"{obs.get('last_run_state')}")
+            # Where the work went is the other half of "it is off": a routine is usually
+            # switched off because its work MOVED (merged, or carried as another's task).
             return (f"OBSERVATION (report REFUSED — {obs.get('target')!r} is "
                     f"{obs.get('state')}: {obs.get('because')}, and {when}. "
-                    f"{obs.get('reason')})")
+                    f"{obs.get('reason')} "
+                    f"{recipients.render(obs.get('suggestions') or [])})")
         if cap := obs.get("thread_cap"):
             return (f"OBSERVATION (report REFUSED — you already have {len(obs['open_to_target'])} "
                     f"reports open to {obs.get('target')!r}, and {cap} parallel threads to one "

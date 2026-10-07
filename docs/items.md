@@ -241,7 +241,13 @@ context to redirect it, and the refusal names **which kind of off** and **the la
 days before the count, so `disabled` is not `defunct`), while `retired` is the routine's own finish
 line reached and is permanent. Nothing is written and nothing is dropped — the row comes back as an
 observation, and the sender re-files it to the owner that holds the problem now, or leaves `target`
-out so it goes to triage, which is read. A routine whose `routine.yaml` cannot be PARSED also reads
+out so it goes to triage, which is read. Which owner that is was the sender's guess until the
+refusal started SUGGESTING it (`rsched/recipients.py`): the usual reason a routine is switched
+off is that its work moved, so the refusal names the routines that would read the report, best
+first — the one carrying the target as a task (docs/tasks.md, "Merging routines"; the task is
+named, so the hand-off lands on the right work), then its lane-mates, the routines sharing a store
+with it and the ones sharing a tag. Every suggestion is a routine that reads; the sender is never
+offered itself. An UNKNOWN target's list of valid slugs is likewise only routines that read. A routine whose `routine.yaml` cannot be PARSED also reads
 as disabled in the registry, and is deliberately let through: a report about a config that no longer
 parses is exactly the report that gets it fixed.
 
