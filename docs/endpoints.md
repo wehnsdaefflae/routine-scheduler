@@ -10,7 +10,9 @@ endpoint. You configure endpoints and models once (Settings → Endpoints, or
 model by name**.
 
 For a Claude subscription through an existing proxy, see the
-[subscription proxy guide](claude-proxy-cutover.md). The `anthropic` kind also
+[subscription proxy guide](claude-proxy-cutover.md). **Decision models** — Jev, OpenAI's Decisions
+API, the predator server — are not chat transports and have their own catalog and Settings
+section: see [decision models](decision-models.md). The `anthropic` kind also
 accepts an Anthropic-compatible proxy URL and its client key; billing belongs to
 the upstream account, not the wire protocol.
 

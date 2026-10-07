@@ -120,8 +120,8 @@ GUIDE_ORDER = ["getting-started", "examples", "authoring", "conversations", "pla
                "child-runs", "background-tasks", "triggers", "schedule-once", "run-gates",
                "lanes-tags", "patterns", "rules-permissions", "curated-rules", "rule-assists",
                "reminders", "items", "messages", "status-pages", "run-analytics", "search",
-               "notifications", "sandboxing", "admin", "endpoints", "oauth-connections",
-               "remote-machines", "browser-sessions", "darknet", "usenet",
+               "notifications", "sandboxing", "admin", "endpoints", "decision-models",
+               "oauth-connections", "remote-machines", "browser-sessions", "darknet", "usenet",
                "output-compression", "revise-recipe", "claude-proxy-cutover",
                "prompt-anatomy", "architecture", "designs"]
 

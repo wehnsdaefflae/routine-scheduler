@@ -48,3 +48,14 @@ sandbox: permissive
 # endpoints: {}          # transports — populated from the UI
 # models: {}             # the catalog: name → {endpoint, model, …} — populated from the UI
 # system_model: ""       # a catalog model NAME — set from the UI once the catalog has one
+
+# DECISION models — typed classifiers that answer with probabilities, never text (TypeSafe's
+# Jev, OpenAI's Decisions API, a self-hosted deploy/decision-server). Their own catalog, behind
+# the `decide` action; with none configured no run is shown that action. Settings → Decision
+# endpoints, or docs/decision-models.md.
+# protocol: openai (POST {base}/decisions — text + images) | systemone (POST {base}/systemone — Jev, text)
+#
+# decision_endpoints: {}     # e.g. openrouter-jev: {protocol: systemone, base_url: https://openrouter.ai/api/v1, key_var: OPENROUTER_API_KEY}
+# decision_models: {}        # e.g. jev: {endpoint: openrouter-jev, model: typesafe/jev-1.13}
+# decision_model: ""         # the default a decide call uses
+# decision_media_model: ""   # the default for a call that carries images

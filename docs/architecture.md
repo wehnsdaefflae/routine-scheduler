@@ -325,6 +325,16 @@ event type) and stamping each turn's `usage.model` with the model that actually 
 status.json (`ctx.main_model`) and spend attribution stay truthful. Chain exhausted → the run
 fails exactly as before; models without `fallbacks` behave exactly as before.
 
+**Decision models** are a separate catalog (`config/decisionconf.py`: `decision_endpoints`,
+`decision_models`, the `decision_model` / `decision_media_model` defaults) with a separate
+transport contract — evidence + typed questions in, probabilities out (`endpoints/decisions.py`,
+one adapter per wire protocol: `decisions_openai.py` for OpenAI's Decisions API and the predator
+server, `decisions_systemone.py` for TypeSafe's Jev, direct or through OpenRouter). No chat role
+resolves into one and the `decide` action (`engine/decideaction.py`) reaches nothing else; an
+instance with none configured never shows a run the kind. A call is recorded through
+`instrument.observe_call`, so it shows in the activity dock like a completion, and its usage folds
+into the run's budget. See docs/decision-models.md.
+
 ## OAuth connections (oauth/)
 
 A **connection** lets a routine act against a third-party service (Notion first) on behalf of an

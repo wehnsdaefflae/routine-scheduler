@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.387.0] — 2026-10-07
+
+### Added — decision models, and the `decide` action that asks them (operator decision, R2190)
+
+A **decision model** answers a typed question with probabilities over the answers it was
+offered, never text: P(yes) for a yes/no, one probability per option for a choice, a
+probability-weighted level for a score. Routines can now ask one.
+
+- **Settings → Decision endpoints** — a catalog of its own beside the LLM endpoints
+  (`decision_endpoints`, `decision_models`, a default and an image default in `config.yaml`),
+  with provider presets, the credential-in-use line, and a per-model live probe. No chat role can
+  resolve into a decision model, and `decide` reaches nothing else.
+- **Two wire protocols cover every provider**: `openai` — OpenAI's Decisions API
+  (`POST /v1/decisions`, `gpt-6-luna`, text and inline images) and anything serving its shape;
+  `systemone` — TypeSafe's Jev (`POST /systemone`, text only), direct from TypeSafe or through
+  OpenRouter (`typesafe/jev-1.13`) with the OpenRouter key already in Secrets. Both go through the
+  shared retry/credential/usage plumbing and show in the LLM activity dock while they run.
+- **The `decide` action** (kind 31): `question` + `options` (`value: meaning`), `answer_type`
+  yes_no / choice / score, or `questions` — several independent questions over the same
+  evidence in ONE call. `evidence` is text or JSON; `files` adds images (judged together, routed
+  only to a model that takes them) and text files read in whole. Backgroundable like `llm`. The
+  observation is numbers only. An instance with no decision model never shows a run the kind.
+- **predator hosts the measured model** behind the `openai` protocol —
+  `deploy/decision-server/` (Qwen3-VL-8B-Instruct Q4_K_M + mmproj, the SemIf logit readout,
+  several images per request, lazy load + idle unload so the GPU stays free for training jobs,
+  CPU fallback when the card is busy, questions sharing one image encode). Installed as a systemd
+  user service by its idempotent `install.sh`.
+- `list_models` now renders whole — it fell through to the generic renderer, which cut it at 500
+  characters (the roles and two of the live catalog's 24 models) — and lists the decision
+  catalog beside the chat one.
+
+See docs/decision-models.md.
+
 ## [0.386.2] — 2026-10-05
 
 ### Fixed — one dead filesystem root no longer costs a run its ENTIRE tool surface

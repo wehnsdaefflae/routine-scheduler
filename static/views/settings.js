@@ -10,6 +10,7 @@ import { setQuery } from "/static/router.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { act, asButton, el } from "/static/util.js";
 import { renderConnections } from "/static/views/settings-connections.js";
+import { renderDecisions } from "/static/views/settings-decisions.js";
 import { renderEndpoints } from "/static/views/settings-endpoints.js";
 import { renderGithub } from "/static/views/settings-github.js";
 import { renderMachines } from "/static/views/settings-machines.js";
@@ -42,6 +43,8 @@ export async function render(view, query = {}) {
       sections: [
         { id: "endpoints", nav: "Endpoints", title: "LLM endpoints",
           fill: (v) => renderEndpoints(v) },
+        { id: "decisions", nav: "Decisions", title: "Decision endpoints",
+          fill: (v) => renderDecisions(v) },
       ] },
     { label: "Connections",
       blurb: "External accounts and machines the scheduler signs into on your behalf.",
