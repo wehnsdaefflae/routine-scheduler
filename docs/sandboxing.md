@@ -154,7 +154,11 @@ fronted the same way — and since every desktop-holding routine has ITS token, 
 not trust the token to say who is calling: identity and folder mounts are proved by a file
 the caller's own jail writes ([desktop sessions](desktop-sessions.md)). Sibling calls resolve transitively: `util_needs` walks
 the `calls:` graph, so a util calling a `net: outbound` sibling gets (and needs) the open
-network, and inherits the sibling's declared secrets.
+network, and inherits the sibling's declared secrets. A call the ENGINE makes may narrow that
+for itself and never widen it (`run_util(offline=True)`): read_file's document conversion runs
+`doc-read`, whose `calls: vision` makes the tree outbound for `--ocr` alone, and the engine never
+passes `--ocr` — so it parses an untrusted PDF with TCP denied, its dependencies installed in the
+net-open prewarm like any `net: none` util's.
 
 ## Filesystem — a per-util declaration too
 
@@ -249,12 +253,14 @@ everything else. An **OPTIONAL** secret
 (declared `NAME?`, D51/F290 — it backs a feature most calls don't use, like page-fetch's
 Basic auth) never files that request: not granted → it is WITHHELD from the child env and
 the util or script observation says so, so a public call runs prompt-free and an auth-needing
-one requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). The one util
-call the ENGINE makes on a run's behalf — `view_image`'s vision fallback
-(`mediaops.vision_describe`) — files no exposure ask (the run chose neither the util nor its
-arguments), but it is made in the run's environment all the same: the routine's own scoped
-key shadows the central one, a not-granted optional secret is withheld, and a secret the user
-DECLINED for the routine is never handed over — the fallback is refused instead. Optionality has ONE
+one requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). The two util
+calls the ENGINE makes on a run's behalf file no exposure ask (the run chose neither the util
+nor its arguments). `view_image`'s vision fallback (`mediaops.vision_describe`) is made in the
+run's environment all the same: the routine's own scoped key shadows the central one, a
+not-granted optional secret is withheld, and a secret the user DECLINED for the routine is never
+handed over — the fallback is refused instead. `read_file`'s document conversion
+(`docread.converted`) needs no credential at all, so it withholds every secret its util's tree
+declares, and runs offline (above). Optionality has ONE
 precedence: a `?` on the util the run CALLED wins over a required declaration in a util it
 `calls:`, because only the called util knows whether the path reaching that sibling is taken
 (a scorer requires its own key; a util that scores only under one flag marks the key optional

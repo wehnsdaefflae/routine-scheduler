@@ -19,7 +19,9 @@ Model-authored and user-authored **prose**, never raw tool output:
 - **Recipe files**: `main.md`, `stages/`, and `instruction.md`.
 
 Deliberately NOT indexed: `routine.yaml` / `tuning.yaml` / server config, `state/`,
-`inbox/`, artifacts and attachments, and anything under `background_home` (transient by
+`inbox/`, artifacts and attachments, the engine's `.util_outputs/` and `.doc_cache/` stores
+(spilled util output, documents read_file converted — bulk copies of what a run read), and
+anything under `background_home` (transient by
 design — a detached task's results land in its owner conversation's transcript). Tool
 observations are excluded on purpose: they carry file contents wholesale — bulky,
 derivative, and where a leaked secret would live.

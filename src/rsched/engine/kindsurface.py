@@ -179,8 +179,10 @@ removing something another routine relies on."""),
 write_file / delete / move / mkdir / edit_file: read or write a file (within the working dir or an \
 allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
 reads instead of spending a turn per file); a directory path returns its listing (one entry \
-per line, paged like a file), a binary or oversized file only its size — page those with \
-shell or a util. edit_file replaces an exact `anchor` string with \
+per line, paged like a file); a PDF or an Office document (docx/pptx/xlsx) returns its text \
+CONVERTED to Markdown, paged like a file — the observation names the pages and any page with \
+no text layer (a scan, not transcribed); any other binary or oversized file only its size — \
+page those with shell or a util. edit_file replaces an exact `anchor` string with \
 `replacement` IN PLACE — for touching a few lines of a large file, use it instead of \
 re-emitting the whole document through write_file. write_file REPLACES wholesale: overwriting \
 an existing file outside your working dir is rejected until this run has read it. delete \

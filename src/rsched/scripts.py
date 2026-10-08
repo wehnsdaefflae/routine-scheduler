@@ -44,7 +44,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import sandbox, utils_header, utils_lib, utils_run
-from .paths import atomic_write
+from .paths import ensure_gitignored
 
 SCRIPT_TIMEOUT_S = 300
 VENV_DIR = ".venv"
@@ -235,18 +235,6 @@ def script_deps(routine_dir: Path, name: str) -> list[str]:
     return [str(d) for d in deps] if isinstance(deps, list) else []
 
 
-def _ensure_venv_ignored(routine_dir: Path) -> None:
-    """Keep the venv out of the engine autocommit — `git add -A` would otherwise commit
-    the whole interpreter tree into the routine's repo (mirrors outputs._ensure_ignored).
-    """
-    gi = routine_dir / ".gitignore"
-    lines = gi.read_text(encoding="utf-8").splitlines() if gi.is_file() else []
-    if any(ln.strip().rstrip("/") == VENV_DIR for ln in lines):
-        return
-    atomic_write(gi, "\n".join([*lines, "# the scripts venv (rebuilt on demand)",
-                                f"{VENV_DIR}/", ""]))
-
-
 def ensure_env(routine_dir: Path, name: str, *,
                policy: sandbox.SandboxPolicy, libraries_home: Path,
                aborted: Callable[[], bool] | None = None) -> str | None:
@@ -258,7 +246,8 @@ def ensure_env(routine_dir: Path, name: str, *,
     step ends with its run like the script it builds for (`aborted`, `utils_run.run_jailed`),
     and the line it returns is then the runner's own note.
     """
-    _ensure_venv_ignored(routine_dir)
+    # git add -A would otherwise commit the whole interpreter tree into the routine's repo
+    ensure_gitignored(routine_dir, VENV_DIR, "the scripts venv (rebuilt on demand)")
     py = venv_python(routine_dir)
     steps: list[list[str]] = []
     if not py.exists():

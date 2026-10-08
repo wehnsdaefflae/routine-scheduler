@@ -1,8 +1,9 @@
 """File-shaped effect handlers: read_file / write_file / edit_file — plus the path gates every
 file-shaped action shares (the runs/ read depth, the write-grounding rule, the seals on what
 the engine and the operator own). Split from executor.py, which keeps dispatch and the util
-runner; delete / move / mkdir live in fsops.py, `view_image` in mediaops.py and the
-name-addressed stores (`.memory/`, the rule library) in memops.py.
+runner; delete / move / mkdir live in fsops.py, `view_image` in mediaops.py, the conversion a
+read_file of a PDF or Office document pages through in docread.py, and the name-addressed
+stores (`.memory/`, the rule library) in memops.py.
 
 Every gate compares RESOLVED paths. `resolve_rel` hands back a fully resolved path, so the
 dirs a seal is anchored on are resolved too (`_routine_dirs`) — and they are every routine
@@ -23,7 +24,7 @@ from ..grants import CONFIG_FILE
 from ..paths import atomic_write, read_json
 from ..readmodels.statemap import STAGES_DIR
 from ..tasks import TASKS_FILE
-from . import fileformat
+from . import docread, fileformat
 from .finishline import FILE as FINISH_LINE
 from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
@@ -153,32 +154,52 @@ def _listing_lines(path: Path) -> Iterator[str]:
             yield f"file {size:>12}  {e.name}"
 
 
-def _sniff(path: Path) -> tuple[int, bool]:
-    """(size, binary?) from a stat and an 8 KiB head — everything known about a file before
-    a single byte of it is decoded.
+def _head(path: Path) -> tuple[int, bytes]:
+    """(size, the first 8 KiB) from a stat and one bounded read — everything known about a
+    file before a single byte of it is decoded.
     """
     size = path.stat().st_size
     with path.open("rb") as fh:
-        return size, b"\0" in fh.read(BINARY_SNIFF_BYTES)
+        return size, fh.read(BINARY_SNIFF_BYTES)
 
 
-def _refusal(rel_path: str, path: Path) -> dict | None:
+def _sniff(path: Path) -> tuple[int, bool]:
+    """(size, binary?) — a NUL byte in the head marks a file binary."""
+    size, head = _head(path)
+    return size, b"\0" in head
+
+
+def _binary_error(size: int) -> str:
+    return (f"binary file ({size:,} bytes) — read_file shows text only; "
+            "view_image sees an image or PDF, a util or shell handles the rest")
+
+
+def _refusal(rel_path: str, size: int, binary: bool) -> dict | None:
     """The two reads that must never happen, decided from a stat and an 8 KiB sniff BEFORE
     anything is decoded: a binary file (a NUL byte in its head) and a file over
     READ_MAX_BYTES. Both carry `size` — the whole of what read_file can tell about such a
     file, and the reason the refusal still counts as having LOOKED at it for the
-    destruction gate (history.seen_paths reads the key back on resume).
+    destruction gate (history.seen_paths reads the key back on resume). A DOCUMENT never
+    reaches this: it is converted (docread.py), and refused only when that fails
+    (`_document_refusal`).
     """
-    size, binary = _sniff(path)
     if binary:
-        return {"path": rel_path, "size": size,
-                "error": f"binary file ({size:,} bytes) — read_file shows text only; "
-                         "view_image sees an image or PDF, a util or shell handles the rest"}
+        return {"path": rel_path, "size": size, "error": _binary_error(size)}
     if size > READ_MAX_BYTES:
         return {"path": rel_path, "size": size,
                 "error": f"{size:,} bytes exceeds the read_file cap of {READ_MAX_BYTES:,} "
                          "bytes — page it with shell (head / sed -n) or a util instead"}
     return None
+
+
+def _document_refusal(rel_path: str, size: int, kind: str, why: str) -> dict:
+    """A document whose conversion failed is refused as the binary it is, plus what failed —
+    the util missing, failing or out of time — so the run knows the read can work and why it
+    did not this time. Never cached, so the next read tries again.
+    """
+    return {"path": rel_path, "size": size,
+            "error": f"{_binary_error(size)}. It is {docread.FORMATS[kind]}, which read_file "
+                     f"converts to Markdown, and that failed: {why}"}
 
 
 def _windowed(rel_path: str, window: list[str], total: int, start: int,
@@ -229,6 +250,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     max_lines = min(int(action.get("max_lines") or READ_DEFAULT_MAX_LINES),
                     READ_WINDOW_MAX_LINES)
     directory = False
+    conversion: docread.Conversion | None = None
     try:
         path = resolve_action_path(ctx, rel_path)
         if err := _memory_gate(ctx, path) or _runs_read_gate(ctx, path):
@@ -237,11 +259,20 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
             directory = True
             window, total = _window(_listing_lines(path), start, max_lines)
         else:
-            if refusal := _refusal(rel_path, path):
+            size, head = _head(path)
+            source = path
+            if kind := docread.document_kind(path, head):
+                # a PDF / Office document: its Markdown conversion is what gets paged
+                done = docread.converted(ctx, path, kind)
+                if isinstance(done, str):
+                    ctx.seen_paths.add(str(path))   # a stat IS a look, as for any refusal
+                    return _document_refusal(rel_path, size, kind, done)
+                conversion, source = done, done.text
+            elif refusal := _refusal(rel_path, size, b"\0" in head):
                 ctx.seen_paths.add(str(path))   # a stat IS a look: grounds delete/move/overwrite
                 return refusal
             # streamed, never materialised: only the window is ever held in memory
-            with path.open(encoding="utf-8", errors="replace") as fh:
+            with source.open(encoding="utf-8", errors="replace") as fh:
                 window, total = _window((line.rstrip("\n") for line in fh), start, max_lines)
     except (OSError, PermissionError) as exc:
         return {"path": rel_path, "error": str(exc)}
@@ -263,6 +294,8 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     obs = _windowed(rel_path, window, total, start, max_lines, start_char)
     if directory:
         obs["directory"] = True
+    if conversion is not None:
+        obs["converted"] = docread.described(conversion.meta, start, obs["end_line"])
     return obs
 
 def _note_recorded_phase(ctx: RunContext, path) -> None:
@@ -382,7 +415,9 @@ def _holds_config(resolved: Path) -> bool:
 
 def _engine_owned(ctx: RunContext, resolved) -> str | None:
     """`runs/` and `.util_outputs/` of every reachable routine dir: the engine's record of
-    what happened, never rewritten by the run it records. One exemption, and only in the
+    what happened, never rewritten by the run it records — and `.doc_cache/`, the documents
+    read_file converted, whose files a later read trusts by their content hash, so a run that
+    edited one would be handed its own edit back as the document. One exemption, and only in the
     ROUTINE's runs/: a child's own workspace tree (`runs/<ts>/sub/<n>/`, its children's
     beneath it) is where a child WORKS. Everything else under it — the run's control.json,
     status.json, transcript, the history of earlier runs — is the engine's and the web's;
@@ -399,6 +434,10 @@ def _engine_owned(ctx: RunContext, resolved) -> str | None:
             return (f"{OUTPUTS_DIR}/ is engine-owned and read-only for the run — it is the "
                     "saved full text of util output too large for its observation (read_file "
                     "it); a run does not rewrite the record of what a util returned")
+        if _within(resolved, d / docread.CACHE_DIR):
+            return (f"{docread.CACHE_DIR}/ is engine-owned and read-only for the run — it "
+                    "holds the Markdown read_file converted documents to; read_file the "
+                    "document itself, and write what you derive from it elsewhere")
     return None
 
 

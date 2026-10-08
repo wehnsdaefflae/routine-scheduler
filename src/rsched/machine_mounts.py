@@ -24,7 +24,7 @@ from pathlib import Path
 from .config.modelconf import MachineConfig
 from .config.routine import RoutineConfig
 from .config.server import ServerConfig
-from .paths import atomic_write, config_file
+from .paths import config_file, ensure_gitignored
 
 log = logging.getLogger("rsched.machine_mounts")
 
@@ -170,17 +170,6 @@ def _mount_base() -> Path:
     base.chmod(0o700)
     return base
 
-def _ensure_mnt_gitignored(routine_dir: Path) -> None:
-    """Keep the mount dir out of the engine autocommit — else `git add -A` descends into the
-    sshfs mount and commits the REMOTE filesystem into the routine's repo.
-    """
-    gi = routine_dir / ".gitignore"
-    lines = gi.read_text(encoding="utf-8").splitlines() if gi.is_file() else []
-    if any(ln.strip().rstrip("/") == MOUNT_SUBDIR for ln in lines):
-        return
-    atomic_write(gi, "\n".join([*lines, "# remote-machine share mounts (transient)",
-                                f"{MOUNT_SUBDIR}/", ""]))
-
 def mount_routine_shares(
         routine: RoutineConfig, server: ServerConfig, *,
         secrets: dict[str, str] | None = None) -> tuple[list[MountedShare], dict[str, str]]:
@@ -202,8 +191,9 @@ def mount_routine_shares(
         return [], {}
     # Gitignore mnt/ BEFORE any mount attempt: a crashed prior run's STALE mount must
     # never be swept into the autocommit just because this run's own mounts failed early
-    # (no sshfs / no key) and the write further down was skipped.
-    _ensure_mnt_gitignored(routine.dir)
+    # (no sshfs / no key) and the write further down was skipped. Else `git add -A` descends
+    # into the sshfs mount and commits the REMOTE filesystem into the routine's repo.
+    ensure_gitignored(routine.dir, MOUNT_SUBDIR, "remote-machine share mounts (transient)")
     if not shutil.which("sshfs"):
         log.warning("machines: sshfs not installed — cannot mount share(s) %s",
                     [n for n, _ in wanted])

@@ -438,8 +438,9 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
 
     **A shell write is an UNGATED write, deliberately, and the observation says so** (D158, from
     R1980). Every write protection the engine has lives in the FILE-action gate
-    (`engine/fileops.py:_write_gate`): the `.memory/` seal, the engine-ownership of `runs/` and
-    `.util_outputs/`, the `routine.yaml` config refusal, and the recipe-authoring boundary. A
+    (`engine/fileops.py:_write_gate`): the `.memory/` seal, the engine-ownership of `runs/`,
+    `.util_outputs/` and `.doc_cache/`, the `routine.yaml` config refusal, and the
+    recipe-authoring boundary. A
     `bash -c` redirect calls none of it, so all four are bypassable by any routine holding
     `shell` — which is the point of an escape hatch, and is why the capability is granted
     sparingly rather than gated per path. Deciding WHICH writes a shell line performs is

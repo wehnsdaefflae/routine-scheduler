@@ -9,8 +9,9 @@ history/ archives, LEDGER.md, .memory/ notes, durable decision records
 (questions/pending), and recipe files (main.md / stages / instruction.md).
 NOT indexed: config (routine.yaml, tuning.yaml, server config), state/, inbox/
 (transient), artifacts/attachments (deliverables, often binary), `.util_outputs/`
-(spilled util output — bulk, and where a leaked secret would live), and secrets — the
-index never sees them, so it can never leak them.
+(spilled util output — bulk, and where a leaked secret would live), `.doc_cache/` (the
+documents read_file converted — a copy of what a run read), and secrets — the index never
+sees them, so it can never leak them.
 """
 
 from __future__ import annotations

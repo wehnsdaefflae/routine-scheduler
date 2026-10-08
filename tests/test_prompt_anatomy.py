@@ -209,6 +209,14 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # names the read_file arguments that reach the rest (fileops._windowed, resume_at)
         "the rest is in the spill file: read_file it with",
         "to continue in sequence",
+        # a DOCUMENT read_file converts (engine/docread.py): the head says it is a conversion,
+        # what was not converted and how to reach it, which pages carry no text layer — and a
+        # failed conversion keeps the binary refusal with what failed (fileops._document_refusal)
+        "to Markdown (layout approximated)",
+        "one read converts at most",
+        "NO TEXT LAYER (scanned images, not transcribed)",
+        "which read_file converts to Markdown, and that failed:",
+        "CONVERTED to Markdown, paged like a file",
         "which did not run either",
         "one hold per action string per run",
         "[REMINDERS: ",

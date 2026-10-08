@@ -13,6 +13,7 @@ the engine's own write_util gate, and every util's own offline `--selftest` pass
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -151,10 +152,27 @@ def test_util_seed_headers_pass_engine_gate(util):
 # every import one reaches — pyyaml is a package dependency, and the network clients (paramiko,
 # httpx, ddgs) are imported only in the code that talks to the network. In its own process, so
 # a selftest's env and signal changes stay there.
+#
+# The exception is a util whose SUBJECT is its third-party dependency: `doc-read` is a
+# converter (pymupdf4llm, markitdown), so a selftest without them would test nothing. It runs
+# as `gu` runs it — `uv run --script`, its PEP 723 deps installed into uv's cache on first use
+# and reused offline after — and the run is still offline as far as the selftest goes.
+UV_SELFTESTS = frozenset({"doc-read"})
+
+
+def _selftest_cmd(util: Path) -> list[str]:
+    if util.parent.name not in UV_SELFTESTS:
+        return [sys.executable, str(util), "--selftest"]
+    if uv := shutil.which("uv"):
+        return [uv, "run", "--script", str(util), "--selftest"]
+    pytest.skip(f"{util.parent.name}'s selftest needs its converter deps, installed by uv — "
+                "and uv is not on PATH")
+
+
 @pytest.mark.parametrize("util", UTIL_SEEDS, ids=_ids(UTIL_SEEDS))
 def test_util_seed_selftest_passes(util, tmp_path):
     if util.parent.name == "instance-export" and os.geteuid() == 0:
         pytest.skip("its selftest proves a chmod-000 directory is reported; root reads it anyway")
-    done = subprocess.run([sys.executable, str(util), "--selftest"], cwd=tmp_path,
+    done = subprocess.run(_selftest_cmd(util), cwd=tmp_path,
                           capture_output=True, text=True, timeout=300, check=False)
     assert done.returncode == 0, f"{util.parent.name}:\n{done.stdout}\n{done.stderr}"

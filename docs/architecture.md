@@ -600,6 +600,24 @@ and the capabilities digest's catalog listing):
   file itself is untouched — only the commit skips it. A run-end commit that does not land files
   `commit_failed` against the run and leaves the files for the next run's commit (Git writes,
   below).
+- `.doc_cache/<sha256>.md|.json` (`engine/docread.py`) — the documents `read_file` CONVERTED. A
+  PDF, docx, pptx or xlsx (known by its magic bytes: `%PDF-`, or an OOXML zip carrying
+  `[Content_Types].xml`) is no longer refused as a binary: the engine runs the library's
+  `doc-read` util on it — in the run's own jail, `offline` (TCP denied although its `calls:
+  vision` makes the tree outbound) and with no secret — which writes layout-aware Markdown
+  (pymupdf4llm for a PDF, one `<!-- page N of M -->` line per page; markitdown for Office) straight
+  into this cache, and `read_file` pages that file exactly like a text file. The observation says
+  it is a conversion, names the pages converted (at most `docread.MAX_PAGES`, 200, per conversion —
+  the rest are named with the util call that reaches them) and the pages with NO TEXT LAYER (a scan
+  is reported, never silently OCR'd; the util's `--ocr` sends only those pages to `vision`). The
+  invariant that `read_file` never materialises a file holds: the util streams to disk, the engine
+  streams from it, and the source is hashed in 1 MiB chunks — so a document over `READ_MAX_BYTES`
+  is converted rather than refused (what is read is the converted text). Keyed by the sha256 of
+  the BYTES, so a re-read or the next window converts nothing and a changed file converts again;
+  a failed conversion (util missing, failing, timed out) is never cached and falls back to the
+  binary refusal with what failed appended. Engine-owned and read-only for the run, gitignored on
+  first use (`paths.ensure_gitignored`, the one helper every such store uses), never
+  search-indexed, pruned to the `KEEP_DOCS` (32) most recently read.
 - `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here; a message's **`via`**
   is a CLOSED set, `engine/inbox.VIAS`, validated by the one writer `inbox.file_message`, and it
   is not a label but the SWITCH that decides when the message is consumed, whether the post-finish
@@ -885,7 +903,8 @@ meet. A conversation's spine is its own **working plan**
   path on which the uncensored model answers and acts; the automatic path keeps the honeypot rule.
 - Web: `web/api_conversations.py` (create/message are multipart — **attachments** land in
   `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
-  images). **Artifacts**: deliverables the model `write_file`s into a DELIVERABLE DIR —
+  images, `read_file`'s Markdown conversion for a PDF or an Office document). **Artifacts**:
+  deliverables the model `write_file`s into a DELIVERABLE DIR —
   `artifacts/`, `reports/` or `output/` (`web/artifacts.py` `ARTIFACT_DIRS`, one list governing
   listing, serving and deletion; R339/F336 — scanning `artifacts/` alone left the panel empty for
   a run that committed a verified `reports/*.pdf`, with no way to register it) — are listed/served
@@ -1540,7 +1559,7 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   `components/searchbox.js`, focused by `/` or Ctrl-K): SQLite FTS5 over both homes' PROSE —
   transcript say/note/finish/questions/answers/user messages (gz + subrun trees included),
   result.md, history/ archives, LEDGER.md, `.memory/`, pending decision records, recipe
-  files; NEVER config, state/, inbox, artifacts, `.util_outputs/`, or tool observations
+  files; NEVER config, state/, inbox, artifacts, `.util_outputs/`, `.doc_cache/`, or tool observations
   (bulk, and where a leaked secret would live). The db (`<routines_home>/.control/search.sqlite3`) is a PURE
   CACHE of the filesystem — delete it and it rebuilds; per-file stat fingerprints drive
   incremental refresh (newest runs first, budget-bounded with a per-pass progress

@@ -42,6 +42,7 @@ def _routine(make_routine):
     (d / "stages" / "scan.md").write_text("scan\n", encoding="utf-8")
     (d / "state" / "finish-line.json").write_text('{"outcomes": []}\n', encoding="utf-8")
     (d / ".util_outputs").mkdir()
+    (d / ".doc_cache").mkdir()
     (d / "runs" / EARLIER).mkdir(parents=True)
     (d / "runs" / EARLIER / "transcript.jsonl").write_text('{"type": "header"}\n',
                                                            encoding="utf-8")
@@ -76,7 +77,8 @@ def _write(ctx, path, content="x"):
 
 @pytest.mark.parametrize("rel", [f"runs/{TS}/control.json", f"runs/{TS}/status.json",
                                  f"runs/{TS}/transcript.jsonl",
-                                 f"runs/{EARLIER}/result.md", ".util_outputs/x.out"])
+                                 f"runs/{EARLIER}/result.md", ".util_outputs/x.out",
+                                 ".doc_cache/x.md"])
 def test_a_child_cannot_write_what_the_engine_owns_in_the_routine(make_routine, tmp_path, rel):
     d = _routine(make_routine)
     child = _child(_top(d, tmp_path))

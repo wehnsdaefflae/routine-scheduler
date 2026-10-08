@@ -130,7 +130,7 @@ def test_store_problems_name_a_broken_file(tmp_path):
 
 @pytest.mark.parametrize(("rel", "ok"), [("tasks/x", True), ("work/x", True),
                                          ("state/x", False), ("../x", False), ("/abs", False),
-                                         (".memory", False)])
+                                         (".memory", False), (".doc_cache/x", False)])
 def test_a_workspace_stays_inside_the_routine_and_off_its_own_places(rel, ok):
     assert (tasks.workspace_problem(rel) == "") is ok
 

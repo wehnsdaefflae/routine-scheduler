@@ -154,7 +154,7 @@ def workspace_problem(rel: str) -> str:
     if not parts or Path(rel).is_absolute() or ".." in parts:
         return "a workspace is a directory INSIDE the routine, given relative to it"
     if parts[0] in ("runs", "state", "stages", ".memory", ".git", "inbox", "questions",
-                    ".util_outputs", "scripts"):
+                    ".util_outputs", ".doc_cache", "scripts"):
         return f"{parts[0]}/ belongs to the routine itself — use {TASKS_DIR}/<id>/"
     return ""
 

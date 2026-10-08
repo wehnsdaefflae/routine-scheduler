@@ -17,7 +17,8 @@ Reads are ordinary `read_file`, which pages by line window — a large output is
 consult on disk than it ever was in context, where it only existed as a head+tail guess.
 Writes are engine-only (`fileops._write_gate`), like `runs/`: a run must not be able to
 rewrite its own evidence. The dir is gitignored on first use — the run-end autocommit is
-`git add -A` and util output can carry tokens — mirroring `machine_mounts._ensure_mnt_gitignored`.
+`git add -A` and util output can carry tokens — through `paths.ensure_gitignored`, the one
+helper every engine-owned store in a routine uses (the document cache, `docread.py`, too).
 
 An applied lossless compression (output_compression.py) saves its original stdout under the
 run's own `runs/` tree instead, so this five-run cache cannot prune that recovery evidence.
@@ -32,26 +33,13 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..paths import atomic_write
+from ..paths import atomic_write, ensure_gitignored
 
 if TYPE_CHECKING:
     from .run_context import RunContext
 
 OUTPUTS_DIR = ".util_outputs"
 KEEP_RUNS = 5
-
-
-def _ensure_ignored(routine_dir: Path) -> None:
-    """Keep the store out of the engine autocommit — `git add -A` would otherwise commit
-    every spilled output into the routine's repo (and `git sync` push it to a remote),
-    permanently, including whatever secrets a util printed.
-    """
-    gi = routine_dir / ".gitignore"
-    lines = gi.read_text(encoding="utf-8").splitlines() if gi.is_file() else []
-    if any(ln.strip().rstrip("/") == OUTPUTS_DIR for ln in lines):
-        return
-    atomic_write(gi, "\n".join([*lines, "# spilled util output (engine-owned, pruned)",
-                                f"{OUTPUTS_DIR}/", ""]))
 
 
 def _run_key(ctx: RunContext) -> str:
@@ -105,7 +93,10 @@ def spill(ctx: RunContext, name: str, out: str, err: str, *,
     try:
         base = ctx.routine.dir / OUTPUTS_DIR
         rel_dir = f"{OUTPUTS_DIR}/{_run_key(ctx)}"
-        _ensure_ignored(ctx.routine.dir)
+        # git add -A would otherwise commit every spilled output into the routine's repo (and
+        # a git sync push it), permanently, with whatever secrets a util printed
+        ensure_gitignored(ctx.routine.dir, OUTPUTS_DIR,
+                          "spilled util output (engine-owned, pruned)")
         (ctx.routine.dir / rel_dir).mkdir(parents=True, exist_ok=True)
         for stream, text, truncated in (("out", out, out_truncated),
                                         ("err", err, err_truncated)):

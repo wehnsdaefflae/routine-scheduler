@@ -1,9 +1,10 @@
 """The native filesystem actions (D120=A): delete / move / mkdir.
 
 Same jail and same seals as write_file — the parent resolved against the write roots, and
-`fileops._write_gate` for runs/, .util_outputs/, .memory/, routine.yaml, the finish line and
-the recipe — plus two rules of their own. A delete or a move acts on the ENTRY it names, as
-`rm` and `mv` do (`_entry`): a link is removed or relocated, never what it points to. And the
+`fileops._write_gate` for runs/, .util_outputs/, .doc_cache/, .memory/, routine.yaml, the
+finish line and the recipe — plus two rules of their own. A delete or a move acts on the ENTRY
+it names, as `rm` and `mv` do (`_entry`): a link is removed or relocated, never what it points
+to. And the
 destructive-op grounding rule: removing or relocating a path OUTSIDE the routine's own dir
 requires having seen it this run — the reasoning of write_file's overwrite gate, extended to
 destruction (`_unseen_destruction`).
@@ -48,8 +49,9 @@ def _unseen_destruction(ctx: RunContext, resolved, what: str) -> str | None:
     """The grounding gate for delete and move-src: destroying a path outside the routine's
     own dir that this run has never read. The own dir is exempt (state cleanup is a
     routine's normal mode); elsewhere the model must have LOOKED at what it destroys — a
-    read_file of the path, which for a directory is its listing and for a binary or
-    oversized file its size (the refusal grounds too). A shell `ls` does not count: the
+    read_file of the path, which for a directory is its listing, for a PDF or Office document
+    its converted text (docread.py), and for any other binary or oversized file its size (the
+    refusal grounds too). A shell `ls` does not count: the
     engine cannot see what a shell command showed, only what read_file returned. The gate
     text names the two forms because a run that reads "read_file it first" about a season
     pack once read_file'd a 1.5 GB .mkv to comply (2026-09-14). A symbolic link is exempt
