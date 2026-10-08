@@ -102,10 +102,13 @@ the limits (single-writer status.json preserved).
   (`engine/turndebris.py`): a model switch mid-turn re-fits the prompt to the new window, and a
   compaction there moves it. Cache traffic reports as usage `cached_in`/`cache_write` (kept OUT of `in`, so
   token budgets keep their meaning). A provider's cache is earned by a BYTE-STABLE prefix and by
-  nothing else — there is no per-run key an adapter is handed. THREE sanctioned exceptions
+  nothing else — there is no per-run key an adapter is handed. FOUR sanctioned exceptions
   rewrite the list in place:
-  compaction (below), schema-retry debris cleanup, and the media fallback (a failed image turn's
-  tail message is rewritten text-only) — each invalidates the provider cache once, by design.
+  compaction (below — the window clamp included), schema-retry debris cleanup, the media fallback
+  (a failed image turn's tail message is rewritten text-only), and a rule unbind the user asked to
+  ERASE (`switches.apply_rule_drop`: the messages carrying the rule's text become a tombstone, opt-in
+  because the cache breaks from the first edited message) — each invalidates the provider cache
+  once, by design.
 - **Compaction archives context to a navigable on-disk history** (`compaction.archive_middle`): when
   the prompt exceeds ~60% of the resolved model's `context_tokens` — ~80% once cache hits are observed
   (compaction rewrites the prefix and invalidates the cache, so carried context is cheaper than

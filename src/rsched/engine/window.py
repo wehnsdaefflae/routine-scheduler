@@ -7,8 +7,9 @@ lives in `overflow.py`, which builds on this file.
 
 That permission is the reason it is worth isolating. The composed prompt is a CACHING CONTRACT
 — appended-to, never mutated — and compaction, the schema-retry cleanup and the media fallback
-are the three sanctioned exceptions, each invalidating the provider cache deliberately. Every
-other seam in the engine appends.
+are three of the four sanctioned exceptions, each invalidating the provider cache deliberately
+(the fourth is a rule unbind the user asked to erase, `switches.apply_rule_drop`). Every other
+seam in the engine appends.
 """
 
 from __future__ import annotations

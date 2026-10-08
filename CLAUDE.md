@@ -487,8 +487,9 @@ by a test, by the engine, or by a past incident.
   generation prompt — make it correct, unambiguous and strict, then repair the existing files
   once by hand. Add a machine check only for what no prompt can guarantee.
 - **The composed prompt is a caching contract.** The message list is appended-to, never
-  mutated; per-turn boilerplate is banned. Only compaction, schema-retry cleanup and the
-  media fallback may rewrite it, each invalidating the provider cache by design.
+  mutated; per-turn boilerplate is banned. Only compaction (its window clamp included),
+  schema-retry cleanup, the media fallback and a rule unbind the user asked to ERASE
+  (`switches.apply_rule_drop`) may rewrite it, each invalidating the provider cache by design.
 - **What DONE means has three owners — none of them is a budget** (reports/goal.md).
   WHAT ONE FINISHED RUN LEAVES BEHIND is the recipe's `## Done when` (`engine/donewhen.py`,
   `- d<n> · <stage> — <outcome>`), re-asked every run and never "already met"; a run started by

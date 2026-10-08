@@ -207,7 +207,7 @@ def apply_rule_drop(loop) -> None:
     Rewriting the list INVALIDATES the provider's prompt cache from the first edited message
     on, which is why it is opt-in and why the note says so: the composed prompt is a caching
     contract, and compaction, schema-retry cleanup and the media fallback are the only other
-    things allowed to break it.
+    things allowed to break it (CLAUDE.md and docs/architecture.md name all four).
     """
     ctx = loop.ctx
     if (sw := _fresh(loop, "drop_rules", loop._last_rule_drop_ts)) is None:

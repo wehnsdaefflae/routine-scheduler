@@ -407,21 +407,27 @@ docs/rules-permissions.md for the model; `entities.py` for the vocabulary.
 Past ~60% of the context window — ~80% once the endpoint demonstrably serves prompt-cache
 hits (usage `cached_in` > 0), since cached re-reads are ~10x cheaper while each compaction
 rewrites the prefix and invalidates the cache — or when the prompt eats >10% of the
-remaining token budget per turn, the middle messages (all but the first 6 and last 24) are
-reorganized into `runs/<ts>/history/*.md` + `INDEX.md` and replaced by ONE pointer. The
-archival call runs on the routine's TOOL-CALL model when its window fits the middle (it is
-machine work — the main model is the fallback, never the default) and its token spend is
-folded into the run's usage:
+remaining token budget per turn, or at a STAGE BOUNDARY where archiving now costs less than
+carrying the middle to the end of the run (`engine/boundary.py`), the middle messages (all
+but the first 6 and last 24) are replaced AT ONCE by the engine's deterministic digest, one
+line per elided turn (`compaction.maybe_compact`):
 
 ```
-CONTEXT COMPACTED — 57 earlier messages have been archived to an on-disk, navigable
-history. Read `runs/20260712-070000/history/INDEX.md` (read_file) to see what's there,
-then read the specific runs/20260712-070000/history/*.md files relevant to your current
-step. Do not rely on memory of the archived turns — consult the index.
+CONTEXT COMPACTED — this replaces the elided middle of the conversation (57 messages). One line per elided turn:
+turn 3: read_file "stages/scan.md" — say: "Phase is scan; reading its module before touching the portals."
+turn 4: util "websearch" — say: "…"
 ```
 
-Fallback (LLM pass failed): a deterministic one-line-per-turn digest, also headed
-`CONTEXT COMPACTED`.
+The run carries straight on. The NAVIGABLE history is built off the hot path
+(`engine/archival.py`): one background call reorganizes the same middle into
+`runs/<ts>/history/*.md` plus an engine-written `INDEX.md`, on the server's compaction model
+when one is set and fits, else the routine's tool-call model, else the main model (each must
+hold the middle — `window._pick_archival_model`); its spend is booked when it lands. Landing
+is announced by an APPENDED `ENGINE NOTE: the <n> messages elided earlier have finished
+archiving into a NAVIGABLE history — …` (row above), never by swapping the digest — a second
+rewrite would be a second cache invalidation. A run that ends first, or an archival that
+fails, keeps the digest alone; the transcript holds every byte either way. Once per run the
+pass is preceded by the one-turn `about to be ARCHIVED` warning (row above).
 
 ---
 
