@@ -166,7 +166,7 @@ def _stub_engine(monkeypatch, script: str):
     instead of running the fixture against production.
     """
 
-    def cmd(server, target, run_ts, *, resume=False):
+    def cmd(server, target, run_ts, *, resume=False, models=None):
         return ["bash", "-c", script.replace("{TS}", run_ts)]
 
     monkeypatch.setattr(runner_state, "engine_cmd", cmd)

@@ -144,6 +144,13 @@ lists every pattern with its followers (`GET /api/patterns`).
   the finish line is the routine's own.
 - **The rules of its kind** on top of the defaults every routine holds.
 
+And one value a pattern never carries: a **model trial** (`trial:`, docs/run-analytics.md "Model
+trials"). It is not in the settings vocabulary, so the settings page neither shows it as a field
+nor marks it an override, and "Save as new pattern" cannot copy it: a trial is one experiment on
+one routine for its next few runs, and a pattern holding one would put every follower on trial.
+It is proposed the way a run proposes any change it cannot make — an `ask_user` `config_patch`,
+applied with the Decisions page's one click — and the routine page's header says when one is on.
+
 ## The library
 
 `rsched lint` checks every pattern (`workflows/lint.lint_patterns`): a sound document naming

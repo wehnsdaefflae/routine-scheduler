@@ -44,6 +44,9 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "run_gate": (NEXT_RUN, "admission is evaluated before the next automatic engine starts"),
     "models": (NEXT_RUN, ("the transport is bound per turn, but swapping a model mid-run is the "
                           "run page's model-switch control, not a config edit")),
+    "trial": (NEXT_RUN, ("a model trial is armed when the daemon FIRES a run: its models are "
+                         "named to the engine at launch, so a run already going finishes on the "
+                         "model it booted with and the trial starts with the next fire")),
     "connections": (NEXT_RUN, "OAuth tokens are injected into the util environment at boot"),
     "machines": (NEXT_RUN, "the machine bindings and share mounts are resolved at boot"),
     "permissions": (NEXT_RUN, ("the held conduct docs are read at boot: their prose is composed "
@@ -97,7 +100,7 @@ ADOPTABLE = tuple(f for f, (half, _) in CLASSIFICATION.items() if half == LIVE)
 #: on the operator's click. The engine may not import the web layer, which is why the two sets
 #: are spelled out here; `tests/test_configflow.py` pins each one to its model.
 ROUTINE_PATCH_FIELDS = frozenset({
-    "enabled", "run_gate", "schedule", "budgets", "models", "connections", "grants",
+    "enabled", "run_gate", "schedule", "budgets", "models", "trial", "connections", "grants",
     "machines", "name", "description", "tags", "pattern", "hub_tab", "permissions",
     "capabilities", "rules", "shared_reminders", "improve", "deliberation", "keep_runs",
     "fs_read_roots", "fs_write_roots",

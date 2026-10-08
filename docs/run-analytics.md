@@ -44,6 +44,49 @@ At run start the engine stamps the current recipe commit into the run
 - Beside it the record carries `library_commit`, the LIBRARY's HEAD as of the run's END
   (depth 0 only, one read per run). A rule revision reaches every holder at once and moves no
   recipe version, so it is the only thing that dates the change the trend below reacts to.
+- And a `fingerprint` (depth 0, engine/runrecord.py): the engine release, the main model by
+  catalog name with its effort, the deliberation level, a hash of the behaviour-relevant config,
+  a hash per held rule — and `trial`, the id of the model trial the run was fired under (below).
+
+## Model trials
+
+A recipe version answers "did this CHANGE help?"; a **model trial** asks the same of the model
+(operator, 2026-10-08): is this routine's model more than its work needs, or not enough? A trial is
+ordinary config — `trial: {id, models, runs, reason}` in routine.yaml (`config/trialconf.py`),
+e.g. `{id: t-20261008-sonnet-high, models: {main: sonnet-high}, runs: 5, reason: …}` — that a
+capable maintenance routine (config-optimizer) PROPOSES as an `ask_user` `config_patch` and the
+operator applies with the Decisions page's one **approve & apply** (`{"trial": null}` clears one).
+The filing check refuses a malformed trial or a model the catalog lacks on the turn it is filed
+(`engine/config_bridge.trial_value`), and the PATCH refuses both again, plus a model whose window
+cannot run a turn — a trial is a `models:` binding for a few runs, so it meets the same checks.
+
+From the accept on, everything is DERIVED (`rsched/trials.py`) and nothing writes config again:
+
+- **Active** while fewer than `runs` of the routine's runs have recorded it — depth-0 records
+  folded per run (`usage_stream.usage_runs`) whose `fingerprint.trial` is the trial's id. Counted
+  from this stream, so a restart or a retention sweep loses no run and a fire that never reached
+  the engine (a gate skip, a failed launch) fakes none.
+- **Armed per fire.** While active, EVERY fire — schedule, lane, trigger, catch-up, manual — gets
+  `trial.json` (`{id, models, runs}`) in its new run dir before the engine exists (the runner, beside
+  a hand-started run's brief), and the runner names the models to `engine-run` as `--model
+  role=name`. The engine runs the routine on them for that run (children included), and the run's
+  record carries `fingerprint.trial` beside `fingerprint.model` (the catalog name it ran on) and
+  `fingerprint.effort` (engine/runrecord.py). A resume reads the run dir's OWN `trial.json`, so a run keeps the
+  trial it started under even once the trial has finished. `rsched run-once` arms nothing.
+- **Finished** at `runs` recorded runs: the trial simply stops applying. The field stays in
+  routine.yaml as history until the operator's next accepted change clears or replaces it — which
+  is why `trial` is outside the fingerprint's config hash: the runs after a finished trial must
+  compare equal to the identical runs before it. A new trial needs a new id; re-proposing an old
+  id finds its runs already counted.
+- **Ignored** while a model it names is not in the catalog (renamed or removed since the accept):
+  applied, the run would die resolving a model nobody serves. The routine page lists it among the
+  routine's problems and `rsched validate` prints it; no fire is armed.
+
+The routine page's header carries ONE chip while a trial is active — `trial · <model> · k of N
+runs`, the reason in its tooltip — and, once it finished, `trial finished · results in
+Development`, linking to the routine's change view (`#/changes/<slug>`), where the trial's runs are
+read against the runs on the routine's own model. `GET /api/routines/{slug}` carries the state as
+`trial` (`{id, models, runs, reason, recorded, state, problem}`, or null).
 
 ## The health view (routine page → Recipe health)
 

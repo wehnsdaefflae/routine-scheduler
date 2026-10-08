@@ -21,6 +21,7 @@ from .. import schedule
 from ..config import DELIBERATION_LEVELS, write_tuning
 from ..config.base import DEFAULT_LADDER, LADDER_KEYS, TUNING_KEYS, _known_tz
 from ..config.routine import RunGateConfig, RunGatePatch
+from ..config.trialconf import TrialConfig
 from ..engine.ladder import MIN_OVERSIGHT_TURNS
 from ..paths import read_yaml
 from .config_fields import (
@@ -30,6 +31,7 @@ from .config_fields import (
     validate_machines,
     validate_models,
     validate_roots,
+    validate_trial,
 )
 from .routines_common import (
     _git_commit,
@@ -96,6 +98,9 @@ class RoutinePatch(BaseModel):
     #                                          key is a 422 here, never a silent revert at load
     models: dict | None = None              # {main|tool_call|uncensored: catalog name,
     #                                          decision|decision_media: decision model}
+    # A MODEL TRIAL (rsched/trials.py), REPLACED whole. An explicit `"trial": null` CLEARS it —
+    # `patch_routine` keeps that one null, which `exclude_none` would read as "not sent".
+    trial: TrialConfig | None = None
     connections: dict | None = None         # {provider: account-label} OAuth connection bindings
     grants: dict | None = None              # {entity-id: bool} decision rows (secret exposure
     #                                          + deny-forever tombstones — entities.py)
@@ -371,6 +376,8 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     updates = patch.model_dump(exclude_none=True)
     if patch.run_gate is not None:
         updates["run_gate"] = patch.run_gate.model_dump(exclude_unset=True)
+    if "trial" in patch.model_fields_set and patch.trial is None:
+        updates["trial"] = None     # SENT as null: the one spelling of "clear the trial"
     return apply_updates(request, info, updates)
 
 
@@ -431,6 +438,15 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
     # meaningless off the catalog, and the picker only offers catalog names.
     if "machines" in updates:
         raw["machines"] = validate_machines(_state(request).server, updates.pop("machines"))
+    # A MODEL TRIAL: every model it names meets the checks a `models:` binding meets, because
+    # for its runs it IS one. Replaced whole (the generic merge below would blend two trials);
+    # null removes the key, so "no trial" has one spelling.
+    if "trial" in updates:
+        trial = updates.pop("trial")
+        if trial is None:
+            raw.pop("trial", None)
+        else:
+            raw["trial"] = validate_trial(_state(request).server, trial)
     # Validate the grant-decision rows (entities.py ids → bool); REPLACE wholesale —
     # removing a row returns that entity to undecided (asked on first use / requestable).
     if "grants" in updates:

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import lanes, registry, schedule
+from .. import lanes, registry, schedule, trials
 from .. import triggers as triggers_mod
 from ..config import ROUTINE_MODEL_ROLES
 from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
@@ -190,8 +190,14 @@ def routine_detail(request: Request, slug: str) -> dict:
     # model (durable stream; the current month rides spend.current.referrals)
     referrals_total = sum(int(c.get("referrals") or 0)
                           for c in (monthly["by_routine"].get(slug) or {}).values())
+    trial = trials.state(server, info.cfg)
     return {
         **_card(request, info, monthly=monthly, lane_of=lane_of),
+        # A MODEL TRIAL (rsched/trials.py): the config plus `recorded` / `state` / `problem` —
+        # the header's chip. A trial the catalog cannot serve is IGNORED at every fire, so its
+        # problem joins the routine's own: the loader cannot see the catalog to report it.
+        "trial": trial,
+        "problems": [*info.problems, *([trial["problem"]] if trial and trial["problem"] else [])],
         "referrals_total": referrals_total,
         # the heading this routine's card sits under on the Steward hub — identity, edited in
         # the page's identity section and named to the run in its harness contract

@@ -40,6 +40,7 @@ from .decisionconf import (
 from .modelconf import EndpointConfig, MachineConfig, ModelConfig, ModelRef
 from .routine import RoutineConfig, load_routine, load_tuning, write_tuning
 from .server import ServerConfig, load_server_config
+from .trialconf import TrialConfig
 
 __all__ = [
     "DECISION_PROTOCOLS",
@@ -70,6 +71,7 @@ __all__ = [
     "RoutineConfig",
     "SchemaMode",
     "ServerConfig",
+    "TrialConfig",
     "default_tz",
     "load_routine",
     "load_server_config",

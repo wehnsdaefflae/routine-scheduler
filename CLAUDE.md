@@ -552,7 +552,16 @@ by a test, by the engine, or by a past incident.
   config it was handed and refuses when that config resolves to different run homes than the
   spawner is using. A spawner whose config was never loaded from a file is refused before a
   process exists. Never give either flag a default — the fallback is `~`, i.e. production,
-  and a tmp-homed test once spent real money and real ledger rows there.
+  and a tmp-homed test once spent real money and real ledger rows there. A model trial's run
+  is told its models the same way (`--model role=name`, from the run dir's own `trial.json`).
+- **A model trial ends by COUNTING, never by a write.** `trial:` in routine.yaml
+  (`rsched/trials.py`) is active while fewer than `runs` depth-0 usage runs carry its id in
+  `fingerprint.trial`; every fire while it is active is armed (`trial.json` in the run dir,
+  `--model` to `engine-run`, re-read from that dir on a resume). Nothing clears the field when
+  the trial finishes — it stays as history until the operator's next accepted change — so never
+  add a writer that tidies it up, and keep it out of the fingerprint's config hash
+  (`runrecord._NOT_BEHAVIOUR`), or the runs after a finished trial stop comparing equal to the
+  identical runs before it.
 - **Git is never SIGKILLed; a commit always says what happened** (docs/architecture.md,
   "Git writes"). Git deletes its `index.lock` in its SIGTERM handler only, so `libgit.git`
   runs it in its own process group and ends a timed-out call with SIGTERM first — the

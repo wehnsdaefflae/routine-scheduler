@@ -1,9 +1,10 @@
 """Engine subprocess management: spawn, track, abort, reap, retention, orphan recovery.
 
 One engine process per run (`python -m rsched.cli engine-run <dir> --run-ts <ts> --config
-<path> --homes <fingerprint>` in this venv), its own process group. The child inherits no
-configuration, so the command NAMES the config and the homes it must resolve to and the
-child refuses a mismatch (`runner_state.engine_cmd`, F394). The global semaphore counts
+<path> --homes <fingerprint>` in this venv, plus `--model role=name` for a model trial's run),
+its own process group. The child inherits no configuration, so the command NAMES the config
+and the homes it must resolve to and the child refuses a mismatch (`runner_state.engine_cmd`,
+F394). The global semaphore counts
 starting+running processes; a run parked in waiting_user releases its slot (the daemon
 polls status.json cheaply).
 """
@@ -16,7 +17,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from .. import registry
+from .. import registry, trials
 from ..config import RoutineConfig, ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
@@ -150,7 +151,9 @@ class Runner:
         """Queue a run unless one is already active for this routine. The subprocess is
         spawned only once a concurrency slot is held. Returns the run_id. `brief` is the
         operator's one line for a run they start by hand (engine/brief.py), written into the
-        run dir before the engine exists so it reads it at boot.
+        run dir before the engine exists so it reads it at boot. An ACTIVE model trial is
+        armed the same way, whatever the reason (rsched/trials.py): its `trial.json` lands in
+        the run dir and `_supervise` names its models to the engine.
         """
         if not cfg.enabled:
             log.info("fire_refused_disabled routine=%s reason=%s", cfg.slug, reason)
@@ -168,6 +171,7 @@ class Runner:
             from ..engine import brief as brief_mod
 
             brief_mod.write(run_dir, brief)
+        trials.arm(self.server, cfg, run_dir)
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
                         sem=self._sem_for(cfg), background=self.is_background(cfg))
         atomic_write_json(run_dir / "status.json", _queued_status(run.run_id, ts))
@@ -264,9 +268,12 @@ class Runner:
             if (not run.cancelled
                     and await run_gate.admit(run, cfg, self.server, reason, resume)
                     and not run.cancelled and not run.user_cancel):
+                # a trial run's models come from ITS OWN trial.json — a resume keeps the trial
+                # the run started under, even once the trial itself has finished
                 spawn = asyncio.create_task(asyncio.create_subprocess_exec(
                     *runner_state.engine_cmd(self.server, str(cfg.dir), run.run_ts,
-                                             resume=resume),
+                                             resume=resume,
+                                             models=trials.overrides(run.run_dir)),
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.PIPE,
                     start_new_session=True,

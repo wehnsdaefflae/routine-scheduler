@@ -94,10 +94,13 @@ INTERACTIVE_SLOTS = 3
 BACKGROUND_SLOTS = 2
 
 def engine_cmd(server: ServerConfig, target: str, run_ts: str, *,
-               resume: bool = False) -> list[str]:
+               resume: bool = False, models: dict[str, str] | None = None) -> list[str]:
     """The argv for one run's engine subprocess. `target` is a routine slug (resolved under
     routines_home) or a directory path — conversations live under their own home, so the
-    runner always passes cfg.dir.
+    runner always passes cfg.dir. `models` are a MODEL TRIAL's role → catalog-name overrides
+    (rsched/trials.py, read from the run dir's `trial.json` on every leg), named as
+    `--model role=name` for the same reason the config is: the child is told, never left to
+    discover.
 
     The child is a FRESH interpreter that inherits none of this process's configuration, so
     it is told WHICH config file to load (`--config`) and which run homes that file must
@@ -118,6 +121,8 @@ def engine_cmd(server: ServerConfig, target: str, run_ts: str, *,
            "--config", str(server.source), "--homes", homes_fingerprint(server)]
     if resume:
         cmd.append("--resume")
+    for role, name in sorted((models or {}).items()):
+        cmd += ["--model", f"{role}={name}"]
     return cmd
 
 def _queued_status(run_id: str, ts: str, prior: object = None) -> dict:

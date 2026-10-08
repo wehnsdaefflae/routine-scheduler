@@ -31,13 +31,17 @@ from .. import __version__
 from ..paths import read_json
 from . import accounting
 
-#: Written by the runner for a run fired as a MODEL TRIAL (daemon), read once at the record.
+#: Written by the runner for a run fired as a MODEL TRIAL (rsched/trials.arm), read once at the
+#: record; the runner reads its `models` again on every leg to name them to `engine-run`.
 TRIAL_FILE = "trial.json"
 
 #: RoutineConfig fields that do not change what a run DOES — who it is, when it fires, how long
 #: its runs are kept. Everything else is behaviour: a change there is a change to measure.
+#: `trial` is behaviour recorded ELSEWHERE — the run's `trial` id and its `model` — and the field
+#: outlives the trial as history (rsched/trials.py), so hashing it would split the runs after a
+#: finished trial from the identical runs before it.
 _NOT_BEHAVIOUR = frozenset({"name", "slug", "description", "tags", "enabled", "schedule",
-                            "retention", "workflow", "playbook", "dir", "deliberation"})
+                            "retention", "workflow", "playbook", "dir", "deliberation", "trial"})
 
 
 def _short(text: str) -> str:

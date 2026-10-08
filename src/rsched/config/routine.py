@@ -39,6 +39,7 @@ from .base import (
     _validate_lenient,
     default_tz,
 )
+from .trialconf import TrialConfig, trial_load_problems
 
 
 class RunGateConfig(BaseModel):
@@ -126,6 +127,11 @@ class RoutineConfig(_Config):
     # falls back to the server system_model. Resolved live via EndpointRegistry, so editing
     # a catalog model updates every routine that names it.
     models: dict[str, str] = Field(default_factory=dict)
+    # A MODEL TRIAL (rsched/trials.py): "run on these catalog models for the next N fires". The
+    # daemon applies it per fire while fewer than `runs` runs have recorded it; `models:` above
+    # stays the routine's own throughout. A finished trial stays here as history until the next
+    # accepted change clears or replaces it — nothing writes this field but that accept.
+    trial: TrialConfig | None = None
     # OAuth connection bindings: provider id → account label (Settings → Connections). A run bound
     # here gets that provider's current access token injected into any util that declares it (as
     # <PROVIDER>_ACCESS_TOKEN). A RESOURCE binding like models/fs_roots — the binding is the grant;
@@ -413,6 +419,7 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
         problems.append(f"models.{kind}: unknown model kind "
                         f"(expected one of {ROUTINE_MODEL_ROLES}){hint}")
         del cfg.models[kind]
+    problems += trial_load_problems(raw.get("trial"), cfg.trial)
     from ..oauth.providers import PROVIDERS  # function-level: oauth imports secrets, not config
     for prov in [p for p in cfg.connections if p not in PROVIDERS]:
         problems.append(
