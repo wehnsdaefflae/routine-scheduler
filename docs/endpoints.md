@@ -98,6 +98,11 @@ system_model: glm                 # the fallback model for setup-time work — a
     Providers that reject it — with a 400, or a generic 503 that hides a schema-incapable
     backend — get one degraded retry without it, so it is safe to leave on.
   - `json_object`: weaker "any JSON" mode; the scheduler's validator does the rest.
+- `tool_choice` — `anthropic` kind only: how the action tool is offered. `auto` (the default)
+  lets a model's configured effort and its thinking reach it; `forced` keeps a route validated
+  only forced (the Codex models the subscription proxy serves on this wire), at the cost of the
+  effort — a forced call is answered without thinking. Config-only: a Settings save that does
+  not send it keeps what config.yaml says.
   - `ollama_native`: Ollama's own `format` field — REAL constrained decoding; best for
     small local models that otherwise drift off-schema.
   - `none`: nothing requested; the code-level validate-and-retry loop does all the work.
@@ -347,15 +352,22 @@ base URL of the server, whatever key you configured it with. This is the guarant
 for a model no provider lists.
 
 **Anthropic API** — `kind: anthropic`, no base_url needed, `sk-ant-…` key. Metered: know
-your budget caps. The action rides one tool with `tool_choice` FORCING it. The newest Claude
-models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse a forced choice with a 400,
-and the adapter answers it by offering the tool on `auto` held to one call — a round trip per
-structured call on those models. Through the subscription proxy nothing refuses it: the proxy
-strips thinking and effort from a forced call instead ([subscription
-proxy](claude-proxy-cutover.md)). 0.372.0 stopped forcing, to spare that round trip; through
-the proxy Opus then answered with tool calls nothing could be read from, every run failed
-over to its fallback model, and the operator chose to force again (2026-10-01). A model that
-answers in text instead has its action read from the text. A model that refuses several
+your budget caps. The action rides one tool offered on `auto`, held to one call — because a
+FORCED tool choice makes the configured effort meaningless: the Messages API allows thinking
+only on `auto`, the newest Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5)
+refuse forcing with a 400, and the [subscription proxy](claude-proxy-cutover.md) strips thinking
+and effort from a forced call. Measured through the proxy on 2026-10-08: forced, Opus 5 at
+effort `low` and `max` answered alike (467 and 551 output tokens, no thinking); on `auto` it
+thought, and Opus 5, Sonnet 5 and Fable 5 all answered with the action, on a first turn and a
+third, with the real composed prompt and the full schema. From 0.370.2 to 0.395.0 every call was
+forced, so no catalog effort reached a Claude model on a structured turn. 0.372.0 had tried
+`auto` once and Opus then answered `tool_use` with nothing readable — a shape never reproduced
+since; it can no longer cost a run, because an `auto` reply no action can be read from is
+re-asked ONCE with the tool forced inside the same call (`stop_details["forced_reask"]` marks
+that answer, which ran at the proxy's default effort, and the warning log names what the unread
+reply carried). An endpoint set `tool_choice: forced` sends the forced choice, and on a model
+that refuses it gets `auto` held to one call. A model that answers in text instead has its action
+read from the text. A model that refuses several
 optional fields (a configured `temperature`, the effort knob) is degraded one 400 at a time.
 A reply no action can be read from names what it carried — block types, a tool call's name,
 its input's type — in the run's empty-completion error.

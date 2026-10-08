@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.396.0] — 2026-10-08
+
+### Fixed — a configured effort reaches Claude models again
+- **The action tool is offered on `auto`, so effort and thinking reach the model** (operator
+  order 2026-10-08: "effort does NOTHING?! this needs to be fixed right now"). A forced
+  `tool_choice` makes a configured effort meaningless: the Messages API allows thinking only on
+  `auto`, and CLIProxyAPI strips `thinking` and `output_config.effort` from every forced call.
+  Measured through the live proxy: forced, Opus 5 at `low` and at `max` answered with 467 and 551
+  output tokens and no thinking block; on `auto` it thought, and Opus 5, Sonnet 5 and Fable 5 all
+  answered with the action under its own name — first turn and third, with the composer's real
+  33k-character prompt and the full action schema. From 0.370.2 to 0.395.0 every structured call
+  was forced, so every "Opus high", "Sonnet max" or "Fable Max" in the catalog ran at the proxy's
+  default on every main-loop turn, child run, `llm` action with a schema and verifier call.
+- **An unreadable `auto` reply cannot cost a run.** 0.372.0 met one shape on `auto` — `tool_use`
+  and nothing to read — that never reproduced; such a reply is now re-asked ONCE with the tool
+  forced inside the same call, marked `stop_details["forced_reask"]` (that turn ran at the
+  default effort), its usage the sum of both requests, with a warning log naming what the unread
+  reply carried. A re-ask that reads nothing either returns the first reply, and the engine's
+  empty-completion handling takes over as before.
+- **`tool_choice: auto | forced` on an `anthropic` endpoint** (config-only; a Settings save that
+  omits it keeps what config.yaml says). `forced` keeps a route validated only forced — the
+  Codex models: the live `codex-proxy` endpoint is set to it.
+- **Mind the quota:** a high effort now spends the thinking it was configured for. Re-check the
+  catalog's effort per model with that in view.
+
 ## [0.395.0] — 2026-10-08
 
 ### Added

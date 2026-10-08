@@ -33,6 +33,11 @@ class EndpointConfig(_Config):
     quota_key_var: str = "CLIPROXY_MANAGEMENT_KEY"
     quota_auth_index: str = ""  # blank selects the sole enabled Claude account
     schema_mode: SchemaMode = "json_schema"  # openai kind only
+    # anthropic kind only: how the action tool is offered. `auto` (the default) lets a configured
+    # effort and the model's thinking reach it; `forced` is for models validated only on the
+    # forced route (the Codex models the subscription proxy serves on this wire) — forcing
+    # strips effort and thinking (endpoints/anthropic_api.py says why and what was measured).
+    tool_choice: Literal["auto", "forced"] = "auto"
     # DEFAULTS a catalog model inherits when it leaves the field unset — and since 0.296.0 they
     # sit BELOW the figure the provider itself reports (endpoints/limits.py), because one guess
     # made once for a whole endpoint is exactly what the provider's own answer should replace.
