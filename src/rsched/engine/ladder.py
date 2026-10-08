@@ -294,8 +294,8 @@ def escalate(loop, reason: str, settings: dict) -> None:
                           "since_turn": since, "oversight_turns": turns})
     action = {"prompt": _supervisor_prompt(dispatch, rung=rung),
               "workflow": SUPERVISOR_WORKFLOW, "model": "main", "label": f"rung-{rung}"}
-    sub = loop.subs._start_child(action, mode=child.OVERSIGHT, prefix="rung",
-                                 overrides={"turns": turns})
+    sub = loop.subruns._start_child(action, mode=child.OVERSIGHT, prefix="rung",
+                                    overrides={"turns": turns})
     if isinstance(sub, str):
         # The ordinary case on a deep or budget-spent tree, not an error.
         ctx.transcript.event("oversight_skipped", {"rung": rung, "reason": sub})
@@ -330,9 +330,15 @@ def at_boundary(loop) -> None:
         if (reason := rung_is_due(loop, settings)) is not None:
             escalate(loop, reason, settings)
     except Exception as exc:
-        log.warning("oversight rung skipped: %s", exc)
+        # The mechanism RAISED — not a rung declining to run. These were one event until
+        # R2348/R2352: `ladder.py` dispatched through `loop.subs`, an attribute that has never
+        # existed, so every rung on every run died here and was recorded as an ordinary skip.
+        # A reader could not tell total failure from a healthy decline on any surface, which is
+        # exactly why it survived unnoticed. `oversight_failed` is its own record.
+        log.warning("oversight rung FAILED: %s", exc)
         try:
-            loop.ctx.transcript.event("oversight_skipped", {"reason": f"error: {exc}"})
+            loop.ctx.transcript.event("oversight_failed",
+                                      {"error": f"{type(exc).__name__}: {exc}"})
         except Exception:
             pass
 

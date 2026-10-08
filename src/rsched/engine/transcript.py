@@ -27,14 +27,19 @@ EVENT_TYPES = (
     # A finish that STOOD while declared stages went unentered (F521/R1681) — a notice,
     # never a refusal: skipping is sometimes right, going unnoticed never is.
     "stages_skipped", "finish",
-    # The escalation ladder's four records (engine/ladder.py). A rung is oversight: it must
-    # leave a trace whether it fired, ruled, ruled nothing, or never ran — an oversight
+    # The escalation ladder's five records (engine/ladder.py). A rung is oversight: it must
+    # leave a trace whether it fired, ruled, ruled nothing, never ran, or BROKE — an oversight
     # mechanism nobody can audit is not oversight. `oversight_dispatch` is the rung STARTING
-    # (why it fired, over which interval, on what budget); `oversight_skipped` the reason it did
-    # not run at all (no supervisor pattern, the tree's ceiling, a spent budget, an error). The
-    # directive's TEXT reaches the worker as a `user_injection` on the `oversight` channel, so
-    # `oversight_directive` records the VERDICT, not the prose.
+    # (why it fired, over which interval, on what budget); `oversight_skipped` the reason it
+    # DECLINED to run (no supervisor pattern, the tree's ceiling, a spent budget) — a decision
+    # the ladder took on purpose. `oversight_failed` is the mechanism RAISING, which is not a
+    # decision at all: for most of the ladder's life an AttributeError was filed as a skip
+    # (`loop.subs` for `loop.subruns`, ladder.py:297, R2348/R2352), so every rung on every run
+    # died and read exactly like a healthy decline on every surface. The two must never share an
+    # event again. The directive's TEXT reaches the worker as a `user_injection` on the
+    # `oversight` channel, so `oversight_directive` records the VERDICT, not the prose.
     "oversight_dispatch", "oversight_directive", "oversight_skipped", "oversight_no_directive",
+    "oversight_failed",
     # A PERSON stopped the call of one turn (F586, decided as D160-C: "B plus a transcript
     # event, so an audit of the run afterwards SEES the human intervention instead of inferring
     # it from a gap"). The observation already carries `cancelled`, but an observation says what

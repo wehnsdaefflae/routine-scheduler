@@ -696,6 +696,13 @@ export function createTranscript(container, opts = {}) {
     oversight_skipped: (ev) => el("div", { class: "ev compaction", "data-oversight-skipped": "" },
       `— ↑ oversight${ev.payload?.rung ? ` rung ${ev.payload.rung}` : ""} skipped: `
       + `${ev.payload?.reason || "no reason recorded"} —`),
+    // The mechanism RAISED — not a rung declining to run. Its own renderer in the ERROR palette
+    // for the reason the event exists: until R2348/R2352 this was filed as `oversight_skipped`,
+    // so a total failure (`loop.subs`, an attribute that never existed, on EVERY run) rendered
+    // as the ordinary ceiling case and nobody reading a transcript could tell.
+    oversight_failed: (ev) => el("div", { class: "ev error", "data-oversight-failed": "" },
+      `— ↑ oversight${ev.payload?.rung ? ` rung ${ev.payload.rung}` : ""} FAILED: `
+      + `${ev.payload?.error || "no error recorded"} —`),
     // A rung that ran and handed back no usable directive — supervision that cost turns and
     // said nothing. Visible, because it reads like `continue` and is not.
     oversight_no_directive: (ev) => el("div", { class: "ev compaction", "data-oversight-none": "" },

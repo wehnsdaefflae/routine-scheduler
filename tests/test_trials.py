@@ -137,6 +137,32 @@ def test_a_trial_naming_a_model_the_catalog_lacks_is_ignored(make_routine, tmp_p
     assert not (run_dir / runrecord.TRIAL_FILE).exists()
 
 
+def test_a_stored_role_naming_a_model_the_catalog_lacks_is_reported(make_routine, tmp_path):
+    """F643: `tv-show-tracker-seedbox-manager` and `library-sync` each carried a bare `Sonnet`
+    role, stored nine weeks earlier when that WAS a catalog name. After the rename to
+    `Sonnet medium`/`Sonnet high` both died at boot — rc=1, no finish, no summary, an
+    `orphaned_run` and nothing to read. The write edges check; a stored name goes stale later."""
+    server = _catalog(tmp_server(tmp_path, create=False), "Sonnet medium", "Sonnet high")
+    problem = trials.roles_problem(server, {"main": "Sonnet"})
+    assert "models.main 'Sonnet'" in problem and "not in the model catalog" in problem
+    assert "Settings" in problem, "the line must say where the catalog is named"
+    assert trials.roles_problem(server, {"main": "Sonnet medium"}) == ""
+    assert trials.roles_problem(server, None) == ""
+    assert trials.roles_problem(server, {}) == ""
+
+
+def test_every_stale_role_is_named_not_only_the_first(make_routine, tmp_path):
+    """The uncensored role resolves only when a refusal is referred, so it stays broken longest:
+    a line that stopped at `main` would hide it."""
+    server = _catalog(tmp_server(tmp_path, create=False), "Sonnet high")
+    problem = trials.roles_problem(server, {"main": "Sonnet", "tool_call": "Sonnet high",
+                                            "uncensored": "gemma-4-26b-a4b-uncensored"})
+    assert "models.main 'Sonnet'" in problem
+    assert "models.uncensored 'gemma-4-26b-a4b-uncensored'" in problem
+    assert "tool_call" not in problem, "a role the catalog serves must not be named"
+    assert " are not in the model catalog" in problem, "two stale roles read as plural"
+
+
 def test_no_trial_is_no_state(make_routine, tmp_path):
     cfg, _ = load_routine(make_routine(slug="plain"))
     assert trials.state(tmp_server(tmp_path, create=False), cfg) is None

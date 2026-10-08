@@ -108,9 +108,18 @@ class _Sub:
 
 
 class _Loop:
+    """The slice of EngineLoop the ladder touches.
+
+    The sub-run manager is `subruns` — the name the REAL loop carries (`engine/loop.py:154`,
+    and every working caller in `engine/actionroute.py`). This fake said `subs` and so did
+    `ladder.py`, which is the only reason every rung on every run could die of an
+    AttributeError for months behind a green suite (R2348/R2352). If a change makes this
+    attribute disagree with `engine/loop.py` again, fix the production code, never this line.
+    """
+
     def __init__(self, ctx, subs, says=()):
         self.ctx = ctx
-        self.subs = subs
+        self.subruns = subs
         self.turn_records = [{"say": s} for s in says]
 
 
@@ -416,7 +425,57 @@ def test_nothing_in_the_ladder_can_end_the_run(tmp_path):
     ctx = _Ctx(tmp_path, turn=99, ladder={"enabled": True})
     loop = _Loop(ctx, _Exploding(None))
     ladder.at_boundary(loop)                       # must not raise
-    assert "oversight_skipped" in ctx.transcript.kinds()
+    assert "oversight_failed" in ctx.transcript.kinds()
+
+
+def test_a_mechanism_that_raised_is_not_recorded_as_a_rung_that_declined(tmp_path):
+    """A RAISE and a DECLINE are different facts and must never share an event.
+
+    This is the property R2348/R2352 was filed on: `ladder.py` dispatched through `loop.subs`,
+    an attribute the real loop has never had, and filed the AttributeError as
+    `oversight_skipped` — the same record the legitimate "deep or budget-spent tree" case
+    writes. So every rung on every run died and read, on every surface, exactly like a healthy
+    ladder declining to fire. The two events below must stay distinct whatever else changes.
+    """
+    class _Exploding(_Subs):
+        def _start_child(self, action, *, mode, prefix, overrides=None):
+            raise AttributeError("'EngineLoop' object has no attribute 'subs'")
+
+    settings = {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15}
+
+    (tmp_path / "broke").mkdir()
+    (tmp_path / "declined").mkdir()
+    broke = _Ctx(tmp_path / "broke", turn=99, ladder={"enabled": True})
+    ladder.at_boundary(_Loop(broke, _Exploding(None)))
+    assert "oversight_failed" in broke.transcript.kinds()
+    assert "oversight_skipped" not in broke.transcript.kinds()
+
+    # The decline: `_start_child` hands back a REASON STRING, which is not an error at all.
+    declined = _Ctx(tmp_path / "declined")
+    ladder.escalate(_Loop(declined, _Subs("child-task budget exhausted")), "interval", settings)
+    assert "oversight_skipped" in declined.transcript.kinds()
+    assert "oversight_failed" not in declined.transcript.kinds()
+
+
+def test_the_ladder_dispatches_through_an_attribute_the_real_loop_has(tmp_path):
+    """The fake `_Loop` above is the ladder's only test surface, so a name only IT carries
+    proves nothing. Pin the attribute against the real class's own annotations: had this
+    existed, R2348's "every rung has always died" would have failed on the first run.
+    """
+    import re
+
+    from rsched.engine.loop import EngineLoop
+
+    # CODE only: the comments in ladder.py name the historical `loop.subs` on purpose, so a
+    # guard that read them would fail on its own explanation.
+    source = "\n".join(line.split("#", 1)[0] for line
+                       in Path(ladder.__file__).read_text(encoding="utf-8").splitlines())
+    reached = set(re.findall(r"\bloop\.([a-z_]+)\b", source))
+    known = set(EngineLoop.__annotations__) | set(dir(EngineLoop))
+    assert reached, "the ladder reaches nothing on the loop — did the dispatch move?"
+    assert not (reached - known), (
+        f"engine/ladder.py reaches loop attributes EngineLoop does not have: "
+        f"{sorted(reached - known)}")
 
 
 def test_the_interval_is_closed_even_when_the_rung_fails(tmp_path):

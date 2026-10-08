@@ -21,11 +21,14 @@ from pathlib import Path
 
 from ..engine.transcript import read_events
 
-#: The events this read-model folds — `engine/ladder.py` is the only writer of all four.
+#: The events this read-model folds — `engine/ladder.py` is the only writer of all five.
 DISPATCH = "oversight_dispatch"
 DIRECTIVE = "oversight_directive"
 SKIPPED = "oversight_skipped"
 NO_DIRECTIVE = "oversight_no_directive"
+#: The mechanism RAISED, which a skip never is (R2348/R2352). Folded separately and reported as
+#: `last: "failed"` so the strip can say the ladder is broken rather than quietly declining.
+FAILED = "oversight_failed"
 
 
 def _int(value: object, default: int = 0) -> int:
@@ -58,11 +61,12 @@ def ladder_state(run_dir: Path, *, turn: int = 0) -> dict | None:
 def _ladder_state(path: Path, turn: int) -> dict | None:
     events, _ = read_events(path, 0)
     rungs = [ev for ev in events
-             if ev.get("type") in (DISPATCH, DIRECTIVE, SKIPPED, NO_DIRECTIVE)]
+             if ev.get("type") in (DISPATCH, DIRECTIVE, SKIPPED, NO_DIRECTIVE, FAILED)]
     if not rungs:
         return None
-    state: dict = {"rung": 0, "dispatched": 0, "skipped": 0, "verdict": "", "disposition": "",
-                   "next_look": "", "turns_to_next": None, "last": "", "last_reason": ""}
+    state: dict = {"rung": 0, "dispatched": 0, "skipped": 0, "failed": 0, "verdict": "",
+                   "disposition": "", "next_look": "", "turns_to_next": None, "last": "",
+                   "last_reason": ""}
     last_dispatch_turn = 0
     next_rung_in = 0
     for ev in rungs:
@@ -85,6 +89,12 @@ def _ladder_state(path: Path, turn: int) -> dict | None:
             state["skipped"] += 1
             state["last"] = "skipped"
             state["last_reason"] = str(p.get("reason") or "")
+        elif etype == FAILED:
+            # Never folded into `skipped`: a broken mechanism and a declined rung are the one
+            # distinction this read-model exists to make (R2348/R2352).
+            state["failed"] += 1
+            state["last"] = "failed"
+            state["last_reason"] = str(p.get("error") or "")
         else:                                    # NO_DIRECTIVE
             state["last"] = "silent"
             state["last_reason"] = str(p.get("status") or "")
@@ -96,4 +106,4 @@ def _ladder_state(path: Path, turn: int) -> dict | None:
     return state
 
 
-__all__ = ["DIRECTIVE", "DISPATCH", "NO_DIRECTIVE", "SKIPPED", "ladder_state"]
+__all__ = ["DIRECTIVE", "DISPATCH", "FAILED", "NO_DIRECTIVE", "SKIPPED", "ladder_state"]

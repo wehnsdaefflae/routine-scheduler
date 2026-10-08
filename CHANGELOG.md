@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.399.1] — 2026-10-09
+
+### Fixed — every oversight rung on every run had always died, and nothing said so (F644, R2352/R2348)
+
+- `engine/ladder.py` dispatched a rung through `loop.subs`; the attribute is `loop.subruns`, as
+  every working caller has it (`actionroute.py`). `grep -rn '\.subs\b' src/` returned exactly that
+  one line tree-wide — so a rung has never judged anything, children in flight or none. The
+  ladder's own tests passed because their fake loop defined `subs` to match the caller; the fake
+  now carries the real name and would fail against the defect.
+- An errored rung is no longer indistinguishable from a declined one. A rung that RAISES files the
+  new `oversight_failed` event (vocabulary in `engine/transcript.py`), while `oversight_skipped`
+  keeps its one meaning — the legitimate decline of a deep or budget-spent tree. `readmodels/ladder.py`
+  folds the new event to `last: "failed"` with its error text, and `static/components/ladderstrip.js`
+  plus `static/components/transcript.js` render it instead of falling through to a blank verdict
+  line. The read model's docstring had already named the property this restores: the skip reason is
+  the only thing distinguishing a declined rung from a broken one.
+
+### Fixed — a stored model role the catalog no longer serves is now reported (F643)
+
+- `trials.roles_problem(server, models)` asks of a routine's STANDING roles the question
+  `catalog_problem` asks of a trial, and `rsched validate` reports it. The write edges already
+  refuse a bad role name (`web/config_fields.validate_models`); what nothing checked is a stored
+  name going stale LATER, when the catalog is renamed under a file nobody edited.
+- Measured cause: `tv-show-tracker-seedbox-manager` and `library-sync` each carried a bare
+  `Sonnet`, stored nine weeks earlier when that was a catalog name. After the rename to
+  `Sonnet medium`/`Sonnet high` both died at boot — `EndpointError: model 'Sonnet' is not in the
+  catalog`, rc=1, **no finish, no summary, no result.md**, an `orphaned_run` and nothing to read.
+  A role is worse than a trial here: an unservable trial is merely ignored, while `main` resolves
+  on the first turn of every run. Every stale role is named, not only the first, because the
+  `uncensored` role resolves only when a refusal is referred and so stays broken longest.
+
 ## [0.399.0] — 2026-10-08
 
 ### Added — the change measurement reaches back to the first run

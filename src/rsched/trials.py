@@ -64,6 +64,33 @@ def ignored_problem(server: ServerConfig, trial: TrialConfig | None) -> str:
             "or is cleared") if problem else ""
 
 
+def roles_problem(server: ServerConfig, models: dict[str, str] | None) -> str:
+    """The same question as `catalog_problem`, asked of a routine's STANDING model roles:
+    which of `models`' names this instance cannot serve, or "".
+
+    Here for the reason this module exists at all — the loader cannot see the catalog, so a
+    stored model name is checked only by callers that can. The write edges DO check
+    (`web/config_fields.validate_models` refuses a role naming a non-catalog model), but a
+    stored name goes stale LATER, when the catalog is renamed underneath a file nobody edited.
+    That is F643: `tv-show-tracker-seedbox-manager` and `library-sync` both carried a bare
+    `Sonnet` taken nine weeks earlier, when it was a catalog name; after the rename to
+    `Sonnet medium`/`Sonnet high` each routine died at boot — `EndpointError: model 'Sonnet' is
+    not in the catalog` out of `resolve`, rc=1, no finish, no summary, an `orphaned_run` and
+    nothing else. A role is worse than a trial here: a trial that cannot be served is merely
+    ignored, while `main` resolves on the first turn of every run.
+
+    The uncensored role is included — it resolves the moment a refusal is referred, which is
+    rarer than turn one and so stays broken longer unnoticed.
+    """
+    missing = [f"models.{role} {name!r}" for role, name in sorted((models or {}).items())
+               if isinstance(name, str) and name not in server.models]
+    if not missing:
+        return ""
+    verb = "is" if len(missing) == 1 else "are"
+    return (f"{', '.join(missing)} {verb} not in the model catalog — the run dies resolving it "
+            "(Settings → Models names what this instance serves)")
+
+
 def recorded(routines_home: Path, slug: str, trial_id: str) -> int:
     """How many of `slug`'s runs carry `trial_id` in their durable record — runs, not legs, and
     the live routine's own (readmodels/incarnations.py).

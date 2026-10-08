@@ -61,10 +61,12 @@ def test_the_real_transcript_accepts_each_ladder_record(tmp_path):
                                     "next_look": "the gate verdict"})
     t.event("oversight_skipped", {"rung": 2, "reason": "no supervisor pattern"})
     t.event("oversight_no_directive", {"rung": 2, "status": "failed"})
+    t.event("oversight_failed", {"error": "AttributeError: 'EngineLoop' object has no "
+                                          "attribute 'subs'"})
     t.close()
     lines = [json.loads(ln) for ln
              in (tmp_path / "transcript.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [ln["type"] for ln in lines] == list(LADDER_EVENT_TYPES)
+    assert [ln["type"] for ln in lines] == [*LADDER_EVENT_TYPES, "oversight_failed"]
     assert lines[0]["payload"]["oversight_turns"] == 11
     assert lines[1]["payload"]["verdict"] == "off_track"
 

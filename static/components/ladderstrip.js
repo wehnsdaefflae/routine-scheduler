@@ -15,6 +15,13 @@ const VERDICT_CLASS = { on_track: "ok", off_track: "warn", stuck: "bad", failing
 
 /** The strip's line for what the last rung did — its own sentence, never a bare enum. */
 function lastLine(st) {
+  if (st.last === "failed") {
+    // The mechanism RAISED. Loudest line on the strip, never folded into the skip wording: for
+    // most of the ladder's life ladder.py dispatched through a non-existent attribute and filed
+    // the AttributeError as a skip, so a reader saw "did not run — error: …" and read it as the
+    // ordinary ceiling case (R2348/R2352).
+    return ["bad", `rung ${st.rung || "?"} BROKE — ${st.last_reason || "no error recorded"}`];
+  }
   if (st.last === "skipped") {
     return ["warn", `rung ${st.rung || "?"} did not run — ${st.last_reason || "no reason recorded"}`];
   }
@@ -69,6 +76,7 @@ export function renderLadder(host, rail, state) {
   const counts = [];
   if (state.dispatched) counts.push(`${state.dispatched} dispatched`);
   if (state.skipped) counts.push(`${state.skipped} skipped`);
+  if (state.failed) counts.push(`${state.failed} FAILED`);
   if (counts.length) rows.push(el("div", { class: "faint small" }, counts.join(" · ")));
   host.replaceChildren(el("div", { class: "ladderstrip", "data-ladder": state.last || "" },
     ...rows));

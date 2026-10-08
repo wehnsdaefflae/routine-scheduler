@@ -154,7 +154,7 @@ def cmd_validate(args) -> int:
                if server.routines_home.is_dir() else [])
     from .readmodels.remedies import surface_lines
     from .readmodels.surface import routine_surface
-    from .trials import ignored_problem
+    from .trials import ignored_problem, roles_problem
     from .workflows.recipelint import recipe_notes
 
     for d in targets:
@@ -163,6 +163,11 @@ def cmd_validate(args) -> int:
         # cannot see the catalog, so it is said here (rsched/trials.py)
         if cfg and (trial_problem := ignored_problem(server, cfg.trial)):
             problems.append(trial_problem)
+        # And the STANDING roles, for the same reason and from the same module: a stored name
+        # goes stale when the catalog is renamed underneath it, and the write edge that checked
+        # it is long past (F643 — two runs died at boot on a `Sonnet` that was valid when taken)
+        if cfg and (role_problem := roles_problem(server, cfg.models)):
+            problems.append(role_problem)
         # Setup COHERENCE is a second, independent question from "is the file well-formed":
         # a routine can parse perfectly and still hold a rule that tells it to publish into a
         # directory it cannot write. Only a blocking row fails the command — an interrupt or a
