@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.393.1] — 2026-10-08
+
+### Fixed
+- **One-shot calls through the subscription proxy are no longer written to the prompt cache.**
+  Since 0.325.0 a one-shot call (the archival of a compacted middle, an `llm` subcall, the
+  refusal classifier) was sent with NO cache marker so that nothing would be written — but
+  CLIProxyAPI, which every `anthropic` endpoint here runs through, places its own breakpoints on
+  the tools, the system prompt and the last message of any request that carries none (v7.2.156,
+  no setting to stop it). In the week to 2026-10-08 that billed 100% of four archival calls'
+  input (2.94M tokens) and 95% of 190 `llm` subcalls' as cache WRITES, at 1.25x, for prefixes
+  nothing read again. Such a call now carries ONE marker of its own, on its first and smallest
+  block — the tool definition, else the system prompt, else the first message
+  (`anthropic_api._claim_placement`) — so the proxy leaves placement alone. Measured live through
+  the proxy on a 24.5k-token one-shot call: 24,623 tokens written before, 0 after. A ~150-token
+  tool definition is below the minimum prefix the API caches, so the claim itself writes nothing.
+
 ## [0.393.0] — 2026-10-08
 
 Two token-saving mechanisms adapted from NVIDIA's SoL-Pi harness study (arXiv 2609.20519),

@@ -280,9 +280,17 @@ Who caches how:
   top-level `cache_control` marker. Without it the metered Opus fallback re-sent its whole
   prefix at full price every turn — twelve turns of one live run, ~100–117k input each,
   `cached_in` 0, **$6.63**.
-- **One-shot calls** (an `llm` action, an archival digest, the refusal classifier) place no
-  marker at all on any adapter: their prefix is never sent again, so the write would buy a read
-  that never comes.
+- **One-shot calls** (an `llm` action, an archival digest, the refusal classifier) are not
+  written to the cache: their prefix is never sent again, so the write would buy a read that never
+  comes. On the OpenAI-compatible wire that means no marker. On the `anthropic` wire it means ONE
+  marker on the first, smallest block — the tool definition, else the system prompt, else the
+  first message (`anthropic_api._claim_placement`) — because the subscription proxy every
+  `anthropic` endpoint here runs through (CLIProxyAPI v7.2.156) places its OWN breakpoints on the
+  tools, the system prompt and the last message of any request that carries none, with no setting
+  to stop it. Before the claim, 100% of the archival calls' input (2.94M tokens over four calls)
+  and 95% of 190 `llm` subcalls' was billed as cache writes in the week to 2026-10-08. A ~150-token
+  tool definition is below the minimum prefix the API caches, so the claim itself writes nothing
+  there.
 
 **The 5-minute TTL is the right default — measured twice, do not raise it.** A cache entry
 expires five minutes after its last use, so a turn following a long tool call re-writes the whole

@@ -36,7 +36,10 @@ from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, EndpointError, Mess
 #: Derived HERE and nowhere else, because this wrapper is the one seam every completion
 #: passes through and it already knows the kind. A per-call-site flag would be a flag ten
 #: call sites can forget; the adapters still default `cacheable=True`, so a path that somehow
-#: bypasses instrumentation keeps caching rather than silently losing it.
+#: bypasses instrumentation keeps caching rather than silently losing it. How a one-shot call
+#: is kept OUT of the cache is each adapter's business: on the `anthropic` wire it takes one
+#: marker, not none, because the subscription proxy caches any request that carries none
+#: (`anthropic_api._claim_placement`).
 CACHEABLE_KINDS = frozenset({"turn"})
 
 

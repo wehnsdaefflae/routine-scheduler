@@ -305,9 +305,13 @@ Two kinds:
   `stop_details["unread"]`. Sets `cache_control` breakpoints (tools +
   system static, a moving one on the last message) on CONVERSATION turns — ~0.1x reads on the whole
   prefix every turn. A ONE-SHOT
-  call places none: `cacheable` is derived from the task kind at the one seam every completion passes
-  through (`instrument.CACHEABLE_KINDS` = {"turn"}), because a prefix that is never sent again would
-  pay a 1.25x write for a read that never comes (measured: 0.3% read share on `llm_action`).
+  call is not written: `cacheable` is derived from the task kind at the one seam every completion
+  passes through (`instrument.CACHEABLE_KINDS` = {"turn"}), because a prefix that is never sent again
+  would pay a 1.25x write for a read that never comes (measured: 0.3% read share on `llm_action`).
+  It carries ONE marker, on its first and smallest block (`anthropic_api._claim_placement`), not
+  none: the subscription proxy (CLIProxyAPI) adds its own breakpoints to any request carrying no
+  marker, which had every archival call's whole input — 2.94M tokens across four — billed as cache
+  writes.
 
 Whether that caching is actually WORKING is a measured reading, not an assumption:
 `endpoints.base.cache_read_share` divides reads by all cache traffic, the Stats tab carries it on

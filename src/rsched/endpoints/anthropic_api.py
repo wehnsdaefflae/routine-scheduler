@@ -28,8 +28,10 @@ Prompt caching is on for CONVERSATIONS: cache_control breakpoints on the tools b
 the system prompt (static per run) plus a moving breakpoint on the last message — each turn
 re-reads the whole prefix at ~0.1x price instead of full price. The engine's message list is
 append-only, which is exactly what prefix caching needs. A ONE-SHOT call (`cacheable=False`,
-derived from the task kind in instrument.CACHEABLE_KINDS) places no markers at all: its
-prefix is never sent again, so a write would cost 1.25x for a read that never comes. Cache
+derived from the task kind in instrument.CACHEABLE_KINDS) must not be written: its prefix is
+never sent again, so a write would cost 1.25x for a read that never comes. It does NOT do
+that by sending no marker — the subscription proxy places its own breakpoints on any request
+that carries none — but by sending ONE on the first, smallest block (`_claim_placement`). Cache
 traffic is reported as usage "cached_in" / "cache_write" (kept out of "in"). A 400 naming
 cache_control gets one degraded retry without the markers.
 
@@ -190,6 +192,41 @@ def _mark_tail(messages: list[Message]) -> list[Message]:
     return out
 
 
+def _claim_placement(body: dict) -> dict:
+    """A ONE-SHOT body with one cache marker on its FIRST block in evaluation order — the
+    tool definition, else the system prompt, else the first message's first block.
+
+    No marker at all is not "no caching" on every wire. CLIProxyAPI, the subscription proxy
+    every `anthropic` endpoint here runs through, adds its own breakpoints — on the tools, the
+    system prompt and the last message — to any request that arrives carrying none
+    (`shouldEnsureCacheControl`, v7.2.156; there is no setting for it). Measured over the week
+    to 2026-10-08: 100% of four archival calls' input (2.94M tokens) and 95% of 190 `llm`
+    subcalls' was billed as cache WRITES, at 1.25x, for prefixes nothing ever read again.
+    One marker of the caller's own tells the proxy placement is taken, and caches at most the
+    prefix up to the block it sits on. For the archival call that is a ~150-token tool
+    definition, below the minimum prefix the API caches at all, so it is free on the direct
+    API too; a long system prompt would be written, and is still far less than the whole
+    prompt. A prompt that is a single message has no smaller prefix to mark: that one is
+    cached, exactly as the proxy would have cached it.
+    """
+    marker = {"type": "ephemeral"}
+    if body.get("tools"):
+        return {**body, "tools": [{**body["tools"][0], "cache_control": marker},
+                                  *body["tools"][1:]]}
+    if body.get("system"):
+        return {**body, "system": [{"type": "text", "text": body["system"],
+                                    "cache_control": marker}]}
+    messages = body.get("messages") or []
+    if not messages:
+        return body
+    first = messages[0]
+    content = first["content"]
+    blocks: list[dict] = ([{"type": "text", "text": content}] if isinstance(content, str)
+                          else [dict(b) for b in content])
+    blocks[0] = {**blocks[0], "cache_control": marker}
+    return {**body, "messages": [{**first, "content": blocks}, *messages[1:]]}
+
+
 def _strip_cache_control(body: dict) -> dict:
     """Degraded request without any cache markers (for gateways that reject them)."""
     out = json.loads(json.dumps(body))
@@ -288,6 +325,8 @@ class AnthropicEndpoint:
                 tool["cache_control"] = {"type": "ephemeral"}   # static per run → a breakpoint
             body["tools"] = [tool]
             body["tool_choice"] = dict(_FORCED)
+        if not cacheable:
+            body = _claim_placement(body)
         headers = {"x-api-key": self._api_key(), "anthropic-version": API_VERSION}
         sent = body
 

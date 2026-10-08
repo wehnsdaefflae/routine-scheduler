@@ -555,12 +555,19 @@ def test_anthropic_effort_wiring(monkeypatch):
     assert "output_config" not in seen["body"]
 
 
-def test_anthropic_one_shot_places_no_breakpoints(monkeypatch, tmp_path):
+def test_anthropic_one_shot_claims_placement_on_its_smallest_block(monkeypatch, tmp_path):
     """A one-shot call (`cacheable=False` — an `llm` action, the archival digest, a refusal
     classification) sends a prefix that will never be sent again, so a cache WRITE costs
-    1.25x for a read that never comes. No markers at all, and the system prompt goes back to
-    its plain string form (block form exists only to carry a marker).
+    1.25x for a read that never comes.
+
+    Sending NO marker did not prevent that: the subscription proxy (CLIProxyAPI) places its
+    own breakpoints — tools, system, last message — on any request carrying none, and every
+    archival call's whole input was billed as a cache write (2.94M tokens over four). So the
+    call carries exactly ONE marker, on the first block in evaluation order: the proxy leaves
+    placement alone, and only that small prefix can be written.
     """
+    import json as _json
+
     keyfile = tmp_path / "anthropic.env"
     keyfile.write_text('ANTHROPIC_API_KEY="sk-test"\n')
     ep = AnthropicEndpoint(EndpointConfig(
@@ -574,14 +581,35 @@ def test_anthropic_one_shot_places_no_breakpoints(monkeypatch, tmp_path):
             "usage": {"input_tokens": 7, "output_tokens": 3}})
 
     monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
-    ep.complete(MESSAGES, model="m", schema={"type": "object"}, cacheable=False)
 
-    assert "cache_control" not in __import__("json").dumps(seen["body"])
+    def markers() -> int:
+        return _json.dumps(seen["body"]).count('"cache_control"')
+
+    # with a schema: the tool definition carries it — the smallest prefix there is
+    ep.complete(MESSAGES, model="m", schema={"type": "object"}, cacheable=False)
+    assert markers() == 1
+    assert seen["body"]["tools"][0]["cache_control"] == {"type": "ephemeral"}
     assert seen["body"]["system"] == "be brief"                  # plain string, not blocks
     assert isinstance(seen["body"]["messages"][-1]["content"], str)
     # everything else about the call is unchanged — this is a caching decision, not a
     # different request shape
     assert seen["body"]["tool_choice"] == _FORCED
+
+    # no schema: the system prompt carries it
+    ep.complete(MESSAGES, model="m", cacheable=False)
+    assert markers() == 1
+    assert seen["body"]["system"] == [{"type": "text", "text": "be brief",
+                                       "cache_control": {"type": "ephemeral"}}]
+
+    # neither: the first message's first block — the whole prompt, which the proxy would
+    # have cached anyway; there is no smaller prefix to claim
+    ep.complete([m for m in MESSAGES if m["role"] != "system"], model="m", cacheable=False)
+    assert markers() == 1
+    assert seen["body"]["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+
+    # a CONVERSATION turn is untouched: tools, system and the moving tail breakpoint
+    ep.complete(MESSAGES, model="m", schema={"type": "object"})
+    assert markers() == 3
 
 
 def test_anthropic_cache_usage_captured(monkeypatch):
