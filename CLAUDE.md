@@ -409,7 +409,14 @@ one you are about to touch, not all of them.
   that raises becomes an error observation instead of ending the run. **A `background: true` call
   passes that gate on its STARTING turn, before the thread exists** (F633): the gate asks the user
   and a thread has no turn to block on, so a deferral that skipped it would have moved a security
-  decision out of reach — every call-time gate a kind has runs synchronously first.
+  decision out of reach — every call-time gate a kind has runs synchronously first. **The
+  CONCURRENCY CAP is read before that gate** (D166: at most `background.MAX_CONCURRENT` = 3 in
+  flight, the fourth REFUSED naming the live handles): the gate can file a BLOCKING question, so
+  asking the user to decide a credential exposure for a call about to be refused anyway would spend
+  his attention on nothing. **A backgrounded call's model spend books ON COLLECTION** (D167):
+  `RunContext.add_usage` parks a reading made on a background thread and `background.collect` books
+  it at the turn boundary, because folding into `ctx.usage` from the thread both races the loop's
+  own fold and makes a turn's budget check depend on thread timing.
   **Util output too large for its observation is SAVED, not lost** — `engine/outputs.py` spills the
   full captured text to `.util_outputs/<run-ts>/t<turn>-<util>.out` and the observation that lost the
   middle carries the path (so the store needs no index). ONLY truncated output is kept: an

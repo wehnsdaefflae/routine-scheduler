@@ -99,8 +99,8 @@ context is unchanged — same run, same budget, same conversation — which is p
 cannot offer.
 
 - **Which kinds.** `engine/actions.BACKGROUNDABLE_KINDS`: `util`, `script`, `shell`, `llm`,
-  `read_file`, `view_image`, `memory_read`, `read_rule`. Every one is a read or a fetch whose only
-  effect is its observation. A mutation (`write_file`, `edit_file`, `write_util`, `memory_write`, …)
+  `decide`, `read_file`, `view_image`, `memory_read`, `read_rule`. Every one is a read or a fetch
+  whose only effect is its observation. A mutation (`write_file`, `edit_file`, `write_util`, `memory_write`, …)
   is REFUSED with its reason inside the schema-retry cycle, because a later synchronous action
   would read what the deferred one has not written yet; widening that needs a dependency/barrier
   model. A control kind (`finish`, `ask_user`, `report`, `spawn`, `subtask`, `wait`, `kill`) is
@@ -129,6 +129,50 @@ cannot offer.
   is a loss only a reader of the result can judge.
 - **No new transcript event types**: the started record and the real observation are both
   `observation` events carrying `background` and `handle` (plus `started_turn` on the delivery).
+
+### Phase 4 — the cap, the budget, and who may use it
+
+Three decisions, answered 2026-10-08 (D166, D167, D168), settle how the feature behaves under
+load, where its spend lands, and who gets it.
+
+- **At most THREE background calls in flight per run** (`background.MAX_CONCURRENT`, D166). The
+  fourth flagged action is **REFUSED** on its own turn, inside the schema-retry cycle, naming every
+  live handle with its brief — so the run can decide what to drop: take this call in the
+  foreground, or let one of the named handles land first. Nothing is queued, deliberately: a queue
+  defers silently, so a run cannot tell a started call from a parked one, and the parked call still
+  lands its observation at a boundary the run did not plan for. The cap is read in
+  `actionroute.dispatch_action` **before** the call-time secret gate, because that gate can file a
+  BLOCKING question and asking the operator to decide a credential exposure for a call about to be
+  refused spends his attention on nothing. The refusal carries `rejected` + `reason` — the one
+  shape `observations._not_executed` words for an action the engine did not execute; a refusal
+  carrying result-shaped fields instead reaches a per-kind renderer that reads them and raises.
+- **A background call's tokens book ON COLLECTION, not from its thread** (D167). A handler knows
+  nothing about having been backgrounded — `do_llm` books through `ctx.add_usage` at five sites
+  (two of its own, three in `engine/refusal.py`) and `do_decide` at one — so the deferral lives at
+  the single booking point: `RunContext.add_usage` reads the name of the thread it is running on
+  (`background_parking_key`, matching `BACKGROUND_THREAD_PREFIX`) and PARKS the reading instead of
+  folding it. `background.collect` books it at the turn boundary and records `usage_booked` beside
+  the call, so the spend and the observation that caused it arrive together. Booking from the
+  thread was wrong twice over: `fold_usage` is a read-modify-write over a shared dict, so two
+  folds at once lose a reading; and the spend arrived at an arbitrary moment inside a turn, making
+  the number a turn's budget check reads depend on thread timing. **An abandoned call's spend books
+  too** — the tokens were spent at the provider whether or not the run ever read the answer, and
+  charging only the calls that landed would make "background it and finish" the cheapest way to
+  spend money no budget sees.
+- **Wall-clock needs no accounting machinery** and the reason is worth stating: the run's clock is
+  real elapsed time (`meter()["wall_clock"]` = `elapsed_s()/60`), so twenty parallel fetches cannot
+  outrun a 240-minute ceiling — the run is still running while they do. A test pins that semantics
+  rather than leaving it to be re-derived.
+- **Every run, not only conversations** (D168). Backgrounding was motivated by a human waiting, but
+  a scheduled routine with independent fetches gains exactly the same, so the flag is gated by KIND
+  only (`BACKGROUNDABLE_KINDS`) and never by run kind. There is nothing to configure.
+- **Cancellation is NOT in phase 4** as shipped. `kill` takes `n`, an integer sub-workflow number,
+  while a background id is a string handle (`bg1`), so reusing it means changing a field in the flat
+  action schema every routine's prompt carries — a surface decision, filed rather than guessed.
+  Whoever builds it should know the honest ceiling first: Python cannot force-kill a thread, so
+  cancellation can only mean "stop DELIVERING the observation and free a cap slot", never "stop the
+  work", and the spend still books. A call nobody cancels is still abandoned safely at run end,
+  which already works.
 
 ## Contrast with subtasks/subruns
 
