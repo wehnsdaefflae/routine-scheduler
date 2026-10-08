@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.393.3] — 2026-10-08
+
+### Fixed
+- **Answering a decision that carries a `config_patch` no longer takes its `approve & apply`
+  button away.** A patch-carrying card has two independent controls and answering is not one of
+  them: the answer lands the text and never applies the patch. Answering nevertheless resolved
+  the card, so the one control that could apply the proposal disappeared with it — reported
+  twice, the second time on an option reading literally "Ja — Patch übernehmen", where the
+  answer said yes and nothing happened. The operator ruled it on 2026-10-05 (option 3: "only the
+  button; answering warns and keeps the patch available").
+
+  The fix had to go where the card actually goes. An answered card re-renders through the
+  **settled-receipt branch** at the top of `item()` in `static/views/questions.js` — a separate
+  element tree that deliberately drops the proposal body, because rendering every settled
+  proposal in full made the page eleven thousand pixels of decisions already taken. Keeping the
+  card listed was therefore only half a fix: the repaint discarded the proposal anyway. The
+  config bridge is now one factory, `configProposal(q, {host, clearWarn})`, and **each card shape
+  mounts its own copy with its own handler** — a factory rather than one node reused, because
+  `append` RELOCATES a mounted node, which is what carried a live apply button into an element
+  that had just been wiped. The settled card shows the proposal under a "NOT applied" warning,
+  and the button still works; applying from there does not re-file the existing answer.
+- **A `.flow-note` wraps, so a config proposal is readable on a phone.** The note is a flex row
+  with no `flex-wrap`, and the config proposal is a flow-note carrying three blocks (the
+  explanation, the patch as JSON, the apply button). At 390 px they were laid out in three
+  columns with the JSON clipped mid-token (`"budge`, `"max_t`). No assertion caught it and
+  nothing overflowed the viewport — the `<pre>` scrolls inside its own column — so it was found
+  by rendering the card and looking at it. The patch now takes the note's full width.
+
 ## [0.393.2] — 2026-10-08
 
 ### Fixed
