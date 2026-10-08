@@ -161,6 +161,26 @@ def write_usage_stream(routines_home: Path, records: list[dict]) -> None:
         "".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
 
 
+def measured_run(i: int, *, slug: str = "digest", recipe: str = "c1",
+                 model: str = "Opus high", effort: str = "high", engine: str = "0.396.0",
+                 rules: dict | None = None, status: str = "ok", tokens: int = 40_000,
+                 met: int = 2, owed: int = 2, trial: str = "") -> dict:
+    """One depth-0 usage record carrying the `fingerprint` and `quality` the change read models
+    measure (engine/runrecord.py), run `i` on 2026-10-<i>. The fast suite's change tests and the
+    browser suite's Changes pages read the same shape."""
+    return {"ts": f"2026-10-{i:02d}T07:00:00+02:00", "routine": slug, "run_id": f"{slug}:{i}",
+            "depth": 0, "status": status, "turns": 20, "tokens": tokens,
+            "recipe_commit": recipe, "utils": {"websearch": {"ok": 3}},
+            "fingerprint": {"engine": engine, "model": model, "effort": effort,
+                            "deliberation": "standard", "config": "cfg1",
+                            "rules": rules or {"web-research": "r1"},
+                            **({"trial": trial} if trial else {})},
+            "quality": {"owed": owed, "met": met, "unmet": owed - met, "not_due": 0,
+                        "stages_skipped": 0, "challenged": 0, "disputed": 0, "holds": 0,
+                        "schema_retries": 0, "interventions": 0, "elapsed_s": 300,
+                        "cache_read": 900, "cache_write": 100}}
+
+
 def health_events(routines_home: Path, **match: object) -> list[dict]:
     """The health stream's rows, oldest first — none while it does not exist yet — keeping
     those whose fields equal `match` (`event="run_failed"`, `routine="r"`)."""

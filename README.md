@@ -49,9 +49,12 @@ Stats tab.
   reversible ones directly (committed per routine), and files a deferred question to the
   **Decisions** page when unsure; answers are remembered in the LEDGERs, so user
   interaction shrinks over time. Self-improvement is **outcome-gated**: every run is
-  stamped with the recipe version that produced it, the routine page's Recipe-health view
-  buckets outcomes by version, a deterministic heuristic flags a change whose runs got
-  clearly worse — and one click rolls the recipe back (the improver never auto-reverts).
+  stamped with the recipe version that produced it, the Recipe health of the routine's
+  development view (Develop → Changes) buckets outcomes by version, a deterministic
+  heuristic flags a change whose runs got clearly worse — and one click rolls the recipe
+  back (the improver never auto-reverts). Every other change — a model, its effort, a rule's
+  text, an engine release — is found from the runs' own fingerprints and judged on
+  correctness, completeness and effectiveness on the Changes pages.
 - **As a whole**: two more meta routines use the exact same building blocks —
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
   is lens-scoped and test-gated, with bigger decisions on the **Messages** page) and `token-lab`

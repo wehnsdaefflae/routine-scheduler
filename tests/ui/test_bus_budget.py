@@ -47,6 +47,9 @@ VIEWS = [
     ("#/routines", "table.list, .grid, .empty"),
     ("#/conversations", ".conv-new textarea"),
     ("#/help", "#view h1"),
+    # the DEVELOPMENT views re-read on a finished run only (components/run-finished.js)
+    ("#/changes", "[data-unmeasured], #sec-releases"),
+    ("#/changes/uir", ".dev-none, table.chg-table"),
 ]
 
 

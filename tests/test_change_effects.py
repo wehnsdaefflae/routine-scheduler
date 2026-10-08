@@ -4,26 +4,12 @@ with nothing declared and nothing reverted."""
 
 from __future__ import annotations
 
-from helpers import write_usage_stream
+from conftest import git_in
+from helpers import measured_run, write_usage_stream
 from rsched.readmodels import change_effects, change_signals, memo
 from rsched.readmodels.model_fit import model_fit
 
-
-def _run(i: int, *, recipe: str = "c1", model: str = "Opus high", effort: str = "high",
-         engine: str = "0.396.0", rules: dict | None = None, status: str = "ok",
-         tokens: int = 40_000, met: int = 2, owed: int = 2, slug: str = "digest",
-         trial: str = "") -> dict:
-    return {"ts": f"2026-10-{i:02d}T07:00:00+02:00", "routine": slug, "run_id": f"{slug}:{i}",
-            "depth": 0, "status": status, "turns": 20, "tokens": tokens,
-            "recipe_commit": recipe, "utils": {"websearch": {"ok": 3}},
-            "fingerprint": {"engine": engine, "model": model, "effort": effort,
-                            "deliberation": "standard", "config": "cfg1",
-                            "rules": rules or {"web-research": "r1"},
-                            **({"trial": trial} if trial else {})},
-            "quality": {"owed": owed, "met": met, "unmet": owed - met, "not_due": 0,
-                        "stages_skipped": 0, "challenged": 0, "disputed": 0, "holds": 0,
-                        "schema_retries": 0, "interventions": 0, "elapsed_s": 300,
-                        "cache_read": 900, "cache_write": 100}}
+_run = measured_run
 
 
 def _home(tmp_path, records, *slugs):
@@ -123,3 +109,39 @@ def test_the_api_serves_the_fleet_and_one_routine(api_client):
     one = c.get("/api/changes/digest").json()
     assert one["changes"][0]["verdict"] == "no effect" and one["model_fit"][0]["runs"] == 6
     assert c.get("/api/changes/nobody").status_code == 404
+
+
+def _commit(d, subject: str) -> str:
+    git_in(d, "add", "-A")
+    git_in(d, "commit", "-qm", subject)
+    return git_in(d, "rev-parse", "HEAD").stdout.strip()
+
+
+def test_the_production_pages_one_line_names_the_newest_verdict_and_the_recipe_flag(
+        api_client, make_routine):
+    """The routine page carries ONE line about development (operator, 2026-10-08): the count,
+    the newest verdict, and — since the recipe-health banner moved to the development view —
+    the regression flag on the newest recipe change, so a flagged recipe still reaches it."""
+    c, tmp = api_client
+    d = make_routine(slug="digest")
+    git_in(d, "init", "-q")
+    v1 = _commit(d, "scaffold")
+    (d / "main.md").write_text("# v2\n", encoding="utf-8")
+    v2 = _commit(d, "recipe: sharpen the scan")
+    write_usage_stream(tmp / "routines", [_run(i, recipe=v1) for i in range(1, 6)]
+                       + [_run(i, recipe=v2, status="failed") for i in range(6, 11)])
+    memo.reset()
+
+    line = c.get("/api/changes/digest/summary").json()
+    assert (line["changes"], line["latest"]) == (1, "regressed")
+    assert line["at"].startswith("2026-10-06")
+    assert line["recipe_regression"]["subject"] == "recipe: sharpen the scan"
+
+
+def test_a_routine_with_nothing_measured_has_an_empty_line(api_client, make_routine):
+    c, _tmp = api_client
+    make_routine(slug="quiet")
+    memo.reset()
+    assert c.get("/api/changes/quiet/summary").json() == {
+        "routine": "quiet", "changes": 0, "latest": None, "at": None, "recipe_regression": None}
+    assert c.get("/api/changes/nobody/summary").status_code == 404

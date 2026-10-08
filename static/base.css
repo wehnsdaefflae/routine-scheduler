@@ -251,6 +251,23 @@ h3 { font-size: var(--t-l); font-weight: 600; letter-spacing: -0.01em; margin: v
 .topbar nav a svg { width: 15px; height: 15px; flex: 0 0 auto; opacity: 0.85; }
 .topbar nav a.active svg { color: var(--signal); opacity: 1; }
 
+/* DEVELOPMENT, apart from PRODUCTION (operator, 2026-10-08). Work and Fleet are the routines doing
+   their jobs; the Develop group — Changes, Stats, Library — is how the system is changing. The
+   distinction is ONE quiet band of IRIS, the palette's colour for structure: a tinted block of
+   the column holding the group, its label and its "you are here" mark in iris instead of signal.
+   No new row and no new word: the same band reads as a tinted run of icons on the narrow rail and
+   a tinted segment of the phone's bottom bar (the media queries below), so the split survives the
+   layouts that drop every label. */
+.nav-zone { display: flex; flex-direction: column; gap: 1px; }
+.nav-zone.dev {
+  margin-top: var(--s3); padding-bottom: var(--s1); border-radius: var(--r2);
+  background: var(--iris-dim);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--iris) 18%, transparent);
+}
+.nav-zone.dev .nav-group { color: var(--iris); padding-top: var(--s2); }
+.nav-zone.dev a.active { box-shadow: inset 2px 0 0 var(--iris); }
+.nav-zone.dev a.active svg { color: var(--iris); }
+
 /* `margin-top: auto` pins the foot to the bottom of the rail on a page with no section index:
    the destinations above it no longer grow to fill the column (the index takes that slack), so
    without it the clock and the theme control would ride up under the last destination. */
@@ -823,6 +840,11 @@ label.field > span, .field > .lbl {
   .rail-foot { flex-direction: column; gap: var(--s2); padding-top: var(--s2); }
   .clock, .theme-toggle button:not([aria-pressed="true"]) { display: none; }
   .theme-toggle { margin: 0; }
+  /* no words here: the tinted run of icons IS the Develop group, so its label line goes. The
+     column shrinks to its 18px icons here (`.topbar` centres its children), so the band reaches
+     out past them on both sides — wide enough to read as a block, not a sliver behind a glyph */
+  .nav-zone.dev { margin: var(--s3) -14px 0; padding: var(--s1) 0; }
+  .nav-zone.dev .nav-group { display: none; }
 }
 
 @media (max-width: 860px) {
@@ -838,6 +860,10 @@ label.field > span, .field > .lbl {
   .topbar nav a { flex: 1; padding: var(--s2) 0; }
   .topbar nav a.active { background: none; box-shadow: none; color: var(--signal); }
   .nav-group { display: none; }
+  /* the Develop group is a tinted SEGMENT of the one row — its three icons keep the width every
+     other destination gets (3 × the `flex: 1` each link has) — never a row of its own */
+  .nav-zone.dev { flex-direction: row; flex: 3 1 0%; margin: 0; padding: 0; }
+  .topbar .nav-zone.dev a.active { box-shadow: none; color: var(--iris); }
   .workspace { margin-left: 0; padding-bottom: 62px; }
   .workbar { padding: var(--s2) var(--s3); }
   .ribbon, .notice-banner { padding-left: var(--s3); padding-right: var(--s3); }

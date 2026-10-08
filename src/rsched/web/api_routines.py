@@ -281,7 +281,8 @@ def routine_detail(request: Request, slug: str) -> dict:
 
 @router.get("/routines/{slug}/health")
 def recipe_health(request: Request, slug: str) -> dict:
-    """The routine page's health section: runs bucketed by the recipe commit that produced
+    """The Recipe health section of a routine's development view (#/changes/<slug>): runs
+    bucketed by the recipe commit that produced
     them (stamped by the engine; pre-stamp history is date-attributed) with the regression
     evaluation of the newest recipe change; `trend`, the same evaluation over the last two
     run WINDOWS regardless of version — what a shared library revision moves and no recipe

@@ -626,8 +626,8 @@ and the capabilities digest's catalog listing):
   uncommitted recipe edits — the improver's — into a recipe-only commit; null for unversioned
   dirs), `utils` (per-util outcome counts) and `asks_deferred`; gitignored, keep-last-N with gzip).
   The engine commits the working dir
-  automatically — routines never run git themselves. **Recipe health** (`run_health.py`, routine
-  page + `GET /routines/{slug}/health`) carries three folds over the durable usage records:
+  automatically — routines never run git themselves. **Recipe health** (`run_health.py`, the
+  routine's development view `#/changes/<slug>` + `GET /routines/{slug}/health`) carries three folds over the durable usage records:
   `regression`, keyed on recipe version, flagging the newest recipe change when the runs after it
   are clearly worse than the runs before; `trend`, the same thresholds keyed on TIME, which is the
   only way a shared library-rule revision can register at all (it reaches every holder at once and

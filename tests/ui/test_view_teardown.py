@@ -296,3 +296,26 @@ def test_a_task_tree_stopped_before_its_first_read_lands_stays_stopped(ui, ui_pa
     ui_page.wait_for_timeout(QUIET_MS)
     tree = [u for u in after if u.endswith("/tree")]
     assert not tree, f"a stopped task tree kept polling: {tree}"
+
+
+def test_leaving_a_development_view_stops_its_run_finished_reread(ui, ui_page):
+    """The Changes views re-read on a finished run, debounced (components/run-finished.js). A
+    finish that lands after the reader left must not reach the daemon: the listener and its
+    pending timer both go with the view — and while it IS mounted, a finish is a reason."""
+    ui_page.goto(f"{ui.url}/#/changes/uir")
+    ui_page.wait_for_selector(".dev-none, table.chg-table")
+    finished = """window.dispatchEvent(new CustomEvent("rsched-bus", { detail: {
+        event: "run_finished", run_id: "uir:20260714-070000", state: "finished" } }));"""
+
+    mounted = watch_requests(ui_page, API)
+    ui_page.evaluate(finished)
+    until(lambda: any("/api/changes/uir" in u for u in mounted), page=ui_page,
+          what="the mounted view's re-read on a finished run")
+
+    ui_page.evaluate(finished)                 # arms the debounce …
+    _leave(ui_page)                            # … and the view goes before it fires
+    after = watch_requests(ui_page, API)
+    ui_page.evaluate(finished)
+    ui_page.wait_for_timeout(QUIET_MS)
+    leaked = [u for u in after if "/api/changes" in u or u.endswith("/health")]
+    assert not leaked, f"a development view re-read after it was gone: {leaked}"

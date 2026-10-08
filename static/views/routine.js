@@ -1,6 +1,9 @@
-// Routine detail: the overview (status, lane, last run, spend, decisions), the runs and the
-// routine's messages — then its SETTINGS, one form led by its pattern and saved by one accept
-// (views/routine-config.js), with the recipe, its health and its state folded in beside them.
+// Routine detail — a PRODUCTION page: the overview (status, lane, last run, spend, decisions),
+// the runs and the routine's messages — then its SETTINGS, one form led by its pattern and saved
+// by one accept (views/routine-config.js), with the recipe and its state folded in beside them.
+// How the routine's changes have done (verdicts, model fit, recipe health) is DEVELOPMENT
+// information and lives at #/changes/<slug>; this page carries one line pointing there, under its
+// name (components/dev-line.js).
 
 import { api } from "/static/api.js";
 import { renderSettings } from "/static/views/routine-config.js";
@@ -11,6 +14,7 @@ import { mountMessages } from "/static/views/routine-messages.js";
 import { mountTasks } from "/static/components/tasks-panel.js";
 import { routineHero } from "/static/views/routine-overview.js";
 import { confirmDialog } from "/static/components/dialog.js";
+import { devLine } from "/static/components/dev-line.js";
 import { summaryLine } from "/static/md.js";
 import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, toast, toastError, when } from "/static/util.js";
 
@@ -44,9 +48,12 @@ export async function render(view, slug, query = {}) {
   const runBtn = el("button", { class: "btn primary", disabled: !llmReady, "data-run-now": "",
     title: llmReady ? "" : "connect an LLM endpoint in Settings first", onclick: () => runNow() },
     "▶ run now");
+  // the one line about development: the way to this routine's changes, model fit and recipe
+  // health, and the summons tone when its newest change regressed
+  const dev = devLine(slug);
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      titleH1),
+      titleH1, dev.node),
     el("div", { class: "row" }, chipHost,
       ...(d.active_run
         ? [el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")]
@@ -152,11 +159,11 @@ export async function render(view, slug, query = {}) {
   }
 
   // -- settings: one form over every setting, led by the routine's pattern, saved by one
-  // accept. The recipe, its health and its state fold in beside them.
+  // accept. The recipe and its state fold in beside them.
   if (settings.error) {
     view.append(el("h2", { id: "sec-settings" }, "Settings"),
       el("div", { class: "panel err" }, `the settings could not be read: ${settings.error}`));
-    return () => {};
+    return () => { dev.dispose(); };
   }
   const cfg = renderSettings(view, d, settings, {
     slug, titleH1, chipHost, runChip, recipeFile: query.file || "",
@@ -171,7 +178,8 @@ export async function render(view, slug, query = {}) {
   }
 
   // The page used to be a static snapshot — a run finishing while you look at it left a
-  // stale hub. Its own run lifecycle events refresh the header chip, health, and runs.
+  // stale hub. Its own run lifecycle events refresh the header chip, the development line, and
+  // the runs.
   const onBus = async (e) => {
     const ev = e.detail || {};
     if (!["run_started", "run_finished"].includes(ev.event)) return;
@@ -182,7 +190,7 @@ export async function render(view, slug, query = {}) {
     messagesPane?.reload();   // a run drains the inbox at boot and files reports as it works
     tasksPane?.reload({ running: ev.event === "run_started" });   // a run decides what it owes
     if (ev.event === "run_finished") {
-      cfg.health.reload();
+      dev.reload();   // a finished run is what lands a measured change
       // a run moves the surface too: it can reach the finish line, write the phase file the
       // `state:phase` row asks for, or author the util a held capability names — and it reports
       // on the finish line, which the Goal group reads
@@ -193,7 +201,7 @@ export async function render(view, slug, query = {}) {
     }
   };
   window.addEventListener("rsched-bus", onBus);
-  return () => { window.removeEventListener("rsched-bus", onBus); cfg.dispose(); };
+  return () => { window.removeEventListener("rsched-bus", onBus); cfg.dispose(); dev.dispose(); };
 }
 
 // The Runs table is capped (user order 2026-08-15, F345): with keep_runs at 30+ the full

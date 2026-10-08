@@ -39,6 +39,12 @@ Two design rules explain most of the system's shape:
 
 ## The pieces around routines
 
+The console's rail groups them by what they are FOR, and keeps PRODUCTION apart from
+DEVELOPMENT: **Work** (Conversations, Decisions, Messages) and **Fleet** (Routines, Browser,
+Desktops) are the routines doing their jobs and what they need from you; **Develop** — the one
+tinted band, in the palette's violet — is how the system is changing and whether that helps
+(Changes, Stats, Library); **System** holds Settings and Help.
+
 - **Endpoints** (Settings) are model *transports*, and there are two kinds: OpenAI-compatible
   APIs (OpenRouter, vLLM, Ollama) and the Anthropic Messages API — which is also how a Claude or
   Codex SUBSCRIPTION is billed, through CLIProxyAPI on the `anthropic` kind (see *The Claude
@@ -61,6 +67,13 @@ Two design rules explain most of the system's shape:
   one-shot briefs for Conversations), **settings patterns**, the global **reminders** store,
   and the shared **web kit** status pages are built on. Routines are built FROM it, and a rule
   or util revised there reaches every holder at its next run.
+- **Changes** (Develop → Changes) says whether a change helped: every change to a routine — its
+  recipe, its model or effort, a rule it holds, an engine release — is found from the runs' own
+  fingerprints and judged on the runs before against the runs after (improved · regressed ·
+  mixed · no effect · measuring · too few runs). One routine's view adds which model served it
+  how well and its **Recipe health** (runs by recipe version, the regression flag and its
+  one-click roll-back). The routine's own page keeps just one line pointing there — coral when
+  its newest change regressed ([run analytics](run-analytics.md)).
 - **Decisions** (Decisions tab) is the one inbox for everything routines need from you:
   blocking questions (a run is waiting), deferred ones (the next run picks the answer up),
   util approvals, and self-audit decisions. A blocking question waits up to the routine's

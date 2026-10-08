@@ -41,7 +41,7 @@ import { scheduleGroup } from "/static/views/routine-config-schedule.js";
 
 /**
  * renderSettings(view, d, settings, opts) → { refreshHead, refreshSurface, reloadSettings,
- *                                              onRunFinished, health, dispose }
+ *                                              onRunFinished, dispose }
  * `d` is the routine detail read, `settings` the GET …/settings payload the page fetched with it.
  */
 export function renderSettings(view, d, settings, { slug, titleH1, chipHost, runChip, repaintSetup,
@@ -108,7 +108,6 @@ export function renderSettings(view, d, settings, { slug, titleH1, chipHost, run
   };
 
   const goal = goalGroup(ctx);
-  const identity = identityGroup(ctx, { titleH1, recipeFile });
   view.append(
     el("h2", { id: "sec-settings" }, "Settings"),
     el("p", { class: "set-desc muted small" },
@@ -120,7 +119,7 @@ export function renderSettings(view, d, settings, { slug, titleH1, chipHost, run
     patternBar(form),
     el("div", { class: "rgroups", "data-settings-groups": "" },
       scheduleGroup(ctx), goal.node, abilitiesGroup(ctx), accessGroup(ctx), limitsGroup(ctx),
-      modelsGroup(ctx), identity.node),
+      modelsGroup(ctx), identityGroup(ctx, { titleH1, recipeFile })),
     acceptBar(form, {
       describeSwitch: () => (form.pendingPattern ? "and the pattern switch" : "and following no pattern"),
       onAccepted: async (next) => {
@@ -136,7 +135,6 @@ export function renderSettings(view, d, settings, { slug, titleH1, chipHost, run
     refreshSurface,
     reloadSettings,
     onRunFinished: () => { goal.reload(); reloadSettings(); },
-    health: identity.health,
     dispose: () => disposers.forEach((fn) => { try { fn(); } catch { /* gone */ } }),
   };
 }

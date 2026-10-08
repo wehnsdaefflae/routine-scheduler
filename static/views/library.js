@@ -24,8 +24,10 @@ const deleter = (path, message) => async () => {
 };
 
 export async function render(view, sub, query = {}) {
+  view.classList.add("dev-view");   // the rail's Develop group: an iris kicker and section ticks
   view.append(el("div", { class: "page-head" },
     el("div", {},
+      el("div", { class: "kicker dev" }, "development"),
       el("h1", {}, "Library"))));
   const countLine = el("div", { class: "tags", style: "margin:2px 0 10px" });
   const filterBar = el("div", { class: "filterbar" });

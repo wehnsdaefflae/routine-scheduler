@@ -38,7 +38,7 @@ PHONE = {"width": 390, "height": 780}
 LONG_TOKEN = "a9f3c1e0b7d4568291acde3f0b1729d5e8c4a6b3f9012d7e5c8a1b4f6039e2d7c5a8b1f4"
 
 #: Every destination the rail offers, plus the run view (the surface that carries a transcript).
-NAV_ROUTES = ("#/", "#/routines", "#/messages", "#/stats", "#/questions",
+NAV_ROUTES = ("#/", "#/routines", "#/messages", "#/changes", "#/stats", "#/questions",
               "#/library", "#/settings", "#/help")
 
 

@@ -13,8 +13,9 @@
 //
 // The destinations are the console's own routes (app.js): #/library/util/<name>,
 // #/library/rule/<slug>, #/library/permission/<slug> open that item's editor directly, and a
-// reminder is a routine's own state, so it goes to #/routine/<slug>, whose Health tab renders
-// the local-reminder table with its tally (views/routine-health.js).
+// reminder is a routine's own state, so it goes to #/changes/<slug> — the routine's development
+// view, whose Recipe health section renders the local-reminder table with its tally
+// (views/routine-health.js).
 
 import { el } from "/static/util.js";
 
@@ -42,14 +43,14 @@ export function permissionLink(slug, { cls = "concept-link" } = {}) {
                    title: `read the ${text} permission` }, text);
 }
 
-/** A reminder id as a link to the routine whose Health tab carries it and its tally. Without a
- *  slug there is nowhere to send the reader, so the id renders as the plain code it is —
- *  a dead link is worse than dead text. */
+/** A reminder id as a link to the development view whose Recipe health carries it and its
+ *  tally. Without a slug there is nowhere to send the reader, so the id renders as the plain
+ *  code it is — a dead link is worse than dead text. */
 export function reminderLink(rid, slug, { cls = "concept-link" } = {}) {
   const text = String(rid ?? "");
   if (!text) return text;
   if (!slug) return el("code", { class: "rem-id" }, text);
-  return el("a", { class: cls, href: `#/routine/${encodeURIComponent(String(slug))}`,
-                   title: `${text} — see its pattern and tally on ${slug}'s health tab` },
+  return el("a", { class: cls, href: `#/changes/${encodeURIComponent(String(slug))}`,
+                   title: `${text} — see its pattern and tally in ${slug}'s Recipe health` },
     el("code", { class: "rem-id" }, text));
 }

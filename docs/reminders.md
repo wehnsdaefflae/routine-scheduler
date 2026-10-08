@@ -149,8 +149,8 @@ hand. Each routine's own tally survives the removal, because it is that routine'
 
 The stats are the whole point of keeping them, yet for one release nothing read them: both
 stores are engine-written JSON under `state/`, so reviewing a pattern's precision meant opening
-a file on the server. The routine page's **Recipe health** section shows them beside the recipe-version
-table, because they answer the same question it does — is this routine's behaviour getting
+a file on the server. The **Recipe health** section of a routine's development view (Develop →
+Changes → the routine, `#/changes/<slug>`) shows them beside the recipe-version table, because they answer the same question it does — is this routine's behaviour getting
 better — and what changed? One row per reminder in force with this routine's own tally, one row
 per rule assist that has fired with its count, and a **delete** button on each LOCAL reminder.
 

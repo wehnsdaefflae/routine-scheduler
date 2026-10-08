@@ -1,6 +1,7 @@
-"""Run-analytics surfaces in the real console: the routine page's recipe-health card
-(version buckets, regression banner, one-click roll-back) and the Stats tab's per-util
-execution table — driven end to end, asserting both the DOM and what landed on disk.
+"""Run-analytics surfaces in the real console: Recipe health in a routine's DEVELOPMENT view
+(#/changes/<slug> — version buckets, regression banner, one-click roll-back, the cautions' tallies;
+it left the production routine page, which keeps one line pointing there) and the Stats tab's
+per-util execution table — driven end to end, asserting both the DOM and what landed on disk.
 """
 
 
@@ -19,8 +20,7 @@ def _git(d, *args, date="2026-07-01T10:00:00+00:00"):
 
 def test_recipe_health_untracked_note(ui, ui_page):
     """The fixture routine has no git history — the card says so instead of pretending."""
-    ui_page.goto(f"{ui.url}/#/routine/uir")
-    unfold(ui_page)
+    ui_page.goto(f"{ui.url}/#/changes/uir")
     expect(ui_page.get_by_text("recipe versions aren't tracked")).to_be_visible()
 
 
@@ -47,8 +47,15 @@ def test_recipe_health_buckets_regression_and_rollback(ui, ui_page):
            "asks_deferred": 1, "ts": f"2026-07-1{i}T07:10:00+00:00"} for i in (1, 2, 3)],
     ])
 
+    # the production page says it in one line, in the summons tone, and leads to the banner
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    line = ui_page.locator("[data-dev-line]")
+    expect(line.locator("[data-recipe-flag]")).to_have_text("recipe regression flagged")
+    expect(line).to_have_class("dev-line summons")
     unfold(ui_page)
+    expect(ui_page.locator(".panel.err", has_text="possible regression")).to_have_count(0)
+    line.click()
+
     banner = ui_page.locator(".panel.err", has_text="possible regression")
     expect(banner).to_contain_text("recipe: sharpen the scan")
     expect(banner).to_contain_text("fail rate jumped")
@@ -187,8 +194,7 @@ def test_cautions_table_shows_the_tallies_and_deletes_a_local_reminder(ui, ui_pa
         stats={**store.blank_stats(), "fires": 3, "could_not": 2})], {})
     atomic_write_json(d / "state" / "assists.json", {"git-checkpoint:pre-action": 4})
 
-    ui_page.goto(f"{ui.url}/#/routine/uir")
-    unfold(ui_page)
+    ui_page.goto(f"{ui.url}/#/changes/uir")
     expect(ui_page.get_by_text("it overwrites the destination")).to_be_visible()
     expect(ui_page.locator('td[title="git-checkpoint:pre-action"]')).to_be_visible()
 

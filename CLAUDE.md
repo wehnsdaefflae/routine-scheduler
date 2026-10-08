@@ -754,6 +754,13 @@ by a test, by the engine, or by a past incident.
   system-ui for the console's own voice, mono for anything a counter emitted, a reading serif for
   anything a mind wrote. Dark is the default with a real three-state theme; every token is defined
   for both. `views.css` builds only on those tokens and adds no colour of its own.
+  The console keeps PRODUCTION apart from DEVELOPMENT (operator, 2026-10-08): the rail's Work and
+  Fleet groups are the routines doing their jobs, its **Develop** group (Changes, Stats, Library —
+  one iris band, `.nav-zone.dev` in base.css) is how the system is changing and whether that
+  helped. Development information about one routine (its measured changes, model fit, Recipe
+  health) lives at `#/changes/<slug>`; the production routine page carries ONE line pointing
+  there (`components/dev-line.js`) and nothing else of it — a new development reading joins the
+  development view, not the production page (docs/run-analytics.md).
 - Tests accompany every module in the same commit; `ScriptedEndpoint` in `tests/conftest.py` replays
   canned actions and is the main engine harness. Endpoint adapters are mock-tested; anything touching the
   network hides behind `RSCHED_LIVE_TESTS=1`.

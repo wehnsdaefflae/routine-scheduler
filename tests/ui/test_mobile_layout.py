@@ -221,7 +221,8 @@ def test_the_run_rail_does_not_come_before_the_run_on_a_phone(ui, ui_page):
 #: The routes test_mobile_nav.py's NAV_ROUTES cannot carry: its list is also the count of the
 #: bottom bar's destinations, so a DETAIL route cannot join it — and a detail route is exactly
 #: where the widgets that widen a document live (a model picker, a transcript, an editor).
-DETAIL_ROUTES = ("#/routine/uir", "#/library/rule/ask-policy", "#/run/uir:20260904-000353")
+DETAIL_ROUTES = ("#/routine/uir", "#/library/rule/ask-policy", "#/run/uir:20260904-000353",
+                 "#/changes/uir")
 
 
 def test_no_detail_route_scrolls_sideways_on_a_phone(ui, ui_page):

@@ -1,16 +1,17 @@
 // Routine settings — IDENTITY & RECIPE: what the routine is called and how it is found — name,
 // description, tags, the Steward-hub heading its card sits under. Behind "more": where it came
-// from (read-only), its recipe files, the recipe's health, and its state and ledger.
+// from (read-only), its recipe files, and its state and ledger.
 //
-// The recipe editor, the health table's roll-back and the cautions' delete are ACTIONS on files
-// and tallies the routine owns, not settings: each takes effect at once, on its own button.
+// The recipe editor is an ACTION on files the routine owns, not a setting: it takes effect at
+// once, on its own button. How the recipe's versions have DONE — the health table, its roll-back
+// and the cautions' tallies — is development information and lives in the routine's development
+// view (#/changes/<slug>, views/changes-routine.js), not on this production page.
 
 import { el, skeleton } from "/static/util.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { fieldBlock, settingsGroup } from "/static/components/settings-field.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { wireRecipeNav } from "/static/resizable.js";
-import { mountHealth } from "/static/views/routine-health.js";
 import { mountRecipe } from "/static/views/routine-recipe.js";
 
 /** The longest hub heading the PATCH accepts (api_routine_patch.HUB_TAB_MAX). */
@@ -68,18 +69,13 @@ export function identityGroup(ctx, { titleH1, recipeFile = "" }) {
   // the file tree's resize grip goes in beside it, so the pair needs its wrapper first
   const recipeWrap = el("div", { class: "recipe-wrap" }, navCol, editorCol);
   wireRecipeNav(navCol);
-  const recipe = mountRecipe(navCol, editorCol, slug, recipeFile);
-
-  // -- recipe health: runs bucketed by the recipe version that produced them, the regression
-  // flag on the newest change, the one-click roll-back — and the cautions the run raised here
-  const healthBox = el("div", {}, skeleton(["60%", "90%"]));
-  const health = mountHealth(healthBox, slug, { onRecipeChanged: recipe.refreshTree });
+  mountRecipe(navCol, editorCol, slug, recipeFile);
 
   const stateFiles = (d.files?.state) || [];
   const node = settingsGroup({
     form, title: "Identity & recipe", hint: "name · description · tags · hub tab · the recipe",
     keys: ["name", "description", "tags", "hub_tab"],
-    digest: () => `origin ${wf.slug || "hand-authored"} · the recipe · its health · state & memory`,
+    digest: () => `origin ${wf.slug || "hand-authored"} · the recipe · state & memory`,
     sections: [
       ...settingsSection({ title: "Name", id: "name" },
         ["the display name (the folder ", el("span", { class: "ref-tag" }, slug), " stays the identity)"],
@@ -106,11 +102,6 @@ export function identityGroup(ctx, { titleH1, recipeFile = "" }) {
          "the next run; the routine-improver may refine these too. The general rules it holds ",
          "live in the library, not here."],
         recipeWrap),
-      ...settingsSection({ title: "Recipe health", id: "recipe-health" },
-        ["runs by the recipe version that produced them, with the regression flag on the newest ",
-         "change and its roll-back — and the cautions raised here: the reminders in force with ",
-         "this routine's own tally and the rule assists that have fired."],
-        healthBox),
       ...settingsSection({ title: "State & memory", id: "state" }, null,
         el("div", { class: "muted small" },
           stateFiles.length ? `state/ · ${stateFiles.join("  ·  ")}` : "no state files yet"),
@@ -125,5 +116,5 @@ export function identityGroup(ctx, { titleH1, recipeFile = "" }) {
     node.open = true;
     for (const fold of node.querySelectorAll("details.rmore")) fold.open = true;
   }
-  return { node, health };
+  return node;
 }

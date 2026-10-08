@@ -37,7 +37,9 @@
 </script>
 </head>
 <body>
-<!-- The rail: one chrome, and the destinations grouped by what they are FOR. -->
+<!-- The rail: one chrome, and the destinations grouped by what they are FOR — PRODUCTION (Work,
+     Fleet: the routines doing their jobs and what they need from you), DEVELOPMENT (Develop: how
+     the system is changing and whether that helps), and the System itself. -->
 <header class="topbar">
   <a class="brand" href="#/">
     <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true">
@@ -64,9 +66,19 @@
          until the instance is pointed at a desktop service (desktop_broker_url +
          desktop_view_url). A MONITOR on a stand, not the browser's window frame. -->
     <a href="#/desktops" data-nav="desktops" id="nav-desktops" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/></svg>Desktops</a>
-    <a href="#/stats" data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Stats</a>
+    <!-- DEVELOPMENT, apart from the production groups above (operator, 2026-10-08): whether the
+         system's changes helped (Changes), what it costs (Stats), and what routines are built
+         from (Library). One quiet IRIS band — structure, not urgency — that survives every
+         layout: a tinted block of the column on the wide rail, a tinted run of icons on the
+         narrow one, a tinted segment of the phone's bottom bar (base.css, .nav-zone.dev).
+         The Changes glyph is two states joined both ways: a before and an after, compared. -->
+    <div class="nav-zone dev" role="group" aria-labelledby="nav-dev-label">
+      <span class="nav-group" id="nav-dev-label">Develop</span>
+      <a href="#/changes" data-nav="changes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4V13a4 4 0 0 0 4 4h5.6"/><path d="M18 15.6V11a4 4 0 0 0-4-4H8.4"/></svg>Changes</a>
+      <a href="#/stats" data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Stats</a>
+      <a href="#/library" data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5Z"/><path d="M13 4h5.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H13Z"/></svg>Library</a>
+    </div>
     <span class="nav-group">System</span>
-    <a href="#/library" data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5Z"/><path d="M13 4h5.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H13Z"/></svg>Library</a>
     <!-- SLIDERS, not a gear: the cog was a 3.2px hub with eight straight spokes, and the rail
          scales every nav glyph to 18px, at which the spokes lose their teeth and it reads as
          the brightness icon the theme toggle uses. -->

@@ -1857,3 +1857,65 @@ a.desktop-owner:hover { color: var(--signal); }
 .desktop-folder { color: var(--ink-2); }
 .desktop-screen-wrap { margin-top: var(--s3); }
 .desktop-screen-note { padding: var(--s5) var(--s3); text-align: center; }
+
+/* ── DEVELOPMENT views: Changes (views/changes.js, views/changes-routine.js) ─────────────────
+   Development is kept apart from production (operator, 2026-10-08) and the console is text
+   heavy already, so these pages speak in chips, mono numbers and tiny marks, with the words in
+   tooltips. Their quiet mark is the rail's Develop band: IRIS, the palette's structure colour —
+   on the kicker over the title and on each section's tick. A verdict wears the chip state
+   vocabulary (components/change-marks.js); the two tones added here are `measuring` (the
+   machine still collecting runs: signal, without the pulse a live run wears) and the SUMMONS a
+   regression wears on the production routine page's one development line. */
+.kicker.dev { color: var(--iris); }
+.dev-view h2::before { background: var(--iris); }
+.dev-none { padding: var(--s1) 0 var(--s2); }
+.dev-view table.list th.num { text-align: right; }
+.chip.v-measuring { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 40%, transparent); background: var(--signal-dim); }
+.chip.v-summons { color: var(--summons); border-color: color-mix(in srgb, var(--summons) 45%, transparent); background: var(--summons-dim); }
+.chip .v-glyph { font-size: 9px; letter-spacing: 0; }
+a.chip:hover { text-decoration: none; border-color: currentColor; }
+.v-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+
+/* correctness · completeness · effectiveness — three marks in a fixed order, the word in the
+   tooltip, a sign beside the colour so no state is told by colour alone */
+.dim-marks { display: inline-flex; gap: 3px; vertical-align: middle; }
+.dim-mark {
+  display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: var(--r1);
+  font-family: var(--f-mono); font-size: var(--t-xs); line-height: 1;
+  color: var(--ink-3); border: 1px solid var(--rule-2);
+}
+.dim-mark.better { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: var(--ok-dim); }
+.dim-mark.worse { color: var(--err); border-color: color-mix(in srgb, var(--err) 42%, transparent); background: var(--err-dim); }
+.dim-mark.mixed { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: var(--warn-dim); }
+
+/* a change's row: what changed in mono, the engines inside its windows as a faint note under it,
+   and the whole row a disclosure onto the signals it was judged on */
+.chg-what { font-family: var(--f-mono); font-size: var(--t-s); color: var(--ink); }
+.chg-engines { font-family: var(--f-mono); font-size: var(--t-xs); margin-top: 2px; }
+table.list tr.chg-row { cursor: pointer; }
+.chg-toggle { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.chg-toggle .tri { color: var(--iris); font-size: 10px; }
+table.list tr.chg-detail > td, table.list tr.chg-detail:hover > td {
+  background: var(--plate-2); padding: var(--s1) var(--s3) var(--s3);
+}
+table.list.sig-table { width: auto; min-width: min(560px, 100%); }
+table.list.sig-table td, table.list.sig-table th { padding: 3px var(--s3); font-size: var(--t-s); }
+table.list.sig-table tr:hover td { background: transparent; }
+.sig-mark { font-family: var(--f-mono); font-size: var(--t-xs); color: var(--ink-3); }
+.sig-mark.better { color: var(--ok); }
+.sig-mark.worse { color: var(--err); }
+
+/* the PRODUCTION routine page's one line about development (components/dev-line.js): a quiet
+   link under the routine's name, iris like the rail's Develop band — SUMMONS when its newest
+   change regressed or recipe health flags its recipe, because then a person should look */
+.dev-line {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+  margin-top: var(--s1); font-size: var(--t-s); color: var(--ink-3);
+}
+.dev-line:hover { color: var(--ink-2); text-decoration: none; }
+.dev-line .dev-tag {
+  font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.14em; color: var(--iris);
+}
+.dev-line .dev-sep { color: var(--rule-2); }
+.dev-line.summons .dev-tag, .dev-line .dev-flag { color: var(--summons); }

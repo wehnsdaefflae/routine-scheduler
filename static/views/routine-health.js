@@ -1,10 +1,13 @@
-// Recipe health (split from routine.js): runs bucketed by the recipe version that
-// produced them (engine-stamped commit; the durable usage stream survives retention),
-// a deterministic regression flag on the newest change, and the one-click roll-back.
-// mountHealth fills `box` and returns { reload } for the run-lifecycle bus handler.
+// Recipe health: runs bucketed by the recipe version that produced them (engine-stamped commit;
+// the durable usage stream survives retention), a deterministic regression flag on the newest
+// change, and the one-click roll-back. DEVELOPMENT information, so it is mounted by a routine's
+// development view (views/changes-routine.js, #/changes/<slug>) — the production routine page
+// carries only the one line pointing there (operator, 2026-10-08).
+// mountHealth fills `box` and returns { reload, dispose }: the view's run-finished handler
+// re-reads through `reload`, its teardown calls `dispose`, after which no read paints.
 //
 // Plus the CAUTIONS the between-turn feed raises here — the reminders in force with this
-// routine's own tally, and the rule assists that have fired. Same tab because they answer
+// routine's own tally, and the rule assists that have fired. Same section because they answer
 // the same question the version table does: is this routine's behaviour getting better or
 // worse, and what changed. A caution that fires constantly and is labelled could_not every
 // time is a bad pattern, and the tally is kept precisely so that is reviewable — it just had
@@ -14,11 +17,17 @@ import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { el, fmtNum, queuedToast, toast, toastError } from "/static/util.js";
 
-export function mountHealth(box, slug, { onRecipeChanged }) {
+export function mountHealth(box, slug, { onRecipeChanged = () => {} } = {}) {
+  let alive = true, seq = 0;   // only the newest read paints, and none after dispose
   async function reload() {
+    const mine = ++seq;
     let h;
     try { h = await api(`/api/routines/${slug}/health`); }
-    catch (err) { box.replaceChildren(el("div", { class: "muted small" }, `health unavailable: ${err.message}`)); return; }
+    catch (err) {
+      if (alive && mine === seq) box.replaceChildren(el("div", { class: "muted small" }, `health unavailable: ${err.message}`));
+      return;
+    }
+    if (!alive || mine !== seq) return;
     const parts = [];
     const day = (iso) => (iso ? String(iso).slice(0, 10) : "—");
     const reg = h.regression || {};
@@ -143,5 +152,5 @@ export function mountHealth(box, slug, { onRecipeChanged }) {
   }
 
   reload();
-  return { reload };
+  return { reload, dispose: () => { alive = false; } };
 }

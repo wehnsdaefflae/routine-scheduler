@@ -45,7 +45,11 @@ At run start the engine stamps the current recipe commit into the run
   (depth 0 only, one read per run). A rule revision reaches every holder at once and moves no
   recipe version, so it is the only thing that dates the change the trend below reacts to.
 
-## The health view (routine page → Recipe health)
+## The health view (Changes → a routine → Recipe health)
+
+How a routine's recipe versions have done is DEVELOPMENT information, so it lives in the
+routine's development view (`#/changes/<slug>`, rail group *Develop*), not on the production
+routine page — which keeps one line pointing there (see [the console](#in-the-console-production-and-development-apart)).
 
 `rsched/readmodels/run_health.py` buckets the routine's depth-0 usage records by recipe version:
 runs, ok/partial/failed/aborted, fail rate, median turns and tokens, and
@@ -72,8 +76,10 @@ just after the newest recipe change with the runs just before it
 | `TURNS_FLOOR` / `TOKENS_FLOOR` | +5 / +20k | absolute floors so a 2→3-turn routine's ratio never flags noise |
 
 `partial` (budget-stopped) counts as not-ok: a recipe change that makes runs blow their
-budgets IS a degradation. The flag renders as a banner on the routine page naming the
-commit and the numbers behind each reason. **Flag-first**: nothing reverts automatically.
+budgets IS a degradation. The flag renders as a banner in the routine's development view
+naming the commit and the numbers behind each reason, and the production routine page's one
+development line turns SUMMONS and says `recipe regression flagged` (`run_health.recipe_regression`,
+read through `GET /api/changes/{slug}/summary`). **Flag-first**: nothing reverts automatically.
 
 ### The time-window trend
 
@@ -115,7 +121,7 @@ config) and `state/` are never touched. The revert commit is itself the next rec
 version, so health tracking continues seamlessly. Made while a run is active, the revert
 is queued and applied when the run ends (D78-A, `pending_edits`), like a recipe file edit.
 
-## Measuring changes (`/api/changes`, the Development view)
+## Measuring changes (`/api/changes`, Develop → Changes)
 
 The recipe-health flag above sees one kind of change (the recipe) through four coarse signals
 (status, turns, tokens, deferred asks). Every change that can alter what a routine does is now
@@ -160,6 +166,43 @@ on one model say nothing about another.
 
 Flag-first: nothing reverts or proposes on its own. Runs recorded before 0.397.0 carry no
 fingerprint and are not measured — the measurement starts with the release that records it.
+
+### In the console: production and development apart
+
+The operator's order (2026-10-08) was to *clearly distinguish production related information from
+development related information*, without cluttering a console that is text heavy already. The
+rail says it first: **Work** (Conversations, Decisions, Messages) and **Fleet** (Routines, Browser,
+Desktops) are PRODUCTION — the routines doing their jobs and what they need from you; **Develop**
+(Changes, Stats, Library) is DEVELOPMENT — how the system is changing and whether that helps;
+**System** keeps Settings and Help. The Develop group is one quiet band of IRIS (the palette's
+structure colour): a tinted block of the wide rail, a tinted run of icons on the narrow one, a
+tinted segment of the phone's bottom bar — never a row of its own. The development pages carry
+an iris `development` kicker over their title and iris section ticks.
+
+- **Changes** (`#/changes`, `views/changes.js`, `GET /api/changes`) — three tables: engine
+  **Releases** (release · first seen · routines judged · verdict counts as chips · median token
+  ratio · met-rate change in percentage points), **Model & rule changes** across routines (what
+  changed from → to · each routine's verdict chip, a link into its view) and **Routines** (each
+  routine with a measured change · how many · the newest verdict · when). With no fingerprinted
+  run yet the page says only that measurement starts with the runs recorded from this release on.
+- **One routine** (`#/changes/<slug>`, `views/changes-routine.js`, `GET /api/changes/{slug}`) — its
+  changes newest first (when · what changed, e.g. `recipe 1a2b3c4→3c4d5e6`, `model Opus
+  high→Sonnet high`, `rule web-research` · runs before → after · the verdict chip · three tiny
+  marks for correctness, completeness and effectiveness · the engine releases inside its windows
+  as a faint note), each row opening onto its signal table (each signal's before → after and a
+  ▲▼ coloured only by better/worse); the **Model fit** table; and **Recipe health** (the version
+  table, the regression banner with its roll-back, the cautions' tallies).
+- **The production routine page** (`#/routine/<slug>`) carries exactly one line about any of it,
+  under the routine's name (`components/dev-line.js`, `GET /api/changes/{slug}/summary`):
+  `DEVELOPMENT · 3 measured changes · latest ▲ IMPROVED`, a quiet link into the routine's view.
+  It wears SUMMONS when the newest change regressed or recipe health flags the newest recipe
+  change — there a person should look.
+
+The verdict chips speak the chip state vocabulary (`components/change-marks.js`): improved is ok,
+regressed the failure tone, mixed the warning one, `no effect` and `too few runs` quiet, and
+`measuring` signal without a pulse. Every mark carries a glyph and its word in a tooltip, so no
+state is told by colour alone. The pages re-read on a finished run only (and on a reconnect),
+debounced (`components/run-finished.js`) — never on `llm_task`/`llm_process`.
 
 ## Per-util execution stats (Stats tab → Global utils)
 
@@ -308,7 +351,8 @@ compare against a UTC cutoff moved the window's edge by that offset.
 
 ## Who reads the flags
 
-The routine page (the health banner and the one-click revert) and **routine-improver's
+A routine's development view (the health banner and the one-click revert, with the production
+routine page's one development line turning summons while a flag stands) and **routine-improver's
 target ORDER**: its `orient` stage attaches the same two window medians and the same 1.5×
 ratio to every candidate, and `select-targets` puts the flagged ones first, most-moved
 first. That is what the flags are for — a sweep spends its hour where the numbers moved,
