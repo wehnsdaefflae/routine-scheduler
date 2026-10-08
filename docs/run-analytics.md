@@ -1,4 +1,4 @@
-# Run analytics: recipe-version health, per-util stats & prompt-cache health
+# Run analytics: measuring changes, recipe-version health, per-util stats & prompt-cache health
 
 The scheduler improves its routines through use — the routine-improver edits recipes
 directly. Two measurement layers close that loop: every run is attributed to the **recipe
@@ -114,6 +114,52 @@ state just before that commit and commits only those paths — `routine.yaml` (t
 config) and `state/` are never touched. The revert commit is itself the next recipe
 version, so health tracking continues seamlessly. Made while a run is active, the revert
 is queued and applied when the run ends (D78-A, `pending_edits`), like a recipe file edit.
+
+## Measuring changes (`/api/changes`, the Development view)
+
+The recipe-health flag above sees one kind of change (the recipe) through four coarse signals
+(status, turns, tokens, deferred asks). Every change that can alter what a routine does is now
+measured, from the runs themselves, with nothing declared:
+
+- **What made a run.** Every depth-0 usage record carries a `fingerprint` (`engine/runrecord.py`):
+  the engine release, the main model by catalog name and its effort, the deliberation level, a
+  short hash of the behaviour-relevant config (`routine.yaml` minus identity, schedule and
+  retention), a short hash of each held rule's text, and the id of a model trial when the run was
+  fired as one. The recipe and library commits ride the record already.
+- **How it went.** Beside it, `quality`: the accounting lines owed, met, unmet and not due
+  (Done-when lines and goals), stages skipped, claims the verifier challenged and the ones that
+  stood disputed, actions a caution held, schema retries, the person's interventions while the run
+  worked, wall time, cache reads and writes. Run-cumulative (reseeded on a resume), so the fold
+  keeps the newest leg's values.
+
+A routine's input differs from run to run, so no run's OUTPUT is scored. What stays comparable is
+the process: the same routine answering for the same Done when should be about as correct, as
+complete and as cheap from one run to the next. `readmodels/change_signals.py` reads fifteen
+signals per run in three dimensions — CORRECTNESS (failed or aborted, claims challenged and
+disputed, holds, failed util calls), COMPLETENESS (owed lines met, lines unmet, partial finishes,
+stages skipped) and EFFECTIVENESS (median tokens, turns and minutes, interventions, schema
+retries, cache read share) — each with a direction and a noise threshold (a median also needs an
+absolute floor, so a 2→3-turn routine never reads as 50% worse).
+
+`readmodels/change_effects.py` finds the CHANGES: boundaries between consecutive runs whose
+behaviour key differs (recipe, config, model, effort, deliberation, a rule's text, a trial). The
+up to five runs before and after, each side only runs of one key, are judged signal by signal,
+each dimension `better`/`worse`/`mixed`/`same`, and the change gets one verdict — `improved`,
+`regressed`, `mixed`, `no effect`, `measuring` (the newest change, still collecting runs) or `too
+few runs` (another change came first; a routine whose recipe changes every run cannot be said to
+have improved, and saying so is the finding). **Engine releases are not part of a routine's key**
+— several land a day, and as a key they would cut every history into windows too short to judge.
+They are judged across the fleet instead (`releases`): every routine whose behaviour key held
+still around the run that first ran a release, its runs before against after, pooled per release,
+with the median token ratio and met-rate change. A release inside a routine change's windows is
+named beside that change (`engines`). Model and rule changes are rolled up across the routines
+that met them (`fleet`). `readmodels/model_fit.py` groups one routine's runs by what served them
+(model, effort, deliberation, trial) on the same signals — the table the config-optimizer reads to
+judge whether a model is overkill or not enough, and why a model TRIAL exists: one routine's runs
+on one model say nothing about another.
+
+Flag-first: nothing reverts or proposes on its own. Runs recorded before 0.397.0 carry no
+fingerprint and are not measured — the measurement starts with the release that records it.
 
 ## Per-util execution stats (Stats tab → Global utils)
 
