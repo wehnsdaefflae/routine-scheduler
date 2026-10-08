@@ -423,7 +423,17 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .flow-note {
   display: flex; gap: 9px; align-items: baseline; font-size: var(--t-s); color: var(--ink-2);
   padding: 8px 11px; border: 1px dashed var(--rule-2); border-radius: var(--r2); margin-top: 10px;
+  /* WRAP. A flow-note is usually one line of prose, where this never shows — but the config
+     proposal is a flow-note carrying three blocks (the explanation, the patch as JSON, and the
+     `approve & apply` button), and an unwrapped flex row put them in three columns at phone
+     width with the JSON clipped mid-token ("budge, "max_t). Found by LOOKING at the rendered
+     card, not by a width measurement: the <pre> scrolls inside its column, so nothing exceeded
+     the viewport and every assertion passed. */
+  flex-wrap: wrap;
 }
+/* The patch itself gets the full width of the note once wrapped — a config change is read as a
+   whole, and a horizontally scrolling JSON block in a 390px column is read as nothing. */
+.flow-note > pre.doc { flex: 1 1 100%; min-width: 0; overflow-x: auto; }
 .flow-note .arrow { color: var(--signal); }
 /* one queued message (Messages page) / one changelog row on an item card */
 .pending-item, .addressed-item { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 12px; }
