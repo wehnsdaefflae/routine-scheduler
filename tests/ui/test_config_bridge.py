@@ -109,10 +109,18 @@ def test_answering_keeps_the_card_and_its_apply_button(ui, ui_page):
     expect(card).to_contain_text("answered")
     expect(card).to_contain_text("NOT applied")
     expect(card).to_contain_text("budgets")          # the proposal is still shown
-    expect(apply_btn).to_be_visible()                # …and the one control that applies it
+
+    # Re-locate the button instead of reusing `apply_btn`: an answered card is RE-RENDERED
+    # through the settled-receipt branch of `item`, a different element tree that mounts its
+    # own copy of the proposal, so the handle taken before answering points at a node that is
+    # no longer in the document. This is the whole substance of the fix — the proposal has to
+    # exist in BOTH card shapes, and a test holding the old handle would have proved only that
+    # Playwright caches an element.
+    kept_btn = card.get_by_role("button", name="approve & apply")
+    expect(kept_btn).to_be_visible()                 # …the one control that applies it
 
     # the button is not merely present: it still applies
-    apply_btn.click()
+    kept_btn.click()
     expect(card).to_contain_text("applied")
     until(lambda: read_yaml(ui.routines / "uir" / "routine.yaml")
           .get("budgets", {}).get("max_turns") == 95, what="the patch applied after answering")
