@@ -22,18 +22,35 @@ def truncate(text: str, cap: int = OBS_CAP_CHARS, keep: str = "head+tail") -> tu
     - "head": keep the HEAD only, drop the TAIL — for ordered STDOUT that is spilled in
       full to `.util_outputs/`, so a reader continues IN SEQUENCE from the spill file at
       the char the preview stopped (operator AUDIT note R45: mid-truncation breaks
-      sequential paging). The marker names that resume offset.
+      sequential paging). The marker names that resume point as the `read_file` arguments
+      that reach it (`resume_at`): a bare char offset named an argument read_file never had.
     """
     if len(text) <= cap:
         return text, False
     if keep == "head":
         marker = (f"\n[... output truncated: showing first {cap} of {len(text)} chars — "
-                  f"read the spill file from char {cap} for the rest ...]\n")
+                  f"the rest is in the spill file: read_file it with {resume_at(text, cap)} "
+                  "...]\n")
         return (text[:cap] + marker), True
     head = int(cap * 0.6)
     tail = cap - head
     marker = f"\n[... output truncated: showing {cap} of {len(text)} chars (head+tail) ...]\n"
     return (text[:head] + marker + text[-tail:]), True
+
+
+def resume_at(text: str, offset: int) -> str:
+    """The `read_file` arguments that land on char `offset` of `text` once it is a file:
+    `start_line=L` plus `start_char=C` when the offset falls inside a line.
+
+    Counted with read_file's own line semantics — Python's universal newlines, where a
+    carriage return and CR-LF end a line as well as a newline — because tool output is full
+    of lone carriage returns (progress bars) that counting newlines alone would not see as
+    the line breaks read_file then splits on.
+    """
+    head = text[:offset].replace("\r\n", "\n").replace("\r", "\n")
+    line = head.count("\n") + 1
+    col = len(head) - (head.rfind("\n") + 1)
+    return f"start_line={line}" + (f" start_char={col}" if col else "")
 
 
 #: Keys whose mere PRESENCE means the action did not do what it was asked. Failure is

@@ -160,7 +160,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                                  "paused")),
     "task": (("verb",), ("id", "title", "brief", "path", "state", "outcome", "summary",
                          "wake", "quiet_days", "accounting")),
-    "read_file": ((), ("path", "paths", "start_line", "max_lines", "background")),
+    "read_file": ((), ("path", "paths", "start_line", "start_char", "max_lines", "background")),
     "view_image": ((), ("path", "paths", "prompt", "background")),
     "write_file": (("path", "content"), ("append", "then_script")),
     "delete": (("path",), ("recursive",)),

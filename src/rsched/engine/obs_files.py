@@ -26,10 +26,12 @@ def _with_script(obs: dict) -> str:
 
 def _span(f: dict) -> str:
     """`lines 1-200 of 412` — or, for a directory read, `directory listing, entries 1-8 of 8`:
-    the model must know it got a LISTING (which grounds a delete of the tree), not a file.
+    the model must know it got a LISTING (which grounds a delete of the tree), not a file. A
+    read that entered its first line part-way (`start_char`) says where.
     """
     unit = "directory listing, entries" if f.get("directory") else "lines"
-    return f"{unit} {f['start_line']}-{f['end_line']} of {f['total_lines']}"
+    entered = f", line {f['start_line']} from char {f['start_char']}" if f.get("start_char") else ""
+    return f"{unit} {f['start_line']}-{f['end_line']} of {f['total_lines']}{entered}"
 
 
 def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.

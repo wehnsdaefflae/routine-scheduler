@@ -171,7 +171,7 @@ def test_truncate_head_mode_keeps_head_and_resumes_in_sequence():
     head = out.split("\n[... output truncated")[0]
     assert head == text[:OBS_CAP_CHARS]              # the HEAD is kept verbatim
     assert "TAIL-MARKER" not in out                  # the TAIL is dropped, not shown
-    assert f"read the spill file from char {OBS_CAP_CHARS}" in out  # resume offset named
+    assert f"read_file it with start_line=1 start_char={OBS_CAP_CHARS}" in out  # resume point
     assert "head+tail" not in out
 
 

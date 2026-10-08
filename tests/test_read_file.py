@@ -220,3 +220,50 @@ def test_resume_rebuild_counts_listings_and_size_refusals():
             {"path": "/srv/videos/missing.mkv", "error": "[Errno 2] No such file"}]}},
     ]
     assert seen_paths(events) == ["a.txt", "/srv/videos/pack", "/srv/videos/e1.mkv"]
+
+
+# ---- a line longer than one observation pages by character -----------------------------------
+
+def test_a_line_longer_than_the_cap_is_read_to_its_end(tmp_path):
+    """A single line past the observation cap — a minified JSON spill, the 1 MB capture
+    envelope — used to be cut at 8,000 chars with a marker pointing at the NEXT line, so the
+    rest of it was unreachable without `shell`. The marker now names `start_char`, and
+    following it page by page yields the line whole, in order."""
+    from rsched.engine.observations import OBS_CAP_CHARS
+
+    line = "".join(f"{i:06d}," for i in range(4_300))          # ~30k chars, one line
+    (tmp_path / "spill.out").write_text(f"head\n{line}\ntail\n", encoding="utf-8")
+    ctx = _ctx(tmp_path)
+    obs = fileops._read_one("spill.out", {"start_line": 2}, ctx)
+    got = obs["content"].split("\n[... ")[0]
+    pages = 1
+    while obs["truncated"]:
+        assert f"start_line=2 start_char={len(got)}" in obs["content"]
+        obs = fileops._read_one("spill.out", {"start_line": 2, "start_char": len(got)}, ctx)
+        got += obs["content"].split("\n[... ")[0].split("\n")[0]
+        pages += 1
+    assert got == line
+    assert pages == -(-len(line) // OBS_CAP_CHARS)
+    assert obs["start_char"] == (pages - 1) * OBS_CAP_CHARS
+    assert "tail" in obs["content"], "the last page runs on into the following lines"
+
+
+def test_a_part_way_read_says_where_it_entered(tmp_path):
+    (tmp_path / "a.txt").write_text("abcdefghij\nsecond\n", encoding="utf-8")
+    obs = fileops._read_one("a.txt", {"start_char": 4}, _ctx(tmp_path))
+    assert obs["content"] == "efghij\nsecond"
+    assert "lines 1-2 of 2, line 1 from char 4" in format_files(obs, "read_file")
+
+
+def test_the_spill_marker_names_the_read_file_arguments_that_reach_the_rest():
+    """The stdout preview stops at char 8,000 of the spilled text; the marker used to say
+    "from char 8000", an argument read_file never had. It now names the line and the char
+    within it — counted the way read_file splits lines, where a lone carriage return (a
+    progress bar) ends a line too."""
+    from rsched.engine.observations import OBS_CAP_CHARS, resume_at, truncate
+
+    text = "progress 10%\rprogress 100%\n" + "y" * (2 * OBS_CAP_CHARS)
+    out, _ = truncate(text, keep="head")
+    assert f"start_line=3 start_char={OBS_CAP_CHARS - 27}" in out
+    assert resume_at("abc\ndef", 4) == "start_line=2"
+    assert resume_at("abc\r\ndef", 6) == "start_line=2 start_char=1"

@@ -196,6 +196,10 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # says the write did not run either
         "put it ON the change",
         "[then_script NOT run]",
+        # a line longer than one observation continues by character, and the spill pointer
+        # names the read_file arguments that reach the rest (fileops._windowed, resume_at)
+        "the rest is in the spill file: read_file it with",
+        "to continue in sequence",
         "which did not run either",
         "one hold per action string per run",
         "[REMINDERS: ",

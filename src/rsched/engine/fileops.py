@@ -182,7 +182,12 @@ def _refusal(rel_path: str, path: Path) -> dict | None:
 
 
 def _windowed(rel_path: str, window: list[str], total: int, start: int,
-              max_lines: int) -> dict:
+              max_lines: int, start_char: int = 0) -> dict:
+    """The window as its observation: whole lines, END-truncated at the cap, with the exact
+    `start_line` (and, inside a line longer than the cap, `start_char`) that continues it.
+    `start_char` is where the window's first line was entered — `window[0]` already starts
+    there.
+    """
     end_line = min(start - 1 + max_lines, total)
     content = "\n".join(window)
     truncated = False
@@ -201,19 +206,26 @@ def _windowed(rel_path: str, window: list[str], total: int, start: int,
             used += len(ln) + 1
         end_line = start + len(kept) - 1
         core = "\n".join(kept)
-        if len(core) > OBS_CAP_CHARS:          # a single line longer than the cap
+        resume = f"start_line={end_line + 1}"
+        if len(core) > OBS_CAP_CHARS:
+            # A single line longer than the cap: the rest of it is the next page. Resuming at
+            # the next LINE skipped it — a one-line minified JSON spill, or the 1 MB capture
+            # envelope, could not be read past its first 8,000 chars at all.
             core = core[:OBS_CAP_CHARS]
+            resume = f"start_line={start} start_char={start_char + OBS_CAP_CHARS}"
         content = (core + f"\n[... {len(kept)} of {len(window)} window lines shown (through line "
                    f"{end_line} of {total}); truncated at {OBS_CAP_CHARS} chars — re-read "
-                   f"with start_line={end_line + 1} to continue in sequence ...]")
+                   f"with {resume} to continue in sequence ...]")
         truncated = True
     return {"path": rel_path, "start_line": start,
+            **({"start_char": start_char} if start_char else {}),
             "end_line": end_line, "total_lines": total,
             "content": content, "truncated": truncated}
 
 
 def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     start = max(1, int(action.get("start_line") or 1))
+    start_char = max(0, int(action.get("start_char") or 0))
     max_lines = min(int(action.get("max_lines") or READ_DEFAULT_MAX_LINES),
                     READ_WINDOW_MAX_LINES)
     directory = False
@@ -245,7 +257,10 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
         # a declared stage was indistinguishable from one that worked through all of them.
         if path.stem not in ctx.phases_entered:
             ctx.phases_entered.append(path.stem)
-    obs = _windowed(rel_path, window, total, start, max_lines)
+    if start_char and window:
+        # entering the first line part-way: the continuation of a line longer than the cap
+        window = [window[0][start_char:], *window[1:]]
+    obs = _windowed(rel_path, window, total, start, max_lines, start_char)
     if directory:
         obs["directory"] = True
     return obs
