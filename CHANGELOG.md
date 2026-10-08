@@ -15,6 +15,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.398.0] — 2026-10-08
+
+### Added — changes are measured, production and development apart, model trials
+Operator orders 2026-10-08: "suggest a way to measure changes autonomously. extend the records to
+allow for drawing conclusions on the effectiveness, completeness, and correctness of a change …
+in the ui, we need to clearly distinguish between production related information and development
+related information", and, on model choice, "go ahead as you proposed".
+
+- **The run record says what made a run and how it went** (`engine/runrecord.py`). Every depth-0
+  usage record carries a `fingerprint` — engine release, main model by catalog name and its
+  effort, deliberation, a hash of the behaviour-relevant config, a hash per held rule's text, a
+  trial id — and `quality` — accounting lines owed/met/unmet/not due, stages skipped, verifier
+  challenges and disputes, held actions, schema retries, the person's interventions while the run
+  worked, wall time, cache reads and writes. Run-cumulative counters, reseeded on a resume.
+- **Every change is found and judged from the runs themselves** (`readmodels/change_effects.py`,
+  `change_signals.py`): a boundary where the recipe, config, model, effort, deliberation, a held
+  rule's text or a trial changed; the up to five runs on either side compared on fifteen signals
+  in three dimensions — correctness, completeness, effectiveness — for one verdict: improved,
+  regressed, mixed, no effect, measuring, too few runs. Engine releases are judged across the
+  fleet (several land a day; as a routine's key they would cut every history too short to judge),
+  model and rule changes rolled up across routines. `readmodels/model_fit.py` groups a routine's
+  runs by model × effort × deliberation × trial. `GET /api/changes`, `/api/changes/{slug}`,
+  `/api/changes/{slug}/summary`. Runs before this release carry no fingerprint and are not
+  measured.
+- **Production and development apart.** The rail's new **Develop** group (Changes, Stats,
+  Library) is one quiet iris band, on the wide rail, the icon rail and the phone bar; Work and
+  Fleet are production. **Changes** (`#/changes`) shows releases, model and rule changes and
+  every routine with a measured change; one routine's view (`#/changes/<slug>`) its changes, each
+  opening onto its signal table, its model fit and its **Recipe health — moved off the routine
+  page**. The production routine page keeps one line under its name, coral when its newest change
+  regressed or its recipe is flagged.
+- **Model trials** (`trial:` in routine.yaml, `rsched/trials.py`): a routine runs on another
+  catalog model for its next N fires (1–20), proposed as an `ask_user` `config_patch` and applied
+  with one approve & apply; `{"trial": null}` clears it. Active while fewer than N runs carry
+  `fingerprint.trial` — derived from the usage stream, never written; every fire gets `trial.json`
+  and `engine-run --model`; finished, it stops by itself. The routine header shows `trial · <model>
+  · k of N runs`, then `trial finished · results in Development`.
+- **config-optimizer judges model fit from these measurements** and runs on Opus high (its recipe
+  and config, live data): a trial when no comparison exists, adopt or drop on a finished trial's
+  measured verdict, one routine at a time.
+- **The "later" asks of the 2026-10-08 review are queued** in `docs/designs.md` for the
+  scheduler-builder: a conversation goals card; engine-recorded deliverables, judge eval sets and
+  untrusted-content provenance; memory consolidation and recall over the memory index; sandboxed
+  live artifacts for interactive diagrams; change contracts and a `recurred` status; evidence
+  before routine-improver edits again; replaying rule revisions on past decision points; stage
+  exit checks; offline gate replay; the autoresearch-a-method pattern; `stale_after`/`verified` on
+  memory notes; undo a run; a per-run context breakdown.
+
 ## [0.397.0] — 2026-10-08
 
 ### Added — read_file reads documents
