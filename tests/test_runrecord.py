@@ -72,6 +72,30 @@ def test_the_config_hash_moves_with_behaviour_and_not_with_identity(make_routine
     assert runrecord.config_hash(load_routine(d)[0]) != before        # behaviour: a change
 
 
+def test_when_a_routine_runs_is_not_how_it_behaves(make_routine):
+    """0.398.0 excluded `schedule` and `retention` — YAML keys, not the field names the dump
+    carries (`cron`, `tz`, `keep_runs`) — so a cron edit read as a behaviour change."""
+    import yaml
+
+    d = make_routine(slug="clocked")
+    before = runrecord.config_hash(load_routine(d)[0])
+    raw = yaml.safe_load((d / "routine.yaml").read_text())
+    (d / "routine.yaml").write_text(yaml.safe_dump({
+        **raw, "schedule": {"cron": "17 3 * * 2", "tz": "Etc/UTC"},
+        "retention": {"keep_runs": 7}, "hub_tab": "Elsewhere", "improve": False}))
+    assert runrecord.config_hash(load_routine(d)[0]) == before
+
+
+def test_every_config_field_is_decided():
+    """A field in neither set would be silently left out of the hash; in both, contradictory."""
+    from rsched.config.routine import RoutineConfig
+
+    fields = set(RoutineConfig.model_fields)
+    assert fields == runrecord.BEHAVIOUR | runrecord.NOT_BEHAVIOUR, (
+        f"undecided: {sorted(fields - runrecord.BEHAVIOUR - runrecord.NOT_BEHAVIOUR)}")
+    assert not runrecord.BEHAVIOUR & runrecord.NOT_BEHAVIOUR
+
+
 def test_a_rule_revision_moves_only_that_rules_hash(tmp_path):
     (tmp_path / "a.md").write_text("# rule: a — one\n", encoding="utf-8")
     (tmp_path / "b.md").write_text("# rule: b — two\n", encoding="utf-8")

@@ -34,6 +34,7 @@ from pathlib import Path
 from .config import RoutineConfig, ServerConfig, TrialConfig
 from .engine.runrecord import TRIAL_FILE
 from .paths import atomic_write_json, read_json
+from .readmodels.incarnations import live_runs
 from .readmodels.usage_stream import usage_runs
 
 log = logging.getLogger("rsched.trials")
@@ -64,10 +65,11 @@ def ignored_problem(server: ServerConfig, trial: TrialConfig | None) -> str:
 
 
 def recorded(routines_home: Path, slug: str, trial_id: str) -> int:
-    """How many of `slug`'s runs carry `trial_id` in their durable record — runs, not legs."""
-    return sum(1 for rec in usage_runs(routines_home)
-               if not rec.get("depth") and rec.get("routine") == slug
-               and isinstance(rec.get("fingerprint"), dict)
+    """How many of `slug`'s runs carry `trial_id` in their durable record — runs, not legs, and
+    the live routine's own (readmodels/incarnations.py).
+    """
+    return sum(1 for rec in live_runs(routines_home, usage_runs(routines_home), slug)
+               if not rec.get("depth") and isinstance(rec.get("fingerprint"), dict)
                and rec["fingerprint"].get("trial") == trial_id)
 
 

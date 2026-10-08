@@ -1,5 +1,7 @@
 """How each MODEL did on a routine — its runs grouped by what served them: the main model by
-catalog name, its effort, the deliberation level (a model trial's runs are their own group).
+catalog name and by provider id (`model_id`), its effort, the deliberation level (a model
+trial's runs are their own group). A run rebuilt from history knows the provider id it ran on
+but rarely the catalog name, so its group shows the id and counts it `rebuilt`.
 
 The question it answers is the operator's (2026-10-08): is this routine's model overkill, or not
 enough? One routine's runs on one model say how THAT model did and nothing about another, so the
@@ -16,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .change_effects import routine_runs
+from .change_keys import components
 from .change_signals import SIGNALS, aggregate, run_signals
 
 #: The signals a model's fit is read on — correctness and completeness first, then cost.
@@ -24,18 +27,23 @@ FIT_SIGNALS = ("failed", "met_rate", "unmet", "disputed", "interventions", "toke
 
 
 def model_fit(routines_home: Path, slug: str) -> list[dict]:
-    """`[{model, effort, deliberation, trial, runs, last, <signal>: value, …}]`, most runs first."""
+    """`[{model, model_id, effort, deliberation, trial, runs, rebuilt, last, <signal>: value,
+    …}]`, most runs first. A component a rebuilt run could not recover is None (unknown) — its
+    runs group apart from the runs that know it, never into the "" a real value is.
+    """
     groups: dict[tuple, list[dict]] = {}
     for rec in routine_runs(routines_home).get(slug, []):
-        fp = rec["fingerprint"]
-        key = (str(fp.get("model") or ""), str(fp.get("effort") or ""),
-               str(fp.get("deliberation") or ""), str(fp.get("trial") or ""))
+        scalars, _rules = components(rec)
+        key = tuple(scalars[k] for k in ("model", "model_id", "effort", "deliberation", "trial"))
         groups.setdefault(key, []).append(rec)
     sigs = {s.name: s for s in SIGNALS}
     out = []
-    for (model, effort, deliberation, trial), recs in groups.items():
+    for (model, model_id, effort, deliberation, trial), recs in groups.items():
         values = [run_signals(r) for r in recs]
-        out.append({"model": model, "effort": effort, "deliberation": deliberation,
-                    "trial": trial, "runs": len(recs), "last": str(recs[-1].get("ts") or ""),
+        out.append({"model": model, "model_id": model_id, "effort": effort,
+                    "deliberation": deliberation, "trial": trial, "runs": len(recs),
+                    "rebuilt": sum(1 for r in recs
+                                   if r["fingerprint"].get("source") == "reconstructed"),
+                    "last": str(recs[-1].get("ts") or ""),
                     **{name: aggregate(values, sigs[name]) for name in FIT_SIGNALS}})
-    return sorted(out, key=lambda g: (-g["runs"], g["model"]))
+    return sorted(out, key=lambda g: (-g["runs"], str(g["model"] or g["model_id"] or "")))

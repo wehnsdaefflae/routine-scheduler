@@ -45,8 +45,9 @@ At run start the engine stamps the current recipe commit into the run
   (depth 0 only, one read per run). A rule revision reaches every holder at once and moves no
   recipe version, so it is the only thing that dates the change the trend below reacts to.
 - And a `fingerprint` (depth 0, engine/runrecord.py): the engine release, the main model by
-  catalog name with its effort, the deliberation level, a hash of the behaviour-relevant config,
-  a hash per held rule — and `trial`, the id of the model trial the run was fired under (below).
+  catalog name and by provider id (`model_id`) with its effort, the deliberation level, a hash of
+  the behaviour-relevant config, a hash per held rule — and `trial`, the id of the model trial the
+  run was fired under (below).
 
 ## Model trials
 
@@ -94,7 +95,8 @@ How a routine's recipe versions have done is DEVELOPMENT information, so it live
 routine's development view (`#/changes/<slug>`, rail group *Develop*), not on the production
 routine page — which keeps one line pointing there (see [the console](#in-the-console-production-and-development-apart)).
 
-`rsched/readmodels/run_health.py` buckets the routine's depth-0 usage records by recipe version:
+`rsched/readmodels/run_health.py` buckets the routine's depth-0 usage records — its OWN, never an
+archived routine's that held the slug before it (`incarnations.live_runs`) — by recipe version:
 runs, ok/partial/failed/aborted, fail rate, median turns and tokens, and
 deferred-question churn (`asks_deferred` — decisions the runs threw over the wall: a
 deferred ask, or a blocking ask that timed out / was parked / died with an abort).
@@ -171,10 +173,17 @@ The recipe-health flag above sees one kind of change (the recipe) through four c
 measured, from the runs themselves, with nothing declared:
 
 - **What made a run.** Every depth-0 usage record carries a `fingerprint` (`engine/runrecord.py`):
-  the engine release, the main model by catalog name and its effort, the deliberation level, a
-  short hash of the behaviour-relevant config (`routine.yaml` minus identity, schedule and
-  retention), a short hash of each held rule's text, and the id of a model trial when the run was
-  fired as one. The recipe and library commits ride the record already.
+  the engine release, the main model by catalog name and by provider id (`model_id`) and its
+  effort, the deliberation level, a short hash of the behaviour-relevant config, a short hash of
+  each held rule's text, and the id of a model trial when the run was fired as one. The recipe and
+  library commits ride the record already. The config hash covers an ALLOWLIST
+  (`runrecord.BEHAVIOUR`: models, connections, machines, grants, budgets, permissions, shared
+  reminders, capabilities, read and write roots, the ladder); every other field is listed in
+  `runrecord.NOT_BEHAVIOUR` — who the routine is, WHEN it runs (cron, zone, triggers, gate, off
+  switch), retention, `improve`, and what is measured as its own component (deliberation, rules,
+  tuning — part of the recipe — and trial). `tests/test_runrecord.py` fails on a field in neither
+  set: 0.398.0 excluded YAML keys rather than field names, so every cron edit read as a behaviour
+  change.
 - **How it went.** Beside it, `quality`: the accounting lines owed, met, unmet and not due
   (Done-when lines and goals), stages skipped, claims the verifier challenged and the ones that
   stood disputed, actions a caution held, schema retries, the person's interventions while the run
@@ -190,25 +199,101 @@ stages skipped) and EFFECTIVENESS (median tokens, turns and minutes, interventio
 retries, cache read share) — each with a direction and a noise threshold (a median also needs an
 absolute floor, so a 2→3-turn routine never reads as 50% worse).
 
-`readmodels/change_effects.py` finds the CHANGES: boundaries between consecutive runs whose
-behaviour key differs (recipe, config, model, effort, deliberation, a rule's text, a trial). The
-up to five runs before and after, each side only runs of one key, are judged signal by signal,
-each dimension `better`/`worse`/`mixed`/`same`, and the change gets one verdict — `improved`,
-`regressed`, `mixed`, `no effect`, `measuring` (the newest change, still collecting runs) or `too
-few runs` (another change came first; a routine whose recipe changes every run cannot be said to
-have improved, and saying so is the finding). **Engine releases are not part of a routine's key**
-— several land a day, and as a key they would cut every history into windows too short to judge.
-They are judged across the fleet instead (`releases`): every routine whose behaviour key held
-still around the run that first ran a release, its runs before against after, pooled per release,
-with the median token ratio and met-rate change. A release inside a routine change's windows is
-named beside that change (`engines`). Model and rule changes are rolled up across the routines
-that met them (`fleet`). `readmodels/model_fit.py` groups one routine's runs by what served them
-(model, effort, deliberation, trial) on the same signals — the table the config-optimizer reads to
-judge whether a model is overkill or not enough, and why a model TRIAL exists: one routine's runs
-on one model say nothing about another.
+A signal compares only runs it was COUNTED the same way in (`change_signals.COUNTED_SINCE`):
+when a release changes what a signal counts — the ruler, not the routine — its entry moves, and
+runs before it have no reading for that signal. 0.369.0 had the claim verifier check every
+Done-when `met`, 0.370.2 on every endpoint, and 0.371.1 stopped a resumed run repeating a hold, an
+assist or a challenge — the fleet's challenged claims went from 0.03 a run to 1.2 overnight on
+2026-09-30, which read as every change of that day making the fleet less correct.
 
-Flag-first: nothing reverts or proposes on its own. Runs recorded before 0.397.0 carry no
-fingerprint and are not measured — the measurement starts with the release that records it.
+`readmodels/change_keys.py` reads each run's behaviour key (recipe, config, model, `model_id`,
+effort, deliberation, a rule's text, a trial) and `readmodels/change_effects.py` finds the
+CHANGES: boundaries between consecutive runs whose keys differ. The up to five runs before and
+after, each side only runs of one key, are judged signal by signal, each dimension
+`better`/`worse`/`mixed`/`same`, and the change gets one verdict — `improved`, `regressed`,
+`mixed`, `no effect`, `measuring` (the newest change, still collecting runs) or `too few runs`
+(another change came first; a routine whose recipe changes every run cannot be said to have
+improved, and saying so is the finding — on this instance's history, 96% of all routine changes).
+
+What reaches MANY routines at once is judged across them, POOLED (`readmodels/change_fleet.py`):
+each routine adds the runs on either side of its boundary that carry its own key unchanged, its
+cost signals divided by its own median (`change_signals.normalized` — a routine of a million
+tokens and one of ten thousand weigh alike), and the pool is judged like one routine's windows on
+the `POOLED` signals (no absolute floors: they mean nothing on a ratio).
+
+- **Engine releases** (`releases`, every one, newest first) are not part of a routine's key —
+  several land a day, and as a key they would cut every history into windows too short to judge.
+  A routine whose own key ALSO changed at the run that first ran the release is `confounded` and
+  left out; `smeared` is the median number of OTHER releases inside the pooled windows (0 judges
+  the release alone). A release inside a routine change's windows is named beside that change
+  (`engines`).
+- **Model and rule changes** (`fleet`, one row per kind · name · from → to) carry each routine's
+  own verdict, and a verdict pooled over the routines where this was the ONLY change at that run
+  (`alone`) — a library migration that rewrote thirty rules at once otherwise handed each of them
+  the whole batch's verdict. Where it also changed together with other things, `together` is the
+  batch's pooled reading, labelled as the batch.
+- **The fleet week by week** (`timeline`, `readmodels/change_timeline.py`) reads the stretch a
+  release verdict smears over: per ISO week, every routine counted once, cost signals against the
+  routine's own median, rates as they are; the week's releases, its models by `model_id`, and how
+  many of its runs were rebuilt or carry no quality. A routine's own weeks
+  (`change_effects.routine_timeline`) ride `GET /api/changes/{slug}`.
+
+`readmodels/model_fit.py` groups one routine's runs by what served them (model, `model_id`, effort,
+deliberation, trial) on the same signals — the table the config-optimizer reads to judge whether
+a model is overkill or not enough, and why a model TRIAL exists: one routine's runs on one model
+say nothing about another.
+
+A slug names a routine only for a while: archiving moves its dir to `.archive/<slug>-<run_ts>` and
+frees the slug for a new routine (`do-my-taxes` and `steward-hub-maintainer` were each archived and
+created again). Runs are grouped by INCARNATION (`readmodels/incarnations.py`) — a run belongs to
+the first archive stamped after it started, else to the live routine — so the per-routine changes
+are the live routines' alone, while releases, the fleet roll-up and the timeline count the
+archived ones too (`archived` names them): a routine that is gone still ran on those releases.
+Every reader that compares or sums one routine's runs keys them the same way
+(`incarnations.resolver` / `live_runs`): recipe health and its time trend, the run-end
+`cost_trend_degraded` check, a trial's run count, and the Stats tab's per-routine spend and
+compression rows, where an archived routine is a row of its own under its archive's name.
+
+Flag-first: nothing reverts or proposes on its own.
+
+### History before the record
+
+The record began with 0.398.0 (2026-10-08); the measurement reaches back to the usage stream's
+first run (2026-07-12), because a one-shot boot migration REBUILT every earlier run's fingerprint
+and quality from what the instance still holds (`migrate_runrecords.py`, with
+`runhistory.py` and `runevidence.py`; all three go with the migration). As of the instant each run
+STARTED:
+
+| component | rebuilt from | unknown when |
+|---|---|---|
+| engine | `main`'s REFLOG — when the branch moved, not when a commit was written | before the reflog |
+| config, rules held, deliberation, named model | the routine's `routine.yaml` + `tuning.yaml` as committed then, loaded by today's loader and hashed by the live hasher; the run's own status names the deliberation it used | today's loader refuses the old file |
+| rule texts | the library's rule file as committed then | — |
+| `model_id` | the run's own transcript header, else its status | the run dir is gone |
+| model (catalog name) | the routine's own `models.main` | the routine ran on the system model, whose history is on record nowhere |
+| effort | — | always: the catalog is unversioned, and before 0.396.0 the subscription transport dropped effort anyway |
+| recipe | the record's `recipe_commit`, else the recipe version committed then | — |
+
+`quality` comes from the run's `status.json` and transcript where retention kept them (two runs
+in three): a key a file lacks, or a count its release did not RECORD yet
+(`runevidence.RECORDED_SINCE`), stays absent — unknown, never zero. The person's interventions
+are counted as a live run counts them: mid-run messages that are not an answer the run asked for,
+nothing the engine wrote (it stamps a `source` on every note, assist and warning), no report and
+no machine channel.
+
+A rebuilt fingerprint says so (`source: "reconstructed"`) and names what it could not recover in
+`unknown`. **An unknown component is a wildcard**: it never makes a change, a change's `what`
+names only components known on both sides, and every verdict drawn on a rebuilt run carries
+`reconstructed`, which the console marks `≈`. The runs fingerprinted live by 0.398.0 were
+corrected in the same pass: their config hashed again under the allowlist, and the `model_id`
+0.398.0 did not record read from their own files.
+
+The engine reached a run at the daemon's next RESTART, not at the merge, and nothing records the
+restart — so a run started between a merge and the restart is attributed to the newer release:
+the one error the reflog cannot remove. A pruned run dir an operator still has in a backup can be
+STAGED for the migration under `.control/migrations/run-records-evidence/<slug>/<run_ts>/` (its
+`status.json` and transcript) before the boot that runs it; the directory is removed once the
+rewrite lands. What it did is recorded in `.control/migrations/run-records.json`.
 
 ### In the console: production and development apart
 
@@ -222,19 +307,30 @@ structure colour): a tinted block of the wide rail, a tinted run of icons on the
 tinted segment of the phone's bottom bar — never a row of its own. The development pages carry
 an iris `development` kicker over their title and iris section ticks.
 
-- **Changes** (`#/changes`, `views/changes.js`, `GET /api/changes`) — three tables: engine
-  **Releases** (release · first seen · routines judged · verdict counts as chips · median token
-  ratio · met-rate change in percentage points), **Model & rule changes** across routines (what
-  changed from → to · each routine's verdict chip, a link into its view) and **Routines** (each
-  routine with a measured change · how many · the newest verdict · when). With no fingerprinted
-  run yet the page says only that measurement starts with the runs recorded from this release on.
+- **Changes** (`#/changes`, `views/changes.js`, `GET /api/changes`) — a **Weeks** strip of small
+  multiples (`components/sparkline.js`: runs, failed, lines met, tokens× against each routine's
+  own median on a log scale clamped ×0.25–×4 with a dashed ×1.00, interventions and challenges per
+  run; no reading is a gap, mostly-rebuilt weeks are shaded, the releases first run that week are
+  ticks, each week's column is its own readout); **Releases**, the newest 12 then "show all"
+  (version · first seen · routines pooled · the pooled verdict · token ratio · met change in
+  percentage points; "+N releases in window" and "N left out" only when non-zero; a `too few
+  runs` release recedes); **Model & rule changes**, 10 then "show all" (the verdict pooled where it
+  was the only change, "alone in A of R"; "with other changes: <verdict> (R routines)" when it also
+  came in a batch; each routine's own chip, more than three `too few runs` folded into one count,
+  archived routines named "(archived)" and unlinked); and **Routines** (each routine with a
+  measured change · how many · the newest verdict · when). `≈` beside a verdict means it rests on
+  rebuilt runs (`components/change-folds.js`, which also keeps a list's folds open across a live
+  re-read).
 - **One routine** (`#/changes/<slug>`, `views/changes-routine.js`, `GET /api/changes/{slug}`) — its
-  changes newest first (when · what changed, e.g. `recipe 1a2b3c4→3c4d5e6`, `model Opus
-  high→Sonnet high`, `rule web-research` · runs before → after · the verdict chip · three tiny
-  marks for correctness, completeness and effectiveness · the engine releases inside its windows
-  as a faint note), each row opening onto its signal table (each signal's before → after and a
-  ▲▼ coloured only by better/worse); the **Model fit** table; and **Recipe health** (the version
-  table, the regression banner with its roll-back, the cautions' tallies).
+  own Weeks strip (tokens×, turns×, lines met, interventions); its changes newest first (when ·
+  what changed, e.g. `recipe 1a2b3c4→3c4d5e6`, `model Opus high→Sonnet high` · runs before →
+  after · the verdict chip · three tiny marks for correctness, completeness and effectiveness · the
+  engine releases inside its windows, as a range "0.379–0.391 (4 releases)" past two), each row
+  opening onto its signal table; consecutive `too few runs` changes fold into one line "N changes
+  came faster than it ran · dates", more than three rule entries read "N rules revised", and the
+  list shows 10 then "show N older"; the **Model fit** table, where a rebuilt group shows its
+  provider id and "≈ N"; and **Recipe health** (the version table, the regression banner with its
+  roll-back, the cautions' tallies).
 - **The production routine page** (`#/routine/<slug>`) carries exactly one line about any of it,
   under the routine's name (`components/dev-line.js`, `GET /api/changes/{slug}/summary`):
   `DEVELOPMENT · 3 measured changes · latest ▲ IMPROVED`, a quiet link into the routine's view.

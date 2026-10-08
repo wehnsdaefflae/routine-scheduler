@@ -22,6 +22,7 @@ a continued run's legs are one run, each leg's own tally summed into it.
 from __future__ import annotations
 
 from ..config import ServerConfig
+from .incarnations import resolver
 from .usage_stream import usage_runs
 
 # the outcome vocabulary of engine.output_compression (metrics["status"])
@@ -52,7 +53,8 @@ def _cell(slug: str) -> dict:
 
 def compression_stats(server: ServerConfig) -> dict:
     """`{"rows": [...], "totals": {...}, "since": iso|None, "records": n}` — one row per
-    routine that has reported a counted run, ordered by estimated tokens saved.
+    routine that has reported a counted run, ordered by estimated tokens saved; a routine
+    archived and created again is two rows, the old one under its archive's name.
 
     Rows carry the raw outcome counts plus two derived readings: `candidates` (successful
     command outputs at all) and `attempts` (the compressor ran).
@@ -62,6 +64,7 @@ def compression_stats(server: ServerConfig) -> dict:
     rows: dict[str, dict] = {}
     since = ""
     records = 0
+    name_of = resolver(server.routines_home)        # an archived routine is its own row
     for rec in usage_runs(server.routines_home):
         tally = rec.get("compression")
         if not isinstance(tally, dict):
@@ -70,8 +73,8 @@ def compression_stats(server: ServerConfig) -> dict:
         ts = str(rec.get("ts") or "")
         if ts and (not since or ts < since):
             since = ts
-        cell = rows.setdefault(str(rec.get("routine") or "?"),
-                               _cell(str(rec.get("routine") or "?")))
+        name = name_of(rec) or "?"
+        cell = rows.setdefault(name, _cell(name))
         cell["runs"] += 1
         for status in STATUSES:
             cell[status] += _int(tally.get(status))

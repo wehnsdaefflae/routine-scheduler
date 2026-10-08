@@ -105,11 +105,12 @@ def _log_cost_trend(ctx: RunContext, slug: str) -> None:
     Called after this run's own usage record is written, so the flag includes it.
     """
     from ..health_events import log_health_event
+    from ..readmodels.incarnations import live_runs
     from ..readmodels.run_health import recent_trend
     from ..readmodels.usage_stream import usage_records
 
-    records = [rec for rec in usage_records(ctx.server.routines_home)
-               if not rec.get("depth") and rec.get("routine") == slug]
+    home = ctx.server.routines_home
+    records = live_runs(home, [rec for rec in usage_records(home) if not rec.get("depth")], slug)
     trend = recent_trend(records)
     if not trend.get("flagged"):
         return

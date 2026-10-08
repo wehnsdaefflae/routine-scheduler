@@ -32,13 +32,6 @@ export function verdictChip(verdict, { text = "", href = "", summons = false } =
   return href ? el("a", { ...attrs, href }, ...body) : el("span", attrs, ...body);
 }
 
-/** Verdict counts as chips, most telling first: "2 improved", "1 regressed". */
-export function verdictCounts(counts) {
-  return el("span", { class: "v-chips" },
-    ...Object.keys(VERDICTS).filter((v) => counts?.[v])
-      .map((v) => verdictChip(v, { text: `${counts[v]} ${v}` })));
-}
-
 const DIM_MARK = { better: "+", worse: "−", mixed: "±", same: "·" };
 export const DIMENSIONS = ["correctness", "completeness", "effectiveness"];
 

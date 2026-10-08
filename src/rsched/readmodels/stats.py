@@ -93,13 +93,17 @@ def monthly_spend(server: ServerConfig) -> dict:
     already folds its children in), one per RUN (`usage_runs`: a continued run's legs are
     one run with their spend summed and its cumulative `referrals` read once, filed under
     the month its newest leg ended). Detached background tasks are attributed to their owner
-    conversation. Shape: {"months": [...asc], "by_routine": {slug: {month: {runs, tokens,
-    cost}}}} — routines sorted by latest-month tokens, descending.
+    conversation, and a routine archived and created again keeps its runs under the archive's
+    name (readmodels/incarnations.py) — the new routine's row is its own. Shape:
+    {"months": [...asc], "by_routine": {slug: {month: {runs, tokens, cost}}}} — routines
+    sorted by latest-month tokens, descending.
     """
+    from .incarnations import resolver
     from .usage_stream import usage_runs
 
     months: set[str] = set()
     by_routine: dict[str, dict[str, dict]] = defaultdict(dict)
+    name_of = resolver(server.routines_home)     # an archived routine is its own row
     for rec in usage_runs(server.routines_home):
         if rec.get("depth"):
             continue
@@ -107,8 +111,7 @@ def monthly_spend(server: ServerConfig) -> dict:
         if len(month) != 7:
             continue
         slug = str(rec.get("routine") or "?")
-        if m := _BG_SLUG.fullmatch(slug):
-            slug = m.group(1)
+        slug = m.group(1) if (m := _BG_SLUG.fullmatch(slug)) else (name_of(rec) or "?")
         try:   # compute BEFORE folding: one malformed record (tokens as a dict, a
             tokens = int(rec.get("tokens") or 0)          # stray string cost) is skipped
             cost = float(rec.get("cost") or 0.0)          # whole, like unparseable JSON —

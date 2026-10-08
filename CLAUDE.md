@@ -570,8 +570,11 @@ by a test, by the engine, or by a past incident.
   `--model` to `engine-run`, re-read from that dir on a resume). Nothing clears the field when
   the trial finishes — it stays as history until the operator's next accepted change — so never
   add a writer that tidies it up, and keep it out of the fingerprint's config hash
-  (`runrecord._NOT_BEHAVIOUR`), or the runs after a finished trial stop comparing equal to the
-  identical runs before it.
+  (`runrecord.NOT_BEHAVIOUR`), or the runs after a finished trial stop comparing equal to the
+  identical runs before it. That hash covers an ALLOWLIST (`runrecord.BEHAVIOUR`), and every
+  RoutineConfig field sits in exactly one of the two sets — a new field fails
+  `tests/test_runrecord.py` until it is decided: hashing a field by default made every cron
+  edit read as a behaviour change.
 - **Git is never SIGKILLed; a commit always says what happened** (docs/architecture.md,
   "Git writes"). Git deletes its `index.lock` in its SIGTERM handler only, so `libgit.git`
   runs it in its own process group and ends a timed-out call with SIGTERM first — the

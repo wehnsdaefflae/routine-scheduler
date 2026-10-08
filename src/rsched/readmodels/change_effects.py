@@ -2,11 +2,11 @@
 
 Nothing declares a change. Every depth-0 run's usage record carries a fingerprint
 (engine/runrecord.py) and the recipe commit; a CHANGE is a boundary between consecutive runs of a
-routine whose BEHAVIOUR KEY differs — the recipe, the behaviour-relevant config, the main model,
-its effort, the deliberation level, a held rule's text, a model trial. The runs just before it
-and the runs just after it (at most `WINDOW` each, each side only runs of ONE key) are compared
-signal by signal (readmodels/change_signals.py) on correctness, completeness and effectiveness,
-and the change gets one verdict:
+routine whose BEHAVIOUR KEY differs (readmodels/change_keys.py) — the recipe, the
+behaviour-relevant config, the main model, its effort, the deliberation level, a held rule's
+text, a model trial. The runs just before it and the runs just after it (at most `WINDOW` each,
+each side only runs of ONE key) are compared signal by signal (readmodels/change_signals.py) on
+correctness, completeness and effectiveness, and the change gets one verdict:
 
 - `improved` / `regressed` — some dimension moved one way and none the other;
 - `mixed` — both ways (cheaper but less complete, say): a person weighs it;
@@ -15,12 +15,19 @@ and the change gets one verdict:
 - `too few runs` — another change came before either side reached `MIN_RUNS`. That is a finding
   too: a routine whose recipe changes every run cannot be told to have improved.
 
-ENGINE RELEASES are not part of a routine's key: several land a day, and as a key they would cut
-every routine's history into windows too short to judge. They are judged across the FLEET
-instead (`releases`): for every routine whose behaviour key held still on both sides of the run
-that first ran a release, its runs before against its runs after, pooled by release. A release
-that lands inside a routine change's windows is named beside it (`engines`) — the confounder a
-reader must see. Model and rule changes are rolled up across routines the same way (`fleet`).
+What reached many routines at once — an ENGINE RELEASE (never part of a routine's key: several
+land a day), a rule's revision, a model switch — is judged across the fleet as well, its holders'
+windows POOLED (readmodels/change_fleet.py), and the weekly timeline (change_timeline.py) reads
+the fleet over a stretch of releases. A release that lands inside a routine change's windows is
+named beside it (`engines`) — the confounder a reader must see.
+
+The history reaches back past the record: runs from before fingerprints existed were REBUILT
+from git (migrate_runrecords.py). What could not be recovered is UNKNOWN, and an unknown
+component is a wildcard — it never makes a change, and a change's `what` names only components
+known on both sides; a verdict drawn on rebuilt runs carries `reconstructed`. A slug that was
+archived and created again names two routines, so runs are grouped by INCARNATION
+(readmodels/incarnations.py): the per-routine changes are the live routines', the fleet readings
+take the archived ones too.
 
 Flag-first, like the recipe-health regression flag: nothing here reverts or proposes anything.
 The config-optimizer reads it to propose a pending change; a person reads it on the Changes page.
@@ -28,71 +35,43 @@ The config-optimizer reads it to propose a pending change; a person reads it on 
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
 from pathlib import Path
-from statistics import median
 
 from . import memo
-from .change_signals import judge, run_signals
+from .change_fleet import MIN_RUNS, WINDOW, fleet, releases
+from .change_keys import diff, engines, reconstructed, segments
+from .change_signals import baseline, judge, overall, run_signals
+from .change_timeline import weekly
+from .incarnations import ARCHIVE, Incarnation, archived_dirs, incarnation_of, incarnations
 from .usage_stream import stream_path, usage_runs
 
-WINDOW = 5
-MIN_RUNS = 3
-_KEYS = ("recipe", "config", "model", "effort", "deliberation", "trial")
-RELEASES_SHOWN = 12
 
-
-def components(rec: dict) -> dict[str, str]:
-    """The behaviour key of one run, flat: its own components plus `rule:<slug>` per held rule."""
-    fp = rec.get("fingerprint") or {}
-    out = {"recipe": str(rec.get("recipe_commit") or ""),
-           **{k: str(fp.get(k) or "") for k in _KEYS[1:]}}
-    out.update({f"rule:{slug}": str(h) for slug, h in (fp.get("rules") or {}).items()})
+def incarnation_runs(routines_home: Path) -> dict[str, tuple[Incarnation, list[dict]]]:
+    """Fingerprinted depth-0 runs per routine INCARNATION (readmodels/incarnations.py), keyed by
+    its name — a live routine's slug, an archived one's dir name — oldest first, the order the
+    stream wrote them in. A conversation or a background task belongs to no routine.
+    """
+    archived = archived_dirs(routines_home)
+    incs: dict[str, list[Incarnation]] = {}
+    out: dict[str, tuple[Incarnation, list[dict]]] = {}
+    for rec in usage_runs(routines_home):
+        slug = str(rec.get("routine") or "")
+        if rec.get("depth") != 0 or not rec.get("fingerprint") or not slug:
+            continue
+        if slug not in incs:
+            incs[slug] = incarnations(routines_home, slug, archived)
+        inc = incarnation_of(incs[slug], str(rec.get("run_id") or "").rsplit(":", 1)[-1])
+        if inc is not None:
+            out.setdefault(inc.name, (inc, []))[1].append(rec)
     return out
-
-
-def diff(old: dict[str, str], new: dict[str, str]) -> list[dict]:
-    out = []
-    for key in sorted({*old, *new}):
-        if old.get(key, "") != new.get(key, ""):
-            kind, _, name = key.partition(":")
-            out.append({"kind": kind, "name": name, "from": old.get(key, ""),
-                        "to": new.get(key, "")})
-    return out
-
-
-def overall(dimensions: dict[str, str]) -> str:
-    moved = set(dimensions.values()) - {"same"}
-    if not moved:
-        return "no effect"
-    if moved == {"better"}:
-        return "improved"
-    if moved == {"worse"}:
-        return "regressed"
-    return "mixed"
 
 
 def routine_runs(routines_home: Path) -> dict[str, list[dict]]:
-    """Fingerprinted depth-0 runs per ROUTINE (not a conversation or a background task),
-    oldest first — the order the stream wrote them in.
+    """The LIVE routines' runs — an archived routine's runs under the same slug are another
+    routine's.
     """
-    out: dict[str, list[dict]] = defaultdict(list)
-    for rec in usage_runs(routines_home):
-        slug = str(rec.get("routine") or "")
-        if rec.get("depth") == 0 and rec.get("fingerprint") and slug \
-                and (routines_home / slug / "routine.yaml").is_file():
-            out[slug].append(rec)
-    return out
-
-
-def _segments(runs: list[dict]) -> list[list[dict]]:
-    segs: list[list[dict]] = []
-    for rec in runs:
-        if segs and components(segs[-1][0]) == components(rec):
-            segs[-1].append(rec)
-        else:
-            segs.append([rec])
-    return segs
+    return {name: runs for name, (inc, runs) in incarnation_runs(routines_home).items()
+            if inc.live}
 
 
 def _evaluate(before: list[dict], after: list[dict], *, current: bool) -> dict:
@@ -101,105 +80,54 @@ def _evaluate(before: list[dict], after: list[dict], *, current: bool) -> dict:
         verdict = overall(judged["dimensions"])
     else:
         verdict = "measuring" if current and len(before) >= MIN_RUNS else "too few runs"
-    return {"verdict": verdict, "runs_before": len(before), "runs_after": len(after), **judged}
-
-
-def _engines(runs: list[dict]) -> list[str]:
-    return sorted({str((r.get("fingerprint") or {}).get("engine") or "") for r in runs} - {""},
-                  key=_version)
-
-
-def _version(v: str) -> tuple:
-    return tuple(int(p) if p.isdigit() else 0 for p in v.split("."))
+    return {"verdict": verdict, "runs_before": len(before), "runs_after": len(after),
+            "reconstructed": reconstructed([*before, *after]), **judged}
 
 
 def _changes_of(runs: list[dict]) -> list[dict]:
-    segs = _segments(runs)
+    segs = segments(runs)
     out = []
     for i in range(1, len(segs)):
-        before, after = segs[i - 1][-WINDOW:], segs[i][:WINDOW]
-        out.append({"at": str(segs[i][0].get("ts") or ""),
-                    "run_id": str(segs[i][0].get("run_id") or ""),
-                    "what": diff(components(segs[i - 1][0]), components(segs[i][0])),
-                    "engines": _engines([*before, *after]),
+        (old_key, old_runs), (new_key, new_runs) = segs[i - 1], segs[i]
+        before, after = old_runs[-WINDOW:], new_runs[:WINDOW]
+        out.append({"at": str(new_runs[0].get("ts") or ""),
+                    "run_id": str(new_runs[0].get("run_id") or ""),
+                    "what": diff(old_key, new_key),
+                    "engines": engines([*before, *after]),
                     **_evaluate(before, after, current=i == len(segs) - 1)})
     return out[::-1]                                           # newest first
 
 
-def _releases(by_routine: dict[str, list[dict]]) -> list[dict]:
-    """Per engine release: each routine whose behaviour key held still around the run that
-    first ran it, judged on its own runs before against after; pooled by release.
-    """
-    pooled: dict[str, list[tuple[str, dict]]] = defaultdict(list)
-    first_seen: dict[str, str] = {}
-    for slug, runs in by_routine.items():
-        for i in range(1, len(runs)):
-            old = str(runs[i - 1]["fingerprint"].get("engine") or "")
-            new = str(runs[i]["fingerprint"].get("engine") or "")
-            if not new or new == old:
-                continue
-            first_seen[new] = min(first_seen.get(new, "~"), str(runs[i].get("ts") or ""))
-            before, after = runs[max(0, i - WINDOW):i], runs[i:i + WINDOW]
-            key = components(runs[i])
-            if all(components(r) == key for r in [*before, *after]):
-                pooled[new].append((slug, _evaluate(before, after, current=False)))
-    out = []
-    for release in sorted(pooled, key=_version, reverse=True)[:RELEASES_SHOWN]:
-        judged = [ev for _slug, ev in pooled[release] if ev["verdict"] != "too few runs"]
-        out.append({"release": release, "first_seen": first_seen.get(release, ""),
-                    "routines": [slug for slug, _ev in pooled[release]],
-                    "verdicts": dict(Counter(ev["verdict"] for _s, ev in pooled[release])),
-                    "tokens_ratio": _median_ratio(judged, "tokens"),
-                    "met_rate_delta": _median_delta(judged, "met_rate")})
-    return out
-
-
-def _signal(ev: dict, name: str) -> dict:
-    return next(s for s in ev["signals"] if s["name"] == name)
-
-
-def _median_ratio(evs: list[dict], name: str) -> float | None:
-    ratios = [s["after"] / s["before"] for ev in evs
-              if (s := _signal(ev, name))["before"] and s["after"] is not None]
-    return round(median(ratios), 2) if ratios else None
-
-
-def _median_delta(evs: list[dict], name: str) -> float | None:
-    deltas = [s["after"] - s["before"] for ev in evs
-              if (s := _signal(ev, name))["before"] is not None and s["after"] is not None]
-    return round(median(deltas), 2) if deltas else None
-
-
-def _fleet(changes: dict[str, list[dict]]) -> list[dict]:
-    """Model and rule changes rolled up across the routines that met them: one row per
-    (kind, name, from → to), with every routine's verdict.
-    """
-    rows: dict[tuple, dict] = {}
-    for slug, routine_changes in changes.items():
-        for ch in routine_changes:
-            for w in ch["what"]:
-                if w["kind"] not in ("rule", "model", "effort"):
-                    continue
-                key = (w["kind"], w["name"], w["from"], w["to"])
-                row = rows.setdefault(key, {**w, "at": ch["at"], "routines": {}})
-                row["routines"][slug] = ch["verdict"]
-                row["at"] = min(row["at"], ch["at"])
-    return sorted(rows.values(), key=lambda r: r["at"], reverse=True)
-
-
 def changes(routines_home: Path) -> dict:
-    """The whole read model: per-routine changes (newest first), engine releases and the
-    fleet roll-up. Memoized on the usage stream.
+    """The whole read model: per-routine changes (newest first) of the LIVE routines, and the
+    readings across the fleet — engine releases, the model and rule roll-up, the weekly
+    timeline — over every incarnation, the archived ones (`archived`) included: a routine that
+    is gone still ran on those releases. Memoized on the usage stream and on the two dirs whose
+    entries say which routines exist.
     """
     path = stream_path(routines_home)
 
     def compute() -> dict:
-        by_routine = routine_runs(routines_home)
-        per = {slug: _changes_of(runs) for slug, runs in by_routine.items()}
-        return {"routines": per, "releases": _releases(by_routine), "fleet": _fleet(per),
-                "measured_runs": sum(len(r) for r in by_routine.values())}
+        everything = incarnation_runs(routines_home)
+        by_name = {name: runs for name, (_inc, runs) in everything.items()}
+        bases = {name: baseline(runs) for name, runs in by_name.items()}
+        per = {name: _changes_of(runs) for name, runs in by_name.items()}
+        verdicts = {(name, ch["run_id"]): ch["verdict"] for name, chs in per.items()
+                    for ch in chs}
+        live = {name for name, (inc, _runs) in everything.items() if inc.live}
+        return {"routines": {name: chs for name, chs in per.items() if name in live},
+                "releases": releases(by_name, bases), "fleet": fleet(by_name, bases, verdicts),
+                "timeline": weekly(by_name, bases), "archived": sorted(set(by_name) - live),
+                "measured_runs": sum(len(r) for r in by_name.values())}
 
-    return memo.memoized_shared(f"change-effects:{path}", [path], compute)
+    return memo.memoized_shared(f"change-effects:{path}",
+                                [path, routines_home, routines_home / ARCHIVE], compute)
+
+
+def routine_timeline(routines_home: Path, slug: str) -> list[dict]:
+    """One live routine's own weeks — the timeline's reading with the routine as its fleet."""
+    runs = routine_runs(routines_home).get(slug, [])
+    return weekly({slug: runs}, {slug: baseline(runs)}) if runs else []
 
 
 def summary(routines_home: Path) -> list[dict]:

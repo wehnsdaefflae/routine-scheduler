@@ -65,6 +65,12 @@ def cmd_daemon(_args) -> int:
     from .migrate_converse_goals import run_migration as carry_converse_goals
     carry_converse_goals(server)
     adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
+    # MIGRATION(expires=2026-11-30): every past run's record gains the fingerprint and quality
+    # the change measurement reads, rebuilt from git and the runs' own files — after the library
+    # exists (its rule history is read) and before the app starts, so nothing appends to the
+    # usage stream while it is rewritten
+    from .migrate_runrecords import run_migration as rebuild_run_records
+    rebuild_run_records(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

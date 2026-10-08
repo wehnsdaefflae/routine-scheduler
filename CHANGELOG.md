@@ -15,6 +15,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.399.0] — 2026-10-08
+
+### Added — the change measurement reaches back to the first run
+Operator, 2026-10-08: "doesn't it only track future features? we would want it to track already
+existing features as well, wouldn't we?" — "be very thorough about it".
+
+- **Every past run is rebuilt** (one-shot boot migration `migrate_runrecords.py`, with
+  `runhistory.py` and `runevidence.py`): the usage stream's 1,331 depth-0 routine runs back to
+  2026-07-12 gain a `fingerprint` and, where retention kept the run's files, a `quality`, as of
+  the instant each run started. The engine release from `main`'s reflog (when the branch MOVED,
+  not when a commit was written); config, rules, deliberation and a named model from the
+  routine's `routine.yaml`/`tuning.yaml` as committed then, hashed by the live hasher; rule texts
+  from the library's history; `model_id` from the run's own transcript or status, never today's
+  catalog. What cannot be recovered is named in `unknown` — effort always, the system model's
+  catalog name, a pruned run's model id — and a count a release did not record yet stays absent,
+  never zero. Rebuilt runs say `source: "reconstructed"` and the console marks them `≈`.
+- **An unknown component is a wildcard**: it never makes a change, and a change names only what is
+  known on both sides (`readmodels/change_keys.py`).
+- **Changes that reach many routines are judged POOLED** (`readmodels/change_fleet.py`): a
+  release, a rule revision, a model switch — each holder's runs around it, cost signals divided by
+  the routine's own median. A routine whose own key changed at the same run is left out of a
+  release (`confounded`); `smeared` counts the other releases in the windows; a rule or model row
+  is judged only where it was the ONLY change (`alone`), the batch's reading kept apart
+  (`together`). On the rebuilt history: 88 of 226 releases judged where none could be per routine.
+- **The fleet week by week** (`readmodels/change_timeline.py`, `timeline` on `/api/changes`, and a
+  routine's own weeks on `/api/changes/{slug}`), every routine counted once a week.
+- **A routine archived and created again is two routines** (`readmodels/incarnations.py`): its
+  runs are grouped by incarnation; archived ones count for releases and the fleet (`archived`).
+  Recipe health and its trend, the run-end cost-trend check, a trial's run count and the Stats
+  tab's per-routine spend and compression rows no longer hand a re-created routine its
+  predecessor's runs — the old one is its own row, under its archive's name.
+- **The Changes pages hold months, not days**: releases and long lists fold, a run of `too few
+  runs` changes folds into one line, many rule revisions read as a count, a change's releases as
+  a range, and the fleet's and a routine's weeks as small sparklines.
+
+### Fixed
+- **A cron edit no longer reads as a behaviour change.** 0.398.0's config hash excluded the YAML
+  keys `schedule` and `retention` instead of the fields `cron`, `tz`, `keep_runs` — the hash is
+  now an allowlist (`runrecord.BEHAVIOUR`) and every config field must be classified
+  (`tests/test_runrecord.py`). The runs 0.398.0 fingerprinted are re-hashed by the migration.
+- **A ruler that changed is not a change.** Verifier challenges, disputes and holds are compared
+  only between runs counted the same way (`change_signals.COUNTED_SINCE`, 0.371.1): the 0.369.0
+  verifier scope took the fleet's challenged claims from 0.03 to 1.2 a run overnight, which read
+  as every change of that day making the fleet less correct.
+- 0.398.0's live records lacked `model_id`; the migration fills it from the runs' own files.
+
 ## [0.398.0] — 2026-10-08
 
 ### Added — changes are measured, production and development apart, model trials

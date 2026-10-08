@@ -13,6 +13,10 @@ facet of it from the record's top-level fields and its `quality` (engine/runreco
   heavy run must not decide), the person's mid-run interventions, schema retries, the share of
   input re-read from the prompt cache.
 
+A signal compares only runs that COUNTED it the same way (`COUNTED_SINCE`): a release that changes
+the ruler is not a change in the routine. Runs of different routines are compared after
+`normalized` divides each cost signal by its routine's own `baseline`, on the `POOLED` signals.
+
 Each signal has a direction and a threshold below which a difference is noise. They are plain
 constants — no statistics library — chosen so ONE odd run in a five-run window does not flip a
 verdict; the windows themselves are small, so an `effect` is a pointer for a person to read,
@@ -21,8 +25,10 @@ never an automatic act.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from statistics import mean, median
+
+from .change_keys import version_key
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,18 @@ SIGNALS: tuple[Signal, ...] = (
     Signal("cache_share", "effectiveness", "higher", "mean", 0.15, label="cache read share"),
 )
 DIMENSIONS = ("correctness", "completeness", "effectiveness")
+#: The release from which each signal is COUNTED the way it is counted now. A release that
+#: changes what a signal counts — the ruler, not the routine — moves its entry, and a run before
+#: it reads None for that signal, since a changed ruler measures no change. 0.369.0 had the claim
+#: verifier check every Done-when `met` (before, only stopping conditions), 0.370.2 on every
+#: endpoint, and 0.371.1 stopped a resumed run repeating a hold, an assist or a challenge it had
+#: spent: on 2026-09-30 the fleet's challenged claims went from 0.03 a run to 1.2 overnight.
+COUNTED_SINCE = {"challenged": "0.371.1", "disputed": "0.371.1", "holds": "0.371.1"}
+#: The signals for runs POOLED across routines (readmodels/change_fleet.py, change_timeline.py):
+#: a cost signal is first divided by its routine's own median (`normalized`), which leaves its
+#: absolute floor (20 000 tokens) meaning nothing — the ratio threshold alone decides.
+POOLED: tuple[Signal, ...] = tuple(replace(s, floor=0.0) if s.how == "median" else s
+                                   for s in SIGNALS)
 
 
 def _num(value: object) -> float:
@@ -70,31 +88,44 @@ def _util_failure_share(utils: object) -> float | None:
     return (calls - ok) / calls if calls else None
 
 
+def _count(q: dict, key: str) -> float | None:
+    """A quality count, or None when the record does not carry it — a run rebuilt from history
+    without its transcript knows its status and spend but not what its verifier challenged, and
+    an unknown read as zero would be a measurement nobody made.
+    """
+    return _num(q[key]) if key in q else None
+
+
 def run_signals(rec: dict) -> dict[str, float | None]:
     """One run's value per signal; None where the run has no reading (no lines owed, no util
-    call, no cache traffic).
+    call, no cache traffic, or a quality count its record does not carry).
     """
     raw = rec.get("quality")
     q: dict = raw if isinstance(raw, dict) else {}
     status = str(rec.get("status") or "")
-    owed = _num(q.get("owed")) - _num(q.get("not_due"))
-    read, write = _num(q.get("cache_read")), _num(q.get("cache_write"))
+    owed = (_num(q["owed"]) - _num(q.get("not_due"))) if "owed" in q else 0.0
+    read, write = _count(q, "cache_read"), _count(q, "cache_write")
+    cache = (read or 0.0) + (write or 0.0)
+    elapsed = _count(q, "elapsed_s")
+    release = version_key(str((rec.get("fingerprint") or {}).get("engine") or "0"))
+    q = {k: v for k, v in q.items()
+         if k not in COUNTED_SINCE or release >= version_key(COUNTED_SINCE[k])}
     return {
         "failed": 1.0 if status in ("failed", "aborted") else 0.0,
-        "challenged": _num(q.get("challenged")),
-        "disputed": _num(q.get("disputed")),
-        "holds": _num(q.get("holds")),
+        "challenged": _count(q, "challenged"),
+        "disputed": _count(q, "disputed"),
+        "holds": _count(q, "holds"),
         "util_failures": _util_failure_share(rec.get("utils")),
         "met_rate": _num(q.get("met")) / owed if owed > 0 else None,
-        "unmet": _num(q.get("unmet")),
+        "unmet": _count(q, "unmet"),
         "partial": 1.0 if status == "partial" else 0.0,
-        "stages_skipped": _num(q.get("stages_skipped")),
+        "stages_skipped": _count(q, "stages_skipped"),
         "tokens": _num(rec.get("tokens")),
         "turns": _num(rec.get("turns")),
-        "elapsed_s": _num(q.get("elapsed_s")),
-        "interventions": _num(q.get("interventions")),
-        "schema_retries": _num(q.get("schema_retries")),
-        "cache_share": read / (read + write) if read + write else None,
+        "elapsed_s": elapsed,
+        "interventions": _count(q, "interventions"),
+        "schema_retries": _count(q, "schema_retries"),
+        "cache_share": (read or 0.0) / cache if cache else None,
     }
 
 
@@ -123,19 +154,54 @@ def compare(before: float | None, after: float | None, sig: Signal) -> int:
     return 1 if (delta < 0) == (sig.better == "lower") else -1
 
 
-def judge(before: list[dict], after: list[dict]) -> dict:
-    """Every signal's two sides and its verdict, then one verdict per dimension: `better`,
-    `worse`, `mixed` (both inside it) or `same`.
+def baseline(runs: list[dict]) -> dict[str, float | None]:
+    """A routine's own median of each cost signal over the runs given — what `normalized`
+    divides by.
     """
-    signals: list[dict] = []
+    values = [run_signals(r) for r in runs]
+    return {s.name: aggregate(values, s) for s in SIGNALS if s.how == "median"}
+
+
+def normalized(values: dict[str, float | None],
+               base: dict[str, float | None]) -> dict[str, float | None]:
+    """One run's signals with each cost signal as a ratio to its routine's `baseline` — so the
+    runs of routines a hundred times apart in size can be pooled. No baseline, no reading.
+    """
+    out = dict(values)
+    for name, b in base.items():
+        v = out.get(name)
+        out[name] = v / b if v is not None and b else None
+    return out
+
+
+def judge(before: list[dict], after: list[dict],
+          signals: tuple[Signal, ...] = SIGNALS) -> dict:
+    """Every signal's two sides and its verdict, then one verdict per dimension: `better`,
+    `worse`, `mixed` (both inside it) or `same`. `signals` is `POOLED` for normalized runs.
+    """
+    out: list[dict] = []
     dims: dict[str, set[int]] = {d: set() for d in DIMENSIONS}
-    for sig in SIGNALS:
+    for sig in signals:
         b, a = aggregate(before, sig), aggregate(after, sig)
         verdict = compare(b, a, sig)
-        signals.append({"name": sig.name, "label": sig.label, "dimension": sig.dimension,
-                        "before": b, "after": a, "verdict": verdict})
+        out.append({"name": sig.name, "label": sig.label, "dimension": sig.dimension,
+                    "before": b, "after": a, "verdict": verdict})
         if verdict:
             dims[sig.dimension].add(verdict)
     word = {frozenset(): "same", frozenset({1}): "better", frozenset({-1}): "worse",
             frozenset({1, -1}): "mixed"}
-    return {"signals": signals, "dimensions": {d: word[frozenset(v)] for d, v in dims.items()}}
+    return {"signals": out, "dimensions": {d: word[frozenset(v)] for d, v in dims.items()}}
+
+
+def overall(dimensions: dict[str, str]) -> str:
+    """One verdict from the three dimensions': `improved` / `regressed` when they moved one way
+    only, `mixed` when both, `no effect` when none moved.
+    """
+    moved = set(dimensions.values()) - {"same"}
+    if not moved:
+        return "no effect"
+    if moved == {"better"}:
+        return "improved"
+    if moved == {"worse"}:
+        return "regressed"
+    return "mixed"

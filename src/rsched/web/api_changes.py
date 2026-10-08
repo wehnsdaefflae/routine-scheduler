@@ -37,21 +37,26 @@ def _routine_home(request: Request, slug: str) -> Path:
 @router.get("/changes")
 def fleet_changes(request: Request) -> dict:
     """The fleet: engine releases judged across the routines they reached, model and rule
-    changes rolled up across routines, and one line per routine with a measured change.
+    changes rolled up across routines, the fleet week by week, and one line per routine with a
+    measured change. `archived` names the routines that are gone but whose runs the fleet
+    readings still count (readmodels/incarnations.py).
     """
     home = request.app.state.server.routines_home
     data = change_effects.changes(home)
-    return {"releases": data["releases"], "fleet": data["fleet"],
-            "routines": change_effects.summary(home), "measured_runs": data["measured_runs"]}
+    return {"releases": data["releases"], "fleet": data["fleet"], "timeline": data["timeline"],
+            "archived": data["archived"], "routines": change_effects.summary(home),
+            "measured_runs": data["measured_runs"]}
 
 
 @router.get("/changes/{slug}")
 def routine_changes(request: Request, slug: str) -> dict:
-    """One routine: its changes, newest first, each with its windows, signals and verdict, and
-    its runs grouped by the model, effort and deliberation that served them.
+    """One routine: its changes, newest first, each with its windows, signals and verdict, its
+    own weeks (the fleet timeline's reading with the routine as its fleet), and its runs grouped
+    by the model, effort and deliberation that served them.
     """
     home = _routine_home(request, slug)
     return {"routine": slug, "changes": change_effects.changes(home)["routines"].get(slug, []),
+            "timeline": change_effects.routine_timeline(home, slug),
             "model_fit": model_fit(home, slug)}
 
 

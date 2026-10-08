@@ -58,7 +58,8 @@ def test_a_release_is_judged_across_routines_and_never_cuts_a_routines_history(t
     assert data["routines"] == {"digest": [], "triage": []}     # a release is not a routine change
     (release,) = data["releases"]
     assert release["release"] == "0.397.0" and sorted(release["routines"]) == ["digest", "triage"]
-    assert release["verdicts"] == {"improved": 2} and release["tokens_ratio"] == 0.5
+    assert release["verdict"] == "improved" and release["tokens_ratio"] == 0.5
+    assert (release["confounded"], release["smeared"]) == (0, 0)
 
 
 def test_model_and_rule_changes_roll_up_across_routines(tmp_path):
@@ -70,8 +71,12 @@ def test_model_and_rule_changes_roll_up_across_routines(tmp_path):
     fleet = change_effects.changes(_home(tmp_path, runs, "digest", "triage"))["fleet"]
     kinds = {(row["kind"], row["name"], row["from"], row["to"]) for row in fleet}
     assert kinds == {("model", "", "Opus high", "Sonnet high"),
+                     ("model_id", "", "proxy/opus", "proxy/sonnet"),
                      ("rule", "web-research", "r1", "r2")}
     assert all(set(row["routines"]) == {"digest", "triage"} for row in fleet)
+    # they changed TOGETHER at every run: no row may claim the batch's effect as its own
+    assert all(row["alone"] == 0 and row["verdict"] == "too few runs" for row in fleet)
+    assert all(row["together"]["runs_before"] == 6 for row in fleet)
 
 
 def test_unfingerprinted_runs_conversations_and_children_are_not_measured(tmp_path):
@@ -145,3 +150,117 @@ def test_a_routine_with_nothing_measured_has_an_empty_line(api_client, make_rout
     assert c.get("/api/changes/quiet/summary").json() == {
         "routine": "quiet", "changes": 0, "latest": None, "at": None, "recipe_regression": None}
     assert c.get("/api/changes/nobody/summary").status_code == 404
+
+
+def test_a_rule_revised_alone_is_judged_on_every_holder_pooled(tmp_path):
+    """Each holder ran once on either side — `too few runs` for each alone — and the pool of
+    the three is judged; routines a hundred times apart in size weigh alike."""
+    runs = []
+    for slug, size in (("digest", 1_000_000), ("triage", 10_000), ("scan", 50_000)):
+        runs += [_run(1, slug=slug, tokens=size),
+                 _run(2, slug=slug, tokens=size * 3, rules={"web-research": "r2"})]
+    data = change_effects.changes(_home(tmp_path, runs, "digest", "triage", "scan"))
+    assert all(chs[0]["verdict"] == "too few runs" for chs in data["routines"].values())
+    (row,) = data["fleet"]
+    assert (row["alone"], row["runs_before"], row["runs_after"]) == (3, 3, 3)
+    assert row["verdict"] == "regressed" and row["tokens_ratio"] == 3.0
+    assert row["together"] is None
+
+
+def test_an_unknown_component_is_never_a_change(tmp_path):
+    """A rebuilt run knows neither its catalog model nor its effort; the live runs after it do
+    — a gap in the evidence, not a change in the routine."""
+    rebuilt = []
+    for i in range(1, 4):
+        rec = _run(i, rebuilt=True)
+        rec["fingerprint"] = {k: v for k, v in rec["fingerprint"].items() if k != "model"}
+        rec["fingerprint"]["unknown"] = ["effort", "model"]
+        rebuilt.append(rec)
+    runs = [*rebuilt, *(_run(i) for i in range(4, 7))]
+    data = change_effects.changes(_home(tmp_path, runs))
+    assert data["routines"]["digest"] == []
+    fit = model_fit(_home(tmp_path, runs), "digest")
+    assert {(g["model"], g["model_id"], g["effort"], g["rebuilt"]) for g in fit} == {
+        (None, "proxy/opus", None, 3), ("Opus high", "proxy/opus", "high", 0)}
+
+
+def test_a_rebuilt_change_says_so(tmp_path):
+    runs = ([_run(i, rebuilt=True) for i in range(1, 4)]
+            + [_run(i, recipe="c2", rebuilt=True) for i in range(4, 7)])
+    (change,) = change_effects.changes(_home(tmp_path, runs))["routines"]["digest"]
+    assert change["reconstructed"] is True
+
+
+def test_an_archived_routines_runs_count_for_the_fleet_and_not_for_its_successor(tmp_path):
+    """`digest` was archived on 10-04 and created again: its runs before that are another
+    routine's — never a change in the new one, still evidence about the release they ran."""
+    runs = ([_run(i, tokens=90_000) for i in range(1, 3)]
+            + [_run(3, tokens=30_000, engine="0.397.0")]
+            + [_run(i, recipe="new") for i in range(5, 8)])
+    home = _home(tmp_path, runs)
+    old = home / ".archive" / "digest-20261004-000000"
+    old.mkdir(parents=True)
+    (old / "routine.yaml").write_text("slug: digest\n", encoding="utf-8")
+    memo.reset()
+    data = change_effects.changes(home)
+    assert data["routines"] == {"digest": []}                  # no change across the two
+    assert data["archived"] == ["digest-20261004-000000"]
+    assert data["releases"][0]["routines"] == ["digest-20261004-000000"]
+    assert data["measured_runs"] == 6
+
+
+def test_a_count_is_compared_only_where_it_was_counted_the_same_way():
+    """0.369.0-0.371.1 changed what the verifier and the holds count — the ruler, not the
+    routine: a run before 0.371.1 has no reading for them."""
+    old, new = _run(1, engine="0.370.2"), _run(2, engine="0.371.1")
+    old["quality"]["challenged"] = new["quality"]["challenged"] = 2
+    assert change_signals.run_signals(old)["challenged"] is None
+    assert change_signals.run_signals(new)["challenged"] == 2
+    assert change_signals.run_signals(old)["interventions"] == 0     # unaffected
+
+
+def test_the_fleet_week_by_week(tmp_path):
+    """Each routine counts once a week; a cost reads against the routine's own median; a week
+    without a run is kept, empty."""
+    runs = [_run(1, tokens=10_000), _run(2, tokens=30_000, engine="0.397.0"),
+            _run(1, slug="triage", tokens=500_000), _run(15, slug="triage", tokens=500_000)]
+    weeks = change_effects.changes(_home(tmp_path, runs, "digest", "triage"))["timeline"]
+    assert [w["week"] for w in weeks] == ["2026-W40", "2026-W41", "2026-W42"]
+    first, empty, last = weeks
+    assert (first["runs"], first["routines"]) == (3, 2)
+    assert first["releases"] == ["0.396.0", "0.397.0"]
+    assert first["signals"]["tokens"] == 1.0          # digest: (0.5+1.5)/2 → median 1; triage 1
+    assert empty["runs"] == 0 and empty["signals"]["tokens"] is None
+    assert last["models"] == {"proxy/opus": 1}
+
+
+def test_the_api_serves_the_timelines(api_client):
+    c, tmp = api_client
+    _home(tmp, [_run(i) for i in range(1, 4)])
+    fleet = c.get("/api/changes").json()
+    assert fleet["timeline"][0]["runs"] == 3 and fleet["archived"] == []
+    assert c.get("/api/changes/digest").json()["timeline"][0]["routines"] == 1
+
+
+def test_a_release_a_routine_skipped_smears_the_one_it_moved_to(tmp_path):
+    """`digest` ran 0.396 then 0.398: its boundary carries 0.397's code too, which only
+    `triage` ever ran."""
+    runs = [_run(i, engine=e) for i, e in ((1, "0.396.0"), (2, "0.396.0"), (3, "0.398.0"))]
+    runs += [_run(i, slug="triage", engine=e)
+             for i, e in ((1, "0.396.0"), (2, "0.397.0"), (3, "0.398.0"))]
+    rel = {r["release"]: r for r in change_effects.changes(
+        _home(tmp_path, runs, "digest", "triage"))["releases"]}
+    assert sorted(rel) == ["0.397.0", "0.398.0"]
+    assert rel["0.397.0"]["smeared"] == 1                      # its after-window ran 0.398
+    assert rel["0.398.0"]["routines"] == ["digest", "triage"]
+    assert rel["0.398.0"]["smeared"] == 1                      # digest: 0.397 between, median 1
+
+
+def test_a_catalog_model_switch_is_one_change_not_three(tmp_path):
+    """Name, provider id and effort move together when a routine switches catalog model."""
+    runs = []
+    for slug in ("digest", "triage", "scan"):
+        runs += [_run(1, slug=slug), _run(2, slug=slug, model="Sonnet low", effort="low")]
+    fleet = change_effects.changes(_home(tmp_path, runs, "digest", "triage", "scan"))["fleet"]
+    assert {r["kind"] for r in fleet} == {"model", "model_id", "effort"}
+    assert all(r["alone"] == 3 and r["together"] is None for r in fleet)

@@ -1905,6 +1905,78 @@ table.list.sig-table tr:hover td { background: transparent; }
 .sig-mark.better { color: var(--ok); }
 .sig-mark.worse { color: var(--err); }
 
+/* MONTHS of rebuilt history on the same pages (components/change-folds.js): a verdict and its
+   qualifiers on one line; "≈" — drawn on runs rebuilt from history — a faint glyph, the words in
+   its tooltip; a row nothing could be judged on (`too few runs`) recedes to the third ink; a list
+   shows its newest rows and one row that reveals the rest. Folded and group-collapsed are
+   CLASSES, independent of the `hidden` a row's own disclosure uses, so unfolding hands back
+   exactly what the reader had opened. */
+.v-line { display: inline-flex; align-items: center; gap: 4px 6px; white-space: nowrap; }
+.v-together { display: flex; margin-top: 3px; }
+@media (max-width: 860px) { .v-line { white-space: normal; flex-wrap: wrap; } }
+.rebuilt-mark {
+  font-family: var(--f-mono); font-size: var(--t-xs); color: var(--ink-3); cursor: help;
+  white-space: nowrap; margin-left: 4px;
+}
+.v-line .rebuilt-mark { margin-left: 0; }
+.chip.v-archived { opacity: 0.72; border-style: dashed; }
+button.chip { cursor: pointer; font-family: var(--f-mono); }
+button.chip:hover { border-color: currentColor; }
+.dev-view table.list tr.quiet td { color: var(--ink-3); }
+.dev-view table.list tr.folded, .dev-view table.list tr.collapsed { display: none !important; }
+.dev-view table.list tr.fold-row td { text-align: center; padding: 4px var(--s3); }
+.dev-view table.list tr.fold-row:hover td { background: transparent; }
+.chg-notes { line-height: 1.4; }
+table.list tr.chg-group { cursor: pointer; }
+table.list tr.chg-group td { color: var(--ink-2); font-size: var(--t-s); }
+.chg-group .chg-toggle { white-space: normal; flex-wrap: wrap; }
+table.list tr.in-group > td:first-child { box-shadow: inset 2px 0 0 var(--rule-2); }
+.chg-rules-toggle {
+  font: inherit; font-family: var(--f-mono); font-size: var(--t-s); color: var(--signal);
+  background: none; border: none; padding: 0; cursor: pointer;
+}
+.chg-rules-toggle::after { content: " ▸"; font-size: 9px; color: var(--iris); }
+.chg-rules-toggle[aria-expanded="true"]::after { content: " ▾"; }
+.chg-rules-toggle:hover { color: var(--signal-2); text-decoration: underline; text-underline-offset: 2px; }
+.chg-rules { margin-top: 2px; line-height: 1.5; }
+
+/* the WEEKS strip (components/sparkline.js): small multiples on one shared x, each a label, its
+   newest reading in mono and a line in the de-emphasis ink — the newest point in iris, the
+   Develop zone's colour; a week mostly rebuilt from history shaded, a release a tick at the foot
+   in iris (structure), the "usual" a dashed rule. The hover column is each week's readout. */
+.spark-strip { margin-bottom: var(--s2); }
+.spark-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--s3) var(--s4);
+}
+.spark-cell { margin: 0; min-width: 0; }
+.spark-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: var(--s2);
+  margin-bottom: 2px;
+}
+.spark-label {
+  font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.spark-value { font-family: var(--f-mono); font-size: var(--t-s); color: var(--ink); white-space: nowrap; }
+.spark { display: block; width: 100%; height: auto; overflow: visible; }
+.spark-line { fill: none; stroke: var(--ink-2); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.spark-dot { fill: var(--ink-2); }
+.spark-now { fill: var(--iris); stroke: var(--deck); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.spark-clamp { fill: var(--ink-2); }
+.spark-ref { stroke: var(--rule-2); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.spark-rebuilt { fill: var(--hover); }
+.spark-rel { stroke: var(--iris); stroke-width: 1.5; opacity: 0.7; vector-effect: non-scaling-stroke; }
+.spark-hit { fill: transparent; }
+.spark-hit:hover { fill: var(--hover-2); }
+.spark-key {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s4);
+  margin-top: var(--s2); font-size: var(--t-xs);
+}
+.spark-key-item { display: inline-flex; align-items: center; gap: 5px; }
+.spark-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.spark-swatch.rebuilt { background: var(--hover); border: 1px solid var(--rule); }
+.spark-swatch.rel { width: 2px; height: 9px; border-radius: 1px; background: var(--iris); opacity: 0.7; }
+
 /* the PRODUCTION routine page's one line about development (components/dev-line.js): a quiet
    link under the routine's name, iris like the rail's Develop band — SUMMONS when its newest
    change regressed or recipe health flags its recipe, because then a person should look */

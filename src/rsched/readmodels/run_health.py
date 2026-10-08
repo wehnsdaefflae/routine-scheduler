@@ -34,6 +34,7 @@ from pathlib import Path
 from ..config import ServerConfig
 from ..recipes import recipe_log
 from . import health_stream, library_reads, memo
+from .incarnations import live_runs
 from .stamps import instant
 from .usage_stream import fold_legs, usage_runs
 
@@ -69,10 +70,13 @@ def _median(vals: list[float]) -> float:
 
 def _stream_runs(server: ServerConfig, slug: str) -> list[dict]:
     """This routine's depth-0 RUNS (`usage_runs` — the legs already folded), in chronological
-    order of their first leg.
+    order of their first leg — the routine's OWN: an archived routine that held the slug before
+    it is another routine (readmodels/incarnations.py), and its runs would read as this one's
+    past in every bucket, the regression and the trend.
     """
-    return [rec for rec in usage_runs(server.routines_home)
-            if not rec.get("depth") and rec.get("routine") == slug]
+    return live_runs(server.routines_home,
+                     [rec for rec in usage_runs(server.routines_home) if not rec.get("depth")],
+                     slug)
 
 
 def _empty_bucket(version: dict, *, current: bool) -> dict:
