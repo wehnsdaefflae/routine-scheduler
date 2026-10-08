@@ -98,10 +98,12 @@ _ATTACHED = "[attached files "
 
 def attachment_note(paths: list[str]) -> str:
     """The block appended to a message (or instruction.md) that carries file attachments.
-    Paths are relative to the conversation dir; the model reads text with read_file and SEES
-    images/PDFs with the view_image action (shown to it directly when the model is
-    multimodal, else described by an image-describing util the engine falls back to). Images
-    are auto-shown to a multimodal model already, so view_image is mainly for another look.
+    Paths are relative to the conversation dir; the model reads text — and a PDF or an Office
+    document, which read_file converts to Markdown (engine/docread.py) — with read_file, and
+    SEES images and a PDF's pages with the view_image action (shown to it directly when the
+    model is multimodal, else described by an image-describing util the engine falls back to).
+    Images are auto-shown to a multimodal model already, so view_image is mainly for another
+    look.
 
     This block is prose the model reads, so it names the CAPABILITY, never the util behind it
     — the fallback tool is the engine's choice, not the run's, and naming it here put a util
@@ -110,9 +112,10 @@ def attachment_note(paths: list[str]) -> str:
     if not paths:
         return ""
     lines = "\n".join(f"- {p}" for p in paths)
-    return (f"\n\n{_ATTACHED}— read text with read_file; SEE images/PDFs with the "
+    return (f"\n\n{_ATTACHED}— read text, PDFs and Office documents (docx/pptx/xlsx, "
+            "converted to Markdown) with read_file; SEE images and a PDF's pages with the "
             "view_image action (shown to you directly when this model is multimodal, else "
-            "described for you automatically); spreadsheets via a fitting util]\n"
+            "described for you automatically); other binaries via a fitting util]\n"
             f"{lines}")
 
 

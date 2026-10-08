@@ -408,18 +408,24 @@ def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path, 
                aborted=aborted)
 
 
-def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
+def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,  # noqa: PLR0913 — keyword-only, each one axis of the ONE controlled runner (jail, env, clock, the two stops, the offline narrowing); a bundle would only relocate the list
              policy: sandbox.SandboxPolicy,
              extra_secrets: dict[str, str] | None = None,
              withhold_secrets: set[str] | None = None,
              cwd: Path | None = None,
              aborted: Callable[[], bool] | None = None,
-             cancelled: Callable[[], bool] | None = None) -> tuple[int, str, str]:
+             cancelled: Callable[[], bool] | None = None,
+             offline: bool = False) -> tuple[int, str, str]:
     """Controlled runner: only a named util from THIS library, uv-run, scoped env (declared
     secrets only, plus any `extra_secrets` the engine resolved for this run — same declared-only
     rule), library root on PATH (so the util can call siblings via `gu`), inside the Landlock jail
     `policy` + the util's own `net:` declaration describe (sandbox.wrap; the server `sandbox:` mode
-    decides strict/permissive/off). Runs with working directory `cwd` — a routine's own dir for
+    decides strict/permissive/off). `offline` NARROWS that declaration for one call and can never
+    widen it: an invocation the ENGINE makes that takes none of the call tree's networked paths
+    runs with TCP denied even when a sibling on its `calls:` line is `net: outbound` (read_file's
+    document conversion never passes `doc-read --ocr`, the one path that reaches `vision`). Its
+    dependencies then install in the prewarm, as for any `net: none` util. A run's own `util`
+    call never sets it. Runs with working directory `cwd` — a routine's own dir for
     run-scoped calls, so relative paths a routine passes to a util resolve against ITS dir like
     read_file/write_file do — or the library `home` when unset (CLI, selftest, notify, settings).
     A call made inside a run passes the run's `aborted` check, so the util ends with its run
@@ -446,7 +452,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # returned nothing at all (R1813, funscript-trainer 2026-09-21).
     env["RSCHED_UTIL_TIMEOUT_S"] = str(timeout)
     needs = util_needs(home, name)
-    net = needs.net
+    net = needs.net and not offline
     script = str(util_dir(home, name) / "main.py")
     # Build-time dependency install is a SEPARATE phase from the util's own execution: a
     # `net: none` util still needs PyPI to fetch its (non-cached) PEP 723 deps the first

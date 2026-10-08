@@ -22,8 +22,10 @@ from ..ids import is_slug, now_iso
 from ..paths import atomic_write_yaml
 
 # mnt/ = transient remote-machine share mounts; .util_outputs/ = spilled util output
-# (engine-owned and pruned, and it can carry whatever a util printed — never committed)
-GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n.util_outputs/\n"
+# (engine-owned and pruned, and it can carry whatever a util printed — never committed);
+# .doc_cache/ = documents read_file converted to Markdown (engine-owned and pruned, and a
+# copy of whatever a run read — never committed)
+GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n.util_outputs/\n.doc_cache/\n"
 
 
 # The parameter list IS routine creation's config surface (the creation conversation, an

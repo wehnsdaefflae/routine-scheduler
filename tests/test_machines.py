@@ -226,12 +226,17 @@ def test_a_hung_unmount_is_given_up_on_and_the_next_helper_tried(tmp_path, monke
 
 
 def test_ensure_gitignore_idempotent(tmp_path):
+    from rsched.paths import ensure_gitignored
+
     (tmp_path / ".gitignore").write_text("runs/\n", encoding="utf-8")
-    machine_mounts._ensure_mnt_gitignored(tmp_path)
+    ensure_gitignored(tmp_path, machine_mounts.MOUNT_SUBDIR, "remote-machine share mounts")
     gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
-    assert "mnt/" in gi and "runs/" in gi
-    machine_mounts._ensure_mnt_gitignored(tmp_path)               # idempotent
+    assert "mnt/" in gi and "runs/" in gi and "# remote-machine share mounts" in gi
+    ensure_gitignored(tmp_path, machine_mounts.MOUNT_SUBDIR, "again")     # idempotent
     assert (tmp_path / ".gitignore").read_text(encoding="utf-8").count("mnt/") == 1
+    (tmp_path / ".gitignore").write_text(".venv\n", encoding="utf-8")      # no slash: enough
+    ensure_gitignored(tmp_path, ".venv", "the scripts venv")
+    assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == ".venv\n"
 
 
 def _share_setup(tmp_path, monkeypatch, *, sshfs=True, run_rc=0, live=True):

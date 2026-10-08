@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.397.0] — 2026-10-08
+
+### Added — read_file reads documents
+- **A PDF, Word, PowerPoint or Excel file is converted, not refused** (operator order 2026-10-08,
+  "implement your suggestions" on document conversion). Known by its bytes, not its name, it is
+  converted to Markdown by the new library util `doc-read` — pymupdf4llm for PDFs (layout-aware,
+  a `<!-- page N of M -->` line per page), Microsoft markitdown for Office files — and paged like
+  text: `start_line` / `max_lines` / `start_char` address the converted text. The conversion is
+  the ENGINE's call (`engine/docread.py`, one engine-owned util name like the vision fallback),
+  made offline and secret-free inside the run's own jail, written straight to a cache file the
+  engine streams — the engine never holds a document as one string.
+- **Cached by content hash** in `<routine>/.doc_cache/` (engine-owned, read-only for runs,
+  gitignored, never search-indexed, pruned to the 32 most recently read), so the next window and
+  the next run convert nothing. A failed conversion is never cached and falls back to the binary
+  refusal with what failed.
+- **Scanned pages are reported, never OCR'd silently**: the observation says it is a conversion
+  (layout approximated) and lists the pages with no text layer; `doc-read --ocr` sends only those
+  pages to `vision`. One conversion covers at most 200 pages; the observation names the rest.
+- Measured: a cold install of the util's dependencies in the container takes ~8 s, a first
+  conversion ~10 s, a cached read under a second. Extracted text costs ~0.3–1.2k tokens per page
+  against ~3–4.5k for a page shown as an image, and can be paged instead of riding every later
+  turn. A 200-page PDF takes ~38 s and several CPU-minutes on its first read (the layout model).
+- `utils_run.run_util(offline=True)` lets an engine-made util call deny the network whatever the
+  util's tree declares; `paths.ensure_gitignored` replaces three copies of one helper.
+
 ## [0.396.0] — 2026-10-08
 
 ### Fixed — a configured effort reaches Claude models again
@@ -17517,37 +17542,4 @@ the version advanced (the gap this changelog was created to close). Three commit
 ### Traits & permissions
 - Split the old “fragments” into **traits** (practice prose, routine-owned) and **permissions**
   (enforced grants, user-owned).
-- **Two-layer permissions**: conduct docs with a `requires:` mapping + per-routine capabilities
-  (gated actions, reserved utils, write_util approval level, previous-run depth) with a
-  cascading UI; enforcement reads capabilities alone (fail-closed).
-- Self-modification is not a permission: a run never edits its own recipe/config unless a
-  user-granted `fs_write_root` covers the routine dir (the improver’s case).
-
-### Conversations
-- An interactive, Claude-Code-like tab on the same engine harness: continuing a finished run is
-  a follow-up (converse semantics), not crash recovery; paste images/files into the composer;
-  header model line + budget editor; draggable/collapsible panes; an artifacts panel.
-
-### Memory & decisions
-- `.memory/` behind designated `memory_read`/`memory_write` actions, with an engine-maintained
-  INDEX and default-on adoption at boot.
-- One **Decisions** inbox for every required user feedback (plain asks, util approvals, audit
-  decisions — meta-badged), timeout-continues-on-default, with a synchronized Discord surface;
-  durable answered-markers stop answered decisions from re-surfacing.
-
-### Budgets & telemetry
-- Health-events JSONL logging for run failures, budget exhaustion, and orphaned runs.
-- `max_total_tokens = -1` (unlimited) becomes the default for routines and conversations;
-  ask-timeouts in minutes.
-
-### Secrets, setup & deploy
-- One central secrets store injected into utils/endpoints/claude at run time (utils declare
-  what they need); paste API keys / Claude token in the UI; GitHub device-flow connect;
-  first-boot bootstrap that secures a fresh deploy and provisions libraries.
-- Docker image (runtime + bind-mounted state), `gh` wired at container boot, HTTPS via
-  tailscale-serve documented; first-launch redirect to Settings until setup completes.
-
-### Docs
-- Full README and CLAUDE.md kept current with the engine loop, contracts, libraries, deploy,
-  the traits/permissions world, prompt anatomy (drift-guarded), and worked Help examples.
-
+- **Two-layer permissions**: conduct docs with a `

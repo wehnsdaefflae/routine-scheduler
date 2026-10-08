@@ -81,6 +81,20 @@ def read_json(path: str | Path, default: object = None) -> object:
         return default
 
 
+def ensure_gitignored(directory: Path, entry: str, why: str) -> None:
+    """Keep `entry/` out of `directory`'s git repo: append it to the `.gitignore` there under a
+    `# why` comment, once. The run-end autocommit is `git add -A`, so every engine-owned store
+    inside a routine — spilled util output, converted documents, the scripts venv, a remote
+    machine's share mount — is ignored before the first thing lands in it. Idempotent: a line
+    naming the entry, with or without its trailing slash, is enough.
+    """
+    gi = directory / ".gitignore"
+    lines = gi.read_text(encoding="utf-8").splitlines() if gi.is_file() else []
+    if any(ln.strip().rstrip("/") == entry for ln in lines):
+        return
+    atomic_write(gi, "\n".join([*lines, f"# {why}", f"{entry}/", ""]))
+
+
 def append_jsonl(path: str | Path, *rows: object) -> None:
     """Append `rows` to the JSON-lines stream at `path` — the ONE writer of the system's
     append-only streams (the report ledger, the health and usage streams, the admin audit,

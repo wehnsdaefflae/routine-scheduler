@@ -184,10 +184,14 @@ Attach files on the first message or any later one; paste an image directly into
 it's attached automatically.
 
 - **Text** files are read with the file tool.
-- **Images and PDFs** are *seen* — shown directly to the model when it's a multimodal one, otherwise
-  described via the vision util. (An attached image is usually shown to the model already; it can ask
-  for another look.)
-- **Spreadsheets and other binaries** are handled by a fitting util.
+- **PDFs and Office documents** (docx, pptx, xlsx) are *read* with the same file tool: it converts
+  them to Markdown locally (the `doc-read` util, no network) and pages the result like any text
+  file. The model is told it is reading a conversion — the layout is approximated — and which PDF
+  pages are scans with no text layer; those are not transcribed unless it asks for OCR.
+- **Images, and a PDF's pages as pictures,** are *seen* — shown directly to the model when it's a
+  multimodal one, otherwise described via the vision util. (An attached image is usually shown to
+  the model already; it can ask for another look.)
+- **Other binaries** are handled by a fitting util.
 
 ## Slash commands — run actions yourself
 

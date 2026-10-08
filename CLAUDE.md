@@ -282,7 +282,17 @@ one you are about to touch, not all of them.
   materialises a file**: it streams the requested window line by line, a directory path returns its
   LISTING (one entry per line, paged like a file), and a binary file or one over
   `fileops.READ_MAX_BYTES` (8 MiB) is refused from a stat plus an 8 KiB NUL sniff BEFORE any
-  decode — the refusal names the size. The listing and the refusal both GROUND the path (a stat
+  decode — the refusal names the size. A DOCUMENT — a PDF or an OOXML docx/pptx/xlsx, known by
+  the MAGIC BYTES in that same head, never by its name — is CONVERTED instead
+  (`engine/docread.py`): the engine runs the library's `doc-read` util in the run's own jail,
+  `offline` and with no secret, which streams Markdown into the content-hash cache
+  `.doc_cache/<sha256>.md` (engine-owned, gitignored, pruned), and read_file pages THAT file like
+  any text — `start_line`/`max_lines`/`start_char` address the converted text, at most
+  `docread.MAX_PAGES` (200) pages per conversion, and the observation says it is a conversion and
+  names every page with no text layer (a scan is reported, never silently OCR'd). The engine
+  still never holds the document or its conversion whole, so a document over the cap is
+  converted rather than refused; a failed conversion is never cached and falls back to the
+  binary refusal with what failed appended. The listing and the refusal both GROUND the path (a stat
   is a look; `history.seen_paths` reads the refusal's `size` key back on resume), so the delete
   gate never sends a run to read a media file to satisfy it (one that did decoded a 1.5 GB .mkv
   into a str twice and swap-thrashed the host for five hours). A shell `ls` does not ground — the
