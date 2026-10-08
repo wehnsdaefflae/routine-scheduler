@@ -260,7 +260,8 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
                        cost: float = 0.0, referrals: int = 0,
                        recipe_commit: str | None = None, library_commit: str | None = None,
                        utils: dict | None = None,
-                       asks_deferred: int = 0, compression: dict | None = None) -> None:
+                       asks_deferred: int = 0, compression: dict | None = None,
+                       fingerprint: dict | None = None, quality: dict | None = None) -> None:
     """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
     the feedback stream the routine-improver routine mines to maintain the shared library it
     owns (its `library-pass` stage) and the DURABLE spend series (run dirs fall to retention;
@@ -279,7 +280,9 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
     the Stats read-model knows not to double count the run from its transcript);
     `asks_deferred` — deferred-question churn; `compression` — the run's output-compression
     outcome counts and estimated saving (RunContext.compression_stats), the durable source
-    of the Stats tab's per-routine roll-up.
+    of the Stats tab's per-routine roll-up; `fingerprint` and `quality` — what made the run
+    and how it went (engine/runrecord.py; depth 0 only), the two halves every conclusion
+    about a change is drawn from (readmodels/change_effects.py).
     """
     try:
         append_jsonl(Path(routines_home) / ".control" / WORKFLOW_USAGE_FILE, {
@@ -298,6 +301,8 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
             "utils": utils or {},
             "asks_deferred": asks_deferred,
             "compression": compression or {},
+            **({"fingerprint": fingerprint} if fingerprint else {}),
+            **({"quality": quality} if quality else {}),
         })
     except OSError:
         pass

@@ -257,6 +257,14 @@ class RunContext:
     goals: list[dict] = field(default_factory=list)
     # A conversation reply's own declaration (finish `final`): None until a finish declares it.
     final: bool | None = None
+    # The run's QUALITY counters (engine/runrecord.py) — run-cumulative like asks_deferred, so a
+    # resumed leg reseeds them (history.prior_counters): claims the verifier challenged and the
+    # ones that stood disputed (the finish's and a goal check's), actions a caution held, and the
+    # person's messages that reached the run while it worked.
+    claims_challenged: int = 0
+    claims_disputed: int = 0
+    holds: int = 0
+    interventions: int = 0
     # The OPEN task (engine/taskops.py) and its workspace: while one is open, the run's
     # relative paths, scripts, shell and util calls and its memory notebook resolve in the
     # workspace instead of the routine's own dir (`work_dir`). Empty / None otherwise.
@@ -556,6 +564,10 @@ class RunContext:
             "recipe_commit": self.recipe_commit,
             "utils": self.util_stats,
             "asks_deferred": self.asks_deferred,
+            "claims_challenged": self.claims_challenged,
+            "claims_disputed": self.claims_disputed,
+            "holds": self.holds,
+            "interventions": self.interventions,
             "reports_open": self.reports_open,
             # the finish's own accounting (engine/accounting.py) — what the runs table, the
             # dashboard and the next run's digest read about how this run went

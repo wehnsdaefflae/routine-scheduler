@@ -167,6 +167,7 @@ def _check(loop, action: dict) -> dict:
                                   f"(checking off goal {gid} mid-run) {evidence}")
     if objections and gid not in loop._challenged:
         loop._challenged.add(gid)
+        loop.ctx.claims_challenged += 1
         return _obs(loop, "check",
                     f"{gid} stays OPEN — a check of your own transcript does not support it: "
                     f"{objections[0]['evidence']}\nDo the missing work and check it again, or — "
@@ -176,6 +177,7 @@ def _check(loop, action: dict) -> dict:
                     "is recorded for the person.", claims_unsupported=[gid])
     goal.update(status="met", evidence=evidence[:goals.TEXT_MAX], turn=loop.ctx.turn,
                 disputed=objections[0]["evidence"] if objections else "")
+    loop.ctx.claims_disputed += bool(objections)
     loop.ctx.write_status()
     return _obs(loop, "check", f"{gid} met." + (" The check's objection is recorded beside "
                                                 "your evidence." if objections else ""))

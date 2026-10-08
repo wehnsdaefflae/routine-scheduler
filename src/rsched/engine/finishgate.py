@@ -244,10 +244,12 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         fresh = [o for o in objections if o["id"] not in loop._challenged]
         if fresh:
             loop._challenged.update(o["id"] for o in fresh)
+            ctx.claims_challenged += len(fresh)
             _defer(loop, ctx, verifier.challenge_message(fresh),
                    claims_unsupported=[o["id"] for o in fresh])
             return None   # deferred — the loop goes round again
         disputes = {o["id"]: o["evidence"] for o in objections}
+        ctx.claims_disputed += len(disputes)
     loop.final_summary = action["summary"]
     # F521/R1681: the finish STANDS — so say which declared stages this run never entered.
     # Deliberately NOT a rung on the ladder above: skipping a stage is often the right call

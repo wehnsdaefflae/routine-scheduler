@@ -284,6 +284,10 @@ def drain_injections(loop) -> None:
                                    vias=inbox.LIVE_MESSAGE_VIAS)
     for m in drained:
         inject_user_message(loop, m)
+    # an INTERVENTION: the person said something while the run worked — a quality signal
+    # (engine/runrecord.py), unlike the message that opens a leg (boot) or an answer it asked for
+    ctx.interventions += sum(1 for m in drained if not m.get("command")
+                             and inbox.user_authored(str(m.get("via") or "")))
     ctx.reports_open += reports.stamp_delivered(
         ctx.server.routines_home, drained, run_id=ctx.run_id)
 

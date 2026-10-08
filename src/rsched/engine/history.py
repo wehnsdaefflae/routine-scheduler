@@ -187,7 +187,8 @@ def seen_paths(events: list[dict]) -> list[str]:
 # finish→reopen showed utils:{} + asks_deferred:0 despite the pre-finish leg's real activity
 # (F131/F132). The GLOBAL util-stats snapshot is transcript-derived and was always correct;
 # this only repairs the per-run status.json + finish event.
-_RESUME_COUNTER_FIELDS = ("asks_deferred", "schema_retries", "schema_forcefails", "referrals")
+_RESUME_COUNTER_FIELDS = ("asks_deferred", "schema_retries", "schema_forcefails", "referrals",
+                          "claims_challenged", "claims_disputed", "holds", "interventions")
 
 
 def prior_counters(status: dict) -> dict:

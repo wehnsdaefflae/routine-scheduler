@@ -215,6 +215,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                             allowed_tools=allowed_tools, resume=bool(resume_from)).run()
         from ..health_events import log_workflow_usage
         from ..workflows import library
+        from . import runrecord
 
         log_workflow_usage(server.routines_home, routine=cfg.slug, run_id=ctx.run_id,
                            workflow=prov.get("slug") or "", depth=0, status=status,
@@ -228,7 +229,10 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                            library_commit=library.head_commit(server.libraries_home),
                            utils=ctx.util_stats,
                            asks_deferred=ctx.asks_deferred,
-                           compression=ctx.compression_stats)
+                           compression=ctx.compression_stats,
+                           # what made the run and how it went (engine/runrecord.py)
+                           fingerprint=runrecord.fingerprint(ctx, orch_ref),
+                           quality=runrecord.quality(ctx))
         _log_cache_health(ctx, cfg.slug)
         # Both read the stream this run's record just landed in: the persisted util-stats
         # snapshot (the single source the Stats tab and the util-review routine share) and

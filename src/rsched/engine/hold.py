@@ -100,5 +100,6 @@ def before_dispatch(loop, action: dict) -> dict | None:
         for source in (remind, assist):
             obs = source.hold(loop, part, rendered)
             if obs is not None:
+                loop.ctx.holds += 1      # a quality signal (engine/runrecord.py)
                 return obs if part is action else {**obs, "rides": canon(action)}
     return None
