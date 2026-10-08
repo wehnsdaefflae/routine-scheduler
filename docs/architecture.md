@@ -295,10 +295,12 @@ Two kinds:
   `response_format` on a 503 that hides a schema-incapable backend). Caching
   is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
 - **anthropic** — Messages API, direct or through CLIProxyAPI for subscription authentication. Schema via a single tool
-  with a FORCED `tool_choice` — the shape the proxy answers reliably, since it strips thinking and
-  effort from a forced call (0.372.0's unforced `auto` let Opus answer with tool calls nothing
-  could be read from; operator, 2026-10-01); a model that refuses forcing — the newest Claude
-  models on the direct API — gets `auto` held to one call. Effort via `output_config`. Every
+  on `auto` held to one call — a FORCED `tool_choice` makes the configured effort meaningless
+  (thinking is allowed only on `auto`, and the proxy strips thinking and effort from a forced
+  call; measured 2026-10-08), so forcing is an endpoint's `tool_choice: forced` only, for a route
+  validated that way (the Codex models). An `auto` reply no action can be read from is re-asked
+  once forced in the same call (`stop_details["forced_reask"]`), so the shape 0.372.0 met cannot
+  cost a run. Effort via `output_config`. Every
   optional field a model may refuse — the forced `tool_choice`, `output_config`, `temperature`,
   the `cache_control` markers — is degraded on a 400 that names it, one field per 400 until the
   request is accepted, and a reply no action can be read from names its content blocks in

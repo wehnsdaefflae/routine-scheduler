@@ -116,27 +116,32 @@ endpoints:
     key_var: CLIPROXY_API_KEY
     quota_source: cliproxy
     quota_key_var: CLIPROXY_MANAGEMENT_KEY
+  codex-proxy:                 # the Codex models, on the route they were validated on
+    kind: anthropic
+    base_url: http://cliproxy:8317
+    key_var: CLIPROXY_API_KEY
+    tool_choice: forced
 ```
 
 Use the proxy root URL, without /v1. For a host installation use
 http://127.0.0.1:8317. A blank quota_auth_index automatically selects the single
 enabled Claude account; select an explicit index when there is more than one.
 Bind catalog models to exact IDs from /v1/models, then verify inference. Set each
-model's effort and vision support deliberately — knowing that a model's effort reaches only
-its PLAIN calls: the proxy strips `thinking` and `output_config.effort` from every call that
-forces a tool, and every structured turn forces the action tool (docs/endpoints.md). When
-0.372.0 stopped forcing, the effort reached Opus for the first time and its structured
-replies could no longer be read. The proxy's catalog lists ids and no
+model's effort and vision support deliberately: it reaches every call, structured turns
+included, because the action tool is offered on `auto`. The proxy strips `thinking` and
+`output_config.effort` from any call that FORCES a tool, which is why nothing is forced unless
+the endpoint says `tool_choice: forced` (docs/endpoints.md — until 0.396.0 every structured turn
+was forced, and no effort reached a Claude model). The proxy's catalog lists ids and no
 limits, so a Claude id takes its window from the built-in table and a Codex id from
 nothing at all: set a Codex model's context window and output limit by hand (the
 Settings card says which models still need it — docs/endpoints.md, "Windows and output
 caps are DISCOVERED"). Existing routine references use catalog names and need no changes.
 
 Codex models also use the `anthropic` kind: the action-tool route passed our live
-action schema when it was validated, with a FORCED tool choice — the choice every structured
-call sends (0.372.0 and 0.372.1 offered the tool on `auto` instead). The OpenAI strict-schema
-route rejects optional nested fields and falls back to unconstrained JSON, so it is not the
-validated route.
+action schema when it was validated, with a FORCED tool choice — so the endpoint serving them
+sets `tool_choice: forced` (on `auto` a Codex model sometimes answers in text, which the engine
+can read but no schema constrained). The OpenAI strict-schema route rejects optional nested
+fields and falls back to unconstrained JSON, so it is not the validated route.
 
 ## Verification and operations
 

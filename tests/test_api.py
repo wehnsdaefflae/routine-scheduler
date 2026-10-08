@@ -1662,6 +1662,30 @@ def test_endpoint_extra_body_set_view_and_preserved(client):
     assert stored()["extra_body"] == {}
 
 
+def test_endpoint_tool_choice_set_view_and_preserved(client):
+    """An anthropic endpoint's tool_choice (auto by default — the effort reaches the model;
+    forced for a route validated only forced) is settable, shown, and survives an edit that
+    does not send it: the Settings card has no control for it, so a save without the field
+    must never put a forced endpoint back on auto."""
+    c, tmp = client
+
+    def stored():
+        return yaml.safe_load((tmp / "config.yaml").read_text())["endpoints"]["codex"]
+
+    assert c.put("/api/settings/endpoints/codex", json={
+        "name": "codex", "kind": "anthropic", "base_url": "http://p:8317",
+        "tool_choice": "forced"}).status_code == 200
+    assert stored()["tool_choice"] == "forced"
+    view = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"]
+                if e["name"] == "codex")
+    assert view["tool_choice"] == "forced"
+    c.put("/api/settings/endpoints/codex",
+          json={"name": "codex", "kind": "anthropic", "base_url": "http://q:8317"})
+    assert stored()["tool_choice"] == "forced"
+    assert c.put("/api/settings/endpoints/codex", json={
+        "name": "codex", "kind": "anthropic", "tool_choice": "sometimes"}).status_code == 422
+
+
 def test_settings_server_config(client):
     """The runtime server knobs (sandbox, concurrency, rescan, github client id) round-trip
     through config.yaml and the live ServerConfig, with validation."""

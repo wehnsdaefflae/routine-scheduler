@@ -60,7 +60,8 @@ def _endpoint_view(name: str, ep: EndpointConfig, server) -> dict:
             "proxy_management": bound is not None,
             "has_subscription_quota": bound is not None and (not providers
                                                                or "claude" in providers),
-            "schema_mode": ep.schema_mode, "context_tokens": ep.context_tokens,
+            "schema_mode": ep.schema_mode, "tool_choice": ep.tool_choice,
+            "context_tokens": ep.context_tokens,
             "temperature": ep.temperature, "max_tokens": ep.max_tokens,
             "extra_body": ep.extra_body,
             "has_inline_key": bool(ep.api_key), "key_source": _key_source(ep)}
@@ -201,6 +202,9 @@ class EndpointBody(BaseModel):
     # the loader's own vocabulary: as a free string, a mode it cannot load was saved with
     # `ok: true` and quietly reverted to the default by the next load (R102)
     schema_mode: SchemaMode = "json_schema"
+    # anthropic only: `auto` lets effort reach the model, `forced` keeps a validated forced route
+    # (config.modelconf). None = leave whatever is in config.yaml untouched.
+    tool_choice: Literal["auto", "forced"] | None = None
     context_tokens: int = DEFAULT_CONTEXT_TOKENS  # a DEFAULT models inherit (per-model wins)
     temperature: float | None = None  # a DEFAULT catalog models inherit
     max_tokens: int | None = None     # a DEFAULT catalog models inherit
@@ -227,7 +231,7 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
         # every config-only / omitted field so saving a key (or editing base_url) never silently
         # drops one, including a custom key_env_file.
         for field in ("temperature", "extra_body", "max_tokens",
-                      "key_env_file"):
+                      "key_env_file", "tool_choice"):
             if field not in spec and field in prev:
                 spec[field] = prev[field]
         for field in ("base_url", "key_var"):

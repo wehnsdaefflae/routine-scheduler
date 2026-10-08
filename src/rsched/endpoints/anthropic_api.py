@@ -1,13 +1,28 @@
 """Anthropic Messages API adapter.
 
 Schema enforcement via tool use: one tool named "action" whose input_schema is the requested
-schema, with tool_choice FORCING it (`_FORCED`). Forcing is what the subscription proxy serves
-reliably: CLIProxyAPI strips `thinking` and `output_config.effort` from every forced call (the
-Messages API allows thinking only on `auto`), so a forced call is answered there with the action
-under its own name. 0.372.0 offered the tool on `auto` instead, to spare the newest models the
-400 below; through the proxy that let a configured effort reach Opus, and its turns came back
-`stop_reason: tool_use` with no action to read — every run failed over to its fallback model, so
-the operator chose to force again (2026-10-01). Without a schema it is a plain messages call.
+schema, offered on `auto` held to ONE call (`_ONE_CALL_AT_MOST`). Without a schema it is a plain
+messages call.
+
+**Why not forced.** A forced `tool_choice` makes a configured EFFORT meaningless: the Messages
+API allows thinking only on `auto`, so CLIProxyAPI — the subscription proxy every `anthropic`
+endpoint here runs through — strips `thinking` and `output_config.effort` from every forced call,
+and the newest Claude models on the direct API refuse forcing outright. Measured through the
+proxy on 2026-10-08: forced, Opus 5 at effort `low` and `max` answered with 467 and 551 output
+tokens and no thinking block — the setting reached nothing; on `auto` the same calls thought and
+answered with the action under its own name, on Opus 5, Sonnet 5 and Fable 5, on a first turn and
+a third, with the composer's real 33k-character system prompt and the full action schema.
+0.370.2–0.372.2 forced the tool for every call, so for a week every "Opus high" or "Sonnet max"
+in the catalog ran at the proxy's default.
+
+**Why it stays safe.** 0.372.0 had offered `auto` once before and Opus then answered `stop_reason:
+tool_use` with nothing the adapter could read; that shape was never reproduced, but it cannot cost
+a run again: an `auto` reply no action can be read from is RE-ASKED once, forced
+(`_reask_forced`), inside the same call — that one turn runs at the proxy's default, the
+completion says so in `stop_details["forced_reask"]` (with what the unread reply carried), its
+usage is the sum of both requests, and a warning is logged. An endpoint whose models were
+validated on the forced route (the Codex models the proxy serves on this wire) keeps it with
+`tool_choice: forced` on its config.
 
 Every optional field a model may refuse — the forced `tool_choice`, `output_config` (effort),
 `temperature`, the `cache_control` markers — rides the body, and a 400 that NAMES one degrades
@@ -44,6 +59,7 @@ blocks are cache-eligible like text, so a viewed image re-reads at cache-read we
 from __future__ import annotations
 
 import json
+import logging
 
 import httpx
 
@@ -52,6 +68,7 @@ from .base import (
     DEFAULT_TIMEOUT,
     PDF_MIME,
     Completion,
+    EndpointError,
     Message,
     json_or_raise,
     post_json,
@@ -62,6 +79,8 @@ from .base import (
     supports_media_type,
     with_retries,
 )
+
+log = logging.getLogger("rsched.endpoints.anthropic")
 
 API_VERSION = "2023-06-01"
 
@@ -76,12 +95,21 @@ _DROPPABLE = (
     ("temperature", ("temperature",)),
 )
 
-#: The tool_choice every schema'd call sends (see the module docstring for why it is forced).
+#: The forced tool_choice: what an endpoint configured `tool_choice: forced` sends, and the
+#: one re-ask of an unreadable `auto` reply.
 _FORCED = {"type": "tool", "name": "action"}
 
-#: What a refused forced tool_choice becomes: the API default, held to ONE call — `auto` alone
-#: would let a reply carry several, and `_parse` keeps a single action.
+#: The tool_choice every schema'd call sends by default (the module docstring says why): the API
+#: default, held to ONE call — `auto` alone would let a reply carry several, and `_parse` keeps a
+#: single action.
 _ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
+
+
+def _summed(a: dict, b: dict) -> dict:
+    """Two requests' usage as one: a re-asked turn cost both, and a budget reading only the
+    second would undercount it.
+    """
+    return {k: int(a.get(k) or 0) + int(b.get(k) or 0) for k in {*a, *b}}
 
 
 def _usage(raw: dict) -> dict:
@@ -301,8 +329,8 @@ def _degrade(body: dict, error: str) -> dict | None:
 
 class AnthropicEndpoint:
     """Anthropic-compatible Messages adapter; billing belongs to the upstream. Schema via
-    a single tool, forced where the model allows; effort via `output_config` and
-    `temperature` when configured — each optional field degraded on a 400 naming it.
+    a single tool on `auto` (forced only where the endpoint says so); effort via `output_config`
+    and `temperature` when configured — each optional field degraded on a 400 naming it.
     """
 
     def __init__(self, cfg: EndpointConfig):
@@ -312,6 +340,7 @@ class AnthropicEndpoint:
         self.key_env_file = cfg.key_env_file
         self.key_var = cfg.key_var
         self.temperature = cfg.temperature
+        self.tool_choice = cfg.tool_choice
 
     def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
         """The Messages API takes images AND PDFs (document blocks) natively when the resolved
@@ -357,7 +386,8 @@ class AnthropicEndpoint:
             if cacheable:
                 tool["cache_control"] = {"type": "ephemeral"}   # static per run → a breakpoint
             body["tools"] = [tool]
-            body["tool_choice"] = dict(_FORCED)
+            body["tool_choice"] = dict(_FORCED if self.tool_choice == "forced"
+                                       else _ONE_CALL_AT_MOST)
         if not cacheable:
             body = _claim_placement(body)
         headers = {"x-api-key": self._api_key(), "anthropic-version": API_VERSION}
@@ -373,9 +403,37 @@ class AnthropicEndpoint:
             while resp.status_code == 400 and (smaller := _degrade(sent, resp.text)) is not None:
                 sent = smaller
                 resp = self._post(sent, headers, timeout)
-            return self._parse(resp)
+            completion = self._parse(resp)
+            if "unread" in completion.stop_details and sent.get("tool_choice") != _FORCED \
+                    and "tools" in sent:
+                return self._reask_forced(sent, headers, timeout, completion)
+            return completion
 
         return with_retries(call)
+
+    def _reask_forced(self, sent: dict, headers: dict, timeout: int,
+                      unread: Completion) -> Completion:
+        """An `auto` reply no action could be read from, asked ONCE more with the tool forced —
+        the shape 0.372.0 met through the proxy (module docstring). The forced answer runs at
+        the proxy's default effort, so it is marked, not passed off as the configured one; when
+        the re-ask fails or is unreadable too, the first reply is returned as it was and the
+        engine's empty-completion handling takes over, exactly as without the re-ask.
+        """
+        what = unread.stop_details["unread"]
+        log.warning("%s: an auto reply carried no readable action (%s) — re-asking forced",
+                    self.name, what)
+        try:
+            again = self._parse(self._post({**sent, "tool_choice": dict(_FORCED)}, headers,
+                                           timeout))
+        except EndpointError as exc:
+            log.warning("%s: the forced re-ask failed too: %s", self.name, exc)
+            return unread
+        if again.parsed is None and not again.text.strip():
+            return unread
+        return Completion(text=again.text, parsed=again.parsed,
+                          usage=_summed(unread.usage, again.usage),
+                          stop_reason=again.stop_reason,
+                          stop_details={**again.stop_details, "forced_reask": what})
 
     def _post(self, body: dict, headers: dict, timeout: int) -> httpx.Response:
         return post_json(f"{self.base_url}/v1/messages", body, headers, timeout,

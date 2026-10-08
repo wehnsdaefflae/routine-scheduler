@@ -228,7 +228,9 @@ class Completion:
     # openai_compat) — {} when unreported. The Anthropic adapter adds `unread` to a reply it
     # could read nothing from: its content blocks by type, never a value. Diagnostic only:
     # surfaced in the refusal and empty-completion error events so the transcript says what
-    # came back (F164, R5); the engine branches on stop_reason, never on this.
+    # came back (F164, R5); the engine branches on stop_reason, never on this. It also adds
+    # `forced_reask` — what an unreadable `auto` reply carried — to the answer it got by asking
+    # once more with the tool forced, a turn that ran at the proxy's default effort.
     stop_details: dict = field(default_factory=dict)
 
 
