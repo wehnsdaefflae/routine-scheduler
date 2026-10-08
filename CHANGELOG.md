@@ -15,6 +15,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.392.0] — 2026-10-08
+
+### Added
+- **Background actions, phase 4 (D118): a run may have at most THREE background calls in flight,
+  and the fourth is refused with its reason rather than queued.** `background.MAX_CONCURRENT = 3`
+  (D166). The refusal arrives on the starting turn, inside the schema-retry cycle, naming every
+  live handle with its brief — so the run can choose: take this call in the foreground, or let one
+  of the named handles land first. A queue was the alternative and is worse: it defers silently,
+  so a run cannot tell a started call from a parked one, and the parked call still lands its
+  observation at a boundary the run did not plan for. The cap is read **before** the call-time
+  secret gate, because that gate can file a blocking question and asking the operator to decide a
+  credential exposure for a call about to be refused spends his attention on nothing.
+- The `background` field's own description — the prompt surface every routine reads — now names
+  the cap, so a run that meets the refusal has been told the limit exists.
+
+### Changed
+- **A backgrounded call's model spend now books ON COLLECTION, not from its thread** (D167).
+  `RunContext.add_usage` reads the name of the thread it is running on and PARKS a background
+  thread's reading; `background.collect` books it at the turn boundary and records `usage_booked`
+  beside the call, so the spend and the observation that caused it arrive together. This also
+  closes a real race: a backgrounded `llm` books at five sites (two in `llmaction.py`, three in
+  `refusal.py`) and a `decide` at one, every one of them folding into the same `ctx.usage` dict
+  the loop folds into on the main thread through `fold_usage`'s non-atomic read-modify-write — two
+  folds at once lose a reading, and spend arriving mid-turn made a turn's budget check depend on
+  thread timing. Fixed at the one booking point rather than in six handlers, because the handler
+  is exactly the party that does not know it has been backgrounded; a structural test now forbids
+  folding into a run's usage anywhere else. An **abandoned** call's spend books too — the tokens
+  were spent at the provider whether or not the run ever read the answer.
+- Backgrounding stays available to **every** run, not only conversations (D168) — no code was
+  needed, the flag is gated by kind alone, and the docs now say so instead of leaving it implied.
+- `docs/background-tasks.md`, `CLAUDE.md` and `docs/prompt-anatomy.md` carry all of the above;
+  the doc's list of backgroundable kinds also gains `decide`, missing since 0.387.0.
+- `docs/designs.md`'s D118 entry is replaced by a short successor carrying only what is still
+  unbuilt — phase 3 (mutation ordering, which the entry itself called its own decision item) and
+  cancellation. Cancellation is deliberately **not** in this release: `kill` takes an integer
+  sub-workflow number while a background id is a string handle, so reusing it changes a field in
+  the flat action schema every routine's prompt carries — filed as a decision with options. The
+  honest ceiling is now written down either way: Python cannot force-kill a thread, so
+  cancellation can only ever mean "stop delivering the observation and free a cap slot".
+
+### Fixed
+- Booking usage works on a `RunContext` built WITHOUT its dataclass initialiser. Callers construct
+  one with `RunContext.__new__` and set only the fields they need, so no dataclass default exists;
+  the first version of the parking above read its lock attribute directly and raised
+  `AttributeError` there — on the path every model call takes. Both pieces of parking state are now
+  reached through accessors that default the attribute into existence, and a test pins booking and
+  parking on a bare context.
+
 ## [0.391.1] — 2026-10-08
 
 ### Fixed
