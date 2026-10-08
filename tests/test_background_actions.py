@@ -281,6 +281,152 @@ def test_the_background_runner_matches_the_foreground_routing_table():
             "it would raise KeyError the moment a run backgrounds it")
 
 
+# ---- the concurrency cap (D118 phase 4, decided D166) -----------------------------------------
+
+def test_the_cap_is_a_small_fixed_number():
+    """D166 decided "a small fixed cap, e.g. 3". The number is part of the decision, not a
+    tuning knob a later edit may drift: a cap of 50 would be the unbounded fan-out the decision
+    refused, and a cap of 1 would make the feature pointless."""
+    from rsched.engine import background
+
+    assert background.MAX_CONCURRENT == 3
+
+
+def test_the_cap_is_read_before_the_secret_gate():
+    """Order matters, not just presence. The secret gate can file a BLOCKING question; asking
+    the user to decide a credential exposure for a call that is about to be refused anyway
+    spends his attention on nothing. So the cap must be consulted first."""
+    import ast
+    import inspect
+    import textwrap
+
+    from rsched.engine import actionroute
+
+    # The CALL SITES, not the source text: this module explains the secret gate in a comment
+    # block that sits ABOVE the cap's call, so a raw substring index compares the prose and
+    # passes or fails for the wrong reason. Walk the AST and read the order of the two calls.
+    tree = ast.parse(textwrap.dedent(inspect.getsource(actionroute.dispatch_action)))
+    # Sorted by line number, not by walk order: `ast.walk` is breadth-first and gives no
+    # guarantee about siblings, so a test that reads its order passes by accident.
+    calls = sorted((n.lineno, n.func.attr if isinstance(n.func, ast.Attribute)
+                    else getattr(n.func, "id", ""))
+                   for n in ast.walk(tree) if isinstance(n, ast.Call))
+    order = [name for _line, name in calls
+             if name in ("refuse_at_capacity", "_gate_for_background")]
+    assert "refuse_at_capacity" in order, "the cap is not wired into dispatch at all"
+    assert order.index("refuse_at_capacity") < order.index("_gate_for_background"), (
+        "the concurrency cap must be read BEFORE the call-time secret gate, or a call that "
+        f"will be refused still costs the user a blocking exposure question: {order}")
+
+
+def test_the_fourth_concurrent_background_call_is_refused_naming_the_live_handles(
+        make_routine, scripted, monkeypatch):
+    """The cap, through a real run. Three slow calls are in flight; the fourth is REFUSED on
+    its own turn — not started, not queued — and the refusal names every live handle, because
+    "the run decides what to drop" is only a real choice if it can see what it is choosing
+    between."""
+    _slow_util(monkeypatch, seconds=3.0)
+    d = make_routine(slug="bgcap")
+    scripted([
+        {**util("websearch", args=["a"], say="One."), "background": True},
+        {**util("websearch", args=["b"], say="Two."), "background": True},
+        {**util("websearch", args=["c"], say="Three."), "background": True},
+        {**util("websearch", args=["d"], say="Four — over the cap."), "background": True},
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    obs = [e for e in events if e["type"] == "observation"]
+
+    started = [e for e in obs if e["payload"].get("started")]
+    assert len(started) == 3, (
+        f"the cap is 3, so exactly three calls may start; got {len(started)}")
+    refusals = [e for e in obs if e["payload"].get("at_capacity")]
+    assert len(refusals) == 1, f"the fourth flagged call was not refused: {obs}"
+
+    refusal = refusals[0]["payload"]
+    assert refusal.get("started") is not True, (
+        "a refusal must not look like a started call — nothing was backgrounded")
+    assert refusal["limit"] == 3
+    live = {e["payload"]["handle"] for e in started}
+    assert set(refusal["in_flight"]) == live, (refusal["in_flight"], live)
+    for handle in live:
+        assert handle in refusal["reason"], (
+            f"the refusal does not name live handle {handle}, so the run cannot tell which of "
+            f"its own calls to wait for: {refusal['reason']}")
+    assert "REFUSED" in refusal["reason"]
+
+
+def test_a_capacity_refusal_renders_without_reading_a_result_field(
+        make_routine, scripted, monkeypatch):
+    """The regression this cost on its first run. An observation for an action the engine did
+    NOT execute must carry `rejected` + `reason` — the one shape `observations._not_executed`
+    words. Carrying a util-shaped `error` instead fell through to the util renderer, which read
+    `obs['name']` and raised `KeyError: 'name'`, killing the turn and every later resume (a
+    resume re-renders each stored observation). So the refusal is rendered, not just stored."""
+    from rsched.engine.observations import format_observation
+
+    _slow_util(monkeypatch, seconds=2.0)
+    d = make_routine(slug="bgcaprender")
+    scripted([
+        {**util("websearch", args=["a"], say="One."), "background": True},
+        {**util("websearch", args=["b"], say="Two."), "background": True},
+        {**util("websearch", args=["c"], say="Three."), "background": True},
+        {**util("websearch", args=["d"], say="Four."), "background": True},
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    refusal = next(e["payload"] for e in events if e["type"] == "observation"
+                   and e["payload"].get("at_capacity"))
+    assert refusal.get("rejected") is True, (
+        "a capacity refusal must use the engine's not-executed shape (`rejected` + `reason`); "
+        f"this one would reach a per-kind renderer that reads result fields: {refusal}")
+    text = format_observation(refusal)
+    assert "REFUSED" in text and "cap" in text, text
+
+
+def test_a_capacity_refusal_starts_no_work_and_frees_as_calls_land(
+        make_routine, scripted, monkeypatch):
+    """Two claims a counter alone would miss: the refused call's handler never RAN (a refusal
+    that still did the work would be a lie), and capacity is a live measure — once the first
+    three land, a flagged call is accepted again rather than the run being capped for life."""
+    import rsched.engine.executor as executor_mod
+
+    ran: list[str] = []
+
+    def record(action, _ctx):
+        ran.append(str(action.get("args", [None])[0]))
+        time.sleep(0.2)
+        return {"kind": "util", "name": action.get("name"), "exit": 0, "stdout": "ok",
+                "stderr": ""}
+
+    monkeypatch.setitem(executor_mod.DISPATCH, "util", record)
+    d = make_routine(slug="bgcapfree")
+    scripted([
+        {**util("websearch", args=["a"], say="One."), "background": True},
+        {**util("websearch", args=["b"], say="Two."), "background": True},
+        {**util("websearch", args=["c"], say="Three."), "background": True},
+        {**util("websearch", args=["refused"], say="Four."), "background": True},
+        util("list", say="Letting them land."),
+        util("list", say="Still letting them land."),
+        {**util("websearch", args=["e"], say="A slot has freed."), "background": True},
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    assert "refused" not in ran, (
+        f"the refused call's handler RAN anyway — the refusal did the work it declined: {ran}")
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    obs = [e for e in events if e["type"] == "observation"]
+    assert len([e for e in obs if e["payload"].get("at_capacity")]) == 1, (
+        "capacity never freed: a run capped once stayed capped for the rest of its life")
+    assert len([e for e in obs if e["payload"].get("started")]) == 4, (
+        "the fifth flagged call (after three landed) should have been accepted")
+
+
 def test_every_kind_route_owns_is_gated_before_it_may_be_backgrounded():
     """The structural guard. `_route` owns a branch for a kind only where something must happen
     BEFORE the executor sees it; for `util` and `script` that something is the D39 call-time

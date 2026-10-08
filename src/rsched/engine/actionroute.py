@@ -55,6 +55,15 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
             # turn: it can ask the user a blocking question and a background thread has no
             # turn to block on. A refusal or a pending request becomes THIS turn's
             # observation and nothing is backgrounded.
+            #
+            # D118 phase 4 / D166: the CONCURRENCY CAP is read first, ahead of the secret
+            # gate, because the gate can file a BLOCKING question — asking the user to decide
+            # a credential exposure for a call that is about to be refused anyway spends his
+            # attention on nothing. A refusal here is this turn's observation, in the
+            # schema-retry cycle, naming the live handles so the run can decide what to drop.
+            capped = background.refuse_at_capacity(loop, action)
+            if capped is not None:
+                return capped
             gated = _gate_for_background(loop, action)
             if gated is not None:
                 return gated

@@ -55,6 +55,23 @@ from ..endpoints import instrument
 #: The purpose tag an abandoned background call's in-flight model calls are closed under.
 BACKGROUND_PURPOSE = "background action"
 
+#: How many background calls ONE run may have in flight at once (D118 phase 4, decided D166:
+#: "a small fixed cap, e.g. 3: the flagged action is REFUSED (with its reason, in the
+#: schema-retry cycle) while the cap is full, so the run decides what to drop").
+#:
+#: Why a cap exists at all, and why it refuses rather than queues: each pending call is a live
+#: thread holding whatever its handler holds — a subprocess, a socket, a model call — and every
+#: one of them books against the SAME run's wall-clock and token budgets (D167). Unbounded, a
+#: loop that flags every action turns one run into an unbounded fan-out whose results it has no
+#: turns left to read, and whose spend arrives after the budget check that would have stopped it.
+#:
+#: A QUEUE was the alternative and is worse here: it defers the work silently, so the run cannot
+#: tell a started call from a parked one, and the parked call still lands its observation at a
+#: boundary the run did not plan for. A refusal keeps the choice where the decision put it — with
+#: the run, which knows which of its reads matters and can take this one in the foreground, wait
+#: for a handle to land, or drop it.
+MAX_CONCURRENT = 3
+
 #: How long a FINISHING run waits for a background call still in flight. The run's work is over,
 #: so this delays nothing anybody is waiting on — but a conversation's reply is rendered from the
 #: finish, so it stays short enough to be invisible. Deliberately the archival window: the two
@@ -116,6 +133,39 @@ def _runner(kind: str):
     if kind == "script":
         return executor.do_script
     return executor.dispatch
+
+
+def refuse_at_capacity(loop, action: dict) -> dict | None:
+    """The cap (D166), as THIS turn's observation — or None when there is room.
+
+    Shaped like the D39 secret gate's refusal and for the same reason: it is a decision made on
+    the STARTING turn, so it must reach the turn that asked for the call. It is not a *started*
+    observation and nothing is backgrounded, which is what lets the schema-retry cycle treat it
+    as a correctable action rather than as a result.
+
+    It names every live handle, because "the run decides what to drop" is only a real choice if
+    the run can see what it is choosing between — a bare "cap reached" leaves it guessing which
+    of its own calls to wait for.
+    """
+    live = _pendings(loop)
+    if len(live) < MAX_CONCURRENT:
+        return None
+    # `rejected` + `reason` is the ONE shape the engine words for an action it did not execute
+    # (`observations._not_executed`), and using it is not a style choice: every per-kind
+    # renderer below that branch reads the fields of a dispatch RESULT — a `util` refusal
+    # carrying `error` instead reaches the util branch and raises `KeyError: 'name'`, which
+    # kills the turn AND every later resume, since a resume re-renders each stored
+    # observation. That is the exact failure fifteen renderers had already been fixed for;
+    # measured again here on the first run of this test.
+    return {"kind": action.get("kind"), "background": True, "rejected": True,
+            "at_capacity": True, "limit": MAX_CONCURRENT,
+            "in_flight": [p.handle for p in live],
+            "reason": f"REFUSED, nothing was started: this run already has {len(live)} "
+                      f"background calls in flight and {MAX_CONCURRENT} is the cap — "
+                      f"{_brief_list(live)}. Choose: take this {action.get('kind')} in the "
+                      f"FOREGROUND (drop `background`), or let one of the handles above land "
+                      f"first and flag it then. Do not repeat the identical flagged action — "
+                      f"it will be refused again until a slot frees."}
 
 
 def start(loop, action: dict, ctx) -> dict:
