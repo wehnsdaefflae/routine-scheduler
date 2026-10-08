@@ -148,9 +148,9 @@ the limits (single-writer status.json preserved).
   them. The archive is deferred by exactly one turn and the run is told why — and the deferred
   pass is OWED (`loop._evict_owed`): the next turn takes it under the cap that decided it, so
   "the archive happens on your next turn" holds even when the cap has moved since. It did not
-  before: a stage boundary's anticipatory discount lasts one turn, so re-testing the ordinary
-  gate spent the once-per-run warning on a pass that never came, and the compaction that did
-  come later came unannounced. Safe by
+  before: a stage boundary's decision lasts one turn, so re-testing the ordinary gate spent the
+  once-per-run warning on a pass that never came, and the compaction that did come later came
+  unannounced. The owed pass carries the boundary's stage and economics with it too. Safe by
   construction: when the FRACTION binds the gate there is 20-40% of the window before the hard
   ceiling, a whole turn of slack; when the CEILING binds there is none, so the warning is
   skipped and the archive happens now. `clamp_to_cap` runs unconditionally afterwards either
@@ -182,17 +182,28 @@ the limits (single-writer status.json preserved).
   turn_records, cap_tokens)`): the caller's decision is the only one. A second gate inside it
   re-testing its own fraction meant every pass triggered below that fraction spent the
   eviction-warning turn and then archived nothing.
-- **Anticipatory compaction** (`compaction.ANTICIPATE_AT`, 0.85): the gate above is a SIZE check and
-  is indifferent to WHERE in the work it trips, so it can rewrite the prefix three actions into a
-  multi-action step — the worst moment for both coherence and the cache. At a boundary the engine
-  ALREADY detects — the run entering a new stage module, i.e. `ctx.phase` changing on a
-  `stages/<name>.md` read — a prompt merely APPROACHING the gate is archived early, so the clean
-  between-steps pass pre-empts the forced mid-step one. Only the TRIGGER moves: every anti-thrash
-  guard still applies (the incompressible head+tail floor, a middle under 8 messages, less than 20k
-  of growth since the last pass), so a boundary can never cause a compaction the ordinary gate would
-  not eventually have made. The pass is stamped `anticipated: <phase>` in its `compaction` transcript
-  event, because otherwise an early pass and a forced one are indistinguishable after the fact and
-  the feature could not be evaluated.
+- **Stage-boundary compaction** (`engine/boundary.py`): the gate above is a SIZE check, and on a
+  1M-token window it almost never trips — 14 passes in 160 fleet runs (2026-09-17..10-08), while
+  the median request carried 148k tokens and re-read all of it every turn at the cache price. So
+  at a STAGE BOUNDARY — the run reaching a stage it had not reached, by reading its
+  `stages/<name>.md` (`ctx.phase` moving) OR by recording it in `state/phase.json` (the visited
+  set growing; a run that routes by its cursor alone never moves `ctx.phase`, F563) — the gate
+  asks whether archiving the middle NOW costs less than carrying it to the end of the run. That is
+  NVIDIA SoL-Pi's Online Context Compact test, priced in uncached-input-token units at
+  Anthropic's list ratios: the per-turn saving (`before − after`, at the cache-read price once
+  the provider has shown cache hits) against the one-time cost (the kept prefix written once
+  more, plus the archival call reading the middle and writing ~5% of it back). The HORIZON is
+  turns per stage reached so far × stages still ahead, capped by the turn budget; the pass is
+  taken when the run has `boundary.MARGIN` (2) times the breakeven ahead of it — replayed over
+  525 real boundaries, 2 kept 98% of the first passes' net saving with a third fewer passes. A
+  boundary pass is taken WHATEVER the size gate says (its cap becomes 0), so unlike the 0.85
+  discount it replaced it does cause passes the size gate would never have made; that is the
+  point. Every anti-thrash guard still applies (the incompressible head+tail floor, a middle
+  under 8 messages, less than 5,000 estimated tokens of growth since the last pass), and the
+  first look a run or a resumed leg takes is never a boundary. The pass is stamped
+  `anticipated: <stage>` and `economics: {saving_tokens, cost, per_turn, breakeven_turns,
+  horizon_turns, compact}` in its `compaction` transcript event, so a boundary pass is
+  distinguishable from a forced one and the constants can be tuned from what the test did.
 - **Phase is derived, never bookkept**: the stage modules ARE the states — `statemap.py` builds the
   UI's state-graph diagram from the routine's own `stages/*.md`,
   in main.md first-mention order (nothing parsed from prose, so every routine has a diagram), and

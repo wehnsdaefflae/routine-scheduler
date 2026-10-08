@@ -38,11 +38,9 @@ def _loop_with_prompt(make_routine, ep=None, *, messages: int = 40, body: int = 
     loop = _loop(make_routine, _CalibRegistry(ep if ep is not None else _FakeEndpoint([])))
     loop.messages = [{"role": "user" if i % 2 else "assistant", "content": "x" * body}
                      for i in range(messages)]
-    # not at a stage boundary: anticipatory compaction would tighten the gate by 0.85 on the
-    # first call only, and the ratio is what these tests are measuring
-    loop._last_seen_phase = loop.ctx.phase
-    # …and the WINDOW is the gate under test, not the token budget's own ">10% of what is
-    # left per turn" cap (the fixture routine allows 100k tokens in total)
+    # the WINDOW is the gate under test, not the token budget's own ">10% of what is left
+    # per turn" cap (the fixture routine allows 100k tokens in total); the fixture recipe has
+    # no stages, so no stage boundary can take a pass either
     loop.ctx.budgets.max_total_tokens = -1
     return loop
 

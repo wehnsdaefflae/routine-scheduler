@@ -11,6 +11,11 @@ from rsched.engine import window
 from rsched.web.app import create_app
 
 
+def _no_stages() -> dict:
+    """A single-file recipe: no stage can be reached, so no boundary takes a pass."""
+    return {"declared": [], "entered": [], "skipped": []}
+
+
 def test_compaction_setting_validates_persists_clears_and_guards_deletion(tmp_path):
     server = make_test_server(tmp_path, routine_token="routine-tok")
     with TestClient(create_app(server, with_scheduler=False)) as c:
@@ -58,10 +63,11 @@ def test_archival_selection_keeps_foreground_window(tmp_path, monkeypatch, dedic
 
     ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=dedicated),
         routine=SimpleNamespace(models={}), usage={}, phase="", tokens_remaining=lambda: None,
+        stage_coverage=_no_stages,
         registry=SimpleNamespace(for_model=lambda *a: ("tool-endpoint", tool), for_name=for_name),
         transcript=SimpleNamespace(event=lambda kind, data: events.append(data)))
     loop = SimpleNamespace(ctx=ctx, messages=[{"role": "user", "content": "x" * 2000}] * 50,
-                           turn_records=[], _last_compact_after=0)
+                           turn_records=[], _last_compact_after=0, _stage_mark=None)
     monkeypatch.setattr(window, "_warn_before_eviction", lambda *a: False)
 
     def compact(messages, records, cap):
@@ -98,10 +104,11 @@ def test_a_tool_call_candidate_that_cannot_be_resolved_is_reported_not_swallowed
     ctx = SimpleNamespace(
         server=SimpleNamespace(compaction_model=""),
         routine=SimpleNamespace(models={}), usage={}, phase="", tokens_remaining=lambda: None,
+        stage_coverage=_no_stages,
         registry=SimpleNamespace(for_model=for_model),
         transcript=SimpleNamespace(event=lambda kind, data: events.append(data)))
     loop = SimpleNamespace(ctx=ctx, messages=[{"role": "user", "content": "x" * 2000}] * 50,
-                           turn_records=[], _last_compact_after=0)
+                           turn_records=[], _last_compact_after=0, _stage_mark=None)
     monkeypatch.setattr(window, "_warn_before_eviction", lambda *a: False)
     monkeypatch.setattr(window, "maybe_compact",
                         lambda msgs, *_a: (msgs[:6] + msgs[-24:], {"mode": "digest"}))
@@ -126,10 +133,11 @@ def test_archival_falls_back_to_the_main_model_when_the_tool_window_is_too_small
     events, selected = [], []
     ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=""),
         routine=SimpleNamespace(models={}), usage={}, phase="", tokens_remaining=lambda: None,
+        stage_coverage=_no_stages,
         registry=SimpleNamespace(for_model=lambda *a: ("tool-endpoint", tool)),
         transcript=SimpleNamespace(event=lambda kind, data: events.append(data)))
     loop = SimpleNamespace(ctx=ctx, messages=[{"role": "user", "content": "x" * 2000}] * 50,
-                           turn_records=[], _last_compact_after=0)
+                           turn_records=[], _last_compact_after=0, _stage_mark=None)
     monkeypatch.setattr(window, "_warn_before_eviction", lambda *a: False)
     monkeypatch.setattr(window, "maybe_compact",
                         lambda msgs, *_a: (msgs[:6] + msgs[-24:], {"mode": "digest"}))
@@ -152,10 +160,11 @@ def test_archival_is_skipped_when_no_model_can_hold_the_middle(tmp_path, monkeyp
     events, selected = [], []
     ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=""),
         routine=SimpleNamespace(models={}), usage={}, phase="", tokens_remaining=lambda: None,
+        stage_coverage=_no_stages,
         registry=SimpleNamespace(for_model=lambda *a: ("tiny-endpoint", tiny)),
         transcript=SimpleNamespace(event=lambda kind, data: events.append(data)))
     loop = SimpleNamespace(ctx=ctx, messages=[{"role": "user", "content": "x" * 2000}] * 50,
-                           turn_records=[], _last_compact_after=0)
+                           turn_records=[], _last_compact_after=0, _stage_mark=None)
     monkeypatch.setattr(window, "_warn_before_eviction", lambda *a: False)
     monkeypatch.setattr(window, "maybe_compact",
                         lambda msgs, *_a: (msgs[:6] + msgs[-24:], {"mode": "digest"}))

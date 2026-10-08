@@ -18,9 +18,8 @@ import json
 from pathlib import Path
 
 from ..endpoints.base import EndpointError
-from . import archival, enginenote, mediaops
+from . import archival, boundary, enginenote, mediaops
 from .compaction import (
-    ANTICIPATE_AT,
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
     archival_fits,
@@ -277,24 +276,22 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     budget_cap = (float("inf") if remaining is None
                   else max(10_000.0, 0.10 * remaining))
     cap = min(context_cap, budget_cap)
-    # A BOUNDARY the engine already detects: this turn begins a new stage module, so the run is
-    # between steps rather than mid-edit. Compact now if the prompt is merely APPROACHING the gate
-    # — a pass taken here is cheaper and less disruptive than the same pass forced three actions
-    # into the next step. The anti-thrash guards below are untouched: this moves WHEN a compaction
-    # happens, never whether an extra one does.
-    at_boundary = bool(ctx.phase) and ctx.phase != getattr(loop, "_last_seen_phase", None)
-    anticipated = ""
-    if at_boundary:
-        loop._last_seen_phase = anticipated = ctx.phase
-        cap *= ANTICIPATE_AT
+    # A STAGE BOUNDARY: the run is between steps rather than mid-edit, and everything it carries
+    # from the finished stage is re-read on every turn it has left. When archiving that now costs
+    # less than carrying it to the end of the run, the pass is taken here whatever the size gate
+    # says (engine/boundary.py — the breakeven test, every figure recorded with the pass).
+    anticipated, economics = boundary.assess(loop, size)
+    if economics.get("compact"):
+        cap = 0.0
     # A pass the eviction warning DEFERRED is owed now. The run was told "the archive happens
     # on your next turn either way", so the cap that decided the pass still decides it:
     # re-testing only today's cap broke that promise whenever the cap had moved — at a stage
-    # boundary every time, because the anticipatory discount applies to the boundary turn
+    # boundary every time, because the boundary's decision applies to the boundary turn
     # alone — and the once-per-run warning was spent on a pass that never came.
     if (owed := getattr(loop, "_evict_owed", None)) is not None:
         loop._evict_owed = None
-        cap, anticipated = min(cap, owed[0]), anticipated or owed[1]
+        cap = min(cap, owed[0])
+        anticipated, economics = anticipated or owed[1], economics or owed[2]
     if (size <= cap or len(loop.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
         return
     # Anti-thrash: head + tail are an incompressible floor (large observations in the last
@@ -308,7 +305,7 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
         return
     if _warn_before_eviction(loop, size, ref):
         # one turn to externalize what matters; the archive happens next turn, on THIS cap
-        loop._evict_owed = (cap, anticipated)
+        loop._evict_owed = (cap, anticipated, economics)
         return
     # The INSTANT tier takes the pass and the run carries straight on; the navigable
     # archive is built off the hot path and announced when it lands (engine/archival.py).
@@ -338,12 +335,14 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
         # the archival call's spend is booked by archival.collect, on the turn the
         # archive lands — this pass is the deterministic digest and calls no model
         loop._last_compact_after = estimate_input_tokens(loop.messages)
-        # `anticipated` says this pass was taken EARLY, at a stage boundary, rather than because
-        # the prompt had actually crossed the gate — without it the two are indistinguishable in
-        # the transcript and the feature could not be evaluated after the fact. A boundary pass
-        # the eviction warning deferred by a turn is still that boundary's pass.
+        # `anticipated` names the stage boundary this pass was taken at, and `economics` the
+        # breakeven test that decided it — without them a boundary pass and a forced one are
+        # indistinguishable in the transcript, and the test's constants could not be tuned from
+        # what it actually did. A pass the eviction warning deferred by a turn is still that
+        # boundary's pass.
         ctx.transcript.event("compaction",
-                             {**cinfo, **({"anticipated": anticipated} if anticipated else {})})
+                             {**cinfo, **({"anticipated": anticipated} if anticipated else {}),
+                              **({"economics": economics} if economics else {})})
 
 
 def apply_media_fallback(loop, exc: EndpointError) -> bool:

@@ -109,7 +109,7 @@ class EngineLoop:
     _history_active: Any
     _history_note: Any
     _last_compact_after: Any
-    _last_seen_phase: Any
+    _stage_mark: Any
     _recall_after: Any
     _recalled: set[str]
     _last_config_ts: Any

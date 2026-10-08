@@ -27,15 +27,6 @@ COMPACT_AT_FRACTION = 0.6
 # cache. The economics flip: compact later.
 COMPACT_AT_FRACTION_CACHED = 0.8
 
-# ANTICIPATORY COMPACTION. The gate above is a SIZE check and is indifferent to WHERE in the work
-# it trips, so it can rewrite the prefix in the middle of a multi-action step — the worst moment for
-# both coherence and the cache. At a boundary the engine already detects (the run entering a new
-# stage module — `ctx.phase` changing on a `stages/<name>.md` read), a prompt merely APPROACHING the
-# gate is archived early, so the clean between-steps pass pre-empts the forced mid-step one. Only
-# the TRIGGER moves; every anti-thrash guard still applies, so this can never cause an extra pass
-# that the normal gate would not eventually have made anyway.
-ANTICIPATE_AT = 0.85
-
 KEEP_HEAD_MSGS = 6    # system + kickoff + first 2 turn pairs
 
 KEEP_TAIL_MSGS = 24   # ~ last 12 turn pairs
@@ -99,9 +90,10 @@ def maybe_compact(messages: list[dict], turn_records: list[dict], cap_tokens: fl
 
     The cap is an argument, not a constant re-derived here. It used to re-test
     `COMPACT_AT_FRACTION * context_tokens` — a second, stricter gate behind the caller's own —
-    so every pass the caller triggered below 60% of the window returned None: uncached
-    anticipation (0.51 × window at a stage boundary) and the ">10% of the remaining token
-    budget" gate both spent the eviction-warning turn and then archived nothing.
+    so every pass the caller triggered below 60% of the window returned None: a stage
+    boundary's pass and the ">10% of the remaining token budget" gate both spent the
+    eviction-warning turn and then archived nothing. `boundary.assess` relies on the same
+    property the other way: a cap of 0 is a dry run that says what a pass would leave.
     """
     if estimate_input_tokens(messages) <= cap_tokens:
         return messages, None

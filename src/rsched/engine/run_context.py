@@ -466,6 +466,11 @@ class RunContext:
         left = self.budgets.ledger().remaining("tokens", self.meter())
         return None if left is None else int(left)
 
+    def turns_remaining(self) -> int | None:
+        """Turns left in this leg's budget window; None = unlimited."""
+        left = self.budgets.ledger().remaining("turns", self.meter())
+        return None if left is None else int(left)
+
     def child_budgets(self, *, overrides: dict | None = None) -> Budgets:
         """A subrun/subtask's budgets: each consumable resource is HALF the parent's remainder
         (an unlimited time/token/cost budget stays unlimited); the conversation-life cap

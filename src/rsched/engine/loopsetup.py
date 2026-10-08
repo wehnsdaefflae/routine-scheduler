@@ -201,8 +201,8 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop._budget_spent = None    # which budget spent it: {resource, limit, message}
     loop._last_compact_after = 0   # post-compaction size; gates re-compaction (anti-thrash)
     loop._evict_warned = False   # the one-turn warning before the middle is elided
-    loop._evict_owed = None      # (cap, anticipated phase) of the pass that warning deferred
-    loop._last_seen_phase = None   # the anticipatory-compaction edge (window.py)
+    loop._evict_owed = None      # (cap, stage, economics) of the pass that warning deferred
+    loop._stage_mark = None      # where the run stood last turn — the stage-boundary edge
     # 1.0 until a completion reports what the provider actually counted; every window the
     # compaction gates see is divided by it from then on (window.note_prompt_size).
     loop._token_ratio = 1.0
