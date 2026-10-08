@@ -358,7 +358,25 @@ export async function render(view, query = {}) {
           chip(firedRunId ? "answered · run started" : "answered · queued", "ok"),
           el("span", {}, `“${text}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run"
             : firedRunId ? "run starting now" : "next run"}`)));
-        state.items = state.items.filter((x) => x.qid !== q.qid);
+        // R2189: a card carrying an UNAPPLIED `config_patch` STAYS on the page with its
+        // proposal and its `approve & apply` button (operator's ruling, 2026-10-05, option 3:
+        // "only the button; answering warns and keeps the patch available"). Answering never
+        // applies a patch, so dropping the card here destroyed the only control that could —
+        // reported twice, the second time on an option reading "Ja — Patch übernehmen".
+        //
+        // Nothing is MOVED to achieve that, and that is the whole trick: `configBar` is
+        // already a sibling of `controls` inside `panel` (see the assembly below), and
+        // `append` RELOCATES a mounted node — an earlier attempt appended `configBar` into
+        // the just-wiped `controls` and thereby carried the live apply button into the
+        // element it had emptied. Leaving both where they are keeps one button with one
+        // handler; only `controls` is rewritten, so the button survives untouched.
+        if (q.config_patch && !q.meta) {
+          controls.append(el("div", { class: "small faint mt" },
+            "the proposed config change was NOT applied — answering never applies it; "
+            + "use “approve & apply” above while it is still offered"));
+        } else {
+          state.items = state.items.filter((x) => x.qid !== q.qid);
+        }
         syncToolbar();
         // A repaint while the answer was in flight rebuilt `inputs` without this box — and
         // splicing at index -1 would drop the LAST question's box from the ↑/↓ order instead.

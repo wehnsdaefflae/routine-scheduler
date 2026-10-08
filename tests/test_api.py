@@ -1079,6 +1079,51 @@ def test_deferred_question_links_back_to_its_run(client):
     assert "run_id" not in by["q-orphan"]            # pruned run → no dangling link
 
 
+def test_answering_a_patch_carrying_question_says_the_patch_was_not_applied(client):
+    """R2189, reported twice. A card carrying a `config_patch` has TWO controls: the page's
+    `approve & apply` button, and the ordinary answer — which lands the text and never looks at
+    the patch. The operator ruled (2026-10-05, option 3) that only the button applies, so the
+    answer must SAY the patch was not applied rather than settling the card in silence: the
+    second report carried an option reading literally "Ja — Patch übernehmen", and the proposed
+    change evaporated with no trace on any surface.
+    """
+    c, tmp = client
+    pending = tmp / "routines" / "apir" / "questions" / "pending"
+    atomic_write_json(pending / "q-p1.json",
+                      {"qid": "q-p1", "question": "Raise the turn budget?",
+                       "options": ["yes: raise it", "no: leave it"],
+                       "asked": "20261008", "mode": "deferred",
+                       "config_patch": {"budgets": {"max_turns": 120}}})
+    r = c.post("/api/questions/q-p1/answer", json={"text": "yes: raise it"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body.get("config_patch_applied") is False, (
+        f"an answer must say the patch was NOT applied, not stay silent about it: {body}")
+    assert body.get("config_patch_target") == "apir", body
+    assert "approve & apply" in body.get("config_patch_note", ""), (
+        "the note must name the control that DOES apply it, or the person who just answered "
+        f"has no way to get the change they asked for: {body}")
+
+    # …and the same on the record the run reads, not only in the HTTP response.
+    answer = json.loads((tmp / "routines" / "apir" / "inbox"
+                         / "answer-q-p1.json").read_text(encoding="utf-8"))
+    assert answer["config_patch_applied"] is False, answer
+    assert answer["text"] == "yes: raise it", "the answer itself must still land"
+
+
+def test_an_ordinary_answer_carries_no_config_patch_fields(client):
+    """The control case. A question with no patch must answer exactly as it always did — the
+    new fields appear only where there is a patch to report on, so no caller learns to expect
+    them and no surface renders an empty warning.
+    """
+    c, tmp = client
+    pending = tmp / "routines" / "apir" / "questions" / "pending"
+    atomic_write_json(pending / "q-p2.json", {"qid": "q-p2", "question": "Pick?", "options": [],
+                                              "asked": "20261008", "mode": "deferred"})
+    body = c.post("/api/questions/q-p2/answer", json={"text": "green"}).json()
+    assert not [k for k in body if k.startswith("config_patch")], body
+
+
 def test_answered_question_shows_settled_not_open(client):
     """Answering flips a question to `answered` on every subsequent read — the pending
     file lives on until the next run consumes it, but a reload of the Decisions page must

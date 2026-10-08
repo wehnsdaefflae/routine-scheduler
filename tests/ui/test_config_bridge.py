@@ -77,3 +77,51 @@ def test_a_conversations_patch_for_a_routine_applies_to_that_routine(ui, ui_page
     expect(card).to_contain_text("applied")
     until(lambda: read_yaml(ui.routines / "uir" / "routine.yaml")
           .get("budgets", {}).get("max_turns") == 77, what="the routine patch")
+
+
+def test_answering_keeps_the_card_and_its_apply_button(ui, ui_page):
+    """R2189, reported twice. A patch-carrying card has TWO controls, and ANSWERING is not one
+    of them: the answer lands the text and never applies the patch. So answering must not take
+    the card away — the operator ruled it (2026-10-05, option 3: "only the button; answering
+    warns and keeps the patch available"), because the second report carried an option reading
+    literally "Ja — Patch übernehmen" and the proposed change evaporated with the card.
+
+    Loads what the person sees, not the attribute that points at it: after answering, the
+    proposal, the apply button and a warning that nothing was applied must all still be there,
+    and the button must still WORK.
+    """
+    ui.seed_question("uir", "q-20261008-070000-1", "Raise the turn budget to 95?",
+                     extra={"config_patch": {"budgets": {"max_turns": 95}}})
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator(".question-item", has_text="Raise the turn budget to 95").first
+    expect(card).to_be_visible()
+    apply_btn = card.get_by_role("button", name="approve & apply")
+    expect(apply_btn).to_be_visible()
+
+    card.locator("textarea, input[type=text]").first.fill("yes, please raise it")
+    card.get_by_role("button", name="answer").first.click()
+
+    expect(card).to_contain_text("answered")
+    expect(card).to_contain_text("NOT applied")
+    expect(card).to_contain_text("budgets")          # the proposal is still shown
+    expect(apply_btn).to_be_visible()                # …and the one control that applies it
+
+    # the button is not merely present: it still applies
+    apply_btn.click()
+    expect(card).to_contain_text("applied")
+    until(lambda: read_yaml(ui.routines / "uir" / "routine.yaml")
+          .get("budgets", {}).get("max_turns") == 95, what="the patch applied after answering")
+
+
+def test_answering_an_ordinary_question_still_clears_it(ui, ui_page):
+    """The control case, and the reason the keep-the-card change is scoped to patch-carrying
+    cards: a question with NO proposal must still disappear on answering, exactly as before.
+    A card that lingered after being answered would read as "it didn't work"."""
+    ui.seed_question("uir", "q-20261008-070000-2", "Which colour?")
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator(".question-item", has_text="Which colour").first
+    expect(card).to_be_visible()
+    card.locator("textarea, input[type=text]").first.fill("green")
+    card.get_by_role("button", name="answer").first.click()
+    expect(card).to_contain_text("answered")
+    expect(card.get_by_role("button", name="approve & apply")).to_have_count(0)
