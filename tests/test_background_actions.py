@@ -12,6 +12,7 @@ Two halves, deliberately in one file because they are one contract:
   does, so these go through `run_routine`.
 """
 
+import threading
 import time
 
 import pytest
@@ -425,6 +426,193 @@ def test_a_capacity_refusal_starts_no_work_and_frees_as_calls_land(
         "capacity never freed: a run capped once stayed capped for the rest of its life")
     assert len([e for e in obs if e["payload"].get("started")]) == 4, (
         "the fifth flagged call (after three landed) should have been accepted")
+
+
+# ---- budget accounting (D118 phase 4, decided D167) -------------------------------------------
+
+def test_the_parking_key_and_the_thread_name_are_one_constant():
+    """The two halves of the deferral agree on a STRING, and nothing else binds them: the
+    handler that books knows nothing about being backgrounded, so the only thing that can tell
+    is the thread's name. If `background.start` ever names its threads differently from what
+    `run_context.background_parking_key` reads, every background booking silently goes back to
+    racing mid-turn folds — no error, just a budget that is wrong again."""
+    from rsched.engine import background
+    from rsched.engine.run_context import BACKGROUND_THREAD_PREFIX, background_parking_key
+
+    assert background.THREAD_PREFIX is BACKGROUND_THREAD_PREFIX
+    assert background_parking_key() is None, "the main thread must never park its spend"
+
+    seen: list[str | None] = []
+    t = threading.Thread(target=lambda: seen.append(background_parking_key()),
+                         name=f"{BACKGROUND_THREAD_PREFIX}bg7")
+    t.start()
+    t.join()
+    assert seen == [f"{BACKGROUND_THREAD_PREFIX}bg7"], seen
+
+
+def test_a_background_threads_spend_is_parked_and_booked_once_on_collection(
+        make_routine, scripted, monkeypatch):
+    """D167: "book tokens on collection". A handler booking from the thread folds into a shared
+    dict mid-turn, so the number a turn's budget check reads depends on thread timing. Here a
+    backgrounded call spends tokens through the ordinary `ctx.add_usage` path; the meter must
+    not move while it runs, and must move by exactly that much once the result is collected."""
+    import rsched.engine.executor as executor_mod
+
+    meter_while_running: list[int] = []
+
+    def spender(action, ctx):
+        # Exactly what a backgrounded `llm` does: the handler books through add_usage from
+        # inside the thread, knowing nothing about being backgrounded.
+        ctx.add_usage({"in": 700, "out": 300})
+        time.sleep(0.3)
+        return {"kind": "util", "name": action.get("name"), "exit": 0, "stdout": "spent",
+                "stderr": ""}
+
+    def watcher(action, ctx):
+        # Each watcher turn takes longer than the backgrounded call, so the run cannot finish
+        # before the call lands. Without that, every scripted turn completes inside the
+        # sleep, nothing is ever collected, and the spend books in `settle` as `unread` —
+        # which is correct behaviour for a run that ends too fast, and says nothing about
+        # whether COLLECTION books. (Measured: four scripted turns in under 0.3 s.)
+        time.sleep(0.25)
+        meter_while_running.append(int(ctx.meter()["tokens"]))
+        return {"kind": "util", "name": action.get("name"), "exit": 0, "stdout": "watched",
+                "stderr": ""}
+
+    def dispatch(action, ctx):
+        return (spender if action.get("args") else watcher)(action, ctx)
+
+    monkeypatch.setitem(executor_mod.DISPATCH, "util", dispatch)
+    d = make_routine(slug="bgbook")
+    scripted([
+        {**util("websearch", args=["pay"], say="Backgrounding a spending call."),
+         "background": True},
+        util("list", say="Looking at the meter while it runs."),
+        util("list", say="Looking again, while it still runs."),
+        util("list", say="Looking after it has landed."),
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+
+    # DELTAS, not absolute readings: the run's own turns are model calls and spend tokens too,
+    # so the meter is never at zero (measured: the harness alone moves it ~15 per turn). The
+    # claim is that the 1000 appears at ONE boundary and not before it.
+    assert len(meter_while_running) == 3, meter_while_running
+    first, second, third = meter_while_running
+    assert second - first < 1000, (
+        "the background call's tokens reached the meter MID-FLIGHT — they must be parked until "
+        f"collection, or a turn's budget check depends on thread timing: {meter_while_running}")
+    assert third - second >= 1000, (
+        "the background call's 1000 tokens never booked across the boundary that collected it "
+        f"— spend no budget ever sees is worse than spend booked late: {meter_while_running}")
+
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    booked = [e["payload"]["usage_booked"] for e in events if e["type"] == "observation"
+              and e["payload"].get("usage_booked")]
+    assert booked == [{"in": 700, "out": 300}], (
+        f"the booked spend must be recorded beside the call that caused it, once: {booked}")
+
+
+def test_an_abandoned_background_calls_spend_still_books(make_routine, scripted, monkeypatch):
+    """The tokens were spent at the provider whether or not this run ever read the answer.
+    Charging only the calls that LANDED would make "background it and finish" the cheapest way
+    to spend money the budget never sees."""
+    import rsched.engine.executor as executor_mod
+
+    def spend_then_hang(action, ctx):
+        ctx.add_usage({"in": 500, "out": 100})
+        time.sleep(30)          # still running when the run finishes
+        return {"kind": "util", "name": action.get("name"), "exit": 0, "stdout": "late",
+                "stderr": ""}
+
+    monkeypatch.setitem(executor_mod.DISPATCH, "util", spend_then_hang)
+    d = make_routine(slug="bgabandon")
+    scripted([
+        {**util("websearch", args=["x"], say="Backgrounding."), "background": True},
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    abandoned = [e["payload"] for e in events if e["type"] == "observation"
+                 and e["payload"].get("abandoned")]
+    assert abandoned, "the still-running call was not recorded as abandoned at all"
+    assert abandoned[0].get("usage_booked") == {"in": 500, "out": 100}, (
+        "an abandoned background call's already-spent tokens were never booked: "
+        f"{abandoned[0]}")
+
+
+def test_a_background_calls_wall_clock_is_the_runs_own_wall_clock(make_routine, scripted,
+                                                                  monkeypatch):
+    """D167's second half: "count a background call's wall-clock against the run's wall-clock
+    budget, so twenty parallel fetches cannot outrun a 240-minute ceiling". The run's clock is
+    REAL elapsed time (`meter()["wall_clock"]` = elapsed_s/60), so a background call cannot buy
+    extra clock — it is not bookkeeping but a property, and this pins it: time passing inside a
+    background call shows up in the meter the next turn reads."""
+    import rsched.engine.executor as executor_mod
+
+    clocks: list[float] = []
+
+    def dispatch(action, ctx):
+        if action.get("args"):
+            time.sleep(0.6)
+        else:
+            clocks.append(float(ctx.meter()["wall_clock"]))
+        return {"kind": "util", "name": action.get("name"), "exit": 0, "stdout": "ok",
+                "stderr": ""}
+
+    monkeypatch.setitem(executor_mod.DISPATCH, "util", dispatch)
+    d = make_routine(slug="bgclock")
+    scripted([
+        util("list", say="Clock at the start."),
+        {**util("websearch", args=["slow"], say="Backgrounding a slow call."),
+         "background": True},
+        util("list", say="Clock after it landed."),
+        finish(summary="done" + " ." * 20),
+    ])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    assert len(clocks) == 2, clocks
+    assert clocks[1] > clocks[0], (
+        "wall clock did not advance across a background call — the run's clock must be real "
+        f"elapsed time, or parallel fetches outrun the ceiling: {clocks}")
+
+
+def test_every_add_usage_in_the_engine_goes_through_the_one_booking_point():
+    """The structural guard, and the reason this fix is one edit rather than six. A backgrounded
+    `llm` reaches `add_usage` at five sites (two in llmaction, three in refusal) and a `decide`
+    at one; a per-handler deferral would be six edits that the NEXT handler to book forgets. So
+    `RunContext.add_usage` is the single place that decides parked-or-booked, and nothing may
+    fold into `ctx.usage` around it."""
+    import pathlib
+
+    import rsched.engine.run_context as rc_mod
+
+    # What is forbidden is folding into the RUN's usage from outside `add_usage` — not folding
+    # at all: `endpoints/completion.py` and `engine/history.py` legitimately fold into their
+    # OWN local totals (a per-completion sum, a replayed-leg total), which no budget reads and
+    # no background thread touches. An earlier version of this guard flagged those three lines
+    # and said nothing true; the claim is about the destination, so it names the destination.
+    engine = pathlib.Path(rc_mod.__file__).parent
+    offenders = []
+    for path in sorted([*engine.glob("*.py"), *engine.parent.glob("endpoints/*.py")]):
+        if path.name == "run_context.py":
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "fold_usage(" in line and (".usage" in line or "ctx.usage" in line):
+                offenders.append(f"{path.name}:{i}: {line.strip()}")
+    assert not offenders, (
+        "something folds into a run's usage outside RunContext.add_usage — background spend "
+        f"would bypass the parking that D167 requires: {offenders}")
+    # And the positive half: the one booking point really does consult the parking key, so a
+    # future edit cannot keep the name and drop the deferral.
+    import inspect
+
+    src = inspect.getsource(rc_mod.RunContext.add_usage)
+    assert "background_parking_key" in src, (
+        "RunContext.add_usage no longer asks whether it is on a background thread — every "
+        "backgrounded call's spend is folding mid-turn again (D167)")
 
 
 def test_every_kind_route_owns_is_gated_before_it_may_be_backgrounded():

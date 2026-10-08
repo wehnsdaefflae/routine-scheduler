@@ -51,6 +51,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..endpoints import instrument
+from .run_context import BACKGROUND_THREAD_PREFIX as THREAD_PREFIX
 
 #: The purpose tag an abandoned background call's in-flight model calls are closed under.
 BACKGROUND_PURPOSE = "background action"
@@ -197,7 +198,11 @@ def start(loop, action: dict, ctx) -> dict:
                          "in the background. Do not repeat the identical action; work around "
                          "it, and report it if the task depends on it."}
 
-    pending.thread = threading.Thread(target=work, name=f"background-{handle}", daemon=True)
+    # The NAME is load-bearing, not a label: `run_context.background_parking_key` reads it to
+    # decide that this thread's model spend must be PARKED rather than booked mid-flight
+    # (D167), and `_book_usage` reconstructs the same key from the handle. One constant, so a
+    # rename cannot quietly turn every background booking back into a racing mid-turn fold.
+    pending.thread = threading.Thread(target=work, name=f"{THREAD_PREFIX}{handle}", daemon=True)
     _pendings(loop).append(pending)
     pending.thread.start()
     # NO transcript event here. This observation is RETURNED, and the loop's `_observe` is the
@@ -230,6 +235,7 @@ def collect(loop) -> None:
     ctx = loop.ctx
     for pending in landed:
         pending.thread.join(timeout=0)
+        spent = _book_usage(ctx, pending)
         obs: dict[str, Any] = dict(pending.result or {})
         # `ctx.turn + 1`, not `ctx.turn`: a boundary runs BEFORE the turn it opens is counted,
         # so stamping the current value records the result as arriving on the turn that STARTED
@@ -237,6 +243,7 @@ def collect(loop) -> None:
         # named here is the turn that actually reads the message appended just below.
         ctx.transcript.event("observation", {
             **_recordable(obs), "background": True, "handle": pending.handle,
+            **({"usage_booked": spent} if spent else {}),
             "started_turn": pending.turn}, turn=ctx.turn + 1)
         loop.messages.append({"role": "user", "content":
             f"BACKGROUND RESULT — `{pending.handle}` ({pending.kind}: {pending.brief}), "
@@ -269,9 +276,11 @@ def settle(loop) -> str:
     abandoned = [p for p in pendings if not p.done]
     loop._background = []
     for pending in [p for p in pendings if p.done]:
+        spent = _book_usage(loop.ctx, pending)
         loop.ctx.transcript.event("observation", {
             **_recordable(dict(pending.result or {})), "background": True,
             "handle": pending.handle, "started_turn": pending.turn, "unread": True,
+            **({"usage_booked": spent} if spent else {}),
             "note": "landed after the run's last turn — recorded here, never read by the run"},
             turn=loop.ctx.turn)
     if not abandoned:
@@ -280,13 +289,41 @@ def settle(loop) -> str:
         purpose=BACKGROUND_PURPOSE,
         error="the run ended before the background action finished")
     for pending in abandoned:
+        # Its spend books even though its RESULT is lost: the tokens were spent at the provider
+        # whether or not this run ever read the answer, and charging only the calls that landed
+        # would make "background it and finish" the cheapest way to spend money the budget
+        # never sees. A thread killed mid-call has parked nothing yet, so this is often empty.
+        spent = _book_usage(loop.ctx, pending)
         loop.ctx.transcript.event("observation", {
             "kind": pending.kind, "background": True, "handle": pending.handle,
             "started_turn": pending.turn, "abandoned": True,
+            **({"usage_booked": spent} if spent else {}),
             "llm_calls_abandoned": closed,
             "note": "the run ended before this background action finished; its result is lost "
                     "and nothing in the run read it"}, turn=loop.ctx.turn)
     return _brief_list(abandoned)
+
+
+def _book_usage(ctx, pending: Pending) -> dict:
+    """Book what this background call PARKED, at the moment its result is collected (D167).
+
+    The decision's words are "book tokens on collection", and the reason is that a background
+    thread folding into `ctx.usage` mid-turn makes the run's own budget check depend on thread
+    timing: the number a turn is judged against would differ by milliseconds. Parking moves the
+    booking to the boundary, where the result lands anyway — so the spend and the observation
+    that caused it arrive together, and a reader of the transcript can tell which call cost what.
+
+    Booked for an ABANDONED call too (`settle`), and that is not an oversight: the tokens were
+    spent at the provider whether or not this run ever read the answer. Charging only the calls
+    that landed would make a run that backgrounds and finishes the cheapest way to spend money
+    the budget never sees.
+
+    Returns the reading it booked, so the caller can record it beside the call.
+    """
+    spent = ctx.take_deferred_usage(f"{THREAD_PREFIX}{pending.handle}")
+    if spent:
+        ctx.add_usage(spent)
+    return spent
 
 
 def _brief_list(pendings: list[Pending]) -> str:

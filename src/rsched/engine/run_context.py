@@ -30,6 +30,24 @@ if TYPE_CHECKING:
 _UNSET: Any = object()
 
 
+#: The prefix `engine/background.py` names its threads with (`background-<handle>`). Read here
+#: rather than imported, deliberately: `add_usage` is on the hot path of every model call and
+#: must not pull a module that imports the executor, and a NAME is all the two sides need to
+#: agree on. A test pins the two together so renaming one cannot silently unpark every booking.
+BACKGROUND_THREAD_PREFIX = "background-"
+
+
+def background_parking_key() -> str | None:
+    """The key a BACKGROUND thread's spend parks under, or None on any other thread.
+
+    D167: a backgrounded call's tokens book on collection, not mid-flight. The caller of
+    `add_usage` is the handler, which knows nothing about being backgrounded — so the one thing
+    that can tell is the thread it is running on, named by `background.start`.
+    """
+    name = threading.current_thread().name
+    return name if name.startswith(BACKGROUND_THREAD_PREFIX) else None
+
+
 def _never_aborted() -> bool:
     """`RunContext.aborted` until a loop installs its own: a context no loop drives (a test,
     a direct dispatch) is never stopping.
@@ -146,6 +164,21 @@ class RunContext:
     mounted_shares: set[str] = field(default_factory=set)
     unavailable_shares: dict[str, str] = field(default_factory=dict)
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
+    # D118 phase 4 / D167: "book tokens ON COLLECTION". A BACKGROUNDED action runs in a thread
+    # (engine/background.py) and its handler books through `add_usage` like any other —
+    # `do_llm` alone reaches it at five sites (two of its own, three in refusal.py) and
+    # `do_decide` at one. Booking from the thread is wrong twice over: the fold is a
+    # read-modify-write over a shared dict, so two threads folding at once lose a reading; and
+    # the spend arrives at an arbitrary moment INSIDE a turn, so the budget check that would
+    # have stopped the run sees a number that depends on thread timing rather than on what the
+    # run has read. So a background thread's spend is PARKED here and booked by
+    # `background.collect` at the turn boundary, where everything else about that call lands.
+    # Keyed by thread so two background calls cannot overwrite each other's parked reading.
+    _deferred_usage: dict = field(default_factory=dict)
+    # Guards `usage` itself: the loop's own booking still happens on the main thread while a
+    # background thread may be parking, and both reach this object.
+    _usage_lock: threading.Lock = field(default_factory=threading.Lock, repr=False,
+                                        compare=False)
     # Spend recorded by EARLIER legs of this run (set on resume from the transcript).
     # Budgets deliberately ignore it — a resume gets a fresh window — but reporting must
     # not: status.json and the finish event carry usage_total() = base + this window.
@@ -307,7 +340,29 @@ class RunContext:
         self._suspended_s += seconds
 
     def add_usage(self, usage: dict) -> None:
-        fold_usage(self.usage, usage)
+        """Book one usage reading against this run — the single writer of `usage`.
+
+        D167 decided background spend books ON COLLECTION, and this is the one place that can
+        enforce it: a backgrounded `llm` reaches `add_usage` at five sites and a `decide` at
+        one, so a per-handler fix would be six edits that the next handler to book forgets.
+        Called from a background thread, the reading is PARKED under that thread's name and
+        `background.collect` books it at the turn boundary. Everything else folds straight in,
+        under the lock, because the main thread may be folding while a thread is parking.
+        """
+        if (parked := background_parking_key()) is not None:
+            with self._usage_lock:
+                fold_usage(self._deferred_usage.setdefault(parked, {}), usage)
+            return
+        with self._usage_lock:
+            fold_usage(self.usage, usage)
+
+    def take_deferred_usage(self, key: str) -> dict:
+        """The spend one background call parked, removed from the parking area — for the
+        collector to book. Empty for a call that spent no tokens (a `util`, a `read_file`),
+        which is the common case and books nothing.
+        """
+        with self._usage_lock:
+            return self._deferred_usage.pop(key, {})
 
     def usage_total(self) -> dict:
         """This window's usage plus earlier legs' (usage_base) — what reporting shows.
