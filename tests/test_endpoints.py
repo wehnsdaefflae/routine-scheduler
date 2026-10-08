@@ -612,6 +612,58 @@ def test_anthropic_one_shot_claims_placement_on_its_smallest_block(monkeypatch, 
     assert markers() == 3
 
 
+def test_a_one_shot_claim_covers_only_a_short_slice_of_a_long_text():
+    """With no tool to mark, the claim rides a SLICE of the first text — never the whole of a
+    long system prompt or single-message prompt, which would write exactly what the claim keeps
+    out. The cut falls at a line break, else a space, else the slice's end, and the blocks join
+    back into the original text byte for byte."""
+    from rsched.endpoints.anthropic_api import (
+        CLAIM_SLICE_CHARS,
+        _claim_placement,
+        _claimed_text,
+        _strip_cache_control,
+    )
+
+    def joined(blocks):
+        return "".join(b["text"] for b in blocks)
+
+    def marked(blocks):
+        return [b for b in blocks if "cache_control" in b]
+
+    lines = "".join(f"line {i}: " + "w " * 30 + "\n" for i in range(200))   # ~13k chars
+    for text in (lines,                                      # cut after a line break
+                 "word " * 3_000,                            # no line break: after a space
+                 "x" * 5_000):                               # no whitespace: at the slice end
+        blocks = _claimed_text(text)
+        assert joined(blocks) == text
+        assert len(blocks) == 2 and marked(blocks) == blocks[:1]
+        assert 0 < len(blocks[0]["text"]) <= CLAIM_SLICE_CHARS
+    assert _claimed_text(lines)[0]["text"].endswith("\n")
+    # short already: one marked block; a cut that would leave a blank half: one marked block
+    assert _claimed_text("brief") == [{"type": "text", "text": "brief",
+                                       "cache_control": {"type": "ephemeral"}}]
+    assert len(_claimed_text("y" * CLAIM_SLICE_CHARS + "   ")) == 1
+
+    # a single-message prompt and a long system prompt are both sliced, never marked whole
+    one = _claim_placement({"messages": [{"role": "user", "content": lines}]})
+    blocks = one["messages"][0]["content"]
+    assert joined(blocks) == lines and len(marked(blocks)) == 1
+    sys = _claim_placement({"system": lines, "messages": [{"role": "user", "content": "go"}]})
+    assert joined(sys["system"]) == lines and len(marked(sys["system"])) == 1
+    assert sys["messages"][0]["content"] == "go"
+    # …and a degraded retry rejoins the system prompt exactly, adding nothing at the cut
+    assert _strip_cache_control(sys)["system"] == lines
+
+    # a media message: its leading text is sliced and the files follow untouched; one that
+    # OPENS with a file has no text to slice, so the file carries the claim
+    image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "x"}}
+    media = _claim_placement({"messages": [{"role": "user", "content": [
+        {"type": "text", "text": lines}, image]}]})["messages"][0]["content"]
+    assert joined(media[:2]) == lines and media[2] == image and len(marked(media)) == 1
+    bare = _claim_placement({"messages": [{"role": "user", "content": [image]}]})
+    assert bare["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+
+
 def test_anthropic_cache_usage_captured(monkeypatch):
     """input_tokens excludes cache traffic on this API — the adapter surfaces it as
     cached_in/cache_write, never folded into "in" (the cross-adapter invariant)."""

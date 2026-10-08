@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.393.2] — 2026-10-08
+
+### Fixed
+- **A one-shot call with no tool definition is no longer written to the cache either.** 0.393.1
+  put its claim marker on the system prompt or the first message WHOLE, so a long system prompt
+  or a single-message prompt was still written in full. The marker now rides a leading slice of
+  at most 1,000 chars (`anthropic_api._claimed_text`), cut after a line break where one falls so
+  the blocks join back into exactly the original text, and a degraded retry rejoins a sliced
+  system prompt with nothing in between. Measured live through the proxy on ~24.4k-token calls:
+  a single-message prompt 24,233 tokens written under 0.393.1, 0 now; a long system prompt
+  24,236, 0 now. A message that opens with an image has no text to slice and still marks the
+  image.
+
 ## [0.393.1] — 2026-10-08
 
 ### Fixed

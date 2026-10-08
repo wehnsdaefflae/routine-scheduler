@@ -283,13 +283,15 @@ Who caches how:
 - **One-shot calls** (an `llm` action, an archival digest, the refusal classifier) are not
   written to the cache: their prefix is never sent again, so the write would buy a read that never
   comes. On the OpenAI-compatible wire that means no marker. On the `anthropic` wire it means ONE
-  marker on the first, smallest block — the tool definition, else the system prompt, else the
-  first message (`anthropic_api._claim_placement`) — because the subscription proxy every
+  marker on the smallest prefix the request has — the tool definition, else a leading slice of at
+  most 1,000 chars cut from the system prompt or the first message, at a line break where one
+  falls (`anthropic_api._claim_placement`) — because the subscription proxy every
   `anthropic` endpoint here runs through (CLIProxyAPI v7.2.156) places its OWN breakpoints on the
   tools, the system prompt and the last message of any request that carries none, with no setting
   to stop it. Before the claim, 100% of the archival calls' input (2.94M tokens over four calls)
   and 95% of 190 `llm` subcalls' was billed as cache writes in the week to 2026-10-08. A ~150-token
-  tool definition is below the minimum prefix the API caches, so the claim itself writes nothing
+  tool definition, like a 1,000-char slice, is below the minimum prefix the API caches, so the
+  claim itself writes nothing
   there.
 
 **The 5-minute TTL is the right default — measured twice, do not raise it.** A cache entry

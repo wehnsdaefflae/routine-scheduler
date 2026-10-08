@@ -308,7 +308,8 @@ Two kinds:
   call is not written: `cacheable` is derived from the task kind at the one seam every completion
   passes through (`instrument.CACHEABLE_KINDS` = {"turn"}), because a prefix that is never sent again
   would pay a 1.25x write for a read that never comes (measured: 0.3% read share on `llm_action`).
-  It carries ONE marker, on its first and smallest block (`anthropic_api._claim_placement`), not
+  It carries ONE marker, on the smallest prefix it has — the tool definition, else a 1,000-char
+  leading slice of its first text (`anthropic_api._claim_placement`), not
   none: the subscription proxy (CLIProxyAPI) adds its own breakpoints to any request carrying no
   marker, which had every archival call's whole input — 2.94M tokens across four — billed as cache
   writes.
