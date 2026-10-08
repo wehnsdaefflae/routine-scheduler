@@ -2,7 +2,9 @@
 
 A conversation is routine-shaped — same `routine.yaml`, same model roles, same connection
 and machine bindings, same budgets and folder grants — so its PATCH and the routine PATCH
-were two copies of the same five checks, and copies drift. They already had: the
+were two copies of the same five checks, and copies drift. (A model trial's check is
+routine-only — a conversation has no fires to try a model on — and lives here beside the
+model check it repeats.) They already had: the
 conversation path refused a model whose own `max_tokens` fills its context window
 (R112/R128 — the next completion dies with `context_length_exceeded`) and the routine path
 did not, so a routine could be bound to a model that cannot run a turn and the failure
@@ -70,6 +72,25 @@ def validate_models(server, mapping: dict | None) -> dict:
             # first completion would die on `context_length_exceeded`. Refuse at the click.
             raise HTTPException(400, problem)
     return dict(mapping or {})
+
+
+def validate_trial(server, value: dict) -> dict:
+    """A MODEL TRIAL (rsched/trials.py), shaped already by `TrialConfig` at the model edge:
+    every model it names must be in the catalog and able to run a turn — the two checks a
+    `models:` binding meets, because for the trial's runs it IS one. A trial the catalog cannot
+    serve would be ignored at every fire, so it is refused here instead. Returns what the file
+    holds.
+    """
+    from ..config.trialconf import TrialConfig
+    from ..trials import catalog_problem
+
+    trial = TrialConfig.model_validate(value)
+    if problem := catalog_problem(server, trial):
+        raise HTTPException(400, f"{problem} — a trial names models Settings → Models lists")
+    for name in trial.models.values():
+        if window := model_window_problem(server, name):
+            raise HTTPException(400, window)
+    return trial.model_dump()
 
 
 def decision_picker(server) -> dict:

@@ -26,7 +26,40 @@ def resolve(ctx, cpatch: dict | None) -> tuple[str, str]:
     """
     conversation = runkind.lands_in_conversation(ctx)
     target, error = patch_target(ctx, cpatch, conversation=conversation)
-    return target, error or patch_shape(cpatch, target, conversation=conversation)
+    return target, (error or patch_shape(cpatch, target, conversation=conversation)
+                    or trial_value(ctx.server, cpatch))
+
+
+#: What a model trial looks like, said in the refusal so the next filing gets it right.
+TRIAL_SHAPE = ('{"trial": {"id": "t-<yyyymmdd>-<model>", "models": {"main": "<catalog model '
+               'name>"}, "runs": <1-20>, "reason": "<what the trial should show>"}}')
+
+
+def trial_value(server, patch: dict | None) -> str:
+    """Refuse a `trial` VALUE the apply would refuse — the one key whose value is judged at
+    filing, because a trial is a proposal config-optimizer files for routines it does not
+    run, and a malformed one or a model the catalog lacks is a 422/400 on the operator's click.
+    The shape is `config/trialconf.TrialConfig`, the catalog is `rsched.trials`; the window fit
+    the PATCH also checks lives in the web layer and is left to the click. `null` (clear the
+    trial) always passes.
+    """
+    if not patch or patch.get("trial") is None:
+        return ""
+    from pydantic import ValidationError
+
+    from ..config.trialconf import TrialConfig
+    from ..trials import catalog_problem
+
+    try:
+        trial = TrialConfig.model_validate(patch["trial"])
+    except ValidationError as exc:
+        why = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'trial'}: "
+                        f"{e['msg'].removeprefix('Value error, ')}" for e in exc.errors())
+        return (f"config_patch trial: {why}. A trial is {TRIAL_SHAPE}; "
+                '{"trial": null} clears one.')
+    if problem := catalog_problem(server, trial):
+        return f"config_patch {problem}. `list_models` names the catalog."
+    return ""
 
 
 def patch_shape(patch: dict | None, target: str = "", *, conversation: bool = False) -> str:

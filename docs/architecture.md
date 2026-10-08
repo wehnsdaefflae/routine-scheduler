@@ -337,7 +337,9 @@ loop — and every spawned child's default), `tool_call` (the `llm` action), opt
 `uncensored` — plus the two DECISION roles `decision` / `decision_media`, which name a decision
 model (below) and fall back to the instance's decision defaults instead. A chat role left unset falls back to the server's single `system_model` (also a catalog
 name) — the ONE model for pre-routine machine work (the clarify flow + workflow
-generation/suggestion). A single `llm`/`spawn`/`subtask` call may override its model per call
+generation/suggestion). A MODEL TRIAL (`trial:`, `rsched/trials.py`) replaces chat roles for the
+routine's next N fires without touching `models:` — the daemon names the trial's models to the
+engine per run, exactly as `run-once --model` does by hand. A single `llm`/`spawn`/`subtask` call may override its model per call
 (`model:` a role — main|tool_call|uncensored — or a CATALOG model name; D81, extended by
 the 2026-08-22 order retiring the subroutine role. The `list_models` action shows the
 catalog; an unconfigured `uncensored` or an unknown name is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
@@ -480,7 +482,10 @@ and the capabilities digest's catalog listing):
   a `tz` left out is the server's zone, `config.default_tz` — the zone the console edits in; a
   fixed time the clock repeats when daylight saving ends fires once, `rsched/firetimes.py`),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
-  main / tool_call / uncensored), `connections:` (provider → account label — OAuth
+  main / tool_call / uncensored), `trial:` (a MODEL TRIAL — `{id, models, runs, reason}`: the
+  next `runs` fires run on these catalog models instead, counted from the usage stream and
+  stopping by itself; the field stays as history until the next accepted change — see
+  docs/run-analytics.md "Model trials", `rsched/trials.py`), `connections:` (provider → account label — OAuth
   connection bindings, a resource like models; see OAuth connections above),
   `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: `actions`,
   `utils`, the approval dials `confirm` / `rule_confirm` / `remind_confirm` and the levels `runs` /
@@ -1211,7 +1216,9 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   inheritance** (F394): the child is a fresh interpreter that gets none of the parent's
   configuration, so `runner_state.engine_cmd` passes `--config <the config the daemon loaded>` and
   `--homes <registry.homes_fingerprint>`, and `engine-run` — which defaults NEITHER — refuses the
-  run when the named config resolves to different homes. Without that, a caller holding a config
+  run when the named config resolves to different homes. A MODEL TRIAL's run is told its models
+  the same way, `--model role=name`, read from the run dir's own `trial.json` on every leg
+  (`rsched/trials.py` arms it at the fire, so a resume keeps the trial its run started under). Without that, a caller holding a config
   it built rather than loaded (every test) spawned an engine that read `~/.config/routine-scheduler/config.yaml`
   and executed against the live instance's homes, endpoints and money. A spawner whose config was
   never loaded from a file is refused in `engine_cmd`, before a process exists. **`rsched/registry.py`** (a shared read-model,
@@ -1380,6 +1387,10 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   test file); `engine/config_bridge.patch_shape` refuses, on the turn the ask is filed,
   any key outside the surface the apply will PATCH — a conversation's own proposal (the record
   lands in a conversation) against `ConversationPatch`, everything else against `RoutinePatch`.
+  One VALUE is judged there too: a `trial` (`config_bridge.trial_value` — its shape and its
+  models' catalog membership), because a model trial is proposed for routines the proposer does
+  not run, and its refusal teaches the shape. `"trial": null` clears one: `patch_routine` keeps
+  that one explicit null, which its `exclude_none` dump would otherwise read as "not sent".
   Both PATCH handlers call `routines_common.signal_config_change`, which writes a
   `config_change` signal into the live run's `control.json` (the seam that already exists for
   reaching a running run); `engine/switches.apply_config_change` adopts the live half at the next

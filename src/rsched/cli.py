@@ -89,7 +89,8 @@ def cmd_run_once(args) -> int:
 
 
 def cmd_engine_run(args) -> int:
-    """Internal: spawned by the daemon. Same as run-once but quiet, with a fixed run_ts.
+    """Internal: spawned by the daemon. Same as run-once but quiet, with a fixed run_ts — and
+    `--model` overrides only when the daemon names a model trial's (rsched/trials.py).
 
     `--config` and `--homes` are REQUIRED and have NO default. This process inherits nothing
     from its spawner, so a default would mean silently adopting
@@ -132,6 +133,7 @@ def cmd_engine_run(args) -> int:
     signal.signal(signal.SIGTERM, lambda *_: request_abort())
     try:
         status, _ = run_routine(routine_dir, server, run_ts=args.run_ts,
+                                model_overrides=_parse_model_overrides(args.model),
                                 resume_from=args.run_ts if getattr(args, "resume", False) else None)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -152,10 +154,15 @@ def cmd_validate(args) -> int:
                if server.routines_home.is_dir() else [])
     from .readmodels.remedies import surface_lines
     from .readmodels.surface import routine_surface
+    from .trials import ignored_problem
     from .workflows.recipelint import recipe_notes
 
     for d in targets:
         cfg, problems = load_routine(d)
+        # A model trial naming a model the catalog lacks is ignored at every fire — the loader
+        # cannot see the catalog, so it is said here (rsched/trials.py)
+        if cfg and (trial_problem := ignored_problem(server, cfg.trial)):
+            problems.append(trial_problem)
         # Setup COHERENCE is a second, independent question from "is the file well-formed":
         # a routine can parse perfectly and still hold a rule that tells it to publish into a
         # directory it cannot write. Only a blocking row fails the command — an interrupt or a
@@ -338,6 +345,10 @@ def main(argv: list[str] | None = None) -> int:
                         "that resolves to different homes is refused")
     e.add_argument("--resume", action="store_true",
                    help="rehydrate the run's transcript and continue it")
+    e.add_argument("--model", action="append",
+                   help="a MODEL TRIAL's role override, kind=name (a catalog model; "
+                        "repeatable) — the daemon names a trial run's models here "
+                        "(rsched/trials.py)")
     e.set_defaults(fn=cmd_engine_run)
 
     v = sub.add_parser("validate", help="validate server config and routine.yaml files")

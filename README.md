@@ -54,7 +54,10 @@ Stats tab.
   heuristic flags a change whose runs got clearly worse — and one click rolls the recipe
   back (the improver never auto-reverts). Every other change — a model, its effort, a rule's
   text, an engine release — is found from the runs' own fingerprints and judged on
-  correctness, completeness and effectiveness on the Changes pages.
+  correctness, completeness and effectiveness on the Changes pages. A routine's MODEL is
+  tested the same way: a proposed **model trial** you accept with one click runs it on another
+  catalog model for its next few fires, every run records it, and it stops by itself
+  ([docs/run-analytics.md](docs/run-analytics.md#model-trials)).
 - **As a whole**: two more meta routines use the exact same building blocks —
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
   is lens-scoped and test-gated, with bigger decisions on the **Messages** page) and `token-lab`
@@ -244,7 +247,8 @@ leaving a half-written file behind. See `docs/usenet.md`.
 `uv run rsched --help` — `daemon` (what the service/container runs: scheduler + web in one
 process), `run-once` (`--model kind=name` overrides a model role with a catalog model),
 `engine-run` (internal — the daemon spawns it with `--config` and `--homes`, both
-required, so the child can never adopt a config nobody pointed it at), `validate`,
+required, so the child can never adopt a config nobody pointed it at, plus `--model` for a model
+trial's run), `validate`,
 `lint`, `suggest`, `scaffold`, `abort`.
 
 ## Development

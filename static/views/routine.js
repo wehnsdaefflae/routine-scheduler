@@ -13,6 +13,7 @@ import { landOn } from "/static/components/settings-field.js";
 import { mountMessages } from "/static/views/routine-messages.js";
 import { mountTasks } from "/static/components/tasks-panel.js";
 import { routineHero } from "/static/views/routine-overview.js";
+import { trialChip } from "/static/components/trialchip.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { devLine } from "/static/components/dev-line.js";
 import { summaryLine } from "/static/md.js";
@@ -32,10 +33,13 @@ export async function render(view, slug, query = {}) {
   const llmReady = st.llm_ready !== false;
 
   // Three reasons a routine is not running, and they are not interchangeable: it is between
-  // runs, it reached its FINISH LINE and is done, or you switched it off.
-  const runChip = (x) => (x.active_state ? chip(x.active_state, x.active_state)
+  // runs, it reached its FINISH LINE and is done, or you switched it off. Beside it, a MODEL
+  // TRIAL the routine is on (components/trialchip.js) — both repainted together on every head
+  // refresh, so a run that finishes moves the trial's count with the run chip.
+  const stateChip = (x) => (x.active_state ? chip(x.active_state, x.active_state)
     : x.retired ? chip("finished", "finished")
     : x.enabled ? chip("idle", "idle") : chip("disabled", "disabled"));
+  const runChip = (x) => el("span", { class: "row head-chips" }, stateChip(x), trialChip(x.trial, slug));
   const chipHost = el("span", {}, runChip(d));
   const titleH1 = el("h1", {}, d.name || slug);
   // Run now takes an optional BRIEF: one line the run started by hand answers for, instead of

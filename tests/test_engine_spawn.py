@@ -45,6 +45,16 @@ def test_engine_cmd_names_the_config_and_the_homes(tmp_path):
     assert str(tmp_path / "routines") in cmd[cmd.index("--homes") + 1]
     assert "--resume" not in cmd
     assert "--resume" in engine_cmd(server, "r", "20260827-190000", resume=True)
+    assert "--model" not in cmd
+
+
+def test_engine_cmd_names_a_trials_models(tmp_path):
+    """A model trial's overrides ride the command line like the config does — the child is
+    told, never left to discover them (rsched/trials.py)."""
+    _, server = _write_config(tmp_path)
+    cmd = engine_cmd(server, "r", "20261008-120000", resume=True,
+                     models={"tool_call": "fast", "main": "sonnet-high"})
+    assert cmd[-4:] == ["--model", "main=sonnet-high", "--model", "tool_call=fast"]
 
 
 def test_engine_cmd_refuses_a_config_that_was_never_loaded_from_a_file(tmp_path):
@@ -76,7 +86,7 @@ async def test_runner_hands_its_own_server_to_engine_cmd(tmp_path, make_routine,
     _, server = _write_config(tmp_path)
     seen: list = []
 
-    def cmd(passed_server, target, run_ts, *, resume=False):
+    def cmd(passed_server, target, run_ts, *, resume=False, models=None):
         seen.append((passed_server, target))
         return ["bash", "-c", "true"]
 
@@ -134,6 +144,7 @@ def test_engine_run_accepts_the_matching_pair(tmp_path, monkeypatch, make_routin
 
     def fake_run_routine(routine_dir, srv, **kw):
         seen["dir"], seen["home"] = routine_dir, srv.routines_home
+        seen["models"] = kw.get("model_overrides")
         return "ok", None
 
     monkeypatch.setattr("rsched.engine.runtime.run_routine", fake_run_routine)
@@ -142,3 +153,24 @@ def test_engine_run_accepts_the_matching_pair(tmp_path, monkeypatch, make_routin
                  "--config", str(server.source), "--homes", homes_fingerprint(server)])
     assert code == 0
     assert seen["dir"] == d and seen["home"] == server.routines_home
+    assert seen["models"] == {}
+
+
+def test_engine_run_hands_a_trials_models_to_the_run(tmp_path, monkeypatch, make_routine):
+    """`--model role=name` from the daemon reaches `run_routine` as its overrides — the
+    engine half of a model trial."""
+    _, server = _write_config(tmp_path, routines_home=str(tmp_path / "routines"))
+    d = make_routine(slug="trialled")
+    seen = {}
+
+    def fake_run_routine(routine_dir, srv, **kw):
+        seen.update(kw)
+        return "ok", None
+
+    monkeypatch.setattr("rsched.engine.runtime.run_routine", fake_run_routine)
+    monkeypatch.setattr("rsched.cli.signal.signal", lambda *a: None)
+    code = main(["engine-run", str(d), "--run-ts", "20261008-120000",
+                 "--config", str(server.source), "--homes", homes_fingerprint(server),
+                 "--model", "main=sonnet-high"])
+    assert code == 0
+    assert seen["model_overrides"] == {"main": "sonnet-high"}

@@ -486,13 +486,16 @@ main { max-width: var(--shell-max); width: 100%; margin: 0 auto; padding: var(--
 .chip.bare::before { display: none; }
 
 /* The LANE a routine sits in (when it fires, with whom) is structure, not a run state: iris,
-   with no state dot, one band of structure beside the run chips. */
+   with no state dot, one band of structure beside the run chips. A MODEL TRIAL the routine is
+   on (components/trialchip.js) is the same kind of fact — a binding the operator chose, for a
+   while — so it wears the same band; a finished one is a link to its results. */
 .lanes-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: var(--s1); }
 .lanes-row .lbl { color: var(--ink-3); }
-.chip.lane-chip { color: var(--iris); border-color: color-mix(in srgb, var(--iris) 42%, transparent); background: var(--iris-dim); }
-.chip.lane-chip::before { display: none; }
-.chip.lane-chip:hover { border-color: var(--iris); text-decoration: none; }
+.chip.lane-chip, .chip.trial { color: var(--iris); border-color: color-mix(in srgb, var(--iris) 42%, transparent); background: var(--iris-dim); }
+.chip.lane-chip::before, .chip.trial::before { display: none; }
+.chip.lane-chip:hover, a.chip.trial:hover { border-color: var(--iris); text-decoration: none; }
 button.chip.lane-chip { cursor: pointer; }
+.row.head-chips { gap: 6px; }   /* the run chip and a trial chip: one cluster */
 
 .tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .tag {
