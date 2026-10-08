@@ -34,12 +34,71 @@ from rsched.web.app import create_app
 GUARDED = ["~/.config/routine-scheduler", "~/.credentials", "~/.ssh"]
 
 
-def test_the_guard_names_the_three_stores_and_anything_over_them():
+def test_the_guard_names_the_stores_and_anything_over_them():
     assert entities.guarded_roots(GUARDED) == GUARDED
     assert entities.guarded_roots(["~/.ssh/config"]) == ["~/.ssh/config"]
     assert entities.guarded_roots(["~"]) == ["~"]          # a grant that CONTAINS one
     assert entities.guarded_roots(["~/routines", "~/git-repos/routine-scheduler"]) == []
     assert entities.guarded_roots(None) == [] and entities.guarded_roots("~/.ssh") == []
+
+
+def test_the_guard_names_credential_files_not_the_config_directory():
+    """D169 (operator, 2026-10-08, answer A). The guard refuses a path that IS a store or
+    CONTAINS one, and it used to name the config DIRECTORY — so it swept in every sibling of
+    the real credential files, `config.yaml` above all. That is the instance's ordinary
+    settings file and holds no credential; the routines whose job is auditing this server's
+    configuration read exactly it, and the guard's own advisory asks them to narrow their
+    grant to it. F635: the advisory then refused the narrower path, so the one wording every
+    door speaks was false about the door it was written for.
+
+    Both directions are the point. Nothing was opened up — the directory is STILL ungrantable,
+    because it contains the credential entries — but a path that holds no credential is now
+    clean on its own, with no prior grant and no allowance.
+    """
+    config_yaml = "~/.config/routine-scheduler/config.yaml"
+    assert entities.guarded_roots([config_yaml]) == []
+    # …while every credential entry in the same directory stays refused, by name
+    for name in entities.CONFIG_DIR_CREDENTIALS:
+        path = f"~/.config/routine-scheduler/{name}"
+        assert entities.guarded_roots([path]) == [path], name
+        # and anything INSIDE one of them: a scoped secrets file, a machine's ssh key
+        assert entities.guarded_roots([f"{path}/x"]) == [f"{path}/x"], name
+    # the directory itself is refused for CONTAINING them, which is what keeps the property
+    assert entities.guarded_roots(["~/.config/routine-scheduler"]) \
+        == ["~/.config/routine-scheduler"]
+    assert entities.guarded_roots(["~/.config"]) == ["~/.config"]
+
+
+def test_the_guarded_list_follows_a_relocated_config_dir(tmp_path, monkeypatch):
+    """`RSCHED_CONFIG` can move the config dir, and then the credential files are THERE, not
+    at the default spelling. The enforcement path resolves them through `paths.config_file()`
+    for that reason — a hardcoded tuple would have guarded a directory this instance does not
+    use and left the live one open.
+    """
+    moved = tmp_path / "elsewhere"
+    moved.mkdir()
+    monkeypatch.setattr("rsched.paths.config_file", lambda: moved / "config.yaml")
+    stores = entities.never_grantable_stores()
+    assert str(moved / "secrets.env") in stores
+    assert entities.guarded_roots([str(moved / "secrets.env")]) == [str(moved / "secrets.env")]
+    # the relocated dir's own config.yaml is clean, like the default one
+    assert entities.guarded_roots([str(moved / "config.yaml")]) == []
+
+
+def test_every_guarded_config_entry_is_a_name_its_owning_module_still_uses():
+    """The narrowing's one new failure mode: a credential file named only as a literal in
+    `entities.CONFIG_DIR_CREDENTIALS` becomes silently GRANTABLE the day its owner renames
+    it. Each entry is therefore checked against the module that actually writes it.
+    """
+    from rsched import secrets
+    from rsched.oauth import store as oauth_store
+    from rsched.web import push
+
+    owned = {secrets.SECRETS_FILE, secrets.SCOPED_DIR, oauth_store.CONNECTIONS_FILE,
+             push._VAPID_FILE, ".mounts"}
+    assert set(entities.CONFIG_DIR_CREDENTIALS) == owned, (
+        "a credential file was renamed or added without updating the guard: "
+        f"{set(entities.CONFIG_DIR_CREDENTIALS) ^ owned}")
 
 
 def test_the_patch_edge_refuses_a_guarded_root_and_says_which(tmp_path, make_routine):

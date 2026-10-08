@@ -148,9 +148,12 @@ def validate_roots(key: str, values: list | None, *, current: list | None = None
 
     - a path that is not ABSOLUTE once `~`/`$VARS` expand — a relative root would resolve
       against the daemon's working directory, which no operator means;
-    - a credential store (SEC-1, `entities.guarded_roots`): the config dir, `~/.credentials`
-      and `~/.ssh` are never grantable, and the never-grantable promise lived only on the
-      runtime ask path until a typed root mounted the instance's credential dir on a routine.
+    - a credential store (SEC-1, `entities.guarded_roots`): the credential FILES in the config
+      dir, `~/.credentials` and `~/.ssh` are never grantable, and the never-grantable promise
+      lived only on the runtime ask path until a typed root mounted the instance's credential
+      dir on a routine. Since D169 the guard names those files rather than the directory, so
+      `config.yaml` — ordinary settings, no credential — is clean on its own and needs no
+      allowance; the directory is still refused for CONTAINING them.
       A store ALREADY in a file is the loader's to report, never dropped (config/routine.py).
       `current` is what the routine holds for this key RIGHT NOW (the two PATCH edges have the
       file in hand): a guarded value already there, or strictly inside one that is, does not widen

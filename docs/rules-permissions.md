@@ -721,8 +721,14 @@ docs (they ride the cascade; they grant nothing).
 - **`runs/` writes** — `fileops._write_gate` on the resolved path, with `_runs_read_gate`
   backstopping the relative form.
 
-The same question applies to the three fs paths that are never grantable at all
-(`entities.NEVER_GRANTABLE`: the instance config dir, `~/.credentials`, `~/.ssh`). They are
+The same question applies to the fs paths that are never grantable at all
+(`entities.NEVER_GRANTABLE`: the credential FILES in the instance config dir — `secrets.env`,
+`secrets.d/`, `connections.json`, the push key, `.mounts/` — plus `~/.credentials` and
+`~/.ssh`). The config dir itself is still refused, because it CONTAINS those entries, but a
+sibling that holds no credential is grantable on its own: `config.yaml` is the instance's
+ordinary settings file, and the guard's advisory asks a routine holding the whole dir to
+narrow its grant to exactly that (D169, 2026-10-08 — naming the directory made the advisory
+refuse the narrower path it asked for). They are
 refused at the runtime ask, refused at every edge where an operator MAKES a grant (the routine
 PATCH, the conversation PATCH and create form — one enforcer, `config_fields.validate_roots`,
 which also refuses a non-absolute root), never carried by a settings PATTERN (creation copies a

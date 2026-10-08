@@ -86,7 +86,12 @@ call, live run included:
   mounts what the run was granted, so a routine granted one of those directories as a folder
   root sees it like any other util root. `entities.NEVER_GRANTABLE` is what makes that grant
   impossible — and it was enforced on ONE path, a run's runtime access request, leaving the
-  operator's own Filesystem-roots panel wide open. It is now refused at the PATCH edge, and a
+  operator's own Filesystem-roots panel wide open. The list names the credential FILES
+  (`secrets.env`, `secrets.d/`, `connections.json`, the push key, `.mounts/`), resolved in the
+  config dir this instance actually loaded, plus `~/.credentials` and `~/.ssh`; the config dir
+  itself stays ungrantable by containing them, while `config.yaml` — ordinary settings, no
+  credential — is grantable on its own, which is what the guard's narrow-it advisory asks for
+  (D169). It is now refused at the PATCH edge, and a
   file that already carries one is REPORTED by the config loader rather than silently stripped:
   two live routines audit and export the server's own configuration as their job, and a root
   that vanished from under their next run would fail them with nothing naming the cause. A

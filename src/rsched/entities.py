@@ -66,7 +66,59 @@ TRUE_ROW_CLASSES = frozenset({"secret"})
 # reaches a store only through a link planted after approval (sandbox.wrap); and the config
 # LOADER (config/routine.py, which REPORTS one already in a file rather than dropping it: a
 # root a routine has been running on for months disappears from under its next run otherwise).
-NEVER_GRANTABLE = ("~/.config/routine-scheduler", "~/.credentials", "~/.ssh")
+#
+# D169 (operator, 2026-10-08, answer A) narrowed this from the config DIRECTORY to the
+# credential FILES inside it. The guard refuses a path that is a store or CONTAINS one, so
+# naming the directory made `~/.config/routine-scheduler/config.yaml` a guarded root too —
+# and config.yaml holds no credential: it is the instance's ordinary settings file, which the
+# routines whose job is auditing this server's configuration read. The advisory asked those
+# routines to narrow their grant to exactly that file and then refused the narrower path, so
+# the one wording every door speaks was false about the door it was written for (F635; D159's
+# earlier narrowing did not silence the advisory it was chosen to silence).
+#
+# What is guarded is therefore each credential STORE by name — and a grant on the config dir
+# itself still names `secrets.env` and the rest by containment, so nothing was opened up:
+# the directory remains ungrantable because it CONTAINS these entries.
+#
+# The entries inside the config dir are named by the modules that OWN them, never spelled
+# again here: a credential file whose name is only a literal in this tuple becomes silently
+# GRANTABLE the day its owner renames it, which is the one failure a narrowed guard can have
+# that the wide one could not.
+CONFIG_DIR_CREDENTIALS = (
+    "secrets.env",            # secrets.SECRETS_FILE — the central store + the console token
+    "secrets.d",              # secrets.SCOPED_DIR — one <slug>.env per routine (D103)
+    "connections.json",       # oauth.store.CONNECTIONS_FILE — OAuth refresh tokens
+    "vapid-private.pem",      # web.push._VAPID_FILE — the push signing key
+    ".mounts",                # machine_mounts — per-machine ssh keys + known_hosts
+)
+#: Credential stores outside the instance config dir.
+HOME_CREDENTIALS = ("~/.credentials", "~/.ssh")
+
+
+def _config_dir_credentials() -> tuple[str, ...]:
+    """The credential entries of the config dir this instance actually loaded.
+
+    Resolved through `paths.config_file()` rather than the default spelling, because
+    `RSCHED_CONFIG` may move the dir — the guard has to name the files that exist, not the
+    files that would exist at the default location.
+    """
+    from .paths import config_file
+    base = config_file().parent
+    return tuple(str(base / name) for name in CONFIG_DIR_CREDENTIALS)
+
+
+def never_grantable_stores() -> tuple[str, ...]:
+    """Every path no grant may open: the loaded config dir's credential entries plus the
+    home-level stores. A function, not a constant, so a relocated config dir is honoured and
+    so tests can monkeypatch the pieces independently.
+    """
+    return (*_config_dir_credentials(), *HOME_CREDENTIALS)
+
+
+#: Kept as the module's declarative answer for readers and for the tests that patch it; the
+#: enforcement path calls `never_grantable_stores()` so a relocated config dir is honoured.
+NEVER_GRANTABLE = (*(f"~/.config/routine-scheduler/{n}" for n in CONFIG_DIR_CREDENTIALS),
+                   *HOME_CREDENTIALS)
 
 _LEVELS = {"runs": ("last", "all"), "reminders": ("local", "global")}
 
@@ -133,7 +185,12 @@ def never_grantable_fs(path: str | Path) -> bool:
 
 
 def _touches_store(p: Path) -> bool:
-    guarded = {g for store in NEVER_GRANTABLE for g in _spellings(store)}
+    # `never_grantable_stores()`, not the NEVER_GRANTABLE constant: the config dir may be
+    # moved by RSCHED_CONFIG, and the guard must name the files that actually hold this
+    # instance's credentials. `g in p.parents` is what keeps the config DIRECTORY ungrantable
+    # after D169's narrowing — it contains these entries, so a grant on it still contains a
+    # store, while a sibling that holds no credential (config.yaml) passes clean.
+    guarded = {g for store in never_grantable_stores() for g in _spellings(store)}
     return any(p == g or p in g.parents or g in p.parents for g in guarded)
 
 
@@ -156,9 +213,12 @@ def reaches_store_only_through_a_link(path: str | Path) -> bool:
 #: was false for exactly the door SEC-1 came through: an operator typing the path into the
 #: routine page's Filesystem-roots panel.
 GUARDED_ROOT_REASON = (
-    "is an instance credential store. The config dir (console token + central secrets), "
-    "~/.credentials and ~/.ssh are never grantable to a routine by design: a run holding one "
-    "reads every other routine's secrets and the operator's own token (docs/sandboxing.md)")
+    "is an instance credential store. The credential files in the config dir (secrets.env, "
+    "secrets.d/, connections.json, the push key, .mounts/), ~/.credentials and ~/.ssh are "
+    "never grantable to a routine by design: a run holding one reads every other routine's "
+    "secrets and the operator's own token (docs/sandboxing.md). The config dir ITSELF is "
+    "refused because it contains them — grant the specific file you need instead, such as "
+    "config.yaml, which holds no credential")
 
 
 def guarded_roots(paths: object) -> list[str]:
