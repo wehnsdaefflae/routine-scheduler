@@ -73,7 +73,11 @@ def test_create_conversation_disk_shape(server):
     assert not (d / ".git").exists()            # unversioned by design — delete means gone
     cfg, problems = load_routine(d)
     assert cfg is not None and not problems
-    assert cfg.cron == "" and cfg.budgets["max_turns"] == 40
+    # no reply ceiling by default — the goals bound a reply, not a counter (conversations.py)
+    assert cfg.cron == "" and cfg.budgets["max_turns"] == -1
+    assert cfg.budgets["max_wall_clock_min"] == -1 and cfg.budgets["max_total_tokens"] == -1
+    tuning = yaml.safe_load((d / "tuning.yaml").read_text())
+    assert tuning["deliberation"] == "standard"      # the routine default, not `deliberate`
     assert cfg.fs_write_roots and cfg.fs_read_roots
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     assert raw["kind"] == "conversation"
@@ -118,7 +122,7 @@ def test_create_list_detail_message_delete(client):
     assert items[0]["state"] == "running"
 
     detail = c.get(f"/api/conversations/{slug}").json()
-    assert detail["title"] and detail["budgets"]["max_turns"] == 40
+    assert detail["title"] and detail["budgets"]["max_turns"] == -1
     perm = {p["slug"]: p for p in detail["permissions"]}
     assert perm["shell"]["active"] is False                  # off by default, one-click grant
     assert perm["scheduling"]["routine_only"] is True        # greyed in the panel
@@ -385,7 +389,7 @@ def test_create_conversation_accepts_prestart_budgets(client):
     # blank fields keep the conversation defaults; a non-numeric budget is a 400
     slug2 = c.post("/api/conversations", data={"text": "plain"}).json()["slug"]
     raw2 = yaml.safe_load((server.conversations_home / slug2 / "routine.yaml").read_text())
-    assert raw2["budgets"]["max_turns"] == 40 and raw2["budgets"]["max_total_turns"] == -1
+    assert raw2["budgets"]["max_turns"] == -1 and raw2["budgets"]["max_total_turns"] == -1
     assert c.post("/api/conversations", data={"text": "x", "max_turns": "lots"}).status_code == 400
 
 
@@ -399,8 +403,8 @@ def test_conversation_defaults_endpoint(client):
     assert perm["util-authoring"]["active"] is True          # a conversation default
     assert perm["shell"]["active"] is False                  # off by default, one-click grant
     assert perm["scheduling"]["routine_only"] is True        # greyed in the composer too
-    assert d["budgets"]["max_turns"] == 40
-    assert d["deliberation"] == "deliberate"
+    assert d["budgets"]["max_turns"] == -1
+    assert d["deliberation"] == "standard"
     assert "actions" in d["capabilities"]["active"]
     # F339: the RULES surface too — the library's rules (slug + summary, for the picker)
     # and the set a new conversation holds by default.

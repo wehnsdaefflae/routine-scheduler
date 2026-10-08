@@ -279,6 +279,7 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
     # Each domain module keeps EVERY string for its own kinds; this only owns the order and
     # the fallback, so a kind's wording is still in exactly one place.
     from .decideaction import format_decide
+    from .goalops import format_goal
     from .llmaction import format_models
     from .obs_admin import format_admin
     from .obs_children import format_children
@@ -286,7 +287,7 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
     from .obs_library import format_library
     from .taskops import format_task
     for fmt in (format_files, format_library, format_children, format_admin, format_decide,
-                format_models, format_task):
+                format_models, format_task, format_goal):
         if (out := fmt(obs, str(kind or ""))) is not None:
             return out
     return f"OBSERVATION ({kind}): {json.dumps(obs, ensure_ascii=False)[:500]}"

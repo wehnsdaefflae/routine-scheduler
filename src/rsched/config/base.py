@@ -116,7 +116,6 @@ DEFAULT_RUNG_HEIGHT = 20
 # `oversight_turns` is in it so the derived cap can be overridden per routine — the knobs live in
 # tuning rather than config precisely so a meta-routine can raise them on measured evidence.
 TUNING_KEYS = ("deliberation", "ladder_rung_height", "oversight_turns")
-CONVERSATION_DELIBERATION = "deliberate"  # chat is judgment-heavy — context on paper by default
 # Endpoints are stateless HTTP transports; subscription authentication lives in the proxy.
 EndpointKind = Literal["openai", "anthropic"]
 SchemaMode = Literal["json_schema", "json_object", "ollama_native", "none"]

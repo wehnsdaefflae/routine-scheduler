@@ -437,6 +437,7 @@ class EngineLoop:
     # --- ending ------------------------------------------------------------------
 
     def _finish_run(self, status: str, summary: str, *, authored: bool = False,
-                    reply_to: str | None = None) -> str:
+                    reply_to: str | None = None, final: bool | None = None) -> str:
         """End the run — the one close-out every ending goes through (engine/loopend.py)."""
-        return loopend.finish_run(self, status, summary, authored=authored, reply_to=reply_to)
+        return loopend.finish_run(self, status, summary, authored=authored, reply_to=reply_to,
+                                  final=final)

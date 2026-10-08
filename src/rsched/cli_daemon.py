@@ -60,6 +60,10 @@ def cmd_daemon(_args) -> int:
     from .migrate_seed_utils import run_migration as carry_seed_util_fixes
     carry_seed_util_fixes(server)
     sync_seed_library_docs(server.libraries_home, routines_home=server.routines_home)
+    # MIGRATION(expires=2026-11-30): the converse pattern's goals revision (version 5) — the
+    # sync above only adds missing patterns
+    from .migrate_converse_goals import run_migration as carry_converse_goals
+    carry_converse_goals(server)
     adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)

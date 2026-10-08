@@ -260,7 +260,7 @@ def test_a_run_may_not_claim_an_outcome_the_operator_judges():
 def test_a_done_when_line_takes_no_distance():
     verdicts = accounting.parse(["d1 distance: far", "d2 met: b"])
     assert accounting.problems(verdicts, DONE, [])["refused"] == [
-        "d1: a Done-when line or a brief is met, unmet or not due"]
+        "d1: a Done-when line or a goal is met, unmet or not due"]
 
 
 def test_the_deferral_says_what_is_missing_and_the_shape():
@@ -370,18 +370,21 @@ def test_a_save_that_completes_the_line_queues_the_retirement_card(api_client, m
 # ---- the job brief ------------------------------------------------------------------------------
 
 def test_a_brief_stands_in_for_the_done_when_list(tmp_path):
-    from rsched.engine import brief
+    """The brief is the run's first GOAL: a briefed run answers for its goals, not the recipe's
+    Done when — and a goal is met, unmet or not due like a Done-when line."""
+    from rsched.engine import goals
 
     (tmp_path / "main.md").write_text(RECIPE, encoding="utf-8")
-    text = finish_digest.digest_section(tmp_path, brief="re-check the Q3 figures only")
-    assert "THIS RUN'S BRIEF" in text and "re-check the Q3 figures only" in text
-    assert "`b1 met: <evidence>` or `b1 unmet: <what remains>`" in text
+    ledger = goals.seed("re-check the Q3 figures only")
+    text = finish_digest.digest_section(tmp_path, goals=ledger)
+    assert "GOALS (what a person asked of THIS run" in text
+    assert "[b1] re-check the Q3 figures only" in text
+    assert "`b<n> met: <evidence>` or `b<n> unmet: <what remains>`" in text
     assert "one entry per line of your recipe" not in text   # the recipe's list is not owed
-    found = accounting.problems(accounting.parse(["b1 distance: far"]),
-                                brief.owed("re-check"), [])
-    assert found["refused"] == ["b1: a Done-when line or a brief is met, unmet or not due"]
+    found = accounting.problems(accounting.parse(["b1 distance: far"]), goals.owed(ledger), [])
+    assert found["refused"] == ["b1: a Done-when line or a goal is met, unmet or not due"]
     assert accounting.problems(accounting.parse(["b1 met: the figures match"]),
-                               brief.owed("re-check"), []) == {
+                               goals.owed(ledger), []) == {
         "missing": [], "bare": [], "refused": []}
 
 

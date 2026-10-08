@@ -2,13 +2,15 @@
 //
 // A run accounts for every line it answers for, once, at its main finish (engine/accounting.py):
 // each line of its recipe's `## Done when` — met, unmet, or not due — and each open outcome of
-// the routine's finish line — the distance that remains, or met when the run proved it. A run
-// started by hand with a BRIEF answers for that one line (`b1`) instead of the Done when. The
-// accounting is a field of the run's status, not prose in its summary, so the rail reads it as
-// data and labels each id with the line it stands for.
+// the routine's finish line — the distance that remains, or met when the run proved it — and
+// each open GOAL, what a person asked of this run (`b1`, `b2`, …: the brief a run was started
+// with, and anything asked for since; a briefed run answers for its goals instead of the Done
+// when). The accounting is a field of the run's status, not prose in its summary, so the rail
+// reads it as data and labels each id with the line it stands for.
 //
 // The Done-when and finish-line labels are read from the routine NOW: a line the recipe has
-// since renamed shows its id and the run's note, never a guessed text. The brief is the run's own.
+// since renamed shows its id and the run's note, never a guessed text. The goals are the run's
+// own, read from its status.
 
 import { api } from "/static/api.js";
 import { el } from "/static/util.js";
@@ -16,7 +18,7 @@ import { el } from "/static/util.js";
 const ENTRY = /^\s*([dgb]\d+)\s+(met|unmet|not due|distance)\s*:\s*([\s\S]*)$/i;
 const MARK = { met: "✓", unmet: "✗", "not due": "–", distance: "→" };
 const WORD = { met: "met", unmet: "unmet", "not due": "not due", distance: "distance left" };
-const CAPTION = { brief: "the brief", delivers: "what a finished run delivers",
+const CAPTION = { goals: "what was asked of this run", delivers: "what a finished run delivers",
                   "finish line": "finish line" };
 
 /** `[{id, verdict, note}]` from the status field's `"d1 met: …"` strings; a line that does not
@@ -31,7 +33,7 @@ export function parseAccounting(lines) {
 
 /**
  * createRunAccounting(mount, { slug }) → { set(detail) }
- * For a ROUTINE's run. `set` takes the run detail read (`accounting`, `brief`, `state`) and paints.
+ * For a ROUTINE's run. `set` takes the run detail read (`accounting`, `goals`, `state`) and paints.
  */
 export function createRunAccounting(mount, { slug }) {
   const body = el("div", { class: "acct", "data-run-accounting": "" });
@@ -48,15 +50,15 @@ export function createRunAccounting(mount, { slug }) {
     if (!rows.length) {
       body.replaceChildren(el("div", { class: "faint small" },
         ["finished", "failed", "aborted"].includes(detail?.state)
-          ? "this run reported no accounting — it answered for no brief, no Done when and no "
+          ? "this run reported no accounting — it answered for no goal, no Done when and no "
             + "open finish-line outcome"
           : "a run reports its accounting once, at its end"));
       return;
     }
-    const groups = { brief: [], delivers: [], "finish line": [], other: [] };
+    const groups = { goals: [], delivers: [], "finish line": [], other: [] };
+    const asked = Object.fromEntries((detail?.goals || []).map((g) => [g.id, g.text]));
     for (const r of rows) {
-      const label = r.id === "b1" && detail?.brief ? { text: detail.brief, kind: "brief" }
-        : labels?.[r.id];
+      const label = asked[r.id] ? { text: asked[r.id], kind: "goals" } : labels?.[r.id];
       groups[label?.kind || "other"].push({ ...r, label });
     }
     const row = (r) => el("div", { class: `acct-row v-${(r.verdict || "raw").replace(" ", "-")}`,

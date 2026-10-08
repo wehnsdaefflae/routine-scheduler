@@ -808,9 +808,12 @@ library workflow is materialized in verbatim at creation (no LLM in the path —
 title + editable tags arrive off-path via the system model). **Finish-per-reply**: every reply ends in an authored finish whose summary IS the
 chat message; the next user message resumes the SAME run in place (fresh budget window — turns,
 wall clock, tokens and subruns all reset — and fresh once-only guards, since each reply is a new
-task; a reply interrupted and resumed keeps its own, `engine/guardscope.py`). The per-reply budget is a runaway BACKSTOP, not a pace:
-what ends a reply is the work reaching a handover point (a finished plan step, a verified
-deliverable, a decision for the user, a blocker). A conversation's spine is its own **working plan**
+task; a reply interrupted and resumed keeps its own, `engine/guardscope.py`). A new conversation
+has NO per-reply ceiling (`conversations.CONVERSATION_BUDGETS`, all -1; a person can set one) and
+the routines' `standard` deliberation: what ends a reply is the work reaching a handover point
+(a finished plan step, a verified deliverable, a decision for the user, a blocker), and what the
+user asked for is kept as GOALS (`engine/goals.py`) that a reply declaring itself `final` must
+meet. A conversation's spine is its own **working plan**
 (`state/plan.md`, written and revised by the run, inlined at the top of every later reply by
 `state_digest`) — the emergent counterpart to a routine's compiled `stages/` + `phase.json`.
 - Runner: conversation replies draw from a **reserved interactive slot pool** (`INTERACTIVE_SLOTS`,
@@ -1392,7 +1395,21 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
     (`engine/donewhen.py`): one `- d<n> · <stage> — <outcome>` line each, in `main.md`, where the
     design of a run already lives and changes (the improver, a recipe revision, `write_recipe`).
     It is re-asked every run and never "already met". A run the operator starts by hand with a
-    one-line BRIEF (`engine/brief.py`) answers for the brief instead.
+    one-line BRIEF (`engine/brief.py`) answers for its GOALS instead (next item).
+  - **What a person asked of THIS run** is its GOALS (`engine/goals.py`, the `goal` action in
+    `engine/goalops.py`): `b1`, `b2`, … — the brief seeds `b1`, and the run transcribes anything
+    a person asks for while it runs. ONE mechanism for routines and conversations, because the
+    rule that kept a run from setting its own goals is the one it enforces: the run is the
+    SCRIBE, never the author. Every goal carries `quote`, the person's own words, and the engine
+    finds them in what the person wrote to the run (the brief, a conversation's first message,
+    every user-channel message and answer — never a report or another machine `via`, never the
+    routine's recipe) or refuses the goal; rewording or dropping one needs words written AFTER
+    the ones it came from. `check` meets the finish's claim judge. The ledger lives in the
+    transcript (each goal observation's `ledger`, a finish's `stopping_update.goals`), so a
+    resume, a rewind and a branch read it back exactly. What differs by mode is only WHEN a goal
+    must be met: a routine run's main finish accounts every open goal met or unmet; a
+    conversation is one continuous run whose goals outlive each reply, and a reply that declares
+    `final: true` must meet every open one (`final: false` hands back with them open).
   - **When the ROUTINE is done for good** is the operator's FINISH LINE
     (`state/finish-line.json`, `engine/finishline.py`): zero or more OUTCOMES, all of which must
     be reached, plus an optional `until` date after which it stops either way. Every outcome

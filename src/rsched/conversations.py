@@ -17,8 +17,8 @@ import re
 from pathlib import Path
 
 from .config import (
-    CONVERSATION_DELIBERATION,
     DEFAULT_BUDGETS,
+    DEFAULT_DELIBERATION,
     DEFAULT_PERMISSIONS,
     DEFAULT_RULES,
     ServerConfig,
@@ -41,14 +41,16 @@ CONVERSATION_RULES = [*(r for r in DEFAULT_RULES if r != "decision-record"), "gi
 # Shell stays a one-click opt-in.
 CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS]
 # Per-REPLY ceilings (each user message resumes the run with a fresh window — turns, wall
-# clock, tokens and subruns all reset), and deliberately a BACKSTOP rather than a pace. The
-# old 10-turn cap was the pace: the model read it at turn 1 and never attempted anything
-# that would not fit, so replies came out short by PLANNING, not by truncation — and turn 11
-# force-finished with an engine string the user read as the reply. What bounds a reply now
-# is the work reaching a point worth handing over (see the converse pattern's checkpoint
-# rule); this only stops a runaway. Tokens ride the default (-1 = unlimited); max_subruns
-# rides the default too — decomposing a heavy step is a normal move, not a rationed one.
-CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": 40, "max_wall_clock_min": 60}
+# clock, tokens and subruns all reset) — and by default there are NONE (operator,
+# 2026-10-08). A ceiling was always a backstop rather than a pace, and even as a backstop it
+# ended replies the work had not finished: the old 10-turn cap was the pace the model planned
+# to, and the 40-turn/60-minute one still cut long jobs off mid-step. What bounds a reply is
+# what the person asked for — the conversation's GOALS (engine/goals.py): a reply that
+# declares itself final must meet every open one, and one that is not final hands back with
+# them open. A person can still set any ceiling per conversation; max_subruns and the subrun
+# depth stay structural.
+CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": -1, "max_wall_clock_min": -1,
+                        "max_total_tokens": -1, "max_cost": -1}
 # Permissions that only make sense for scheduled routines — the UI greys them out.
 ROUTINE_ONLY_PERMISSIONS = ["scheduling"]
 
@@ -262,9 +264,10 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     if write_roots:
         cfg["fs_write_roots"] = write_roots
     atomic_write_yaml(conv_dir / "routine.yaml", cfg)
-    # tuning.yaml: chat is judgment-heavy — context-on-paper by default (composer +
-    # header-panel slider; a pre-start pick governs reply #1 already)
-    write_tuning(conv_dir, {"deliberation": deliberation or CONVERSATION_DELIBERATION})
+    # tuning.yaml: the standard say contract by default, like a routine (operator,
+    # 2026-10-08); the composer and the header panel's slider raise it per conversation, and
+    # a pre-start pick governs reply #1 already
+    write_tuning(conv_dir, {"deliberation": deliberation or DEFAULT_DELIBERATION})
     return conv_dir
 
 

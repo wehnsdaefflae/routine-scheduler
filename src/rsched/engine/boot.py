@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from .. import reports, rules, sharedstores
 from ..paths import read_json, resolve_rel
-from . import askback, enginenote, guardscope, inbox, mediaops, taskops
+from . import askback, enginenote, goals, guardscope, inbox, mediaops, runkind, taskops
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
+from .transcript import read_events
 
 
 def boot(loop) -> None:
@@ -28,6 +29,8 @@ def boot(loop) -> None:
                 setattr(ctx, attr, val)
     ctx.write_status("starting")
     resuming = loop.resume and ctx.depth == 0
+    # what this run has done so far — read before the digest, which names the goals it left
+    events = (read_events(ctx.run_dir / "transcript.jsonl", 0)[0] if resuming else [])
     if ctx.depth == 0:
         # F359 (user order 2026-08-17): a RESUMED leg consumes only what is addressed to
         # IT — the user's conversation/run-page messages, a detached background task's
@@ -58,13 +61,17 @@ def boot(loop) -> None:
         # the TASK ledger (engine/taskops.py): a fresh run decides what it owes, a resumed leg
         # reads it back with its open task — before the digest, which names them
         tasks_section = taskops.boot(ctx)
+        # the GOALS (engine/goals.py): the brief's seed on a fresh run, the transcript's last
+        # word on a resumed one — a conversation's outlive every reply
+        ctx.goals = goals.replay(events, ctx.brief)
         digest = state_digest(ctx.routine.dir, deferred_qa, open_qs,
                               routines_home=ctx.server.routines_home,
                               slug=ctx.routine.slug,
                               held_rules=rules.when_lines(ctx.server.rules_home,
                                                           list(ctx.routine.rules)),
-                              store_notes=store_notes,
-                              brief=ctx.brief, tasks_section=tasks_section)
+                              store_notes=store_notes, goals=ctx.goals,
+                              conversation=runkind.is_conversation(ctx),
+                              tasks_section=tasks_section)
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"
@@ -77,8 +84,6 @@ def boot(loop) -> None:
                                  allowed_kinds=loop.allowed_tools,
                                  report_msgs=[m["text"] for m in prose if m.get("report")])
     if resuming:
-        from .transcript import read_events
-        events, _ = read_events(ctx.run_dir / "transcript.jsonl", 0)
         replayed, last_turn, records = replay_messages(events)
         loop.messages = [{"role": "system", "content": system}, *replayed]
         loop.turn_records = records
@@ -170,9 +175,15 @@ def boot(loop) -> None:
         # Fresh-boot prose rides the composed prompt's MESSAGES section — but it must ALSO
         # be a transcript event (`boot` payload marker): the renderer shows what the user
         # said, and a later resume replays it (the rebuilt system prompt excludes it).
+        # The CHANNEL rides along, as on the live path (control.inject_user_message): a report
+        # another routine addressed here is not the person speaking, and the goal layer's
+        # grounding check (engine/goals.py) must be able to tell the two apart.
         for m in msgs:
             if not m.get("command"):
-                ctx.transcript.event("user_injection", {"text": m["text"], "boot": True})
+                ctx.transcript.event("user_injection", {
+                    "text": m["text"], "boot": True,
+                    **({"via": str(m["via"])} if m.get("via") else {}),
+                    **({"report": True} if m.get("report") else {})})
         kickoff = {"role": "user", "content": kickoff_message(ctx) + loop.util_reminder}
         attach_first_message_media(loop, kickoff)  # conversation: images the user attached
         loop.messages = [{"role": "system", "content": system}, kickoff]

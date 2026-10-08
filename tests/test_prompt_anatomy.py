@@ -154,11 +154,20 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "SHARED STORES (read+write roots you share with other routines",
         "the heading your card sits under on the Steward hub",
         # The goal model: the FINISH block the digest says once at boot (finish_digest), the
-        # brief that stands in for a recipe's Done when (engine/brief.py), the accounting rung
+        # run's GOALS that stand in for a briefed run's Done when and bound a conversation's
+        # final reply (engine/goals.py, goalops, finishgate._undeclared), the accounting rung
         # and the claim check (accounting.deferral, verifier.challenge_message), and the rules
         # named with their moments (composer, rules.when_lines)
         "FINISH LINE (the operator's",
-        "THIS RUN'S BRIEF",
+        "GOALS (what a person asked of THIS run",
+        "GOALS (what the person asked for in this conversation",
+        "GOALS: none yet. When the person asks for work",
+        "whether this reply is FINAL",
+        "a FINAL reply meets every open goal",
+        "in anything the person wrote to this run",
+        "anything the person wrote AFTER the words this goal came from",
+        "stays OPEN — a check of your own transcript does not support it",
+        "GOALS NOW:",
         "At your finish, the `accounting` field carries",
         "THE LAST RUN LEFT UNMET",
         "your `accounting` is incomplete",

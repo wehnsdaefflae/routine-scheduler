@@ -139,6 +139,10 @@ class GrantPolicy:
             # the SETTING decides, for an admin leg too: without it there is no task store to
             # act on and no gate holding the run to its tasks
             return self.tasks_on
+        if kind == "goal":
+            # STRUCTURAL: goals are what a PERSON asked of a run, and nobody but its parent
+            # speaks to a child (engine/goals.py)
+            return not self.is_subrun
         if self.admin or kind not in GATED_KINDS:
             return True
         if kind == "write_util":

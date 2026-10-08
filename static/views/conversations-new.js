@@ -54,13 +54,13 @@ export function mountComposerOnly(main) {
     style: "width:100%;max-width:420px" });
   // Pre-start budgets: per-REPLY ceilings + a cumulative cap over the WHOLE conversation
   // (all optional — blank keeps the default; -1 = unlimited).
-  const turnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "10",
+  const turnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
     style: "width:80px", title: "max turns per reply (-1 = unlimited)" });
   const totalTurnsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
     style: "width:80px", title: "max turns for the whole conversation (blank or -1 = unlimited)" });
-  const minsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "30",
+  const minsIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
     style: "width:80px", title: "max minutes per reply (-1 = unlimited)" });
-  const tokIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "400000",
+  const tokIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
     style: "width:100px", title: "max tokens per reply (-1 = unlimited)" });
   // Pre-start model picker: pick a catalog model by NAME (or fall back to the system model),
   // so a conversation can start on the right model instead of system-default-then-switch.
@@ -86,7 +86,7 @@ export function mountComposerOnly(main) {
   const writeRoots = rootsEditor([], { pickTitle: "read + write folder" });
   // Permissions + deliberation govern reply #1, which fires on create — so they must be set
   // here (afterwards the conversation header panel takes over). Fed by /api/conversations/defaults.
-  const delib = deliberationControl("deliberate");
+  const delib = deliberationControl("standard");
   const permsHost = el("div", {});   // the permissions panel appends here once defaults load
   let permPanel = null;
   // F339: rules and connections are PRE-START choices too. A rule especially — reply #1 fires
@@ -97,9 +97,11 @@ export function mountComposerOnly(main) {
   api("/api/conversations/defaults").then((d) => {
     if (d.deliberation) delib.set(d.deliberation);
     const b = d.budgets || {};
-    if (b.max_turns != null) turnsIn.placeholder = String(b.max_turns);
-    if (b.max_wall_clock_min != null) minsIn.placeholder = String(b.max_wall_clock_min);
-    if (b.max_total_tokens != null) tokIn.placeholder = String(b.max_total_tokens);
+    // -1 is "no ceiling" — the default for every reply budget (conversations.py)
+    const shown = (v) => (v < 0 ? "∞" : String(v));
+    if (b.max_turns != null) turnsIn.placeholder = shown(b.max_turns);
+    if (b.max_wall_clock_min != null) minsIn.placeholder = shown(b.max_wall_clock_min);
+    if (b.max_total_tokens != null) tokIn.placeholder = shown(b.max_total_tokens);
     permPanel = abilitiesPanel(d.permissions, d.capabilities);
     permsHost.replaceChildren(permPanel.node);
     // no onSave → the picker renders no apply button; its `selected` rides the form

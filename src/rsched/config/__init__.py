@@ -11,7 +11,6 @@ import X` is unchanged for every consumer.
 """
 
 from .base import (
-    CONVERSATION_DELIBERATION,
     DECISION_ROLES,
     DEFAULT_BUDGETS,
     DEFAULT_CAPABILITIES,
@@ -43,7 +42,6 @@ from .routine import RoutineConfig, load_routine, load_tuning, write_tuning
 from .server import ServerConfig, load_server_config
 
 __all__ = [
-    "CONVERSATION_DELIBERATION",
     "DECISION_PROTOCOLS",
     "DECISION_ROLES",
     "DEFAULT_BUDGETS",

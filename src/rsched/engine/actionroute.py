@@ -11,6 +11,7 @@ from . import (
     create_routine,
     detach,
     executor,
+    goalops,
     interact,
     manage_lane,
     secretgate,
@@ -148,6 +149,8 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->h
         return manage_lane.handle_manage_lane(ctx, action)
     if action["kind"] == "task":
         return taskops.handle_task(loop, action)
+    if action["kind"] == "goal":
+        return goalops.handle_goal(loop, action)
     if action["kind"] == "subruns":
         return loop.subruns.status_table()
     if action["kind"] == "kill":

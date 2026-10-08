@@ -841,7 +841,7 @@ def test_conversation_slash_commands(ui, ui_page):
 
 def test_conversation_deliberation_slider(ui, ui_page):
     """A conversation's deliberation is edited from the header panel: defaults to
-    'deliberate' (chat is judgment-heavy), one arrow key saves the new level to the
+    'standard' like a routine (operator, 2026-10-08), one arrow key saves the new level to the
     conversation's tuning.yaml — routine.yaml (config) stays untouched."""
     ui_page.goto(f"{ui.url}/#/conversations")
     ui_page.locator(".conv-new textarea").fill("Deliberation knob playground.")
@@ -850,15 +850,15 @@ def test_conversation_deliberation_slider(ui, ui_page):
     slug = ui_page.url.rsplit("/", 1)[-1]
     conv_dir = ui.conversations / slug
     tuning = yaml.safe_load((conv_dir / "tuning.yaml").read_text(encoding="utf-8"))
-    assert tuning["deliberation"] == "deliberate"     # the conversation default
+    assert tuning["deliberation"] == "standard"       # the conversation default
 
     ui_page.locator("summary", has_text="capabilities & budgets").click()
     slider = ui_page.locator('.delib input[type="range"]')
     slider.focus()
-    slider.press("ArrowLeft")                         # deliberate → standard
-    expect(visible_toast(ui_page)).to_contain_text("deliberation: standard")
+    slider.press("ArrowRight")                        # standard → deliberate
+    expect(visible_toast(ui_page)).to_contain_text("deliberation: deliberate")
     tuning = yaml.safe_load((conv_dir / "tuning.yaml").read_text(encoding="utf-8"))
-    assert tuning["deliberation"] == "standard"
+    assert tuning["deliberation"] == "deliberate"
     raw = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8"))
     assert "deliberation" not in raw                  # config never carries tuning
 
@@ -1299,7 +1299,7 @@ def test_new_conversation_composer_offers_caps_and_budgets(ui, ui_page):
     assert "shell" in raw["capabilities"]["actions"]
     assert raw["budgets"]["max_total_tokens"] == 55000
     tuning = yaml.safe_load((convs[0] / "tuning.yaml").read_text(encoding="utf-8"))
-    assert tuning["deliberation"] == "deliberate"   # the untouched default rides along
+    assert tuning["deliberation"] == "standard"     # the untouched default rides along
 
 
 # ---- 7. Item reference links (F63/D14 → the card they name) --------------------------------

@@ -98,7 +98,13 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                      "WORKFLOW below (the converse pattern) defines HOW you work a reply — triage "
                      "the newest message, act in small verified steps, finish every reply — not "
                      "WHAT the task is. A reply may take several turns and spawn sub-work when a "
-                     "fuller, multi-step response serves the user better. ")
+                     "fuller, multi-step response serves the user better. What the user asks "
+                     "for is kept as GOALS (the `goal` kind): transcribe their request before you "
+                     "work on it, and keep the list in step with what they say since. Every "
+                     "reply's finish declares `final` — true when it delivers what they asked "
+                     "(each open goal accounted met), false when you hand back before that "
+                     "(progress, a question only they can answer, a blocker) and the goals stay "
+                     "open. ")
     else:
         ownership = ("Ownership of prose: your recipe is self-contained — the WORKFLOW below (its "
                      "main.md entry and the stages/<name>.md modules it routes to) fully defines "

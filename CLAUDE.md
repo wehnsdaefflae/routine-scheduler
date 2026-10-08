@@ -196,8 +196,12 @@ one you are about to touch, not all of them.
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, delete,
   move, mkdir, edit_file, memory_read, memory_write, read_rule, write_rule, script, shell, llm, decide,
-  spawn, subtask, detach, schedule_run, create_routine, manage_lane, task, list_models, subruns,
-  kill, wait, ask_user, report, finish` (32, `actionschema.KINDS`). **`task` is the TASK layer**
+  spawn, subtask, detach, schedule_run, create_routine, manage_lane, task, goal, list_models,
+  subruns, kill, wait, ask_user, report, finish` (33, `actionschema.KINDS`). **`goal` keeps the
+  run's GOALS** (`engine/goals.py`) — what a PERSON asked of it, `b<n>` lines the run transcribes
+  as a scribe, each carrying the person's own words (`quote`), which the engine must find in what
+  they wrote or it refuses the goal; a later word is needed to reword or drop one. Offered at
+  depth 0 only (a child has its parent's brief), in routines and conversations alike. **`task` is the TASK layer**
   (docs/tasks.md), present only where the routine's `capabilities.tasks` SETTING is `on`: the
   run keeps its standing work as tasks in the engine-owned `state/tasks.json` and the engine
   enforces GATED PROCESSING — every task due this run (a `task:`-tagged gate check that found
@@ -493,13 +497,15 @@ by a test, by the engine, or by a past incident.
 - **What DONE means has three owners — none of them is a budget** (reports/goal.md).
   WHAT ONE FINISHED RUN LEAVES BEHIND is the recipe's `## Done when` (`engine/donewhen.py`,
   `- d<n> · <stage> — <outcome>`), re-asked every run and never "already met"; a run started by
-  hand with a BRIEF (`engine/brief.py`) answers for the brief instead. WHEN THE ROUTINE IS DONE
+  hand with a BRIEF answers for its GOALS instead (`engine/goals.py`: the brief seeds `b1`, a
+  person's mid-run requests add more, and a conversation keeps its goals across replies — a reply
+  declaring `final: true` must meet every open one). WHEN THE ROUTINE IS DONE
   FOR GOOD is the operator's FINISH LINE (`state/finish-line.json`, `engine/finishline.py`):
   outcomes each with a JUDGE — `date` (the calendar), `run` (a run proves it, its `met` checked),
   `you` (a run reports the distance and may never claim it) — plus an optional `until`. WHAT A
   RUN MUST NEVER DO is held before the action by permissions, rules and reminders; a
   recipe's `## Never` carries what none of them can hold. The finish owes an `accounting` FIELD
-  — one entry per Done-when line and per open outcome (`engine/accounting.py`); the gate checks
+  — one entry per Done-when line, per open goal and per open outcome (`engine/accounting.py`); the gate checks
   presence and shape, never semantics. A `met` is checked once against the run's own
   transcript (`engine/verifier.py`: FAIL-OPEN everywhere, AT MOST ONE challenge per line per
   run, a re-asserted verdict STANDS and is recorded `disputed`). Budgets stay a runaway

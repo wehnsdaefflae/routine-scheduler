@@ -207,10 +207,18 @@ def test_run_now_takes_an_optional_brief(ui, ui_page):
 
 
 def test_a_run_started_with_a_brief_says_so_and_accounts_for_it(ui, ui_page):
+    """The brief is the run's goal b1 and a mid-run request its b2 (engine/goals.py): the rail
+    labels every goal line from the run's own status, under one caption."""
+    from rsched.engine import goals
+
     run = ui.seed_run("uir", "20260714-070000", "finished", summary="done")
     status = json.loads((run / "status.json").read_text(encoding="utf-8"))
     status["brief"] = "check only the new grant call"
-    status["accounting"] = ["b1 met: the new call is read and filed"]
+    status["goals"] = [*goals.seed("check only the new grant call"),
+                       goals.blank("b2", "the funder is told the new date", "tell the funder",
+                                   source="person", heard=1, turn=4)]
+    status["accounting"] = ["b1 met: the new call is read and filed",
+                            "b2 unmet: their mailbox bounced"]
     atomic_write_json(run / "status.json", status)
     ui_page.set_viewport_size({"width": 1425, "height": 900})
     ui_page.goto(f"{ui.url}/#/run/uir:20260714-070000")
@@ -218,7 +226,11 @@ def test_a_run_started_with_a_brief_says_so_and_accounts_for_it(ui, ui_page):
     b1 = ui_page.locator('[data-run-accounting] [data-acct="b1"]')
     expect(b1).to_contain_text("check only the new grant call")
     expect(b1.locator(".acct-note")).to_have_text("the new call is read and filed")
-    expect(ui_page.locator("[data-run-accounting] .acct-cap")).to_have_text(["the brief"])
+    b2 = ui_page.locator('[data-run-accounting] [data-acct="b2"]')
+    expect(b2).to_contain_text("the funder is told the new date")
+    expect(b2).to_have_class(re.compile(r"\bv-unmet\b"))
+    expect(ui_page.locator("[data-run-accounting] .acct-cap")).to_have_text(
+        ["what was asked of this run"])
 
 
 @pytest.mark.browser_context_args(timezone_id="Pacific/Kiritimati")

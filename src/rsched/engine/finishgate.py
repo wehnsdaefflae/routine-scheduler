@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..ids import now_iso
-from . import accounting, brief, donewhen, finishline, inbox, taskops
+from . import accounting, donewhen, finishline, goals, inbox, runkind, taskops
 from .control import drain_injections
 from .finish_guard import unbacked_action_claims
 
@@ -11,14 +11,14 @@ from .finish_guard import unbacked_action_claims
 def rebuild(loop, events: list[dict]) -> None:
     """Re-seed the claim check's one-objection-per-line ledger (`loop._challenged`) from the
     challenges recorded inside the guard scope (engine/guardscope.py): each is a deferred
-    finish naming the lines it objected to (`claims_unsupported`). Without it a resumed leg
-    argued a line the run had already been asked about, and a re-asserted verdict never
-    stood.
+    finish, or a goal check left open, naming the lines it objected to
+    (`claims_unsupported`). Without it a resumed leg argued a line the run had already been
+    asked about, and a re-asserted verdict never stood.
     """
     loop._challenged = set()
     for ev in events:
         payload = ev.get("payload") or {}
-        if ev.get("type") == "observation" and payload.get("kind") == "finish":
+        if ev.get("type") == "observation" and payload.get("kind") in ("finish", "goal"):
             loop._challenged.update(str(i) for i in payload.get("claims_unsupported") or [])
 
 
@@ -37,17 +37,27 @@ def _defer(loop, ctx, message: str, **why) -> None:
     ctx.write_status()
 
 
-def _owed(loop, ctx) -> tuple[list[dict], list[dict]] | None:
-    """`(done_when_lines, open_outcomes)` a finish must account for — None when it owes
-    nothing: a child, a follow-up after the run already ended, or a routine with neither a
-    Done-when list nor an open finish-line outcome. A briefed run owes its brief in place of
-    the Done-when list (engine/brief.py).
+def _owed(loop, ctx, action: dict) -> tuple[list[dict], list[dict]] | None:
+    """`(lines, open_outcomes)` a finish must account for — `lines` being the Done-when list
+    and the open GOALS (engine/goals.py), both answered met/unmet — or None when it owes
+    nothing: a child, a follow-up after a routine run already ended, a conversation reply that
+    is not final, or a run with nothing to answer for.
+
+    A routine run whose goals began with the operator's brief owes them in place of its
+    Done-when list. A CONVERSATION owes only its goals, and only on a reply it declares
+    `final` — the reply cycle's other replies hand back before the job is done, by design.
     """
-    if ctx.depth > 0 or getattr(loop, "leg_after_authored", False):
-        return None
-    done = brief.owed(ctx.brief) if ctx.brief else donewhen.read(ctx.routine.dir)
-    outcomes = finishline.open_outcomes(finishline.load(ctx.routine.dir))
-    return (done, outcomes) if done or outcomes else None
+    lines: list[dict] = []
+    outcomes: list[dict] = []
+    if ctx.depth > 0:
+        pass
+    elif runkind.is_conversation(ctx):
+        lines = goals.owed(ctx.goals) if action.get("final") is True else []
+    elif not getattr(loop, "leg_after_authored", False):
+        briefed = any(g.get("source") == "brief" for g in ctx.goals)
+        lines = [*([] if briefed else donewhen.read(ctx.routine.dir)), *goals.owed(ctx.goals)]
+        outcomes = finishline.open_outcomes(finishline.load(ctx.routine.dir))
+    return (lines, outcomes) if lines or outcomes else None
 
 
 def _claims(verdicts: dict, done: list[dict], outcomes: list[dict]) -> list[dict]:
@@ -60,8 +70,25 @@ def _claims(verdicts: dict, done: list[dict], outcomes: list[dict]) -> list[dict
             for x in lines if verdicts.get(x["id"], ("",))[0] == "met"]
 
 
+def _undeclared(loop, ctx, action: dict) -> tuple[str, dict] | None:
+    """`(message, keys)` for a CONVERSATION reply that leaves a goal open without saying whether
+    it is FINAL — the one moment the declaration changes what the finish owes (an open goal is
+    met now, or it waits for the next reply). Settled by one field, so like the accounting it
+    has no once-only limit; never the reserved turn, for the reason every rung gives.
+    """
+    still = [g["id"] for g in goals.open_goals(ctx.goals)]
+    if loop._finish_reserved or not still or isinstance(action.get("final"), bool):
+        return None
+    message = (f"OBSERVATION (finish deferred): goals are open ({', '.join(still)}) — declare "
+               "whether this reply is FINAL. `final: true` when it delivers what the person "
+               "asked, with `accounting` carrying `b<n> met: <evidence>` for each open goal; "
+               "`final: false` when you are handing back before that (progress, a question "
+               "only they can answer, a blocker) and the goals stay open. Then finish again.")
+    return message, {"final_undeclared": True}
+
+
 def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
-                verdicts: dict) -> tuple[str, dict] | None:
+                verdicts: dict, *, final: bool) -> tuple[str, dict] | None:
     """`(message, keys)` for a finish that still owes work, or None.
 
     GATED PROCESSING first (engine/taskops.py): a routine that keeps tasks may not end while a
@@ -74,12 +101,15 @@ def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
     the verifier reads the `met` claims). The main finish only: a follow-up after the run ended
     answers the person, not the recipe.
 
+    A FINAL conversation reply may not leave a goal unmet: `final` is the claim that what the
+    person asked for is delivered, so `accounting.problems` refuses an unmet goal there.
+
     Both skip the reserved-finish turn (deferring it would force-finish with an engine string).
     """
     if (tasks_owed := taskops.finish_owed(loop)) is not None:
         return tasks_owed, {"tasks_owed": True}
     if owed is not None and not loop._finish_reserved:
-        found = accounting.problems(verdicts, *owed)
+        found = accounting.problems(verdicts, *owed, final=final)
         if any(found.values()):
             return accounting.deferral(found), {"accounting": found}
     return None
@@ -92,8 +122,9 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     """May this run END? Returns the run status when the finish stands, None when it is
     set aside for one turn (the R108 deferral shape) and the loop should go round again.
 
-    Split out of `EngineLoop.run` (F393). Eight guards, one question: an undrained user
-    message, an ask-back on an approval the finish itself filed, a due task with no checkpoint
+    Split out of `EngineLoop.run` (F393). Nine guards, one question: an undrained user
+    message, an ask-back on an approval the finish itself filed, a conversation reply that
+    leaves open goals without declaring itself final or not, a due task with no checkpoint
     (gated processing), an incomplete accounting, a
     rule whose moment is the ending itself (`assist.at_finish`), a fabricated first-action
     finish, an unbacked action claim, and a `met` claim the run's own transcript does not
@@ -134,9 +165,11 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         return None   # deferred — the loop goes round again
     # What the run still OWES before it may end: its due tasks, then its accounting
     # (`_unanswered`). One rung, two questions, asked in that order.
-    owed = _owed(loop, ctx)
+    conversation = ctx.depth == 0 and runkind.is_conversation(ctx)
+    owed = _owed(loop, ctx, action)
     verdicts = accounting.parse(action.get("accounting"))
-    if (unanswered := _unanswered(loop, owed, verdicts)) is not None:
+    if (unanswered := (_undeclared(loop, ctx, action) if conversation else None)
+            or _unanswered(loop, owed, verdicts, final=conversation)) is not None:
         message, why = unanswered
         _defer(loop, ctx, message, **why)
         return None   # deferred — the loop goes round again
@@ -231,19 +264,30 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # a finished run into a failed one.
     if ctx.depth == 0 and verdicts:
         ctx.accounting = [str(e) for e in action.get("accounting") or []]
-        try:
-            newly = finishline.record(
-                ctx.routine.dir, {i: v for i, v in verdicts.items() if i.startswith("g")},
-                run_id=ctx.run_id, now=now_iso(), disputes=disputes)
-        except OSError as exc:
-            ctx.transcript.event("error", {"where": "finishline.record", "error": str(exc)})
-            newly = []
+        newly: list[str] = []
+        if outcome_verdicts := {i: v for i, v in verdicts.items() if i.startswith("g")}:
+            try:
+                newly = finishline.record(ctx.routine.dir, outcome_verdicts, run_id=ctx.run_id,
+                                          now=now_iso(), disputes=disputes)
+            except OSError as exc:
+                ctx.transcript.event("error", {"where": "finishline.record",
+                                               "error": str(exc)})
+        # the goals' verdicts land on the ledger — only the lines this finish OWED, which are
+        # the ones the claim check read: a `met` on a reply that owed nothing (not final, a
+        # follow-up) was never checked and closes nothing — and the ledger rides the event:
+        # that snapshot is what a later leg replays the goals from (engine/goals.py)
+        owed_ids = {x["id"] for x in owed[0]} if owed is not None else set()
+        stamped = goals.stamp(ctx.goals, {i: v for i, v in verdicts.items() if i in owed_ids
+                                          and i.startswith("b")}, disputes=disputes)
         ctx.transcript.event("stopping_update",
                              {"met": newly, "judged": {i: v for i, (v, _n) in verdicts.items()},
                               "run_id": ctx.run_id,
-                              **({"disputed": sorted(disputes)} if disputes else {})})
+                              **({"disputed": sorted(disputes)} if disputes else {}),
+                              **({"goals": ctx.goals} if stamped else {})})
         if newly:
             from . import goalreached
             goalreached.maybe_propose_retirement(ctx)
     return loop._finish_run(action["status"], action["summary"], authored=True,
-                            reply_to=action.get("reply_to"))
+                            reply_to=action.get("reply_to"),
+                            final=action["final"] if conversation
+                            and isinstance(action.get("final"), bool) else None)

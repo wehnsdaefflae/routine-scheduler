@@ -54,7 +54,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "decide": "question", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
-               "manage_lane": "verb", "task": "id",
+               "manage_lane": "verb", "task": "id", "goal": "id",
                "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
 _UTIL_ANCHOR = re.compile(r"^\^util:([a-z0-9][a-z0-9-]*)")
@@ -63,9 +63,9 @@ _UTIL_ANCHOR = re.compile(r"^\^util:([a-z0-9][a-z0-9-]*)")
 def canon(action: dict) -> str:
     """The engine's canonical rendering of one action (see the module docstring)."""
     kind = str(action.get("kind") or "?")
-    if kind == "task":
+    if kind in ("task", "goal"):
         tid = str(action.get("id") or "")
-        return f"task:{action.get('verb') or '?'}{f' {tid}' if tid else ''}"
+        return f"{kind}:{action.get('verb') or '?'}{f' {tid}' if tid else ''}"
     if kind in ("util", "script"):
         args = action.get("args")
         tail = " ".join(str(a) for a in args) if isinstance(args, list) else ""

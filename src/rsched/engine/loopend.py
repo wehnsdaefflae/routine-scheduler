@@ -101,7 +101,7 @@ def endpoint_verdict(ctx: RunContext, exc: EndpointError) -> str:
 
 
 def finish_run(loop, status: str, summary: str, *, authored: bool = False,
-               reply_to: str | None = None) -> str:
+               reply_to: str | None = None, final: bool | None = None) -> str:
     """Close the run out — every ending, authored or not, through this one path."""
     ctx = loop.ctx
     # R82: repair a summary whose newlines were double-escaped (literal ``\n`` and no real
@@ -135,6 +135,9 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
     finish_payload = {"status": status, "summary": summary, "authored": authored}
     if reply_to:   # F438/D117: the reply targets an earlier message (conversations)
         finish_payload["reply_to"] = reply_to
+    if final is not None:   # a conversation reply's own declaration (engine/goals.py)
+        finish_payload["final"] = final
+        ctx.final = final
     ctx.transcript.event("finish", finish_payload,
                          usage_total=ctx.usage_total(), turns=ctx.turn)
     if ctx.depth == 0:

@@ -68,8 +68,8 @@ def _plan_text(routine_dir: Path) -> str:
 def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict], *,
                  routines_home: Path | None = None, slug: str = "",
                  held_rules: list[str] | None = None,
-                 store_notes: list[dict] | None = None, brief: str = "",
-                 tasks_section: str = "") -> str:
+                 store_notes: list[dict] | None = None, goals: list[dict] | None = None,
+                 conversation: bool = False, tasks_section: str = "") -> str:
     from ..paths import read_json
 
     parts: list[str] = []
@@ -106,10 +106,12 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                      "you: tick off what is done, re-order, add what you discovered, drop what "
                      "turned out unnecessary. Delete the file once the job is finished):\n"
                      + plan)
-    # Where the routine stands against its FINISH LINE, what its finish owes in `accounting`,
-    # and what the last run left unmet — said once, here, at boot (engine/finish_digest.py).
+    # Where the routine stands against its FINISH LINE, the run's GOALS, what its finish owes in
+    # `accounting`, and what the last run left unmet — said once, here, at boot
+    # (engine/finish_digest.py).
     from . import finish_digest
-    if finish_sec := finish_digest.digest_section(routine_dir, brief=brief):
+    if finish_sec := finish_digest.digest_section(routine_dir, goals=goals or [],
+                                                  conversation=conversation):
         parts.append(finish_sec)
     state_dir = routine_dir / "state"
     if state_dir.is_dir():

@@ -25,7 +25,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from .. import conversations as conv_mod
-from ..config import DELIBERATION_LEVELS, load_routine
+from ..config import DEFAULT_DELIBERATION, DELIBERATION_LEVELS, load_routine
 from ..paths import atomic_write_json
 from .api_routine_edit import (
     PermissionsBody,
@@ -313,7 +313,7 @@ def conversation_defaults(request: Request) -> dict:
     summaries = rules_mod.summaries(server.rules_home, rule_slugs)
     return {"permissions": permissions, "capabilities": capabilities,
             "budgets": dict(conv_mod.CONVERSATION_BUDGETS),
-            "deliberation": conv_mod.CONVERSATION_DELIBERATION,
+            "deliberation": DEFAULT_DELIBERATION,
             "library_rules": [{"slug": s, "summary": summaries.get(s, "")}
                               for s in rule_slugs],
             "rules": [r for r in conv_mod.CONVERSATION_RULES if r in set(rule_slugs)]}

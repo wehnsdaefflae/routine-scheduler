@@ -3,8 +3,8 @@ projection of ACTION_SCHEMA onto them.
 
 `actions.py` stays the single source of truth for what a turn may do — this module only
 NARROWS what the model is shown to what the engine would accept anyway. A run whose
-workflow `tools:` allowlist and capabilities permit 8 of the 32 kinds was previously sent
-all 32 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
+workflow `tools:` allowlist and capabilities permit 8 of the 33 kinds was previously sent
+all 33 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
 model read, every turn, the full description of channels the validator would reject. The
 projection is derived from `actions.KIND_FIELDS` — the same map `validate_action` builds
 its allowed-field set from — so the shown schema and the enforced contract cannot drift.
@@ -333,6 +333,16 @@ calls and memory_read / memory_write resolve there, and its recipe (main.md + st
 workspace) is authoritative for its work. A checkpoint accounts for that recipe's `## Done when` \
 lines and opens the next due task. Create a task when standing work comes up that is not one \
 yet; never let one task's work hide inside another's checkpoint."""),
+    (("goal",), """- goal: the GOALS of this run — what a PERSON asked of it, each ONE checkable \
+end state (b1, b2, …). You are their scribe, never their author: every goal you set, add or \
+reword carries `quote`, the person's own words it came from, verbatim, and the engine refuses \
+words it cannot find in what they wrote to this run. Via `verb`: set (goals: [{text, quote}, …] \
+— the opening list, while none is open) · add (goals: new ones, when they ask for more) · \
+change (id + goals: [the new wording], quoting words they wrote AFTER the goal was set) · drop \
+(id + quote: their later words that withdraw it — never because it got hard) · check (id + \
+evidence: it is met, checked against your own transcript once, like a finish's `met`) · list. \
+A goal is an outcome, not a step: the steps toward it belong in your plan. Every open goal is \
+answered at your finish — the state digest says how."""),
     (("list_models",), """- list_models: the model catalog + this run's resolved role \
 bindings (main / tool_call / uncensored), read-only — consult it BEFORE setting a `model` \
 override on llm/spawn/subtask so the name you pass is one the catalog actually carries."""),

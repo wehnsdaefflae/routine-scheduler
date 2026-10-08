@@ -15,6 +15,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.395.0] — 2026-10-08
+
+### Added
+- **Goals: what a person asked of a run, kept by the run as their scribe — one mechanism for
+  routines and conversations** (operator order 2026-10-08). A new action kind, `goal`
+  (`engine/goals.py`, `engine/goalops.py`; 33 kinds), keeps the run's GOALS — `b1`, `b2`, …,
+  each one checkable end state — with the verbs `set` (the opening list), `add`, `change`,
+  `drop`, `check` and `list`. The rule that made routines look incompatible ("a run may not set
+  its own goals") is the rule it enforces: every goal carries `quote`, the person's own words, and
+  the engine must find them in what the person actually wrote to this run — the brief, a
+  conversation's first message, every user-channel message and answer; never a report or another
+  machine channel, never an engine note, never the routine's own recipe — or the goal is refused.
+  Rewording or dropping one needs words written AFTER the ones it came from, so a goal is never
+  quietly abandoned because it got hard. `check` meets the finish's claim judge (`verifier`), once
+  per line, sharing the finish's challenge ledger.
+  - **Routines:** the operator's job brief is now goal `b1` (`brief.owed` is gone), and anything
+    the operator asks for mid-run joins the list; the main finish accounts every open goal met or
+    unmet, in place of the Done when for a briefed run and beside it otherwise.
+  - **Conversations:** one continuous run, so the goals outlive every reply. Every reply's finish
+    declares `final` — `true` delivers what was asked and must account every open goal `met`
+    (`b<n>: a FINAL reply meets every open goal …` refuses an unmet one); `false` hands back with
+    the goals open. A reply that would leave a goal open without declaring is set aside once per
+    attempt (`finishgate._undeclared`); with nothing open the declaration is optional.
+    `normalize_action` keeps `final: false`, the one boolean whose false is not padding.
+  - **The transcript is the record:** every goal observation carries the whole ledger, and so does
+    the `stopping_update` of a finish that stamped verdicts; a resume, a ⟲ rewind and a ⑂ branch
+    replay it (`goals.replay`). `status.json` publishes `goals` and `final`, `/api/runs/{id}`
+    carries `goals`, and the run page's goal rail labels every `b<n>` from them.
+  - The state digest says the goals once at boot (`GOALS (…)`, and for a new conversation `GOALS:
+    none yet …`); `docs/prompt-anatomy.md` §3g documents every new string.
+  - Fresh-boot `user_injection` events now record their `via`/`report`, like the live path, so a
+    report delivered at boot is never read as the person speaking.
+
+### Changed
+- **New conversations default to `standard` deliberation and no budget ceilings** (operator
+  order 2026-10-08). `CONVERSATION_BUDGETS` is all -1 for turns, minutes, tokens and cost (the
+  child-task count and depth stay structural), and `CONVERSATION_DELIBERATION` is gone — a new
+  conversation takes the routine default. What bounds a reply is its goals and the work reaching
+  a handover point; any ceiling a person sets is still a backstop. The composer shows ∞ for an
+  unlimited default and the header panel accepts -1 for turns. Existing conversations keep the
+  budgets and deliberation they were created with.
+- **The `converse` pattern is version 5** — it keeps the user's goals before the work and declares
+  every reply final or not; the budget paragraph says there is no ceiling unless one was set.
+  `migrate_converse_goals` carries it to the live library once at boot, only while the live copy
+  is the untouched version 4 (MIGRATION(expires=2026-11-30)).
+
 ## [0.394.0] — 2026-10-08
 
 ### Changed

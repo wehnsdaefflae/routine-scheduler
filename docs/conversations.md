@@ -17,8 +17,9 @@ and revise a document, clean a dataset, research something — rather than tend 
 | Lifetime | One continuous session, resumed in place each reply | One run per fire, state carried in files |
 | Instruction | Your first message (optionally seeded by a playbook) | A workflow, decomposed from your instruction at creation |
 | Versioned? | **No** — the directory is not a git repo; delete means gone | Yes — the engine commits each run |
-| Budget | Per **reply**, fresh each message | Per **run** |
+| Budget | None by default; any you set is per **reply**, fresh each message | Per **run** |
 | Spine | A **working plan** the agent writes and revises as it goes | A workflow compiled at creation |
+| Done | Your **goals**, transcribed from what you asked; a *final* reply meets them | The recipe's Done when, and the finish line |
 | Where | Conversations tab (`~/conversations/<slug>`) | Dashboard (`~/routines/<slug>`) |
 
 Everything else — the tool set, permissions, artifacts, the readable transcript — is shared.
@@ -66,8 +67,9 @@ A conversation is **one continuous run**, and every reply is a self-contained le
   the daemon's post-finish reap sweeps the inbox for any still-unconsumed USER message and
   resumes the run itself. Report/trigger deliveries are exempt from the sweep — they keep
   their own read-on-next-run contract.
-- You send another message → the same run **resumes in place** with a fresh budget window. Nothing
-  is lost between messages; the files, the LEDGER, and everything the agent observed carry over.
+- You send another message → the same run **resumes in place** (with a fresh budget window, if
+  you set any budget). Nothing is lost between messages; the files, the LEDGER, the goals and
+  everything the agent observed carry over.
 - If you message while the agent is still working, it's delivered as an injection and **picked up at
   the next turn** rather than starting a new leg.
 
@@ -100,12 +102,15 @@ point worth handing you: a finished piece of the job, a verified deliverable, a 
 can make, or a genuine blocker. A single message can run for many turns when the job needs it — it
 is not trying to answer quickly, it is trying to answer.
 
-The per-reply budget is a **backstop** against a runaway, not a pace. When the agent nears the
-ceiling it gets a warning and converges to the nearest clean handover: it brings the working plan
-and LEDGER up to date and replies with honest progress, ending with an offer to continue. Say
-**continue** and it picks up right where it left off, in the same conversation, with a fresh window.
-And if the budget does run out mid-work, the agent still gets a reserved final turn to write the
-reply itself — you never get an engine error where an answer should be.
+A new conversation has **no per-reply budget**: no turn, time, token or cost ceiling. What bounds
+a reply is what you asked for (see *Goals and final replies* below). You can still set any ceiling
+— on the composer before you start, or in the header panel later — and then it is a **backstop**
+against a runaway, not a pace: when the agent nears it, it gets a warning and converges to the
+nearest clean handover — it brings the working plan and LEDGER up to date and replies with honest
+progress, not final, ending with an offer to continue. Say **continue** and it picks up right where
+it left off, with a fresh window. And if the budget does run out mid-work, the agent still gets a
+reserved final turn to write the reply itself — you never get an engine error where an answer
+should be.
 
 Because chat replies draw from a **reserved interactive pool**, a busy schedule never makes you wait
 in line behind cron runs, and vice versa.
@@ -168,9 +173,10 @@ Two things follow from this that are worth knowing:
 ## Deliberation
 
 The header's **⚙ capabilities & budgets** panel carries the **deliberation** slider — how much of
-the model's thinking lands on paper as it works (conversations default to *deliberate*: says that
-carry the context behind each step, including knowledge beyond the immediate inputs). A change saves
-to the conversation and, when a reply is live, re-levels it at the next turn.
+the model's thinking lands on paper as it works (conversations default to *standard*, like a
+routine: what the last step taught it and why the next one; raise it to *deliberate* for says that
+carry the context behind each step, including knowledge beyond the immediate inputs). A change
+saves to the conversation and, when a reply is live, re-levels it at the next turn.
 
 ## Attachments
 
@@ -217,16 +223,34 @@ reply, or a completed routine) with a command, it executes and the turn stays wi
 does **not** apply to a routine's own scheduled execution — that is the routine's turn, not
 yours, so its workflow always runs (a command you inject there is context for that run).
 
-## What DONE means
+## Goals and final replies
 
-A conversation's budgets are a **runaway backstop**, not a definition of done. What bounds the job
-is what you asked for: the working plan (above) opens with the goal in a line; the agent works
-toward it until the reply is complete. Redirect it in the chat — "only diagnose, do not start
-fixing", "stop once the PDF is verified" — and the plan changes with it.
+What bounds the job is what you asked for, and the agent keeps it as **goals** — `b1`, `b2`, …, each
+one checkable end state ("the login test passes ten runs in a row"). Before it starts on a request
+it transcribes it with its `goal` action; every goal carries **your own words** it came from, and
+the engine refuses a goal whose words it cannot find in something you wrote. The agent is the
+scribe, never the author: it may sharpen "fix the flaky test" into a checkable outcome, but it
+cannot invent a goal you never asked for. When you ask for more, it adds goals; when you change or
+withdraw a request, it changes or drops the goal — only on words you wrote **after** the ones the
+goal came from, so a goal is never quietly abandoned because it got hard. The working plan (above)
+is the *how*; the goals are the *what*.
 
-Recorded, checked verdicts belong to routines, whose runs repeat. A routine's recipe names what one
-finished run leaves behind (its `## Done when`); its finish line says when the routine is done for
-good. Every run's finish accounts for both — see the **Goal** group on the routine page.
+Every reply says whether it is **final**:
+
+- **final** — it delivers what you asked: every open goal is met, each with its evidence. The
+  agent may check a goal off as soon as it is met, or account for it in the final reply; either
+  way the claim is checked against its own transcript (once — if it insists, its word stands and
+  the disagreement is recorded). A final reply with a goal still open is refused.
+- **not final** — it hands back before that: a finished step worth showing you, a question only you
+  can answer, a blocker. The goals stay open, and the next reply picks them up.
+
+The goals outlive every reply — the conversation is one continuous run — and the agent sees them at
+the top of each reply. A ⟲ rewind or a ⑂ branch keeps exactly the goals its history had.
+
+Routines use the same mechanism: a run you start with a **brief** gets it as goal `b1`, and
+anything you ask for while it runs joins the list; its finish accounts for every open goal. A
+routine's recipe names what one finished run leaves behind (its `## Done when`); its finish line
+says when the routine is done for good — see the **Goal** group on the routine page.
 
 ## Artifacts — deliverables in the side panel
 
@@ -245,8 +269,8 @@ running conversation, where changes apply from the next reply (a reply already i
 what changed and which part of it reaches it — F337):
 
 - **Budgets** are **per reply**: turns, minutes, tokens and child tasks for each message, not the
-  whole session. They are a runaway backstop — raise them for a conversation doing heavy work,
-  lower them if you want short exchanges.
+  whole session. A new conversation has none but the child-task count (-1 = unlimited); set one
+  as a runaway backstop, or to keep exchanges short.
 - **Permissions** work exactly as they do for routines (see the *Rules, permissions & capabilities* guide). A
   conversation starts with the default set; the **shell** action is a one-click grant. Previous-run depth is
   greyed out — a conversation is one continuous run, so it doesn't apply.

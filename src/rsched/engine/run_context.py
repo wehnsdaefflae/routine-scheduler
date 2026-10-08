@@ -248,8 +248,15 @@ class RunContext:
     # The accounting the run's finish carried, set by the finish gate once it stands.
     accounting: list[str] = field(default_factory=list)
     # The operator's one-line JOB BRIEF for a run started by hand (engine/brief.py); "" for
-    # every other run. A briefed run answers for it instead of its recipe's Done when.
+    # every other run. It seeds goal b1; a briefed run answers for its goals instead of its
+    # recipe's Done when.
     brief: str = ""
+    # The run's GOALS — what a person asked of it (engine/goals.py): seeded from the brief,
+    # replayed from the transcript on a resume, kept by the `goal` action and stamped by a
+    # standing finish. Published in status.json for the console.
+    goals: list[dict] = field(default_factory=list)
+    # A conversation reply's own declaration (finish `final`): None until a finish declares it.
+    final: bool | None = None
     # The OPEN task (engine/taskops.py) and its workspace: while one is open, the run's
     # relative paths, scripts, shell and util calls and its memory notebook resolve in the
     # workspace instead of the routine's own dir (`work_dir`). Empty / None otherwise.
@@ -554,6 +561,8 @@ class RunContext:
             # dashboard and the next run's digest read about how this run went
             "accounting": self.accounting,
             **({"brief": self.brief} if self.brief else {}),
+            **({"goals": self.goals} if self.goals else {}),
+            **({"final": self.final} if self.final is not None else {}),
             # the task the run is working on right now (engine/taskops.py) — the live tail's
             # "where is it" for a routine whose work is several tasks
             **({"task": self.task_id} if self.task_id else {}),

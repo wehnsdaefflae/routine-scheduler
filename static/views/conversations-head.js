@@ -113,20 +113,21 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   const b = detail.budgets || {};
   const numIn = (v, min = "1") => el("input", { type: "number", min, value: v,
     class: "tight", style: "width:90px;padding:3px 6px" });
-  // fallbacks mirror CONVERSATION_BUDGETS (conversations.py) — a runaway backstop, not a pace
-  const turnsIn = numIn(b.max_turns ?? 40);
-  const minsIn = numIn(b.max_wall_clock_min ?? 60, "-1");    // -1 = unlimited time
-  const tokIn = numIn(b.max_total_tokens ?? 400000, "-1");   // -1 = unlimited tokens
+  // fallbacks mirror CONVERSATION_BUDGETS (conversations.py): no ceiling unless one is set
+  // (-1 = unlimited); a ceiling here is a runaway backstop, never a pace
+  const turnsIn = numIn(b.max_turns ?? -1, "-1");
+  const minsIn = numIn(b.max_wall_clock_min ?? -1, "-1");
+  const tokIn = numIn(b.max_total_tokens ?? -1, "-1");
   const saveBudgets = el("button", { class: "btn small" }, "save budgets");
   saveBudgets.onclick = () => act(saveBudgets,
     () => api(`/api/conversations/${slug}`, { method: "PATCH", body: { budgets: {
-      max_turns: +turnsIn.value || 40, max_wall_clock_min: +minsIn.value || 60,
-      max_total_tokens: +tokIn.value || 400000 } } }),
+      max_turns: +turnsIn.value || -1, max_wall_clock_min: +minsIn.value || -1,
+      max_total_tokens: +tokIn.value || -1 } } }),
     "budgets saved — they cap EACH reply, from the next one");
   const budgetField = (label, input) => el("label", { style: "flex-direction:column" },
     el("span", { class: "faint" }, label), input);
   capBody.append(el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;align-items:flex-end" },
-    budgetField("turns / reply", turnsIn), budgetField("minutes / reply (-1=∞)", minsIn),
+    budgetField("turns / reply (-1=∞)", turnsIn), budgetField("minutes / reply (-1=∞)", minsIn),
     budgetField("tokens / reply (-1=∞)", tokIn), saveBudgets));
   // Folder access (D82): the same read/write roots the composer grants at create time,
   // editable mid-conversation. Saved to config wholesale; they reach the NEXT reply's

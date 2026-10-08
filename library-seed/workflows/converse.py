@@ -2,9 +2,10 @@
 
 A conversation is a routine-shaped dir with NO schedule: the user's FIRST message is the
 instruction, every later message arrives as an injected USER MESSAGE, and between replies
-the run is FINISHED — the engine resumes it in place when the user writes again, with a
-fresh budget window per reply. This file is a PATTERN, not a program: the orchestrator acts
-it out, one engine action per turn.
+the run is FINISHED — the engine resumes it in place when the user writes again. A reply has
+no turn or time ceiling unless the user set one: what bounds it is what they asked for, kept as
+the conversation's GOALS. This file is a PATTERN, not a program: the orchestrator acts it out,
+one engine action per turn.
 
 A scheduled routine gets its spine from a compiled recipe (stages/ + phases). A conversation
 has none — so it writes its OWN, as `state/plan.md`, whenever a request outgrows a single
@@ -21,19 +22,20 @@ from routine.params import (
 )
 
 from routine.actions import (read_file, write_file, edit_file, util, write_util, llm,
-                             spawn, subtask, detach, wait, ask_user, finish)
+                             spawn, subtask, detach, wait, ask_user, goal, finish)
 
 META = {
     "name": "Converse",
     "slug": "converse",
     "description": "Interactive conversation: triage each user message, answer follow-ups "
-                   "directly, keep a working plan for anything larger, do the real work in "
-                   "verified steps, deliver artifacts, and finish EVERY reply (the finish "
-                   "summary IS the chat reply).",
+                   "directly, keep what the user asked for as goals and a working plan for "
+                   "anything larger, do the real work in verified steps, deliver artifacts, "
+                   "and finish EVERY reply, declaring whether it is final (the finish summary "
+                   "IS the chat reply).",
     "when_to_use": "Conversations only — the Conversations tab materializes this pattern into "
                    "each new conversation. Not for scheduled routines: there is no schedule, "
                    "and the reply cycle assumes a user who reads the answer and writes back.",
-    "version": 4,
+    "version": 5,
     # "meta" keeps it out of spawn-pattern lists and wizard suggestions — a conversation
     # harness assumes a present user; it is materialized ONLY by the Conversations tab.
     "tags": ["conversation", "interactive", "assistant", "meta"],
@@ -50,6 +52,7 @@ def main():
     kind = triage(message)               # follow-up | task | new-topic — judged, not computed
     if kind == "follow-up":
         return reply(answer(message))    # cheap; NEVER redo work already in this conversation
+    keep_goals(message)                  # what they asked for, in their words — before the work
     result = work(working_plan(message), message)
     return reply(result, new_topic=(kind == "new-topic"))
 
@@ -94,6 +97,22 @@ def answer(message):
     not evidence for the third, and an empty cell in your own table is an ungrounded claim."""
 
 
+def keep_goals(message):
+    """The GOALS are what the user asked for — kept by the engine, written by you as their
+    scribe. Before you work on a request, transcribe it with the goal action: each goal ONE
+    checkable end state ("the report renders and every figure matches the source"), each
+    carrying the user's own words it came from. The opening message gets the opening list
+    (set); a later message that asks for more adds to it; one that changes or withdraws a
+    request changes or drops that goal — always on their words, never on your judgment that it
+    got too hard.
+
+    Goals and the plan are different things: a goal says what is true when the user is served,
+    the plan says how you get there. A follow-up answered in this one reply needs no goal.
+    When one is met, check it off with what shows it — that is checked against your own
+    transcript, like any claim of done."""
+    goal("set", [{"text": "<one checkable end state>", "quote": "<their words>"}])
+
+
 def working_plan(message):
     """Your own decomposition of the job, kept in `state/plan.md`. The engine puts it in
     front of you at the top of EVERY later reply, so it — not the chat scrollback — is how a
@@ -125,12 +144,11 @@ def work(plan, message):
       only they can make, or a genuine blocker. NOT at the first natural pause: if a step is
       done and the next one follows obviously from it, keep going. If you are mid-step with
       nothing the user can act on, keep going.
-    - The engine's BUDGET warning is a BACKSTOP, not that signal. When it appears, converge
-      to the nearest handover point: stop starting new work, bring state/plan.md and
-      LEDGER.md up to date, then reply with honest progress and end with an offer to
-      continue. The user's 'continue' opens a fresh window on the same plan, so nothing is
-      lost — but a summary you wrote at a point you chose is worth far more than one written
-      against the wall.
+    - There is no turn or time ceiling on a reply unless the user set one. If they did, its
+      warning is a BACKSTOP, not that signal: converge to the nearest handover point — stop
+      starting new work, bring state/plan.md and LEDGER.md up to date, then reply with honest
+      progress (not final) and end with an offer to continue. The user's 'continue' opens a
+      fresh window on the same plan and the same goals, so nothing is lost.
     - Attachments: a message may carry an '[attached files]' block of paths. read_file the
       text ones; SEE images/PDFs with the view_image action (shown to you directly when this
       model is multimodal, else described by an image-describing util — attached images are
@@ -170,9 +188,16 @@ def artifacts():
 
 
 def reply(result, new_topic=False):
-    """EVERY reply is an authored finish: status ok (or partial when the job is not done and
-    you are handing over mid-plan), and the summary is the MESSAGE the user reads in the
-    chat — direct, conversational markdown grounded in this cycle's observations. Include:
+    """EVERY reply is an authored finish that declares whether it is FINAL. Final = it
+    delivers what the user asked: every open goal is met, accounted `met` with its evidence
+    (the engine checks the claim against your transcript and will not take a final reply with
+    a goal still open). Not final = you hand back before that — a finished plan step worth
+    showing, a decision only they can make, a genuine blocker — and the goals stay open for
+    your next reply. Never call a reply final to end it sooner; never leave one non-final when
+    the work is in fact done.
+
+    Status ok (or partial when the job is not done and you are handing over mid-plan), and the
+    summary is the MESSAGE the user reads in the chat — direct, conversational markdown grounded in this cycle's observations. Include:
     what you did or found, artifact filenames if any, checkpoint commits if any, where the
     plan now stands if there is one, and open questions. If new_topic, make the summary's
     FIRST line exactly `[new-topic] <a short title for the suggested new conversation>` and
@@ -183,7 +208,7 @@ def reply(result, new_topic=False):
     The conversation CONTINUES in place: phrase remaining work as picked up in THIS
     conversation when the user next writes — never as what 'the next run picks up'. A
     conversation has no next run, only your next reply."""
-    return finish("ok", "the reply the user reads")
+    return finish("ok", "the reply the user reads", final=True)
 
 
 if __name__ == "__main__":

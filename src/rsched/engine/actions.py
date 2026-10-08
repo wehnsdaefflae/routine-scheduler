@@ -19,6 +19,7 @@ from ..reports import REPORT_ID_RE
 from . import thenscript
 from .actionschema import KINDS, PSEUDO_UTILS
 from .decideaction import field_problems as decide_field_problems
+from .goalops import field_problems as goal_field_problems
 from .remind import field_problems as reminder_field_problems
 
 # The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine
@@ -74,6 +75,9 @@ KIND_EXAMPLES: dict[str, dict] = {
              "verb": "checkpoint", "id": "client-onboarding", "outcome": "advanced",
              "summary": "<what landed, what the next run picks up>",
              "accounting": ["d1 met: <evidence>"]},
+    "goal": {"say": "<what the person asked for>", "kind": "goal", "verb": "add",
+             "goals": [{"text": "<one checkable end state>",
+                        "quote": "<their own words it came from, verbatim>"}]},
 
     "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
     "view_image": {"say": "<why look at it>", "kind": "view_image",
@@ -160,6 +164,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                                  "paused")),
     "task": (("verb",), ("id", "title", "brief", "path", "state", "outcome", "summary",
                          "wake", "quiet_days", "accounting")),
+    "goal": (("verb",), ("id", "goals", "quote", "evidence")),
     "read_file": ((), ("path", "paths", "start_line", "start_char", "max_lines", "background")),
     "view_image": ((), ("path", "paths", "prompt", "background")),
     "write_file": (("path", "content"), ("append", "then_script")),
@@ -183,7 +188,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
     "report": (("title",), ("detail", "target", "answers", "closes", "supersedes", "settles")),
-    "finish": (("status", "summary"), ("accounting", "reply_to")),
+    "finish": (("status", "summary"), ("accounting", "reply_to", "final")),
 }
 
 
@@ -220,6 +225,11 @@ def normalize_action(obj: dict) -> dict:
     out = {}
     for key, val in obj.items():
         if key in ("say", "kind") or key in required:
+            out[key] = val
+        elif key == "final" and kind == "finish" and isinstance(val, bool):
+            # the one boolean whose `false` is a DECLARATION — a reply that is not final — and
+            # never padding: dropped, a deliberate false read as undeclared, and the finish
+            # gate asked for the declaration the model had just made, round after round
             out[key] = val
         elif val in ("", None, [], {}) or val is False:
             continue
@@ -339,6 +349,10 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                             "('stop' or 'continue')")
     if kind == "task":
         problems += task_field_problems(obj)
+    if kind == "goal":
+        problems += goal_field_problems(obj)
+    if kind == "finish" and "final" in obj and not isinstance(obj["final"], bool):
+        problems.append("kind=finish: 'final' is true or false — is this reply final?")
     if kind in ("read_file", "view_image"):
         # The schema already holds `paths` to a list of at most READ_PATHS_MAX strings; what it
         # cannot say is that none of them is blank.

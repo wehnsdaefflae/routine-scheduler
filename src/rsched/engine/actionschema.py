@@ -38,7 +38,7 @@ KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_
          "script", "shell",
          "llm", "decide", "spawn", "subtask", "detach",
          "schedule_run", "create_routine", "manage_lane",
-         "task",
+         "task", "goal",
          "list_models", "subruns", "kill", "wait", "ask_user", "report", "finish")
 
 ACTION_SCHEMA: dict = {
@@ -342,12 +342,13 @@ ACTION_SCHEMA: dict = {
         "id": {"type": "string",
                "description": "schedule_run: the one-shot id (so-XXXX) to cancel · task: the "
                               "task's kebab-case id (create: the new one's; open without it "
-                              "opens the next due task)"},
+                              "opens the next due task) · goal change/check/drop: the goal's "
+                              "id (b1, b2, …)"},
         # manage_lane — CRUD/fire routine LANES from a conversation (D61). Offered to every
         # depth-0 run; a root conversation applies a verb, any other run queues a proposal (F328)
         "verb": {"type": "string",
                  "enum": ["list", "create", "update", "delete", "set-default", "run", "open",
-                          "checkpoint"],
+                          "checkpoint", "set", "add", "change", "check", "drop"],
                  # EVERY clause carries its kind's lead. `kindsurface._project_description`
                  # splits on " · " and KEEPS a clause that names no kind, so an un-led
                  # continuation of task's list survives into a run that holds manage_lane and
@@ -365,7 +366,28 @@ ACTION_SCHEMA: dict = {
                                 "update (id + what changes) · task: open (id, or none for the "
                                 "next due task) · task: checkpoint (id + outcome + summary: "
                                 "closes the open task and opens the next due one) · task: "
-                                "delete (id)"},
+                                "delete (id) · goal: the operation — set (goals: the opening "
+                                "list, while none is open) · goal: add (goals: one or more "
+                                "new ones) · goal: change (id + goals: [one, reworded]) · "
+                                "goal: drop (id + quote) · goal: check (id + evidence: met) · "
+                                "goal: list"},
+        # goal — the run's GOALS, transcribed from what a person asked (engine/goals.py)
+        "goals": {
+            "type": "array", "maxItems": 12,
+            "items": {"type": "object", "additionalProperties": False, "properties": {
+                "text": {"type": "string",
+                         "description": "the goal as ONE checkable end state — what is true "
+                                        "when it is met, not a step toward it"},
+                "quote": {"type": "string",
+                          "description": "the person's OWN words it came from, verbatim (an "
+                                         "excerpt; join two excerpts with …)"}}},
+            "description": "goal set/add: the goals, one per entry · goal change: ONE entry — "
+                           "the new wording, quoting the words they wrote AFTER the goal was "
+                           "set that changed it",
+        },
+        "quote": {"type": "string",
+                  "description": "goal drop: the person's own words, written AFTER the goal "
+                                 "was set, that withdraw it — verbatim"},
         "members": {"type": "array", "items": {"type": "string"},
                     "description": "manage_lane create/update: the ORDERED routine slugs in the "
                                    "lane (deduped; each must name a real routine) — the fire "
@@ -429,7 +451,9 @@ ACTION_SCHEMA: dict = {
         "evidence": {"type": ["string", "object", "array"],
                      "description": "decide: what the answer depends on — text, or a JSON "
                                     "object/array of the facts. Self-contained: the model "
-                                    "sees nothing else of your context"},
+                                    "sees nothing else of your context · goal check: what "
+                                    "shows the goal is met — the observation or artefact, as "
+                                    "text"},
         "files": {"type": "array", "items": {"type": "string"}, "maxItems": 16,
                   "description": "decide: files whose CONTENT is evidence — images "
                                  "(png/jpeg/webp/gif) are shown to a decision model that takes "
@@ -601,9 +625,10 @@ ACTION_SCHEMA: dict = {
                            "answers for — one "
                            "entry per line of your recipe's `## Done when` (`d1 met: "
                            "<evidence>`, `d2 unmet: <what remains>`, `d3 not due: <how that "
-                           "was established>`) and per open outcome of the routine's finish "
+                           "was established>`), per open outcome of the routine's finish "
                            "line (`g1 distance: <what remains>`, or `g1 met: <evidence>` for "
-                           "one the run proves). Omit when your digest names neither",
+                           "one the run proves) and per open GOAL (`b1 met: <evidence>`, `b2 "
+                           "unmet: <what remains>`). Omit when your digest names none of them",
         },
         "reply_to": {
             "type": "string",
@@ -612,6 +637,16 @@ ACTION_SCHEMA: dict = {
                            "words); it renders as a '↩ …' reference chip above your reply in "
                            "the chat, the way the user replying to a message does. Ignored "
                            "outside a conversation.",
+        },
+        "final": {
+            "type": "boolean",
+            "description": "finish (conversations only): is this reply FINAL? true = it "
+                           "delivers what the person asked: every open goal is accounted met "
+                           "in `accounting` (or was checked off) · false = you are handing back "
+                           "BEFORE that — progress, a question only they can answer, a blocker "
+                           "— and the goals stay open for the next reply. Declare it on every "
+                           "reply; it is required while a goal is open. Ignored outside a "
+                           "conversation.",
         },
     },
 }
@@ -625,7 +660,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "decide": "question", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
-               "manage_lane": "verb", "task": "id",
+               "manage_lane": "verb", "task": "id", "goal": "id",
                "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
 #: The kinds that may name several files at once (`paths`) where BRIEF_FIELD names one — what
@@ -676,11 +711,11 @@ def canon(action: dict) -> str:
     string would silently change what a regex can see as an action's arguments grow.
     """
     kind = str(action.get("kind") or "?")
-    if kind == "task":
+    if kind in ("task", "goal"):
         # the verb is what the turn DID to the task — `task id=x` cannot tell an open from a
-        # checkpoint, the one distinction a reader of the turn needs
+        # checkpoint, the one distinction a reader of the turn needs (a goal's add from its drop)
         tid = str(action.get("id") or "")
-        return f"task:{action.get('verb') or '?'}{f' {tid}' if tid else ''}"
+        return f"{kind}:{action.get('verb') or '?'}{f' {tid}' if tid else ''}"
     if kind in ("util", "script"):
         args = action.get("args")
         tail = " ".join(str(a) for a in args) if isinstance(args, list) else ""

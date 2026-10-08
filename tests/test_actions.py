@@ -94,6 +94,8 @@ def test_transcript_js_brief_field_mirrors_python():
          "members": ["weight-coach", "news-digest"], "on_failure": "continue"},
         {"say": "s", "kind": "task", "verb": "checkpoint", "id": "nanogeofeld",
          "outcome": "advanced", "summary": "AP 3.4 revised", "accounting": ["d1 met: x"]},
+        {"say": "s", "kind": "goal", "verb": "add",
+         "goals": [{"text": "the Q3 table matches the ledger", "quote": "fix the Q3 table"}]},
         {"say": "s", "kind": "subruns"},
         {"say": "s", "kind": "kill", "n": 2},
         {"say": "s", "kind": "wait", "all": True, "timeout_s": 120},
