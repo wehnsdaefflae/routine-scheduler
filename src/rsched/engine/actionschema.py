@@ -248,6 +248,14 @@ ACTION_SCHEMA: dict = {
             "description": "read_file/view_image: act on SEVERAL files in one action (instead "
                            "of `path`) — batch related reads/images",
         },
+        "then_script": {
+            "type": "array", "items": {"type": "string"}, "minItems": 1,
+            "description": "write_file/edit_file: OPTIONAL — run one of your scripts/ the moment "
+                           'the change lands: ["<script-name>", ...args]. Both results come '
+                           "back in ONE observation, saving the turn you would spend calling "
+                           "it; skipped if the change fails. Use it whenever your next action "
+                           "would be running that script (to test, render or check the file)",
+        },
         "start_line": {"type": "integer", "minimum": 1,
                        "description": "read_file: first line (default 1)"},
         "max_lines": {

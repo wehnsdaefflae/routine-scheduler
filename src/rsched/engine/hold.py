@@ -86,12 +86,19 @@ def before_dispatch(loop, action: dict) -> dict | None:
     Returns the observation the model reads INSTEAD of the action's result, or None to let it
     execute. The canonical string is computed once here and handed to every source, so the two
     layers can never disagree about what the action was.
-    """
-    from . import assist, remind
 
-    rendered = canon(action)
-    for source in (remind, assist):
-        obs = source.hold(loop, action, rendered)
-        if obs is not None:
-            return obs
+    A write carrying a script (`then_script`, engine/thenscript.py) is asked about TWICE: as
+    itself, then as the script it runs, rendered as that script would be alone — a reminder
+    on `script:deploy …` must hold the fused call as surely as the bare one. A held script
+    holds the whole action (nothing runs), and the observation names what it rode on.
+    """
+    from . import assist, remind, thenscript
+
+    script = thenscript.riding(action)
+    for part in (action, script) if script is not None else (action,):
+        rendered = canon(part)
+        for source in (remind, assist):
+            obs = source.hold(loop, part, rendered)
+            if obs is not None:
+                return obs if part is action else {**obs, "rides": canon(action)}
     return None

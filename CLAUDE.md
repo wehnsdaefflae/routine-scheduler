@@ -253,7 +253,14 @@ one you are about to touch, not all of them.
   action IS the confirmation, and the tally is per-routine even for a library reminder
   (docs/reminders.md). `read_file` batches
   related reads via `paths` (one turn, one
-  observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
+  observation section per file); `write_file`/`edit_file` may carry `then_script` —
+  `["<script>", …args]`, run the moment the change lands, both results in ONE observation
+  (`engine/thenscript.py`). It is the ONE field that names another kind's call, so that call is
+  gated AS that kind: `validate_action` on the synthesized script (the `tools:` list),
+  `hold.before_dispatch` asking about each part (a reminder on `script:x` holds the fused write),
+  D39's secret gate before it runs, and `kindsurface` projecting the field out wherever `script`
+  is not usable. Scoped to `script` because a util or a shell command riding a write would pass
+  every gate keyed on its own kind; `edit_file` anchor-replaces in place so revisions cost the diff, not
   the document — and a `.json`/`.yaml`/`.toml` file that PARSED before an edit or a string
   overwrite may not stop parsing because of it (`engine/fileformat.check_after`): the write is
   refused and the file untouched, so a degraded model's corrupted `replacement` is caught on the

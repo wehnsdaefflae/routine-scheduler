@@ -8,6 +8,21 @@ an edit, and — for `.memory/` and the rule library — that the engine owns th
 
 from __future__ import annotations
 
+from . import thenscript
+
+
+def _with_script(obs: dict) -> str:
+    """A write or edit that carried a script (`then_script`, engine/thenscript.py): the change
+    in its own words, then the script in ITS own words — each renderer stays the one place its
+    kind is worded.
+    """
+    from .observations import format_observation
+    change = format_observation({k: v for k, v in obs.items()
+                                 if k not in (thenscript.FIELD, thenscript.SKIPPED)})
+    if skipped := obs.get(thenscript.SKIPPED):
+        return f"{change}\n[then_script NOT run] {skipped}"
+    return f"{change}\n{format_observation(obs[thenscript.FIELD])}"
+
 
 def _span(f: dict) -> str:
     """`lines 1-200 of 412` — or, for a directory read, `directory listing, entries 1-8 of 8`:
@@ -19,6 +34,8 @@ def _span(f: dict) -> str:
 
 def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
     """Wording for this module's kinds; None when `kind` is not one of them."""
+    if kind in thenscript.HOSTS and (thenscript.FIELD in obs or thenscript.SKIPPED in obs):
+        return _with_script(obs)
     if kind == "read_file":
         if obs.get("files") is not None:  # batched multi-path read
             parts = []

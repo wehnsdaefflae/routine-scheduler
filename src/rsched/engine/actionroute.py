@@ -15,6 +15,7 @@ from . import (
     manage_lane,
     secretgate,
     taskops,
+    thenscript,
 )
 from .control import RunAborted
 from .loopconst import POLL_S
@@ -124,6 +125,10 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->h
         # the routine's own deterministic helper — same call-time secret gate
         return secretgate.gate_script_secrets(loop, action, poll_s=POLL_S) \
             or executor.do_script(action, ctx)
+    if (script := thenscript.riding(action)) is not None:
+        # a write or edit carrying the script that checks it: the change, then that script
+        # behind the SAME secret gate as the branch above (engine/thenscript.py)
+        return thenscript.run(loop, action, script, ctx)
     # `shell` has no branch here on purpose: it declares no secrets, so there is nothing for
     # a call-time exposure gate to ask about, and it falls through to executor.dispatch with
     # the other effect kinds. Its capability gate already ran inside the schema-retry cycle.

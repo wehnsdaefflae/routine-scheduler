@@ -28,10 +28,15 @@ def test_projection_still_accepts_that_kinds_own_example(kind):
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_projection_keeps_every_declared_field_of_an_allowed_kind(kind):
+    """…with ONE deliberate exception: `then_script` names a SCRIPT call riding a write, so it
+    is shown only where `script` is allowed too (engine/thenscript.py)."""
     required, optional = KIND_FIELDS[kind]
     props = schema_for_kinds({kind})["properties"]
-    missing = [f for f in (*required, *optional) if f not in props]
+    missing = [f for f in (*required, *optional) if f not in props and f != "then_script"]
     assert not missing, f"{kind}: projection dropped {missing}"
+    if "then_script" in optional:
+        assert "then_script" not in props
+        assert "then_script" in schema_for_kinds({kind, "script"})["properties"]
     for universal in ("say", "note", "kind"):
         assert universal in props
 

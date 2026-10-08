@@ -75,7 +75,13 @@ the limits (single-writer status.json preserved).
   `util name=list args=["<name>"]`) → **state digest** (phase, `state/` and `artifacts/` — each capped at
   `composer.DIR_LIST_MAX` entries, newest first — stage modules, held rules, last result,
   LEDGER tail, open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/
-  `edit_file`/`llm`) run through `engine/executor.py`. Everything else is reachable on demand (read_file
+  `edit_file`/`llm`) run through `engine/executor.py`; a `write_file`/`edit_file` may carry
+  `then_script` — one of the routine's scripts, run the moment the change lands, both results in
+  ONE observation (`engine/thenscript.py`, SoL-Pi's Action Fusion: 1,089 of 3,459 writes in 160
+  fleet runs were followed straight by a run of the file just changed, each a whole turn). The
+  riding script is validated, HELD and secret-gated as the `script` action it would be alone, is
+  skipped when the change did not land, and is shown in the schema only where `script` is a
+  usable kind. Everything else is reachable on demand (read_file
   stages/history, read_rule, util name=list, memory_read).
 
   **What that costs, measured 2026-09-11 across all 33 live routines:** the composed prefix averages

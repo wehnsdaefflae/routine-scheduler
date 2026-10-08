@@ -191,6 +191,12 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # one of these is load-bearing prose.
         "An action can have an effect you did not intend",
         "ACTION HELD — it did NOT run.",
+        # A write carrying its script (engine/thenscript.py): the standing instruction in the
+        # script gloss, the skip a change that did not land reports, and the hold head that
+        # says the write did not run either
+        "put it ON the change",
+        "[then_script NOT run]",
+        "which did not run either",
         "one hold per action string per run",
         "[REMINDERS: ",
         "The labels: could_not",

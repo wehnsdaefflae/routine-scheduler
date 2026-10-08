@@ -135,3 +135,31 @@ def test_a_malformed_call_and_a_timeout_read_in_the_warning_colour(ui, ui_page):
             assert row["colour"] == got["warn"], f"{theme}: the {name} row is {row['colour']}"
             assert row["edge"] == got["warn"], f"{theme}: the {name} row's edge is {row['edge']}"
         assert (usage["style"], timeout["style"]) == ("solid", "dashed"), got["rows"]
+
+
+def test_a_write_that_ran_its_script_reads_as_the_scripts_verdict(ui, ui_page):
+    """`then_script` (engine/thenscript.py): the change landed, so the row means what the script
+    said about it — a red row for a failing check, a green one for a passing one — and the
+    script's own output sits under the change's line. A change that did not land never ran its
+    script, and the row says so instead of showing a result that does not exist."""
+    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.wait_for_selector("h1")
+    ui_page.evaluate(_FIXTURE, [
+        {"kind": "write_file", "path": "scripts/render.py", "bytes": 120,
+         "then_script": {"kind": "script", "name": "render", "args": [], "exit": 1,
+                         "stdout": "", "stderr": "Traceback: boom"}},
+        {"kind": "edit_file", "path": "state/x.json", "replacements": 1, "bytes": 40,
+         "then_script": {"kind": "script", "name": "check", "args": [], "exit": 0,
+                         "stdout": "all 3 rows valid"}},
+        {"kind": "edit_file", "path": "state/x.json", "error": "anchor not found",
+         "then_script_skipped": "the edit_file did not land, so the script did not run"},
+    ])
+    rows = ui_page.locator("#states .obs-collapse")
+    expect(rows.nth(0)).to_have_class("obs-collapse obs-error")
+    expect(rows.nth(1)).to_have_class("obs-collapse obs-ok")
+    expect(rows.nth(2)).to_have_class("obs-collapse obs-error")
+    texts = ui_page.evaluate(
+        "() => [...document.querySelectorAll('#states .obs-collapse .obs')].map(e => e.textContent)")
+    assert "then_script render → exit 1" in texts[0] and "Traceback: boom" in texts[0]
+    assert "then_script check → exit 0" in texts[1] and "all 3 rows valid" in texts[1]
+    assert "[then_script NOT run]" in texts[2]

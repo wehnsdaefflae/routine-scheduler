@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import copy
 
+from . import thenscript
 from .actions import ALWAYS_KINDS, KIND_FIELDS
 from .actionschema import ACTION_SCHEMA, KINDS
 
@@ -91,6 +92,10 @@ def schema_for_kinds(kinds: list[str] | set[str] | None, *,
         required, optional = KIND_FIELDS[kind]
         fields.update(required)
         fields.update(optional)
+    if "script" not in keep:
+        # the one field that names ANOTHER kind's call: a write may carry a script only where
+        # the run may call scripts at all (engine/thenscript.py)
+        fields.discard(thenscript.FIELD)
     out = copy.deepcopy(ACTION_SCHEMA)
     # filter the DEEPCOPY's specs, never the original's: taking them from ACTION_SCHEMA
     # here handed the description-trimming loop below references into the shared global,

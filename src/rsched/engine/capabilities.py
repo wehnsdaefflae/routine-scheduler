@@ -14,6 +14,12 @@ from .run_context import RunContext
 #: conduct-first to fit, so the budget is a backstop, not a truncator.
 PERMISSION_NOTE_MAX_CHARS = 1_000
 
+#: The script gloss's last sentence, in both its forms (engine/thenscript.py): the turn between
+#: a change and the script that checks it is the one most worth not spending.
+_THEN_SCRIPT = ("When the step right after a write_file or edit_file is running a script, put "
+                'it ON the change: then_script ["<name>", ...args] runs it the moment the change '
+                "lands and returns both results in ONE observation — skipped if the change fails")
+
 
 def _permission_notes(ctx: RunContext, g) -> str:
     """Usage notes for the held permissions that carry one — the library permission's body,
@@ -304,7 +310,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                       "one is refused. "
                       "Placement test: a script is for THIS routine only — capability "
                       "another routine could plausibly reuse belongs in the shared "
-                      "library as a util instead")
+                      "library as a util instead. " + _THEN_SCRIPT)
             else:
                 cap_bits.append(
                     "script — run this routine's own Python helpers from scripts/<name>.py "
@@ -317,7 +323,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                     "your venv inside your sandbox, survives this run, and future runs "
                     "call it for free. Placement test: a script is for THIS routine only "
                     "— capability another routine could plausibly reuse belongs in the "
-                    "shared library as a util instead")
+                    "shared library as a util instead. " + _THEN_SCRIPT)
         if "create_routine" in kinds:
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
                             "routine — the only way a routine is created)")

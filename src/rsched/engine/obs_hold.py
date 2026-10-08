@@ -49,10 +49,21 @@ def _caution(r: dict) -> str:
             "action and costs no turn of its own).")
 
 
+def _held(obs: dict) -> str:
+    """The head both kinds share. A script riding a write (`then_script`) is held for the
+    whole action, so the head says the write did not run either — read alone, `script:x`
+    did NOT run invites the model to assume its change landed.
+    """
+    head = f"ACTION HELD — it did NOT run. `{obs.get('action')}`"
+    if rides := obs.get("rides"):
+        head += f" (the then_script riding `{rides}`, which did not run either)"
+    return head
+
+
 def reminder_hold(obs: dict) -> str:
     """A consequence reminder this routine wrote for itself."""
     cautions = "\n".join(_caution(r) for r in obs.get("reminders") or [])
-    return (f"ACTION HELD — it did NOT run. `{obs.get('action')}` matches a consequence "
+    return (f"{_held(obs)} matches a consequence "
             f"reminder left for exactly this moment:\n{cautions}\n"
             f"Decide again with that in front of you. {_PROCEED}\n"
             "Then LABEL what happened: carry `remind_feedback` with the id above and one of "
@@ -68,7 +79,7 @@ def assist_hold(obs: dict) -> str:
     terse, and terseness is only honest when the full text is one action away.
     """
     lines = "\n".join(f"- {line}" for line in obs.get("lines") or [])
-    return (f"ACTION HELD — it did NOT run. `{obs.get('action')}` is the moment a general rule "
+    return (f"{_held(obs)} is the moment a general rule "
             f"you practise governs:\n{lines}\n"
             f"Decide again with that in front of you. {_PROCEED}\n"
             "If the rule turned out not to apply here, say so in your next `say` — that is "

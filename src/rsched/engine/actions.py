@@ -16,6 +16,7 @@ from datetime import date
 
 from ..ids import is_slug
 from ..reports import REPORT_ID_RE
+from . import thenscript
 from .actionschema import KINDS, PSEUDO_UTILS
 from .decideaction import field_problems as decide_field_problems
 from .remind import field_problems as reminder_field_problems
@@ -161,11 +162,11 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                          "wake", "quiet_days", "accounting")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines", "background")),
     "view_image": ((), ("path", "paths", "prompt", "background")),
-    "write_file": (("path", "content"), ("append",)),
+    "write_file": (("path", "content"), ("append", "then_script")),
     "delete": (("path",), ("recursive",)),
     "move": (("src", "dst"), ()),
     "mkdir": (("path",), ("parents",)),
-    "edit_file": (("path", "anchor"), ("replacement", "all")),
+    "edit_file": (("path", "anchor"), ("replacement", "all", "then_script")),
     "memory_read": (("name",), ("background",)),
     "memory_write": (("name",), ("content", "about", "delete")),
     "read_rule": (("name",), ("background",)),
@@ -447,6 +448,10 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             if not str(obj.get("about") or "").strip():
                 problems.append("memory_write requires 'about' (the note's one-line INDEX "
                                 "entry) unless delete: true")
+    # A script riding a write or edit is validated as the script action it is: the recipe's
+    # `tools:` list and the capability layer judge it exactly as they would judge it alone.
+    if kind in thenscript.HOSTS:
+        problems += thenscript.problems(obj, allowed_kinds, grants)
     # The side fields are gated on their own terms (the capability rides the FIELD, not the
     # kind), so this runs outside the ALWAYS_KINDS exemption above: a `remind` on a `report`
     # must meet the same bar as one on a `util`.

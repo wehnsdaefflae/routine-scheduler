@@ -367,6 +367,10 @@ export function createTranscript(container, opts = {}) {
     if (o.background && (o.unread || o.abandoned)) return "lost";
     if (o.kind === "reminder_hold" || o.kind === "assist_hold") return "held";
     if (o.missing || o.declined || o.rejected || o.callers) return "refused";
+    // A write or edit that carried a script (engine/thenscript.py) LANDED — so what the row
+    // means is what the script said about it. A change that did not land carries an error
+    // and no script, and reads as the error below.
+    if (o.then_script) return obsState(o.then_script);
     if (o.kind === "util" || o.kind === "script" || o.kind === "shell") {
       if (o.exit == null) return "";
       if (o.exit === TIMEOUT_EXIT) return "timeout";
@@ -386,6 +390,22 @@ export function createTranscript(container, opts = {}) {
     return el("details", { class: `obs-collapse${state ? ` obs-${state}` : ""}` },
       el("summary", {}, `result — ${firstLine}${more ? " …" : ""}`),
       rich ? md(text, "obs md") : el("div", { class: "obs" }, text));
+  }
+
+  // The script a write or edit carried (`then_script`, engine/thenscript.py), worded as the
+  // script's own row would be, under the change's line — or why it never ran.
+  function thenScriptText(o) {
+    if (o.then_script_skipped) return `\n[then_script NOT run] ${o.then_script_skipped}`;
+    const s = o.then_script;
+    if (!s) return "";
+    if (s.pending_secrets || s.declined_secrets) {
+      return `\nthen_script ${s.name} NOT run — secret exposure `
+        + (s.declined_secrets ? "declined" : `pending for ${s.pending_secrets.join(", ")}`);
+    }
+    if (s.missing) return `\nthen_script: script "${s.name}" does not exist`;
+    if (s.exit == null) return `\nthen_script ${s.name} NOT run: ${s.error || ""}`;
+    return `\nthen_script ${s.name} → exit ${s.exit}\n${s.stdout || ""}`
+      + (s.stderr ? `\n[stderr] ${s.stderr}` : "") + fullOutput(s.full_output);
   }
 
   function addObservation(ev) {
@@ -446,9 +466,10 @@ export function createTranscript(container, opts = {}) {
     } else if (o.kind === "llm") {
       text = o.error || o.reply || "";
     } else if (o.kind === "write_file") {
-      text = o.error || `wrote ${o.bytes} bytes → ${o.path}`;
+      text = (o.error || `wrote ${o.bytes} bytes → ${o.path}`) + thenScriptText(o);
     } else if (o.kind === "edit_file") {
-      text = o.error || `replaced ${o.replacements} occurrence(s) in ${o.path}`;
+      text = (o.error || `replaced ${o.replacements} occurrence(s) in ${o.path}`)
+        + thenScriptText(o);
     } else if (o.kind === "memory_read") {
       text = o.missing ? `no note "${o.name}" (topics: ${(o.topics || []).join(", ") || "none yet"})`
         : o.content || "";

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from . import obs_hold, outputs
+from . import obs_hold, outputs, thenscript
 from .obs_admin import dialog_reply
 
 OBS_CAP_CHARS = 8_000
@@ -58,6 +58,10 @@ def is_failure(obs: dict) -> bool:
     if obs.get("lint_ok") is False or obs.get("selftest_ok") is False:
         return True
     if any(obs.get(k) for k in _FAILURE_KEYS):
+        return True
+    # a write's riding script (engine/thenscript.py) failing is the action failing — the same
+    # answer the two actions would have given apart
+    if isinstance(rode := obs.get(thenscript.FIELD), dict) and is_failure(rode):
         return True
     # a `paths` batch fails per file, and one bad file in eight is still a failure to report
     return any(isinstance(f, dict) and f.get("error") for f in obs.get("files") or [])
