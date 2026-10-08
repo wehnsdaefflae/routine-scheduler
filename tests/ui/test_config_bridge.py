@@ -98,8 +98,13 @@ def test_answering_keeps_the_card_and_its_apply_button(ui, ui_page):
     apply_btn = card.get_by_role("button", name="approve & apply")
     expect(apply_btn).to_be_visible()
 
-    card.locator("textarea, input[type=text]").first.fill("yes, please raise it")
-    card.get_by_role("button", name="answer").first.click()
+    # The house locators (`textarea.answer-input`, and `name="answer"` with exact=True), not a
+    # generic selector: a patch-carrying card ALSO carries an "approve & apply" button, so a
+    # NON-exact accessible-name match for "answer" is ambiguous on exactly the card type this
+    # test seeds — which is why the first version of this test failed all four attempts while
+    # its patch-less control sibling passed in the same run.
+    card.locator("textarea.answer-input").fill("yes, please raise it")
+    card.get_by_role("button", name="answer", exact=True).click()
 
     expect(card).to_contain_text("answered")
     expect(card).to_contain_text("NOT applied")
@@ -121,7 +126,7 @@ def test_answering_an_ordinary_question_still_clears_it(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item", has_text="Which colour").first
     expect(card).to_be_visible()
-    card.locator("textarea, input[type=text]").first.fill("green")
-    card.get_by_role("button", name="answer").first.click()
+    card.locator("textarea.answer-input").fill("green")
+    card.get_by_role("button", name="answer", exact=True).click()
     expect(card).to_contain_text("answered")
     expect(card.get_by_role("button", name="approve & apply")).to_have_count(0)
