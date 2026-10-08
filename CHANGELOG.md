@@ -15,6 +15,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.394.0] — 2026-10-08
+
+### Changed
+- **The never-grantable credential guard names the credential FILES, not the config directory**
+  (D169, operator's answer A). The guard refuses a path that IS a credential store or CONTAINS
+  one, and it named `~/.config/routine-scheduler` — so it swept in every sibling of the real
+  credential files, `config.yaml` above all. That is the instance's ordinary settings file and
+  holds no credential; the routines whose job is auditing this server's configuration read
+  exactly it, and the guard's own advisory asks them to narrow their grant to it. The advisory
+  then refused the narrower path it had just asked for, so the one wording all six enforcement
+  doors speak was false about the door it was written for (F635; D159's earlier narrowing did not
+  silence the advisory it was chosen to silence).
+
+  `NEVER_GRANTABLE` is now `CONFIG_DIR_CREDENTIALS` (`secrets.env`, `secrets.d/`,
+  `connections.json`, `vapid-private.pem`, `.mounts/`) plus `HOME_CREDENTIALS`
+  (`~/.credentials`, `~/.ssh`). The config entries are resolved through `paths.config_file()` by
+  `entities.never_grantable_stores()`, which the enforcement path calls — `RSCHED_CONFIG` may
+  move the directory, and a hardcoded tuple would have guarded a directory the instance does not
+  use while leaving the live one open.
+
+  **Nothing was opened up.** The config directory itself is still refused, because it CONTAINS
+  those entries. `GUARDED_ROOT_REASON` is rewritten accordingly (it is the wording every door
+  speaks) and now tells a holder what to grant instead. Live effect: `config-optimizer`,
+  `library-sync` and `scheduler-improvement-research` already list exactly
+  `~/.config/routine-scheduler/config.yaml` and were flagged by the config loader on every run;
+  all three go quiet, and the advisory becomes true.
+
+  A new test checks each guarded name against the module that OWNS it
+  (`secrets.SECRETS_FILE`, `secrets.SCOPED_DIR`, `oauth.store.CONNECTIONS_FILE`,
+  `push._VAPID_FILE`): a credential file named only as a literal would go silently GRANTABLE the
+  day its owner renames it — the one failure mode a narrowed guard has that the wide one did not.
+
 ## [0.393.3] — 2026-10-08
 
 ### Fixed
