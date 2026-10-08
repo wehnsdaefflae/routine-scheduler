@@ -15,6 +15,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.393.0] — 2026-10-08
+
+Two token-saving mechanisms adapted from NVIDIA's SoL-Pi harness study (arXiv 2609.20519),
+each sized against this fleet's own transcripts before it was built.
+
+### Added
+- **`then_script`: a write or edit and the script that checks it, in ONE action.** Of 3,459
+  `write_file`/`edit_file` actions in 160 fleet runs (2026-09-17..10-08), 1,089 were followed
+  directly by a run of the file just changed — 536 of them a `script` — each a whole turn
+  re-reading ~175k tokens of context. Both kinds now take `then_script: ["<name>", ...args]`:
+  the engine runs that script of the routine's the moment the change lands and returns both
+  results in one observation (`engine/thenscript.py`). The riding script passes exactly the
+  gates it would pass alone — `validate_action` judges it under the recipe's `tools:` list, the
+  hold seam asks about it separately (a reminder on `script:x` holds the fused write, and the hold
+  says the write did not run either), D39's secret gate runs before it — and the field is shown
+  only where `script` is a usable kind. A change that did not land runs nothing; a failing script
+  keeps the change and fails the action. Scoped to `script`: a util or a shell command riding a
+  write would pass every gate keyed on its own kind. The web transcript shows the script's result
+  under the change and colours the row by its verdict.
+- **`read_file` takes `start_char`** — enter `start_line` part-way. A line longer than one
+  observation (a minified JSON spill, the 1 MB capture envelope) was cut at 8,000 chars with a
+  marker pointing at the NEXT line, so the rest was unreachable without `shell`; the marker now
+  names `start_line` + `start_char`, and the stdout preview's spill pointer names the exact
+  `read_file` arguments instead of "from char 8000", an argument read_file never had.
+
+### Changed
+- **A stage boundary compacts when doing so PAYS, not when the prompt is near the size gate.**
+  The size gate almost never trips on a 1M-token window — 14 passes in 160 runs, while the median
+  request re-read 148k tokens every turn. At a stage boundary (a `stages/<name>.md` read OR a
+  stage recorded in `state/phase.json` — the only signal a cursor-routed run such as
+  `llmsectest-weekday` gives) `engine/boundary.py` prices carrying the middle to the end of the
+  run against archiving it now: the per-turn cache-read saving against the kept prefix written
+  once more plus the archival call. The pass is taken when the run has twice the breakeven ahead
+  (turns per stage so far × stages still ahead, capped by the turn budget); replayed over 525 real
+  boundaries that kept 98% of the first passes' net saving with a third fewer passes. Replaces the
+  0.85 `ANTICIPATE_AT` discount. The compaction event records the stage and every figure the test
+  used (`economics`).
+
+### Fixed
+- Docs that had drifted from the compaction code: the anti-thrash growth floor is 5,000 estimated
+  tokens (not "20k"); prompt-anatomy §3f described the synchronous pointer-message archival the
+  engine replaced with the instant digest and background archive; and the caching contract's
+  sanctioned rewrites are FOUR — a rule unbind the user asked to erase rewrites messages too.
+
 ## [0.392.0] — 2026-10-08
 
 ### Added

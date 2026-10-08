@@ -74,6 +74,11 @@ def assess(loop, size: int) -> tuple[str, dict]:
     if not (moved or fresh):  # the recipe lost a stage mid-run: nothing was reached
         return "", {}
     stage = ctx.phase if moved else fresh[0]
+    if getattr(loop, "_archival", None) is not None:
+        # One archive at a time (`archival.start` drops a second): a pass taken now would elide
+        # a middle that never reaches history/. Boundaries come every few turns and an archive
+        # takes minutes, so this one is let go rather than taken without its archive.
+        return stage, {}
     turns_left = ctx.turns_remaining()
     ahead = len(cov["declared"]) - len(cov["entered"]) + 1
     horizon = ctx.turn / max(1, len(cov["entered"])) * ahead

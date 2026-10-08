@@ -208,8 +208,10 @@ the limits (single-writer status.json preserved).
   boundary pass is taken WHATEVER the size gate says (its cap becomes 0), so unlike the 0.85
   discount it replaced it does cause passes the size gate would never have made; that is the
   point. Every anti-thrash guard still applies (the incompressible head+tail floor, a middle
-  under 8 messages, less than 5,000 estimated tokens of growth since the last pass), and the
-  first look a run or a resumed leg takes is never a boundary. The pass is stamped
+  under 8 messages, less than 5,000 estimated tokens of growth since the last pass), the
+  first look a run or a resumed leg takes is never a boundary, and a boundary that finds the
+  previous pass's archive still in flight lets its pass go — one archive runs at a time and a
+  second is dropped, so the pass would elide a middle that never reaches `history/`. The pass is stamped
   `anticipated: <stage>` and `economics: {saving_tokens, cost, per_turn, breakeven_turns,
   horizon_turns, compact}` in its `compaction` transcript event, so a boundary pass is
   distinguishable from a forced one and the constants can be tuned from what the test did.

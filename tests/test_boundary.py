@@ -134,6 +134,16 @@ def test_a_first_look_is_never_a_boundary(monkeypatch):
     assert loop._stage_mark == ("orient", ("orient",))
 
 
+def test_a_boundary_waits_for_the_archive_already_in_flight(monkeypatch):
+    """Only one archive runs at a time and a second is dropped (`archival.start`), so a pass
+    taken while one is in flight would elide a middle that never reaches history/."""
+    loop, calls = _gate_loop(monkeypatch, usage=CACHED, phase="orient", stages=STAGES,
+                             entered=("orient",), stage_mark=("", ()))
+    loop._archival = object()                     # the previous boundary's archive, still running
+    compact_if_needed(loop, endpoint=None, ref=REF)
+    assert not calls
+
+
 def test_a_boundary_cannot_force_a_pass_the_anti_thrash_guards_refuse(monkeypatch):
     """30 messages are all head and tail: there is no middle to archive, so nothing to weigh."""
     loop, calls = _gate_loop(monkeypatch, usage=CACHED, phase="orient", stages=STAGES,

@@ -79,6 +79,13 @@ def test_render_observation_variants():
     assert "nothing new" in _render_event({"type": "observation", "payload": {
         "kind": "wait", "finished": [], "timed_out": False}})
 
+    # a write that carried its script says what the script returned, or that it never ran
+    assert "then_script render: exit 1" in _render_event({"type": "observation", "payload": {
+        "kind": "write_file", "path": "scripts/render.py",
+        "then_script": {"kind": "script", "name": "render", "exit": 1}}})
+    assert "then_script not run" in _render_event({"type": "observation", "payload": {
+        "kind": "edit_file", "error": "anchor not found", "then_script_skipped": "…"}})
+
     # any other observation kind still renders a line naming the kind
     assert "read_file" in _render_event({"type": "observation",
                                          "payload": {"kind": "read_file", "path": "f"}})

@@ -119,6 +119,10 @@ def _render_observation(p: dict) -> str:  # noqa: PLR0911 — one return per act
     if kind == "wait":
         done = ", ".join(f"#{f['n']}:{f['status']}" for f in p.get("finished", []))
         return f"    ← wait → {done or ('timeout' if p.get('timed_out') else 'nothing new')}"
+    if isinstance(rode := p.get("then_script"), dict):     # engine/thenscript.py
+        return f"    ← {kind} → then_script {rode.get('name')}: exit {rode.get('exit')}"
+    if p.get("then_script_skipped"):
+        return f"    ← {kind} failed — then_script not run"
     return f"    ← {kind}"
 
 
