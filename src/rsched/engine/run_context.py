@@ -350,10 +350,10 @@ class RunContext:
         under the lock, because the main thread may be folding while a thread is parking.
         """
         if (parked := background_parking_key()) is not None:
-            with self._usage_lock:
-                fold_usage(self._deferred_usage.setdefault(parked, {}), usage)
+            with self._booking_lock():
+                fold_usage(self._parking().setdefault(parked, {}), usage)
             return
-        with self._usage_lock:
+        with self._booking_lock():
             fold_usage(self.usage, usage)
 
     def take_deferred_usage(self, key: str) -> dict:
@@ -361,8 +361,28 @@ class RunContext:
         collector to book. Empty for a call that spent no tokens (a `util`, a `read_file`),
         which is the common case and books nothing.
         """
-        with self._usage_lock:
-            return self._deferred_usage.pop(key, {})
+        with self._booking_lock():
+            return self._parking().pop(key, {})
+
+    # The two accessors below DEFAULT their attribute into existence rather than reading it.
+    # A RunContext is not always built through its dataclass initialiser: callers construct one
+    # with `RunContext.__new__` and set only the fields they need (a direct dispatch, a unit
+    # test of accounting). Reading `self._usage_lock` directly made `add_usage` — which every
+    # model call reaches — raise `AttributeError` on every such context; measured as a red fast
+    # stage on `tests/test_loop.py::test_usage_accounting_cache_keys_and_resume_base`. The
+    # dataclass defaults stay, for a context built the ordinary way; these make booking total.
+
+    def _booking_lock(self) -> threading.Lock:
+        lock = getattr(self, "_usage_lock", None)
+        if lock is None:
+            lock = self._usage_lock = threading.Lock()
+        return lock
+
+    def _parking(self) -> dict:
+        parked = getattr(self, "_deferred_usage", None)
+        if parked is None:
+            parked = self._deferred_usage = {}
+        return parked
 
     def usage_total(self) -> dict:
         """This window's usage plus earlier legs' (usage_base) — what reporting shows.

@@ -450,6 +450,33 @@ def test_the_parking_key_and_the_thread_name_are_one_constant():
     assert seen == [f"{BACKGROUND_THREAD_PREFIX}bg7"], seen
 
 
+def test_booking_works_on_a_context_built_without_the_dataclass_initialiser():
+    """The regression the release gate caught. A `RunContext` is not always built through its
+    dataclass initialiser — callers construct one with `RunContext.__new__` and set only the
+    fields they need (a direct dispatch, a unit test of accounting), so NO dataclass default
+    exists on it. Reading the lock attribute directly made `add_usage` — which every model call
+    reaches — raise `AttributeError` on every such context, which is how one line of parking
+    reddened `tests/test_loop.py::test_usage_accounting_cache_keys_and_resume_base`.
+    """
+    from rsched.engine.run_context import RunContext
+
+    ctx = RunContext.__new__(RunContext)      # no __init__, so no defaults at all
+    ctx.usage = {"in": 0, "out": 0}
+    ctx.add_usage({"in": 7, "out": 3})
+    assert ctx.usage == {"in": 7, "out": 3}, ctx.usage
+
+    # …and the parking half is just as total: a background thread booking onto that same
+    # bare context must park rather than raise.
+    def park():
+        ctx.add_usage({"in": 11, "out": 0})
+
+    t = threading.Thread(target=park, name="background-bg1")
+    t.start()
+    t.join()
+    assert ctx.usage == {"in": 7, "out": 3}, "a background thread's spend folded in directly"
+    assert ctx.take_deferred_usage("background-bg1") == {"in": 11}, ctx._deferred_usage
+
+
 def test_a_background_threads_spend_is_parked_and_booked_once_on_collection(
         make_routine, scripted, monkeypatch):
     """D167: "book tokens on collection". A handler booking from the thread folds into a shared
