@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 from conftest import TEST_TOKEN, make_test_server
 from rsched import entities
 from rsched.config import load_routine
+from rsched.paths import config_file
 from rsched.web.app import create_app
 
 GUARDED = ["~/.config/routine-scheduler", "~/.credentials", "~/.ssh"]
@@ -55,18 +56,21 @@ def test_the_guard_names_credential_files_not_the_config_directory():
     because it contains the credential entries — but a path that holds no credential is now
     clean on its own, with no prior grant and no allowance.
     """
-    config_yaml = "~/.config/routine-scheduler/config.yaml"
-    assert entities.guarded_roots([config_yaml]) == []
+    # The config dir is asked for, never spelled: conftest's `_hermetic_home` redirects
+    # RSCHED_CONFIG into the test's tmp dir, and the guard resolves the credential files THERE
+    # (that is the point of resolving through `paths.config_file()`). A literal
+    # `~/.config/routine-scheduler/...` would be a path this instance does not use.
+    config_dir = config_file().parent
+    assert entities.guarded_roots([str(config_dir / "config.yaml")]) == []
     # …while every credential entry in the same directory stays refused, by name
     for name in entities.CONFIG_DIR_CREDENTIALS:
-        path = f"~/.config/routine-scheduler/{name}"
+        path = str(config_dir / name)
         assert entities.guarded_roots([path]) == [path], name
         # and anything INSIDE one of them: a scoped secrets file, a machine's ssh key
         assert entities.guarded_roots([f"{path}/x"]) == [f"{path}/x"], name
     # the directory itself is refused for CONTAINING them, which is what keeps the property
-    assert entities.guarded_roots(["~/.config/routine-scheduler"]) \
-        == ["~/.config/routine-scheduler"]
-    assert entities.guarded_roots(["~/.config"]) == ["~/.config"]
+    assert entities.guarded_roots([str(config_dir)]) == [str(config_dir)]
+    assert entities.guarded_roots([str(config_dir.parent)]) == [str(config_dir.parent)]
 
 
 def test_the_guarded_list_follows_a_relocated_config_dir(tmp_path, monkeypatch):
@@ -192,15 +196,19 @@ def test_a_newly_granted_guarded_root_is_still_refused_on_a_routine_holding_none
     server = make_test_server(tmp_path)
     with TestClient(create_app(server, with_scheduler=False)) as c:
         c.headers["Authorization"] = f"Bearer {TEST_TOKEN}"
-        for value in ("~/.config/routine-scheduler", "~/.config/routine-scheduler/config.yaml",
+        # config.yaml is NOT in this list any more (D169): it holds no credential, so it is
+        # grantable to any routine, with or without a prior grant. The refusal case is the
+        # credential FILE beside it — which is what this test was always about.
+        for value in ("~/.config/routine-scheduler", "~/.config/routine-scheduler/secrets.env",
                       "~/.ssh/id_ed25519"):
             r = c.patch("/api/routines/clean", json={"fs_read_roots": ["~/routines", value]})
             assert r.status_code == 400, f"{value}: {r.text}"
             assert "credential store" in r.json()["detail"]
         # the other LIST is its own grant: holding the store for reads does not open writes
+        # (a credential FILE, since config.yaml is grantable on either list after D169)
         _write_roots(routine, "fs_read_roots", ["~/.config/routine-scheduler"])
         r = c.patch("/api/routines/clean",
-                    json={"fs_write_roots": ["~/.config/routine-scheduler/config.yaml"]})
+                    json={"fs_write_roots": ["~/.config/routine-scheduler/secrets.env"]})
         assert r.status_code == 400, r.text
 
 
@@ -227,14 +235,20 @@ def test_an_edge_making_the_grant_passes_no_current_so_nothing_is_grantable(tmp_
     from rsched.web import config_fields
 
     assert config_fields.validate_roots(
-        "fs_read_roots", ["~/.config/routine-scheduler/config.yaml"],
-        current=["~/.config/routine-scheduler"]) == ["~/.config/routine-scheduler/config.yaml"]
+        "fs_read_roots", ["~/.config/routine-scheduler/secrets.env"],
+        current=["~/.config/routine-scheduler"]) == ["~/.config/routine-scheduler/secrets.env"]
     for current in (None, [], ["~/routines"]):
         with pytest.raises(HTTPException) as caught:
             config_fields.validate_roots("fs_read_roots",
-                                         ["~/.config/routine-scheduler/config.yaml"],
+                                         ["~/.config/routine-scheduler/secrets.env"],
                                          current=current)
         assert "credential store" in str(caught.value.detail), current
+    # …and the narrowing D169 exists for needs no allowance at all: config.yaml holds no
+    # credential, so a CREATE edge passing no `current` takes it like any ordinary path.
+    for current in (None, [], ["~/routines"]):
+        assert config_fields.validate_roots(
+            "fs_read_roots", ["~/.config/routine-scheduler/config.yaml"],
+            current=current) == ["~/.config/routine-scheduler/config.yaml"], current
 
 
 def test_a_guarded_root_already_in_a_file_is_reported_and_kept(make_routine):

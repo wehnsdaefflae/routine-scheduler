@@ -93,6 +93,10 @@ CONFIG_DIR_CREDENTIALS = (
 )
 #: Credential stores outside the instance config dir.
 HOME_CREDENTIALS = ("~/.credentials", "~/.ssh")
+#: The same credential entries at the DEFAULT config location, guarded whatever RSCHED_CONFIG
+#: says — a routine.yaml may name them verbatim (see `never_grantable_stores`).
+DEFAULT_CONFIG_CREDENTIALS = tuple(f"~/.config/routine-scheduler/{n}"
+                                   for n in CONFIG_DIR_CREDENTIALS)
 
 
 def _config_dir_credentials() -> tuple[str, ...]:
@@ -108,17 +112,30 @@ def _config_dir_credentials() -> tuple[str, ...]:
 
 
 def never_grantable_stores() -> tuple[str, ...]:
-    """Every path no grant may open: the loaded config dir's credential entries plus the
-    home-level stores. A function, not a constant, so a relocated config dir is honoured and
-    so tests can monkeypatch the pieces independently.
+    """Every path no grant may open: the credential entries of the config dir this instance
+    actually LOADED, plus `NEVER_GRANTABLE` (the same entries at the default location, and the
+    home-level stores).
+
+    A function rather than a constant, for two reasons:
+
+    - `RSCHED_CONFIG` can move the config dir, and the guard has to name the files that exist,
+      not the files that would exist at the default spelling;
+    - `NEVER_GRANTABLE` is read at CALL time, so patching that constant still reaches every
+      enforcement door (the jail-assembler tests do exactly that to point the guard at a
+      temporary store).
+
+    Both spellings are guarded, and that is not belt-and-braces: a routine.yaml — hand-written,
+    copied from another box, or carried over from before a move — may still name
+    `~/.config/routine-scheduler/secrets.env` verbatim, and guarding only the loaded location
+    would hand a grant on the default one straight through. Guarding a path that holds nothing
+    on this instance costs nobody anything; the reverse is a credential leak.
     """
-    return (*_config_dir_credentials(), *HOME_CREDENTIALS)
+    return (*_config_dir_credentials(), *NEVER_GRANTABLE)
 
 
 #: Kept as the module's declarative answer for readers and for the tests that patch it; the
 #: enforcement path calls `never_grantable_stores()` so a relocated config dir is honoured.
-NEVER_GRANTABLE = (*(f"~/.config/routine-scheduler/{n}" for n in CONFIG_DIR_CREDENTIALS),
-                   *HOME_CREDENTIALS)
+NEVER_GRANTABLE = (*DEFAULT_CONFIG_CREDENTIALS, *HOME_CREDENTIALS)
 
 _LEVELS = {"runs": ("last", "all"), "reminders": ("local", "global")}
 
