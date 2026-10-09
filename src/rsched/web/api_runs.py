@@ -180,41 +180,57 @@ def run_phases(request: Request, run_id: str) -> dict:
 def run_files(request: Request, run_id: str) -> dict:
     """Which files the run read and wrote — per-path counts derived from the transcript
     (subruns and user slash commands included) — the rail's file-activity card.
+
+    Each row carries `servable`: whether `run_file` below would actually open it, decided by
+    the same predicate that route enforces (`web/servable.py`). The card renders a click only
+    for a true row — before D172 every row was clickable and a file the run read from a granted
+    fs root answered 400, a chip the console could never honour.
     """
     from ..readmodels.fileactivity import file_activity
+    from .servable import roots_for_run, servable_rel
 
     _, run_dir = _run_dir(request, run_id)
+    routine_dir = run_dir.parent.parent
+    roots = roots_for_run(request.app.state.server, run_dir, routine_dir)
+    rows = [{**row, "servable": servable_rel(str(row.get("path") or ""), run_dir, roots,
+                                             row.get("bases") or [])}
+            for row in file_activity(run_dir)]
     hist = run_dir / "history"
     history = (sorted(p.name for p in hist.iterdir() if p.is_file())
                if hist.is_dir() else [])
-    return {"files": file_activity(run_dir), "history": history}
+    return {"files": rows, "history": history}
 
 
 @router.get("/runs/{run_id}/file")
 def run_file(request: Request, run_id: str, path: str):
     """Serve ONE file from the files card / history list raw — the rail fetches it with
     the auth header and renders/downloads from a blob URL (the artifact panels' pattern).
-    Scope: the RUN dir (history/, sub/, result.md) and its owning routine/conversation
-    dir — the two trees a card row's relative path can resolve against. A row naming a
-    path outside both (files a run touched under an fs-root grant) is listed but not
-    served: the 400 names the boundary instead of opening an arbitrary-file read
-    through the web tier.
+
+    Scope: the RUN dir (history/, sub/, result.md), its owning routine/conversation dir, and
+    the routine's EFFECTIVE READ ROOTS resolved on this call (`web/servable.py`). It used to be
+    the first two alone, so a file the run READ from a granted fs root was listed with a
+    clickable chip that answered 400 — the operator's ruling on D172 (2026-10-08): *"How can
+    the file that is read be outside the routine's permitted paths? If the routine can access
+    it, the Web UI should also be able to"*. Resolving the roots HERE rather than at record
+    time is what makes a revoked grant stop serving. The same predicate decides which rows get
+    a chip at all (`run_files`), so the console never offers a click this route cannot honour.
 
     A relative path is resolved against the directory of the run that TOUCHED it, which the
     file-activity read model records per row (`bases`): a child's working-dir file lives under
     `sub/<n>/`, and resolving it against the parent alone made it a dead row that 404'd while
     a sibling in the same directory opened (R1193). The recorded bases are tried first, the
-    two tree roots after, and every candidate still has to land inside one of them — proven
+    tree roots after, and every candidate still has to land inside one of them — proven
     on the file as OPENED (`artifacts.open_within`), since a run's util can rearrange these
     directories while the console looks. Served never cached, like every artifact (R1682):
     the rows are the same deliverables, rewritten in place under the same names.
     """
-    from ..paths import within
     from ..readmodels.fileactivity import file_activity
     from .artifacts import file_response, open_within
+    from .servable import roots_for_run, servable
 
     _, run_dir = _run_dir(request, run_id)
     routine_dir = run_dir.parent.parent
+    roots = roots_for_run(request.app.state.server, run_dir, routine_dir)
     rel = Path(path)
     if rel.is_absolute():
         candidates = [rel]
@@ -222,23 +238,24 @@ def run_file(request: Request, run_id: str, path: str):
         bases = next((row.get("bases") or [] for row in file_activity(run_dir)
                       if row.get("path") == path), [])
         candidates = [run_dir / b / rel for b in bases if b]
-        candidates += [routine_dir / rel, run_dir / rel]
+        candidates += [root / rel for root in roots]
     for cand in candidates:
         try:
             resolved = cand.resolve()
         except OSError:
             continue
-        if not (within(run_dir, resolved) or within(routine_dir, resolved)):
+        if not servable(resolved, roots):
             continue
         try:
-            fd = open_within(resolved, [routine_dir])
+            fd = open_within(resolved, list(roots))
         except OSError:                # gone, not a regular file, or moved out from under us
             continue
         return file_response(fd, resolved.name, default_media="text/plain")
+    where = "the run, its routine directory and the routine's granted read roots"
     if rel.is_absolute():
-        raise HTTPException(400, "only files under the run and its routine directory "
-                                 f"are served — {path!r} is outside both")
-    raise HTTPException(404, f"no file {path!r} under the run or its routine directory")
+        raise HTTPException(400, f"only files under {where} are served — {path!r} is "
+                                 "outside all of them")
+    raise HTTPException(404, f"no file {path!r} under {where}")
 
 
 @router.get("/runs/{run_id}/tree")

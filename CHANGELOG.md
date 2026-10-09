@@ -15,6 +15,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.403.0] — 2026-10-09
+
+### The console serves a file the routine was permitted to read (D172)
+
+A run's file-activity card listed every path the run touched and made each one clickable, while
+the route behind it served two directories — the run dir and the routine dir. So a file the run
+had READ from a granted `fs_read_roots` tree was shown with a chip that answered **400**: a click
+the console could never honour. The operator's ruling (2026-10-08): *"How can the file that is
+read be outside the routine's permitted paths? If the routine can access it, the Web UI should
+also be able to"*.
+
+- **`GET /api/runs/{id}/file` now serves the routine's EFFECTIVE READ ROOTS** as well as the two
+  trees — its configured `fs_read_roots` plus the instance-wide shared read-only assets, the same
+  expression `sandbox.policy_for_ctx` and the gate admission compile.
+- **Resolved at serve time, never recorded**: the roots are read from `routine.yaml` on every
+  call, so revoking a grant stops the serving at once. Pinned by a test that serves, revokes and
+  fails to serve the same path.
+- **Read roots only** — a path under a write-only grant stays unserved.
+- **ONE predicate for the chip and the route** (`src/rsched/web/servable.py`). Each card row now
+  carries `servable`, decided by the same function the route enforces, and the card renders **no
+  button** for a false row — it stays listed, with the boundary named in its tooltip. That is what
+  keeps a dead chip from reappearing: the two sides cannot drift apart because they are one
+  function.
+- Containment is unchanged in kind: still proven on the OPENED descriptor
+  (`artifacts.open_within`) against the same widened list, and `paths.within` is reached through
+  its module on every call so the symlink-race suite's wrapper still covers this route.
+- A run's one-time fs grants are deliberately excluded — they live on the live `RunContext` and
+  no later call could resolve them honestly.
+- 3 API tests + 1 browser node (and the existing files-card node now seeds real files, since a
+  row whose file is absent gets no click either); `docs/sandboxing.md` carries the widening and
+  its terms.
+
 ## [0.402.0] — 2026-10-09
 
 ### The finish's claim check judges what a run DID, not whether it re-read a procedure (F620/R2228)

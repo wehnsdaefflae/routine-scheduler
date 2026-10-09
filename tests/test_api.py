@@ -546,15 +546,20 @@ def test_run_files_endpoint(client):
         fh.write(json.dumps({"type": "observation", "turn": 1, "payload": {
             "kind": "write_file", "path": "artifacts/out.md", "bytes": 42}}) + "\n")
     files = c.get("/api/runs/apir:20260707-080000/files").json()["files"]
+    # `servable` (D172): whether run_file would actually open this row — the chip's predicate,
+    # the same one the route enforces. False here because the file was only RECORDED as
+    # written by a hand-made transcript line; nothing put bytes on disk for it.
     assert files == [{"path": "artifacts/out.md", "reads": 0, "writes": 1, "edits": 0,
-                      "bytes": 42, "errors": 0, "sub": False, "bases": [""]}]
+                      "bytes": 42, "errors": 0, "sub": False, "bases": [""],
+                      "servable": False}]
     assert c.get("/api/runs/apir:20990101-000000/files").status_code == 404
 
 
 def test_run_file_endpoint(client):
-    """/runs/{id}/file serves ONE row of the files card raw — scoped to the run dir and
-    its owning routine dir (history/ included); paths outside both (fs-root grants) are
-    named, never served (user order 2026-08-12: sidebar files must be downloadable)."""
+    """/runs/{id}/file serves ONE row of the files card raw — scoped to the run dir, its
+    owning routine dir (history/ included) and the routine's granted read roots (D172);
+    anything outside all of them is named, never served (user order 2026-08-12: sidebar
+    files must be downloadable)."""
     c, tmp = client
     run_dir = _mk_run(tmp / "routines", "apir", "20260707-081500", "finished")
     routine_dir = run_dir.parent.parent
@@ -579,6 +584,83 @@ def test_run_file_endpoint(client):
     assert outside.status_code == 400 and "outside" in outside.json()["detail"]
     assert c.get("/api/runs/apir:20260707-081500/file",
                  params={"path": "nope.md"}).status_code == 404
+
+
+def test_run_file_serves_a_path_under_the_routines_granted_read_roots(client):
+    """D172. The console listed every path a run touched and made each one clickable, but the
+    route served two trees only — so a file the run READ from a granted fs root answered 400:
+    a chip the console could never honour. The operator's ruling (2026-10-08): *"How can the
+    file that is read be outside the routine's permitted paths? If the routine can access it,
+    the Web UI should also be able to"*.
+
+    The roots are resolved ON THE CALL, never recorded, so revoking the grant stops the serving
+    at once — and the card's `servable` flag comes from the same predicate, so the chip and the
+    route can never disagree again.
+    """
+    import yaml
+
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260707-083000", "finished")
+    routine_dir = run_dir.parent.parent
+    granted = tmp / "granted-tree"
+    granted.mkdir()
+    (granted / "source.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    denied = tmp / "ungranted-tree"
+    denied.mkdir()
+    (denied / "secret.txt").write_text("not for the console", encoding="utf-8")
+    (run_dir / "transcript.jsonl").write_text("\n".join(
+        json.dumps({"type": "observation", "turn": t, "payload": {
+            "kind": "read_file", "path": str(p)}})
+        for t, p in ((1, granted / "source.csv"), (2, denied / "secret.txt"))) + "\n",
+        encoding="utf-8")
+
+    def rows():
+        return {f["path"]: f for f in
+                c.get("/api/runs/apir:20260707-083000/files").json()["files"]}
+
+    def fetch(p):
+        return c.get("/api/runs/apir:20260707-083000/file", params={"path": str(p)})
+
+    # before the grant: neither path is served, and neither row offers a click
+    assert fetch(granted / "source.csv").status_code == 400
+    assert rows()[str(granted / "source.csv")]["servable"] is False
+
+    cfg = yaml.safe_load((routine_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
+    cfg["fs_read_roots"] = [str(granted)]
+    (routine_dir / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    # with the grant: the read root serves and is chipped...
+    r = fetch(granted / "source.csv")
+    assert r.status_code == 200 and r.text == "a,b\n1,2\n"
+    assert rows()[str(granted / "source.csv")]["servable"] is True
+    # ...and the tree that was never granted still is not — a grant widens, it does not open
+    outside = fetch(denied / "secret.txt")
+    assert outside.status_code == 400 and "not for the console" not in outside.text
+    assert rows()[str(denied / "secret.txt")]["servable"] is False
+
+    # RESOLVED AT SERVE TIME: revoking the grant stops the serving on the next call
+    cfg["fs_read_roots"] = []
+    (routine_dir / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    assert fetch(granted / "source.csv").status_code == 400
+    assert rows()[str(granted / "source.csv")]["servable"] is False
+
+
+def test_a_write_only_grant_is_not_a_read_root_for_the_console(client):
+    """D172 widens READ roots. A path under a write-only grant stays unserved: the operator's
+    premise is that what the routine may READ, he may see."""
+    import yaml
+
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260707-084000", "finished")
+    routine_dir = run_dir.parent.parent
+    wtree = tmp / "write-only-tree"
+    wtree.mkdir()
+    (wtree / "out.txt").write_text("written there", encoding="utf-8")
+    cfg = yaml.safe_load((routine_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
+    cfg["fs_write_roots"] = [str(wtree)]
+    (routine_dir / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    r = c.get("/api/runs/apir:20260707-084000/file", params={"path": str(wtree / "out.txt")})
+    assert r.status_code == 400 and "written there" not in r.text
 
 
 def test_run_file_serves_a_child_runs_working_directory(client):

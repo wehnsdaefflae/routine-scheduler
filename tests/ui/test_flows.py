@@ -235,6 +235,13 @@ def test_run_rail_lists_file_activity(ui, ui_page):
         fh.writelines(json.dumps(e) + "\n" for e in events)
     (run_dir / "history").mkdir()
     (run_dir / "history" / "notes-001.md").write_text("archived text", encoding="utf-8")
+    # the two rows asserted to carry buttons must be real files on disk: since D172 the card
+    # offers a click only where the route would actually open one
+    rdir = ui.routine_dir("uir")
+    (rdir / "state").mkdir(parents=True, exist_ok=True)
+    (rdir / "state" / "notes.md").write_text("x", encoding="utf-8")
+    (rdir / "artifacts").mkdir(parents=True, exist_ok=True)
+    (rdir / "artifacts" / "report.html").write_text("<p>hi</p>", encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-140000")
     rows = ui_page.locator(".file-row")
@@ -242,16 +249,53 @@ def test_run_rail_lists_file_activity(ui, ui_page):
     expect(rows.nth(0)).to_contain_text("state/notes.md")
     expect(rows.nth(0).locator(".file-ops")).to_have_text("read ×2")
     expect(rows.nth(1).locator(".file-ops")).to_have_text("wrote")
-    expect(rows.nth(2)).to_have_class("file-row err")
+    expect(rows.nth(2)).to_have_class(re.compile(r"\bfile-row err\b"))
     expect(rows.nth(2).locator(".file-ops")).to_have_text("✕1")
-    # every row carries view + download affordances (user order 2026-08-12), and the
+    # every servable row carries view + download affordances (user order 2026-08-12), and the
     # compaction archive is listed as servable rows under its own sub-head
     expect(rows.nth(0).locator(".file-act")).to_have_count(2)
+    expect(rows.nth(1).locator(".file-act")).to_have_count(2)
     expect(ui_page.locator(".filelist .rail-sub")).to_have_text("compacted history")
     hist = ui_page.locator(".file-row.hist")
     expect(hist).to_have_count(1)
     expect(hist).to_contain_text("notes-001.md")
     expect(hist.locator(".file-act")).to_have_count(2)
+
+
+def test_the_files_card_offers_no_click_for_a_file_it_cannot_serve(ui, ui_page):
+    """D172: the card used to render a clickable chip for EVERY path a run touched, and a path
+    outside the served trees answered 400 — a chip the console could never honour. A row the
+    server marks `servable: false` now gets no button at all, and says why.
+
+    The operator's premise stands on the other side of this: a path the routine WAS permitted
+    to read is served (tests/test_api.py pins that end). Here is the row that is not.
+    """
+    run_dir = ui.seed_run("uir", "20260716-101500", "finished", summary="done")
+    rdir = ui.routine_dir("uir")
+    (rdir / "artifacts").mkdir(parents=True, exist_ok=True)
+    (rdir / "artifacts" / "kept.md").write_text("servable", encoding="utf-8")
+    events = [
+        {"type": "observation", "turn": 1, "payload": {
+            "kind": "write_file", "path": "artifacts/kept.md", "bytes": 8}},
+        {"type": "observation", "turn": 2, "payload": {
+            "kind": "read_file", "path": "/etc/hostname", "content": "x"}},
+    ]
+    with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
+        fh.writelines(json.dumps(e) + "\n" for e in events)
+
+    ui_page.goto(f"{ui.url}/#/run/uir:20260716-101500")
+    rows = ui_page.locator(".file-row")
+    expect(rows).to_have_count(2)
+    # the file inside the routine dir: both affordances, as before
+    servable = rows.nth(0)
+    expect(servable).to_contain_text("artifacts/kept.md")
+    expect(servable.locator("button.file-act")).to_have_count(2)
+    # the path outside every served tree: listed, explained, NOT clickable
+    unservable = rows.nth(1)
+    expect(unservable).to_contain_text("/etc/hostname")
+    expect(unservable).to_have_class(re.compile(r"\bunservable\b"))
+    expect(unservable.locator("button.file-act")).to_have_count(0)
+    expect(unservable).to_have_attribute("title", re.compile("not served"))
 
 
 def test_run_view_plan_strip(ui, ui_page):

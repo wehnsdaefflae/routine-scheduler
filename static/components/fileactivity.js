@@ -27,8 +27,9 @@ export function createFileActivity(container, { url }) {
 
   // Fetch one row's file with the auth header and hand it to the browser as a blob —
   // view in a new tab (sandboxed unless the type cannot carry script: blobtab.js) or
-  // download. Rows outside the served scope (fs-root paths) get told so inline, where the
-  // click happened, instead of a dead new tab.
+  // download. A non-servable row has no button at all since D172 (see paint), so this
+  // inline failure is now only for a file that disappeared between the paint and the
+  // click — still reported where the click happened, never as a dead new tab.
   async function grab(path, ops, download) {
     try {
       const { url: burl, type } = await apiBlobUrl(`${fileBase}?path=${encodeURIComponent(path)}`);
@@ -62,11 +63,24 @@ export function createFileActivity(container, { url }) {
         el("span", { class: "file-ops" }, opsLine(f))));
       const row = box.lastChild;
       const ops = row.querySelector(".file-ops");
-      row.append(
-        el("button", { class: "file-act", title: "open in a new tab",
-                       onclick: () => grab(f.path, ops, false) }, "⧉"),
-        el("button", { class: "file-act", title: "download",
-                       onclick: () => grab(f.path, ops, true) }, "⭳"));
+      // D172: NO click for a row the server will not serve. `servable` is decided by the
+      // same predicate the file route enforces (web/servable.py), so the card never offers
+      // a button that answers 400 — which is what it used to do for every path a run read
+      // from a granted fs root. A server that does not send the field at all is treated as
+      // servable, so an older daemon keeps its buttons.
+      if (f.servable === false) {
+        row.classList.add("unservable");
+        row.title = `${detail}\n\nnot served: outside the run, its routine directory and `
+                  + `the routine's granted read roots`;
+        row.append(el("span", { class: "file-act faint",
+                                title: "the console does not serve this path" }, "—"));
+      } else {
+        row.append(
+          el("button", { class: "file-act", title: "open in a new tab",
+                         onclick: () => grab(f.path, ops, false) }, "⧉"),
+          el("button", { class: "file-act", title: "download",
+                         onclick: () => grab(f.path, ops, true) }, "⭳"));
+      }
     }
     if (history.length) {
       // the context the model no longer carries verbatim -- compaction's archive files,

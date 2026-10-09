@@ -231,6 +231,39 @@ Decisions-page *approve & apply* reaches a live run by design). Treat a routine 
 `shell` or `script` as able to widen its own config by one run's delay; the capability, not
 the jail, is the decision.
 
+### The console serves a routine's granted READ roots (D172)
+
+The two readers of a routine's files are not the same process and not in the same jail: a
+routine reads inside the Landlock child jail, rebuilt per dispatch from its grants, while the
+daemon that serves the console is unsandboxed and bounded by POLICY instead. That policy used to
+be two directories — the run dir and the routine dir — so a run's file-activity card listed
+every path it touched, rendered a clickable chip for each, and a file the run had READ from a
+granted `fs_read_roots` tree answered 400. The operator's ruling (2026-10-08): *"How can the
+file that is read be outside the routine's permitted paths? If the routine can access it, the
+Web UI should also be able to"*.
+
+So `GET /api/runs/{id}/file` now serves the run dir, the routine dir **and the routine's
+effective read roots** — its configured `fs_read_roots` plus the instance-wide shared read-only
+assets, the same expression `sandbox.policy_for_ctx` and the gate admission compile. The terms
+that keep it a boundary:
+
+- **Resolved at SERVE TIME, from `routine.yaml`, on every call.** Revoking a grant stops the
+  serving at once; a verdict recorded when the file was touched would outlive its justification.
+- **Read roots only.** A path under a write-only grant stays unserved.
+- **A run's one-time fs grants are not included.** They live on the live `RunContext` in memory,
+  so no later call could resolve them honestly.
+- **Containment is still proven on the opened descriptor** (`artifacts.open_within`), which takes
+  the same widened root list — a path test before the open can be raced by the routine's own
+  util, which is the whole reason that proof exists.
+- **ONE predicate decides both sides** (`web/servable.py`): the card renders a click only where
+  the route would open the file, so a chip the console cannot honour cannot reappear. A row it
+  will not serve is still listed, with the boundary named in its tooltip.
+
+This is an arbitrary-file read through the web tier bounded by a GRANT rather than by a
+directory. It is bounded by the same grant the routine itself runs under, and the primary bearer
+already authorizes everything; the routine bearer reads no wider than its own sandbox
+(`tests/test_api.py::test_the_routine_token_reads_no_wider_than_the_sandbox`).
+
 ## Secrets — declared-only injection (every mode)
 
 `_child_env` injects from the stores ONLY the vars the util (or a `calls:`
