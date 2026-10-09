@@ -311,6 +311,14 @@ table.list tr.disabled-row td { opacity: 0.55; }
    Hidden entirely for a run with no rung — the card is registered for every run and toggled. */
 .ladderstrip { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
 .ladderstrip .ls-last { font-weight: 600; }
+/* The strip's own severity ink. lastLine()/VERDICT_CLASS emit bare `bad`/`warn`/`ok`, which
+   matched NOTHING tree-wide (`.bad` existed only as `.test-result.bad`), so a rung that BROKE
+   rendered in exactly the ink of a rung that declined to run — the very conflation F644 exists
+   to end, surviving on the one surface the fix had not reached. Found by rendering the strip,
+   not by reading it: the two lines are identical in the source's intent and identical on screen. */
+.ladderstrip .bad { color: var(--err); }
+.ladderstrip .warn { color: var(--warn); }
+.ladderstrip .ok { color: var(--ok); }
 /* the ruling still in force, under a headline reporting something else — secondary, not a
    second lead (seen in the render: two bold lines read as two competing verdicts) */
 .ladderstrip .ls-ruling { opacity: 0.85; }

@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.399.2] — 2026-10-09
+
+### Fixed — a broken oversight rung still LOOKED like a declined one on the rail (F644, third defect)
+
+- `0.399.1` gave a rung that raised its own `oversight_failed` event, its own read-model state and
+  its own renderers, so that the mechanism's total failure could never again be read as the
+  ordinary deep-or-budget-spent decline. On the run page's rail it still was: `ladderstrip.js`
+  emits **bare** severity class names (`VERDICT_CLASS` → `"bad"`/`"warn"`/`"ok"`, and `lastLine`'s
+  failure branch → `"bad"`), and **no bare `.bad` / `.warn` / `.ok` rule existed** in `base.css` or
+  `views.css` — `.bad` existed only as `.test-result.bad`, a descendant selector matching nothing
+  here. So *rung 1 BROKE — 'EngineLoop' object has no attribute 'subs'* rendered in exactly the ink
+  and weight of *rung 1 did not run — deep or budget-spent tree*.
+- `views.css` now scopes the three to the strip: `.ladderstrip .bad|.warn|.ok` →
+  `var(--err)|var(--warn)|var(--ok)`. Confirmed by rendering the strip at the 300px rail width and
+  at 360px phone width, in both the failed and skipped states side by side.
+- The class names predate the finding, so the `stuck` and `failing` **verdicts** had been rendering
+  uncoloured all along; they are now in the error palette too.
+- Found only by looking at the render: both files are individually correct, the defect lives in the
+  gap between them, and no test asserts that two states are visually distinguishable.
+
 ## [0.399.1] — 2026-10-09
 
 ### Fixed — every oversight rung on every run had always died, and nothing said so (F644, R2352/R2348)
