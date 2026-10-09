@@ -113,15 +113,89 @@ def test_the_judge_never_sees_the_system_prompt(tmp_path):
     assert "I ran the checksum and it matched" in sent      # the conversation IS the evidence
 
 
-# ---- the deterministic objection ----------------------------------------------------------------
+# ---- the stage signal is a HINT, never a verdict (F620) ----------------------------------------
 
-def test_a_line_whose_stage_was_never_entered_is_challenged_without_a_model(tmp_path):
+def test_an_unentered_stage_becomes_a_note_for_the_judge_not_an_objection(tmp_path):
+    """It used to be a verdict of its own, raised with no model asked — and the blamed line was
+    then excluded from the judge that would have looked at what the run did. Stage entry is
+    measured from module re-reads and phase-cursor writes, so it was wrong for every run that
+    already knew its procedure (F620/R2228)."""
     claims = [{"id": "d1", "text": "sources read", "stage": "gather"},
               {"id": "d2", "text": "published", "stage": "publish"},
               {"id": "d3", "text": "ledger written", "stage": ""}]
-    got = verifier.unentered(claims, {"gather"})
-    assert [o["id"] for o in got] == ["d2"]
-    assert "the stage publish that produces this outcome was never entered" in got[0]["evidence"]
+    got = verifier.hinted(claims, {"gather"})
+    assert [c["id"] for c in got if c.get("hint")] == ["d2"]   # entered/stage-less: no note
+    assert "never entered the stage `publish`" in got[1]["hint"]
+    assert "judge it by the actions" in got[1]["hint"]   # it tells the reader what outranks it
+    assert claims[1] == {"id": "d2", "text": "published", "stage": "publish"}  # non-mutating
+
+
+def test_a_claim_whose_stage_was_never_entered_is_still_put_to_the_judge(tmp_path):
+    """The point of F620: the line with the weak signal against it is exactly the line whose
+    evidence must be read, not the one excluded from the reading."""
+    loop = _loop(tmp_path, {"verdicts": []})
+    claims = [{"id": "d1", "text": "the page is published", "stage": "publish"}]
+    assert verifier.refuted(loop, verifier.hinted(claims, set()), "done") == []
+    sent = loop.calls[0]["messages"][0]["content"]
+    assert "[d1] the page is published" in sent
+    assert "never entered the stage `publish`" in sent          # the hint rides the claim
+    assert "Judge by the ACTIONS and their results" in sent
+
+
+def test_a_claim_without_a_hint_carries_no_note(tmp_path):
+    loop = _loop(tmp_path, {"verdicts": []})
+    verifier.refuted(loop, verifier.hinted(_claims("a", stage="gather"), {"gather"}), "done")
+    block = loop.calls[0]["messages"][0]["content"]
+    assert "[d1] a" in block and "note:" not in block
+
+
+# ---- the evidence: what the run DID ------------------------------------------------------------
+
+def test_the_judge_reads_the_run_s_action_record(tmp_path):
+    """The transcript tail is the last TAIL_CHARS of the message list, so on a long run the
+    actions that produced an early outcome are no longer in it. `turn_records` survives
+    compaction and is the only surface that still shows them (F620)."""
+    loop = _loop(tmp_path, {"verdicts": []})
+    loop.turn_records = [
+        {"turn": 7, "kind": "util", "brief": "rutorrent-rpc erase Dark.Matter.S02E06",
+         "say": "erasing the drained torrent"},
+        {"turn": 8, "kind": "edit_file", "brief": "state/shows.json", "say": "pointer advanced"}]
+    verifier.refuted(loop, _claims("the episode is drained and its pointer advanced"), "done")
+    sent = loop.calls[0]["messages"][0]["content"]
+    assert "WHAT IT DID — one line per turn" in sent
+    assert "turn 7: util" in sent and "rutorrent-rpc erase Dark.Matter.S02E06" in sent
+    assert "turn 8: edit_file" in sent and "pointer advanced" in sent
+
+
+def test_a_run_with_no_action_record_simply_has_that_section_left_out(tmp_path):
+    loop = _loop(tmp_path, {"verdicts": []})           # no turn_records attribute at all
+    verifier.refuted(loop, _claims("a"), "done")
+    assert "WHAT IT DID" not in loop.calls[0]["messages"][0]["content"]
+
+
+def test_a_malformed_turn_record_is_skipped_rather_than_breaking_the_check(tmp_path):
+    """It runs at the finish: anything raising here turns a finished run into a crashed one."""
+    loop = _loop(tmp_path, {"verdicts": []})
+    loop.turn_records = ["not a record", {"no": "turn key"},
+                         {"turn": 3, "kind": "shell", "brief": "ls", "say": "looking"}]
+    assert verifier.refuted(loop, _claims("a"), "done") == []
+    assert "turn 3: shell" in loop.calls[0]["messages"][0]["content"]
+
+
+def test_the_action_record_loses_its_middle_not_its_beginning(tmp_path):
+    """An outcome's evidence is as often at turn 12 as at turn 120 — which is precisely what the
+    conversation tail could not show."""
+    loop = _loop(tmp_path, {"verdicts": []})
+    loop.turn_records = (
+        [{"turn": 1, "kind": "util", "brief": "FIRST-ACTION-MARKER", "say": "x" * 100}]
+        + [{"turn": i, "kind": "shell", "brief": "filler", "say": "y" * 400}
+           for i in range(2, 200)]
+        + [{"turn": 200, "kind": "finish", "brief": "LAST-ACTION-MARKER", "say": "z" * 100}])
+    verifier.refuted(loop, _claims("a"), "done")
+    sent = loop.calls[0]["messages"][0]["content"]
+    assert "FIRST-ACTION-MARKER" in sent and "LAST-ACTION-MARKER" in sent
+    assert "elided from the middle" in sent
+    assert len(sent.split("WHAT IT DID")[1]) < verifier.ACTIONS_CHARS + 2000
 
 
 # ---- fail-open: every uncertainty accepts ------------------------------------------------------

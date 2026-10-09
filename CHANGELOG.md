@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.402.0] — 2026-10-09
+
+### The finish's claim check judges what a run DID, not whether it re-read a procedure (F620/R2228)
+
+A Done-when line may name the stage that produces it, and a run that never entered that stage
+used to be objected to **with no model asked** — and the blamed line was then *excluded* from the
+judge that would have looked at its evidence. Stage entry is measured from the run's own file
+activity (a read of `stages/<name>.md`, or a `state/phase.json` it wrote), so it measures module
+re-reads rather than work done, while every recipe here tells a run to read stage modules ON
+DEMAND. `tv-show-tracker-seedbox-manager` run `20261003-160012` was objected to on three lines;
+two had been produced in full — a drain verified at exact size, a `rutorrent-rpc erase`, a
+pointer advance — and the run, reading the objection as unanswerable, **filed a false `unmet`
+about its own finished work**. A false `unmet` is worse than a missing one: the accounting is
+where the operator reads whether a run did what it claimed.
+
+- **One judge, reading the evidence.** Every `met` now goes to the `tool_call` judge
+  (`engine/verifier.py`), which is told to rule on the ACTIONS and their results — matching the
+  identifiers the claim is about — and that a claim is not refuted because a procedure document
+  went unread. The unentered stage survives as a `note:` **hint** on that claim
+  (`verifier.hinted`), phrased for a reader who will go and look: *"which can also mean it knew
+  the procedure already, so judge it by the actions, not by this"*.
+- **The judge can finally see the actions.** It read only the last 12 000 characters of the
+  message list, so on a long run the actions that produced an early outcome were not in front of
+  it. It now also reads the run's **action record** — `loop.turn_records`, one line per turn,
+  which survives compaction — capped at `ACTIONS_CHARS` (24 000) and elided from the **middle**,
+  because an outcome's evidence is as often at turn 12 as at turn 120.
+- **The objection says what overturns it.** The deferral now asks for the actions by name
+  (*"CITE THE ACTIONS: which turns produced the outcome, what they returned, and the identifiers
+  that match"*) and adds *"do not concede a line you did the work for"*.
+- Fail-open is untouched and newly pinned: a malformed turn record is skipped rather than raising
+  at the finish; a run with no action record simply has that section left out. The once-per-line
+  challenge budget, the re-asserted verdict standing, and `disputed` on the record are unchanged.
+- 9 new tests (`tests/test_verifier.py`, `tests/test_loop.py`), `docs/prompt-anatomy.md` and
+  `docs/architecture.md` swept.
+
 ## [0.401.0] — 2026-10-09
 
 ### Fixed — a multimodal run is no longer steered to the `vision` util, and the catalog says so before the call (R2249, F544)

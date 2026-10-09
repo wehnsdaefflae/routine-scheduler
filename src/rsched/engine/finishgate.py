@@ -225,22 +225,29 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                    "actually take the action now, or remove that claim from your summary, "
                    "then finish again.", unbacked_claims=unbacked)
             return None   # deferred — the loop goes round again
-    # The accounting proves each line was ANSWERED, not that the answer is true. Each `met`
-    # claim is checked once: deterministically first (a Done-when line whose producing stage
-    # this run never entered), then by a second model against the run's own transcript.
+    # The accounting proves each line was ANSWERED, not that the answer is true. So each `met`
+    # claim is checked once, by a second model, against the run's own record — the ACTIONS it
+    # took and the tail of its conversation (engine/verifier.py).
+    #
+    # ONE judge, reading the evidence. A Done-when line may name the stage that produces it,
+    # and a run that never entered that stage used to be objected to with no model asked — and
+    # the blamed line was then excluded from the judge that would have looked at what it did.
+    # Stage entry is measured from module re-reads and phase-cursor writes, so it was wrong for
+    # every run that already knew its procedure (F620/R2228: three lines objected to, two of
+    # them produced in full, and the run filed a false `unmet` about its own work). The signal
+    # survives as a HINT on that claim, which the judge weighs against the actions.
+    #
     # Fail-open at every level and at most ONE objection per line per run — per reply, in a
     # conversation, and kept across a resume (`rebuild`): the model keeps the last word and
-    # the disagreement is recorded instead (engine/verifier.py).
+    # the disagreement is recorded instead.
     disputes: dict[str, str] = {}
     if owed is not None and not loop._finish_reserved:
         from . import verifier
         claims = _claims(verdicts, *owed)
         cov = ctx.stage_coverage()
-        early = (verifier.unentered(claims, set(cov["entered"])) if cov["declared"] else [])
-        blamed = {o["id"] for o in early}
-        objections = early + verifier.refuted(
-            loop, [c for c in claims if c["id"] not in blamed],
-            str(action.get("summary") or ""))
+        if cov["declared"]:
+            claims = verifier.hinted(claims, set(cov["entered"]))
+        objections = verifier.refuted(loop, claims, str(action.get("summary") or ""))
         fresh = [o for o in objections if o["id"] not in loop._challenged]
         if fresh:
             loop._challenged.update(o["id"] for o in fresh)

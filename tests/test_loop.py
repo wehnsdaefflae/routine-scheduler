@@ -896,17 +896,57 @@ def test_verifier_challenges_once_then_the_run_keeps_the_last_word(make_routine,
     assert upd["payload"]["met"] == ["g1"] and upd["payload"]["disputed"] == ["g1"]
 
 
-def test_a_line_whose_stage_was_never_entered_is_challenged_without_a_judge(make_routine,
-                                                                           scripted,
-                                                                           monkeypatch):
-    """The deterministic objection comes first and costs no model call; the run can overrule
-    it, because skip detection is imperfect."""
+def test_a_line_whose_stage_was_never_entered_goes_to_the_judge_with_that_as_a_hint(
+        make_routine, scripted, monkeypatch):
+    """F620: the unentered stage used to be an objection ON ITS OWN, and the line it blamed was
+    excluded from the judge that would have read the evidence. Stage entry is measured from
+    module re-reads and phase-cursor writes, so it was wrong for every run that already knew its
+    procedure — R2228: a run whose outcomes were produced in full was objected to on three lines
+    and filed a false `unmet` about its own work. Now ONE judge sees every claim, with the stage
+    signal as a note it weighs.
+    """
     from rsched.engine import verifier
 
-    asked = []
-    monkeypatch.setattr(verifier, "refuted",
-                        lambda loop, claims, summary: (asked.append(claims), [])[1])
+    seen = []
+    monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: (
+        seen.append({"claims": [c["id"] for c in claims],
+                     "hints": {c["id"]: c["hint"] for c in claims if c.get("hint")}}),
+        [])[1])
     d = make_routine(slug="stagecheck", workflow_md=WORKFLOW_MD.rstrip() + """
+
+## Done when
+
+- d1 · publish — the page is published and read back
+""")
+    (d / "stages").mkdir()
+    (d / "stages" / "publish.md").write_text("# publish\n\nPublish it.\n", encoding="utf-8")
+    scripted([probe(), _accounted("Published.", "d1 met: published")])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+
+    # the finish STANDS on the first try: no deterministic objection fires any more
+    assert status == "ok"
+    assert not [e for e in events if e["type"] == "observation"
+                and e["payload"].get("claims_unsupported")]
+    # ...and the line WAS judged, carrying the unentered stage as its hint
+    assert [s["claims"] for s in seen] == [["d1"]]
+    assert "never entered the stage `publish`" in seen[0]["hints"]["d1"]
+    # the stage gap is still on the record, as the notice it always was (F521/R1681)
+    skipped = next(e for e in events if e["type"] == "stages_skipped")
+    assert skipped["payload"]["skipped"] == ["publish"]
+
+
+def test_a_judge_refuting_a_stage_keyed_line_still_challenges_it_once(make_routine, scripted,
+                                                                      monkeypatch):
+    """The hint demotion must not cost the check its teeth: when the judge — now reading the
+    actions — does refute, the line is challenged exactly once and the run keeps the last word.
+    """
+    from rsched.engine import verifier
+
+    monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: [
+        {"id": c["id"], "text": c["text"], "evidence": "no action published anything"}
+        for c in claims])
+    d = make_routine(slug="stagecheck2", workflow_md=WORKFLOW_MD.rstrip() + """
 
 ## Done when
 
@@ -916,7 +956,7 @@ def test_a_line_whose_stage_was_never_entered_is_challenged_without_a_judge(make
     (d / "stages" / "publish.md").write_text("# publish\n\nPublish it.\n", encoding="utf-8")
     scripted([
         probe(),
-        _accounted("Published.", "d1 met: published"),                # challenged, no judge
+        _accounted("Published.", "d1 met: published"),                      # challenged
         _accounted("Published.", "d1 met: the page reads back — see turn 1"),   # stands
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
@@ -925,7 +965,9 @@ def test_a_line_whose_stage_was_never_entered_is_challenged_without_a_judge(make
     challenged = [e["payload"]["claims_unsupported"] for e in events
                   if e["type"] == "observation" and e["payload"].get("claims_unsupported")]
     assert challenged == [["d1"]]
-    assert asked == [[], []]                    # the judge is never asked about a blamed line
+    msg = next(e["payload"]["message"] for e in events if e["type"] == "observation"
+               and e["payload"].get("claims_unsupported"))
+    assert "CITE THE ACTIONS" in msg          # F620: the objection names what overturns it
     upd = next(e for e in events if e["type"] == "stopping_update")
     assert upd["payload"]["disputed"] == ["d1"]
 

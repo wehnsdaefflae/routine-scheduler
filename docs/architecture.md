@@ -1514,8 +1514,11 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
     budget dies. So a line is challenged AT MOST ONCE per run (`loop._challenged` — per reply in
     a conversation, and rebuilt on a resume from the deferrals' `claims_unsupported`, so a
     restart does not reopen the argument): the finish is
-    set aside one turn with the objection and how to overrule it; if the model re-asserts the
-    same verdict it STANDS. The disagreement is then recorded — `disputed` on a finish-line
+    set aside one turn with the objection and how to overrule it — CITE THE ACTIONS, which turns
+    produced the outcome and the identifiers that match, and `do not concede a line you did the
+    work for`, because a run that read the objection as unanswerable filed a false `unmet` about
+    its own finished work and a false `unmet` is worse than a missing one (F620); if the model
+    re-asserts the same verdict it STANDS. The disagreement is then recorded — `disputed` on a finish-line
     outcome and in the `stopping_update` event. The engine gets one intervention, the model keeps
     the last word, and the operator gets the audit trail.
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
