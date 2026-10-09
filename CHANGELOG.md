@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.400.0] — 2026-10-09
+
+### Added — the daemon serves the NAMES of stored credentials, so the off-box export stops needing their values (D171)
+
+`GET /api/credential-names` returns names only, never a value: the central Secrets store's
+names (already in every run's prompt, D46), the routine-scoped names as one UNATTRIBUTED
+sorted union (D103 keeps whose they are inside the daemon), the OAuth store's
+credential-bearing field names (read off `Connection.__dataclass_fields__`, so a new token
+field is covered the day it exists) and the config keys whose value is a credential.
+
+Why it exists: `rsched export` mirrors this instance off-box and scrubbed credentials out of
+what it writes by READING every store — which `sandbox.py` hides from every util and every
+shell by design, and Landlock only ever subtracts. So the export has failed since 2026-10-03
+and the mirror went stale rather than shipping unvouched. The operator's answer (option b) was
+not to open the jail but to remove the need: the daemon is unsandboxed and already reads the
+stores, and a list of names leaks nothing.
+
+The route is deliberately NOT under `/api/settings`, which the routine token
+(`RSCHED_API_TOKEN`, the token the export runs under inside a util) is refused wholesale —
+an endpoint its only caller cannot read would not be a fix. `tests/test_credential_names.py`
+pins the security property by VALUE: every store is seeded with a distinctive credential and
+the whole response body is asserted free of all of them, plus a test that the response is
+byte-identical when a value changes, so nothing in it can be value-derived.
+
+Known narrowing, documented in `docs/architecture.md`: a by-NAME scrub list cannot recognise a
+central-store credential pasted into an unrelated file, the way the by-VALUE scan could. A
+redactor using this list must report which sources it could still scan by value, so a
+shrinking `withheld` list never reads as a clean one.
+
 ## [0.399.2] — 2026-10-09
 
 ### Fixed — a broken oversight rung still LOOKED like a declined one on the rail (F644, third defect)

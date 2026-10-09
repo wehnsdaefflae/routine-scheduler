@@ -996,7 +996,20 @@ JSON-map field says credential (`*KEY`, `*TOKEN`, `*SECRET`, `*PASS`/`*PASSWORD`
 keeps addresses, hosts and user names that sit in hundreds of routine files by design. A value
 under 8 characters (the engine's redaction floor) is not matched. The export fails CLOSED — a
 config or store it cannot read refuses the whole export, since it cannot vouch for a mirror whose
-credentials it cannot see. `bootstrap.py` seeds on
+credentials it cannot see. **One store it cannot read any more is the point of
+`GET /api/credential-names`** (D171, operator decision 2026-10-08): the sandbox hides the whole
+config dir from every util and every shell by design and Landlock only subtracts, so from
+2026-10-03 the export could not read `secrets.env` at all and the off-box mirror went stale
+rather than shipping unvouched. The daemon is unsandboxed and already reads the stores, so it
+serves the NAMES — the central store's (already in every run's prompt, D46), the routine-scoped
+ones as one UNATTRIBUTED union (D103 keeps whose they are inside the daemon), the OAuth store's
+credential-bearing field names and the config's credential keys — and never a value: the response
+is identical on an instance holding real credentials and one holding placeholders
+(`web/api_credential_names.py`, deliberately NOT under `/api/settings`, which the routine token
+the export runs under is refused wholesale). A by-NAME scrub list cannot do everything a
+by-VALUE one did — it cannot recognise a central-store credential someone pasted into an
+unrelated file — so a redactor using it must say which sources it could still scan by value,
+never let a shrinking `withheld` list read as a clean one. `bootstrap.py` seeds on
 first boot; `deploy/install.sh` for host installs. Everything in the library is user-EDITABLE from
 the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
 the `converse` workflow (every conversation is materialized from it BY SLUG, so losing it
