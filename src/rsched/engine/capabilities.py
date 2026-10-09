@@ -99,7 +99,22 @@ def _util_category(tags) -> str:
     return _UTIL_CATEGORY_OTHER
 
 
-def _util_catalog_block(utils: list[dict], kinds: list[str], g) -> str:
+#: Utils that exist for a TEXT-ONLY run, with the note a multimodal run is shown instead of
+#: their bare summary (R2249). A util in the catalog reads as a tool to reach for, and the
+#: qualifier inside `vision`'s summary — "for a text-only model" — was not enough: a run with
+#: a multimodal model called it on a PDF, which opened a credential question for a call that
+#: needed no credential and would have uploaded a grant document to a third party. The engine
+#: refuses that call (engine/visionsteer.py); this is the same fact said BEFORE the call, where
+#: it costs no turn. Keyed by util name, so the note travels with the util and not with a
+#: category.
+_FOR_TEXT_ONLY_RUNS: dict[str, str] = {
+    "vision": "  [for a text-only run — THIS run's model is multimodal: use "
+              "`view_image path=…`, which needs no secret and no upload]",
+}
+
+
+def _util_catalog_block(utils: list[dict], kinds: list[str], g, *,
+                        multimodal: bool = False) -> str:
     """The always-on util catalog, grouped by the controlled category vocabulary (D52 Phase 1):
     a run scans ~14 labelled groups instead of a flat 90+-line alphabetical list. Every util's
     one-line summary stays visible under its group; groups are emitted in `_UTIL_CATEGORIES`
@@ -112,7 +127,7 @@ def _util_catalog_block(utils: list[dict], kinds: list[str], g) -> str:
         head = u["summary"] or u["name"]
         if not head.startswith(u["name"]):
             head = f"{u['name']} — {head}"
-        note = ""
+        note = _FOR_TEXT_ONLY_RUNS.get(u["name"], "") if multimodal else ""
         if g is not None and u["name"] in g.gated_verbs and u["name"] not in g.utils:
             verbs = sorted(v for v in g.gated_verbs[u["name"]]
                            if f"{u['name']}:{v}" not in g.utils)
@@ -234,8 +249,14 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     from .kindsurface import effective_kinds
 
     parts: list[str] = []
+    # read at the ONE place the main model is resolved, so the util catalog's
+    # "this run is multimodal" note can never disagree with the "Model:" line above it; an
+    # unresolvable model stays False, which shows `vision` unannotated — the safe way round,
+    # since the engine's refusal is what actually enforces it (engine/visionsteer.py).
+    multimodal = False
     try:
         _endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
+        multimodal = bool(ref.multimodal)
         parts.append(f"Model: {ref.endpoint}/{ref.model} — context window ≈ "
                      f"{ref.context_tokens:,} tokens; the engine archives the middle of "
                      "the conversation to on-disk history at ~60-80% of that, so budget your "
@@ -368,5 +389,6 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             parts.append("Sub-workflow patterns for spawn/subtask/detach — pick the one "
                          "matching the CHILD's purpose, never reflexively the default:\n"
                          + "\n".join(f"- {w['slug']} — {w['description']}" for w in patterns))
-    parts.append(_util_catalog_block(utils_lib.list_utils(ctx.server.libraries_home), kinds, g))
+    parts.append(_util_catalog_block(utils_lib.list_utils(ctx.server.libraries_home), kinds, g,
+                                     multimodal=multimodal))
     return "\n\n".join(parts)

@@ -17,6 +17,7 @@ from . import (
     secretgate,
     taskops,
     thenscript,
+    visionsteer,
 )
 from .control import RunAborted
 from .loopconst import POLL_S
@@ -63,6 +64,12 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
             # a credential exposure for a call that is about to be refused anyway spends his
             # attention on nothing. A refusal here is this turn's observation, in the
             # schema-retry cycle, naming the live handles so the run can decide what to drop.
+            # R2249: the same `vision` refusal the foreground branch applies, for the same
+            # reason F633 gives above — a kind refused in one path and not the other is a
+            # refusal a flag walks around. It is read FIRST: it needs neither a cap slot nor
+            # a credential decision, and the call it replaces would have asked for both.
+            if (steered := visionsteer.refuse_if_viewable(action, ctx)) is not None:
+                return steered
             capped = background.refuse_at_capacity(loop, action)
             if capped is not None:
                 return capped
@@ -118,6 +125,12 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->h
     if action["kind"] == "write_rule":
         return authoring.handle_write_rule(loop, action, poll_s=POLL_S)
     if action["kind"] == "util":
+        # R2249: `vision` on a file THIS run can simply look at is refused here, BEFORE the
+        # secret gate — the gate would open a credential-exposure question for a call that
+        # needs no credential, and a decline is scoped to the whole run, so one needless
+        # prompt closes off every legitimate `vision` call that run.
+        if (steered := visionsteer.refuse_if_viewable(action, ctx)) is not None:
+            return steered
         # D39: per-routine secret exposure is decided at CALL time — the gate
         # asks/refuses/passes; None means the call proceeds normally.
         return secretgate.gate_util_secrets(loop, action, poll_s=POLL_S) \

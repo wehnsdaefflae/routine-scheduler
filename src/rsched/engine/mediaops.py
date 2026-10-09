@@ -129,31 +129,50 @@ def without_bytes(obs: dict) -> dict:
     return {**obs, "media": [{k: v for k, v in item.items() if k != "b64"} for item in media]}
 
 
+def natively_viewable(ctx: RunContext, rel: str) -> tuple[str, str] | None:
+    """`(abspath, media_type)` if THIS run's main model can be shown `rel` directly, else None.
+
+    The one spelling of that question (F623's lesson: two predicates for one question drift
+    apart silently). Three callers ask it — the conversation's auto-attach, the `view_image`
+    pre-flight, and the `vision` refusal in `visionsteer` — and each needs the same bounds:
+    the main model is multimodal, the endpoint carries that media type natively, the file
+    exists, and it is inside the native size cap. None means the vision-util fallback is the
+    real path, so a refusal must never fire; it is also None for anything that is not a
+    readable local file at all (a URL, a flag, a missing path).
+    """
+    try:
+        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
+    except Exception:
+        # an unresolvable main model is the vision-util's case, not this one — and a run whose
+        # model cannot be resolved must never be told it can see the file
+        return None
+    if not ref.multimodal:
+        return None            # the common text-only case, answered before touching the disk
+    try:
+        path = resolve_action_path(ctx, rel)
+    except (OSError, PermissionError, ValueError):
+        return None
+    mime = guess_media_type(path)
+    if not mime or not path.is_file() or oversize_reason(path, mime) is not None:
+        return None
+    if not endpoint.supports_media(mime, multimodal=bool(ref.multimodal)):
+        return None
+    return str(path), mime
+
+
 def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
     """`media` entries (path + media_type) for the image/PDF attachments among `rels` that
     the main endpoint can show natively — conversation auto-attach. Unsupported files (wrong
     type, too big, or a text-only endpoint) are skipped: the model can still view_image them,
     which then routes through the vision util.
     """
-    try:
-        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
-    except Exception:
-        return []
-    out: list[dict] = []
-    for rel in rels:
-        try:
-            path = resolve_action_path(ctx, str(rel))
-        except (OSError, PermissionError):
-            continue
-        mime = guess_media_type(path)
-        # the SAME pre-flight view_image uses (F623): one predicate, so a bound added there is
-        # never missing here. An oversized attachment is skipped, exactly as a too-big or
-        # unsupported one always was — the model can still `view_image` it, which routes it
-        # through the vision util and says why.
-        if (mime and path.is_file() and oversize_reason(path, mime) is None
-                and endpoint.supports_media(mime, multimodal=ref.multimodal)):
-            out.append({"path": str(path), "media_type": mime})
-    return out
+    # the SAME predicate the view_image pre-flight and the `vision` refusal use (F623): one
+    # question, so a bound added to it is never missing here. An oversized or unsupported
+    # attachment is skipped, exactly as it always was — the model can still `view_image` it,
+    # which then routes through the vision util and says why.
+    seen = (natively_viewable(ctx, str(rel)) for rel in rels)
+    return [{"path": s[0], "media_type": s[1]} for s in seen if s is not None]
+
 
 def do_view_image(action: dict, ctx: RunContext) -> dict:
     """Let the orchestrator SEE an image/PDF: natively when the main MODEL is multimodal

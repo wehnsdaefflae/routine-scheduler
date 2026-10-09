@@ -15,6 +15,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.401.0] — 2026-10-09
+
+### Fixed — a multimodal run is no longer steered to the `vision` util, and the catalog says so before the call (R2249, F544)
+
+A run whose own model can see a file called `util vision <the file>` on a grant PDF. That
+opened a credential-exposure question for `OPENROUTER_VISION_KEY` — a credential the call did
+not need — and would have uploaded a document carrying a person's name, Förderkennzeichen and
+working hours to a third-party provider, to get back a transcription where `view_image` hands
+over the document itself. The user declined the exposure and asked the right question:
+*"you're a vision model, what would you need openrouter for?"*
+
+Two changes, because the call and the prompt that invited it are different problems:
+
+- **The engine refuses the call** (`engine/visionsteer.py`), in both dispatch paths and
+  *before* the secret gate — asking the user to decide an exposure for a call that is about to
+  be refused spends his attention on nothing, and R2249 names the second-order cost: a
+  declined exposure is scoped to the WHOLE run, so one needless prompt closes off every
+  legitimate `vision` call that run. The refusal names the call that works
+  (`view_image path=…`, quoted as the run wrote it, so it is copyable) and states that nothing
+  was sent and no credential was requested.
+- **The util catalog flags it** (`engine/capabilities.py`): a multimodal run reads
+  `vision  [for a text-only run — THIS run's model is multimodal: use view_image path=…]`
+  instead of the bare summary. The qualifier inside the summary ("for a text-only model") was
+  not enough, because a util in the catalog reads as a tool to reach for. A text-only run sees
+  the summary unchanged, so the annotation never becomes noise.
+
+The refusal is exactly as narrow as the engine's own native-view predicate, which is now ONE
+function (`mediaops.natively_viewable`) that the auto-attach scanner, the `view_image`
+pre-flight and the refusal all ask — F623's lesson that two predicates for one question drift
+apart. Everything `vision` genuinely exists for passes through untouched: a text-only model, an
+endpoint without native document support, a file over the native cap, a URL, a flag.
+
+`tests/test_vision_steer.py` pins both edges (9 tests, including the background path, because
+`util` is backgroundable and a kind refused in one path and not the other is a refusal a flag
+walks around) and `tests/test_composer_vision_note.py` the prompt surface (3).
+
 ## [0.400.0] — 2026-10-09
 
 ### Added — the daemon serves the NAMES of stored credentials, so the off-box export stops needing their values (D171)
