@@ -15,6 +15,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.408.1] — 2026-10-10
+
+### The background concurrency cap is GONE — 0.392.0 built the option the operator did not choose
+
+**D166 asked how many background calls one run may hold in flight. His answer is (c): "unbounded —
+simplest, and the run's own turn budget is already the practical limit".** 0.392.0 shipped option
+(a), a fixed cap of 3, and credited D166 by id for it. The decision row had recorded (a) from an
+EARLIER delivery of the same question; he had since answered it differently, and by then the
+constant, the refusal, its test, that CHANGELOG entry and the prompt text every run reads were all
+built to the option he did not choose. Found by `self-audit` as **F650** — the most serious class of
+defect this project has, because "we built what he chose" is the claim every decision citation
+rests on.
+
+**What caught it, and what should be standing practice:** comparing each re-delivered answer
+against its recorded resolution, instead of checking only that an answer had arrived. Four of the
+five answers in that same batch matched the ledger exactly, so a blanket "stale re-delivery"
+reading would have buried the one real contradiction.
+
+- **Removed**: `background.MAX_CONCURRENT`, `background.refuse_at_capacity`, and the cap's read in
+  `actionroute.dispatch_action`. A flagged call now meets only the vision steer and the call-time
+  secret gate — both about the call itself, neither about how many others are running. The gate's
+  synchronous-on-the-starting-turn requirement (F633) is untouched, and a test pins that removing
+  the cap did not take the gate with it.
+- **The mechanism is gone rather than widened.** A bigger number would have left the same thing to
+  drift back; the argument FOR a cap is real — every pending call is a live thread whose spend books
+  against the same run's budgets (D167) — so it is recorded as a comment in `engine/background.py`
+  saying it was heard and decided against, and that reopening it means reopening D166.
+- **The prompt surface** (`actionschema.py`'s `background` field, which is where a run learns the
+  rule) now says there is no cap and that its own turn budget is the limit, since every result still
+  has to be read.
+- **The cancel observation** no longer reports "N of 3 now in flight"; it reports that the handle is
+  off the live list and how many remain.
+- **Tests**: the two cap unit tests become **absence** tests — no `MAX_CONCURRENT`, no
+  `refuse_at_capacity`, and nothing in `dispatch_action` refusing for capacity — and the integration
+  test now backgrounds **six** calls (not four: four would pass against a cap of 4) and asserts all
+  six START, none is refused, and all six DELIVER. Two tests that used the cap as a measuring
+  instrument were re-pointed at the property they actually owned: the cancel test now proves the
+  live-list removal directly through the `kill` observation's own `in_flight`, and the
+  not-executed-renderer guard is kept on a payload built in the test, so whatever pre-dispatch
+  refusal this seam grows next inherits a renderer known to survive missing result fields.
+- Docs: `docs/background-tasks.md` (phase 4), `CLAUDE.md`, `docs/prompt-anatomy.md`. The 0.392.0
+  entry below is annotated rather than rewritten — a shipped entry that was wrong is evidence.
+
 ## [0.408.0] — 2026-10-10
 
 ### `kill handle=` STOPS the work for `util`, `script` and `shell` — 0.404.0 shipped a ceiling that was not one
@@ -756,6 +799,13 @@ each sized against this fleet's own transcripts before it was built.
 ## [0.392.0] — 2026-10-08
 
 ### Added
+> **CORRECTED IN 0.408.1 (F650): the cap below was the option the operator did NOT choose.** D166's
+> answer is (c), unbounded; this row recorded (a) from an earlier delivery of the same question and
+> the code was built to it. `MAX_CONCURRENT`, `refuse_at_capacity` and the cap's read in
+> `dispatch_action` are gone. The entry is left standing because a shipped entry that was wrong is
+> evidence; read everything in this bullet about the cap as retracted. The ordering claim about the
+> secret gate (the gate runs on the starting turn, F633) is unaffected and still holds.
+
 - **Background actions, phase 4 (D118): a run may have at most THREE background calls in flight,
   and the fourth is refused with its reason rather than queued.** `background.MAX_CONCURRENT = 3`
   (D166). The refusal arrives on the starting turn, inside the schema-retry cycle, naming every

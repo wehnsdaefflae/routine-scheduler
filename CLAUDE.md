@@ -439,11 +439,12 @@ one you are about to touch, not all of them.
   that raises becomes an error observation instead of ending the run. **A `background: true` call
   passes that gate on its STARTING turn, before the thread exists** (F633): the gate asks the user
   and a thread has no turn to block on, so a deferral that skipped it would have moved a security
-  decision out of reach — every call-time gate a kind has runs synchronously first. **The
-  CONCURRENCY CAP is read before that gate** (D166: at most `background.MAX_CONCURRENT` = 3 in
-  flight, the fourth REFUSED naming the live handles): the gate can file a BLOCKING question, so
-  asking the user to decide a credential exposure for a call about to be refused anyway would spend
-  his attention on nothing. **A backgrounded call's model spend books ON COLLECTION** (D167):
+  decision out of reach — every call-time gate a kind has runs synchronously first. **There is NO
+  concurrency cap** (D166 answered (c), unbounded: the run's own turn budget is the practical limit).
+  0.392.0 read a cap of 3 at that seam; the decision row had recorded the option the operator did
+  not choose, so 0.408.1 removed the mechanism rather than widening the number (F650) — the
+  reasoning for a cap, heard and decided against, is a comment in `engine/background.py` so it is
+  not rebuilt as an obvious improvement. **A backgrounded call's model spend books ON COLLECTION** (D167):
   `RunContext.add_usage` parks a reading made on a background thread and `background.collect` books
   it at the turn boundary, because folding into `ctx.usage` from the thread both races the loop's
   own fold and makes a turn's budget check depend on thread timing.

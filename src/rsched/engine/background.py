@@ -79,22 +79,18 @@ BACKGROUND_PURPOSE = "background action"
 #: the host through `shell` or `script`, never through `llm`.
 STOPPABLE_KINDS = ("util", "script", "shell")
 
-#: How many background calls ONE run may have in flight at once (D118 phase 4, decided D166:
-#: "a small fixed cap, e.g. 3: the flagged action is REFUSED (with its reason, in the
-#: schema-retry cycle) while the cap is full, so the run decides what to drop").
+#: THERE IS NO CONCURRENCY CAP, and that is a decision rather than an omission (D166, answered
+#: (c)): "unbounded: simplest, and the run's own turn budget is already the practical limit".
 #:
-#: Why a cap exists at all, and why it refuses rather than queues: each pending call is a live
-#: thread holding whatever its handler holds — a subprocess, a socket, a model call — and every
-#: one of them books against the SAME run's wall-clock and token budgets (D167). Unbounded, a
-#: loop that flags every action turns one run into an unbounded fan-out whose results it has no
-#: turns left to read, and whose spend arrives after the budget check that would have stopped it.
-#:
-#: A QUEUE was the alternative and is worse here: it defers the work silently, so the run cannot
-#: tell a started call from a parked one, and the parked call still lands its observation at a
-#: boundary the run did not plan for. A refusal keeps the choice where the decision put it — with
-#: the run, which knows which of its reads matters and can take this one in the foreground, wait
-#: for a handle to land, or drop it.
-MAX_CONCURRENT = 3
+#: 0.392.0 shipped a cap of 3 (`MAX_CONCURRENT`, with a `refuse_at_capacity` refusal naming the
+#: live handles) because the ledger row had recorded option (a) from an earlier delivery of the
+#: same decision; the operator had since answered it differently, and the code, its test, the
+#: CHANGELOG entry and the prompt text every run reads were all built to the option he did not
+#: choose (F650). This comment exists so the cap is not reintroduced as an obvious improvement:
+#: the argument FOR one is real — every pending call is a live thread whose spend books against
+#: the same run's budgets (D167) — and it was heard and decided against. A run that fans out
+#: more than it has turns left to read pays for that in its own turn budget, which is the limit
+#: the decision points at. Reopening it means reopening D166, not editing this file.
 
 #: How long a FINISHING run waits for a background call still in flight. The run's work is over,
 #: so this delays nothing anybody is waiting on — but a conversation's reply is rendered from the
@@ -168,39 +164,6 @@ def _runner(kind: str):
     if kind == "script":
         return executor.do_script
     return executor.dispatch
-
-
-def refuse_at_capacity(loop, action: dict) -> dict | None:
-    """The cap (D166), as THIS turn's observation — or None when there is room.
-
-    Shaped like the D39 secret gate's refusal and for the same reason: it is a decision made on
-    the STARTING turn, so it must reach the turn that asked for the call. It is not a *started*
-    observation and nothing is backgrounded, which is what lets the schema-retry cycle treat it
-    as a correctable action rather than as a result.
-
-    It names every live handle, because "the run decides what to drop" is only a real choice if
-    the run can see what it is choosing between — a bare "cap reached" leaves it guessing which
-    of its own calls to wait for.
-    """
-    live = _pendings(loop)
-    if len(live) < MAX_CONCURRENT:
-        return None
-    # `rejected` + `reason` is the ONE shape the engine words for an action it did not execute
-    # (`observations._not_executed`), and using it is not a style choice: every per-kind
-    # renderer below that branch reads the fields of a dispatch RESULT — a `util` refusal
-    # carrying `error` instead reaches the util branch and raises `KeyError: 'name'`, which
-    # kills the turn AND every later resume, since a resume re-renders each stored
-    # observation. That is the exact failure fifteen renderers had already been fixed for;
-    # measured again here on the first run of this test.
-    return {"kind": action.get("kind"), "background": True, "rejected": True,
-            "at_capacity": True, "limit": MAX_CONCURRENT,
-            "in_flight": [p.handle for p in live],
-            "reason": f"REFUSED, nothing was started: this run already has {len(live)} "
-                      f"background calls in flight and {MAX_CONCURRENT} is the cap — "
-                      f"{_brief_list(live)}. Choose: take this {action.get('kind')} in the "
-                      f"FOREGROUND (drop `background`), or let one of the handles above land "
-                      f"first and flag it then. Do not repeat the identical flagged action — "
-                      f"it will be refused again until a slot frees."}
 
 
 def start(loop, action: dict, ctx) -> dict:
@@ -349,8 +312,8 @@ def cancel(loop, handle: str) -> dict:
             "background_kind": pending.kind, "brief": pending.brief,
             "had_landed": landed, "stopped_work": stopped_work,
             "in_flight": [p.handle for p in loop._background],
-            "note": f"`{pending.handle}` will NOT deliver its observation and its slot is "
-                    f"free ({len(loop._background)} of {MAX_CONCURRENT} now in flight). "
+            "note": f"`{pending.handle}` will NOT deliver its observation; it is off the live "
+                    f"list ({len(loop._background)} still in flight). "
                     + ("It had already finished, so its result existed and was dropped."
                        if landed else
                        f"The WORK IS BEING STOPPED: a backgrounded {pending.kind} runs as a "

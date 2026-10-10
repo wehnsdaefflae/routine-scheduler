@@ -198,9 +198,9 @@ ACTION_SCHEMA: dict = {
                            "steers the run (finish, ask_user, report, spawn, subtask, wait, "
                            "kill): a later action would read state the background call has "
                            "not written yet. Do not background a call whose result your VERY "
-                           "NEXT action needs — you would only have to wait for it anyway. At "
-                           "most THREE may be in flight at once: a fourth is refused naming the "
-                           "live handles, so you choose what to drop or take in the foreground",
+                           "NEXT action needs — you would only have to wait for it anyway. There "
+                           "is no cap on how many may be in flight at once; your own turn budget "
+                           "is the limit, since every result still has to be read",
         },
         "command": {
             "type": "string",

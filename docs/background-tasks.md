@@ -135,17 +135,24 @@ cannot offer.
 Three decisions, answered 2026-10-08 (D166, D167, D168), settle how the feature behaves under
 load, where its spend lands, and who gets it.
 
-- **At most THREE background calls in flight per run** (`background.MAX_CONCURRENT`, D166). The
-  fourth flagged action is **REFUSED** on its own turn, inside the schema-retry cycle, naming every
-  live handle with its brief — so the run can decide what to drop: take this call in the
-  foreground, or let one of the named handles land first. Nothing is queued, deliberately: a queue
-  defers silently, so a run cannot tell a started call from a parked one, and the parked call still
-  lands its observation at a boundary the run did not plan for. The cap is read in
-  `actionroute.dispatch_action` **before** the call-time secret gate, because that gate can file a
-  BLOCKING question and asking the operator to decide a credential exposure for a call about to be
-  refused spends his attention on nothing. The refusal carries `rejected` + `reason` — the one
-  shape `observations._not_executed` words for an action the engine did not execute; a refusal
-  carrying result-shaped fields instead reaches a per-kind renderer that reads them and raises.
+- **No cap on how many are in flight** (D166, answered **(c) unbounded**: "simplest, and the run's
+  own turn budget is already the practical limit"). Nothing in `actionroute.dispatch_action` counts
+  the live calls; a flagged action meets only the vision steer and the call-time secret gate, both
+  of which are about that call and not about how many others are running. The argument for a cap is
+  real and was heard — every pending call is a live thread whose spend books against the same run's
+  budgets (D167) — and the decision went the other way: a run that fans out more than it has turns
+  left to read pays for that in its own turn budget. `background.py` carries that reasoning as a
+  comment so the cap is not reintroduced as an obvious improvement; reopening it means reopening
+  D166.
+
+  **0.392.0 shipped the opposite and 0.408.1 removed it — the specimen is worth keeping** (F650).
+  That release built option (a), `MAX_CONCURRENT = 3` with a `refuse_at_capacity` refusal naming the
+  live handles, because the decision row had recorded (a) from an EARLIER delivery of the same
+  question; the operator had since answered it differently, and the code, its test, the CHANGELOG
+  entry and the prompt text every run reads were all built to the option he did not choose. What
+  caught it was comparing each re-delivered answer against its recorded resolution instead of
+  checking only that an answer had arrived — four of the five answers in that batch matched the
+  ledger exactly, so a blanket "stale re-delivery" reading would have buried the one contradiction.
 - **A background call's tokens book ON COLLECTION, not from its thread** (D167). A handler knows
   nothing about having been backgrounded — `do_llm` books through `ctx.add_usage` at five sites
   (two of its own, three in `engine/refusal.py`) and `do_decide` at one — so the deferral lives at

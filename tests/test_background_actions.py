@@ -282,150 +282,114 @@ def test_the_background_runner_matches_the_foreground_routing_table():
             "it would raise KeyError the moment a run backgrounds it")
 
 
-# ---- the concurrency cap (D118 phase 4, decided D166) -----------------------------------------
+# ---- NO concurrency cap (D118 phase 4; D166 answered (c) unbounded) ---------------------------
 
-def test_the_cap_is_a_small_fixed_number():
-    """D166 decided "a small fixed cap, e.g. 3". The number is part of the decision, not a
-    tuning knob a later edit may drift: a cap of 50 would be the unbounded fan-out the decision
-    refused, and a cap of 1 would make the feature pointless."""
+def test_there_is_no_concurrency_cap():
+    """D166 asked how many background calls one run may hold in flight and the operator answered
+    **(c) unbounded**: "simplest, and the run's own turn budget is already the practical limit".
+
+    F650 is why this test is written as an ABSENCE. 0.392.0 shipped option (a) — a fixed cap of 3
+    — because the ledger row had recorded (a) from an earlier delivery of the same decision; the
+    operator had since answered it differently, and the code, its test, the CHANGELOG entry and
+    the prompt text every run reads were all built to the option he did not choose. So the thing
+    to pin is not a bigger number: it is that no cap mechanism exists to drift back into one.
+    """
     from rsched.engine import background
 
-    assert background.MAX_CONCURRENT == 3
+    assert not hasattr(background, "MAX_CONCURRENT"), (
+        "MAX_CONCURRENT is back: D166 chose unbounded, and a constant here is the cap "
+        "returning as a 'tuning knob'")
+    assert not hasattr(background, "refuse_at_capacity"), (
+        "the capacity refusal is back; D166's answer leaves nothing to refuse")
 
 
-def test_the_cap_is_read_before_the_secret_gate():
-    """Order matters, not just presence. The secret gate can file a BLOCKING question; asking
-    the user to decide a credential exposure for a call that is about to be refused anyway
-    spends his attention on nothing. So the cap must be consulted first."""
+def test_nothing_in_dispatch_refuses_a_background_call_for_capacity():
+    """The constant's absence is not enough — a cap could be reintroduced inline at the dispatch
+    seam. `dispatch_action` is where the cap was read (ahead of the secret gate), so that is
+    where this is checked: the only pre-start decisions a flagged call now meets are the vision
+    steer and the call-time secret gate, both of which are about the call itself and not about
+    how many others are running."""
     import ast
     import inspect
     import textwrap
 
     from rsched.engine import actionroute
 
-    # The CALL SITES, not the source text: this module explains the secret gate in a comment
-    # block that sits ABOVE the cap's call, so a raw substring index compares the prose and
-    # passes or fails for the wrong reason. Walk the AST and read the order of the two calls.
+    # The CALL SITES, not the source text: a substring search over this module compares its
+    # explanatory comment blocks and passes or fails for the wrong reason.
     tree = ast.parse(textwrap.dedent(inspect.getsource(actionroute.dispatch_action)))
-    # Sorted by line number, not by walk order: `ast.walk` is breadth-first and gives no
-    # guarantee about siblings, so a test that reads its order passes by accident.
-    calls = sorted((n.lineno, n.func.attr if isinstance(n.func, ast.Attribute)
-                    else getattr(n.func, "id", ""))
-                   for n in ast.walk(tree) if isinstance(n, ast.Call))
-    order = [name for _line, name in calls
-             if name in ("refuse_at_capacity", "_gate_for_background")]
-    assert "refuse_at_capacity" in order, "the cap is not wired into dispatch at all"
-    assert order.index("refuse_at_capacity") < order.index("_gate_for_background"), (
-        "the concurrency cap must be read BEFORE the call-time secret gate, or a call that "
-        f"will be refused still costs the user a blocking exposure question: {order}")
+    names = {n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", "")
+             for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    assert "refuse_at_capacity" not in names, (
+        "the concurrency cap is wired into dispatch again; D166 chose unbounded")
+    assert "_gate_for_background" in names, (
+        "the call-time secret gate must still run on the starting turn (F633) — removing the "
+        "cap may not take the gate with it")
 
 
-def test_the_fourth_concurrent_background_call_is_refused_naming_the_live_handles(
+def test_six_concurrent_background_calls_all_start_and_all_deliver(
         make_routine, scripted, monkeypatch):
-    """The cap, through a real run. Three slow calls are in flight; the fourth is REFUSED on
-    its own turn — not started, not queued — and the refusal names every live handle, because
-    "the run decides what to drop" is only a real choice if it can see what it is choosing
-    between."""
-    _slow_util(monkeypatch, seconds=3.0)
-    d = make_routine(slug="bgcap")
+    """D166's answer, through a real run. Six slow calls are flagged back to back, well past the
+    cap of three that 0.392.0 shipped: every one of them STARTS with its own handle, none is
+    refused, and every one DELIVERS its observation at a later boundary.
+
+    Six and not four on purpose: four would pass against a cap of 4, and the specimen F650
+    records is a cap that came back as a number nobody re-read. Delivery is asserted too, because
+    "started" alone would also be true of a fan-out whose results the run never receives.
+    """
+    _slow_util(monkeypatch, seconds=1.0)
+    d = make_routine(slug="bgnocap")
+    letters = ["a", "b", "c", "d", "e", "f"]
     scripted([
-        {**util("websearch", args=["a"], say="One."), "background": True},
-        {**util("websearch", args=["b"], say="Two."), "background": True},
-        {**util("websearch", args=["c"], say="Three."), "background": True},
-        {**util("websearch", args=["d"], say="Four — over the cap."), "background": True},
-        finish(summary="done" + " ." * 20),
-    ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
-    assert status == "ok", status
-    events, _ = read_events(run_dir / "transcript.jsonl")
-    obs = [e for e in events if e["type"] == "observation"]
-
-    started = [e for e in obs if e["payload"].get("started")]
-    assert len(started) == 3, (
-        f"the cap is 3, so exactly three calls may start; got {len(started)}")
-    refusals = [e for e in obs if e["payload"].get("at_capacity")]
-    assert len(refusals) == 1, f"the fourth flagged call was not refused: {obs}"
-
-    refusal = refusals[0]["payload"]
-    assert refusal.get("started") is not True, (
-        "a refusal must not look like a started call — nothing was backgrounded")
-    assert refusal["limit"] == 3
-    live = {e["payload"]["handle"] for e in started}
-    assert set(refusal["in_flight"]) == live, (refusal["in_flight"], live)
-    for handle in live:
-        assert handle in refusal["reason"], (
-            f"the refusal does not name live handle {handle}, so the run cannot tell which of "
-            f"its own calls to wait for: {refusal['reason']}")
-    assert "REFUSED" in refusal["reason"]
-
-
-def test_a_capacity_refusal_renders_without_reading_a_result_field(
-        make_routine, scripted, monkeypatch):
-    """The regression this cost on its first run. An observation for an action the engine did
-    NOT execute must carry `rejected` + `reason` — the one shape `observations._not_executed`
-    words. Carrying a util-shaped `error` instead fell through to the util renderer, which read
-    `obs['name']` and raised `KeyError: 'name'`, killing the turn and every later resume (a
-    resume re-renders each stored observation). So the refusal is rendered, not just stored."""
-    from rsched.engine.observations import format_observation
-
-    _slow_util(monkeypatch, seconds=2.0)
-    d = make_routine(slug="bgcaprender")
-    scripted([
-        {**util("websearch", args=["a"], say="One."), "background": True},
-        {**util("websearch", args=["b"], say="Two."), "background": True},
-        {**util("websearch", args=["c"], say="Three."), "background": True},
-        {**util("websearch", args=["d"], say="Four."), "background": True},
-        finish(summary="done" + " ." * 20),
-    ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
-    assert status == "ok", status
-    events, _ = read_events(run_dir / "transcript.jsonl")
-    refusal = next(e["payload"] for e in events if e["type"] == "observation"
-                   and e["payload"].get("at_capacity"))
-    assert refusal.get("rejected") is True, (
-        "a capacity refusal must use the engine's not-executed shape (`rejected` + `reason`); "
-        f"this one would reach a per-kind renderer that reads result fields: {refusal}")
-    text = format_observation(refusal)
-    assert "REFUSED" in text and "cap" in text, text
-
-
-def test_a_capacity_refusal_starts_no_work_and_frees_as_calls_land(
-        make_routine, scripted, monkeypatch):
-    """Two claims a counter alone would miss: the refused call's handler never RAN (a refusal
-    that still did the work would be a lie), and capacity is a live measure — once the first
-    three land, a flagged call is accepted again rather than the run being capped for life."""
-    import rsched.engine.executor as executor_mod
-
-    ran: list[str] = []
-
-    def record(action, _ctx):
-        ran.append(str(action.get("args", [None])[0]))
-        time.sleep(0.2)
-        return {"kind": "util", "name": action.get("name"), "exit": 0, "stdout": "ok",
-                "stderr": ""}
-
-    monkeypatch.setitem(executor_mod.DISPATCH, "util", record)
-    d = make_routine(slug="bgcapfree")
-    scripted([
-        {**util("websearch", args=["a"], say="One."), "background": True},
-        {**util("websearch", args=["b"], say="Two."), "background": True},
-        {**util("websearch", args=["c"], say="Three."), "background": True},
-        {**util("websearch", args=["refused"], say="Four."), "background": True},
+        *({**util("websearch", args=[x], say=f"Backgrounding {x}."), "background": True}
+          for x in letters),
         util("list", say="Letting them land."),
         util("list", say="Still letting them land."),
-        {**util("websearch", args=["e"], say="A slot has freed."), "background": True},
         finish(summary="done" + " ." * 20),
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
     assert status == "ok", status
-    assert "refused" not in ran, (
-        f"the refused call's handler RAN anyway — the refusal did the work it declined: {ran}")
     events, _ = read_events(run_dir / "transcript.jsonl")
     obs = [e for e in events if e["type"] == "observation"]
-    assert len([e for e in obs if e["payload"].get("at_capacity")]) == 1, (
-        "capacity never freed: a run capped once stayed capped for the rest of its life")
-    assert len([e for e in obs if e["payload"].get("started")]) == 4, (
-        "the fifth flagged call (after three landed) should have been accepted")
+
+    started = [e["payload"] for e in obs if e["payload"].get("started")]
+    assert len(started) == len(letters), (
+        f"all {len(letters)} flagged calls must start — D166 chose unbounded; got "
+        f"{len(started)}: {[p.get('handle') for p in started]}")
+    assert len({p["handle"] for p in started}) == len(letters), (
+        f"handles collided: {[p.get('handle') for p in started]}")
+    assert not [e for e in obs if e["payload"].get("at_capacity")
+                or e["payload"].get("rejected")], (
+        f"a flagged call was refused: {[e['payload'] for e in obs if e['payload'].get('rejected')]}")
+
+    delivered = {e["payload"]["handle"] for e in obs
+                 if e["payload"].get("background") and e["payload"].get("handle")
+                 and not e["payload"].get("started")}
+    assert delivered == {p["handle"] for p in started}, (
+        f"started {len(started)} calls but only {len(delivered)} delivered — an unbounded "
+        f"fan-out whose results never arrive is not what unbounded means: {delivered}")
+
+
+def test_a_backgroundable_refusal_renders_without_reading_a_result_field():
+    """The regression the capacity refusal paid for on its first run, kept as a guard after the
+    refusal itself was removed (F650 / D166 = unbounded).
+
+    An observation for an action the engine did NOT execute must carry `rejected` + `reason` —
+    the one shape `observations._not_executed` words. Carrying a util-shaped `error` instead fell
+    through to the util renderer, which read `obs['name']` and raised `KeyError: 'name'`, killing
+    the turn AND every later resume (a resume re-renders each stored observation). The property
+    belongs to the shape, not to the one refusal that happened to use it first, so it is pinned
+    on a payload built here: whatever pre-dispatch refusal this seam grows next inherits a
+    renderer that is known to survive missing result fields.
+    """
+    from rsched.engine.observations import format_observation
+
+    refusal = {"kind": "util", "background": True, "rejected": True,
+               "reason": "REFUSED, nothing was started: a stand-in for any pre-dispatch "
+                         "refusal of a flagged call."}
+    text = format_observation(refusal)
+    assert "REFUSED" in text, text
+    assert "nothing was started" in text, text
 
 
 # ---- budget accounting (D118 phase 4, decided D167) -------------------------------------------
@@ -818,14 +782,20 @@ def test_cancelling_a_handle_that_is_not_in_flight_teaches_the_valid_ones(
         f"its own addressing: {err['error']}")
 
 
-def test_a_cancelled_call_delivers_no_observation_and_frees_its_slot(
+def test_a_cancelled_call_leaves_the_live_list_and_delivers_no_observation(
         make_routine, scripted, monkeypatch):
-    """The feature, through a real run, in the three terms the decision allows it to claim.
+    """The feature, through a real run, in the terms the decision allows it to claim.
 
-    Three slow calls fill the cap; one is cancelled; a fourth flagged call is then ACCEPTED
-    where it would otherwise have been refused — that acceptance is the slot-freeing proof, and
-    it is a stronger claim than reading a counter. The cancelled handle must never appear as a
-    landed (non-`started`) observation, and no BACKGROUND RESULT message may carry it.
+    Three slow calls are in flight; one is cancelled. The claim is that `cancel` drops the
+    Pending from the LIVE LIST at once — `collect` reads that list at every boundary, so a
+    handle still on it would deliver — and that the cancelled handle therefore never appears as
+    a landed (non-`started`) observation, nor in any BACKGROUND RESULT message.
+
+    Until F650 this test proved the removal INDIRECTLY: a fourth flagged call was accepted
+    "where it would otherwise have been refused", and that acceptance stood in for the freed
+    slot. D166's answer is (c) unbounded, so there is no refusal left to be the contrast — the
+    cancel's own `in_flight` list and the absent delivery are the direct evidence, and the
+    `kill` observation is the one surface that publishes that list.
     """
     _slow_util(monkeypatch, seconds=3.0)
     d = make_routine(slug="bgcancel")
@@ -834,7 +804,7 @@ def test_a_cancelled_call_delivers_no_observation_and_frees_its_slot(
         {**util("websearch", args=["b"], say="Two."), "background": True},
         {**util("websearch", args=["c"], say="Three."), "background": True},
         {"say": "I no longer need the second result.", "kind": "kill", "handle": "bg2"},
-        {**util("websearch", args=["d"], say="The freed slot takes this."),
+        {**util("websearch", args=["d"], say="And one more, after the cancel."),
          "background": True},
         finish(summary="done" + " ." * 20),
     ])
@@ -847,11 +817,12 @@ def test_a_cancelled_call_delivers_no_observation_and_frees_its_slot(
                if e["payload"].get("kind") == "kill" and e["payload"].get("cancelled")]
     assert len(cancels) == 1, f"the cancellation did not happen: {obs}"
     assert cancels[0]["handle"] == "bg2"
+    assert "bg2" not in cancels[0]["in_flight"], (
+        "the cancelled handle is still on the live list, which `collect` reads at every "
+        f"boundary — it would deliver after all: {cancels[0]['in_flight']}")
 
-    assert not [e for e in obs if e["payload"].get("at_capacity")], (
-        "the fourth flagged call was refused, so cancelling bg2 did not free its cap slot")
     assert len([e for e in obs if e["payload"].get("started")]) == 4, (
-        "four calls should have STARTED: three, then the one the freed slot admitted")
+        "all four flagged calls should have STARTED — nothing is refused for capacity")
 
     delivered = [e["payload"] for e in obs
                  if e["payload"].get("background") and e["payload"].get("handle") == "bg2"

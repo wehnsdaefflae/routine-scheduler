@@ -59,20 +59,17 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
             # turn to block on. A refusal or a pending request becomes THIS turn's
             # observation and nothing is backgrounded.
             #
-            # D118 phase 4 / D166: the CONCURRENCY CAP is read first, ahead of the secret
-            # gate, because the gate can file a BLOCKING question — asking the user to decide
-            # a credential exposure for a call that is about to be refused anyway spends his
-            # attention on nothing. A refusal here is this turn's observation, in the
-            # schema-retry cycle, naming the live handles so the run can decide what to drop.
+            # D166 answered (c), UNBOUNDED: nothing here counts how many calls are already in
+            # flight. 0.392.0 read a cap of 3 at this very point, ahead of the secret gate;
+            # the row had recorded the option the operator did not choose (F650), and the
+            # whole mechanism is gone rather than widened — `background.py` says why, so it is
+            # not reintroduced as an obvious improvement.
             # R2249: the same `vision` refusal the foreground branch applies, for the same
             # reason F633 gives above — a kind refused in one path and not the other is a
-            # refusal a flag walks around. It is read FIRST: it needs neither a cap slot nor
-            # a credential decision, and the call it replaces would have asked for both.
+            # refusal a flag walks around. It is read FIRST: it needs no credential decision,
+            # and the call it replaces would have asked for one.
             if (steered := visionsteer.refuse_if_viewable(action, ctx)) is not None:
                 return steered
-            capped = background.refuse_at_capacity(loop, action)
-            if capped is not None:
-                return capped
             gated = _gate_for_background(loop, action)
             if gated is not None:
                 return gated
