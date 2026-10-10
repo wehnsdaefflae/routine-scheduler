@@ -517,6 +517,14 @@ ACTION_SCHEMA: dict = {
                                  "your remaining turns)"},
         # subruns / kill / wait
         "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the sub-workflow number"},
+        "handle": {"type": "string",
+                   "description": "kill: a BACKGROUND call's handle (bg1, bg2 … — the one its "
+                                  "started observation named) instead of `n`. It stops the "
+                                  "DELIVERY, not the work: the observation will never reach "
+                                  "this run and the cap slot frees at once, but the call runs "
+                                  "to its own end (a Python thread cannot be interrupted) and "
+                                  "what it spent still books against your budget. Cancel a "
+                                  "result you no longer want — never to make a call stop"},
         "all": {"type": "boolean",
                 "description": "wait: wait for ALL running sub-workflows (default: any next) · "
                                "edit_file/write_util/write_rule edit mode: replace EVERY "

@@ -167,6 +167,11 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->h
     if action["kind"] == "subruns":
         return loop.subruns.status_table()
     if action["kind"] == "kill":
+        # Two namespaces (D176 option (a)): `handle` addresses a background call, `n` a
+        # sub-workflow. `validate_action` has already refused neither-and-both, so a `handle`
+        # present here is the run's choice of namespace and not an ambiguity to resolve.
+        if str(action.get("handle") or "").strip():
+            return background.cancel(loop, str(action["handle"]).strip())
         return loop.subruns.kill(action["n"])
     if action["kind"] == "wait":
         return loop.subruns.wait(action, poll_s=POLL_S, aborted=loop._aborted)

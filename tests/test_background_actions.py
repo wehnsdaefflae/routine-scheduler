@@ -731,3 +731,191 @@ def test_a_denied_secret_refuses_a_backgrounded_util_on_the_starting_turn(
     refusal = next(e for e in obs if e["payload"].get("declined_secrets"))
     assert refusal["turn"] == 1, "the refusal must reach the turn that asked for the call"
     assert "declined" in refusal["payload"]["reason"]
+
+
+# ---- cancellation (D118 phase 4, decided D176 option (a)) --------------------------------------
+
+def test_kill_declares_the_handle_field_in_the_flat_action_schema():
+    """D176 option (a) is "a NEW `handle` field on `kill`", and a sub-field the flat
+    ACTION_SCHEMA does not declare is stripped in SILENCE (`additionalProperties: False`) —
+    the way two earlier action fields shipped doing nothing. So the declaration is the first
+    claim, before any behaviour."""
+    assert "handle" in ACTION_SCHEMA["properties"], (
+        "`kill` cannot address a background call: the field is undeclared, so normalisation "
+        "strips it and every handle-addressed kill reaches the route as a bare kill")
+    assert ACTION_SCHEMA["properties"]["handle"]["type"] == "string"
+    assert "handle" in KIND_FIELDS["kill"][1]
+
+
+def test_the_handle_fields_own_description_states_the_delivery_not_work_ceiling():
+    """The operator's hand-off demanded this in these terms: "state the delivery-not-work
+    limitation in the field's own schema description so a caller cannot read it as a
+    cancellation". The field description IS the only documentation a run gets at the moment it
+    decides to cancel — a ceiling recorded only in docs/ is a ceiling the caller never meets.
+    """
+    text = ACTION_SCHEMA["properties"]["handle"]["description"].lower()
+    assert "not the work" in text or "never" in text, text
+    assert "spen" in text or "book" in text, (
+        f"the description does not say the spend still books, so a run could read "
+        f"cancellation as a refund: {text}")
+    assert "bg1" in text, "the description does not show the handle's shape"
+
+
+def test_a_kill_addresses_exactly_one_namespace():
+    """Two namespaces stay two namespaces (D176's whole point), so the pair is checked
+    semantically: `n` alone and `handle` alone are valid, neither and both are refused with a
+    message naming what to drop. `n` could not be REQUIRED any more, which is exactly why this
+    check has to exist — without it a handle-less, n-less kill would reach
+    `loop.subruns.kill(action["n"])` and raise KeyError."""
+    assert validate_action(normalize_action({"say": "x", "kind": "kill", "n": 1})) == []
+    assert validate_action(normalize_action(
+        {"say": "x", "kind": "kill", "handle": "bg1"})) == []
+
+    both = validate_action(normalize_action(
+        {"say": "x", "kind": "kill", "n": 1, "handle": "bg1"}))
+    assert any("never both" in p for p in both), both
+
+    neither = validate_action(normalize_action({"say": "x", "kind": "kill"}))
+    assert any("'handle'" in p and "'n'" in p for p in neither), neither
+
+
+def test_a_cancellation_renders_without_reading_the_sub_workflow_number():
+    """The `kill` renderer reads `obs['n']` on every branch below the error one, and a
+    background cancellation carries a string handle and NO `n`. Rendering it there raises
+    `KeyError: 'n'`, which kills the turn AND every later resume (a resume re-renders each
+    stored observation) — the exact failure the capacity refusal paid for on its first run."""
+    from rsched.engine.observations import format_observation
+
+    text = format_observation({
+        "kind": "kill", "handle": "bg2", "cancelled": True, "background_kind": "util",
+        "brief": "websearch", "had_landed": False, "in_flight": [],
+        "note": "`bg2` will NOT deliver its observation and its slot is free."})
+    assert "bg2" in text, text
+    assert "kill" in text.lower(), text
+
+
+def test_cancelling_a_handle_that_is_not_in_flight_teaches_the_valid_ones(
+        make_routine, scripted, monkeypatch):
+    """An addressing mistake is correctable, so it is an `error` observation naming what IS in
+    flight — the shape `subruns.kill` gives an unknown sub-workflow number. The common case is a
+    run holding a handle whose call already LANDED: it came from a started observation and still
+    looks live, so the message names that reading first."""
+    _slow_util(monkeypatch, seconds=2.0)
+    d = make_routine(slug="bgcancelmiss")
+    scripted([
+        {**util("websearch", args=["a"], say="Backgrounding one."), "background": True},
+        {"say": "Cancelling a handle I never started.", "kind": "kill", "handle": "bg9"},
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    err = next(e["payload"] for e in events if e["type"] == "observation"
+               and e["payload"].get("kind") == "kill" and e["payload"].get("error"))
+    assert "bg9" in err["error"], err
+    assert "bg1" in err["error"], (
+        f"the error does not name the handle that IS in flight, so the run cannot correct "
+        f"its own addressing: {err['error']}")
+
+
+def test_a_cancelled_call_delivers_no_observation_and_frees_its_slot(
+        make_routine, scripted, monkeypatch):
+    """The feature, through a real run, in the three terms the decision allows it to claim.
+
+    Three slow calls fill the cap; one is cancelled; a fourth flagged call is then ACCEPTED
+    where it would otherwise have been refused — that acceptance is the slot-freeing proof, and
+    it is a stronger claim than reading a counter. The cancelled handle must never appear as a
+    landed (non-`started`) observation, and no BACKGROUND RESULT message may carry it.
+    """
+    _slow_util(monkeypatch, seconds=3.0)
+    d = make_routine(slug="bgcancel")
+    scripted([
+        {**util("websearch", args=["a"], say="One."), "background": True},
+        {**util("websearch", args=["b"], say="Two."), "background": True},
+        {**util("websearch", args=["c"], say="Three."), "background": True},
+        {"say": "I no longer need the second result.", "kind": "kill", "handle": "bg2"},
+        {**util("websearch", args=["d"], say="The freed slot takes this."),
+         "background": True},
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    obs = [e for e in events if e["type"] == "observation"]
+
+    cancels = [e["payload"] for e in obs
+               if e["payload"].get("kind") == "kill" and e["payload"].get("cancelled")]
+    assert len(cancels) == 1, f"the cancellation did not happen: {obs}"
+    assert cancels[0]["handle"] == "bg2"
+
+    assert not [e for e in obs if e["payload"].get("at_capacity")], (
+        "the fourth flagged call was refused, so cancelling bg2 did not free its cap slot")
+    assert len([e for e in obs if e["payload"].get("started")]) == 4, (
+        "four calls should have STARTED: three, then the one the freed slot admitted")
+
+    delivered = [e["payload"] for e in obs
+                 if e["payload"].get("background") and e["payload"].get("handle") == "bg2"
+                 and not e["payload"].get("started")]
+    assert all(p.get("cancelled") for p in delivered), (
+        f"a cancelled call delivered its observation anyway: {delivered}")
+
+
+def test_a_cancelled_call_is_recorded_as_its_own_loss_not_as_an_abandonment(
+        make_routine, scripted, monkeypatch):
+    """Two losses with different causes must not fold into one key. `abandoned` means the run
+    ran out of turns; `cancelled` means the run CHOSE to drop the result. A surface that could
+    not tell them apart would read every deliberate drop as a run that overran — and the record
+    is the only place anyone can ever see which it was."""
+    _slow_util(monkeypatch, seconds=3.0)
+    d = make_routine(slug="bgcancelrec")
+    scripted([
+        {**util("websearch", args=["a"], say="One."), "background": True},
+        {"say": "Dropping it.", "kind": "kill", "handle": "bg1"},
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    # `background: true` is what separates the CALL's record from the kill ACTION's own
+    # observation: both name the handle, and only the call's record carries the background
+    # framing, its `started_turn` and its booked spend — the shape `collect` and `settle`
+    # write, so one reader folds all three fates of a handle.
+    recorded = [e["payload"] for e in events if e["type"] == "observation"
+                and e["payload"].get("handle") == "bg1"
+                and e["payload"].get("background")
+                and not e["payload"].get("started")]
+    assert len(recorded) == 1, (
+        f"the cancelled call left no record, so nobody reading the run afterwards can tell "
+        f"the work happened and the answer was dropped: {recorded}")
+    assert recorded[0].get("cancelled") is True
+    assert recorded[0].get("abandoned") is not True, (
+        "a cancellation recorded as an abandonment loses the one thing the record is for: "
+        "whether the run chose this or ran out of turns")
+    assert recorded[0].get("started_turn") == 1
+
+
+def test_cancelling_frees_the_slot_without_settle_having_to_mop_up(
+        make_routine, scripted, monkeypatch):
+    """A cancelled call must leave the live list AT ONCE, not at run end: `collect` reads that
+    list at every boundary, so a Pending still in it would deliver its result the moment the
+    thread finished — the one thing cancellation promises will not happen. The cancelled handle
+    therefore appears in NO summary line about what the run never read."""
+    _slow_util(monkeypatch, seconds=0.3)
+    d = make_routine(slug="bgcancelsettle")
+    scripted([
+        {**util("websearch", args=["a"], say="One."), "background": True},
+        {"say": "Dropping it before it lands.", "kind": "kill", "handle": "bg1"},
+        util("list", say="A turn that gives the thread time to finish."),
+        util("list", say="And another."),
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    landed = [e["payload"] for e in events if e["type"] == "observation"
+              and e["payload"].get("handle") == "bg1"
+              and not e["payload"].get("started")
+              and not e["payload"].get("cancelled")]
+    assert landed == [], (
+        f"the cancelled call's result was delivered or recorded as unread after all — it was "
+        f"still in the live list when its thread finished: {landed}")

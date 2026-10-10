@@ -15,6 +15,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.404.0] — 2026-10-10
+
+### A run can drop a background result it no longer wants (D118 phase 4 complete, D176)
+
+`kill` now addresses **two namespaces**: `n` a sub-workflow, as always, and a new optional
+`handle` a background call (`bg1`, `bg2` …). That is D176 option (a), the operator's answer to the
+one surface question phase 4 was parked on since 2026-10-08 — chosen over widening `n` to
+`integer | string`, because `ACTION_SCHEMA` is flat on purpose for weak models and Ollama grammars,
+and over a whole new `cancel` kind on the surface every routine's prompt carries.
+
+- **`engine/background.cancel`** removes the Pending from the live list AT ONCE. That single act is
+  what makes the promise true: `collect` reads that list at every turn boundary, so a call still in
+  it would deliver its result the moment its thread finished. The cap slot frees immediately, so
+  the next flagged action is accepted where it would have been refused (D166).
+- **It stops the DELIVERY, never the work.** A Python thread has no interruption point, so the call
+  runs to its own end unread and its spend still books (D167) — a cancellation that unbooked it
+  would make "background it, cancel it, read the free result" the cheapest spend no budget sees.
+  The ceiling is written in the `handle` field's **own schema description**, not only in the docs:
+  the field is the only documentation a run meets at the moment it decides to cancel.
+- **A cancelled call is recorded, not dropped** — an `observation` with `cancelled: true` and
+  `had_landed` (whether a finished result was thrown away), mirroring `settle`'s abandoned branch
+  so one reader folds all three fates of a handle. Deliberately NOT `abandoned`: a run that chose
+  to drop a result and a run that ran out of turns are different losses, and the record is the only
+  place anyone can see which it was.
+- `n` is no longer a REQUIRED field of `kill`; `validate_action` demands **exactly one** of
+  `n`/`handle` and names what to drop, so neither-and-both is corrected inside the schema-retry
+  cycle instead of reaching the route as a `KeyError`.
+- The kill renderer reads `handle` **before** every branch that reads `obs['n']` — rendering a
+  cancellation there would raise `KeyError: 'n'`, killing the turn and every later resume (a resume
+  re-renders each stored observation), which is the exact failure the capacity refusal paid for on
+  its first run.
+- An unknown handle is a correctable `error` naming what IS in flight, shaped like
+  `subruns.kill`'s unknown-number error.
+- 8 new cases in `tests/test_background_actions.py` (89 in the file): the declaration, the field
+  description's ceiling, the either/or, the renderer, the unknown handle, no-delivery +
+  slot-freeing proven by a fourth call being ACCEPTED, the `cancelled`/`abandoned` distinction, and
+  that the slot frees without `settle` mopping up.
+- Docs swept in the same change: `docs/background-tasks.md`'s cancellation bullet (it promised the
+  opposite), `docs/architecture.md`'s D118 paragraph, the `engine/background.py` docstring, and the
+  `docs/designs.md` entry — whose **Cancellation** section is deleted here, leaving phase 3
+  (mutation ordering) as the only undecided part of D118.
+
 ## [0.403.0] — 2026-10-09
 
 ### The console serves a file the routine was permitted to read (D172)

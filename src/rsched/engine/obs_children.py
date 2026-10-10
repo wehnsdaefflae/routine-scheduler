@@ -48,6 +48,14 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
     if kind == "kill":
         if obs.get("error"):
             return f"OBSERVATION (kill FAILED): {obs['error']}"
+        if obs.get("handle"):
+            # A BACKGROUND call's cancellation (D176 option (a)) — it carries a string handle
+            # and no `n`, so this branch comes before every line below that reads `obs['n']`.
+            # Rendering it there would raise `KeyError: 'n'` and kill the turn AND every later
+            # resume, which re-renders each stored observation: the exact failure the capacity
+            # refusal already paid for once.
+            return (f"OBSERVATION (kill): background call `{obs['handle']}` cancelled. "
+                    + str(obs.get("note") or ""))
         if obs.get("already_finished"):
             return (f"OBSERVATION (kill): sub-workflow {obs['n']} had already finished "
                     f"({obs['status']}).")

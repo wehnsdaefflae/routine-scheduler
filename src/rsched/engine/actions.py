@@ -184,7 +184,11 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "detach": (("prompt",), ("workflow", "label")),
     "list_models": ((), ()),
     "subruns": ((), ()),
-    "kill": (("n",), ()),
+    # `n` is no longer REQUIRED because a kill now addresses either namespace: `n` a
+    # sub-workflow, `handle` a background call (D176 option (a) — two namespaces stay two
+    # namespaces). Exactly one of them is demanded by `validate_action`, which can say which
+    # it got and which it needs; requiredness here could only ever demand `n`.
+    "kill": ((), ("n", "handle")),
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
     "report": (("title",), ("detail", "target", "answers", "closes", "supersedes", "settles")),
@@ -353,6 +357,21 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
         problems += goal_field_problems(obj)
     if kind == "finish" and "final" in obj and not isinstance(obj["final"], bool):
         problems.append("kind=finish: 'final' is true or false — is this reply final?")
+    if kind == "kill":
+        # One kill, two namespaces (D176 option (a)): a sub-workflow NUMBER or a background
+        # call's string HANDLE. Neither is required on its own, so the pair is checked here
+        # where the message can name what it got — `KIND_FIELDS` could only ever demand `n`
+        # and would reject every handle-addressed kill before it reached the route.
+        has_n = obj.get("n") is not None
+        has_handle = bool(str(obj.get("handle") or "").strip())
+        if has_n and has_handle:
+            problems.append("kind=kill addresses ONE thing: 'n' (a sub-workflow number) or "
+                            "'handle' (a background call's bg1/bg2 …), never both — drop the "
+                            "one you did not mean")
+        elif not has_n and not has_handle:
+            problems.append("kind=kill requires 'n' (the sub-workflow number — `subruns` "
+                            "lists them) or 'handle' (a background call's handle, bg1/bg2 …, "
+                            "from the started observation that named it)")
     if kind in ("read_file", "view_image"):
         # The schema already holds `paths` to a list of at most READ_PATHS_MAX strings; what it
         # cannot say is that none of them is blank.

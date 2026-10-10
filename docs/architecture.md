@@ -748,8 +748,16 @@ and the capabilities digest's catalog listing):
   `archival.collect` and `announce_finished_subruns`; `loopend` calls `background.settle`, which
   records a result that landed too late (`unread`) or a call still running (`abandoned`, its
   in-flight model calls closed via `instrument.abandon_open_calls`) and names the loss in the run's
-  summary. Both records are `observation` events carrying `background`/`handle`/`started_turn` —
-  payload EXTENSIONS, no new event types. Built on the ARCHIVAL shape, deliberately not on
+  summary. A run that no longer wants a result CANCELS it — `kill handle=bg1` (D176 option (a):
+  `n` stays the sub-workflow namespace, `handle` addresses a background call) routes to
+  `background.cancel`, which drops the Pending from the live list AT ONCE, so `collect` cannot
+  deliver it and the cap slot frees immediately. It stops the DELIVERY and not the work: a Python
+  thread has no interruption point, so the call runs to its own end unread and its spend still
+  books (D167) — stated in the `handle` field's own schema description, because that is the only
+  documentation a run meets at the moment it decides. A cancelled call is recorded with
+  `cancelled: true` rather than `abandoned`, so a reader can tell a deliberate drop from a run
+  that ran out of turns. All these records are `observation` events carrying
+  `background`/`handle`/`started_turn` — payload EXTENSIONS, no new event types. Built on the ARCHIVAL shape, deliberately not on
   `DetachedManager`: a daemon-ticked multi-process unit would not start until the next tick, by
   which time the reply's process is gone. A MUTATION may not carry the flag (a later synchronous
   action could read state the deferred one has not written yet — that needs a dependency/barrier

@@ -166,13 +166,19 @@ load, where its spend lands, and who gets it.
 - **Every run, not only conversations** (D168). Backgrounding was motivated by a human waiting, but
   a scheduled routine with independent fetches gains exactly the same, so the flag is gated by KIND
   only (`BACKGROUNDABLE_KINDS`) and never by run kind. There is nothing to configure.
-- **Cancellation is NOT in phase 4** as shipped. `kill` takes `n`, an integer sub-workflow number,
-  while a background id is a string handle (`bg1`), so reusing it means changing a field in the flat
-  action schema every routine's prompt carries — a surface decision, filed rather than guessed.
-  Whoever builds it should know the honest ceiling first: Python cannot force-kill a thread, so
-  cancellation can only mean "stop DELIVERING the observation and free a cap slot", never "stop the
-  work", and the spend still books. A call nobody cancels is still abandoned safely at run end,
-  which already works.
+- **Cancellation: `kill handle=bg1`** (D176 option (a) — `n` stays the sub-workflow namespace, a
+  new optional `handle` addresses a background call; the flat schema gained one field rather than
+  `n` becoming an `integer | string` union, because it is flat on purpose for weak models and
+  Ollama grammars). `background.cancel` drops the Pending from the live list AT ONCE, which is what
+  makes the promise true — `collect` reads that list at every boundary — and frees the cap slot
+  immediately.
+  **It stops the DELIVERY, never the work:** a Python thread has no interruption point, so the call
+  runs to its own end with nobody reading it and its spend still books. That ceiling is stated in
+  the `handle` field's own schema description, because the field is the only documentation a run
+  meets at the moment it decides to cancel. The call is recorded with `cancelled: true` (and
+  `had_landed`, when a finished result was thrown away) rather than `abandoned`: a deliberate drop
+  and a run that ran out of turns are different losses. An unknown handle is a correctable error
+  naming what IS in flight. Cancel a result you no longer want — never to make a call stop.
 
 ## Contrast with subtasks/subruns
 

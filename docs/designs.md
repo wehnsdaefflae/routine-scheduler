@@ -22,13 +22,14 @@ decided in conversation before any finding exists says so and carries none.
 
 ---
 
-## Background actions: what phase 4 left undecided (decided 2026-09-04 as D118, phases 1-2+4 shipped)
+## Background actions: phase 3, the one part still undecided (decided 2026-09-04 as D118, phases 1-2+4 shipped)
 
-**D118's phases 1, 2 and 4 are BUILT** — the `background: true` flag, the conversation UX, the
-concurrency cap, and budget accounting. Their narration now lives where current behaviour belongs:
+**D118's phases 1, 2 and 4 are BUILT IN FULL** — the `background: true` flag, the conversation UX,
+the concurrency cap, budget accounting, and (since D176 answered its surface question with option
+(a)) cancellation via `kill handle=bg1`. Their narration now lives where current behaviour belongs:
 `docs/background-tasks.md` ("A single action in the background"), plus `docs/architecture.md` and
 the `engine/background.py` module docstring. Read those for how it works; this entry is only what
-is still unbuilt, kept because deleting the whole D118 entry would have deleted these two with it.
+is still unbuilt, kept because deleting the whole D118 entry would have deleted phase 3 with it.
 
 ### Phase 3 — mutation ordering (its own decision, never part of D118's build)
 
@@ -39,21 +40,6 @@ dependency or explicit-barrier model so a backgrounded write cannot be read stal
 called this "its own decision item" and it still is — nothing about it has been decided, and the
 cheap half (leave it refused) is what ships today and works.
 
-### Cancellation — blocked on ONE surface decision, filed 2026-10-08
-
-Phase 4's list named "cancellation via `kill`", and D118's open-decisions list only parenthesised
-it ("Reuse `kill n`."). That is not enough to build on: `kill` takes `n`, an **integer** sub-workflow
-number (`engine/actionschema.py`, `engine/actionroute.py`), while a background call's id is a
-**string** handle (`bg1`) — so reusing `kill` means changing a field in the flat action schema that
-every routine's prompt carries. Options were filed to `self-audit` as **R2338** with a
-recommendation: (a) a new `handle` field on `kill` ← recommended; (b) widen `n` to integer|string
-(worst: the schema is flat on purpose for weak models and Ollama grammars); (c) a separate `cancel`
-kind; (d) no cancellation, with the limitation documented.
-
-**Whoever builds it must know the honest ceiling first:** Python cannot force-kill a thread, so
-every option means "stop DELIVERING the observation and free a cap slot", never "stop the work" —
-and the spend still books (D167). A call nobody cancels is already abandoned safely at run end,
-recorded `abandoned: true` with its in-flight model calls closed and named in the run's summary.
 
 ---
 

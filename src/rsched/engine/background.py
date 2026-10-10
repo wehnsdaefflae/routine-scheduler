@@ -37,6 +37,12 @@ KIND allowlist, not anything here: `actions.BACKGROUNDABLE_KINDS` admits reads a
 only effect IS the observation, and refuses every mutation — a backgrounded write could be read
 stale by the next synchronous action, which needs a dependency model (the design's phase 3).
 
+**Cancellation stops the DELIVERY, never the work** (phase 4's last part, decided D176 option
+(a)). `kill handle=bg1` reaches `cancel` below: the Pending leaves the live list at once, so the
+cap slot frees and `collect` can no longer deliver it — but a Python thread has no interruption
+point, so the call runs to its own end unread and its spend still books. `n` keeps meaning a
+sub-workflow; two namespaces stay two namespaces.
+
 **No new transcript event types.** The started record and the real observation are both
 `observation` events, carrying `background` and `handle`. A new type would mean five coupled
 changes (`EVENT_TYPES`, the console renderer, the CLI renderer, the docs' written-out list, the
@@ -217,6 +223,71 @@ def start(loop, action: dict, ctx) -> dict:
                     f"boundary, tagged `{handle}`. Do not re-run it, and do not take an action "
                     f"whose correctness depends on its result until it lands; anything else "
                     f"you can do now, do now."}
+
+
+def cancel(loop, handle: str) -> dict:
+    """Stop DELIVERING a background call's observation and free its cap slot (D118 phase 4,
+    decided D176 option (a): `kill` keeps `n` for sub-workflows and addresses a background
+    call by a NEW `handle` field).
+
+    **What this cannot do, stated here because the field's own description states it too.**
+    Python cannot force-kill a thread: there is no interruption point to inject and no
+    unwinding to perform, so the work goes on to its natural end in a daemon thread nobody
+    reads. Cancellation therefore means exactly three things, and nothing else:
+
+    * the observation will NOT reach the run — no boundary message, no `collect` append;
+    * the cap slot frees AT ONCE, so the next flagged action is not refused (D166);
+    * the spend still books (D167) — the tokens were spent at the provider whichever way the
+      run then felt about the answer, and a cancellation that unbooked them would make
+      "background it, cancel it, read the free result" the cheapest spend a budget never sees.
+
+    A cancelled call is recorded as its own `observation` event rather than dropped. The run
+    asked for work, the work happened, the money was spent: a record that stops mid-sentence is
+    how a reader afterwards concludes the engine lost something. The payload mirrors `settle`'s
+    abandoned branch — same keys, one reader — with `cancelled: true` rather than `abandoned`,
+    because the two losses have different causes and a surface folding them could not tell a
+    run that chose to drop a result from a run that ran out of turns.
+
+    The Pending leaves the live list immediately, which is what frees the slot and what keeps
+    `collect` from delivering a result that lands a millisecond later: `collect` reads the live
+    list, and this call is no longer in it.
+    """
+    live = _pendings(loop)
+    wanted = str(handle or "").strip()
+    pending = next((p for p in live if p.handle == wanted), None)
+    if pending is None:
+        # Shaped like `subruns.kill`'s unknown-number error and for the same reason: an
+        # addressing mistake is correctable, so the observation says what the valid handles
+        # ARE. A run whose call already landed is the common case, so it is named first —
+        # the handle it is holding came from a `started` observation and looks live to it.
+        return {"kind": "kill", "handle": wanted, "error":
+                f"no background call `{wanted}` is in flight — it has already landed (its "
+                f"observation was appended at a turn boundary, tagged with its handle) or "
+                f"the handle is not one this run started."
+                + (f" In flight now: {_brief_list(live)}." if live else
+                   " This run has nothing in flight.")}
+    loop._background = [p for p in live if p is not pending]
+    ctx = loop.ctx
+    spent = _book_usage(ctx, pending)
+    landed = pending.done
+    ctx.transcript.event("observation", {
+        "kind": pending.kind, "background": True, "handle": pending.handle,
+        "started_turn": pending.turn, "cancelled": True, "had_landed": landed,
+        **({"usage_booked": spent} if spent else {}),
+        "note": "the run cancelled this background call; its result was not delivered"
+                + (" (it had already finished — the work was done, the answer was dropped)"
+                   if landed else " and the work it started runs to its own end unread")},
+        turn=ctx.turn)
+    return {"kind": "kill", "handle": pending.handle, "cancelled": True,
+            "background_kind": pending.kind, "brief": pending.brief,
+            "had_landed": landed, "in_flight": [p.handle for p in loop._background],
+            "note": f"`{pending.handle}` will NOT deliver its observation and its slot is "
+                    f"free ({len(loop._background)} of {MAX_CONCURRENT} now in flight). "
+                    + ("It had already finished, so its result existed and was dropped."
+                       if landed else
+                       "The WORK is not stopped — a thread cannot be interrupted in Python, "
+                       "so it runs to its own end with nobody reading it.")
+                    + " What it spent is booked against this run either way."}
 
 
 def collect(loop) -> None:
