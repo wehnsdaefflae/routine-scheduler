@@ -62,6 +62,23 @@ from .run_context import BACKGROUND_THREAD_PREFIX as THREAD_PREFIX
 #: The purpose tag an abandoned background call's in-flight model calls are closed under.
 BACKGROUND_PURPOSE = "background action"
 
+#: The backgroundable kinds whose work a cancel can actually STOP, because the thread is
+#: blocked on a SUBPROCESS rather than inside the interpreter.
+#:
+#: `util`, `script` and `shell` all run through `utils_run.run_jailed`, which already polls a
+#: `cancelled` callable inside the wait it performs anyway and ends the command's whole process
+#: group through `procgroup.terminate` (F586, decided D160-C; the 0.370.2 backstop SIGKILLs a
+#: group that ignores SIGTERM). So for these three, `kill handle=…` terminates the work.
+#:
+#: The others — `llm`, `decide`, `read_file`, `view_image`, `memory_read`, `read_rule` — run
+#: inside the interpreter, where Python offers no interruption point: nothing can make that
+#: thread stop, so the cancel can only stop the DELIVERY and free the cap slot. The operator
+#: named the asymmetry in 0.404.0's wording ("that sounds like a detach, not like a kill") and
+#: it was right: claiming one ceiling for both halves understated what the engine can do for
+#: exactly the calls worth cancelling, which are the slow ones — a ten-minute test run reaches
+#: the host through `shell` or `script`, never through `llm`.
+STOPPABLE_KINDS = ("util", "script", "shell")
+
 #: How many background calls ONE run may have in flight at once (D118 phase 4, decided D166:
 #: "a small fixed cap, e.g. 3: the flagged action is REFUSED (with its reason, in the
 #: schema-retry cycle) while the cap is full, so the run decides what to drop").
@@ -96,10 +113,21 @@ class Pending:
     turn: int                                   # the turn that STARTED it
     thread: threading.Thread
     result: dict = field(default_factory=dict)  # written by the thread, read after it is done
+    #: Set by `cancel` to stop the WORK, not just its delivery. Read by the cancel check this
+    #: call's own context carries, which `utils_run.run_jailed` polls inside its wait — so for a
+    #: `util`/`script`/`shell` the command's process group is terminated (F586's seam). A thread
+    #: running inside the interpreter has no such poll, which is why only `STOPPABLE_KINDS` are
+    #: given one: an event nothing reads would be a promise nothing keeps.
+    stop: threading.Event = field(default_factory=threading.Event)
 
     @property
     def done(self) -> bool:
         return not self.thread.is_alive()
+
+    @property
+    def stoppable(self) -> bool:
+        """Can a cancel stop this call's WORK, or only its delivery?"""
+        return self.kind in STOPPABLE_KINDS
 
 
 def configure(loop) -> None:
@@ -191,9 +219,21 @@ def start(loop, action: dict, ctx) -> dict:
     pending = Pending(handle=handle, kind=action["kind"], brief=_brief(action),
                       turn=ctx.turn, thread=None)  # type: ignore[arg-type]
 
+    # The thread dispatches against a SHALLOW PROXY of the run context whose only difference is
+    # the cancel check: `engine.control.cancelled_for_turn` keys the F586 intent channel by TURN
+    # — deliberately, so a cancel clicked as one call ends cannot kill the next one — and a
+    # background call by definition outlives the turn that started it. So the check the ordinary
+    # dispatch installs can never fire again once that turn passes, which left `kill handle=…`
+    # able to stop only the delivery even for a `shell` blocked on a ten-minute subprocess. This
+    # proxy answers "cancelled" for the HANDLE instead, so `run_jailed` ends the command's
+    # process group inside the wait it already performs. A proxy rather than a mutated ctx: the
+    # real context is shared with the live turn, and flipping its cancel check would stop the
+    # FOREGROUND call too.
+    thread_ctx = _cancellable_ctx(ctx, pending) if pending.stoppable else ctx
+
     def work() -> None:
         try:
-            pending.result = dispatch(flagless, ctx) or {}
+            pending.result = dispatch(flagless, thread_ctx) or {}
         except Exception as exc:
             # A handler that raised is an observation the run can read and route around — the
             # same wording `actionroute.dispatch_action` gives a synchronous one. A background
@@ -230,10 +270,24 @@ def cancel(loop, handle: str) -> dict:
     decided D176 option (a): `kill` keeps `n` for sub-workflows and addresses a background
     call by a NEW `handle` field).
 
-    **What this cannot do, stated here because the field's own description states it too.**
-    Python cannot force-kill a thread: there is no interruption point to inject and no
-    unwinding to perform, so the work goes on to its natural end in a daemon thread nobody
-    reads. Cancellation therefore means exactly three things, and nothing else:
+    **Two different promises, by kind, and saying so is the point.** 0.404.0 claimed one
+    ceiling for both — "it stops the delivery, never the work" — and the operator named what
+    that is: *"that sounds like a detach, not like a kill"*. He was right, and the claim
+    understated the engine for exactly the calls worth cancelling, which are the slow ones.
+
+    * For `STOPPABLE_KINDS` — `util`, `script`, `shell` — the thread is blocked on a SUBPROCESS,
+      and `utils_run.run_jailed` already polls a cancel check inside that wait and ends the
+      command's whole process group through `procgroup.terminate` (F586, decided D160-C; with
+      0.370.2's backstop for a group that ignores SIGTERM). So **the work stops**. What made this
+      unreachable until now was the intent channel's KEY, not Python: `cancelled_for_turn` keys
+      by turn, and a background call outlives its starting turn, so the check could never fire
+      again. `start` hands those threads a context whose cancel check reads this call's own
+      handle instead.
+    * For every other kind — `llm`, `decide`, `read_file`, `view_image`, `memory_read`,
+      `read_rule` — the work runs inside the interpreter, where Python offers no interruption
+      point. There the honest statement stands: the delivery stops, the work does not.
+
+    Both ways, two things always hold:
 
     * the observation will NOT reach the run — no boundary message, no `collect` append;
     * the cap slot frees AT ONCE, so the next flagged action is not refused (D166);
@@ -267,26 +321,44 @@ def cancel(loop, handle: str) -> dict:
                 + (f" In flight now: {_brief_list(live)}." if live else
                    " This run has nothing in flight.")}
     loop._background = [p for p in live if p is not pending]
+    # Ask the WORK to stop, where that is a thing this engine can do. For a util, script or
+    # shell the thread is blocked in `utils_run.run_jailed`, which polls this call's cancel
+    # check inside the wait it already performs and ends the command's whole process group
+    # (F586's seam, plus 0.370.2's SIGKILL backstop for a group that ignores SIGTERM). Set
+    # BEFORE the Pending leaves anything else, so the subprocess starts dying while we record.
+    pending.stop.set()
     ctx = loop.ctx
     spent = _book_usage(ctx, pending)
     landed = pending.done
+    # Did this cancel stop the WORK, or only its delivery? True only for a call that was still
+    # running AND whose kind runs as a subprocess `run_jailed` can terminate — a call that had
+    # already finished has no work left to stop, whatever its kind.
+    stopped_work = pending.stoppable and not landed
     ctx.transcript.event("observation", {
         "kind": pending.kind, "background": True, "handle": pending.handle,
         "started_turn": pending.turn, "cancelled": True, "had_landed": landed,
+        "stopped_work": stopped_work,
         **({"usage_booked": spent} if spent else {}),
         "note": "the run cancelled this background call; its result was not delivered"
                 + (" (it had already finished — the work was done, the answer was dropped)"
-                   if landed else " and the work it started runs to its own end unread")},
+                   if landed else
+                   "; its command's process group was terminated" if stopped_work else
+                   " and the work it started runs to its own end unread")},
         turn=ctx.turn)
     return {"kind": "kill", "handle": pending.handle, "cancelled": True,
             "background_kind": pending.kind, "brief": pending.brief,
-            "had_landed": landed, "in_flight": [p.handle for p in loop._background],
+            "had_landed": landed, "stopped_work": stopped_work,
+            "in_flight": [p.handle for p in loop._background],
             "note": f"`{pending.handle}` will NOT deliver its observation and its slot is "
                     f"free ({len(loop._background)} of {MAX_CONCURRENT} now in flight). "
                     + ("It had already finished, so its result existed and was dropped."
                        if landed else
-                       "The WORK is not stopped — a thread cannot be interrupted in Python, "
-                       "so it runs to its own end with nobody reading it.")
+                       f"The WORK IS BEING STOPPED: a backgrounded {pending.kind} runs as a "
+                       "subprocess, and its whole process group is terminated inside the wait "
+                       "the engine was already performing." if stopped_work else
+                       f"The WORK IS NOT STOPPED — a backgrounded {pending.kind} runs inside "
+                       "the interpreter, which Python gives no way to interrupt, so it runs to "
+                       "its own end with nobody reading it.")
                     + " What it spent is booked against this run either way."}
 
 
@@ -373,6 +445,34 @@ def settle(loop) -> str:
             "note": "the run ended before this background action finished; its result is lost "
                     "and nothing in the run read it"}, turn=loop.ctx.turn)
     return _brief_list(abandoned)
+
+
+def _cancellable_ctx(ctx, pending: Pending):
+    """`ctx` with ONE thing changed: the cancel check reads this call's own stop event.
+
+    `engine.control.cancelled_for_turn` keys the F586 intent channel by TURN, deliberately — a
+    cancel clicked just as a long call finishes must not kill the NEXT call, and the UI's red ×
+    renders on one action's row, so the intent travels as "stop the call of turn N". A
+    background call breaks that key and only that key: it outlives the turn that started it, so
+    the check can never fire again once the run moves on.
+
+    So the thread gets a shallow proxy carrying `background_stop`, which `cancelled_for_turn`
+    prefers when present. A PROXY and not a mutated context: the real one is shared with the
+    live turn, so flipping its cancel check would stop the foreground call too — and a
+    `__getattr__` delegate rather than a copy, because `RunContext` holds the transcript, the
+    meter and the usage lock that the parked-spend booking depends on being the SAME objects.
+    """
+
+    class _BackgroundCtx:
+        background_stop = staticmethod(pending.stop.is_set)
+
+        def __getattr__(self, name):
+            return getattr(ctx, name)
+
+        def __setattr__(self, name, value):
+            setattr(ctx, name, value)
+
+    return _BackgroundCtx()
 
 
 def _book_usage(ctx, pending: Pending) -> dict:

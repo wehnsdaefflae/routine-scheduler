@@ -919,3 +919,174 @@ def test_cancelling_frees_the_slot_without_settle_having_to_mop_up(
     assert landed == [], (
         f"the cancelled call's result was delivered or recorded as unread after all — it was "
         f"still in the live list when its thread finished: {landed}")
+
+
+# ---- cancellation stops the WORK where it can (the operator's 0.404.0 correction) -------------
+
+def test_the_stoppable_kinds_are_exactly_the_subprocess_ones():
+    """The asymmetry has one source of truth, and it is not a guess: `util`, `script` and `shell`
+    are the kinds `utils_run.run_jailed` runs, and it is the only place in the engine that polls a
+    cancel check inside a wait and ends a process group. Every other backgroundable kind runs
+    inside the interpreter, where Python offers no interruption point."""
+    from rsched.engine.background import STOPPABLE_KINDS
+
+    assert set(STOPPABLE_KINDS) == {"util", "script", "shell"}
+    assert set(STOPPABLE_KINDS) <= set(BACKGROUNDABLE_KINDS), (
+        "a kind that cannot be backgrounded cannot be cancelled either")
+    for kind in ("llm", "decide", "read_file", "view_image", "memory_read", "read_rule"):
+        assert kind not in STOPPABLE_KINDS, (
+            f"{kind} runs in the interpreter — claiming its work can be stopped would be the "
+            "same overclaim in the other direction")
+
+
+def test_the_handle_field_states_both_promises_not_one_ceiling():
+    """0.404.0's description said "it stops the DELIVERY, not the work" for every kind. The
+    operator read that and said: *that sounds like a detach, not like a kill* — correctly, because
+    for the three kinds worth cancelling (a ten-minute test run reaches the host through `shell` or
+    `script`, never through `llm`) the engine CAN stop the work. The field is the only
+    documentation a run meets at the moment it decides, so it carries both cases."""
+    text = ACTION_SCHEMA["properties"]["handle"]["description"]
+    low = text.lower()
+    assert "terminated" in low or "process group" in low, (
+        f"the field does not say the work can actually stop: {text}")
+    assert "shell" in low and "script" in low, "it must name which kinds stop"
+    assert "interpreter" in low or "interrupt" in low, (
+        "and which kinds cannot, or the claim flips from understated to overstated")
+    assert "spen" in low or "book" in low, "the spend still books, both ways"
+
+
+def test_cancelling_a_backgrounded_shell_actually_kills_the_subprocess(
+        make_routine, scripted, monkeypatch):
+    """THE claim. A backgrounded `shell` sleeping far past the run's end is cancelled, and the
+    process it started is GONE — not merely undelivered.
+
+    The command writes its own pid, then sleeps 120 s and only then writes a "finished" marker.
+    After the cancel the pid must be dead and the marker must never appear: a run that merely
+    stopped listening would leave both. This is the difference between a kill and a detach.
+    """
+    import os
+    import signal as sig
+
+    # The turns must be SLOWER than the subprocess takes to SPAWN, or the run ends before bash
+    # has written its pid and the test proves nothing about stopping (measured: a 0.46 s run).
+    _slow_util(monkeypatch, seconds=0.8)
+    d = make_routine(slug="bgkillshell")
+    pidfile = d / "state" / "bg.pid"
+    donefile = d / "state" / "bg.done"
+    cmd = (f"echo $$ > {pidfile}; sleep 120; echo finished > {donefile}")
+
+    scripted([
+        {"say": "Backgrounding a long shell command.", "kind": "shell",
+         "command": cmd, "timeout_s": 300, "background": True},
+        util("list", say="Letting it start."),
+        util("list", say="Still letting it start."),
+        {"say": "I no longer need it — stop it.", "kind": "kill", "handle": "bg1"},
+        util("list", say="Giving the group a moment to die."),
+        util("list", say="And another."),
+        finish(summary="done" + " ." * 20),
+    ])
+    server = _server(d)
+    set_capabilities(d, actions=["shell", "memory_read", "memory_write"])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok", status
+
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    cancels = [e["payload"] for e in events if e["type"] == "observation"
+               and e["payload"].get("kind") == "kill" and e["payload"].get("cancelled")]
+    assert len(cancels) == 1, f"the cancellation did not happen: {cancels}"
+    assert cancels[0]["stopped_work"] is True, (
+        "a backgrounded shell is a subprocess — its cancellation must claim, and be, a real stop")
+
+    assert pidfile.exists(), "the command never started, so this test proves nothing"
+    pid = int(pidfile.read_text().strip())
+    # The group is SIGTERMed inside run_jailed's wait; give the kernel a moment either way.
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        try:
+            os.kill(pid, sig.SIGKILL)       # never leave a 120 s sleeper behind
+        except ProcessLookupError:
+            pass
+        pytest.fail(f"pid {pid} is STILL ALIVE after the cancel — the work was not stopped, "
+                    "which is exactly the detach-wearing-a-kill's-name the operator named")
+    assert not donefile.exists(), (
+        "the command ran to completion anyway — it was undelivered, not stopped")
+
+
+def test_cancelling_an_llm_stops_only_the_delivery_and_says_so(
+        make_routine, scripted, monkeypatch):
+    """The other half, and it must NOT overclaim. An `llm` runs inside the interpreter, so the
+    cancel frees the slot and drops the result while the call finishes unread — and the
+    observation says that, rather than claiming a stop it did not perform."""
+    import rsched.engine.executor as executor_mod
+
+    ran: list[str] = []
+
+    def slow_llm(action, ctx):
+        time.sleep(1.5)
+        ran.append(str(action.get("prompt")))
+        return {"kind": "llm", "text": "an answer nobody reads"}
+
+    monkeypatch.setitem(executor_mod.DISPATCH, "llm", slow_llm)
+    d = make_routine(slug="bgkillllm")
+    scripted([
+        {"say": "Backgrounding a slow llm.", "kind": "llm", "prompt": "think slowly",
+         "background": True},
+        {"say": "Dropping it.", "kind": "kill", "handle": "bg1"},
+        util("list", say="A turn while it finishes unread."),
+        util("list", say="And another."),
+        finish(summary="done" + " ." * 20),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok", status
+
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    cancel = next(e["payload"] for e in events if e["type"] == "observation"
+                  and e["payload"].get("kind") == "kill" and e["payload"].get("cancelled"))
+    assert cancel["stopped_work"] is False, (
+        "an llm's work cannot be stopped — claiming it was would be the same overclaim as "
+        "0.404.0's, pointing the other way")
+    # …and the result still never reached the run
+    delivered = [e for e in events if e["type"] == "observation"
+                 and e["payload"].get("handle") == "bg1"
+                 and e["payload"].get("background")
+                 and not e["payload"].get("started")
+                 and not e["payload"].get("cancelled")]
+    assert delivered == [], f"a cancelled llm delivered its observation anyway: {delivered}"
+
+
+def test_the_cancel_check_is_keyed_by_handle_not_by_the_turn_that_started_it():
+    """Why this was unreachable until now, pinned so it cannot regress.
+
+    `control.cancelled_for_turn` keys the F586 intent channel by TURN — deliberately: a cancel
+    clicked just as a long call finishes must not kill the NEXT call. A background call outlives
+    its starting turn, so that key can never fire for it again. The fix is a context carrying
+    `background_stop`, which the same function prefers when present.
+    """
+    import threading as th
+
+    from rsched.engine.control import cancelled_for_turn
+
+    stop = th.Event()
+
+    class Ctx:
+        background_stop = staticmethod(stop.is_set)
+        turn = 7
+        root_run_dir = None
+
+    check = cancelled_for_turn(Ctx())
+    assert check() is False
+    stop.set()
+    assert check() is True, (
+        "the per-handle stop is not consulted, so a background subprocess can never be reached")
+
+    class TurnOnlyCtx:
+        turn = 7
+        root_run_dir = None
+
+    # no run dir and no handle: never cancelled, the way `_never_aborted` answers for the abort
+    assert cancelled_for_turn(TurnOnlyCtx())() is False

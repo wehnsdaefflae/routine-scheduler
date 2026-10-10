@@ -172,13 +172,37 @@ load, where its spend lands, and who gets it.
   Ollama grammars). `background.cancel` drops the Pending from the live list AT ONCE, which is what
   makes the promise true — `collect` reads that list at every boundary — and frees the cap slot
   immediately.
-  **It stops the DELIVERY, never the work:** a Python thread has no interruption point, so the call
-  runs to its own end with nobody reading it and its spend still books. That ceiling is stated in
-  the `handle` field's own schema description, because the field is the only documentation a run
-  meets at the moment it decides to cancel. The call is recorded with `cancelled: true` (and
-  `had_landed`, when a finished result was thrown away) rather than `abandoned`: a deliberate drop
-  and a run that ran out of turns are different losses. An unknown handle is a correctable error
-  naming what IS in flight. Cancel a result you no longer want — never to make a call stop.
+  **What it stops depends on the KIND, and for the slow kinds it really is a kill.** 0.404.0 shipped
+  this as "it stops the DELIVERY, never the work", justified by "a Python thread cannot be
+  interrupted". The operator read that field and said it described a detach rather than a kill, and
+  he was right: the claim holds for the kinds that run inside the interpreter and is FALSE for the
+  three that are actually slow. `util`, `script` and `shell` all reach the host through
+  `utils_run.run_jailed`, which has polled a `cancelled` callable inside the wait it performs anyway
+  and ended the command's whole process group through `procgroup.terminate` since F586 (decided
+  D160-C; 0.370.2 added the SIGKILL backstop for a group that ignores SIGTERM) — and a backgrounded
+  call goes through the ordinary dispatch, so it already received that callable. What stranded the
+  capability was never Python but the intent channel's KEY: `control.cancelled_for_turn` keys the
+  channel by TURN, deliberately, so a cancel clicked as one call ends cannot kill the next one — and
+  a background call outlives its starting turn, so the check could never fire again.
+  - `background.STOPPABLE_KINDS` = `util`, `script`, `shell` — the kinds whose thread is blocked on
+    a subprocess. `Pending.stop` is a `threading.Event` set by `cancel` BEFORE it records, so the
+    process group starts dying while the record is written, and `Pending.stoppable` says which
+    promise a handle carries.
+  - The thread dispatches against `_cancellable_ctx`, a shallow `__getattr__` PROXY of the run
+    context whose only difference is a `background_stop` handle that `cancelled_for_turn` prefers
+    when present. A proxy and not a mutated context, because the real one is shared with the live
+    turn and flipping its cancel check would stop the FOREGROUND call too; a delegate and not a
+    copy, because the transcript, meter and usage lock must stay the SAME objects for the
+    parked-spend booking (D167).
+  - **`stopped_work` rides both observations** — the cancel's own and the collector's — so a real
+    stop and a dropped delivery are never conflated by whoever reads them back.
+
+  For `llm`, `decide` and the reads the original ceiling stands unchanged: the work runs to its own
+  end unread. Both promises are stated in the `handle` field's own schema description, because that
+  field is the only documentation a run meets at the moment it decides to cancel. Either way the
+  call is recorded with `cancelled: true` (and `had_landed`, when a finished result was thrown away)
+  rather than `abandoned`: a deliberate drop and a run that ran out of turns are different losses,
+  and the spend books in both. An unknown handle is a correctable error naming what IS in flight.
 
 ## Contrast with subtasks/subruns
 

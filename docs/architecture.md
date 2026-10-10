@@ -755,10 +755,19 @@ and the capabilities digest's catalog listing):
   summary. A run that no longer wants a result CANCELS it — `kill handle=bg1` (D176 option (a):
   `n` stays the sub-workflow namespace, `handle` addresses a background call) routes to
   `background.cancel`, which drops the Pending from the live list AT ONCE, so `collect` cannot
-  deliver it and the cap slot frees immediately. It stops the DELIVERY and not the work: a Python
-  thread has no interruption point, so the call runs to its own end unread and its spend still
-  books (D167) — stated in the `handle` field's own schema description, because that is the only
-  documentation a run meets at the moment it decides. A cancelled call is recorded with
+  deliver it and the cap slot frees immediately. **What it stops depends on the kind.** For
+  `background.STOPPABLE_KINDS` — `util`, `script`, `shell`, the three whose thread is blocked on a
+  SUBPROCESS — it is a real kill: `Pending.stop` is set before the cancel records, the thread
+  dispatches against `_cancellable_ctx` (a shallow `__getattr__` proxy carrying `background_stop`,
+  which `control.cancelled_for_turn` prefers over its turn-keyed file channel), and
+  `utils_run.run_jailed` ends the command's whole process group through `procgroup.terminate`
+  (F586/D160-C). A proxy and not a mutated context because the real one is shared with the live
+  turn; a delegate and not a copy because transcript/meter/usage-lock IDENTITY carries the
+  parked-spend booking (D167). For `llm`, `decide` and the reads — inside the interpreter, where
+  Python has no interruption point — only the delivery stops and the call runs to its own end
+  unread. Either way the spend books (D167), and `stopped_work` on both observations says which of
+  the two happened; both promises are stated in the `handle` field's own schema description,
+  because that is the only documentation a run meets at the moment it decides. A cancelled call is recorded with
   `cancelled: true` rather than `abandoned`, so a reader can tell a deliberate drop from a run
   that ran out of turns. All these records are `observation` events carrying
   `background`/`handle`/`started_turn` — payload EXTENSIONS, no new event types. Built on the ARCHIVAL shape, deliberately not on

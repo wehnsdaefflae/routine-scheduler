@@ -15,6 +15,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.408.0] — 2026-10-10
+
+### `kill handle=` STOPS the work for `util`, `script` and `shell` — 0.404.0 shipped a ceiling that was not one
+
+0.404.0 gave a run the ability to drop a background result it no longer wanted, and described the
+new `handle` field as *"It stops the DELIVERY, not the work"*, justified by *"a Python thread cannot
+be interrupted"*. The operator read it and said that described a **detach, not a kill**. He was
+right, and the claim was false for exactly the three kinds worth cancelling: a ten-minute test run
+reaches the host through `shell` or `script`, never through `llm`.
+
+**The capability was already built; the KEYING stranded it.** `utils_run.run_jailed` — the one
+runner behind `util`, `script` and `shell` — has taken a `cancelled` callable and ended the
+command's whole process group through `procgroup.terminate` since F586 (decided D160-C; 0.370.2
+added the SIGKILL backstop for a group that ignores SIGTERM), and a backgrounded call receives that
+callable through the ordinary dispatch like any other. But `control.cancelled_for_turn` keys the
+intent channel by **turn** — deliberately, so a cancel clicked as one call ends cannot kill the
+next one — and a background call outlives its starting turn, so the check could never fire again.
+
+- **`background.STOPPABLE_KINDS`** = `util`, `script`, `shell`: the kinds whose thread is blocked on
+  a subprocess. Everything else runs inside the interpreter, where Python has no interruption point,
+  and claiming otherwise would be the same overclaim pointing the other way.
+- **`Pending.stop`** (a `threading.Event`) and **`Pending.stoppable`**. `background.cancel` sets the
+  event BEFORE it records, so the process group starts dying while the record is written.
+- **`_cancellable_ctx`** — the thread dispatches against a shallow `__getattr__` **proxy** of the run
+  context whose only difference is a `background_stop` handle, which `cancelled_for_turn` now
+  prefers when present (the turn-keyed file channel stays for the foreground). A proxy and not a
+  mutated context, because the real one is shared with the live turn and flipping its cancel check
+  would have stopped the **foreground** call too; a delegate and not a copy, because the transcript,
+  meter and usage lock must stay the SAME objects for D167's parked-spend booking.
+- **`stopped_work` on both observations** — the cancel's own and the collector's — so a real stop
+  and a dropped delivery are never conflated.
+- The **`handle` field's description** now states both promises instead of one false ceiling, since
+  that field is the only documentation a run meets at the moment it decides to cancel.
+
+**5 new tests** (94 in `tests/test_background_actions.py`). The load-bearing one backgrounds a
+`shell` that writes its pid, sleeps 120 s and only then writes a marker: after `kill handle=bg1`
+**the pid is gone and the marker never appears** — the difference between a kill and a detach. Its
+first run reproduced the file's own documented trap (a 0.46 s run: the turns were faster than bash
+could spawn), fixed with a slow util.
+
+Docs: `docs/background-tasks.md` (the cancellation passage), `docs/architecture.md` §background
+actions. For `llm`, `decide` and the reads the original ceiling stands unchanged and both docs say
+so.
+
 ## [0.407.0] — 2026-10-10
 
 ### Past actions go to Claude as tool CALLS — a reply ends at its one call, so a thinking model stops chaining actions

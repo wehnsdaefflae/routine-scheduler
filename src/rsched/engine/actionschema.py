@@ -519,12 +519,16 @@ ACTION_SCHEMA: dict = {
         "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the sub-workflow number"},
         "handle": {"type": "string",
                    "description": "kill: a BACKGROUND call's handle (bg1, bg2 … — the one its "
-                                  "started observation named) instead of `n`. It stops the "
-                                  "DELIVERY, not the work: the observation will never reach "
-                                  "this run and the cap slot frees at once, but the call runs "
-                                  "to its own end (a Python thread cannot be interrupted) and "
-                                  "what it spent still books against your budget. Cancel a "
-                                  "result you no longer want — never to make a call stop"},
+                                  "started observation named) instead of `n`. What it stops "
+                                  "depends on the kind: a backgrounded `util`, `script` or "
+                                  "`shell` runs as a subprocess, so its whole process group is "
+                                  "TERMINATED — the work really stops; an `llm`, `decide` or a "
+                                  "read runs inside the interpreter, which Python gives no way "
+                                  "to interrupt, so only the DELIVERY stops and that call runs "
+                                  "to its own end unread. Either way the observation never "
+                                  "reaches this run, the cap slot frees at once, and what it "
+                                  "spent still books against your budget — the result says "
+                                  "which of the two happened (`stopped_work`)"},
         "all": {"type": "boolean",
                 "description": "wait: wait for ALL running sub-workflows (default: any next) · "
                                "edit_file/write_util/write_rule edit mode: replace EVERY "

@@ -100,6 +100,13 @@ def cancelled_for_turn(ctx) -> Callable[[], bool]:
     would otherwise stop turn 1's call. And a context with no run dir at all (a test, a CLI
     call) never cancels, the way `run_context._never_aborted` answers for the abort.
     """
+    # A BACKGROUND call carries its own stop predicate, keyed by its handle (engine/background:
+    # `_cancellable_ctx`). It takes precedence because the turn key cannot work there: a
+    # background call outlives the turn that started it, so a check keyed on `ctx.turn` can
+    # never fire again once the run moves on — which left `kill handle=…` unable to stop even a
+    # `shell` blocked on a ten-minute subprocess. The file channel stays for the foreground.
+    if (stop := getattr(ctx, "background_stop", None)) is not None:
+        return stop
     run_dir = getattr(ctx, "root_run_dir", None)
     turn = getattr(ctx, "turn", 0)
     if run_dir is None:
