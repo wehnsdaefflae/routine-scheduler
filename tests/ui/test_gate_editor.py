@@ -12,6 +12,7 @@ The file on disk is the proof of a save: `routine.yaml` is what the daemon reads
 
 from __future__ import annotations
 
+import json
 import re
 
 from playwright.sync_api import expect
@@ -87,6 +88,107 @@ def test_the_gate_is_tested_as_shown_without_starting_a_run(ui, ui_page):
     expect(verdict).to_have_attribute("data-gate-verdict", re.compile("^(run|skip)$"))
     expect(panel.locator(".gate-result")).to_contain_text("weekdays")
     assert ui.runner.fired == [], "testing a gate must not start a run"
+
+
+def _stub_test_result(page, checks, *, asked_of=None, decision="run"):
+    """Answer the gate test with a fixed per-component result, so one test can put every chip
+    state side by side. The states depend on what the CHECKS answered, which a live mailbox or
+    a real clock cannot be made to produce on demand."""
+    page.route(GATE_TEST, lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=json.dumps({"decision": decision, "reason": "stubbed", "checks": checks,
+                         "asked_of": asked_of if asked_of is not None
+                         else [c["kind"] for c in checks], "stderr": ""})))
+
+
+def test_the_component_chips_are_colour_coded_by_what_they_would_do(ui, ui_page):
+    """The operator's order: "i obviously want the chips of all the component the complete gate
+    consists of to be color coded. green for 'would fire' red for 'wouldn't fire'."
+
+    Asserted on the RENDERED COLOUR, never on the class name — F644's third defect was
+    ladderstrip.js emitting severity class names that matched no CSS rule at all, so two states
+    the code distinguished rendered in identical ink and a console read of the JS proved
+    nothing. getComputedStyle is what a class with no rule cannot survive.
+    """
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = _gate(ui_page)
+    panel.locator("[data-gate-add]").select_option("weekdays")
+    _stub_test_result(ui_page, [
+        {"id": "c1", "kind": "weekdays", "work": True, "reason": "a standing duty is due today"},
+        {"id": "c2", "kind": "max_quiet", "work": False, "reason": "ran 20 minutes ago"},
+        {"id": "c3", "kind": "mail", "work": True, "unknown": True,
+         "reason": "could not check — the mailbox refused the login"},
+    ], asked_of=["weekdays", "max_quiet", "mail", "script"])
+    panel.locator("[data-gate-test]").click()
+
+    chips = panel.locator("[data-gate-chip]")
+    expect(chips).to_have_count(4)                      # three answered + the one never asked
+    expect(panel.locator('[data-gate-chip-kind="weekdays"]')).to_have_attribute(
+        "data-gate-chip", "work")
+    expect(panel.locator('[data-gate-chip-kind="max_quiet"]')).to_have_attribute(
+        "data-gate-chip", "idle")
+    expect(panel.locator('[data-gate-chip-kind="mail"]')).to_have_attribute(
+        "data-gate-chip", "unknown")
+    expect(panel.locator('[data-gate-chip-kind="script"]')).to_have_attribute(
+        "data-gate-chip", "unasked")
+
+    # the words too: colour is the glance, the words are what a screen reader and a
+    # red-green reader get
+    expect(panel.locator('[data-gate-chip-kind="weekdays"]')).to_contain_text("would fire")
+    expect(panel.locator('[data-gate-chip-kind="max_quiet"]')).to_contain_text("wouldn't fire")
+    expect(panel.locator('[data-gate-chip-kind="mail"]')).to_contain_text("could not tell")
+    expect(panel.locator('[data-gate-chip-kind="script"]')).to_contain_text("not asked")
+
+    ink = {state: ui_page.evaluate(
+        "(s) => getComputedStyle(document.querySelector(`[data-gate-chip='${s}']`)).color", state)
+        for state in ("work", "idle", "unknown", "unasked")}
+    assert len(set(ink.values())) == 4, f"two chip states render in the same ink: {ink}"
+    # and the green/red pair is the one he asked for, so pin their hues rather than only
+    # their difference: a stylesheet that swapped them would still pass a distinctness check
+    assert _hue(ink["work"]) == "green", ink["work"]
+    assert _hue(ink["idle"]) == "red", ink["idle"]
+    # the tint carries the state as well as the ink — at rail width the ink alone is thin
+    tints = {state: ui_page.evaluate(
+        "(s) => getComputedStyle(document.querySelector(`[data-gate-chip='${s}']`))"
+        ".backgroundColor", state) for state in ("work", "idle", "unknown")}
+    assert len(set(tints.values())) == 3, f"two chip states share a background: {tints}"
+
+
+def test_a_chip_states_colour_survives_the_narrow_rail(ui, ui_page):
+    """A chip row that wraps at phone width must keep its colour and its tag on one line —
+    the operator reads this surface on his phone, and the ladderstrip defect was invisible
+    until it was rendered at the width it is used at."""
+    ui_page.set_viewport_size({"width": 400, "height": 900})
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = _gate(ui_page)
+    panel.locator("[data-gate-add]").select_option("weekdays")
+    _stub_test_result(ui_page, [
+        {"id": "c1", "kind": "weekdays", "work": True,
+         "reason": "a standing duty is due today and no run has done it yet"},
+        {"id": "c2", "kind": "max_quiet", "work": False,
+         "reason": "today's standing duty was already done by an ok run"},
+    ])
+    panel.locator("[data-gate-test]").click()
+    fires = panel.locator('[data-gate-chip-kind="weekdays"]')
+    expect(fires).to_be_visible()
+    assert _hue(ui_page.evaluate(
+        "() => getComputedStyle(document.querySelector(\"[data-gate-chip='work']\")).color"
+    )) == "green"
+    box = fires.bounding_box()
+    assert box["width"] <= 400, box
+    tag = fires.locator(".ref-tag").bounding_box()
+    assert tag["width"] > 0 and tag["height"] > 0, tag   # the kind is still legible, not collapsed
+
+
+def _hue(css_colour: str) -> str:
+    """green / red / other from a computed `rgb(r, g, b)` — the only thing the operator's
+    order is about, read from what the browser actually painted."""
+    r, g, b = (int(n) for n in re.findall(r"\d+", css_colour)[:3])
+    if g > r and g >= b:
+        return "green"
+    if r > g and r >= b:
+        return "red"
+    return "other"
 
 
 def test_the_timeout_rides_the_same_accept(ui, ui_page):

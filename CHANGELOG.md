@@ -15,6 +15,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.409.0] — 2026-10-10
+
+### "Test the gate now" colours every component chip — green would fire, red wouldn't (F656)
+
+**The operator's order, verbatim:** *"when i click on 'test the gate now' i obviously want the chips
+of all the component the complete gate consists of to be color coded. green for 'would fire' red for
+'wouldn't fire'."* The surface reported each component's answer in uniform grey ink, so finding the
+one that fails meant reading every chip's sentence.
+
+- **Four states, not two.** Green = this component would fire the run. Red = it wouldn't. **Amber**
+  = it would fire, but only because the check *could not tell* (a mailbox refusing the login, a page
+  that timed out). The gate counts an unanswerable check as work on purpose — a wrong "skip" loses
+  work silently — but painting that the same green as a check that genuinely found something hides a
+  broken check behind a run that starts anyway, which is exactly what a colour is for. The check
+  rows now carry `unknown: true` (`gatekit/run.py`) where previously a thrown check was
+  indistinguishable from a satisfied one.
+- **Grey = not asked.** `run_gate._decide` asks the custom `script` check only when no declarative
+  check already said "run", so the answer list is routinely SHORTER than the gate. He asked for the
+  chips of *all the components the complete gate consists of*, and a component silently missing from
+  the page reads as one that passed. `/api/routines/{slug}/gate/test` now returns `asked_of` (every
+  component, in the order shown) on all three of its paths, and the page renders the difference as a
+  "not asked" chip saying an earlier check already found work.
+- The words carry the state as well as the colour ("would fire", "wouldn't fire", "would fire, but
+  could not tell", "not asked"), and so do the border and tint — colour alone fails a red-green
+  reader and thins out at rail width.
+
+**Verified by RENDERING, not by reading class names.** F644's third defect a day earlier was
+`ladderstrip.js` emitting bare `bad`/`warn`/`ok` class names that matched no CSS rule in either
+stylesheet, so two states the code distinguished rendered in identical ink — and a console read of
+the JS proved nothing. The new tests stub the test endpoint with all four states, read each chip's
+`getComputedStyle().color` back out of the browser and require four distinct inks, three distinct
+background tints, and that the green/red pair is actually green and red by hue (a stylesheet that
+swapped them would pass a mere distinctness check). A second test does it at 400 px with the tag's
+bounding box asserted non-empty. Both were run against unfixed `main` first and failed there with
+`[data-gate-chip]` resolving to **0 elements**.
+
 ## [0.408.1] — 2026-10-10
 
 ### The background concurrency cap is GONE — 0.392.0 built the option the operator did not choose

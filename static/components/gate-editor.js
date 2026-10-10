@@ -213,9 +213,12 @@ export function gateEditor({ slug, value, onChange }) {
         el("div", { class: `gate-verdict gate-${r.decision}`, "data-gate-verdict": r.decision },
           verdict),
         el("div", { class: "small" }, r.reason),
-        ...(r.checks || []).map((c) => el("div", { class: "small gate-check-result" },
-          el("span", { class: "ref-tag" }, label(c.kind)), " ",
-          c.work ? "work — " : "nothing to do — ", c.reason)),
+        ...(r.checks || []).map(chipFor),
+        ...notAsked(r).map((kind) => el("div",
+          { class: "small gate-check-result gate-chip gate-chip-unasked",
+            "data-gate-chip": "unasked", "data-gate-chip-kind": kind },
+          el("span", { class: "ref-tag" }, label(kind)), " not asked — ",
+          "an earlier check already found work, so the gate stopped there")),
         r.stderr ? el("pre", { class: "small gate-stderr" }, r.stderr) : null,
       ].filter(Boolean));
     } catch (err) {
@@ -249,3 +252,37 @@ function blankCheck(kind, existing) {
 }
 
 function label(kind) { return kind.replaceAll("_", " "); }
+
+// One component's answer, COLOURED — green = this component would fire the run, red = it would
+// not. Reading each chip's text to find the failing one is what the operator asked to stop
+// doing, and colour is the only thing that survives a glance.
+//
+// Three states, not two. A check that could not establish its answer (a mailbox refusing the
+// login, a page that timed out) is counted as WORK by the gate — deliberately: a wrong "skip"
+// loses work silently. But painting it the same green as a check that genuinely found something
+// would hide a broken check behind a run that starts anyway, which is the failure a colour is
+// supposed to surface. It gets amber: the run would fire, and the reason is ignorance.
+function chipFor(c) {
+  const state = c.unknown ? "unknown" : (c.work ? "work" : "idle");
+  const words = { work: "would fire — ", idle: "wouldn't fire — ",
+                  unknown: "would fire, but could not tell — " }[state];
+  return el("div", { class: `small gate-check-result gate-chip gate-chip-${state}`,
+    "data-gate-chip": state, "data-gate-chip-kind": c.kind || "" },
+    el("span", { class: "ref-tag" }, label(c.kind)), " ", words,
+    stripPrefix(c.reason));
+}
+
+// The reason already says "could not check — …"; the chip's own words say it too, so drop the
+// duplicate rather than printing the sentence twice.
+function stripPrefix(reason) {
+  return String(reason || "").replace(/^could not check — /, "");
+}
+
+// A gate stops at the first component that finds work (run_gate._decide asks the custom script
+// only when no declarative check already said run), so the answer list can be SHORTER than the
+// gate. The operator asked for the chips of all the components the complete gate consists of —
+// a component silently missing from the list would read as one that passed.
+function notAsked(r) {
+  const answered = new Set((r.checks || []).map((c) => c.kind));
+  return [...new Set(r.asked_of || [])].filter((kind) => !answered.has(kind));
+}

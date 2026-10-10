@@ -1784,6 +1784,29 @@ summary.setup-head::-webkit-details-marker { display: none; }
 .gate-verdict.gate-skip { color: var(--ink-2); }
 .gate-verdict.gate-error { color: var(--err); }
 .gate-check-result { color: var(--ink-2); }
+/* A tested gate's components, colour-coded: green would fire the run, red would not, amber
+   would fire but only because the check could not tell, grey was never asked (the gate stopped
+   at an earlier component). The border + tint carry the state as well as the ink, so the chips
+   stay distinguishable at rail width and for a red-green reader. */
+.gate-chip {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  padding: 4px 8px; margin-top: 4px; border: 1px solid var(--rule);
+  border-radius: var(--r2); border-left-width: 3px;
+}
+.gate-chip-work {
+  color: var(--ok); background: var(--ok-dim);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.gate-chip-idle {
+  color: var(--err); background: var(--err-dim);
+  border-color: color-mix(in srgb, var(--err) 42%, transparent);
+}
+.gate-chip-unknown {
+  color: var(--warn); background: var(--warn-dim);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.gate-chip-unasked { color: var(--ink-3); border-color: var(--rule); }
+.gate-chip .ref-tag { flex: 0 0 auto; }
 .gate-stderr { max-height: 180px; overflow: auto; background: var(--deck-2); padding: var(--s2); border-radius: var(--r1); }
 
 /* ── shared reminders (components/reminders-picker.js) and triggers ────────────────────────── */

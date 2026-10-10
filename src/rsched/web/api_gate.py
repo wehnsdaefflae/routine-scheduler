@@ -57,21 +57,27 @@ async def test_gate(request: Request, slug: str, body: TestBody) -> dict:
     tmp = Path(tempfile.mkdtemp(prefix="gate-test-"))
     run = ActiveRun(slug=slug, run_id=f"{slug}:gate-test", run_ts="gate-test", run_dir=tmp)
     meta: dict = {}
+    # Every component the gate CONSISTS of, in the order shown. The gate stops at the first
+    # component that finds work, so its answer list is routinely shorter than this — and a
+    # component silently absent from the page reads as one that passed. Sent so the page can
+    # show it as not asked instead.
+    asked_of = [str(c.get("kind")) for c in cfg.run_gate.checks if c.get("kind")]
     try:
         async with asyncio.timeout(cfg.run_gate.timeout_s):
             decision = await run_gate._decide(run, cfg, _state(request).server, "test", meta)
         stderr = (tmp / "gate-stderr.txt").read_text(encoding="utf-8") if (
             tmp / "gate-stderr.txt").is_file() else ""
         return {"decision": decision["decision"], "reason": decision["reason"],
-                "checks": meta.get("checks") or [], "stderr": stderr[-2000:]}
+                "checks": meta.get("checks") or [], "asked_of": asked_of,
+                "stderr": stderr[-2000:]}
     except TimeoutError:
-        return {"decision": "error", "checks": [],
+        return {"decision": "error", "checks": [], "asked_of": asked_of,
                 "reason": f"the gate did not answer within {cfg.run_gate.timeout_s}s — a "
                           "scheduled fire would be recorded as FAILED"}
     except Exception as exc:
         stderr = (tmp / "gate-stderr.txt").read_text(encoding="utf-8") if (
             tmp / "gate-stderr.txt").is_file() else ""
-        return {"decision": "error", "checks": meta.get("checks") or [],
+        return {"decision": "error", "checks": meta.get("checks") or [], "asked_of": asked_of,
                 "reason": f"a scheduled fire would be recorded as FAILED: {exc}",
                 "stderr": stderr[-2000:]}
     finally:

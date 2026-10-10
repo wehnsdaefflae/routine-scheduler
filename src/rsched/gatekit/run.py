@@ -54,8 +54,10 @@ def evaluate(ctx: dict) -> dict:
             work, reason, fingerprint = CHECKS[kind]({**check, "id": cid}, ctx)
         except UnknownError as exc:
             work, reason, fingerprint = True, f"could not check — {exc}", ""
+            row["unknown"] = True
         except Exception as exc:
             work, reason, fingerprint = True, f"could not check — {type(exc).__name__}: {exc}", ""
+            row["unknown"] = True
         row.update(work=bool(work), reason=reason[:300])
         if fingerprint:
             row["fingerprint"] = fingerprint
