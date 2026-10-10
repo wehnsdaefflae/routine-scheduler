@@ -183,10 +183,13 @@ WHICH refusals are logged depends on the CAUSE, not on the fire reason:
   - overrun (still active from a prior run) and draining (quiescing for a self-update
     restart) are logged for the SCHEDULED (cron) path only — a resume, trigger, manual or
     lane fire overruns legitimately and would spam the stream;
-  - a STALE MODEL ROLE (`models.<role>` naming a model the catalog does not serve) is
-    logged for EVERY fire reason, because it is a broken config rather than a collision:
-    no run of that routine can start until the name is fixed, and the detail carries the
-    operator-facing sentence naming the role (F643, rsched/trials.roles_problem).
+  - a STALE MODEL ROLE is logged for EVERY fire reason, because it is a broken config
+    rather than a collision: no run of that routine can start until the name is fixed, and
+    the detail carries the operator-facing sentence naming the role (F643,
+    rsched/trials.roles_problem). Only `models.main` refuses a fire
+    (daemon/runner.FIRE_BLOCKING_ROLES) - the loop resolves it on turn one, while a stale
+    `tool_call`/`uncensored` may never be resolved at all and is reported by `rsched
+    validate` instead of taking a working routine dark.
 
 A deliberate global PAUSE is NOT this event: the scheduler skips those fires earlier — an
 intentional operator action is never logged as a refusal. Nor is `enabled: false`, which is

@@ -1257,9 +1257,15 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   and so does the console's Run-now route, so a refusal can never be reported with a cause that is
   not the real one (it told the operator "already has an active run" whatever had actually
   happened). Its causes are `disabled`, `draining`, `overrun` and — F643 — **`stale_role`: a
-  routine whose `models.<role>` names a model the catalog no longer serves is refused BEFORE a run
+  routine whose `models.main` names a model the catalog no longer serves is refused BEFORE a run
   dir is claimed.** `trials.roles_problem` is the predicate, shared with `rsched validate` and the
-  config write edge. The failure it ends: `library-sync` and `tv-show-tracker-seedbox-manager` each
+  config write edge — but the fire guard asks it only about `FIRE_BLOCKING_ROLES` (`main` today),
+  **deliberately narrower than what `validate` reports**: the loop resolves `main` on turn one, so
+  a stale name there means the run cannot reach its first turn, while `tool_call` and `uncensored`
+  resolve only if the run makes such a call (`uncensored` only when a refusal is referred).
+  `folder-reorg` carried a stale `uncensored` for weeks while every one of its runs finished fine;
+  a fire guard over all roles would have taken a working routine dark to prevent a death that was
+  not happening — a refusal must not cost more than the failure it prevents. The failure it ends: `library-sync` and `tv-show-tracker-seedbox-manager` each
   carried a bare `Sonnet` stored when that was a catalog name, and after the rename each run died
   on its first turn resolving it (`EndpointError`, rc=1, no finish, no summary, an `orphaned_run`
   and nothing saying why). A run that cannot reach its first turn is now never born, and the

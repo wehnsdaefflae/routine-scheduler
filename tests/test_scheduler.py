@@ -695,7 +695,7 @@ async def test_a_stale_role_refuses_every_fire_reason_and_records_each(
     that routine can start by ANY route until the name is fixed, and the refusal is the only
     place it is ever said. So every reason refuses, and every refusal is recorded."""
     d = make_routine(slug="stalemanual")
-    cfg = _with_roles(d, main="Sonnet medium", uncensored="gemma-gone")
+    cfg = _with_roles(d, main="Sonnet")
     _stub_engine(monkeypatch, "sleep 30")
     server = _catalog(_server(tmp_path), "Sonnet medium")
     runner = Runner(server, EventBus())
@@ -705,10 +705,33 @@ async def test_a_stale_role_refuses_every_fire_reason_and_records_each(
     events = health_events(server.routines_home, routine="stalemanual")
     refused = [e for e in events if e["event"] == "fire_refused"]
     assert len(refused) == 4, "every non-scheduled fire reason is recorded too"
-    assert all("models.uncensored 'gemma-gone'" in e["detail"] for e in refused)
-    # the uncensored role resolves only when a refusal is referred, so it stays broken longest
-    assert all("models.main" not in e["detail"] for e in refused), \
-        "a role the catalog serves must not be named"
+    assert all("models.main 'Sonnet'" in e["detail"] for e in refused)
+
+
+async def test_a_role_the_run_may_never_resolve_does_not_refuse_the_fire(
+        make_routine, tmp_path, monkeypatch):
+    """The refusal must not cost more than the failure it prevents.
+
+    `trials.roles_problem` names EVERY stale role and is right to — `rsched validate` and the
+    console want the whole truth. But `tool_call` and `uncensored` resolve only if the run makes
+    such a call, and `uncensored` only when a refusal is referred, which is rare. Live evidence
+    at the time this was written: `folder-reorg` had carried a stale
+    `uncensored: gemma-4-26b-a4b-uncensored` for weeks while every one of its runs finished fine.
+    A fire guard over all roles would have taken a working routine dark to prevent a death that
+    was not happening.
+    """
+    d = make_routine(slug="reorgish")
+    cfg = _with_roles(d, main="Sonnet medium", uncensored="gemma-4-26b-a4b-uncensored")
+    _stub_engine(monkeypatch, "sleep 0.2")
+    server = _catalog(_server(tmp_path), "Sonnet medium")
+    runner = Runner(server, EventBus())
+
+    assert runner.fire_blocker(cfg) is None, "a stale uncensored role must not block a fire"
+    assert await runner.fire(cfg, reason="schedule") is not None
+    await runner.abort("reorgish")
+    # …and `validate` still tells the whole truth about it, which is where it belongs
+    from rsched import trials as trials_mod
+    assert "models.uncensored" in trials_mod.roles_problem(server, cfg.models)
 
 
 async def test_a_servable_role_fires_normally(make_routine, tmp_path, monkeypatch):

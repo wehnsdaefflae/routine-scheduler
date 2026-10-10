@@ -46,7 +46,7 @@ from .stamps import instant
 #: exactly the way it was blind to all six.
 BLOCKED_EVENTS: dict[str, str] = {
     "fire_refused": "a fire produced no run — the routine was still active, the daemon was "
-                    "draining, or a model role names a model the catalog no longer serves",
+                    "draining, or its `main` model role names a model the catalog no longer serves",
     "lane_fire_refused": "a due lane fire armed nothing — the previous chain is still in "
                          "flight",
     "lane_fire_paused": "a due lane fire was skipped because scheduling was paused — the "

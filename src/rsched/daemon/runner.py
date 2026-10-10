@@ -41,6 +41,20 @@ log = logging.getLogger("rsched.runner")
 #: burst of fires for one routine, which is at most a handful per second.
 _CLAIM_TRIES = 60
 
+#: The model roles whose staleness REFUSES A FIRE (F643) — only those a run cannot avoid
+#: resolving, which today is `main` alone: the loop resolves it on turn one, so a stale name
+#: there means the run cannot reach its first turn and must not be born.
+#:
+#: Deliberately NARROWER than `trials.roles_problem`, which names every stale role and is right
+#: to: `rsched validate` and the console want the whole truth. But refusing a FIRE is a far
+#: heavier act than reporting, and `tool_call` and `uncensored` resolve only if the run happens
+#: to make such a call — `uncensored` only when a refusal is referred, which is rare. Live
+#: evidence: `folder-reorg` has carried a stale `uncensored: gemma-4-26b-a4b-uncensored` for
+#: weeks while every one of its runs finished fine. Blocking on that role would have taken a
+#: working routine dark to prevent a death that was not happening — the refusal must not cost
+#: more than the failure it prevents.
+FIRE_BLOCKING_ROLES = ("main",)
+
 
 def _claim_run_dir(runs: Path) -> tuple[str, Path]:
     """A run dir nobody has used: the run-ts of now, or of the next free second.
@@ -174,8 +188,10 @@ class Runner:
         (`web/api_routine_edit.py`). `cause` is the short token the health event records;
         `why` is the operator's sentence.
 
-        The stale-role check is F643. A routine whose `models` names a model this instance
-        cannot serve dies on its first turn resolving it — `EndpointError`, rc=1, no finish,
+        The stale-role check is F643, and it asks only about `FIRE_BLOCKING_ROLES` — a role the
+        run may never resolve is reported by `rsched validate`, not refused here. A routine whose
+        `models.main` names a model this instance cannot serve dies on its first turn
+        resolving it — `EndpointError`, rc=1, no finish,
         no summary, an `orphaned_run` and nothing that says why (`tv-show-tracker-seedbox-
         manager:20261008-160000` and `library-sync:20261007-223003`, both on a bare `Sonnet`
         that was a catalog name when it was stored). Refusing BEFORE `_claim_run_dir` is what
@@ -190,7 +206,9 @@ class Runner:
             return ("overrun",
                     (f"another run of {cfg.slug} is already active "
                      f"({self.active[cfg.slug].run_id})"))
-        if problem := trials.roles_problem(self.server, cfg.models):
+        blocking = {role: name for role, name in (cfg.models or {}).items()
+                    if role in FIRE_BLOCKING_ROLES}
+        if problem := trials.roles_problem(self.server, blocking):
             return ("stale_role", problem)
         return None
 

@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.405.1] — 2026-10-10
+
+### Only the `main` role refuses a fire — 0.405.0's guard would have taken a working routine dark
+
+Shipped minutes after 0.405.0 and found by asking the question a green gate cannot answer: *which
+routines does this newly refuse, on this instance, today?*
+
+`trials.roles_problem` names **every** stale role, and is right to — `rsched validate` and the
+console want the whole truth. Using it unchanged as a FIRE guard was wrong, because refusing a fire
+is a far heavier act than reporting one. `folder-reorg` carries a stale
+`uncensored: gemma-4-26b-a4b-uncensored` **right now** and every one of its runs finishes fine: the
+`uncensored` role resolves only when a refusal is referred, which is rare, and `tool_call` only if
+the run makes such a call. From the next daemon restart, 0.405.0 would have refused **100% of
+folder-reorg's fires** to prevent a mid-run death that was happening in approximately none of them.
+
+- **`daemon/runner.FIRE_BLOCKING_ROLES = ("main",)`** — the fire guard asks `roles_problem` only
+  about roles a run cannot avoid resolving. The loop resolves `main` on turn one, so a stale name
+  there means the run cannot reach its first turn and must not be born. Everything else is
+  `rsched validate`'s business, where it is reported and costs nothing.
+- A test pins exactly the `folder-reorg` shape: stale `uncensored`, servable `main` → `fire_blocker`
+  returns None, the fire proceeds, and `roles_problem` still names the role for `validate`.
+- The three narration surfaces move with it: `health_events.py`'s vocabulary entry,
+  `readmodels/health_stream.py`'s console label, and `docs/architecture.md`.
+
+**The principle, since this is the second time a refusal has been built this week:** a guard must
+not cost more than the failure it prevents. A green gate proves no test disagrees with the code; it
+cannot tell you the behaviour is right. The live-instance question — *what does this newly refuse?*
+— is a separate check, and it belongs before the commit.
+
 ## [0.405.0] — 2026-10-10
 
 ### The daemon refuses to fire a routine whose model role names a model that is gone (F643)
