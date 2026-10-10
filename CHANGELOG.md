@@ -15,6 +15,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.406.0] — 2026-10-10
+
+### A reply that carries two actions runs the FIRST — the "narrated but never done" incidents were the engine dropping actions
+
+**The incidents (R2443-R2445, and fleet-wide since 2026-10-08).** Runs narrated changes nobody had
+made: "Import added", "Test file written", "Fields added to the model", "Messages-key fix landed",
+"Ask body written" — 17 in two llmsectest runs, none before 2026-10-08. The runs blamed themselves.
+They were right about what they had *emitted*. The engine had thrown it away.
+
+**The cause, reproduced live.** 0.396.0 (2026-10-08 17:13) moved the Anthropic action tool from
+forced to `auto` so effort reaches the model. With thinking on, Opus 5 chains: it writes its FIRST
+action as JSON in a **text** block, thinks on as though it had run, and makes the **call** for the
+next — whose `say` reports the first as done. The adapter returned both, but the engine read only
+the call: the first action vanished, and the second, narrating it, ran. Replaying the real turn 194
+of `llmsectest-weekday:20261010-040001` through the live proxy produced exactly that in 5 of 5
+attempts (text: `edit_file models.py` adding the fields; call: `read_file runner.py`, "Fields added
+to the model"). A sharper tool description changed nothing (3/3); with no tool offered the model
+still wrote two actions as two text blocks (1/3). Median output per turn on that routine rose from
+~300 to ~500 tokens with the switch; claim-shaped `say`s went 2 → 11 → 23 per run.
+
+- **`engine/replyactions.py` (new)** — `reply_actions` reads EVERY action a reply carried, in
+  order: the JSON action objects in its text (scanned with the decoder, so an action quoted inside
+  another's `content` is not a second one), then the call. The engine runs the **first**; objects
+  equal but for their narration (`say`, `note`, the reminder fields) are one action and run once.
+  A text action the engine cannot parse beside a call is a schema violation — it cannot know what
+  came first, so it runs neither.
+- **The run is told, by name.** The actions that did not run are stored on the executed one's
+  observation (`not_executed`) and rendered as its tail: `[NOT EXECUTED: your reply carried 2
+  actions. The engine runs exactly ONE action per reply — the FIRST, whose result is above. This one
+  did NOT run, and nothing it assumed has happened: - read_file path=… — it said: "Fields added…"
+  …]`. Stored, so a resumed leg replays it; a finish set aside by a guard carries it too; the
+  transcript is the count of how often it happens.
+- **`anthropic_api._parse`** reads the FIRST action call, never the last, and logs a reply that
+  carried more than one despite the one-call choice.
+- **The harness contract** no longer says extras "are silently dropped" (true of the retired CLI
+  transport, and the opposite of what a model needed to hear): one action per reply, as the call OR
+  one JSON object, the later ones handed back NOT EXECUTED; and a change planned or drafted while
+  thinking has not happened until an observation shows it — in a `say` as much as in a finish.
+- Docs: `docs/prompt-anatomy.md` §3a and §5.1, `docs/endpoints.md`, `docs/architecture.md`,
+  CLAUDE.md's action contract.
+
 ## [0.405.1] — 2026-10-10
 
 ### Only the `main` role refuses a fire — 0.405.0's guard would have taken a working routine dark

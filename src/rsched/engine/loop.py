@@ -56,6 +56,7 @@ from .loopconst import POLL_S
 from .loopend import SCHEMA_STORM_TURNS
 from .loopnudge import REPEAT_FAIL
 from .observations import format_observation, is_failure
+from .replyactions import unexecuted_note, unexecuted_row
 from .run_context import RunContext
 from .switches import (
     apply_config_change,
@@ -153,6 +154,7 @@ class EngineLoop:
     resume: Any
     subruns: Any
     turn_records: list[dict]
+    unexecuted: list[dict]
     failures: dict[str, int]
     util_reminder: Any
     workflow_body: Any
@@ -304,6 +306,9 @@ class EngineLoop:
         # …and the `turn:finish` trigger fires here, its own fire point: the finish produces no
         # ordinary observation, so there is no tail for `at_observation` to ride.
         remind_note += remind.at_finish(self, action)
+        # A finish that was its reply's FIRST action, with more written after it: when a guard
+        # sets the finish aside, the run is told those did not run either (replyactions).
+        remind_note += unexecuted_note([unexecuted_row(a) for a in self.unexecuted])
         outcome = finishgate.check_finish(self, action, self.ctx)
         if outcome is None and remind_note and self.messages:
             self.messages[-1]["content"] += remind_note   # rides the guard's own message
@@ -338,6 +343,11 @@ class EngineLoop:
         ctx = self.ctx
         obs = (hold.before_dispatch(self, action)
                or actionroute.dispatch_action(self, action, ctx))
+        if self.unexecuted:
+            # The reply carried more actions than this one; they did not run, and the run is
+            # told so by name in THIS observation — stored on it, so a resumed leg replays the
+            # same words (engine/replyactions.py). Their own side fields never ran either.
+            obs = {**obs, "not_executed": [unexecuted_row(a) for a in self.unexecuted]}
         held = hold.is_hold(obs)
         if not held:
             self.executed_actions += 1   # a HELD action executed nothing

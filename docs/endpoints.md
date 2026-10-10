@@ -367,7 +367,11 @@ re-asked ONCE with the tool forced inside the same call (`stop_details["forced_r
 that answer, which ran at the proxy's default effort, and the warning log names what the unread
 reply carried). An endpoint set `tool_choice: forced` sends the forced choice, and on a model
 that refuses it gets `auto` held to one call. A model that answers in text instead has its action
-read from the text. A model that refuses several
+read from the text — and a THINKING model often does both in one reply: its first action as JSON
+text, the next as the call, narrating the first as done. The engine runs the reply's FIRST action
+and hands every later one back NOT EXECUTED, by name, in that observation (`engine/replyactions.py`,
+0.406.0); before that the adapter's call was all it read, so the first action vanished and the
+call that claimed it ran (R2443-R2445). A model that refuses several
 optional fields (a configured `temperature`, the effort knob) is degraded one 400 at a time.
 A reply no action can be read from names what it carried — block types, a tool call's name,
 its input's type — in the run's empty-completion error.

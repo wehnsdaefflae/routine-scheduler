@@ -197,7 +197,12 @@ one you are about to touch, not all of them.
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, delete,
   move, mkdir, edit_file, memory_read, memory_write, read_rule, write_rule, script, shell, llm, decide,
   spawn, subtask, detach, schedule_run, create_routine, manage_lane, task, goal, list_models,
-  subruns, kill, wait, ask_user, report, finish` (33, `actionschema.KINDS`). **`goal` keeps the
+  subruns, kill, wait, ask_user, report, finish` (33, `actionschema.KINDS`). **A reply runs ONE
+  action — the FIRST it wrote** (`engine/replyactions.py`): a thinking model chains actions in one
+  reply (JSON text, then the call, the second narrating the first as done), and every later one is
+  named back NOT EXECUTED in the first one's observation. An adapter that kept only the call is how
+  runs narrated edits that never happened (R2443-R2445) — never let a parser keep a later action
+  over an earlier one, nor drop one without saying so. **`goal` keeps the
   run's GOALS** (`engine/goals.py`) — what a PERSON asked of it, `b<n>` lines the run transcribes
   as a scribe, each carrying the person's own words (`quote`), which the engine must find in what
   they wrote or it refuses the goal; a later word is needed to reword or drop one. Offered at

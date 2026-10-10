@@ -34,6 +34,13 @@ takes ONE action per turn), and the engine reads an action from a text reply whe
 writes one instead. So no field is sent blindly or dropped blindly: the model that rejects one
 says so, and pays a round trip per refused field.
 
+**A thinking model writes actions as TEXT beside its call.** On `auto`, Opus 5 regularly writes
+its first action as JSON in a text block and the NEXT one as the call — the conversation shows
+every earlier action as JSON text, and interleaved thinking carries on past an action no call
+ended. `text` and `parsed` both reach the engine, which runs the reply's FIRST action and names
+every later one back to the run unexecuted (engine/replyactions.py). Before 0.406.0 it read only
+`parsed`: the first action vanished and the second, narrating it as done, ran.
+
 A reply no action can be read from — no `action` call with an object input, and no text — says
 what it DID carry: `stop_details["unread"]` lists its content blocks (each type, a tool call's
 name and its input's type, never a value), and the engine's empty-completion error prints it.
@@ -100,8 +107,8 @@ _DROPPABLE = (
 _FORCED = {"type": "tool", "name": "action"}
 
 #: The tool_choice every schema'd call sends by default (the module docstring says why): the API
-#: default, held to ONE call — `auto` alone would let a reply carry several, and `_parse` keeps a
-#: single action.
+#: default, held to ONE call — `auto` alone would let a reply carry several. `_parse` reads the
+#: first call; a reply's text can still carry actions of its own (engine/replyactions.py).
 _ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
 
 
@@ -443,13 +450,15 @@ class AnthropicEndpoint:
         raise_for_status(resp, self.name)
         data = json_or_raise(resp, self.name)
         blocks = data.get("content") or []
-        parsed, texts = None, []
-        for block in blocks:
-            if block.get("type") == "tool_use" and block.get("name") == "action":
-                parsed = block.get("input")
-            elif block.get("type") == "text":
-                texts.append(block.get("text", ""))
-        parsed = parsed if isinstance(parsed, dict) else None
+        calls = [b.get("input") for b in blocks
+                 if b.get("type") == "tool_use" and b.get("name") == "action"]
+        texts = [b.get("text", "") for b in blocks if b.get("type") == "text"]
+        if len(calls) > 1:
+            # `_ONE_CALL_AT_MOST` asks the API for at most one; a wire that drops the field
+            # gets the FIRST — the engine runs a reply's first action (engine/replyactions.py).
+            log.warning("%s: a reply carried %d action calls despite the one-call choice — "
+                        "the first is read", self.name, len(calls))
+        parsed = calls[0] if calls and isinstance(calls[0], dict) else None
         stop = str(data.get("stop_reason") or "")
         # stop_details is populated by the API only on stop_reason "refusal" — a dict
         # like {"type": "refusal", "category": "cyber"|…|null, "explanation": …} — and is

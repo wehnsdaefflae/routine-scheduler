@@ -84,6 +84,7 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop.dialog_qids = {}    # records an ask-back left open, by (type, subject) — askback.py;
     #                          a resumed leg re-keys them from the transcript
     loop.executed_actions = 0  # actions that produced an observation this run
+    loop.unexecuted = []       # this turn's reply's actions after the first (replyactions)
     loop._schema_storm_streak = 0   # consecutive retry-burdened turns (D87, SCHEMA_STORM_TURNS)
     # This leg's wake, set in boot. The speaker turn is the USER's after the model hands
     # it back with an authored finish (`leg_after_authored`); a message that resumes then

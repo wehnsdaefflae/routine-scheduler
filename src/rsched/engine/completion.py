@@ -31,6 +31,7 @@ from .degrade import (
     _recover_transport,
     _turn_task_text,
 )
+from .replyactions import reply_actions
 from .window import _override_window, compact_if_needed, note_prompt_size
 
 MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
@@ -235,14 +236,17 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     """Parse a completion into a normalized action candidate plus validation problems
     (schema first, then per-kind/permission checks). Raises on unparseable text —
     callers decide whether that is a retry or a silent fallback.
+
+    The candidate is the FIRST action the reply wrote; every later one is left on
+    `loop.unexecuted` for the observation to name (engine/replyactions.py says why the first).
+    Set on every attempt, so the accepted one's list is what the turn's observation reads.
     """
     from ..grantpolicy import REQUEST_ROUTE_MARK
     from .authoring import recreate_denial  # function-level: authoring pulls in the ask stack
     from .availability import request_denial
 
-    candidate = (completion.parsed if completion.parsed is not None
-                 else extract_json(completion.text))
-    candidate = normalize_action(candidate)
+    first, *loop.unexecuted = reply_actions(completion)
+    candidate = normalize_action(first)
     problems = (validate(candidate, ACTION_SCHEMA)
                 or validate_action(candidate, allowed_kinds=loop.allowed_tools,
                                    grants=loop.grants)

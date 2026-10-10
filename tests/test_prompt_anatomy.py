@@ -118,9 +118,11 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # (outputs.digest) — the only route to output the observation could not carry
         "instead of re-running the util",
         "rather than re-running the util",
-        # the anti-batching override (composer harness paragraph, F180): the CLI harness
-        # advertises multi-tool batching; the engine executes at most one action per reply
-        "ONE tool call per reply",
+        # the anti-batching override (composer harness paragraph, F180) and the observation
+        # tail naming what a multi-action reply did NOT run (engine/replyactions.py, 0.406.0)
+        "ONE action per reply",
+        "the engine runs only the FIRST action a reply carries",
+        "did NOT run, and nothing",
         # access requests (the four-state grant model): the request field's schema
         # description, the denial routing + tombstone wording (grants.request_route),
         # the decided observation, the once-grant CAPABILITIES line, and the declined

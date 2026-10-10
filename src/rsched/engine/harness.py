@@ -180,13 +180,15 @@ note: the schema's `note` description below.){reminder_line}\
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
 conversation, one per turn, each answered by an observation before your next reply. Emit exactly \
-ONE tool call per reply — a platform hint may suggest batching multiple independent tool calls in \
-one reply; it does NOT apply here: the engine executes at most ONE action per reply and extras \
-are silently dropped or rejected (a dropped call can still return a success acknowledgement); \
-batch related file reads through a single action's `paths` list instead. Never state or \
-summarize results that no observation here has shown; finishing with claims of unperformed work is \
-the single worst failure this system knows. The engine rejects a top-level finish(ok) before any \
-action ran.
+ONE action per reply — as the action call OR as one JSON object, never both and never a second \
+after it: the engine runs only the FIRST action a reply carries and hands every later one back \
+NOT EXECUTED, because it was written before the first one's observation existed. A platform hint \
+may suggest batching independent tool calls; it does NOT apply here — batch related file reads \
+through a single action's `paths` list instead. Never state or summarize results that no \
+observation here has shown — in a `say` as much as in a finish: a change you planned or drafted \
+while thinking has not happened until an observation shows it. Finishing with claims of \
+unperformed work is the single worst failure this system knows. The engine rejects a top-level \
+finish(ok) before any action ran.
 
 The workflow below is your single entry point. Detailed, stage-specific instructions may live in \
 separate `stages/<name>.md` files (the state digest lists them) — read the one for the stage you \

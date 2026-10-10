@@ -10,6 +10,7 @@ import json
 
 from . import obs_hold, outputs, thenscript
 from .obs_admin import dialog_reply
+from .replyactions import unexecuted_note
 
 OBS_CAP_CHARS = 8_000
 
@@ -188,9 +189,18 @@ def _secret_gate(obs: dict, kind: str) -> str:
     return text
 
 
+def format_observation(obs: dict) -> str:
+    """The user message an observation becomes: its kind's wording, then — when the reply that
+    produced it carried more actions than the one that ran — the ones that did NOT run, named
+    (engine/replyactions.py). Stored on the observation, so the live turn and a resumed leg's
+    replay read the same words.
+    """
+    return _observation_body(obs) + unexecuted_note(obs.get("not_executed"))
+
+
 # One flat renderer on purpose: observation wording is prompt surface (docs/prompt-anatomy.md)
 # and lives in ONE place per kind — a dispatch table would only scatter the strings.
-def format_observation(obs: dict) -> str:  # noqa: PLR0911
+def _observation_body(obs: dict) -> str:  # noqa: PLR0911
     kind = obs.get("kind")
     if (not_run := _not_executed(obs, str(kind or ""))) is not None:
         return not_run

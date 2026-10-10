@@ -31,10 +31,11 @@ def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path
     assert "NO shell" not in text
     for needle in ("EXACTLY one JSON object", "the `util` action", "10 turns",
                    "deferred", "blocking", str(ctx.routine.dir),
-                   # the anti-batching override: the CLI harness advertises multi-tool
-                   # batching, but the engine executes at most one action per reply
-                   # (F180: batched actions were silently dropped with success ACKs)
-                   "ONE tool call per reply"):
+                   # the anti-batching override: a thinking model chains actions in one
+                   # reply, but the engine runs only the first and hands the rest back
+                   # (F180; 0.406.0 — the dropped first action of R2443-R2445)
+                   "ONE action per reply", "hands every later one back NOT EXECUTED",
+                   "while thinking has not happened"):
         assert needle in text, needle
 
 

@@ -566,7 +566,6 @@ def test_anthropic_one_shot_claims_placement_on_its_smallest_block(monkeypatch, 
     call carries exactly ONE marker, on the first block in evaluation order: the proxy leaves
     placement alone, and only that small prefix can be written.
     """
-    import json as _json
 
     keyfile = tmp_path / "anthropic.env"
     keyfile.write_text('ANTHROPIC_API_KEY="sk-test"\n')
@@ -583,7 +582,7 @@ def test_anthropic_one_shot_claims_placement_on_its_smallest_block(monkeypatch, 
     monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
 
     def markers() -> int:
-        return _json.dumps(seen["body"]).count('"cache_control"')
+        return json.dumps(seen["body"]).count('"cache_control"')
 
     # with a schema: the tool definition carries it — the smallest prefix there is
     ep.complete(MESSAGES, model="m", schema={"type": "object"}, cacheable=False)
@@ -1136,3 +1135,27 @@ def test_anthropic_a_reask_that_reads_nothing_either_returns_the_first_reply(mon
     c = _anth(tool_choice="forced").complete(MESSAGES, model="gpt-6-astra",
                                              schema={"type": "object"})
     assert c.parsed is None and [b["tool_choice"] for b in bodies] == [_FORCED]
+
+
+def test_anthropic_a_reply_carries_its_text_beside_its_call_and_the_first_of_two_calls(monkeypatch):
+    """The live shape behind R2443-R2445: a thinking Opus writes its FIRST action as JSON text
+    and the next as the call. Both must reach the engine — the text action used to vanish here,
+    and the call narrating it as done ran (engine/replyactions.py decides which runs). A wire
+    that ignores the one-call choice and sends two calls gets the FIRST, never the last."""
+    first = {"say": "Adding the fields.", "kind": "edit_file", "path": "m.py",
+             "anchor": "a", "replacement": "b"}
+    second = {"say": "Fields added. Now reading the runner.", "kind": "read_file",
+              "path": "runner.py"}
+    dual = {"content": [{"type": "thinking", "thinking": "", "signature": "s"},
+                        {"type": "text", "text": json.dumps(first)},
+                        {"type": "tool_use", "name": "action", "input": second}],
+            "stop_reason": "tool_use", "usage": {"input_tokens": 1, "output_tokens": 9}}
+    two_calls = {"content": [{"type": "tool_use", "name": "action", "input": first},
+                             {"type": "tool_use", "name": "action", "input": second}],
+                 "stop_reason": "tool_use", "usage": {"input_tokens": 1, "output_tokens": 9}}
+    bodies: list = []
+    monkeypatch.setattr(anth_mod.httpx, "post", _replies(bodies, dual, two_calls))
+    c = _anth().complete(MESSAGES, model="claude-opus-5", schema={"type": "object"})
+    assert json.loads(c.text) == first and c.parsed == second
+    c = _anth().complete(MESSAGES, model="claude-opus-5", schema={"type": "object"})
+    assert c.parsed == first
