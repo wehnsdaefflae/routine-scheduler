@@ -7,7 +7,7 @@ from __future__ import annotations
 import base64
 
 from rsched.config import EndpointConfig
-from rsched.endpoints import anthropic_api, openai_compat
+from rsched.endpoints import anthropic_api, anthropic_messages, openai_compat
 from rsched.endpoints.base import (
     PDF_MIME,
     guess_media_type,
@@ -86,19 +86,19 @@ def test_anthropic_render_media_image_and_pdf(tmp_path):
     msgs = [{"role": "user", "content": "look",
              "media": [{"path": str(png), "media_type": "image/png"},
                        {"path": str(pdf), "media_type": PDF_MIME}]}]
-    blocks = anthropic_api._render_media(msgs)[0]["content"]
+    blocks = anthropic_messages.render_media(msgs)[0]["content"]
     assert blocks[0] == {"type": "text", "text": "look"}
     assert blocks[1] == {"type": "image", "source": {
         "type": "base64", "media_type": "image/png", "data": base64.b64encode(b"IMG").decode()}}
     assert blocks[2]["type"] == "document" and blocks[2]["source"]["media_type"] == PDF_MIME
     # a text-only message keeps plain string content (cache-stable)
-    assert anthropic_api._render_media([{"role": "user", "content": "hi"}]) == \
+    assert anthropic_messages.render_media([{"role": "user", "content": "hi"}]) == \
         [{"role": "user", "content": "hi"}]
 
 
 def test_anthropic_merge_consecutive_carries_media(tmp_path):
     png = _file(tmp_path)
-    merged = anthropic_api.merge_consecutive(
+    merged = anthropic_messages.merge_consecutive(
         [{"role": "user", "content": "a"},
          {"role": "user", "content": "b", "media": _media(png)}])
     assert len(merged) == 1 and merged[0]["content"] == "a\n\nb"
@@ -106,10 +106,10 @@ def test_anthropic_merge_consecutive_carries_media(tmp_path):
 
 
 def test_anthropic_mark_tail_handles_both_shapes():
-    listy = anthropic_api._mark_tail([{"role": "user", "content": [
+    listy = anthropic_messages.mark_tail([{"role": "user", "content": [
         {"type": "text", "text": "hi"}, {"type": "image", "source": {"x": 1}}]}])
     assert listy[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
-    plain = anthropic_api._mark_tail([{"role": "user", "content": "hi"}])
+    plain = anthropic_messages.mark_tail([{"role": "user", "content": "hi"}])
     assert plain[-1]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
 

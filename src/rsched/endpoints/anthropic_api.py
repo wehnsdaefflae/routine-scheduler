@@ -34,12 +34,15 @@ takes ONE action per turn), and the engine reads an action from a text reply whe
 writes one instead. So no field is sent blindly or dropped blindly: the model that rejects one
 says so, and pays a round trip per refused field.
 
-**A thinking model writes actions as TEXT beside its call.** On `auto`, Opus 5 regularly writes
-its first action as JSON in a text block and the NEXT one as the call — the conversation shows
-every earlier action as JSON text, and interleaved thinking carries on past an action no call
-ended. `text` and `parsed` both reach the engine, which runs the reply's FIRST action and names
-every later one back to the run unexecuted (engine/replyactions.py). Before 0.406.0 it read only
-`parsed`: the first action vanished and the second, narrating it as done, ran.
+**Past actions are sent as CALLS** (`anthropic_messages.native_turns`, 0.407.0). On `auto`, a
+thinking Opus 5 that reads its own history as JSON text writes its next action as text too —
+which ends nothing — thinks on as though it had run, and makes the call for the one after: two
+actions in one reply, the second narrating the first as done. A schema'd call on `auto` therefore
+renders each past action as a `tool_use` of the action tool and the message after it as that
+call's `tool_result`, and a reply ends at its one call. `text` and `parsed` both still reach the
+engine, which runs a reply's FIRST action and names every later one back unexecuted
+(engine/replyactions.py, 0.406.0) — the safety net under the rendering. Before 0.406.0 the
+engine read only `parsed`: the first action vanished and the second, narrating it, ran.
 
 A reply no action can be read from — no `action` call with an object input, and no text — says
 what it DID carry: `stop_details["unread"]` lists its content blocks (each type, a tool call's
@@ -54,33 +57,40 @@ derived from the task kind in instrument.CACHEABLE_KINDS) must not be written: i
 never sent again, so a write would cost 1.25x for a read that never comes. It does NOT do
 that by sending no marker — the subscription proxy places its own breakpoints on any request
 that carries none — but by sending ONE on the smallest prefix it has: the tool definition, else
-a 1,000-char leading slice of its first text (`_claim_placement`). Cache
+a 1,000-char leading slice of its first text (`anthropic_messages.claim_placement`). Cache
 traffic is reported as usage "cached_in" / "cache_write" (kept out of "in"). A 400 naming
 cache_control gets one degraded retry without the markers.
 
 Multimodal: a message may carry a `media` list ([{path, media_type}]); this API takes
 images and PDFs natively, so those files become base64 image/document content blocks. Image
 blocks are cache-eligible like text, so a viewed image re-reads at cache-read weight too.
+Every message-level rendering — merging, media, native calls, cache markers — lives in
+`anthropic_messages.py`; this module is the transport.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 
 import httpx
 
 from ..config import DEFAULT_MODEL_MAX_TOKENS, EndpointConfig
+from .anthropic_messages import (
+    claim_placement,
+    mark_tail,
+    merge_consecutive,
+    native_turns,
+    render_media,
+    strip_cache_control,
+)
 from .base import (
     DEFAULT_TIMEOUT,
-    PDF_MIME,
     Completion,
     EndpointError,
     Message,
     json_or_raise,
     post_json,
     raise_for_status,
-    read_media_b64,
     resolve_api_key,
     split_system,
     supports_media_type,
@@ -148,171 +158,6 @@ def _describe(blocks: list[dict]) -> str:
     return ", ".join(parts) or "no content blocks"
 
 
-def merge_consecutive(messages: list[Message]) -> list[Message]:
-    """The Messages API requires alternating roles; the engine legitimately produces
-    consecutive user messages (observation + injection, compaction digests). Merge them —
-    concatenating text content and carrying any `media` forward.
-    """
-    merged: list[Message] = []
-    for m in messages:
-        if merged and merged[-1]["role"] == m["role"]:
-            prev = merged[-1]
-            combined = {"role": m["role"], "content": prev["content"] + "\n\n" + m["content"]}
-            media = (prev.get("media") or []) + (m.get("media") or [])
-            if media:
-                combined["media"] = media
-            merged[-1] = combined
-        else:
-            merged.append(dict(m))
-    return merged
-
-
-def _content_blocks(content: str, media: list[dict]) -> list[dict]:
-    """A message's string content + its media list → Anthropic content blocks (text first,
-    then each file as a base64 image or document block).
-    """
-    blocks: list[dict] = [{"type": "text", "text": content}] if content else []
-    for item in media:
-        mime = item["media_type"]
-        try:
-            # R1493: prefer bytes the engine captured when it verified the file. A message's
-            # media rides the whole conversation, so re-reading the path here would re-read it
-            # on every later send — and a run that overwrites or cleans up that file invalidates
-            # an attachment the model was already told it would see. Only entries with no
-            # captured bytes (conversation auto-attach) are read from disk.
-            data = item.get("b64") or read_media_b64(item["path"])
-        except OSError as exc:
-            blocks.append({"type": "text", "text":
-                           f"[Attachment unavailable: {item['path']}: {exc}. "
-                           "The earlier observation remains in the conversation.]"})
-            continue
-        source = {"type": "base64", "media_type": mime, "data": data}
-        blocks.append({"type": "document" if mime == PDF_MIME else "image", "source": source})
-    return blocks
-
-
-def _render_media(messages: list[Message]) -> list[Message]:
-    """Turn any message carrying `media` into block-form content; text-only messages keep
-    their plain string content (cache-stable). Drops the engine-side `media` key.
-    """
-    out: list[Message] = []
-    for m in messages:
-        if m.get("media"):
-            out.append({"role": m["role"],
-                        "content": _content_blocks(m.get("content", ""), m["media"])})
-        else:
-            out.append({"role": m["role"], "content": m["content"]})
-    return out
-
-
-def _mark_tail(messages: list[Message]) -> list[Message]:
-    """Moving cache breakpoint on the LAST message: each turn the lookup matches the
-    previous turn's breakpoint (the prefix is append-only) and re-reads everything before
-    it from cache; only the newest exchange is fresh input. Handles both a plain string tail
-    and an already-rendered block list (a media message) — the breakpoint rides its last
-    block either way.
-    """
-    if not messages:
-        return messages
-    out = [dict(m) for m in messages]
-    last = out[-1]
-    content = last.get("content")
-    if isinstance(content, str):
-        out[-1] = {"role": last["role"],
-                   "content": [{"type": "text", "text": content,
-                                "cache_control": {"type": "ephemeral"}}]}
-    elif isinstance(content, list) and content:
-        blocks = [dict(b) for b in content]
-        blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral"}}
-        out[-1] = {"role": last["role"], "content": blocks}
-    return out
-
-
-#: How much leading text a one-shot call's placement claim may cover: ~250 tokens, below the
-#: minimum prefix any current Claude model caches at all (1,024 tokens at the smallest), so the
-#: claim itself writes nothing.
-CLAIM_SLICE_CHARS = 1_000
-
-_EPHEMERAL = {"type": "ephemeral"}
-
-
-def _claimed_text(text: str) -> list[dict]:
-    """`text` as text blocks the claim marker can ride without covering it: the FIRST block at
-    most CLAIM_SLICE_CHARS long and marked, the rest unmarked after it. The cut falls after the
-    slice's last line break, else its last space, so the blocks join back into exactly `text`.
-    A text that is short already, or one no cut leaves two non-blank halves of (the API refuses
-    a whitespace-only text block), is one marked block — a short one is below the minimum anyway.
-    """
-    whole = [{"type": "text", "text": text, "cache_control": dict(_EPHEMERAL)}]
-    if len(text) <= CLAIM_SLICE_CHARS:
-        return whole
-    window = text[:CLAIM_SLICE_CHARS]
-    cut = window.rfind("\n") + 1 or window.rfind(" ") + 1 or CLAIM_SLICE_CHARS
-    head, tail = text[:cut], text[cut:]
-    if not head.strip() or not tail.strip():
-        return whole
-    return [{"type": "text", "text": head, "cache_control": dict(_EPHEMERAL)},
-            {"type": "text", "text": tail}]
-
-
-def _claim_placement(body: dict) -> dict:
-    """A ONE-SHOT body with one cache marker on the SMALLEST prefix it has — the tool definition
-    when there is one (tools lead the prefix, so nothing smaller exists), else a short leading
-    slice of the system prompt, else of the first message (`_claimed_text`).
-
-    No marker at all is not "no caching" on every wire. CLIProxyAPI, the subscription proxy
-    every `anthropic` endpoint here runs through, adds its own breakpoints — on the tools, the
-    system prompt and the last message — to any request that arrives carrying none
-    (`shouldEnsureCacheControl`, v7.2.156; there is no setting for it). Measured over the week
-    to 2026-10-08: 100% of four archival calls' input (2.94M tokens) and 95% of 190 `llm`
-    subcalls' was billed as cache WRITES, at 1.25x, for prefixes nothing ever read again.
-    One marker of the caller's own tells the proxy placement is taken, and caches at most the
-    prefix up to it: a ~150-token tool definition for the archival call, a 1,000-char slice
-    otherwise — both below the minimum prefix the API caches, so the claim writes nothing on
-    the direct API either. Marking a whole long system prompt or a whole single-message prompt
-    instead would write exactly what the claim exists to keep out. The one prefix with no text
-    to slice is a message that opens with an image: that image is marked, and is at most one
-    image's tokens.
-    """
-    if body.get("tools"):
-        return {**body, "tools": [{**body["tools"][0], "cache_control": dict(_EPHEMERAL)},
-                                  *body["tools"][1:]]}
-    if body.get("system"):
-        return {**body, "system": _claimed_text(body["system"])}
-    messages = body.get("messages") or []
-    if not messages:
-        return body
-    first = messages[0]
-    content = first["content"]
-    if isinstance(content, str):
-        blocks = _claimed_text(content)
-    elif content and content[0].get("type") == "text":
-        blocks = [*_claimed_text(content[0]["text"]), *content[1:]]
-    else:
-        blocks = [{**content[0], "cache_control": dict(_EPHEMERAL)}, *content[1:]]
-    return {**body, "messages": [{**first, "content": blocks}, *messages[1:]]}
-
-
-def _strip_cache_control(body: dict) -> dict:
-    """Degraded request without any cache markers (for gateways that reject them)."""
-    out = json.loads(json.dumps(body))
-
-    def scrub(node):
-        if isinstance(node, dict):
-            node.pop("cache_control", None)
-            for v in node.values():
-                scrub(v)
-        elif isinstance(node, list):
-            for v in node:
-                scrub(v)
-    scrub(out)
-    if isinstance(out.get("system"), list):   # collapse block-form system back to a string
-        # joined with NOTHING: the only multi-block system is one `_claimed_text` cut out of a
-        # single string, and any separator would insert text at the cut
-        out["system"] = "".join(b.get("text", "") for b in out["system"])
-    return out
-
-
 def _degrade(body: dict, error: str) -> dict | None:
     """`body` with every optional field this 400 names degraded, or None when it names none
     that is still being sent — then the 400 stands. A forced tool_choice is first unforced
@@ -330,7 +175,7 @@ def _degrade(body: dict, error: str) -> dict | None:
         else:
             out["tool_choice"] = _ONE_CALL_AT_MOST
     if "cache_control" in low:   # a proxy/old gateway that rejects caching
-        out = _strip_cache_control(out)
+        out = strip_cache_control(out)
     return out if out != body else None
 
 
@@ -365,13 +210,17 @@ class AnthropicEndpoint:
                  timeout: int = DEFAULT_TIMEOUT,
                  temperature: float | None = None, cacheable: bool = True) -> Completion:
         system, rest = split_system(messages)
-        rendered = _render_media(merge_consecutive(rest))
+        rendered = render_media(merge_consecutive(rest))
+        if schema is not None and self.tool_choice != "forced":
+            # past actions as calls of the offered tool, so a reply ends at its one call
+            # (anthropic_messages.native_turns says why, and why not on a forced route)
+            rendered = native_turns(rendered, "action")
         body: dict = {
             "model": model,
             # the catalog's shared fallback — a call that passes no cap (a Settings
             # probe) gets the same 16_384 an unset catalog model resolves to
             "max_tokens": max_tokens or DEFAULT_MODEL_MAX_TOKENS,
-            "messages": (_mark_tail(rendered) if cacheable else rendered),
+            "messages": (mark_tail(rendered) if cacheable else rendered),
         }
         temp = temperature if temperature is not None else self.temperature  # model wins
         if temp is not None:
@@ -396,7 +245,7 @@ class AnthropicEndpoint:
             body["tool_choice"] = dict(_FORCED if self.tool_choice == "forced"
                                        else _ONE_CALL_AT_MOST)
         if not cacheable:
-            body = _claim_placement(body)
+            body = claim_placement(body)
         headers = {"x-api-key": self._api_key(), "anthropic-version": API_VERSION}
         sent = body
 

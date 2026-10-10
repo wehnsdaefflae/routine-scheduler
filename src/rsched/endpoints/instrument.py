@@ -39,7 +39,7 @@ from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, EndpointError, Mess
 #: bypasses instrumentation keeps caching rather than silently losing it. How a one-shot call
 #: is kept OUT of the cache is each adapter's business: on the `anthropic` wire it takes one
 #: marker, not none, because the subscription proxy caches any request that carries none
-#: (`anthropic_api._claim_placement`).
+#: (`anthropic_messages.claim_placement`).
 CACHEABLE_KINDS = frozenset({"turn"})
 
 

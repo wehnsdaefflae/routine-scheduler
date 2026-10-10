@@ -300,9 +300,11 @@ Two kinds:
   call; measured 2026-10-08), so forcing is an endpoint's `tool_choice: forced` only, for a route
   validated that way (the Codex models). An `auto` reply no action can be read from is re-asked
   once forced in the same call (`stop_details["forced_reask"]`), so the shape 0.372.0 met cannot
-  cost a run. A reply's text reaches the engine beside its call: a thinking model writes its first
-  action as JSON text and the next as the call, and the engine runs the FIRST and names the rest
-  back unexecuted (`engine/replyactions.py`). Effort via `output_config`. Every
+  cost a run. Past actions are SENT as calls of the action tool and their observations as the calls'
+  results (`anthropic_messages.native_turns`, on `auto` only), so a reply ends at its one call;
+  should a reply still carry an action as text beside its call, the engine runs the FIRST and
+  names the rest back unexecuted (`engine/replyactions.py`). Message rendering — merging, media,
+  calls, cache markers — is `anthropic_messages.py`; `anthropic_api.py` is the transport. Effort via `output_config`. Every
   optional field a model may refuse — the forced `tool_choice`, `output_config`, `temperature`,
   the `cache_control` markers — is degraded on a 400 that names it, one field per 400 until the
   request is accepted, and a reply no action can be read from names its content blocks in
@@ -313,7 +315,7 @@ Two kinds:
   passes through (`instrument.CACHEABLE_KINDS` = {"turn"}), because a prefix that is never sent again
   would pay a 1.25x write for a read that never comes (measured: 0.3% read share on `llm_action`).
   It carries ONE marker, on the smallest prefix it has — the tool definition, else a 1,000-char
-  leading slice of its first text (`anthropic_api._claim_placement`), not
+  leading slice of its first text (`anthropic_messages.claim_placement`), not
   none: the subscription proxy (CLIProxyAPI) adds its own breakpoints to any request carrying no
   marker, which had every archival call's whole input — 2.94M tokens across four — billed as cache
   writes.

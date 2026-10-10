@@ -266,6 +266,16 @@ command results only on the NEXT prose reply, replayed like any other turn.
 Every assistant message is the raw action JSON. Every action gets exactly one user message
 back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`.
 
+**On the Anthropic wire the pair is a CALL and its RESULT** (`endpoints/anthropic_messages.native_turns`,
+0.407.0). The engine's list stays as above for every provider; a schema'd call on `auto` sends each
+past action as a `tool_use` of the action tool (id `rs_<index>`, its position in the merged list, so
+the bytes never change as the run grows) and the message after it as that call's `tool_result`,
+wording unchanged. A model reading its history as JSON TEXT wrote its next action as text too —
+which ends nothing — and chained a second; reading it as calls, its reply ends at its one call
+(5 of 5 live replays two actions before, 0 of 5 after). A message that is not exactly one JSON
+object stays text, a forced route keeps text, and no signed thinking block is passed back — the API
+accepts a continuation without one.
+
 **One reply, one action — the FIRST.** A reply may carry more than one action: a thinking model
 writes an action as JSON text, thinks on as though it had run, and writes the next — as a second
 text object or as the action call (`engine/replyactions.py`). The engine runs only the FIRST and

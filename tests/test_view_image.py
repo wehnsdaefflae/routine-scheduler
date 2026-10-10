@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 from helpers import run_context, server_config
 from rsched import utils_run
-from rsched.endpoints import anthropic_api, openai_compat
+from rsched.endpoints import anthropic_messages, openai_compat
 from rsched.endpoints.base import EndpointError, supports_media_type
 from rsched.engine import executor, fileops, mediaops, obs_files
 from rsched.engine.actions import KIND_EXAMPLES, validate_action
@@ -113,12 +113,12 @@ def test_native_media_carries_bytes_so_a_later_overwrite_cannot_unshow_it(tmp_pa
     assert media[0]["b64"] == base64.b64encode(b"ORIGINAL").decode("ascii")
     # the run moves on and the path stops holding those bytes — the two real cases
     shot.write_bytes(b"A DIFFERENT RENDER ENTIRELY")
-    blocks = anthropic_api._content_blocks("look", media)
+    blocks = anthropic_messages.content_blocks("look", media)
     assert blocks[1]["source"]["data"] == base64.b64encode(b"ORIGINAL").decode("ascii")
     parts = openai_compat._openai_content("look", media)
     assert base64.b64encode(b"ORIGINAL").decode("ascii") in parts[1]["image_url"]["url"]
     shot.unlink()
-    assert anthropic_api._content_blocks("look", media)[1]["type"] == "image"
+    assert anthropic_messages.content_blocks("look", media)[1]["type"] == "image"
     assert "Attachment unavailable" not in json.dumps(
         openai_compat._openai_content("look", media))
     # an entry with NO captured bytes (conversation auto-attach) still reads from disk, and a

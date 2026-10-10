@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.407.0] — 2026-10-10
+
+### Past actions go to Claude as tool CALLS — a reply ends at its one call, so a thinking model stops chaining actions
+
+0.406.0 made a two-action reply safe (the first runs, the rest are named back unexecuted). This
+removes why the model wrote two. The engine kept every past action as an assistant message holding
+its JSON and sent it like that; a thinking Opus reading its own history as JSON TEXT wrote its next
+action as text too — which ends nothing — thought on as though it had run, and made the call for
+the one after.
+
+- **`endpoints/anthropic_messages.native_turns`** — a schema'd call on `auto` sends each past action
+  as a `tool_use` of the action tool and the message after it as that call's `tool_result` (media
+  blocks after the result, as the API requires). The engine's message list is unchanged and every
+  other provider sees it as before. The call id is the message's position (`rs_<index>`), so a
+  message renders the same bytes on every later turn and the cached prefix holds. A message that is
+  not exactly one JSON object (schema-retry debris) stays text; a call with no message after it
+  stays text; a forced route (the Codex endpoint) keeps the text history it was validated on.
+- **No thinking block is stored or passed back.** Measured live on 2026-10-10: the Messages API
+  accepts a continuation of a thinking reply both with and without its signed thinking block, so the
+  rendering is a pure function of the engine's list and nothing new reaches the transcript.
+- **Measured** on the real turn 194 of `llmsectest-weekday:20261010-040001` through the live proxy:
+  text history, two actions in 5 replies of 5; native history, ONE call in 5 of 5 (plus 3 of 3
+  through the shipped adapter on Opus 5 and 1 of 1 on Sonnet 5), thinking on, and the whole
+  123k-token prefix read from cache on every repeat.
+- `anthropic_api.py` (477 lines) is split: message rendering — merging, media, native calls, cache
+  markers and the one-shot claim — moves to `anthropic_messages.py`, and the adapter is the
+  transport. Tests follow the helpers to their module; `tests/test_anthropic_messages.py` pins the
+  rendering, its byte-stability as the list grows, the debris and media cases, and which calls
+  the adapter renders natively.
+- Docs: `docs/prompt-anatomy.md` §3a, `docs/endpoints.md`, `docs/architecture.md`, CLAUDE.md.
+
 ## [0.406.0] — 2026-10-10
 
 ### A reply that carries two actions runs the FIRST — the "narrated but never done" incidents were the engine dropping actions

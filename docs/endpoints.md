@@ -290,7 +290,7 @@ Who caches how:
   comes. On the OpenAI-compatible wire that means no marker. On the `anthropic` wire it means ONE
   marker on the smallest prefix the request has — the tool definition, else a leading slice of at
   most 1,000 chars cut from the system prompt or the first message, at a line break where one
-  falls (`anthropic_api._claim_placement`) — because the subscription proxy every
+  falls (`anthropic_messages.claim_placement`) — because the subscription proxy every
   `anthropic` endpoint here runs through (CLIProxyAPI v7.2.156) places its OWN breakpoints on the
   tools, the system prompt and the last message of any request that carries none, with no setting
   to stop it. Before the claim, 100% of the archival calls' input (2.94M tokens over four calls)
@@ -371,7 +371,14 @@ read from the text — and a THINKING model often does both in one reply: its fi
 text, the next as the call, narrating the first as done. The engine runs the reply's FIRST action
 and hands every later one back NOT EXECUTED, by name, in that observation (`engine/replyactions.py`,
 0.406.0); before that the adapter's call was all it read, so the first action vanished and the
-call that claimed it ran (R2443-R2445). A model that refuses several
+call that claimed it ran (R2443-R2445). The cause is removed at the wire since 0.407.0: on `auto`
+every past action is SENT as a call of the action tool and its observation as that call's result
+(`anthropic_messages.native_turns`), so the model reads its history as calls rather than JSON text
+and a reply ends at its one call — in live replays of the same turn, two actions in 5 of 5 replies
+before, one call in 5 of 5 after, on Opus 5 and Sonnet 5. The rendering is positional and
+deterministic, so the cached prefix holds; no thinking block is stored or passed back (the API
+accepts a continuation without one, measured 2026-10-10); a forced route keeps the text history
+it was validated on. A model that refuses several
 optional fields (a configured `temperature`, the effort knob) is degraded one 400 at a time.
 A reply no action can be read from names what it carried — block types, a tool call's name,
 its input's type — in the run's empty-completion error.

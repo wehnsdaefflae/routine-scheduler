@@ -202,7 +202,11 @@ one you are about to touch, not all of them.
   reply (JSON text, then the call, the second narrating the first as done), and every later one is
   named back NOT EXECUTED in the first one's observation. An adapter that kept only the call is how
   runs narrated edits that never happened (R2443-R2445) — never let a parser keep a later action
-  over an earlier one, nor drop one without saying so. **`goal` keeps the
+  over an earlier one, nor drop one without saying so. The CAUSE is removed at the wire: on the
+  Anthropic `auto` route past actions are SENT as `tool_use` calls and observations as their
+  `tool_result`s (`endpoints/anthropic_messages.native_turns`), because a model reading its own
+  history as JSON text writes actions as text, which ends nothing. The rendering is positional
+  and deterministic — never make it depend on a later message, or the cached prefix breaks. **`goal` keeps the
   run's GOALS** (`engine/goals.py`) — what a PERSON asked of it, `b<n>` lines the run transcribes
   as a scribe, each carrying the person's own words (`quote`), which the engine must find in what
   they wrote or it refuses the goal; a later word is needed to reword or drop one. Offered at

@@ -8,7 +8,8 @@ import rsched.endpoints.anthropic_api as anth_mod
 import rsched.endpoints.openai_compat as oai_mod
 from rsched.config import EndpointConfig
 from rsched.endpoints import EndpointRegistry, make_endpoint
-from rsched.endpoints.anthropic_api import AnthropicEndpoint, merge_consecutive
+from rsched.endpoints.anthropic_api import AnthropicEndpoint
+from rsched.endpoints.anthropic_messages import merge_consecutive
 from rsched.endpoints.base import (
     EndpointError,
     retry_base_delay,
@@ -616,11 +617,11 @@ def test_a_one_shot_claim_covers_only_a_short_slice_of_a_long_text():
     long system prompt or single-message prompt, which would write exactly what the claim keeps
     out. The cut falls at a line break, else a space, else the slice's end, and the blocks join
     back into the original text byte for byte."""
-    from rsched.endpoints.anthropic_api import (
+    from rsched.endpoints.anthropic_messages import (
         CLAIM_SLICE_CHARS,
-        _claim_placement,
         _claimed_text,
-        _strip_cache_control,
+        claim_placement,
+        strip_cache_control,
     )
 
     def joined(blocks):
@@ -644,22 +645,22 @@ def test_a_one_shot_claim_covers_only_a_short_slice_of_a_long_text():
     assert len(_claimed_text("y" * CLAIM_SLICE_CHARS + "   ")) == 1
 
     # a single-message prompt and a long system prompt are both sliced, never marked whole
-    one = _claim_placement({"messages": [{"role": "user", "content": lines}]})
+    one = claim_placement({"messages": [{"role": "user", "content": lines}]})
     blocks = one["messages"][0]["content"]
     assert joined(blocks) == lines and len(marked(blocks)) == 1
-    sys = _claim_placement({"system": lines, "messages": [{"role": "user", "content": "go"}]})
+    sys = claim_placement({"system": lines, "messages": [{"role": "user", "content": "go"}]})
     assert joined(sys["system"]) == lines and len(marked(sys["system"])) == 1
     assert sys["messages"][0]["content"] == "go"
     # …and a degraded retry rejoins the system prompt exactly, adding nothing at the cut
-    assert _strip_cache_control(sys)["system"] == lines
+    assert strip_cache_control(sys)["system"] == lines
 
     # a media message: its leading text is sliced and the files follow untouched; one that
     # OPENS with a file has no text to slice, so the file carries the claim
     image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "x"}}
-    media = _claim_placement({"messages": [{"role": "user", "content": [
+    media = claim_placement({"messages": [{"role": "user", "content": [
         {"type": "text", "text": lines}, image]}]})["messages"][0]["content"]
     assert joined(media[:2]) == lines and media[2] == image and len(marked(media)) == 1
-    bare = _claim_placement({"messages": [{"role": "user", "content": [image]}]})
+    bare = claim_placement({"messages": [{"role": "user", "content": [image]}]})
     assert bare["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
 
