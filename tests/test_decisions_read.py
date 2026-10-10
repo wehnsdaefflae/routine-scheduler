@@ -156,6 +156,44 @@ def test_audit_decisions_ride_their_own_memo(tmp_path, make_routine, monkeypatch
     assert "audit:D1" not in by() and walks.audit == 3 and walks.routine_walks() == 0
 
 
+def test_every_decided_status_in_the_vocabulary_stops_the_ask(tmp_path, make_routine,
+                                                              monkeypatch):
+    """F659: a decision the audit has already DISPOSED of is not an ask, whichever word of
+    `docs/items.md`'s vocabulary it was disposed with.
+
+    `addressed` is the status a SHIPPED item carries, and it was missing from
+    `_DECIDED_STATUSES` — so every decision self-audit marked `addressed` came back as an
+    answerable card. On 2026-10-10 six already-shipped decisions (D167, D168, D169, D171,
+    D172, D173) were re-asked that way and the operator spent ~19 minutes re-answering them;
+    D167 came back with the OPPOSITE option to the one that had shipped, which is how a
+    ledger gets a resolution the code contradicts (F650/D166 is the case where that was
+    built). The `marker >= generated` gate cannot catch it: an answer's marker is always
+    older than the report written after it.
+    """
+    make_routine(slug="apir")
+    server = _server(tmp_path)
+    _Walks(monkeypatch)
+    audit = tmp_path / "routines" / SELF_AUDIT_SLUG / "audit"
+
+    def open_ids() -> set[str]:
+        return {q["qid"] for q in decisions_read.open_decisions(server)}
+
+    # every disposal word in docs/items.md's vocabulary, plus the ones already honoured
+    for n, status in enumerate(["addressed", "dropped", "settled", "in_progress"], start=1):
+        atomic_write_json(audit / "report.json",
+                          {"generated": f"2026-10-10T0{n}:00:00+00:00",
+                           "decisions": [{"id": f"D{n}", "title": "Pick",
+                                          "options": ["a", "b"], "status": status}]})
+        assert f"audit:D{n}" not in open_ids(), f"status {status!r} was re-asked"
+
+    # an `open` decision with real options is still an ask — the fix must not hide those
+    atomic_write_json(audit / "report.json",
+                      {"generated": "2026-10-10T09:00:00+00:00",
+                       "decisions": [{"id": "D9", "title": "Pick", "options": ["a", "b"],
+                                      "status": "open"}]})
+    assert "audit:D9" in open_ids()
+
+
 def test_homes_are_memoized_apart(tmp_path, make_routine, monkeypatch):
     """A change in one home re-walks that home only; the three lists keep their markers."""
     make_routine(slug="apir")

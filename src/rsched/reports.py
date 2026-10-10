@@ -76,6 +76,36 @@ REPORT_ID_RE = re.compile(r"^R(\d+)$")
 TITLE_MAX = 300
 DETAIL_MAX = 4000
 
+#: What a cut detail says where it lands. F660: the cap used to be a bare slice, so a
+#: truncated report read exactly like a complete one — 273 rows of the live ledger end at
+#: exactly 4000 characters, mid-word, and R2436's cut-off tail WAS the question it was
+#: asking, which left that exchange unclosable from the ledger. The cap itself is a
+#: prompt-budget decision and is unchanged; only the silence is.
+TRUNCATION_NOTE = ("\n\n[TRUNCATED: {dropped} more characters were cut here at the "
+                   "{cap}-character report-detail cap — re-file the rest as a follow-up "
+                   "report if it carries a question or a conclusion.]")
+
+
+def clip_detail(detail: str) -> tuple[str, int]:
+    """The detail as it is stored and delivered, plus how many characters were dropped.
+
+    One helper for both write sites (the ledger row and the inbox message) so the two can
+    never disagree about what the reader is holding, and the note is counted INSIDE the cap
+    rather than pushing the row past it.
+    """
+    text = str(detail or "")
+    if len(text) <= DETAIL_MAX:
+        return text, 0
+    # Reserve the note's WORST-CASE width (the count can never exceed the input's own
+    # length) and compute the dropped count once against that reservation. A two-pass
+    # version would have to re-measure a note whose width changes with the count's digits,
+    # and the two passes can disagree — the row would then state a different figure from
+    # the one the filer is told, which is the defect this fix exists to remove.
+    reserve = len(TRUNCATION_NOTE.format(dropped=len(text), cap=DETAIL_MAX))
+    kept = max(0, DETAIL_MAX - reserve)
+    dropped = len(text) - kept
+    return text[:kept] + TRUNCATION_NOTE.format(dropped=dropped, cap=DETAIL_MAX), dropped
+
 
 def reports_path(routines_home: Path) -> Path:
     return Path(routines_home) / ".control" / REPORTS_FILE
@@ -212,9 +242,10 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
                 if len(open_ids) >= OPEN_THREAD_CAP:
                     raise ThreadCapError(routine, target, open_ids)
             item_id = next_id(path)
+            kept_detail = clip_detail(detail)[0]
             append_jsonl(path, {"id": item_id, "ts": now_iso(), "routine": routine,
                                 "run_id": run_id,
-                                "title": title[:TITLE_MAX], "detail": detail[:DETAIL_MAX],
+                                "title": title[:TITLE_MAX], "detail": kept_detail,
                                 **({"target": target} if target else {}),
                                 **({"answers": answers} if answers else {}),
                                 **({"closes": True} if closes else {}),
@@ -231,7 +262,7 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
             # so the filename here is an idempotency key, not a timestamp.
             inbox.file_message(
                 target_dir,
-                message_text(item_id, routine, title[:TITLE_MAX], detail[:DETAIL_MAX],
+                message_text(item_id, routine, title[:TITLE_MAX], kept_detail,
                              disposal),
                 via="report", name=f"rep-{item_id}",
                 # A closure asks nothing, so it must not BUY the target a run: the report

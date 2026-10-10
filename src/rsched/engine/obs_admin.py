@@ -211,9 +211,15 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             took = (f" It TAKES OVER {', '.join(obs['supersedes'])}: they leave triage now and "
                     f"settle when this one does, so do not route them again."
                     if obs.get("supersedes") else "")
+            # F660: a cut detail is named HERE, with the size of the loss, because this is
+            # the only moment the filer still holds the text it lost.
+            cut = (f" Its detail was TRUNCATED: {obs['detail_truncated']} characters were "
+                   "cut at the cap, so anything after that point — a question, a conclusion "
+                   "— did NOT reach the reader; re-file the rest as a follow-up if it did."
+                   if obs.get("detail_truncated") else "")
             return (f"OBSERVATION (report filed as {obs.get('id')}: {obs.get('title')!r} — "
-                    f"{where}.{took} Refer to it by that id if you mention it again. Continue "
-                    "your own task.)")
+                    f"{where}.{took}{cut} Refer to it by that id if you mention it again. "
+                    "Continue your own task.)")
         return ("OBSERVATION (report: could NOT write the reports log (I/O error) — the "
                 "report was not filed. Continue your own task; put it in your finish summary "
                 "instead.)")

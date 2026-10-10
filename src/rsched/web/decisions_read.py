@@ -41,8 +41,14 @@ SETTLED_CAP = 25
 #: page can show progress, but they are not asks. `in_progress` is the big one: self-audit
 #: is already building the thing, so queueing it for an answer is a card with nothing to
 #: choose (2026-08-06: D74/D76/D77/D78/D80 all reached the operator this way in one night).
+#: `addressed` and `dropped` complete `docs/items.md`'s disposal vocabulary, and their
+#: absence re-asked every decision self-audit had SHIPPED: six already-addressed decisions
+#: (D167-D173) came back as answerable cards on 2026-10-10 and cost ~19 minutes of
+#: re-answering, one of them returning the OPPOSITE option to the one in the code (F659).
+#: The `marker >= generated` gate below cannot catch that — an answer's marker is always
+#: older than the report written after it.
 _DECIDED_STATUSES = frozenset({"settled", "closed", "done", "in_progress", "in progress",
-                               "authorized", "shipped", "building"})
+                               "authorized", "shipped", "building", "addressed", "dropped"})
 
 
 

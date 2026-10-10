@@ -15,6 +15,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.409.1] — 2026-10-11
+
+### A decision that SHIPPED stops being asked again (F659)
+
+`web/decisions_read.py`'s `_DECIDED_STATUSES` — the set that keeps an already-made decision off
+the Decisions page — was missing **`addressed`** and **`dropped`**, two of the six words
+`docs/items.md` defines as the item status vocabulary. `addressed` is precisely the status a
+SHIPPED item carries, so every decision self-audit had built and closed came back as an
+answerable card.
+
+- **Measured, 2026-10-10:** six already-shipped decisions (D167, D168, D169, D171, D172, D173)
+  were re-delivered as asks, and `.ui-traces/20261010.jsonl` shows ~19 minutes (05:05:59→05:24:29
+  UTC) spent re-answering them.
+- **Why it matters beyond the time:** a re-ask invites a second, different answer to a settled
+  question. **D167 came back with the opposite option to the one in the code** (`b` against the
+  shipped `c`, 0.392.0 `e5792dfc`) — the same shape as F650/D166, where a ledger resolution
+  contradicted what had been built.
+- The other hide-gate cannot catch this: an answer's marker is always OLDER than the report
+  generated after it, so `marker >= generated` never fires for a decision answered in the past.
+- Pinned by `tests/test_decisions_read.py::test_every_decided_status_in_the_vocabulary_stops_the_ask`,
+  which walks every disposal word in the vocabulary and asserts an `open` decision is still asked.
+
+### A report's detail says when it was cut, everywhere it lands (F660)
+
+`reports.py` sliced `detail[:DETAIL_MAX]` at both write sites — the `reports.jsonl` row and the
+delivered inbox message — with no marker in the text and no word to the filer. A truncated report
+was indistinguishable from a complete one.
+
+- **Measured on the live ledger:** 273 rows end at exactly 4000 characters, mid-word.
+- **The cost is not cosmetic.** R2436 (scheduler-builder → self-audit) ended `"Changing what "`,
+  and its own text said the cut-off part was *the one question back to the reader and the reason
+  the thread could not close* — so that exchange became unclosable from the ledger.
+- **The cap is unchanged** (it is a prompt-budget decision). What changes is the silence: one
+  `clip_detail` helper now serves both write sites, appends a `[TRUNCATED: N more characters …]`
+  note **inside** the cap (the row never grows past it), and the `report` observation tells the
+  filer the same N **while it still holds the text it lost**.
+- Pinned by `tests/test_reports.py::test_an_over_long_detail_says_it_was_cut_everywhere_it_lands`,
+  which asserts the row and the delivery carry the identical clipped text and that the figure the
+  filer is told is the figure the row states.
+
 ## [0.409.0] — 2026-10-10
 
 ### "Test the gate now" colours every component chip — green would fire, red wouldn't (F656)

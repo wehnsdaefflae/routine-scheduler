@@ -174,6 +174,12 @@ def handle_report(loop, action: dict) -> dict:
                 "open_to_target": cap.open_ids, "oldest": cap.open_ids[0]}
     out = {"kind": "report", "title": title, "filed": filed is not None,
            "id": filed[1] if filed else ""}
+    # F660: the detail cap used to bite in silence, so a filer could not tell that the
+    # conclusion or the question it had just written was not in what it filed. The row and
+    # the delivery carry the marker; this is the half that reaches the run while it can
+    # still re-file the rest.
+    if filed and (dropped := reports.clip_detail(detail)[1]):
+        out["detail_truncated"] = dropped
     if target:
         out["target"] = target
         out["delivery"] = "the target reads it on its next scheduled run"
