@@ -7,6 +7,7 @@ import signal
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import yaml
 
 import rsched.daemon.scheduler as sched_mod
 from conftest import FakeRunner
@@ -635,6 +636,128 @@ async def test_non_scheduled_overrun_stays_quiet(make_routine, tmp_path, monkeyp
     events = health_events(server.routines_home, routine="resumer") if hpath.exists() else []
     assert all(e["event"] != "fire_refused" for e in events)
     await runner.abort("resumer")
+
+
+# --- F643: a routine whose model role names an absent model is refused BEFORE a run dir ---
+
+
+def _with_roles(d, **roles):
+    """Store model roles in a routine's config the way the console's model picker writes them."""
+    cfg = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
+    cfg["models"] = roles
+    (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    loaded, _ = load_routine(d)
+    assert loaded is not None
+    return loaded
+
+
+def _catalog(server, *names):
+    from rsched.config import ModelConfig
+    server.models = {n: ModelConfig(name=n, endpoint="e", model=n) for n in names}
+    return server
+
+
+async def test_fire_refuses_a_routine_whose_role_names_an_absent_model(
+        make_routine, tmp_path, monkeypatch):
+    """F643: the live failure was `library-sync:20261007-223003` and
+    `tv-show-tracker-seedbox-manager:20261008-160000` — each carried a bare `Sonnet` role
+    stored when that WAS a catalog name, and after the rename each run died on its first turn
+    resolving it: `EndpointError: model 'Sonnet' is not in the catalog`, rc=1, no finish, no
+    summary, an `orphaned_run` and nothing saying why.
+
+    The refusal must land BEFORE `_claim_run_dir`, so there is no run dir and no status.json to
+    explain: a run that cannot possibly reach its first turn should never be born.
+    """
+    d = make_routine(slug="staler")
+    cfg = _with_roles(d, main="Sonnet")
+    _stub_engine(monkeypatch, "sleep 30")
+    server = _catalog(_server(tmp_path), "Sonnet medium", "Sonnet high")
+    runner = Runner(server, EventBus())
+
+    assert await runner.fire(cfg, reason="schedule") is None
+    assert not runner.is_active("staler")
+    # no run dir was claimed — the whole point: nothing half-booted to account for later
+    assert not (d / "runs").exists() or not list((d / "runs").iterdir())
+
+    mine = health_events(server.routines_home, routine="staler")
+    assert mine and mine[-1]["event"] == "fire_refused"
+    assert mine[-1]["run_id"] == ""
+    detail = mine[-1]["detail"]
+    assert "models.main 'Sonnet'" in detail, "the event must name the stale role"
+    assert "not in the model catalog" in detail
+    assert "Settings" in detail, "and where the operator fixes it"
+
+
+async def test_a_stale_role_refuses_every_fire_reason_and_records_each(
+        make_routine, tmp_path, monkeypatch):
+    """An overrun is reason-scoped on purpose (a trigger/manual fire overruns legitimately and
+    must not spam the stream). A stale role is the opposite: it is a broken config, no run of
+    that routine can start by ANY route until the name is fixed, and the refusal is the only
+    place it is ever said. So every reason refuses, and every refusal is recorded."""
+    d = make_routine(slug="stalemanual")
+    cfg = _with_roles(d, main="Sonnet medium", uncensored="gemma-gone")
+    _stub_engine(monkeypatch, "sleep 30")
+    server = _catalog(_server(tmp_path), "Sonnet medium")
+    runner = Runner(server, EventBus())
+
+    for reason in ("manual", "trigger", "lane", "schedule_once"):
+        assert await runner.fire(cfg, reason=reason) is None, reason
+    events = health_events(server.routines_home, routine="stalemanual")
+    refused = [e for e in events if e["event"] == "fire_refused"]
+    assert len(refused) == 4, "every non-scheduled fire reason is recorded too"
+    assert all("models.uncensored 'gemma-gone'" in e["detail"] for e in refused)
+    # the uncensored role resolves only when a refusal is referred, so it stays broken longest
+    assert all("models.main" not in e["detail"] for e in refused), \
+        "a role the catalog serves must not be named"
+
+
+async def test_a_servable_role_fires_normally(make_routine, tmp_path, monkeypatch):
+    """The guard must not cost a routine whose roles are fine — including one that names no
+    roles at all (the common case: the server defaults serve it)."""
+    d = make_routine(slug="fine")
+    cfg = _with_roles(d, main="Sonnet medium", tool_call="Sonnet high")
+    _stub_engine(monkeypatch, "sleep 0.2")
+    server = _catalog(_server(tmp_path), "Sonnet medium", "Sonnet high")
+    runner = Runner(server, EventBus())
+    assert await runner.fire(cfg, reason="schedule") is not None
+    assert runner.is_active("fine")
+    await runner.abort("fine")
+
+    d2 = make_routine(slug="noroles")
+    cfg2, _ = load_routine(d2)
+    assert await runner.fire(cfg2, reason="schedule") is not None
+    await runner.abort("noroles")
+
+
+async def test_fire_blocker_names_the_cause_so_a_caller_cannot_invent_one(
+        make_routine, tmp_path, monkeypatch):
+    """`fire` returns only None, so every caller used to word its own reason — and the console
+    told the operator "already has an active run" whatever the real cause was. One source of
+    truth for the decision AND the wording, the shape `resume_blocker` already has."""
+    d = make_routine(slug="blocked")
+    cfg = _with_roles(d, main="Sonnet")
+    _stub_engine(monkeypatch, "sleep 30")
+    server = _catalog(_server(tmp_path), "Sonnet medium")
+    runner = Runner(server, EventBus())
+
+    cause, why = runner.fire_blocker(cfg)
+    assert cause == "stale_role" and "models.main 'Sonnet'" in why
+
+    # a servable routine has no blocker; an ACTIVE one reads overrun, naming the live run
+    ok = _with_roles(make_routine(slug="unblocked"), main="Sonnet medium")
+    assert runner.fire_blocker(ok) is None
+    rid = await runner.fire(ok, reason="schedule")
+    assert rid is not None
+    cause, why = runner.fire_blocker(ok)
+    assert cause == "overrun" and rid in why
+    await runner.abort("unblocked")
+
+    # and draining outranks everything but the operator's own off switch
+    runner.draining = True
+    assert runner.fire_blocker(ok)[0] == "draining"
+    runner.draining = False
+    ok.enabled = False
+    assert runner.fire_blocker(ok)[0] == "disabled"
 
 
 async def test_due_lane_fire_while_in_flight_emits_refused_event(make_routine, tmp_path,

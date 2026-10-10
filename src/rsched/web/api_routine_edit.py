@@ -176,10 +176,16 @@ async def run_now(request: Request, slug: str, body: RunNow | None = None) -> di
     if not info.cfg.enabled:
         raise HTTPException(409, f"routine {slug!r} is disabled — "
                             "choose a schedule before starting it")
-    run_id = await _state(request).runner.fire(info.cfg, reason="manual",
-                                               brief=(body or RunNow()).brief)
+    runner = _state(request).runner
+    run_id = await runner.fire(info.cfg, reason="manual", brief=(body or RunNow()).brief)
     if run_id is None:
-        raise HTTPException(409, f"routine {slug!r} already has an active run")
+        # Name the ACTUAL blocker (runner.fire_blocker is what fire itself consults), not an
+        # assertion that it was an overrun: a stale model role refuses the fire too, and being
+        # told "already has an active run" about a routine that has none is the false lead
+        # resume_blocker was introduced to end.
+        blocker = runner.fire_blocker(info.cfg)
+        why = blocker[1] if blocker else "the run could not be started"
+        raise HTTPException(409, f"could not start {slug!r}: {why}")
     return {"run_id": run_id}
 
 

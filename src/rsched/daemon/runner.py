@@ -128,23 +128,71 @@ class Runner:
             states.append(st.get("state", "unknown") if isinstance(st, dict) else "unknown")
         return states
 
-    def _log_refused_scheduled_fire(self, cfg: RoutineConfig, reason: str, cause: str) -> None:
-        """A DUE cron fire that produced no run is otherwise invisible: fire() only log.info's
-        the refusal when a routine is still active from a prior run (overrun) or the daemon is
-        draining for a self-update restart, so a routine chronically un-fired for one of those
-        reasons leaves no trace in the health-events audit stream. Emit a health event for the
-        SCHEDULED path only; resume, trigger and manual fires overrun legitimately and must not
-        spam the stream. NB: a deliberate global PAUSE skips due fires at the SCHEDULER level
-        (scheduler.py, before fire() is called) and is intentional — it is not a refusal and is
-        not logged here; a pause is the operator's own known action, not a silent drop.
+    def _log_refused_fire(self, cfg: RoutineConfig, reason: str, cause: str,
+                           *, why: str = "") -> None:
+        """A fire that produced no run is otherwise invisible: fire() only log.info's the
+        refusal, so a routine chronically un-fired leaves no trace in the health-events audit
+        stream. Which refusals are worth an event depends on the CAUSE, not on the reason:
+
+        - an OVERRUN or a DRAIN is normal outside the cron path (a resume, trigger, manual or
+          lane fire overruns legitimately), so those are recorded for the scheduled path alone
+          and would otherwise spam the stream;
+        - a STALE ROLE is a broken config. It refuses every fire however started, no run of
+          that routine can ever start until the operator fixes the name, and the refusal is the
+          only place it is ever said. So it is recorded whatever the reason.
+
+        NB: a deliberate global PAUSE skips due fires at the SCHEDULER level (scheduler.py,
+        before fire() is called) and is intentional — it is not a refusal and is not logged
+        here; a pause is the operator's own known action, not a silent drop. A DISABLED routine
+        is the same: `enabled: false` is the operator's off switch, so fire() logs it and
+        writes no event.
         """
-        if reason != "schedule":
+        # An overrun or a drain is NORMAL on a resume/trigger/manual/lane fire — those must not
+        # spam the stream, so they are recorded for the scheduled path alone. A STALE ROLE is
+        # the opposite: it is a broken config, it refuses every fire however started, and the
+        # operator cannot act on what is never written down. So it is recorded whatever the
+        # reason, with `roles_problem`'s own sentence (which names the role and where to fix it)
+        # rather than a token the reader has to decode.
+        if cause != "stale_role" and reason != "schedule":
             return
+        if cause == "stale_role":
+            detail = (f"{reason} fire refused — {why}; no run started, so there is no "
+                      f"half-booted run to explain (F643)")
+        else:
+            detail = (f"scheduled fire refused ({cause}) — no run started this fire; "
+                      f"a routine refused across several fires is going dark")
         log_health_event(
             self.server.routines_home, "fire_refused",
-            routine=cfg.slug, run_id="",
-            detail=f"scheduled fire refused ({cause}) — no run started this fire; "
-                   f"a routine refused across several fires is going dark")
+            routine=cfg.slug, run_id="", detail=detail)
+
+    def fire_blocker(self, cfg: RoutineConfig) -> tuple[str, str] | None:
+        """Why `fire` would start no run — `(cause, why)` — or None when it would proceed.
+
+        The same one-source-of-truth shape as `resume_blocker`, and for the same reason: every
+        caller of `fire` gets only `None` back, so each invented its own sentence and the
+        console told an operator "already has an active run" whatever the real cause was
+        (`web/api_routine_edit.py`). `cause` is the short token the health event records;
+        `why` is the operator's sentence.
+
+        The stale-role check is F643. A routine whose `models` names a model this instance
+        cannot serve dies on its first turn resolving it — `EndpointError`, rc=1, no finish,
+        no summary, an `orphaned_run` and nothing that says why (`tv-show-tracker-seedbox-
+        manager:20261008-160000` and `library-sync:20261007-223003`, both on a bare `Sonnet`
+        that was a catalog name when it was stored). Refusing BEFORE `_claim_run_dir` is what
+        makes the difference visible: no run dir, no `status.json`, no orphan to explain — one
+        `fire_refused` event naming the role and the fix.
+        """
+        if not cfg.enabled:
+            return ("disabled", f"{cfg.slug} is disabled — choose a schedule before starting it")
+        if self.draining:
+            return ("draining", "the daemon is draining for a restart")
+        if cfg.slug in self.active:
+            return ("overrun",
+                    (f"another run of {cfg.slug} is already active "
+                     f"({self.active[cfg.slug].run_id})"))
+        if problem := trials.roles_problem(self.server, cfg.models):
+            return ("stale_role", problem)
+        return None
 
     async def fire(self, cfg: RoutineConfig, *, reason: str = "schedule",
                    brief: str = "") -> str | None:
@@ -155,16 +203,11 @@ class Runner:
         armed the same way, whatever the reason (rsched/trials.py): its `trial.json` lands in
         the run dir and `_supervise` names its models to the engine.
         """
-        if not cfg.enabled:
-            log.info("fire_refused_disabled routine=%s reason=%s", cfg.slug, reason)
-            return None
-        if self.draining:
-            log.info("fire_refused_draining routine=%s reason=%s", cfg.slug, reason)
-            self._log_refused_scheduled_fire(cfg, reason, "draining")
-            return None
-        if cfg.slug in self.active:
-            log.info("overrun_skipped routine=%s reason=%s", cfg.slug, reason)
-            self._log_refused_scheduled_fire(cfg, reason, "overrun")
+        if blocker := self.fire_blocker(cfg):
+            cause, why = blocker
+            log.info("fire_refused routine=%s reason=%s cause=%s", cfg.slug, reason, cause)
+            if cause != "disabled":
+                self._log_refused_fire(cfg, reason, cause, why=why)
             return None
         ts, run_dir = _claim_run_dir(cfg.dir / "runs")
         if brief.strip():

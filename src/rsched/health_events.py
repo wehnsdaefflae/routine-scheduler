@@ -176,13 +176,21 @@ sentence sent three investigations (F480, R1501, R1515) at a drain that works. `
 is therefore the expected majority reading at boot, and a deliberate one: an audit
 filtering for it is asking "what killed these runs?", not reading a defect.
 
-fire_refused: a DUE scheduled (cron) fire produced no run — the routine was still active
-from a prior run (overrun) or the daemon was draining for a self-update restart. run_id
-empty (no run was created). Makes a routine that goes chronically un-fired for one of those
-reasons visible to audit consumers instead of only a log.info line. Only the scheduled fire
-path logs this; resume/trigger/manual overruns are expected and stay quiet. A deliberate
-global PAUSE is NOT this event: the scheduler skips those fires earlier — an intentional
-operator action is never logged as a refusal.
+fire_refused: a fire produced no run. run_id empty (no run was created). Makes a routine
+that goes chronically un-fired visible to audit consumers instead of only a log.info line.
+WHICH refusals are logged depends on the CAUSE, not on the fire reason:
+
+  - overrun (still active from a prior run) and draining (quiescing for a self-update
+    restart) are logged for the SCHEDULED (cron) path only — a resume, trigger, manual or
+    lane fire overruns legitimately and would spam the stream;
+  - a STALE MODEL ROLE (`models.<role>` naming a model the catalog does not serve) is
+    logged for EVERY fire reason, because it is a broken config rather than a collision:
+    no run of that routine can start until the name is fixed, and the detail carries the
+    operator-facing sentence naming the role (F643, rsched/trials.roles_problem).
+
+A deliberate global PAUSE is NOT this event: the scheduler skips those fires earlier — an
+intentional operator action is never logged as a refusal. Nor is `enabled: false`, which is
+the operator's own off switch.
 
 lane_chain_done / lane_chain_stopped: a sequential lane chain ended (daemon/lane_runs,
 F316). routine = the lane id, run_id = the chain record id (lr-...), detail counts member

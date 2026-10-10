@@ -15,6 +15,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.405.0] — 2026-10-10
+
+### The daemon refuses to fire a routine whose model role names a model that is gone (F643)
+
+`library-sync:20261007-223003` and `tv-show-tracker-seedbox-manager:20261008-160000` both died
+the same way: a bare `Sonnet` in `models.main`, stored nine weeks earlier when that WAS a catalog
+name, and after the rename to `Sonnet medium`/`Sonnet high` each run died on its **first turn**
+resolving it — `EndpointError: model 'Sonnet' is not in the catalog`, rc=1, no finish, no summary,
+an `orphaned_run` and nothing anywhere saying why. The write edge has always checked
+(`web/config_fields.validate_models` refuses a role naming a non-catalog model); the hole is a
+stored name going STALE later, under a file nobody edited. `rsched validate` reported it since
+0.399.1 — but only when someone ran it.
+
+The fire path now refuses instead, **before `_claim_run_dir`**: no run dir, no `status.json`, no
+orphan to explain afterwards. A run that cannot possibly reach its first turn is never born.
+
+- **`Runner.fire_blocker(cfg) -> (cause, why) | None`** is the new single source of truth for the
+  decision AND its wording — the shape `resume_blocker` has had since 2026-09-14, adopted for the
+  same reason. `fire` consults it; so does the console's Run-now route. Causes: `disabled`,
+  `draining`, `overrun`, `stale_role`.
+- **The console stops inventing a reason.** `POST /api/routines/{slug}/run` answered 409 *"routine
+  'x' already has an active run"* for every refusal — including a stale role on a routine with no
+  active run at all. It now names the actual blocker, which for a stale role is
+  `trials.roles_problem`'s own sentence: every stale role, and where the catalog is named
+  (Settings → Models).
+- **`fire_refused` is now recorded for EVERY fire reason when the cause is a stale role.** An
+  overrun or a drain is normal outside the cron path (a resume, trigger, lane or manual fire
+  overruns legitimately) and stays scheduled-only, as before. A stale role is not a collision but
+  a broken config: no run of that routine can start by any route until the name is fixed, and the
+  refusal is the only place it is ever said. `_log_refused_scheduled_fire` is renamed
+  `_log_refused_fire` accordingly, and the event's documented meaning in `health_events.py` and
+  its console label in `readmodels/health_stream.py` move with it — the vocabulary doc said *"only
+  the scheduled fire path logs this"*, which this makes false.
+- `enabled: false` is deliberately NOT an event: the operator's own off switch, like a global
+  pause, is a known action and not a silent drop.
+
+The predicate is `trials.roles_problem(server, cfg.models)`, already shipped in 0.399.1 and
+shared with `rsched validate` — the uncensored role included, which resolves only when a refusal
+is referred and so stays broken longest unnoticed. Exactly one stale role is live on this instance
+today (`folder-reorg`'s `uncensored`), so the tests mirror a real case.
+
+**5 new tests** in `tests/test_scheduler.py`, beside the two that pin the overrun event's
+reason-scoping. Proven red-first against HEAD's `runner.py`: both refusal tests fail there with
+`fire` returning a run id (`assert 'staler:20261010-044539' is None`) — the orphan this ends.
+
 ## [0.404.0] — 2026-10-10
 
 ### A run can drop a background result it no longer wants (D118 phase 4 complete, D176)

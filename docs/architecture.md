@@ -1252,7 +1252,19 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   once when daylight saving ends repeats the hour; a wildcard minute or hour is an INTERVAL and
   fires through both passes. The daemon spawns one `engine-run` subprocess
   per routine (never two of the same at once) under `max_concurrent_runs`; a run that blocks on a user
-  question **releases its slot** (a PAUSED run too). **The spawn is an explicit contract, not an
+  question **releases its slot** (a PAUSED run too). **One place decides what refuses a fire and
+  names it** — `Runner.fire_blocker`, the shape `resume_blocker` already had: `fire` consults it
+  and so does the console's Run-now route, so a refusal can never be reported with a cause that is
+  not the real one (it told the operator "already has an active run" whatever had actually
+  happened). Its causes are `disabled`, `draining`, `overrun` and — F643 — **`stale_role`: a
+  routine whose `models.<role>` names a model the catalog no longer serves is refused BEFORE a run
+  dir is claimed.** `trials.roles_problem` is the predicate, shared with `rsched validate` and the
+  config write edge. The failure it ends: `library-sync` and `tv-show-tracker-seedbox-manager` each
+  carried a bare `Sonnet` stored when that was a catalog name, and after the rename each run died
+  on its first turn resolving it (`EndpointError`, rc=1, no finish, no summary, an `orphaned_run`
+  and nothing saying why). A run that cannot reach its first turn is now never born, and the
+  refusal is recorded as `fire_refused` for EVERY fire reason — unlike an overrun or a drain, which
+  are normal outside the cron path and recorded for it alone. **The spawn is an explicit contract, not an
   inheritance** (F394): the child is a fresh interpreter that gets none of the parent's
   configuration, so `runner_state.engine_cmd` passes `--config <the config the daemon loaded>` and
   `--homes <registry.homes_fingerprint>`, and `engine-run` — which defaults NEITHER — refuses the
