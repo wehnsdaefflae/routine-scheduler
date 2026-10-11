@@ -556,7 +556,14 @@ ACTION_SCHEMA: dict = {
             "type": "array", "items": {"type": "string"}, "maxItems": 26,
             "description": "ask_user: optional pick-one choices (at most 5) · decide: the "
                            "answers to choose between, or a score's levels LOWEST first — "
-                           "each 'value: what it means' (the value is what the answer names)",
+                           "each 'value: what it means' (the value is what the answer names) · "
+                           "report: OPTIONAL — the choices that make this report a DECISION "
+                           "FOR THE USER as well as work for its target (at most 5). Naming "
+                           "them puts the report on his Decisions page as an open question "
+                           "from YOU, counted on your routine card, and his answer lands in "
+                           "YOUR inbox for your next run — use it when you are blocked on a "
+                           "call only he can make, instead of parking the question in a "
+                           "report nobody sees",
         },
         "default": {
             "type": "string",

@@ -150,6 +150,14 @@ does not translate synonyms.
 
 ### Reports
 
+A report carrying **`options`** is two things at once (F621): work routed to its target, and a
+DECISION for the user. The filing leaves the ordinary deferred decision record in the asking
+routine's own `questions/pending/`, typed `report` and carrying `report` (the `R<n>`) plus
+`report_target` — so the question reaches every surface the user reads, his answer lands in the
+asking routine's inbox for its next run, and the target is told what he decided through an
+inbox message keyed `msg-decision-<R id>`. The row's own status is unaffected by the answer: a
+report is settled by a REPLY (`answers` / `settles`), never by a decision card.
+
 An `R<n>` derives its status from its OWN ledger, which is the authority for it the way
 `report.json` is for an `F<n>`. In precedence order: **`dropped`** when the user RETRACTED
 it before the target consumed it (`reports.retract_report`, docs/messages.md — the

@@ -127,8 +127,37 @@ def _file_answer(request: Request, qid: str, body: Answer) -> tuple[dict, Path, 
     # silent non-application is indistinguishable from an applied one.
     payload.update(_unapplied_patch_note(match))
     atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
+    _relay_report_answer(server, match, body)
     _announce_answer(request, qid, match["routine"])
     return match, routine_dir, payload
+
+
+def _relay_report_answer(server, match: dict, body: Answer) -> None:
+    """Tell the routine that OWNS a report-born decision's work what was decided (F621).
+
+    A report carrying `options` is two things at once: work routed to its target and a
+    question for the operator. The answer settles the asking run's record — but the target
+    is who acts on it, and it has no way to learn an answer filed into someone else's inbox.
+    So it gets an ordinary inbox message its next scheduled run drains, keyed on the report
+    id, which is also what stops a second answer queueing a second message about one report.
+
+    Best-effort by design: the operator's answer is already durably filed, and a target that
+    has since been retired or renamed must never fail his click.
+    """
+    report_id = str(match.get("report") or "")
+    target = str(match.get("report_target") or "")
+    if not report_id or not target:
+        return
+    target_dir = server.routines_home / target
+    if not (target_dir / "routine.yaml").is_file():
+        return
+    text = str(body.text or "").strip() or str(body.decision or "")
+    from ..engine import inbox
+
+    inbox.file_message(target_dir,
+                       f"[decision on {report_id}] The user answered the question that report "
+                       f"raised, from {match.get('routine')}: {text}",
+                       via="web", name=f"decision-{report_id}")
 
 
 async def _run_now(request: Request, match: dict, brief: str = "") -> str | None:

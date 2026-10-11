@@ -191,7 +191,11 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "kill": ((), ("n", "handle")),
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
-    "report": (("title",), ("detail", "target", "answers", "closes", "supersedes", "settles")),
+    # F621: `options` makes a report a DECISION FOR THE OPERATOR as well as work for its
+    # target — the handler files it on his Decisions page beside delivering it. Same cap as
+    # ask_user's pick-list, for the same reason: a longer list is a question to rephrase.
+    "report": (("title",), ("detail", "target", "answers", "closes", "supersedes", "settles",
+                            "options")),
     "finish": (("status", "summary"), ("accounting", "reply_to", "final")),
 }
 
@@ -329,9 +333,11 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                                 "unless cancel: true")
     if kind == "decide":
         problems += decide_field_problems(obj)
-    # The schema's `options` cap is decide's (26); ask_user's pick-list stays a short one.
-    if kind == "ask_user" and len(obj.get("options") or []) > ASK_OPTIONS_MAX:
-        problems.append(f"kind=ask_user: at most {ASK_OPTIONS_MAX} 'options' — a longer list "
+    # The schema's `options` cap is decide's (26); a pick-list the OPERATOR reads stays a
+    # short one — on an ask_user, and on a report that carries options (F621: those are the
+    # same thing, a decision for him, and they land on the same page).
+    if kind in {"ask_user", "report"} and len(obj.get("options") or []) > ASK_OPTIONS_MAX:
+        problems.append(f"kind={kind}: at most {ASK_OPTIONS_MAX} 'options' — a longer list "
                         "is a question to rephrase, not a menu")
     if kind == "create_routine" and not is_slug(str(obj.get("target") or "")):
         problems.append("kind=create_routine requires 'target' to be a kebab-case slug for the "

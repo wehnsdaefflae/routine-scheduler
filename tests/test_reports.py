@@ -18,7 +18,12 @@ import pytest
 
 from helpers import bare_routine
 from rsched import tasks
-from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, validate_action
+from rsched.engine.actions import (
+    ALWAYS_KINDS,
+    ASK_OPTIONS_MAX,
+    KIND_EXAMPLES,
+    validate_action,
+)
 from rsched.engine.actionschema import KINDS
 from rsched.engine.admin_handlers import handle_report
 from rsched.engine.inbox import drain_messages
@@ -40,10 +45,18 @@ def _loop(tmp_path, *, slug="some-routine", run_id="some-routine:20260726-020000
     home = tmp_path / "routines"
     home.mkdir(parents=True, exist_ok=True)
     bare_routine(home, slug)
+    # F621: a report carrying `options` ALSO files a decision record, through the same
+    # `interact` seam an ask_user uses — so the ctx carries what that seam reads: the
+    # routine's own dir (where a person reads the record), the run_ts the record is stamped
+    # and linked back with, the transcript the asking is recorded in, and the churn counter.
+    events: list[tuple[str, dict]] = []
     ctx = SimpleNamespace(server=SimpleNamespace(routines_home=home),
                           routine=SimpleNamespace(slug=slug), run_id=run_id,
-                          reports_open=[])
-    return SimpleNamespace(ctx=ctx), home
+                          reports_open=[], root_routine_dir=home / slug,
+                          run_ts=run_id.split(":")[-1], turn=3, asks_deferred=0,
+                          transcript=SimpleNamespace(
+                              event=lambda kind, payload: events.append((kind, payload))))
+    return SimpleNamespace(ctx=ctx, events=events), home
 
 
 def _rows(home):
@@ -707,3 +720,97 @@ def test_a_report_whose_text_holds_a_line_separator_is_still_one_row(tmp_path):
     rows = _rows(home)
     assert [r["id"] for r in rows] == ["R1", "R2"]
     assert rows[0]["detail"] == "line one\u2028line two"
+
+
+# -- F621: a report whose question is the OPERATOR's reaches a surface he reads ------------
+
+
+def test_options_on_a_report_file_an_open_decision_for_the_user(tmp_path):
+    """F621 — the blocked-on-the-operator hole, closed.
+
+    A `report` routes work to a ROUTINE, read on that routine's next scheduled run. A run
+    whose report's substance is a question for the OPERATOR therefore reached no surface of
+    his at all: his Decisions page renders file-backed records, and the asking routine's own
+    card read `open_questions: 0` while a campaign sat halted on him. Measured on the live
+    instance 2026-10-11: D118 phase 3 and R2413 both "waiting on the operator", with
+    `open_questions: 0`, `decision_backlog: false` and nothing on the Decisions page.
+
+    Naming `options` says the call is his. The same filing that delivers the work leaves the
+    ONE record every operator surface already reads — so no new source, no new page, and the
+    `R` id rides it so his answer can be relayed to whoever owes the work.
+    """
+    loop, home = _loop(tmp_path)
+    bare_routine(home, "self-audit")
+    out = handle_report(loop, {
+        "target": "self-audit", "title": "enumerating own_dir's writable children",
+        "detail": "It changes what every shell-holding routine can write.",
+        "options": ["enumerate them", "leave it as one root", "ask per routine"]})
+
+    assert out["filed"] and out["id"] == "R1"
+    # the work still went to its owner — a decision does not replace the routing
+    assert out["target"] == "self-audit"
+    assert (home / "self-audit" / "inbox" / "msg-rep-R1.json").is_file()
+
+    # …and the QUESTION now exists as a durable record in the ASKING routine's own dir,
+    # which is what every operator surface scans
+    qid = out["decision_qid"]
+    rec = json.loads((home / "some-routine" / "questions" / "pending" / f"{qid}.json")
+                     .read_text(encoding="utf-8"))
+    assert rec["type"] == "report"
+    assert rec["mode"] == "deferred"            # the run filed and carried on
+    assert rec["options"] == ["enumerate them", "leave it as one root", "ask per routine"]
+    assert rec["report"] == "R1" and rec["report_target"] == "self-audit"
+    # the card stands alone: the report's own words, its id, and who acts on the answer
+    assert "enumerating own_dir" in rec["question"]
+    assert "R1" in rec["question"] and "self-audit" in rec["question"]
+
+    # it is OPEN work owed by the user — the count the routine card and the badge read
+    from rsched.engine.inbox import open_questions
+    assert [q["qid"] for q in open_questions(home / "some-routine")] == [qid]
+    assert loop.ctx.asks_deferred == 1          # counted as a decision thrown over the wall
+    assert [k for k, _ in loop.events] == ["question"]   # asked in the transcript, like any ask
+
+
+def test_a_report_without_options_asks_the_user_nothing(tmp_path):
+    """The default is unchanged: a plain report is work for a routine and NOT a decision
+    card. Every report would otherwise become a question, which is the opposite failure —
+    a Decisions page full of rows nobody owes an answer to."""
+    loop, home = _loop(tmp_path)
+    out = handle_report(loop, {"title": "a flaky selector", "detail": "it retries twice"})
+    assert out["filed"] and "decision_qid" not in out
+    assert not (home / "some-routine" / "questions" / "pending").exists()
+    assert loop.ctx.asks_deferred == 0
+
+
+def test_a_refused_report_leaves_no_decision_behind(tmp_path):
+    """The card is filed only once the report really landed. A refusal (an unknown target
+    here) must not leave the operator a question about work nobody owns."""
+    loop, home = _loop(tmp_path)
+    out = handle_report(loop, {"target": "no-such-routine", "title": "x",
+                               "options": ["a", "b"]})
+    assert out.get("unknown_target") and "decision_qid" not in out
+    assert not (home / "some-routine" / "questions" / "pending").exists()
+
+
+def test_a_reports_pick_list_is_capped_like_an_asks(tmp_path):
+    """Same cap as `ask_user`, from the same constant: a list longer than the operator can
+    scan is a question to rephrase. Caught in the schema-retry cycle, so it is corrected
+    before anything is filed."""
+    problems = validate_action({"kind": "report", "say": "s", "title": "t",
+                                "options": [f"o{i}" for i in range(ASK_OPTIONS_MAX + 1)]})
+    assert any("at most" in p and "report" in p for p in problems)
+    assert validate_action({"kind": "report", "say": "s", "title": "t",
+                            "options": ["a", "b"]}) == []
+
+
+def test_the_filing_observation_says_the_user_can_see_it(tmp_path):
+    """A run told only "filed" would go on believing its question is invisible — and would
+    file a second ask_user about it. The observation names the qid and where the answer
+    comes back."""
+    loop, home = _loop(tmp_path)
+    bare_routine(home, "self-audit")
+    out = handle_report(loop, {"target": "self-audit", "title": "who owns the ladder step",
+                               "options": ["me", "self-audit"]})
+    text = format_observation({**out, "kind": "report"})
+    assert "OPEN DECISION" in text and out["decision_qid"] in text
+    assert "YOUR inbox" in text and "do not also ask it as an ask_user" in text

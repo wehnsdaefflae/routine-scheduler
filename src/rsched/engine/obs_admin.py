@@ -217,9 +217,17 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                    "cut at the cap, so anything after that point — a question, a conclusion "
                    "— did NOT reach the reader; re-file the rest as a follow-up if it did."
                    if obs.get("detail_truncated") else "")
+            # F621: options made it a decision for the OPERATOR too. Say that the card
+            # exists and that his answer comes back HERE — a run told only "filed" would
+            # keep treating itself as blocked on a question nobody could see.
+            decided = (" Its `options` also filed it as an OPEN DECISION for the user "
+                       f"({obs['decision_qid']}): it is on his Decisions page now, counted "
+                       "on your routine card, and his answer arrives in YOUR inbox for your "
+                       "next run — so do not also ask it as an ask_user."
+                       if obs.get("decision_qid") else "")
             return (f"OBSERVATION (report filed as {obs.get('id')}: {obs.get('title')!r} — "
-                    f"{where}.{took}{cut} Refer to it by that id if you mention it again. "
-                    "Continue your own task.)")
+                    f"{where}.{took}{cut}{decided} Refer to it by that id if you mention it "
+                    "again. Continue your own task.)")
         return ("OBSERVATION (report: could NOT write the reports log (I/O error) — the "
                 "report was not filed. Continue your own task; put it in your finish summary "
                 "instead.)")

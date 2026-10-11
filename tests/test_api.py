@@ -2948,3 +2948,64 @@ def test_run_detail_carries_the_runs_own_accounting_and_brief(client):
     assert bare["accounting"] == [] and bare["brief"] == ""
 
 
+
+
+def test_answering_a_report_born_decision_tells_the_routine_that_owes_the_work(client,
+                                                                              make_routine):
+    """F621, the answer half. A report carrying `options` is two things at once: work routed
+    to its target, and a question for the operator. His answer settles the ASKING routine's
+    record — but the TARGET is who acts on it, and an answer filed into someone else's inbox
+    is invisible to it. So it is relayed as an ordinary inbox message its next scheduled run
+    drains, keyed on the report id so a revised answer rewrites that one message instead of
+    queueing a second about one report.
+    """
+    c, tmp = client
+    make_routine(slug="owner-routine")
+    routines = tmp / "routines"
+    atomic_write_json(routines / "apir" / "questions" / "pending" / "q-r1.json",
+                      {"qid": "q-r1", "question": "**Who owns the ladder step?**",
+                       "options": ["me", "self-audit"], "asked": "20261011",
+                       "mode": "deferred", "type": "report",
+                       "report": "R77", "report_target": "owner-routine"})
+
+    r = c.post("/api/questions/q-r1/answer", json={"text": "me"})
+    assert r.status_code == 200, r.text
+
+    # the asking routine gets the answer it is waiting on, exactly as for any decision
+    assert read_json(routines / "apir" / "inbox" / "answer-q-r1.json")["text"] == "me"
+    # …and the OWNER of the work is told what was decided, under the report's id
+    relayed = read_json(routines / "owner-routine" / "inbox" / "msg-decision-R77.json")
+    assert "R77" in relayed["text"] and "me" in relayed["text"]
+    assert "apir" in relayed["text"]          # who raised it, so the reply has an addressee
+
+    # a revised answer rewrites that same message — one report, one relay
+    assert c.post("/api/questions/q-r1/answer", json={"text": "self-audit"}).status_code == 200
+    msgs = sorted(p.name for p in (routines / "owner-routine" / "inbox").glob("msg-*.json"))
+    assert msgs == ["msg-decision-R77.json"]
+    assert "self-audit" in read_json(
+        routines / "owner-routine" / "inbox" / "msg-decision-R77.json")["text"]
+
+
+def test_an_ordinary_decisions_answer_relays_nothing(client):
+    """The relay is report-born only. A plain deferred ask has no owner but the routine that
+    asked it, and queueing a message about it anywhere would be freight nobody asked for."""
+    c, tmp = client
+    routines = tmp / "routines"
+    atomic_write_json(routines / "apir" / "questions" / "pending" / "q-plain.json",
+                      {"qid": "q-plain", "question": "Raise the budget?", "options": [],
+                       "asked": "20261011", "mode": "deferred"})
+    assert c.post("/api/questions/q-plain/answer", json={"text": "yes"}).status_code == 200
+    assert list((routines / "apir" / "inbox").glob("msg-*.json")) == []
+
+
+def test_a_report_born_decision_whose_owner_is_gone_still_answers(client):
+    """His click must never fail because the target was retired or renamed since the report
+    was filed. The answer is already durably filed; the relay is best-effort."""
+    c, tmp = client
+    routines = tmp / "routines"
+    atomic_write_json(routines / "apir" / "questions" / "pending" / "q-r2.json",
+                      {"qid": "q-r2", "question": "Which way?", "options": ["a", "b"],
+                       "asked": "20261011", "mode": "deferred", "type": "report",
+                       "report": "R78", "report_target": "long-gone"})
+    assert c.post("/api/questions/q-r2/answer", json={"text": "a"}).status_code == 200
+    assert read_json(routines / "apir" / "inbox" / "answer-q-r2.json")["text"] == "a"

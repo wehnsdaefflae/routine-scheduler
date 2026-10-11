@@ -107,6 +107,20 @@ def handle_schedule_run(loop, action: dict) -> dict:
             "fire_at": rec["fire_at"]}
 
 
+def _decision_question(report_id: str, title: str, detail: str, target: str) -> str:
+    """The prose the OPERATOR reads on the card for a report-born decision (F621).
+
+    He gets the report's own words, and the two facts a card has to carry to be answerable
+    without opening anything: which report this is, and who acts on the answer. The detail is
+    already capped by `reports.clip_detail` where it is stored; here it rides whole — the
+    page renders block markdown, which is what a report's evidence is written in.
+    """
+    owner = (f"**{target}** owns the work and will be told what you decide"
+             if target else "it is in triage — whoever picks it up will be told what you decide")
+    return f"**{title}**\n\n{detail}\n\n*({report_id} — {owner}.)*" if detail else \
+           f"**{title}**\n\n*({report_id} — {owner}.)*"
+
+
 def handle_report(loop, action: dict) -> dict:
     """File a REPORT — the ungated channel every routine holds for work that is not its own
     task. Appends to <routines_home>/.control/reports.jsonl under an `R<n>` id.
@@ -183,6 +197,16 @@ def handle_report(loop, action: dict) -> dict:
     if target:
         out["target"] = target
         out["delivery"] = "the target reads it on its next scheduled run"
+    # F621: options on a report declare it a DECISION FOR THE OPERATOR as well as work for
+    # its target, so the same call that routes the work leaves a record on his Decisions page.
+    # Only once the report really landed: a refused or unwritten report must not leave a card
+    # asking him about work nobody owns. The qid rides the observation so the filer can name it.
+    if filed and (picks := [str(o) for o in (action.get("options") or []) if str(o).strip()]):
+        from . import interact
+
+        out["decision_qid"] = interact.file_report_decision(
+            loop, question=_decision_question(filed[1], title, detail, target),
+            options=picks, report_id=filed[1], target=target)
     if filed and filed[2]:
         out["supersedes"] = filed[2]        # what the LEDGER folded, under its own lock
     if settles and filed:

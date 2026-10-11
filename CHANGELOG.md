@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.411.0] — 2026-10-11
+
+### A routine blocked on YOUR decision is visible on the pages you read (F621)
+
+A `report` routes work to a *routine*, read on that routine's next scheduled run. A run whose
+report was really a question for the operator therefore reached no surface of his at all: two
+items sat "waiting on the operator" on 2026-10-11 with `open_questions: 0`,
+`decision_backlog: false` and nothing on the Decisions page. His words, 2026-10-02: *"what?!
+why are the questions nowhere to be seen! stuff cannot just be silently blocked on a response
+from me!"*
+
+- `report` takes **`options`** (at most `ASK_OPTIONS_MAX`, the same cap and constant as an
+  `ask_user`'s pick-list). Naming them says the call is the user's.
+- The filing then also leaves the ONE decision record every operator surface already renders —
+  through `interact.file_report_decision`: the same `_free_qid`, the same transcript `question`
+  event, the same single writer `inbox.file_question`. No new source, no new page: the Decisions
+  page, the badge, the routine card's `open_questions`/`decision_backlog` and Web Push all pick
+  it up. Typed `report`, carrying the `R<n>` and the owning routine.
+- The answer lands in the **asking** routine's inbox, drained by its own next run — the unblock
+  no longer waits for the ledger owner's cron — and `api_questions._relay_report_answer` queues
+  `msg-decision-<R id>` into the **target's** inbox, so whoever owes the work is told what was
+  decided. Keyed on the report id, so a revised answer rewrites that one message.
+- The card is filed only once the report really landed: a refused report leaves no decision
+  asking about work nobody owns. A report without `options` is unchanged — work for a routine,
+  and not a decision card.
+- The Decisions page chips it `report R<n> → <owner>` on both the open and the settled shape,
+  and the filing observation names the qid and says the answer comes back to the filer, so a run
+  does not also raise an `ask_user` about it.
+
 ## [0.410.0] — 2026-10-11
 
 ### A retried model call is visible where the call is visible (F655, operator-reported)

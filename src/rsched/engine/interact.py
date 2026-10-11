@@ -132,6 +132,36 @@ def _free_qid(ctx) -> str:
     return qid
 
 
+def file_report_decision(loop, *, question: str, options: list[str],
+                         report_id: str, target: str = "") -> str:
+    """File the decision record a REPORT carrying options is (F621) — returns its qid.
+
+    A report routes WORK to a routine, read on that routine's next scheduled run. A report
+    whose substance is a question for the OPERATOR therefore reached no surface of his at
+    all: his Decisions page shows file-backed records, and a run blocked on him read
+    `open_questions: 0` while it waited. Naming `options` on the report says the question is
+    his, so the same filing that delivers the work ALSO leaves the one record every operator
+    surface already renders — the page, the badge, the routine card, the push.
+
+    It goes through this module and no other because the record must be identical to an
+    `ask_user`'s: same `_free_qid` (so two filings in one turn cannot collide), same
+    transcript event, same ONE writer. The only differences are its `type` and the
+    `report`/`report_target` keys that let the answer be relayed to whoever owes the work.
+    Always DEFERRED: the run filed a report and carried on — it is not parked on this.
+    """
+    ctx = loop.ctx
+    qdir = ctx.root_routine_dir
+    qid = _free_qid(ctx)
+    picks = list(options)
+    ctx.transcript.event("question", {"qid": qid, "mode": "deferred", "question": question,
+                                      "options": picks, "type": "report",
+                                      "subject": report_id})
+    inbox.file_question(qdir, qid, question, picks, ctx.run_ts, qtype="report",
+                        report=report_id, report_target=target)
+    ctx.asks_deferred += 1
+    return qid
+
+
 def _await_reply(loop, qdir: Path, qid: str, qtype: str, *, deadline: float,
                  poll_s: float) -> dict | None:
     """Wait on a BLOCKING record until a reply ends the wait — None when the deadline passes

@@ -22,7 +22,7 @@ from __future__ import annotations
 import copy
 
 from . import thenscript
-from .actions import ALWAYS_KINDS, KIND_FIELDS
+from .actions import ALWAYS_KINDS, ASK_OPTIONS_MAX, KIND_FIELDS
 from .actionschema import ACTION_SCHEMA, KINDS
 
 # Fields every kind carries (actions.validate_action allows `note` on any kind, like `say`).
@@ -122,8 +122,8 @@ def schema_for_kinds(kinds: list[str] | set[str] | None, *,
 # Every kind has a bullet but `script`: its gloss sits in CAPABILITIES (capabilities.py),
 # beside the routine's own scripts it can call, which is the one thing worth saying about it.
 #
-# Two placeholders are substituted (not f-string interpolated — the prose contains braces
-# in code fragments): {util_confirm} and {ask_timeout_min}.
+# Three placeholders are substituted (not f-string interpolated — the prose contains braces
+# in code fragments): {util_confirm}, {ask_timeout_min} and {ask_options_max}.
 KIND_PROSE: tuple[tuple[tuple[str, ...], str], ...] = (
     (("util",), """- util: run a global util — name + optional args (append "--json" for \
 structured output).
@@ -381,6 +381,13 @@ new open report waiting for one more reply; a message marked "no reply needed" g
 leaving triage at once and settling when it settles. That is how you hand someone else's row \
 to its owner (naming it without folding it leaves it exactly where it was, to be routed again \
 next pass) and how you add to a thread you already have open instead of opening a second one. \
+`options` (at most {ask_options_max}) make the report a DECISION FOR THE USER as well as work \
+for its target: the same call puts it on his Decisions page as an open question from you, \
+counts it on your routine card, and brings his answer into YOUR inbox for your next run — \
+while the target is told what he decided. Use it the moment you are blocked on a call only he \
+can make: a question parked in a plain report reaches no surface of his, so a run that writes \
+"waiting on the operator" without options is waiting on nobody. Do not also file an ask_user \
+about it.
 Past a few open threads to one owner a new report is REFUSED and the open ids are named — fold \
 them. Use this for problems you notice in passing, not for your own task's outcome (that \
 belongs in your finish summary)."""),
@@ -402,4 +409,8 @@ def kind_bullets(kinds: list[str] | set[str], *, util_confirm: str = "",
     allowed = set(kinds)
     out = [prose for covers, prose in KIND_PROSE if allowed & set(covers)]
     return ("\n".join(out).replace("{util_confirm}", util_confirm)
-            .replace("{ask_timeout_min}", str(ask_timeout_min)))
+            .replace("{ask_timeout_min}", str(ask_timeout_min))
+            # the pick-list cap is the validator's constant, substituted rather than written
+            # into the prose: two spellings of one number drift, and the prose is what the
+            # model obeys while the constant is what refuses it (F621)
+            .replace("{ask_options_max}", str(ASK_OPTIONS_MAX)))

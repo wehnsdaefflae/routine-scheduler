@@ -33,6 +33,14 @@ const EXPIRING_MS = 30 * 60 * 1000;   // a blocking ask this close to its timeou
 const expiringSoon = (q) => q.mode === "blocking" && q.expires
   && new Date(q.expires).getTime() - Date.now() < EXPIRING_MS;
 const kindOf = (q) => (q.meta ? "meta" : q.mode);
+// F621: a decision born as a REPORT — a routine routed work to another routine and the call
+// is the operator's. The chip names the report and who acts once he answers, because that is
+// what makes the card answerable without opening anything: the question text alone does not
+// say that something is already queued on it.
+const reportChip = (q) => (q.type === "report"
+  ? chip(`report ${q.report || ""}${q.report_target ? ` → ${q.report_target}` : " → triage"}`,
+         "partial")
+  : null);
 // audit decisions reference findings/decisions by id (F63, D14) — make those clickable,
 // but ONLY in the audit's own voice (meta items); elsewhere a bare "D1" is a false positive
 // Render the question text as MARKDOWN, with the BLOCK renderer, whoever wrote it. A run lays
@@ -327,6 +335,7 @@ export async function render(view, query = {}) {
           q.meta ? chip("meta", "meta") : null,
           q.type === "util-approval" ? chip("util approval", "partial") : null,
           q.type === "request" ? chip("access request", "partial") : null,
+          reportChip(q),
           chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""}`
             + ` · ${q.settled ? "acted on" : q.ran_now ? "run started" : "queued"}`, "ok"),
           sourceLink(q),
@@ -502,6 +511,7 @@ export async function render(view, query = {}) {
         q.meta ? chip("meta", "meta") : null,
         q.type === "util-approval" ? chip("util approval", "partial") : null,
         q.type === "request" ? chip("access request", "partial") : null,
+        reportChip(q),
         chip(q.mode, q.mode),
         q.snoozed ? chip("snoozed", "meta") : null,
         sourceLink(q),

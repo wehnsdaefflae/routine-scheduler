@@ -35,9 +35,11 @@ structured feedback fields), and — for the channels whose filename is a KEY ra
 timestamp — a deterministic `name`.
 
 That last one is why the rule needed restating: a report delivery is `msg-rep-<id>` so the
-sender can see whether its own delivery is still queued and retract it, and a background
+sender can see whether its own delivery is still queued and retract it, a background
 result is `msg-bg-<task>` so a re-delivery replaces the pending message instead of queuing a
-second. Seven modules used to write the filename themselves to get that, each with its own
+second, and the user's answer to a report-born decision (F621 — a report that carried
+`options`) is `msg-decision-<R id>` into the TARGET's inbox, so a revised answer rewrites that
+one message rather than queuing a second about one report. Seven modules used to write the filename themselves to get that, each with its own
 `ts` spelling and its own uniqueness rule, and one of them was a character-for-character copy
 of the writer's own line.
 

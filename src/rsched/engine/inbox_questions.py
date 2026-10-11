@@ -192,7 +192,8 @@ def revise_answer(routine_dir: Path, qid: str, text: str) -> Path:
 def file_question(routine_dir: Path, qid: str, question: str, options: list[str],  # noqa: PLR0913 — the ONE record shape: every field is a documented key of it, keyword-only
                   asked_ts: str, *, mode: str = "deferred", qtype: str = "question",
                   default: str = "", expires: str = "", config_patch: dict | None = None,
-                  config_target: str = "", request: list[str] | None = None) -> Path:
+                  config_target: str = "", request: list[str] | None = None,
+                  report: str = "", report_target: str = "") -> Path:
     """The ONE decision record every kind of required user feedback funnels into —
     plain asks, util approvals and access requests, deferred and blocking alike. Blocking
     records carry `expires` (when the run continues without an answer) and are rewritten
@@ -200,8 +201,10 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
     run can't make itself) rides along for the Decisions page's one-click apply; `request`
     (grant-entity ids, entities.py) makes the record an ACCESS REQUEST — the Decisions
     page renders the four allow/deny × now/forever buttons and the answer carries a
-    `decision`. Every surface (Decisions page, run view, Discord mirror) renders from
-    this shape.
+    `decision`. `report`/`report_target` make it a REPORT-BORN decision (F621): the `R<n>` the
+    asking run filed and the routine that owns the work, so the answer can be relayed to that
+    owner and every surface can say which report is waiting. Every surface (Decisions page, run
+    view, Discord mirror) renders from this shape.
     """
     from ..paths import atomic_write_json
 
@@ -221,6 +224,13 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
         record["config_target"] = config_target
     if request:
         record["request"] = list(request)
+    if report:
+        # F621: the decision was born as a REPORT. The id is what the answer is relayed
+        # under, and the target is who owes the work once he has decided — an answer with
+        # neither would reach the page and then have nowhere to go.
+        record["report"] = report
+        if report_target:
+            record["report_target"] = report_target
     atomic_write_json(path, record)
     return path
 
