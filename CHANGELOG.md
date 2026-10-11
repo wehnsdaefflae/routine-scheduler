@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.415.1] — 2026-10-12
+
+### A written-out count in contract prose is now a claim the suite checks
+
+`engine/transcript.py:7` has long stated the principle for its own vocabulary — *"`EVENT_TYPES` is
+the number, and `len()` is how to ask"* — and the two documents that quote those numbers to a
+reader were pinned on neither the names nor the count. Both had drifted, and a count is the
+cheapest kind of documentation to falsify and the most expensive to disbelieve: a reader who counts
+twenty names under a `(19 …)` cannot tell which half is stale.
+
+- `CLAUDE.md`'s Transcript-events block listed **19** types while `EVENT_TYPES` holds **20**.
+  `oversight_failed` (`transcript.py:42`) was in the code, in the web renderer and in the CLI, and
+  absent from the vocabulary every contributor reads — against that very line's instruction,
+  *"extend the tuple and both readers together, never one alone"*. The doc was the reader nobody
+  extended. Now listed, and the count reads 20.
+- `docs/prompt-anatomy.md` called the action schema *"the full 30-kind schema"* while `KINDS` holds
+  **33** (`detach`, `schedule_run` and `task` arrived after the sentence was written). Now 33.
+- New `tests/test_doc_counts.py` pins both, in both directions: every `EVENT_TYPES` name must
+  appear in `CLAUDE.md`, and each written-out count must equal its tuple's `len()`. All three cases
+  were observed RED against the unfixed docs — `['oversight_failed']`, `19 != 20`, `30 != 33` —
+  before the prose was touched.
+
+Found by the audit's deep cruft sweep (F673). The drift was invisible because no test compared a
+number in prose to the collection it describes; `tests/test_prompt_anatomy.py` pins strings and
+fields, and `tests/test_cli.py` pins the vocabulary's renderers, but nobody asked either document
+to count.
+
 ## [0.415.0] — 2026-10-11
 
 ### A renderer that breaks on a result no longer ends the run, or its resume

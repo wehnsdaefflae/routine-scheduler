@@ -558,7 +558,7 @@ runs, LEDGER, `.memory/`, one open + one answered question, one waiting inbox me
 NOT here: the general rules' prose is never inlined — the state digest names each held rule
 with the moment it applies; the run reads one with `read_rule` when that moment comes. The working-directory path is shortened.
 The ACTION SCHEMA block below is the **projection** for that routine's kinds, not the full
-30-kind schema (see *The projection* above) — the kinds it cannot emit contribute neither
+33-kind schema (see *The projection* above) — the kinds it cannot emit contribute neither
 fields nor prose, and a field a surviving kind SHARES with an absent one carries only the
 clauses that still apply. So a property missing here, or a description shorter than
 `actionschema.ACTION_SCHEMA`'s, is the projection at work rather than drift; a property here
