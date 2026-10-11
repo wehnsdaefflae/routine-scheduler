@@ -17,7 +17,12 @@ from __future__ import annotations
 
 import re
 
-from . import goals
+from . import goals, runkind, verifier
+
+# `runkind` and `verifier` are imported at module scope deliberately (F658): `goal check` runs
+# the SAME claim verification a finish does, so a lazy import here has the same failure as the
+# one that cost a run its summary on 2026-10-09 — the engine's in-memory caller meeting a
+# freshly-edited module from disk. Neither imports this module back.
 
 VERBS = ("list", "set", "add", "change", "check", "drop")
 _ID_RE = re.compile(r"^b\d+$")
@@ -59,8 +64,6 @@ def field_problems(obj: dict) -> list[str]:
 
 
 def _texts(loop) -> list[str]:
-    from . import runkind
-
     ctx = loop.ctx
     opening = str(loop.instruction or "") if runkind.is_conversation(ctx) else ""
     return goals.person_texts(goals.transcript_events(ctx.run_dir), opening=opening,
@@ -156,8 +159,6 @@ def _drop(loop, action: dict) -> dict:
 
 
 def _check(loop, action: dict) -> dict:
-    from . import verifier
-
     gid = str(action.get("id") or "")
     goal = _open(loop, "check", gid)
     if goal.get("rejected"):

@@ -3,9 +3,36 @@
 from __future__ import annotations
 
 from ..ids import now_iso
-from . import accounting, donewhen, finishline, goals, inbox, runkind, taskops
+from . import (
+    accounting,
+    assist,
+    donewhen,
+    finishline,
+    goalreached,
+    goals,
+    inbox,
+    runkind,
+    taskops,
+    verifier,
+)
 from .control import drain_injections
 from .finish_guard import unbacked_action_claims
+
+# `assist`, `goalreached` and `verifier` are imported HERE, at module scope, and must stay here
+# (F658). They used to be imported inside the function bodies below, and a lazy import on the
+# finish path is a loaded gun: the engine process holds this module's bytecode from its boot,
+# but a lazy import resolves its target FRESH FROM DISK at the moment it runs — so a run that
+# edits `src/rsched/` (which is one routine's whole job, twice a day) reaches its finish with an
+# OLD caller calling a NEW module. On 2026-10-09 that cost a run its entire authored summary:
+# `verifier.unentered()` had been renamed to `verifier.hinted()` in a release the same run
+# shipped, both sides consistent on disk, and the finish died with AttributeError
+# (`orphaned_run`, rc=1, no result.md). `verifier` was the worst case because nothing in a run
+# imports it until a finish claims something `met` — the mismatch is invisible for the whole run
+# and lands on the one turn whose loss costs the most.
+#
+# None of the three imports anything that imports this module back, so there is no cycle to
+# avoid; the laziness bought a few milliseconds of boot time and risked the only part of a run
+# that survives it. A new import on this path belongs at module scope for the same reason.
 
 
 def rebuild(loop, events: list[dict]) -> None:
@@ -179,12 +206,11 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # `assist.at_finish` allows this at most ONCE per run (per reply, in a conversation), so
     # a rule can ask for the ending to be reconsidered but can never negotiate over it. The
     # deferral names the assists behind it: that record is what keeps "once" across a resume.
-    if ctx.depth == 0 and not loop._finish_reserved:
-        from . import assist
-        if deferral := assist.at_finish(loop, action):
-            message, keys = deferral
-            _defer(loop, ctx, message, assist=True, assists=keys)
-            return None   # deferred — the loop goes round again
+    if (ctx.depth == 0 and not loop._finish_reserved
+            and (deferral := assist.at_finish(loop, action))):
+        message, keys = deferral
+        _defer(loop, ctx, message, assist=True, assists=keys)
+        return None   # deferred — the loop goes round again
     if (action["status"] == "ok" and loop.executed_actions == 0 and ctx.depth == 0
             and not loop._finish_reserved):
         # Fabrication guard: a top-level ok-finish as the very first action
@@ -242,7 +268,6 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # the disagreement is recorded instead.
     disputes: dict[str, str] = {}
     if owed is not None and not loop._finish_reserved:
-        from . import verifier
         claims = _claims(verdicts, *owed)
         cov = ctx.stage_coverage()
         if cov["declared"]:
@@ -294,7 +319,6 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                               **({"disputed": sorted(disputes)} if disputes else {}),
                               **({"goals": ctx.goals} if stamped else {})})
         if newly:
-            from . import goalreached
             goalreached.maybe_propose_retirement(ctx)
     return loop._finish_run(action["status"], action["summary"], authored=True,
                             reply_to=action.get("reply_to"),

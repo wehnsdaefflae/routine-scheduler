@@ -27,7 +27,7 @@ from . import (
     archival,
     assist,
     background,
-    finishgate,
+    finishstands,
     hold,
     loopend,
     loopnudge,
@@ -295,8 +295,8 @@ class EngineLoop:
         return None
 
     def _finish(self, action: dict) -> str | None:
-        """A `finish`: the run's status when it stands, None when a guard set it aside and
-        the model gets another turn (engine/finishgate.py).
+        """The status when the finish stands, None when a guard set it aside for a turn — via
+        engine/finishstands.py, never finishgate: a RAISING guard must not cost the summary.
         """
         # The reminder side fields ride a finish exactly as `note` does (captured when the
         # turn landed). The last turn is where they matter most: the engine asks for a
@@ -309,7 +309,7 @@ class EngineLoop:
         # A finish that was its reply's FIRST action, with more written after it: when a guard
         # sets the finish aside, the run is told those did not run either (replyactions).
         remind_note += unexecuted_note([unexecuted_row(a) for a in self.unexecuted])
-        outcome = finishgate.check_finish(self, action, self.ctx)
+        outcome = finishstands.check_finish_or_stand(self, action, self.ctx)
         if outcome is None and remind_note and self.messages:
             self.messages[-1]["content"] += remind_note   # rides the guard's own message
         return outcome

@@ -25,7 +25,10 @@ compaction gate), `engine/control.py` the
 between-turns control plane (abort, pause gate, injection drain, subrun announcements) and
 `engine/switches.py` its `control.json` switches (model, deliberation, rule bindings, a live
 config change), `engine/loopend.py` how a run ENDS (the engine-authored verdicts and the one
-close-out every ending shares — result.md, autocommit, health event, final status), and
+close-out every ending shares — result.md, autocommit, health event, final status) with
+`engine/finishstands.py` the one line between the loop and `engine/finishgate.py`'s guards —
+a gate that RAISES files `finish_gate_failed` and the run finishes on its own authored summary,
+because that summary is the only part of a run that survives it (F658), and
 `engine/interact.py` the ASK protocol (`ask_user` and the grant-gated approvals, and the ask-back
 that can answer any of them) with `engine/config_bridge.py` the filing check of the
 `config_patch` an ask may carry,

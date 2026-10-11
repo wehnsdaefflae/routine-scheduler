@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.414.0] — 2026-10-11
+
+### A finish gate that raises no longer costs the run its summary
+
+On 2026-10-09 a run that had already shipped two gated releases lost its ending: a stale lazy
+import made `finishgate.check_finish` raise `AttributeError: module 'rsched.engine.verifier' has
+no attribute 'unentered'`, the engine exited rc=1, and the run reads `orphaned_run` — no finish,
+no summary, no result.md — to this day. The mechanism is structural, not one routine's slip: the
+engine process holds a module's bytecode from its boot, but a LAZY import resolves its target
+fresh from disk at the moment it runs, so a run that edits `src/rsched/` (one routine's whole
+job, twice a day) reaches its finish with an old caller calling a new module. `verifier` was the
+worst case: nothing imports it until a finish claims something `met`, so the mismatch is
+invisible for the whole run and lands on the one turn whose loss costs the most. The release gate
+cannot see it — a fresh interpreter always agrees with itself.
+
+**The instance is gone.** `engine/finishgate.py` imports `verifier`, `assist` and `goalreached`
+at module scope, and `engine/goalops.py` its `verifier` and `runkind` — `goal check` runs the
+same claim verification a finish does. None of them imports the gate back, so the laziness bought
+milliseconds of boot time against the only part of a run that survives it. A test parses both
+modules and fails on any lazy relative import in a function body.
+
+**The class is gone too.** New `engine/finishstands.py` sits between the loop and the gate: an
+unexpected exception in the guards is the MECHANISM failing, not a verdict on the ending, so the
+run finishes on its own authored status and summary and the failure becomes its own
+`finish_gate_failed` health event — distinguishable from a gate that ran and rejected (which
+defers) and from the crash it used to be. `RunAborted`, `KeyboardInterrupt` and `SystemExit` pass
+straight through: those are the engine being stopped on purpose. The event is an incident, not a
+standing condition, so it is deliberately outside `REPEAT_COOLDOWN_HOURS` — two broken finishes
+are two facts.
+
+Red-first: with the gate made to raise exactly as it did that day, `main` propagates the error
+out of `loop.py:212` and kills the run; here the run ends `ok`, writes result.md and files one
+health event. Swept `health_events.py`'s machine-checked vocabulary and `docs/architecture.md`'s
+module map.
+
 ## [0.413.0] — 2026-10-11
 
 ### The ≤350-line house bar is enforced, as a ratchet

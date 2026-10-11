@@ -4,7 +4,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"run_partial"|"orphaned_run"
         |"run_canceled"|"oversize_state_file"|"prompt_oversize_shrunk"
         |"wizard_build_degraded"|"fire_refused"|"trigger_capped"|"model_window_corrected"
-        |"util_killed"
+        |"util_killed"|"finish_gate_failed"
         |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"scheduler_tick_error"
@@ -161,6 +161,15 @@ survives, but every such event is a standing config defect an audit should surfa
 
 run_canceled: a user-requested abort killed the engine before it could write its own
 finish (same payload shape as orphaned_run, which is reserved for genuine crashes).
+
+finish_gate_failed: the finish GATE raised, and the run finished anyway on its own authored
+summary (engine/finishstands.py, F658). It is the third possible outcome of a finish and must
+stay distinguishable from the other two: a gate that RAN and rejected defers and is recorded
+in the transcript as a deferral, and a gate that killed the engine was `orphaned_run` with
+rc=1 — which is what this event exists to stop, after one on 2026-10-09 cost a run that had
+already shipped two gated releases its summary, its status and its result.md. `detail` carries
+the exception and the innermost frame; `status` is the status the finish claimed and kept. A
+row here means the guards did NOT run, so nothing about that finish was checked.
 
 Both of those close-out events carry two OPTIONAL structured fields the reap fills in:
 `rc` (the engine process's exit status — negative means it died on that signal, so
