@@ -151,6 +151,22 @@ own record has landed, and emits `cost_trend_degraded` while it is flagged
 as structured fields). A payload nobody opens is a reading nobody has — the nightly audit reads
 the health stream, so that is where a regression this size has to appear.
 
+It is pushed at most ONCE PER (event, routine) PER 12 HOURS, because a run END is not a run:
+a resumed run finishes once per resume, so one `llmsectest-weekday` run filed 26 of these over
+5h36m and the next day's filed 22 — 173 of the live stream's 1,289 rows for a condition only 80
+runs had produced. Deduping the payload cannot collapse them: each finish appends its own usage
+row, which shifts the 5-run window the trend is read over, so those 22 rows carried six
+distinct `detail` strings. The suppression is on the clock instead, in `log_health_event`
+itself (`health_events.REPEAT_COOLDOWN_HOURS`, which also governs `cache_read_degraded`), so no
+call site can forget it; it is the `backup_watch`/`tickguard` idiom, read back from the stream
+rather than latched in memory because a run-end writer has no long-lived object. 12 hours was
+measured against the real stream: it collapses that worst run from 26 rows to 1 and reaches the
+same 80 rows a per-run latch would, while swallowing the first row of only 2 of 80 runs (24
+hours swallows 19 — a routine firing twice a day would lose its second reading). Only a
+STANDING CONDITION is governed this way: an incident, a refusal or a cap that happened twice is
+two facts, and nothing in `health_stream.BLOCKED_EVENTS` may ever be cooled down, since the
+console's blocked-fleet fold counts those rows.
+
 ### How a partial finish ended
 
 `endings` (same payload) counts this routine's last week of `budget_exhausted` and
@@ -421,7 +437,10 @@ the run's prompt tokens actually FELL 4x over the window.
   falls under `CACHE_SHARE_FLOOR` (0.5) with at least `CACHE_SHARE_MIN_TOKENS` (200k) of
   cache traffic behind it (`engine/runtime.py`). The event carries `cache_read_share`,
   `cache_read_tokens` and `cache_write_tokens` as structured fields so a health sweep can
-  filter on them, and self-audit reads the same log.
+  filter on them, and self-audit reads the same log. Like the cost-trend flag it is a STANDING
+  CONDITION, so it is filed at most once per routine per 12 hours
+  (`health_events.REPEAT_COOLDOWN_HOURS`): a resumed run reaches run end once per resume, and a
+  degraded prefix is one fact however many times the run finishes.
 
 Per-turn detail lives in each run's `llm-tasks.jsonl` sidecar: a healthy run's `cached_in`
 GROWS turn over turn; a broken one has it PINNED at the static prefix while `cache_write`

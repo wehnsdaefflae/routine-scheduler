@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.412.0] — 2026-10-11
+
+### Changed
+- **A standing condition is filed once per window, not once per finish.** `cost_trend_degraded`
+  and `cache_read_degraded` are evaluated at RUN END, and a run end is not a run: a resumed run
+  reaches it once per resume. One `llmsectest-weekday` run therefore filed **26** cost-trend
+  rows over 5h36m and the next day's filed 22 — **173 of the live stream's 1,289 rows** for a
+  condition only 80 runs had ever produced, so an operator reading "173 cost events" saw a fleet
+  problem where there were 25 routines and a handful of readings (F653).
+  Both are now filed at most once per **(event, routine) per 12 hours**, enforced inside
+  `log_health_event` itself so no call site can forget it. The window is read back out of the
+  stream through its one memoized parser, rather than latched in memory as
+  `daemon/backup_watch` does, because a run-end writer has no long-lived object to latch on.
+  Deduping the payload was tried and does not work: each finish appends its own usage row,
+  which shifts the 5-run window the trend is read over, so those 22 rows carried six distinct
+  `detail` strings.
+  **12 hours was measured, not guessed** — against the real stream it collapses that worst run
+  from 26 rows to 1 and reaches the same 80 rows a per-run latch would, while swallowing the
+  first row of only 2 of 80 flagged runs (at 24 h, 19 of 80 lose theirs, and a routine firing
+  twice a day would never report its second reading).
+  Only standing conditions are governed: an incident, a refusal or a cap that happened twice is
+  two facts, and nothing in `health_stream.BLOCKED_EVENTS` may ever be cooled down, since the
+  console's blocked-fleet fold counts those rows (a test pins it).
+  New `src/rsched/health_cooldown.py` holds the table, the mechanism and the measurements;
+  `health_events.REPEAT_COOLDOWN_HOURS` re-exports it for readers.
+
 ## [0.411.0] — 2026-10-11
 
 ### A routine blocked on YOUR decision is visible on the pages you read (F621)

@@ -17,6 +17,14 @@ keyed on the documented list — the audit recipe, the `health-events` library u
 sees exactly nothing of an event that was added without a line here, which is how
 `prompt_oversize_shrunk` and `trigger_capped` were written for weeks and read by nobody.
 
+Two of these events report a STANDING CONDITION rather than an incident — `cost_trend_degraded`
+and `cache_read_degraded`, both read at RUN END — and a run end is not a run: a resumed run
+reaches it once per resume, so ONE run filed 26 cost-trend rows in an afternoon. Those are
+filed at most once per (event, routine) per `health_cooldown.REPEAT_COOLDOWN_HOURS` hours,
+applied inside `log_health_event` so no call site can forget it. `health_cooldown`'s docstring
+holds the measurements, the window's justification and the payload-dedupe dead end. Every
+other event here is an incident and is filed every time: two of them are two facts.
+
 budget_exhausted vs run_partial: BOTH are a `partial` finish, and they used to be one
 event. budget_exhausted is the finish a BUDGET VIOLATION forced (the reserved finish turn
 was spent, or the engine ended the run itself); run_partial is a partial the model chose
@@ -234,11 +242,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import health_cooldown
 from .ids import now_iso
 from .paths import append_jsonl
 
 HEALTH_EVENTS_FILE = "health-events.jsonl"
 WORKFLOW_USAGE_FILE = "workflow-usage.jsonl"
+
+#: Re-exported for every reader that asks "is this event repeat-governed?" — the table and the
+#: reasoning live in `health_cooldown`, whose whole subject that is.
+REPEAT_COOLDOWN_HOURS = health_cooldown.REPEAT_COOLDOWN_HOURS
 
 
 def log_health_event(routines_home: Path, event: str, *, routine: str,
@@ -251,8 +264,14 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
     rather than written, so a caller can pass an unknown reading without minting a null the
     readers must handle.
 
+    An event named in `REPEAT_COOLDOWN_HOURS` is DROPPED when the same (event, routine) was
+    filed inside its window — the standing-condition rule, applied here so no call site can
+    forget it.
+
     Best-effort: silently ignores I/O errors so logging never blocks the daemon or engine.
     """
+    if health_cooldown.blocks(routines_home, event, routine):
+        return
     try:
         append_jsonl(Path(routines_home) / ".control" / HEALTH_EVENTS_FILE, {
             "ts": now_iso(),
