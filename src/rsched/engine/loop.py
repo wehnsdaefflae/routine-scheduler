@@ -55,7 +55,7 @@ from .ladder import at_boundary as _ladder_at_boundary
 from .loopconst import POLL_S
 from .loopend import SCHEMA_STORM_TURNS
 from .loopnudge import REPEAT_FAIL
-from .observations import format_observation, is_failure
+from .observations import is_failure, live_observation
 from .replyactions import unexecuted_note, unexecuted_row
 from .run_context import RunContext
 from .switches import (
@@ -372,7 +372,7 @@ class EngineLoop:
             from .admin import log_admin_action
             log_admin_action(ctx.server.routines_home, run_id=ctx.run_id,
                              kind=action["kind"], brief=brief_value(action)[:200])
-        text = format_observation(obs) + self._tails(action, obs, fired, held=held,
+        text = live_observation(obs, ctx) + self._tails(action, obs, fired, held=held,
                                                      streak=streak)
         msg: dict = {"role": "user", "content": text}
         if obs.get("media"):  # view_image / auto-attach: the model sees it next turn

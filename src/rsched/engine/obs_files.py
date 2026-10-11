@@ -140,6 +140,14 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 "It states a principle: apply it to the case in front of you.\n"
                 f"{obs['content']}")
     if kind == "memory_write":
+        if err := obs.get("error"):
+            # edit mode's refusals (memops: no such note, an anchor that does not match, a
+            # result over the cap). The note is untouched, and the existing topics ride along
+            # when the note to edit does not exist. Read before any success field: the first
+            # live refusal reached the `lines` read below and ended the run (0.415.0).
+            topics = (f" Existing topics: {', '.join(obs['topics']) or '(none yet)'}."
+                      if "topics" in obs else "")
+            return f"OBSERVATION (memory_write {obs.get('name')}.md NOT written): {err}{topics}"
         if obs.get("deleted"):
             fate = ("deleted and INDEX updated" if obs.get("existed")
                     else "did not exist — nothing to delete")

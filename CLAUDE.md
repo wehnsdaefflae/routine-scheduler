@@ -177,6 +177,11 @@ one you are about to touch, not all of them.
   may write inside the live instance's data homes, and none may spawn this package's CLI —
   that child is a fresh interpreter that would load the production config. Never weaken it to
   make a test pass; a test that needs to write there is pointed at `tmp_path` instead.
+  `tests/render_guard.py` is its RENDER FLOOR: every observation `executor.dispatch` or
+  `actionroute.dispatch_action` returns in a test is RENDERED, and a renderer that raises FAILS
+  the test — the engine's own floor, which keeps a live run going, raises in the suite. A test
+  of the result DICT proves nothing about the words the run reads: 0.410.0 tested three refusals
+  that way and the first live one ended a run. A handler test past both seams renders its own.
 - `uv run ruff check` + `uv run mypy` — the strict quality gates (ruff runs `select = ALL`;
   every ignore in pyproject.toml carries its house-style reason). Both MUST be green in every
   commit; `uv run pre-commit install` wires them into git.
@@ -436,7 +441,11 @@ one you are about to touch, not all of them.
   (8+ characters, `captured_output.read_capped`) before an observation, the transcript, a spill
   file or the search index sees it; a slash command (`/util …`) goes through the same
   `dispatch_action` seam as a model action, so the D39 secret gate holds for both, and a handler
-  that raises becomes an error observation instead of ending the run. **A `background: true` call
+  that raises becomes an error observation instead of ending the run. So does a RENDERER
+  (`engine/obs_floor.py`): an `error` result is worded for every kind by default, and a renderer
+  that raises costs the run one line — the raw result plus the defect, filed as
+  `observation_render_failed` — because a resume re-renders every stored observation, and a
+  renderer's KeyError was a run no resume could recover. **A `background: true` call
   passes that gate on its STARTING turn, before the thread exists** (F633): the gate asks the user
   and a thread has no turn to block on, so a deferral that skipped it would have moved a security
   decision out of reach — every call-time gate a kind has runs synchronously first. **There is NO

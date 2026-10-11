@@ -1,14 +1,16 @@
 """Observation rendering — the dispatch result of one action, turned into the next user
 message (`format_observation`), plus the head+tail truncation every large output rides
 through. The transcript renderer's counterpart: observation wording is prompt surface
-(docs/prompt-anatomy.md) and lives here in ONE place per kind.
+(docs/prompt-anatomy.md) and lives here in ONE place per kind. It never raises: an error
+result every kind can word, and a renderer that breaks costs the run one line, not the run
+(`obs_floor`).
 """
 
 from __future__ import annotations
 
 import json
 
-from . import obs_hold, outputs, thenscript
+from . import obs_floor, obs_hold, outputs, thenscript
 from .obs_admin import dialog_reply
 from .replyactions import unexecuted_note
 
@@ -193,9 +195,32 @@ def format_observation(obs: dict) -> str:
     """The user message an observation becomes: its kind's wording, then — when the reply that
     produced it carried more actions than the one that ran — the ones that did NOT run, named
     (engine/replyactions.py). Stored on the observation, so the live turn and a resumed leg's
-    replay read the same words.
+    replay read the same words. Never raises (`render_observation`).
     """
-    return _observation_body(obs) + unexecuted_note(obs.get("not_executed"))
+    return render_observation(obs)[0]
+
+
+def render_observation(obs: dict) -> tuple[str, str | None]:
+    """`format_observation`, plus the DEFECT when the kind's renderer raised (None otherwise).
+
+    A raise here used to end the engine mid-turn and every resume after it, since a resumed leg
+    re-renders the stored observation (obs_floor's docstring counts four). The run now reads the
+    raw result instead; `live_observation` is how a live turn records that it happened.
+    """
+    try:
+        return _observation_body(obs) + unexecuted_note(obs.get("not_executed")), None
+    except Exception as exc:  # the floor: any renderer defect costs a line, never the run
+        return obs_floor.defect_text(obs, exc), obs_floor.describe(exc)
+
+
+def live_observation(obs: dict, ctx) -> str:
+    """The rendering a LIVE turn appends — a renderer defect is recorded here, once; a replay
+    calls `format_observation` and renders the same words without recording them again.
+    """
+    text, defect = render_observation(obs)
+    if defect is not None:
+        obs_floor.record(ctx, obs, defect)
+    return text
 
 
 # One flat renderer on purpose: observation wording is prompt surface (docs/prompt-anatomy.md)
@@ -214,6 +239,8 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
         # and is rendered by its kind's own branch, in the ordinary way.
         return (f"OBSERVATION ({kind} STARTED IN THE BACKGROUND as "
                 f"`{obs.get('handle')}`): {obs.get('note') or ''}").rstrip()
+    if (failed := obs_floor.failed(obs, str(kind or ""))) is not None:
+        return failed   # an error result, for a kind whose own renderer words none
     if kind == "shell":
         # No advisory tail: a non-zero exit here is usually the answer, not a mistake (do_shell).
         where = f", in {obs['cwd']}" if obs.get("cwd") else ""
@@ -265,7 +292,7 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
             # lookup below raised, killing the engine mid-turn AND every later resume,
             # since replay re-renders the same stored observation — an unresumable run
             # with an unauthored summary (voice-model-trainer:20260910-030348).
-            return f"OBSERVATION ({kind} {obs['name']} NOT run): {err}"
+            return f"OBSERVATION ({kind} {obs.get('name')} NOT run): {err}"
         head = f"OBSERVATION ({kind} {obs['name']}, exit {obs['exit']})"
         body = _run_body(obs)
         if obs.get("usage"):

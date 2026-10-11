@@ -332,7 +332,7 @@ def collect(loop) -> None:
     message list is only ever APPENDED to between turns, and a message arriving in the middle of
     a turn's own bookkeeping is how an appended tail gets corrupted.
     """
-    from .observations import format_observation
+    from .observations import live_observation
 
     landed = [p for p in _pendings(loop) if p.done]
     if not landed:
@@ -354,7 +354,7 @@ def collect(loop) -> None:
         loop.messages.append({"role": "user", "content":
             f"BACKGROUND RESULT — `{pending.handle}` ({pending.kind}: {pending.brief}), "
             f"started on turn {pending.turn}, has finished. This is its real observation:\n"
-            + format_observation(obs)})
+            + live_observation(obs, ctx)})
 
 
 def settle(loop) -> str:

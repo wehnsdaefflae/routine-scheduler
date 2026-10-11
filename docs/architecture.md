@@ -28,7 +28,10 @@ config change), `engine/loopend.py` how a run ENDS (the engine-authored verdicts
 close-out every ending shares — result.md, autocommit, health event, final status) with
 `engine/finishstands.py` the one line between the loop and `engine/finishgate.py`'s guards —
 a gate that RAISES files `finish_gate_failed` and the run finishes on its own authored summary,
-because that summary is the only part of a run that survives it (F658), and
+because that summary is the only part of a run that survives it (F658), `engine/obs_floor.py`
+the renderer's two floors — an error result every action kind words, and a renderer that RAISES
+files `observation_render_failed` while the run reads the raw result instead of ending (a resume
+re-renders every stored observation, so a raise there was a run no resume could recover), and
 `engine/interact.py` the ASK protocol (`ask_user` and the grant-gated approvals, and the ask-back
 that can answer any of them) with `engine/config_bridge.py` the filing check of the
 `config_patch` an ask may carry,

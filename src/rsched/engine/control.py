@@ -25,7 +25,7 @@ from . import child, inbox, mediaops, refusal
 from .actions import util_rejection_outcome, validate_action
 from .actionschema import ACTION_SCHEMA
 from .commands import CommandError, parse_command
-from .observations import format_observation, truncate
+from .observations import format_observation, live_observation, truncate
 
 log = logging.getLogger("rsched.engine.control")
 
@@ -187,22 +187,23 @@ def injected_message(text: str, *, report: bool = False) -> str:
     return f"{lead}:\n{text}"
 
 
-def command_message(text: str, obs: dict) -> str:
+def command_message(text: str, obs: dict, ctx=None) -> str:
     """One rendering for a slash command AND its result — the single message the live path
     appends, and the single message a replay must rebuild from the injection + observation
-    pair it was recorded as.
+    pair it was recorded as. Only the live path passes `ctx`: a renderer defect is recorded
+    once, when it happens, never again on each replay (obs_floor).
     """
     return ("USER COMMAND (the user executed this action directly):\n"
-            f"{text}\n{render_command_result(obs)}")
+            f"{text}\n{render_command_result(obs, ctx)}")
 
 
-def render_command_result(obs: dict) -> str:
+def render_command_result(obs: dict, ctx=None) -> str:
     """One rendering for a slash command's outcome — live (run_user_command) and replayed
     (history.replay_messages) prompts must read identically.
     """
     if obs.get("kind") == "user_command":
         return f"COMMAND ERROR: {obs.get('error')}"
-    return format_observation(obs)
+    return format_observation(obs) if ctx is None else live_observation(obs, ctx)
 
 
 def run_user_command(loop, m: dict) -> None:
@@ -246,7 +247,7 @@ def run_user_command(loop, m: dict) -> None:
         log.exception("slash command %r failed", text[:80])
         obs = {"kind": "user_command", "error": f"command failed: {exc}"}
     ctx.transcript.event("observation", {**obs, "user_command": True})
-    msg: dict = {"role": "user", "content": command_message(text, obs)}
+    msg: dict = {"role": "user", "content": command_message(text, obs, ctx)}
     if obs.get("media"):  # a /view_image the model can show natively
         msg["media"] = obs["media"]
     loop.messages.append(msg)

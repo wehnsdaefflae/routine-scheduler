@@ -15,6 +15,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.415.0] — 2026-10-11
+
+### A renderer that breaks on a result no longer ends the run, or its resume
+
+On 2026-10-11 scheduler-builder:20261011-120001 shipped four gated releases (0.411.0–0.414.0) and
+then died writing a memory note. The edit would have left the note at 112 lines; memops REFUSED it
+correctly, and the refusal reached `obs_files.format_files`, whose memory_write branch read the
+`lines` of a SUCCESS. `KeyError: 'lines'`, rc=1, no summary — and the resume died at turn 0 the
+same way, because a resumed leg re-renders every stored observation. 0.410.0 had added those three
+refusals and tested each one, but only as the observation DICT: no test rendered the words the run
+would read. It was the fourth defect of its kind (a background start, the reserved finish turn's
+refusal in fifteen kinds, a script's declaration gate), each fixed where it struck while the class
+stayed open.
+
+**The instance.** memory_write words its refusals: `OBSERVATION (memory_write <name>.md NOT
+written): <why>`, with the existing topics when the note to edit does not exist.
+
+**The class, at runtime** — new `engine/obs_floor.py`, two floors under every renderer:
+- an `error` result is worded for EVERY action kind by default
+  (`OBSERVATION (<kind> <subject> FAILED): <error>`), except the kinds whose own renderer words a
+  failure (`OWN_ERRORS`). Before it, 19 of the 33 kinds raised on an error result or rendered it as
+  something else (util and script only when it named no util); delete, move and mkdir failures were cut at 500 characters by the JSON line.
+- a renderer that RAISES costs the run one line, never the run: `observations.render_observation`
+  catches it and the run reads its raw result (media excluded) beside the defect, so it can still
+  act on what happened. A live turn — the loop, a background result, a slash command — records it
+  once, as a transcript `error` (`where: render`) and the new `observation_render_failed` health
+  event (an incident, outside the repeat cooldown); a replay renders the same words byte for byte
+  and records nothing.
+
+**The class, in the suite** — new `tests/render_guard.py`, a session-scoped floor beside the
+sandbox one: every observation `executor.dispatch` or `actionroute.dispatch_action` returns in any
+test is rendered, and the engine's floor RAISES there instead of falling back, so a defect fails a
+test rather than hiding behind the runtime net. `tests/test_obs_floor.py` holds floor 1 for every
+kind in both directions (a kind outside `OWN_ERRORS` gets the generic line; one inside words the
+failure with the generic line switched off), replays the incident end to end through a resume,
+and tests floor 2 and the guard itself.
+
+Red-first: with only the guard added, 0.410.0's own three refusal tests failed with the production
+`KeyError: 'lines'`, and they were the only shapes in 4,311 tests that did. Swept
+`docs/prompt-anatomy.md` (and its pinned needles), `docs/architecture.md`, `health_events.py`'s
+vocabulary and CLAUDE.md.
+
 ## [0.414.0] — 2026-10-11
 
 ### A finish gate that raises no longer costs the run its summary

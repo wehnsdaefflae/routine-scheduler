@@ -85,6 +85,10 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "do NOT restart from step 1",
         "NOT a new run: do not restart the workflow",
         "OBSERVATION (finish REJECTED)",
+        # the renderer's floors (engine/obs_floor.py): an error result every kind words, and a
+        # renderer that raises costs the run a line, never the run
+        "NOT written): ",
+        "the engine could not word this result",
         # the finish-window race (R108, loop.run + _finish_run): a message landing as the
         # model finishes defers the finish — or, on the spent reserved turn, is surfaced
         # as still queued in the summary
