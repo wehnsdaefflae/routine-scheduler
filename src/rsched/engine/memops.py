@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from ..ids import is_slug
 from ..paths import atomic_write
+from .actions import MEMORY_NOTE_MAX_LINES
+from .authoring import anchor_edit
 from .observations import truncate
 from .run_context import RunContext, work_dir
 
@@ -95,8 +97,41 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
         return {"kind": "memory_write", "name": name, "deleted": True, "existed": existed}
     mem_dir.mkdir(exist_ok=True)
     created = not path.exists()
-    data = str(action["content"]).rstrip() + "\n"
+    replacements = 0
+    if action.get("anchor") is not None:
+        # EDIT MODE (R2432/R2456), the third caller of authoring's one anchor rule. Adding two
+        # facts to a 95-line note required re-emitting all 95 — expensive, and exactly how
+        # content gets lost: one routine composed a 104-line revision, was rejected at the cap,
+        # hand-trimmed it and composed it again, on a note created by the previous fix for the
+        # same problem. The note is patched engine-side, so the cap is then measured against the
+        # RESULT and work that was never recomposed can never be rejected for its size.
+        if created:
+            return {"kind": "memory_write", "name": name, "error":
+                    f"no note {name!r} exists to edit — pass 'content' (the whole note) and "
+                    "'about' to create one", "topics": _memory_topics(mem_dir)}
+        before = path.read_text(encoding="utf-8")
+        patched, problem = anchor_edit(
+            before, action, current="the note",
+            verbatim_from=f'{{"kind": "memory_read", "name": "{name}"}}',
+            whole="'content' (the whole note)")
+        if problem:
+            return {"kind": "memory_write", "name": name, "error": problem}
+        replacements = before.count(str(action["anchor"]))
+        data = patched.rstrip() + "\n"
+        if len(data.splitlines()) > MEMORY_NOTE_MAX_LINES:
+            return {"kind": "memory_write", "name": name, "error":
+                    f"the edit would leave the note at {len(data.splitlines())} lines — notes "
+                    f"are capped at {MEMORY_NOTE_MAX_LINES}. The note is UNCHANGED on disk: "
+                    "make the replacement shorter, or split the topic into another note"}
+    else:
+        data = str(action["content"]).rstrip() + "\n"
     atomic_write(path, data)
-    _memory_index_upsert(mem_dir, name, str(action["about"]))
-    return {"kind": "memory_write", "name": name, "created": created,
-            "lines": len(data.splitlines())}
+    if action.get("about") is not None or not action.get("anchor"):
+        # an edit does not change the note's SUBJECT, so `about` is optional there; a revised
+        # one still updates the engine-owned INDEX line
+        _memory_index_upsert(mem_dir, name, str(action["about"]))
+    out = {"kind": "memory_write", "name": name, "created": created,
+           "lines": len(data.splitlines())}
+    if action.get("anchor") is not None:
+        out.update(edited=True, replacements=replacements)
+    return out

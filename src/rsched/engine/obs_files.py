@@ -103,9 +103,13 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         base = f"OBSERVATION (write_file): wrote {obs['bytes']} bytes to {obs['path']}"
         if obs.get("append"):
             size = obs.get("size")
+            # a record-per-line file's separator was missing and the engine added it (R2452) —
+            # said plainly, because the next append would otherwise merge into this record
+            fixed = (" — a trailing newline was added, since this file is one record per line"
+                     if obs.get("terminated") else "")
             # show the resulting total so a silent overwrite (size == bytes) is visible
-            return base + (f" (appended; file now {size} bytes)" if size is not None
-                           else " (appended)")
+            return base + (f" (appended; file now {size} bytes{fixed})" if size is not None
+                           else f" (appended{fixed})")
         return base
     if kind == "edit_file":
         if err := obs.get("error"):
@@ -140,6 +144,12 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             fate = ("deleted and INDEX updated" if obs.get("existed")
                     else "did not exist — nothing to delete")
             return f"OBSERVATION (memory_write): note {obs['name']}.md {fate}."
+        if obs.get("edited"):
+            # edit mode: say what was replaced and where the note now stands, so the next
+            # edit's anchor can be chosen without re-reading the whole note (R2456)
+            return (f"OBSERVATION (memory_write {obs['name']}.md, edit mode): replaced "
+                    f"{obs['replacements']} occurrence(s); the note is now {obs['lines']} "
+                    "lines.")
         return (f"OBSERVATION (memory_write): note {obs['name']}.md "
                 f"{'created' if obs.get('created') else 'revised'} ({obs['lines']} lines); "
                 "INDEX.md updated from 'about'.")

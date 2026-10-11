@@ -273,13 +273,16 @@ ACTION_SCHEMA: dict = {
                            "write_util edit mode: exact text to find in the util's current "
                            "source (read it with util show <name> --full) · "
                            "write_rule edit mode: exact text to find in the rule's current "
-                           "prose (read it with read_rule first)",
+                           "prose (read it with read_rule first) · "
+                           "memory_write edit mode: exact text to find in the note's current "
+                           "markdown (read it with memory_read) — revise a mature note in "
+                           "place instead of re-emitting all of it",
         },
         "replacement": {
             "type": "string",
-            "description": 'edit_file/write_util/write_rule edit mode: the text that replaces '
-                           'the anchor (omit or "" to delete it) — edit in place instead of '
-                           "re-emitting whole files/scripts/rules",
+            "description": 'edit_file/write_util/write_rule/memory_write edit mode: the text '
+                           'that replaces the anchor (omit or "" to delete it) — edit in place '
+                           "instead of re-emitting whole files/scripts/rules/notes",
         },
         "content": {"type": ["string", "object", "array"],
                     "description": "write_file: the full new content — a string, or a JSON "
@@ -292,7 +295,9 @@ ACTION_SCHEMA: dict = {
                                    "+ the principle (or omit content and pass "
                                    "anchor/replacement to revise the existing rule in place) · "
                                    "memory_write: the note's full markdown (one string, "
-                                   "≤100 lines)"},
+                                   "≤100 lines — or omit content and pass anchor/replacement "
+                                   "to revise the existing note in place, which never "
+                                   "re-emits what you are not changing)"},
         # schedule_run — arm/cancel a one-shot time trigger on a routine (gated: scheduling)
         "target": {"type": "string",
                    "description": "schedule_run: the routine slug to arm/cancel a one-shot on "
@@ -410,7 +415,10 @@ ACTION_SCHEMA: dict = {
         "append": {"type": "boolean",
                    "description": "write_file: append instead of overwrite (default false); a "
                                   "structured `content` appends as ONE compact JSON line "
-                                  "(a JSONL record), never pretty-printed"},
+                                  "(a JSONL record), never pretty-printed, and a string "
+                                  "record appended to a `.jsonl`/`.ndjson` file gets the "
+                                  "newline it needs so it cannot merge into the row before "
+                                  "it (every other file is appended byte-faithfully)"},
         # memory_write (memory_read needs only `name`)
         "about": {"type": "string",
                   "description": "memory_write: one-line INDEX entry — what this note holds + "
@@ -531,8 +539,9 @@ ACTION_SCHEMA: dict = {
                                   "which of the two happened (`stopped_work`)"},
         "all": {"type": "boolean",
                 "description": "wait: wait for ALL running sub-workflows (default: any next) · "
-                               "edit_file/write_util/write_rule edit mode: replace EVERY "
-                               "occurrence of the anchor (default: the anchor must be unique)"},
+                               "edit_file/write_util/write_rule/memory_write edit mode: replace "
+                               "EVERY occurrence of the anchor (default: the anchor must be "
+                               "unique)"},
         # ask_user
         "question": {"type": "string",
                      "description": "ask_user: the question, self-contained (simple Markdown "

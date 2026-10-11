@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import IO
 
 from ..ids import now_iso
-from . import failover
+from . import attempts, failover
 from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, EndpointError, Message
 
 #: Task kinds whose prompt is a CONVERSATION — the only ones a cache breakpoint can pay for.
@@ -64,6 +64,26 @@ def make_record(phase: str, *, id: str, endpoint: str, model: str, purpose: str,
     if error is not None:
         rec["error"] = error
     return rec
+
+
+def _attempt_reporter(sink, common: dict):
+    """The hook `base.with_retries` calls from inside its own loop, bound to ONE call's record.
+
+    An `attempt` record is the SAME call — same id — on its Nth try: `attempt` is the try now
+    STARTING (the boundary names the one that just failed), `tries` the total allowed, `after`
+    what ended the previous one, `retry_in` the wait before this one. That is the question a
+    reader has, and nothing could answer it while three attempts of 600 s hid behind one
+    `started` row. The four fields are set HERE rather than threaded through `make_record`,
+    which stays the lifecycle-line builder every phase shares.
+
+    The terminal failure is not reported here — the wrapper's own `failed` record covers it, so
+    an exhausted loop books each boundary once and the failure once.
+    """
+    def report(attempt: int, tries: int, error: BaseException, retry_in: float) -> None:
+        rec = make_record("attempt", **common)
+        rec.update(attempt=attempt + 1, tries=tries, after=str(error)[:300], retry_in=retry_in)
+        _emit(sink, rec)
+    return report
 
 
 # --- sinks (process-global) --------------------------------------------------
@@ -218,7 +238,10 @@ class InstrumentedEndpoint:
         note_started(started)          # so an abandoning caller can terminate it (F572)
         _emit(sink, started)
         try:
-            comp = self._inner.complete(messages, **inner_kwargs)
+            # The retry loop lives INSIDE the adapter, so it reports its own boundaries through
+            # the one-way `attempts` seam while this call is on the stack (F655).
+            with attempts.reporting(_attempt_reporter(sink, common)):
+                comp = self._inner.complete(messages, **inner_kwargs)
         except BaseException as exc:
             if isinstance(exc, EndpointError):
                 self._mark_health(exc, model)
@@ -260,7 +283,8 @@ def observe_call(call, *, endpoint: str, model: str, purpose: str, kind: str):
     note_started(started)
     _emit(sink, started)
     try:
-        out = call()
+        with attempts.reporting(_attempt_reporter(sink, common)):
+            out = call()
     except BaseException as exc:
         _note_terminal(common["id"])
         _emit(sink, make_record("failed", **common, error=str(exc)[:300]))

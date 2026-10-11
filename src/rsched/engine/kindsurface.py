@@ -203,7 +203,10 @@ EXPENSIVE to find out (environment quirks, working solutions, constraints nobody
 down), not what the instruction or a plain look at the data would tell anyone. \
 memory_write(name, content, about) writes ONE kebab-named note of at most 100 lines and \
 the engine maintains .memory/INDEX.md from `about`; delete: true removes a note. \
-memory_read(name) returns one. The state digest shows the INDEX at run start — consult it \
+To REVISE an existing note, pass `anchor` + `replacement` INSTEAD of content — a verbatim \
+in-place patch like edit_file, so adding two facts to a 95-line note never re-emits the other \
+93 (the cap is then measured against the RESULT). memory_read(name) returns one, and is where \
+you copy an anchor from. The state digest shows the INDEX at run start — consult it \
 before re-discovering anything; revise notes that turned out wrong instead of appending \
 contradictions. read_file / write_file are rejected on .memory/ paths."""),
     (("read_rule",), """- read_rule: read a GENERAL RULE from the shared library — \

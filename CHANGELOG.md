@@ -15,6 +15,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.410.0] — 2026-10-11
+
+### A retried model call is visible where the call is visible (F655, operator-reported)
+
+A resumed run's first call went to claude-proxy as a new session, the proxy never answered, the
+engine's 600 s read timeout cut it, and `with_retries` sent it again one second later; the second
+attempt answered in 1m10s. For those **11 minutes** `llm-tasks.jsonl` held ONE `started` record
+and `status.json`'s `updated` never moved — a hung run and a slow run were indistinguishable from
+outside, and the cause had to be read out of the proxy's container log.
+
+The cause is an ORDERING one: instrumentation wraps the adapter from OUTSIDE
+(`endpoints/instrument.InstrumentedEndpoint.complete`) while the retry loop sits INSIDE it
+(`anthropic_api:268`, `openai_compat:251/299` → `base.with_retries`), so the task record saw one
+call however many attempts it took — worst case 3 × 600 s = half an hour behind a single row.
+
+- **The boundary is reported from inside the loop.** New `endpoints/attempts.py` is the one-way
+  channel: `with_retries` calls `attempts.boundary(...)` from tenacity's `before_sleep` and
+  imports nothing from `instrument`; `instrument` installs a reporter for the duration of one
+  call and knows nothing about tenacity. The reporter is a **ContextVar**, so parallel subrun
+  threads each report to their own call's record, and a reporter that raises is swallowed —
+  bookkeeping never breaks a real LLM call.
+- **A new `attempt` phase on the SAME call id** (a retry is the same call), carrying `attempt`
+  (the try now starting), `tries`, `after` (what ended the previous one) and `retry_in`. It
+  rides `runs/<ts>/llm-tasks.jsonl` and the `llm_task` bus event like every other phase. The
+  terminal failure stays the wrapper's `failed` record, so an exhausted loop books each boundary
+  once and the failure once.
+- **A third status, `retrying`.** `llm_tasks.IN_FLIGHT` is now the ONE tuple every "has this call
+  ended" check reads — the orphan sweep, the age backstop and the process-pruning check — because
+  F572's leak was exactly a predicate that named one in-flight status and missed another. The
+  dock mirrors that set.
+- **The dock says which attempt and what killed the last one**: `attempt 2 of 3 — after
+  claude-proxy: read timeout after 600s`, in warn ink, pulsing, and still counted as in flight.
+  Four dock states now paint in four distinct inks, read back out of the browser with
+  `getComputedStyle` — a `retrying` class with no CSS rule would have fallen through to the
+  neutral grey of an unknown state.
+- **What ended an attempt is now readable.** `str(httpx.ReadTimeout(""))` is the EMPTY STRING, so
+  `post_json` produced `claude-proxy: ` for his 600 s cut — a retryable error whose text said
+  nothing about the bound it hit. `base._transport_cause` names the clock that ran out and the
+  value it was set to; an error with words of its own keeps them.
+- Pinned by `tests/test_endpoint_attempts.py`, `tests/test_instrument_attempts.py` and
+  `tests/ui/test_llm_dock_retry.py`. The three browser nodes were run against unfixed `main`
+  first and failed there with `[data-lt-status="retrying"]` resolving to **0 elements**.
+
+His separate question — why a cold resume against the proxy hung for 10 minutes at all — is
+explicitly NOT part of this and stays an open observation.
+
+### An appended JSONL record cannot merge into the row before it (R2446/R2452)
+
+`write_file` with `append` serializes and terminates a STRUCTURED body, but applied a STRING
+body byte-faithfully — and for a record-per-line file that means silent corruption. Measured in
+`scheduler-builder:20261010-120004`: three release rows appended as strings with no trailing
+newline, rows 2 and 3 landed on **one 5,832-character line** carrying three `{` against two `}`,
+and `json.loads` died at char 2,771. The reader is `self-audit`'s orient stage, which folds that
+file into its changelog and flips handed rows to `addressed`; it cannot distinguish "nothing
+shipped" from "the row was eaten".
+
+- `fileformat.record_per_line` (`.jsonl`/`.ndjson`) is the predicate, in the module that already
+  owns the "one document vs append-structured ledger" distinction. The parse gate still skips
+  those formats — a partial line is legal mid-append — but the line boundary IS the structure.
+- An append whose string does not end in a newline gets one; an already-terminated string gets
+  no second one (blank lines are records too, to a line-per-record reader); every other file is
+  still appended byte-faithfully, so a run continuing a sentence next turn is untouched.
+- The observation SAYS so — `appended; file now N bytes — a trailing newline was added, since
+  this file is one record per line` — and the schema's `append` description states the rule.
+
+### `memory_write` revises a note in place (R2432/R2456)
+
+Revising a mature note meant re-emitting all of it. `vodafone-outage-claims` composed a 104-line
+revision of `vodafone-case-state`, was rejected at the 100-line cap, hand-trimmed it and composed
+it again — on a note created by the FIX for the same problem one day earlier.
+
+- `anchor` + `replacement` (+ `all`) INSTEAD of `content`, through the same
+  `authoring.anchor_edit` helper `write_util` and `write_rule` use (now public, three callers),
+  so a stale or ambiguous anchor teaches the same route: `copy it VERBATIM … from {"kind":
+  "memory_read", …}` / `occurs 2× … or set all: true`.
+- **The 100-line cap is measured against the RESULT**, so a note AT the cap stays revisable and
+  work that was never recomposed can never be rejected for its size. An edit that would exceed
+  it is refused with the number and the note is left unchanged on disk.
+- `about` is optional in edit mode (the note's subject has not changed) and a revised one still
+  updates the engine-owned INDEX line. Mixing `content` with `anchor` is refused rather than
+  silently preferring one.
+- The claim in R2432 that `memory_read` does not report a note's line count was REFUTED
+  (R2437) and is not part of this: the number was already there.
+
 ## [0.409.1] — 2026-10-11
 
 ### A decision that SHIPPED stops being asked again (F659)

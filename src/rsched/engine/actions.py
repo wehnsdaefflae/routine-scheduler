@@ -173,7 +173,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "mkdir": (("path",), ("parents",)),
     "edit_file": (("path", "anchor"), ("replacement", "all", "then_script")),
     "memory_read": (("name",), ("background",)),
-    "memory_write": (("name",), ("content", "about", "delete")),
+    "memory_write": (("name",), ("content", "about", "delete", "anchor", "replacement", "all")),
     "read_rule": (("name",), ("background",)),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
     "llm": (("prompt",), ("system", "response_schema", "model", "background")),
@@ -470,17 +470,35 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append("memory_write: 'index' is reserved — the engine maintains "
                             ".memory/INDEX.md from each note's 'about' line")
         if kind == "memory_write" and not obj.get("delete"):
-            content = obj.get("content")
-            if not isinstance(content, str) or not content.strip():
-                problems.append("memory_write requires 'content' (the note's full markdown, "
-                                "one string) unless delete: true")
-            elif len(content.splitlines()) > MEMORY_NOTE_MAX_LINES:
-                problems.append(f"memory_write: content is {len(content.splitlines())} lines — "
-                                f"notes are capped at {MEMORY_NOTE_MAX_LINES}; split the topic "
-                                "into more notes")
-            if not str(obj.get("about") or "").strip():
-                problems.append("memory_write requires 'about' (the note's one-line INDEX "
-                                "entry) unless delete: true")
+            # THREE modes, each with its own required fields: delete (above), EDIT MODE
+            # (`anchor` + optional `replacement`, patching the note in place — R2432/R2456,
+            # so adding two facts to a 95-line note never re-emits 95 lines), and the whole
+            # note (`content` + `about`). Mixing edit mode with `content` is refused rather
+            # than silently preferring one, the way write_util/write_rule do it.
+            if obj.get("anchor") is not None:
+                if obj.get("content") is not None:
+                    problems.append("memory_write: pass EITHER 'content' (the whole note) OR "
+                                    "'anchor'/'replacement' (an in-place edit), not both")
+                if not str(obj.get("anchor") or ""):
+                    problems.append("memory_write: 'anchor' must be the exact text to replace, "
+                                    "copied verbatim from memory_read")
+            elif obj.get("replacement") is not None or obj.get("all") is not None:
+                problems.append("memory_write: 'replacement'/'all' belong to edit mode — pass "
+                                "the 'anchor' (the exact text to replace) with them")
+            else:
+                content = obj.get("content")
+                if not isinstance(content, str) or not content.strip():
+                    problems.append("memory_write requires 'content' (the note's full markdown, "
+                                    "one string) unless delete: true, or 'anchor' + "
+                                    "'replacement' to edit the note in place")
+                elif len(content.splitlines()) > MEMORY_NOTE_MAX_LINES:
+                    problems.append(f"memory_write: content is "
+                                    f"{len(content.splitlines())} lines — notes are capped at "
+                                    f"{MEMORY_NOTE_MAX_LINES}; split the topic into more notes, "
+                                    "or revise in place with 'anchor' + 'replacement'")
+                if not str(obj.get("about") or "").strip():
+                    problems.append("memory_write requires 'about' (the note's one-line INDEX "
+                                    "entry) unless delete: true")
     # A script riding a write or edit is validated as the script action it is: the recipe's
     # `tools:` list and the capability layer judge it exactly as they would judge it alone.
     if kind in thenscript.HOSTS:

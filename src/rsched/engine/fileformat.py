@@ -44,9 +44,27 @@ _PARSERS: dict[str, tuple[Callable[[str], object], str]] = {
 }
 
 
+#: Suffixes whose file is ONE RECORD PER LINE. The parse gate skips them (a partial line is
+#: legal mid-append), but the line boundary is then the file's entire structure — so an append
+#: that does not end in a newline does not add a record, it EXTENDS the previous one.
+_RECORD_PER_LINE = frozenset({".jsonl", ".ndjson"})
+
+
 def checks(path: Path) -> bool:
     """Is this a format the gate checks? A caller reads the old text only when it is."""
     return path.suffix.lower() in _PARSERS
+
+
+def record_per_line(path: Path) -> bool:
+    """Is every LINE of this file one record? Then an appended record needs its separator.
+
+    R2446/R2452, measured: three rows appended as strings with no trailing newline ran
+    together — two of three releases landed on one line, `json.loads` died mid-file, and the
+    routine that reads that hand-off could not tell "nothing shipped" from "the row was
+    eaten". The engine serializes a STRUCTURED append and terminates it; a STRING body was
+    applied byte-faithfully, which for this one family of formats means silent corruption.
+    """
+    return path.suffix.lower() in _RECORD_PER_LINE
 
 
 def _problem(text: str, suffix: str) -> str | None:

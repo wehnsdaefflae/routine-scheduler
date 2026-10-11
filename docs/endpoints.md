@@ -310,6 +310,35 @@ break-even, and it raises the fleet's steady-state weighting. Nor is a per-model
 knob worth it for the two or three routines involved. What DOES pay is fewer long gaps inside a
 turn loop.
 
+### Every retry attempt is visible (F655)
+
+The retry loop reports each boundary from INSIDE itself, and it has to be inside: instrumentation
+wraps an adapter from the OUTSIDE (`endpoints/instrument.InstrumentedEndpoint`) while
+`base.with_retries` sits within the adapter's own `complete()`. So one `started` record covered
+however many attempts a call took — worst case three attempts of `DEFAULT_TIMEOUT` (600 s) behind
+a single row, which is how a retrying run became indistinguishable from a frozen one. The
+operator hit exactly that: a resumed run's first call never got an answer, the 600 s read timeout
+cut it, the retry answered in 1m10s, and for 11 minutes nothing anywhere said so.
+
+- `endpoints/attempts.py` is the one-way channel: `with_retries` calls `attempts.boundary(...)`
+  before each sleep and imports nothing from `instrument`; `instrument` installs a reporter for
+  the duration of one call and knows nothing about tenacity. The reporter is a **ContextVar**, so
+  parallel subrun threads each report to their own call's record.
+- The record is an **`attempt` phase on the same call id** (a retry is the same call), carrying
+  `attempt` (the one now starting), `tries`, `after` (what ended the previous attempt) and
+  `retry_in` (the wait). It lands in `runs/<ts>/llm-tasks.jsonl` and on the `llm_task` bus event
+  like every other phase.
+- `llm_tasks.TaskCenter` folds it to the status **`retrying`** — a third state, neither thinking
+  nor terminated. `llm_tasks.IN_FLIGHT` is the one tuple every "has this call ended" check reads
+  (orphan sweep, age backstop, process pruning), because F572's leak was precisely a predicate
+  that named one in-flight status and missed another. The dock mirrors that set.
+- The terminal failure is NOT reported by the loop — the wrapper records it as the call's own
+  `failed` — so an exhausted call books each boundary once and the failure once.
+- **What ended an attempt has to be readable.** httpx's timeout exceptions carry an EMPTY
+  message, so `post_json` once produced `claude-proxy: ` for a 600 s cut. `base._transport_cause`
+  names the clock that ran out and the bound it was set to; an error with words of its own keeps
+  them.
+
 ### Why raw httpx, and not the provider SDKs
 
 The transports are `httpx` + `tenacity` on purpose. An SDK would replace ~120 lines (`post_json`,

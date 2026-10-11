@@ -15,6 +15,12 @@ import { el, fmtTokens, storage } from "/static/util.js";
 const KEY_OPEN = "llm-tasks-open";           // "1" = panel expanded, else collapsed to the pill
 const RECONCILE_MS = 10000;                  // backstop: catch dropped events + prune done items
 
+// Every status that means the call has not terminated — the mirror of llm_tasks.IN_FLIGHT.
+// A retrying call (F655) is still in flight: counting only "running" made a call on its second
+// attempt vanish from the pill while it was the very thing holding the run up. Module scope, so
+// the handlers defined above the point of use cannot read it in its temporal dead zone.
+const IN_FLIGHT = new Set(["running", "retrying"]);
+
 export function initTaskManager() {
   const slot = document.getElementById("llm-tasks");
   if (!slot) return;
@@ -46,7 +52,7 @@ export function initTaskManager() {
       const p = processes.get(ev.id);
       if (p) { p.closed = true; if (ev.error) p.error = ev.error; }
       // the process ended — any child still shown running was orphaned (killed mid-call)
-      for (const t of tasks.values()) if (t.process_id === ev.id && t.status === "running") t.status = "error";
+      for (const t of tasks.values()) if (t.process_id === ev.id && IN_FLIGHT.has(t.status)) t.status = "error";
     }
   }
   function onBus(e) {
@@ -79,7 +85,7 @@ export function initTaskManager() {
 
   function running() {
     let n = 0;
-    for (const t of tasks.values()) if (t.status === "running") n++;
+    for (const t of tasks.values()) if (IN_FLIGHT.has(t.status)) n++;
     return n;
   }
 
@@ -93,14 +99,27 @@ export function initTaskManager() {
     return el("span", { class: `lt-dot ${status || "running"}`, "aria-hidden": "true" });
   }
 
+  // A retrying call SAYS which attempt it is on and what ended the one before (F655). The
+  // operator's case: one `started` row covered an 11-minute wait across a 600 s read timeout
+  // and a retry, so a hung run and a slow run looked the same from here. "attempt 2 of 3"
+  // plus the cause is the whole difference, and it rides the row the call already has —
+  // the retry is the same call, not a new one.
+  function retryNote(t) {
+    if (!t.attempt || t.attempt < 2) return null;
+    const bits = [`attempt ${t.attempt}${t.tries ? ` of ${t.tries}` : ""}`];
+    if (t.after) bits.push(`after ${t.after}`);
+    return el("span", { class: "lt-attempt", title: t.after || "" }, bits.join(" — "));
+  }
+
   function taskRow(t) {
     const meta = [t.endpoint, t.model].filter(Boolean).join(" / ");
-    return el("div", { class: `lt-task ${t.status || "running"}` },
+    return el("div", { class: `lt-task ${t.status || "running"}`, "data-lt-status": t.status || "running" },
       statusDot(t.status),
       el("div", { class: "lt-task-body" },
         el("div", { class: "lt-purpose" }, t.purpose || "LLM call"),
         el("div", { class: "lt-meta" },
           meta ? el("span", { class: "lt-model" }, meta) : null,
+          retryNote(t),
           t.usage ? el("span", { class: "lt-usage" }, fmtTokens(t.usage)) : null,
           t.error ? el("span", { class: "lt-err" }, t.error) : null)));
   }
@@ -110,7 +129,7 @@ export function initTaskManager() {
   // same number counted the opposite way, both correct and neither informative (F572). A reader
   // wants the state, and only wants a ratio while there is progress to measure.
   function procCount(children) {
-    const run = children.filter((c) => c.status === "running").length;
+    const run = children.filter((c) => IN_FLIGHT.has(c.status)).length;
     const err = children.filter((c) => c.status === "error").length;
     if (run) return `${run} running`;
     if (err) return err === children.length ? `${err} failed` : `${err} of ${children.length} failed`;

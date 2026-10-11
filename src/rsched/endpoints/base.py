@@ -17,6 +17,8 @@ from typing import Protocol
 import httpx
 from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 
+from . import attempts
+
 # {"role": "system"|"user"|"assistant", "content": str} — plus an OPTIONAL "media" list for
 # multimodal input: [{"path": <abs file>, "media_type": <mime>}]. `content` stays a str
 # always (so every str-assuming site keeps working); only adapters whose model is multimodal
@@ -373,7 +375,25 @@ def post_json(url: str, body: dict, headers: dict | None, timeout: int,
         return httpx.post(url, json=body, headers=headers,
                           timeout=httpx.Timeout(timeout, connect=CONNECT_TIMEOUT))
     except httpx.HTTPError as exc:
-        raise EndpointError(f"{name}: {exc}", retryable=True) from exc
+        raise EndpointError(f"{name}: {_transport_cause(exc, timeout)}", retryable=True) from exc
+
+
+def _transport_cause(exc: httpx.HTTPError, timeout: float) -> str:
+    """What ended the attempt, in words — because httpx's timeout exceptions carry an EMPTY
+    message (F655: `str(httpx.ReadTimeout(""))` is `""`), so the operator's 600 s read cut
+    reached his console as `claude-proxy: ` and said nothing about the bound it hit. The
+    attempt record this error travels in is only as useful as this string, and a timeout is
+    exactly the failure a reader needs named: which clock ran out, and what it was set to.
+    """
+    text = str(exc).strip()
+    if isinstance(exc, httpx.ConnectTimeout):
+        return f"connect timeout after {CONNECT_TIMEOUT:g}s (the host never answered)"
+    if isinstance(exc, httpx.ReadTimeout):
+        return f"read timeout after {timeout:g}s (connected, but no reply within the bound)"
+    if isinstance(exc, httpx.TimeoutException):
+        kind = type(exc).__name__.removesuffix("Timeout").lower() or "transport"
+        return f"{kind} timeout after {timeout:g}s"
+    return text or type(exc).__name__
 
 
 #: Statuses that mean "the request never got a verdict", so sending it again can work:
@@ -466,10 +486,23 @@ def with_retries(fn, *, tries: int = 3, base_delay: float | None = None):
     Non-retryable EndpointErrors propagate immediately; the last error is re-raised as-is.
     The default backoff honors RSCHED_RETRY_BASE_DELAY (`retry_base_delay`, read per call):
     the test suite zeroes it — dead-endpoint tests exercise the retry LOGIC, never the clock.
+
+    Every boundary is reported through `attempts.boundary` BEFORE the loop sleeps (F655). The
+    caller that observes a call wraps this from outside and therefore cannot see an attempt end:
+    one `started` record covered up to three attempts of `DEFAULT_TIMEOUT` each, so a retrying
+    call and a thinking one looked the same for as long as half an hour. Only the loop knows,
+    and this is where it says so. The terminal failure is NOT reported here — the observing
+    wrapper records that as the call's own `failed`, so nothing is booked twice.
     """
     if base_delay is None:
         base_delay = retry_base_delay()
     exp = wait_exponential(multiplier=base_delay)
+
+    def before_sleep(state):
+        exc = state.outcome.exception() if state.outcome else None
+        if exc is not None:
+            attempts.boundary(attempt=state.attempt_number, tries=tries, error=exc,
+                              retry_in=float(state.upcoming_sleep or 0.0))
 
     def wait(state):
         # F220: when the provider sent a Retry-After on a 429, wait exactly that (capped),
@@ -486,5 +519,6 @@ def with_retries(fn, *, tries: int = 3, base_delay: float | None = None):
         retry=retry_if_exception(lambda e: isinstance(e, EndpointError) and e.retryable),
         stop=stop_after_attempt(tries),
         wait=wait,
+        before_sleep=before_sleep,
         reraise=True,
     )(fn)

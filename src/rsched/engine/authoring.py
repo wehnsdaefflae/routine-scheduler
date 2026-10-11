@@ -6,7 +6,8 @@ its own approval dial (`confirm` for utils, `rule_confirm` for rules, because a 
 lands on every holder at its next run and that is a different decision from creating a util).
 Every rung of a handler's ladder is its own teaching exit — collapsing them would make the
 refusals interchangeable — and the one rung both share, EDIT MODE's anchor patch, is one
-helper (`_anchor_edit`), so a guard taught to one kind cannot be missing from the other.
+helper (`anchor_edit`), so a guard taught to one kind cannot be missing from the other.
+`memory_write`'s edit mode (R2456) is the third caller of that same helper, for the same reason.
 
 There is deliberately no `remove_rule`: deleting a rule silently un-binds every holder with
 nothing to catch it, so a run reports it and the user deletes it.
@@ -57,7 +58,7 @@ def recreate_denial(loop, action: dict) -> list[str]:
              f"summary.")]
 
 
-def _anchor_edit(text: str, action: dict, *, current: str, verbatim_from: str,
+def anchor_edit(text: str, action: dict, *, current: str, verbatim_from: str,
                  whole: str) -> tuple[str, str]:
     """EDIT MODE's one rule for both library kinds: replace the action's verbatim `anchor` in
     `text` — every occurrence with `all: true`. Returns `(patched, "")`, or `("", reason)`,
@@ -103,7 +104,7 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
                     "reason": f"no util {name!r} exists to edit — edit mode patches an "
                               "existing script; pass 'content' (the complete script) to "
                               "create a new one"}
-        content, problem = _anchor_edit(
+        content, problem = anchor_edit(
             source, action, current="the util's current source",
             verbatim_from=f'{{"kind": "util", "name": "show", "args": ["{name}", "--full"]}}',
             whole="'content' (the complete script), 'path' (a file holding it)")
@@ -235,7 +236,7 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:
             return {"kind": "write_rule", "name": name, "edit_failed": True,
                     "reason": f"no rule {name!r} exists to revise — pass 'content' (the "
                               "complete rule markdown) to author a new one"}
-        content, problem = _anchor_edit(
+        content, problem = anchor_edit(
             existing, action, current="the rule's current text",
             verbatim_from=f'{{"kind": "read_rule", "name": "{name}"}}',
             whole="'content' (the whole rule)")

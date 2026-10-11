@@ -427,6 +427,14 @@ Per-turn detail lives in each run's `llm-tasks.jsonl` sidecar: a healthy run's `
 GROWS turn over turn; a broken one has it PINNED at the static prefix while `cache_write`
 tracks the conversation.
 
+The sidecar's phases are `started`, `attempt`, `finished` and `failed`, all on one call id.
+An **`attempt`** row (F655) means the call is being RETRIED: `attempt` is the try now starting,
+`tries` the total allowed, `after` what ended the previous one (a 600 s read timeout, a 429, a
+5xx) and `retry_in` the wait before it. A run that looks frozen is read here: three attempts of
+600 s used to hide behind one `started` row, so a retrying call and a thinking one were
+indistinguishable. In the LLM activity dock the same record shows as the status `retrying` —
+warn ink, the row saying `attempt 2 of 3 — after …` — and it still counts as in flight.
+
 ## A cooling primary model (`model_failover`, `model_chain_exhausted`)
 
 The same shape of invisible cost, in the model layer. A catalog model's `fallbacks:` chain

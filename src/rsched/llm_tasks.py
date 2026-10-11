@@ -33,7 +33,15 @@ MAX_TASKS = 1000         # hard cap on retained tasks (drop oldest terminal firs
 #: itself waits 180-600s — so it never reaps live work, and far below "forever".
 MAX_RUNNING_S = 3600.0
 
-_STATUS = {"started": "running", "finished": "done", "failed": "error"}
+_STATUS = {"started": "running", "attempt": "retrying", "finished": "done", "failed": "error"}
+
+#: Every status that means the call has NOT terminated. One tuple, read by all three places
+#: that ask — the orphan sweep, the age backstop and the process-pruning check — because F572's
+#: leak was precisely a predicate that named one in-flight status and missed another: a task
+#: nothing recognises as live is never aged out and never orphaned, so it is retained for the
+#: daemon's lifetime. `retrying` (F655) is a second in-flight status; adding it as a literal in
+#: three conditions would have rebuilt that bug on purpose.
+IN_FLIGHT = ("running", "retrying")
 
 
 class TaskCenter:
@@ -63,7 +71,7 @@ class TaskCenter:
         # killed mid-call (an abort leaves a `started` sidecar record with no `finished`). Orphan
         # any in-flight child so it, and then this process, can prune instead of leaking forever.
         for t in self.tasks.values():
-            if t.get("process_id") == id and t.get("status") == "running":
+            if t.get("process_id") == id and t.get("status") in IN_FLIGHT:
                 t.update(status="error", error=t.get("error") or "ended before completion",
                          done_at=time.monotonic())
         self._prune()
@@ -112,7 +120,7 @@ class TaskCenter:
         # terminal rather than deleting it, so it prunes by the ordinary linger below and the
         # panel can show for one linger WHY the row went away.
         for entry in self.tasks.values():
-            if entry.get("status") != "running":
+            if entry.get("status") not in IN_FLIGHT:
                 continue
             started = entry.get("started_at")
             if started is None:
@@ -136,7 +144,7 @@ class TaskCenter:
             pr = self.processes[pid]
             if not pr.get("closed"):
                 continue
-            live = any(e.get("status") == "running" and e.get("process_id") == pid
+            live = any(e.get("status") in IN_FLIGHT and e.get("process_id") == pid
                        for e in self.tasks.values())
             if not live and now - pr.get("closed_at", now) > LINGER_S:
                 del self.processes[pid]

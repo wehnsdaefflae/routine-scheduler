@@ -515,7 +515,17 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
             # reader of that file then counted as 13 malformed rows.
             data = (json.dumps(data, ensure_ascii=False) if action.get("append")
                     else json.dumps(data, indent=2, ensure_ascii=False)) + "\n"
+        terminated = False
         if action.get("append"):
+            # A record-per-line file's structure IS the line boundary, so a string body with
+            # no trailing newline does not append a record — it extends the previous one
+            # (R2446/R2452: three release rows became one 5,832-char line, and the routine
+            # reading that hand-off could not distinguish a lost row from nothing shipped).
+            # A structured body is already terminated above; prose is left byte-faithful,
+            # because a run continuing a sentence next turn must not get a newline inserted.
+            if data and not data.endswith("\n") and fileformat.record_per_line(path):
+                data += "\n"
+                terminated = True
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(data)
         else:
@@ -544,8 +554,11 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
     # `bytes` = payload WRITTEN this action; `size` = the file's total size AFTER it. An
     # append that truly appended shows size == prior + bytes; an overwrite shows size ==
     # bytes — so append-vs-overwrite is provable from the observation alone.
-    return {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
-            "append": bool(action.get("append")), "size": size}
+    out = {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
+           "append": bool(action.get("append")), "size": size}
+    if terminated:
+        out["terminated"] = True   # the engine added the record separator; say so (R2452)
+    return out
 
 
 def _nearest_anchor_hint(text: str, anchor: str) -> str:

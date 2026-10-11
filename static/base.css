@@ -1138,6 +1138,14 @@ label.field > span, .field > .lbl {
   background: var(--signal); box-shadow: 0 0 0 3px var(--signal-dim);
   animation: pulse 1.4s infinite;
 }
+/* a RETRYING call is in flight but not healthy: the first attempt already failed, so it pulses
+   like running (it is changing while you look) in warn ink rather than signal (F655). Without
+   its own rule it fell through to the neutral --ink-3 of an unknown state, which is how two
+   distinct states come to render identically. */
+.lt-dot.retrying {
+  background: var(--warn); box-shadow: 0 0 0 3px var(--warn-dim);
+  animation: pulse 1.4s infinite;
+}
 .lt-dot.done { background: var(--ok); }
 .lt-dot.error { background: var(--err); }
 
@@ -1153,6 +1161,9 @@ label.field > span, .field > .lbl {
   font-size: var(--t-xs); color: var(--ink-2);
 }
 .lt-model { color: var(--ink-3); }
+/* "attempt 2 of 3 — after claude-proxy: read timeout after 600s": the retry's own line, in warn
+   ink so it reads as a problem in progress rather than as another piece of metadata (F655). */
+.lt-attempt { color: var(--warn); }
 .lt-err { color: var(--err); }
 
 .lt-proc { border: 1px solid var(--rule); border-radius: var(--r2); margin: 2px 0; overflow: hidden; }

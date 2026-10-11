@@ -57,6 +57,57 @@ def test_append_outside_own_dir_preserves_existing_content(make_routine, tmp_pat
     assert obs["size"] == len(original.encode("utf-8")) + obs["bytes"]
 
 
+def test_a_string_record_appended_to_a_jsonl_file_stays_one_line(make_routine, tmp_path):
+    """R2446/R2452, measured: three release rows appended as STRINGS with no trailing newline
+    concatenated — rows 2 and 3 landed on one 5,832-character line carrying three `{` against
+    two `}`, and `json.loads` died at char 2,771. The reader is `self-audit`'s orient stage,
+    which folds this file into its changelog and flips handed rows to `addressed`; a file whose
+    integrity depends on whether each append happened to end in a newline is one it cannot tell
+    "nothing shipped" from "the row was eaten" in.
+
+    A record-structured file (`.jsonl`/`.ndjson`) gets the separator it needs. An already
+    newline-terminated string is not given a second one — that would leave blank lines a
+    line-per-record reader counts.
+    """
+    import json
+
+    ctx = action_ctx(make_routine(), tmp_path)
+    rows = [{"version": "0.408.0", "commit": "87336a76"},
+            {"version": "0.408.1", "commit": "fc9a4ded"},
+            {"version": "0.409.0", "commit": "afbbe20d"}]
+    for row in rows:
+        obs = do_write_file({"path": "state/shipped.jsonl",
+                             "content": json.dumps(row),      # a STRING, no trailing newline
+                             "append": True}, ctx)
+        assert "error" not in obs
+    text = (ctx.routine.dir / "state" / "shipped.jsonl").read_text(encoding="utf-8")
+    lines = text.splitlines()
+    assert len(lines) == 3, f"rows ran together: {len(lines)} line(s) for 3 records"
+    assert [json.loads(x) for x in lines] == rows
+    assert text.endswith("\n"), "the last record is unterminated, so the NEXT append merges"
+
+
+def test_a_string_append_already_ending_in_a_newline_gains_no_second_one(make_routine,
+                                                                        tmp_path):
+    ctx = action_ctx(make_routine(), tmp_path)
+    for i in range(2):
+        do_write_file({"path": "state/rows.ndjson", "content": f'{{"i": {i}}}\n',
+                       "append": True}, ctx)
+    text = (ctx.routine.dir / "state" / "rows.ndjson").read_text(encoding="utf-8")
+    assert text == '{"i": 0}\n{"i": 1}\n', repr(text)
+
+
+def test_a_prose_append_is_left_exactly_as_written(make_routine, tmp_path):
+    """Only a record-per-line file gets the separator. A note, a ledger, a markdown log is
+    appended byte-faithfully — a run that writes half a sentence and continues it next turn
+    must not have a newline inserted into its text."""
+    ctx = action_ctx(make_routine(), tmp_path)
+    do_write_file({"path": "state/notes.md", "content": "a half"}, ctx)
+    do_write_file({"path": "state/notes.md", "content": " sentence", "append": True}, ctx)
+    assert (ctx.routine.dir / "state" / "notes.md").read_text(
+        encoding="utf-8") == "a half sentence"
+
+
 def test_structured_append_is_one_compact_jsonl_line(make_routine, tmp_path):
     """An APPENDED structured value is a record: one compact line, so a JSONL ledger stays
     one-object-per-line. The pretty form landed a 13-line row in a changelog.jsonl once, and
