@@ -497,6 +497,10 @@ by a test, by the engine, or by a past incident.
   runs ruff, mypy AND vulture (dead code — what ruff cannot see is a symbol whose last caller
   went away; `src` and `tests` are scanned together so a src symbol used only by a test is not
   reported), and the engine bypasses pre-commit — so a red gate can otherwise sail through.
+  `tests/test_file_size.py` is the fourth, and the only one no tool can do: the ≤350-line bar in
+  Standards, as a ratchet over the frozen ceilings in `tests/size_ratchet.json`. A standard
+  nothing reads is advice — the tree had drifted to 107 files over the bar before anything
+  counted a line.
 - **A recipe says WHAT, never which tool.** Workflow patterns, materialized recipes, general
   rules and playbooks may not name a util or show its flags — they name the capability, the run picks the
   tool from its live CAPABILITIES catalog, and what worked is persisted in the ROUTINE'S memory,
@@ -760,7 +764,15 @@ by a test, by the engine, or by a past incident.
 
 ## Standards
 
-- One responsibility per file, ≤ ~350 lines. Split rather than grow.
+- One responsibility per file, ≤ 350 lines. Split rather than grow. **Enforced as a RATCHET** —
+  `tests/test_file_size.py` over `src/**.py`, `tests/**.py`, `static/**.js`, `static/**.css`
+  (862 files), with every current violation's length frozen as a CEILING in
+  `tests/size_ratchet.json`: a file at or under the bar may never cross it (755 files), a file
+  over it may only shrink, and one that comes back under loses its entry for good. After a split,
+  `python tests/test_file_size.py --update` lowers the ceilings; it REFUSES to raise one or to
+  baseline a newly-over-bar file, so growth cannot be laundered into the record. A shrink nobody
+  records is itself a failure — an untightened ceiling is permission to re-grow. An allowlist was
+  rejected: it would have exempted exactly the files that needed splitting.
 - Prefer a fitting, well-maintained package over hand-rolled plumbing (pydantic validates config,
   tenacity retries, python-frontmatter parses frontmatter, websockets relays the browser screen). The bar is net
   reduction AND net clarity — `paths.atomic_write` and `schema_guard` stay bespoke on purpose.

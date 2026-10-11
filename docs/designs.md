@@ -234,11 +234,21 @@ routines_home=…)`, keeping each message, with its tests.
 
 ---
 
-## Files over the size bar (≤ ~350 lines)
+## Files over the size bar (≤ 350 lines)
 
-`engine/loop.py` (413), `engine/inbox.py` (391), `engine/window.py` (380), `static/util.js` (381).
+The bar is ENFORCED since 0.413.0 (F611): `tests/test_file_size.py` ratchets every one of the 107
+files already over it to its current length and stops the other 755 from crossing, so this entry
+is now about PAYING THE DEBT DOWN, not about noticing it. Measured 2026-10-11 on `c686aa48`:
+`engine/loop.py` (453), `engine/window.py` (402), `engine/inbox.py` (398), `static/util.js` (381)
+— each has grown since this entry was written, which is what an unenforced standard does.
+
 Split along responsibilities they already have — inbox's filing vs draining, util.js's formatting
-vs DOM helpers, window's eviction warning, loop's observe/turn-record helpers.
+vs DOM helpers, window's eviction warning, loop's observe/turn-record helpers. Then run
+`python tests/test_file_size.py --update`: a shrink that leaves its ceiling untightened is
+permission to re-grow, which is why the gate reports one as a failure.
+
+The 20 worst are all test modules (`test_loop.py` 3268, `test_api.py` 3011, `ui/test_flows.py`
+2127) and `static/views.css` (2024); `docs/designs.md:380` covers the test-helper half.
 
 **First increment.** `engine/inbox.py`, the most imported.
 
@@ -390,7 +400,10 @@ changing a test, and proposed three things it was not scoped to do.
   `test_api`, `test_token_calibration`, `test_oversize_prompt` and `tests/ui/test_mobile_nav`. A
   private helper of one test file should not have a second owner.
 - `tests/conftest.py` is 684 lines (574 before the consolidation). Its plain builders — the ones
-  that need no fixture — move to `tests/helpers.py`, about 70 import lines; fixtures stay.
+  that need no fixture — move to `tests/helpers.py`, about 70 import lines; fixtures stay. Since
+  F611 that 684 is a frozen CEILING in `tests/size_ratchet.json`, so conftest cannot grow further
+  while this is undone, and `tests/helpers.py` (under the bar) may not cross it — the builders
+  that move need their own module once it gets close.
 - CLAUDE.md's Standards names the two helper modules as the home of shared test builders, with the
   rules the consolidation kept: a helper with ONE caller stays local, and variants become keyword
   arguments — never "unified" by picking one.

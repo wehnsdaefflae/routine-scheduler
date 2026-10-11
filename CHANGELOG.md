@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.413.0] — 2026-10-11
+
+### The ≤350-line house bar is enforced, as a ratchet
+
+CLAUDE.md's Standards have said "One responsibility per file, ≤ ~350 lines. Split rather than
+grow" for the life of the repo, and nothing ever read a file's length — ruff, mypy and vulture
+cannot see a line count. The standard was advice, and the tree drifted to **107 files over the
+bar** out of 862 (`tests/test_loop.py` 3268, `static/views.css` 2024, and `engine/background.py`
+478 and `daemon/runner.py` 474, both written by the routine that would have maintained any
+allowlist).
+
+`tests/test_file_size.py` now gates `src/**.py`, `tests/**.py`, `static/**.js` and
+`static/**.css` against `tests/size_ratchet.json`, which freezes each current violation's length
+as a CEILING:
+
+- a file at or under the bar may never cross it — **755 files** are held there as of today;
+- a file over the bar may only shrink;
+- coming back under the bar is one-way: the entry is dropped and can never return.
+
+`python tests/test_file_size.py --update` lowers ceilings after a split and REFUSES, by
+construction, to raise one or to baseline a newly-over-bar file — growth cannot be laundered into
+the baseline. A shrink that leaves its ceiling untightened is itself reported as a failure, since
+the lines it gave back would otherwise become permission to re-grow.
+
+Two shapes were rejected: a flat check can never be green on this tree, and a gate red on arrival
+gets deleted; an allowlist exempts exactly the files that need splitting. The ratchet is the shape
+this repo already uses for standards that arrived after the code — pyproject's `max-complexity`,
+the `max-args` family and coverage's `fail_under` all read "ratchet to current worst".
+
+Swept CLAUDE.md (Standards and the quality-gates paragraph), README's Development section and both
+`docs/designs.md` entries that quote file lengths; the splitting work those name is unchanged and
+still open.
+
 ## [0.412.0] — 2026-10-11
 
 ### Changed

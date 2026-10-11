@@ -262,6 +262,11 @@ adds live endpoint smoke tests). Quality gates are strict and enforced:
   never-executed ast-parsed depictions and utils are PEP 723 scripts — each has its own gate
   (`workflows/lint.py`; util header checks + `--selftest`).
 - `uv run mypy` — type check of `src/rsched`.
+- `uv run pytest tests/test_file_size.py` — the ≤350-line file bar from CLAUDE.md's Standards,
+  as a ratchet: no file at or under the bar may cross it, and the 107 already over it (frozen in
+  `tests/size_ratchet.json`) may only shrink. After splitting one, `python
+  tests/test_file_size.py --update` lowers the ceilings — it refuses to raise one, so the
+  baseline can only ever get stricter.
 - `uv run pre-commit install` once — both gates then run on every commit.
 - `uv run pytest --cov` — coverage report (branch coverage on; `fail_under` is a ratchet
   nothing runs today — re-measure it before wiring any gate to the number).
