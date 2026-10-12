@@ -1349,7 +1349,7 @@ summary.setup-head::-webkit-details-marker { display: none; }
    is this routine and offers the wider one after .fix-or, which is a word and not a control:
    the reader chooses between the two by reading them, so the second must not read as the
    first's continuation. Leaving the routine page is a different act from a jump within it;
-   .fix-away is marked as one. The cell around it is `.prose` — a reading serif, because the
+   .fix-away is marked as one. The cell around it is `.prose` — the reading face, because the
    diagnosis above is written ABOUT this routine. An instruction to the operator is the
    console's own voice, so the line speaks in the interface face. */
 .fix-line {
