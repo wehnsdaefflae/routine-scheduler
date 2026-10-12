@@ -81,6 +81,34 @@ def test_an_action_rows_outcome_never_wears_summons():
     assert "dashed" in timeout and "dashed" not in usage, "the solid/dashed edges swapped or merged"
 
 
+#: A serif face, by family name or by generic. `sans-serif` and `ui-sans-serif` contain the
+#: word and are the opposite of one, so the pattern requires the generic to stand alone.
+SERIF_FACE = re.compile(
+    r"(?<!sans-)(?<!sans)\bserif\b|\bui-serif\b|\bGeorgia\b|\bCharter\b|\bPalatino\b"
+    r"|\bBaskerville\b|\bGaramond\b|\bCambria\b|\bConstantia\b|\bIowan Old Style\b"
+    r"|\bTimes New Roman\b|\bTimes\b|\bMincho\b|\bSongti\b|\bBatang\b", re.IGNORECASE)
+
+
+def test_no_type_token_names_a_serif_face():
+    """The console uses no serif type (operator, 2026-10-12: "you need to make sure not to use
+    serif fonts in the webui").
+
+    Checked at the TOKENS because `test_type_comes_from_the_three_type_tokens` already proves
+    no rule spells a face of its own — so the three token values are the whole type surface of
+    `static/`, and a serif cannot reappear anywhere else without failing that test first.
+    `docs_build.py` keeps its own copy of the token block for the standalone guide/docs pages
+    the console serves, which is part of the same web UI: a fix in one copy and not the other
+    is how the two drifted apart before.
+    """
+    from rsched import docs_build
+
+    for name, text in (("static/base.css", BASE),
+                       ("docs_build.THEME_TOKENS", docs_build.THEME_TOKENS)):
+        for token, value in re.findall(r"(--f-[\w-]+)\s*:\s*([^;]+);", text):
+            assert not SERIF_FACE.search(value), (
+                f"{name} {token} names a serif face: {value.strip()}")
+
+
 def test_type_comes_from_the_three_type_tokens():
     for name, css in (("base.css", BASE), ("views.css", VIEWS)):
         for sel, body in _rules(css):

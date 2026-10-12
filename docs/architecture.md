@@ -994,7 +994,7 @@ routine, through the scaffold path, and a fresh instance starts with none — th
 a notice while every meta routine it does have is disabled. `self-audit`
 works LOOKUP-FIRST from `.codemap/` — a compact derived map of this repo (module API surface,
 routes + JS callers, contract literals, mechanical audit flags — orphan candidates
-pre-verified by a whole-repo reference scan) the library `codemap` util regenerates at orient
+pre-verified by a whole-repo reference scan) the library code-search util's `map` verb regenerates at orient
 (gitignored; delete-and-rebuild, never hand-edited; `--since` prints the symbol-level change
 set for the since-anchor review). Its companions: `sym` (syntax-aware surgery — read one
 complete symbol with a content hash, compare-and-swap replace with a whole-file re-parse

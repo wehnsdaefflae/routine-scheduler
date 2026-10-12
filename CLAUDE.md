@@ -131,7 +131,7 @@ one you are about to touch, not all of them.
   path folding, JSON minified with tables — engine behaviour rather than a setting, no optional
   dependency), and the subscription transport
 - `.codemap/` — the derived module/route/contract map `self-audit` works from
-  (gitignored; regenerate with the `codemap` util, never hand-edit)
+  (gitignored; regenerate with the repo-wide code-search util's `map` verb, never hand-edit)
 
 ## Commands
 
@@ -805,8 +805,9 @@ by a test, by the engine, or by a past incident.
   that way. The design system is `base.css` ("watchfloor"): colour is STATE, and the palette turns
   on one distinction — SIGNAL (cyan) is the machine working and is the interactive colour, SUMMONS
   (coral) is what waits on a PERSON, IRIS (violet) is structure. Type says who wrote the words:
-  system-ui for the console's own voice, mono for anything a counter emitted, a reading serif for
-  anything a mind wrote. Dark is the default with a real three-state theme; every token is defined
+  system-ui for the console's own voice, mono for anything a counter emitted, a reading sans at
+  a longer measure for anything a mind wrote (NO serif type anywhere in the console — operator,
+  2026-10-12; `tests/test_stylesheet_tokens.py` pins it at both copies of the type tokens). Dark is the default with a real three-state theme; every token is defined
   for both. `views.css` builds only on those tokens and adds no colour of its own.
   The console keeps PRODUCTION apart from DEVELOPMENT (operator, 2026-10-08): the rail's Work and
   Fleet groups are the routines doing their jobs, its **Develop** group (Changes, Stats, Library —

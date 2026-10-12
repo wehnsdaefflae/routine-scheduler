@@ -20,10 +20,10 @@
  *   DISPLAY (system-ui)   — the console's own voice: headings, nav, buttons, labels.
  *   MACHINE (mono)        — anything a system emitted: ids, timestamps, counts, slugs, paths,
  *                           tokens, cost, code. If a counter produced it, it is mono.
- *   PROSE   (serif)       — anything a MIND wrote: run summaries, a transcript's narration, a
- *                           question, a chat message, recipe prose. A reading serif in an ops
- *                           console is the one liberty this design takes, and it earns itself on
- *                           the longest screen in the product: an agent explaining what it did.
+ *   PROSE   (reading sans) — anything a MIND wrote: run summaries, a transcript's narration, a
+ *                           question, a chat message, recipe prose. NO serif type anywhere in
+ *                           this console (operator, 2026-10-12): the role is carried by size,
+ *                           measure and leading, not by a contrasting face.
  *
  * Dark is the default because this console is read at night and lived in. Light is a real theme,
  * not an afterthought, and the toggle is three-state (auto / light / dark) with dark as the
@@ -106,7 +106,7 @@
   --f-display: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --f-mono: ui-monospace, "SF Mono", "SFMono-Regular", "Cascadia Mono", Menlo, Consolas,
             "Liberation Mono", monospace;
-  --f-prose: ui-serif, Georgia, "Iowan Old Style", Charter, "Times New Roman", serif;
+  --f-prose: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
   --t-xs: 10.5px;
   --t-s: 11.5px;

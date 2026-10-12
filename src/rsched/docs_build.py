@@ -57,7 +57,7 @@ THEME_TOKENS = """
   --iris:    light-dark(#6a55d0, #a99cf5);
   --f-display: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --f-mono: ui-monospace, "SF Mono", "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
-  --f-prose: ui-serif, Georgia, "Iowan Old Style", Charter, "Times New Roman", serif;
+  --f-prose: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 """
 
