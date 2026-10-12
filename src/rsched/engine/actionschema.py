@@ -38,7 +38,7 @@ KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_
          "script", "shell",
          "llm", "decide", "spawn", "subtask", "detach",
          "schedule_run", "create_routine", "manage_lane",
-         "task", "goal",
+         "job", "goal",
          "list_models", "subruns", "kill", "wait", "ask_user", "report", "finish")
 
 ACTION_SCHEMA: dict = {
@@ -213,9 +213,9 @@ ACTION_SCHEMA: dict = {
         "path": {
             "type": "string",
             "description": "read_file/view_image/write_file/delete/mkdir/edit_file: path "
-                           "relative to your working directory (or an allowed root) · task "
-                           "create/update: the task's workspace, relative to the routine (default "
-                           "tasks/<id>) · write_util: "
+                           "relative to your working directory (or an allowed root) · job "
+                           "create/update: the job's workspace, relative to the routine (default "
+                           "jobs/<id>) · write_util: "
                            "install the util script from this file's EXACT bytes "
                            "(byte-faithful; instead of inline content) · shell: OPTIONAL "
                            "working directory for the command (default: your working "
@@ -345,9 +345,9 @@ ACTION_SCHEMA: dict = {
                    "description": "schedule_run: cancel armed one-shot(s) on target instead of "
                                   "arming (with id: cancel that one; without: cancel all)"},
         "id": {"type": "string",
-               "description": "schedule_run: the one-shot id (so-XXXX) to cancel · task: the "
-                              "task's kebab-case id (create: the new one's; open without it "
-                              "opens the next due task) · goal change/check/drop: the goal's "
+               "description": "schedule_run: the one-shot id (so-XXXX) to cancel · job: the "
+                              "job's kebab-case id (create: the new one's; open without it "
+                              "opens the next due job) · goal change/check/drop: the goal's "
                               "id (b1, b2, …)"},
         # manage_lane — CRUD/fire routine LANES from a conversation (D61). Offered to every
         # depth-0 run; a root conversation applies a verb, any other run queues a proposal (F328)
@@ -356,9 +356,9 @@ ACTION_SCHEMA: dict = {
                           "checkpoint", "set", "add", "change", "check", "drop"],
                  # EVERY clause carries its kind's lead. `kindsurface._project_description`
                  # splits on " · " and KEEPS a clause that names no kind, so an un-led
-                 # continuation of task's list survives into a run that holds manage_lane and
-                 # not task — and reads there as a manage_lane verb. Measured in a live
-                 # self-audit prompt, which rendered task's create/update/open/checkpoint/delete
+                 # continuation of job's list survives into a run that holds manage_lane and
+                 # not job — and reads there as a manage_lane verb. Measured in a live
+                 # self-audit prompt, which rendered job's create/update/open/checkpoint/delete
                  # as manage_lane's own (the lead clause was dropped correctly; its orphans
                  # were not). The shared `enum` above is deliberate (actions.py validates each
                  # kind's verbs separately); only the prose must be per-kind.
@@ -366,11 +366,11 @@ ACTION_SCHEMA: dict = {
                                 "manage_lane: create (needs name) · manage_lane: update (needs "
                                 "target) · manage_lane: delete (needs target) · manage_lane: "
                                 "set-default (needs on_failure) · manage_lane: run (needs "
-                                "target; arms a sequential fire of the lane) · task: the "
-                                "operation — list · task: create (id + title + brief) · task: "
-                                "update (id + what changes) · task: open (id, or none for the "
-                                "next due task) · task: checkpoint (id + outcome + summary: "
-                                "closes the open task and opens the next due one) · task: "
+                                "target; arms a sequential fire of the lane) · job: the "
+                                "operation — list · job: create (id + title + brief) · job: "
+                                "update (id + what changes) · job: open (id, or none for the "
+                                "next due job) · job: checkpoint (id + outcome + summary: "
+                                "closes the open job and opens the next due one) · job: "
                                 "delete (id) · goal: the operation — set (goals: the opening "
                                 "list, while none is open) · goal: add (goals: one or more "
                                 "new ones) · goal: change (id + goals: [one, reworded]) · "
@@ -596,8 +596,8 @@ ACTION_SCHEMA: dict = {
         # report — the ungated channel every routine holds
         "title": {
             "type": "string",
-            "description": "report: a one-line summary of the problem you are raising · task "
-                           "create/update: the task's one-line name",
+            "description": "report: a one-line summary of the problem you are raising · job "
+                           "create/update: the job's one-line name",
         },
         "detail": {
             "type": "string",
@@ -606,26 +606,26 @@ ACTION_SCHEMA: dict = {
                            "'done' looks like. Whoever picks this up has none of your context, "
                            "so write it to stand alone",
         },
-        # task — the routine's standing units of work (only with the task layer switched on)
+        # job — the routine's standing units of work (only with the job layer switched on)
         "brief": {"type": "string",
-                  "description": "task create/update: what the task is, what processing it "
+                  "description": "job create/update: what the job is, what processing it "
                                  "each run means and what done looks like — self-contained, "
                                  "since a later run reads nothing else about it"},
         "state": {"type": "string", "enum": ["active", "paused", "done"],
-                  "description": "task create/update: active (processed when due) · paused "
+                  "description": "job create/update: active (processed when due) · paused "
                                  "(kept, never due) · done (finished for good)"},
         "outcome": {"type": "string", "enum": ["advanced", "no-work", "blocked", "deferred"],
-                    "description": "task checkpoint: what became of the task this run — "
+                    "description": "job checkpoint: what became of the job this run — "
                                    "advanced (work landed) · no-work (looked; nothing was due) · "
                                    "blocked (waits on something outside your reach, named in "
                                    "the summary) · deferred (work exists and you set it aside: "
                                    "the next run is owed it)"},
         "wake": {"type": "string",
-                 "description": "task create/update/checkpoint: YYYY-MM-DD — let the task rest "
+                 "description": "job create/update/checkpoint: YYYY-MM-DD — let the job rest "
                                 "until then unless one of its gate checks finds work; an "
                                 "empty string clears it"},
         "quiet_days": {"type": "integer", "minimum": 1, "maximum": 365,
-                       "description": "task create/update: the task is due whenever it has "
+                       "description": "job create/update: the job is due whenever it has "
                                       "not been processed for this many days"},
         # finish
         "status": {"type": "string", "enum": ["ok", "partial", "failed"],
@@ -636,8 +636,8 @@ ACTION_SCHEMA: dict = {
                                   "done"},
         "summary": {
             "type": "string",
-            "description": "task checkpoint: what this run did for the task and what the next "
-                           "run should pick up — the task's whole memory of this run · "
+            "description": "job checkpoint: what this run did for the job and what the next "
+                           "run should pick up — the job's whole memory of this run · "
                            "finish: a DETAILED 8-20 line result summary — concrete outcomes "
                            "(numbers, names, links), decisions taken + why, files changed, "
                            "open ends and what the next run should pick up (becomes result.md, "
@@ -647,7 +647,7 @@ ACTION_SCHEMA: dict = {
         },
         "accounting": {
             "type": "array", "items": {"type": "string"},
-            "description": "task checkpoint: one entry per line of the open task's own "
+            "description": "job checkpoint: one entry per line of the open job's own "
                            "recipe `## Done when` (`d1 met: <evidence>`, `d2 not due: <how "
                            "established>` …) · finish: your verdict on each thing this run "
                            "answers for — one "
@@ -688,7 +688,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "decide": "question", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
-               "manage_lane": "verb", "task": "id", "goal": "id",
+               "manage_lane": "verb", "job": "id", "goal": "id",
                "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
 #: The kinds that may name several files at once (`paths`) where BRIEF_FIELD names one — what
@@ -727,7 +727,7 @@ def canon(action: dict) -> str:
                                       `util:fs-ops` alone cannot tell `mv` from `rm`
         script:store stage --note x   the routine's own script, the same way and for the same
                                       reason: `script name=store` cannot tell `stage` from `drop`
-        task:checkpoint nanogeofeld   a task turn by its verb and the task it acts on
+        job:checkpoint nanogeofeld   a job turn by its verb and the job it acts on
         shell: rm -rf build/          the command IS the action; a `command=` label adds nothing
         read_file paths=a.md,b.md     `read_file` and `view_image` carry a LIST (`paths`), not
                                       the singular field
@@ -739,8 +739,8 @@ def canon(action: dict) -> str:
     string would silently change what a regex can see as an action's arguments grow.
     """
     kind = str(action.get("kind") or "?")
-    if kind in ("task", "goal"):
-        # the verb is what the turn DID to the task — `task id=x` cannot tell an open from a
+    if kind in ("job", "goal"):
+        # the verb is what the turn DID to the job — `job id=x` cannot tell an open from a
         # checkpoint, the one distinction a reader of the turn needs (a goal's add from its drop)
         tid = str(action.get("id") or "")
         return f"{kind}:{action.get('verb') or '?'}{f' {tid}' if tid else ''}"

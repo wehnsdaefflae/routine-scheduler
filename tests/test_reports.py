@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from helpers import bare_routine
-from rsched import tasks
+from rsched import jobs
 from rsched.engine.actions import (
     ALWAYS_KINDS,
     ASK_OPTIONS_MAX,
@@ -276,20 +276,20 @@ def test_the_refusal_suggests_where_the_work_went(tmp_path):
                                                   "tags: [fau]\n")
     bare_routine(home, "fau")
     (home / "fau" / "routine.yaml").write_text("slug: fau\ntags: [fau]\n", encoding="utf-8")
-    task = tasks.new_task("nanogeofeld", "NanoGeoFeld", "", by="operator")
+    task = jobs.new_job("nanogeofeld", "NanoGeoFeld", "", by="operator")
     task["origin"] = "nanogeofeld"
-    tasks.save(home / "fau", {**tasks.empty(), "tasks": [task]})
+    jobs.save(home / "fau", {**jobs.empty(), "tasks": [task]})
     (home / "self-audit" / "routine.yaml").write_text("slug: self-audit\ntags: [fau]\n",
                                                       encoding="utf-8")
 
     obs = handle_report(loop, {"target": "nanogeofeld", "title": "stale util name"})
     assert obs["target_unreachable"] is True
-    assert obs["suggestions"][0] == {"slug": "fau", "task": "nanogeofeld",
-                                     "why": "carries 'nanogeofeld' as its task 'nanogeofeld'"}
+    assert obs["suggestions"][0] == {"slug": "fau", "job": "nanogeofeld",
+                                     "why": "carries 'nanogeofeld' as its job 'nanogeofeld'"}
     assert "self-audit" not in [s["slug"] for s in obs["suggestions"]]
     text = format_observation(obs)
     assert "Routines that would read it: 'fau'" in text
-    assert "name the task 'nanogeofeld' in the title" in text
+    assert "name the job 'nanogeofeld' in the title" in text
     assert _rows(home) == []
 
 

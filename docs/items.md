@@ -252,7 +252,7 @@ observation, and the sender re-files it to the owner that holds the problem now,
 out so it goes to triage, which is read. Which owner that is was the sender's guess until the
 refusal started SUGGESTING it (`rsched/recipients.py`): the usual reason a routine is switched
 off is that its work moved, so the refusal names the routines that would read the report, best
-first — the one carrying the target as a task (docs/tasks.md, "Merging routines"; the task is
+first — the one carrying the target as a task (docs/jobs.md, "Merging routines"; the task is
 named, so the hand-off lands on the right work), then its lane-mates, the routines sharing a store
 with it and the ones sharing a tag. Every suggestion is a routine that reads; the sender is never
 offered itself. An UNKNOWN target's list of valid slugs is likewise only routines that read. A routine whose `routine.yaml` cannot be PARSED also reads

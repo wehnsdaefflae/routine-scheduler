@@ -58,7 +58,7 @@ def capture(ctx: RunContext, action: dict) -> None:
     stamp = f"[{ctx.run_ts} · turn {ctx.turn} · {ctx.phase or '—'} · {_brief(action)}]"
     from .run_context import work_dir
 
-    # an open TASK's notes go to its own workspace (engine/taskops.py), where its next
+    # an open TASK's notes go to its own workspace (engine/jobops.py), where its next
     # briefing reads their tail — the stamp's run id still addresses this run's transcript
     path = work_dir(ctx) / "state" / NOTES_FILE
     try:

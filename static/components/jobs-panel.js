@@ -1,8 +1,8 @@
-// The routine's TASKS (rsched/tasks.py, docs/tasks.md), in the overview zone beside its runs:
-// every task with its state, whether the current or last run owed it and what came of it, the
-// workspace it works in, and the gate checks that watch it. Only for a routine whose task layer
-// is on (its Abilities settings) — the run creates, checkpoints and deletes tasks as work comes
-// up; this panel is where a person STEERS the list: pause a task, resume it, mark it done.
+// The routine's JOBS (rsched/jobs.py, docs/jobs.md), in the overview zone beside its runs:
+// every job with its state, whether the current or last run owed it and what came of it, the
+// workspace it works in, and the gate checks that watch it. Only for a routine whose job layer
+// is on (its Abilities settings) — the run creates, checkpoints and deletes jobs as work comes
+// up; this panel is where a person STEERS the list: pause a job, resume it, mark it done.
 //
 // A change lands between runs only (the server answers 409 while one is live: the run decided
 // at boot what it owes, and its finish is gated on exactly that), and the panel says so instead
@@ -28,13 +28,13 @@ function runMark(t) {
   return null;
 }
 
-export function mountTasks(host, slug, { active = false } = {}) {
+export function mountJobs(host, slug, { active = false } = {}) {
   let read = 0;
   let busy = active;
 
   async function setState(tid, state) {
     try {
-      await api(`/api/routines/${slug}/tasks/${encodeURIComponent(tid)}`,
+      await api(`/api/routines/${slug}/jobs/${encodeURIComponent(tid)}`,
         { method: "PATCH", body: { state } });
       reload();
     } catch (err) { toastError(err); }
@@ -43,7 +43,7 @@ export function mountTasks(host, slug, { active = false } = {}) {
   function actions(t) {
     if (busy) return el("span", { class: "muted small" }, "editable between runs");
     const btn = (label, state) => el("button", {
-      class: "btn small", "data-task-action": state,
+      class: "btn small", "data-job-action": state,
       onclick: () => setState(t.id, state) }, label);
     if (t.state === "active") return el("span", { class: "row" }, btn("pause", "paused"), btn("done", "done"));
     return btn("resume", "active");
@@ -51,7 +51,7 @@ export function mountTasks(host, slug, { active = false } = {}) {
 
   function row(t) {
     const summary = t.last?.summary || "";
-    return el("tr", { "data-task": t.id },
+    return el("tr", { "data-job": t.id },
       el("td", {},
         el("div", { class: "strong" }, t.title || t.id),
         el("div", { class: "muted small mono" }, `${t.id} · ${t.workspace}/`
@@ -66,19 +66,19 @@ export function mountTasks(host, slug, { active = false } = {}) {
   }
 
   function render(data) {
-    const items = data.tasks || [];
+    const items = data.jobs || [];
     const head = el("p", { class: "muted small" },
       items.length
-        ? `${items.length} task(s). Every task due in a run is opened and checkpointed before `
+        ? `${items.length} job(s). Every job due in a run is opened and checkpointed before `
           + "that run may finish; what a run never checkpointed is carried to the next."
-        : "No tasks yet — the routine creates them with its task action as work comes up.");
+        : "No jobs yet — the routine creates them with its job action as work comes up.");
     const problems = (data.problems || []).map((p) => el("div", { style: "color:var(--err)" }, `⚠ ${p}`));
     if (!items.length) return el("div", { class: "panel" }, head, ...problems);
-    return el("div", { class: "panel", style: "padding:0", "data-tasks-panel": "" },
+    return el("div", { class: "panel", style: "padding:0", "data-jobs-panel": "" },
       el("div", { style: "padding:10px 14px 0" }, head, ...problems),
       el("div", { class: "tablewrap" },
         el("table", { class: "list stack" },
-          el("thead", {}, el("tr", {}, ["task", "state", "last checkpoint", "notes", ""]
+          el("thead", {}, el("tr", {}, ["job", "state", "last checkpoint", "notes", ""]
             .map((h) => el("th", {}, h)))),
           el("tbody", {}, items.map(row)))));
   }
@@ -87,9 +87,9 @@ export function mountTasks(host, slug, { active = false } = {}) {
     if (running !== undefined) busy = running;
     const mine = ++read;
     let data;
-    try { data = await api(`/api/routines/${slug}/tasks`); }
+    try { data = await api(`/api/routines/${slug}/jobs`); }
     catch (err) {
-      if (mine === read) host.replaceChildren(el("div", { class: "panel err" }, `tasks could not be read: ${err.message}`));
+      if (mine === read) host.replaceChildren(el("div", { class: "panel err" }, `jobs could not be read: ${err.message}`));
       return;
     }
     if (mine !== read || !host.isConnected) return;   // only the newest read paints

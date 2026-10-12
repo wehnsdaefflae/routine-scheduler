@@ -228,15 +228,15 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "[REMINDERS: ",
         "The labels: could_not",
         "fired and is STILL unlabelled",
-        # The TASK layer (engine/taskops.py, docs/tasks.md): the working-directory exception,
-        # the digest section, the briefing an open task answers with, the finish rung that holds
-        # a run to its due tasks, and the carry line a run's summary gains
-        "except while a TASK is open",
-        "TASKS — this routine's standing work",
-        "TASK OPEN —",
-        "your WORKING DIRECTORY until you checkpoint this task",
-        "GATED PROCESSING — task(s) due this run have no checkpoint yet",
-        "Task(s) carried to the next run",
+        # The JOB layer (engine/jobops.py + jobbrief.py, docs/jobs.md): the working-directory
+        # exception, the digest section, the briefing an open job answers with, the finish rung
+        # that holds a run to its due jobs, and the carry line a run's summary gains
+        "except while a JOB is open",
+        "JOBS — this routine's standing work",
+        "JOB OPEN —",
+        "your WORKING DIRECTORY until you checkpoint this job",
+        "GATED PROCESSING — job(s) due this run have no checkpoint yet",
+        "Job(s) carried to the next run",
         # A message for a routine that reads nothing is refused WITH where to send it instead
         # (rsched/recipients.py): the report refusal's last sentence and the note gate's words
         "Routines that would read it: ",

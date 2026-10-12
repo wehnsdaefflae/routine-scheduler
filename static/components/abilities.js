@@ -39,7 +39,7 @@
 //                                 impossible, so it is on the button, never on the row.
 //
 // Below the cards sit the four SETTINGS no doc switches on — run history, the reminder layer, the
-// shared-reminder approval and the task layer — on a card of their own
+// shared-reminder approval and the job layer — on a card of their own
 // (components/abilities-settings.js).
 //
 // (permissions, capabilities, opts) in, {node, value} out, for its three hosts: the routine page,

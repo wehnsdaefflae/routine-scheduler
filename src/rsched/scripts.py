@@ -300,7 +300,7 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     reaches the SCRIPT only, not the venv build before it: a cancel is aimed at the call the
     operator is watching, and killing the build instead would leave the same action to be
     cancelled again. `seal_dir` is the routine whose `routine.yaml` the run is watched for
-    changing, when the script lives elsewhere — a TASK's workspace (engine/taskops.py) holds
+    changing, when the script lives elsewhere — a TASK's workspace (engine/jobops.py) holds
     scripts of its own but no config. Returns (exit, out, err).
     """
     if not exists(routine_dir, name):

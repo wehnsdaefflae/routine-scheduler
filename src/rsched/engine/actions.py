@@ -71,7 +71,7 @@ KIND_EXAMPLES: dict[str, dict] = {
     "manage_lane": {"say": "<why this lane change now>", "kind": "manage_lane",
                      "verb": "create", "name": "Morning jobs",
                      "members": ["weight-coach", "news-digest"]},
-    "task": {"say": "<what this run did for the open task>", "kind": "task",
+    "job": {"say": "<what this run did for the open job>", "kind": "job",
              "verb": "checkpoint", "id": "client-onboarding", "outcome": "advanced",
              "summary": "<what landed, what the next run picks up>",
              "accounting": ["d1 met: <evidence>"]},
@@ -162,7 +162,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                        ("workflow", "pattern", "setup", "done_when", "finish_line", "never")),
     "manage_lane": (("verb",), ("target", "name", "members", "on_failure", "cron",
                                  "paused")),
-    "task": (("verb",), ("id", "title", "brief", "path", "state", "outcome", "summary",
+    "job": (("verb",), ("id", "title", "brief", "path", "state", "outcome", "summary",
                          "wake", "quiet_days", "accounting")),
     "goal": (("verb",), ("id", "goals", "quote", "evidence")),
     "read_file": ((), ("path", "paths", "start_line", "start_char", "max_lines", "background")),
@@ -357,8 +357,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
         elif verb == "set-default" and not str(obj.get("on_failure") or "").strip():
             problems.append("kind=manage_lane verb=set-default requires 'on_failure' "
                             "('stop' or 'continue')")
-    if kind == "task":
-        problems += task_field_problems(obj)
+    if kind == "job":
+        problems += job_field_problems(obj)
     if kind == "goal":
         problems += goal_field_problems(obj)
     if kind == "finish" and "final" in obj and not isinstance(obj["final"], bool):
@@ -535,44 +535,44 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     return problems
 
 
-#: The `task` action's verbs (engine/taskops.py) — the shared `verb` property's enum carries
+#: The `job` action's verbs (engine/jobops.py) — the shared `verb` property's enum carries
 #: manage_lane's too, so the per-kind check is what holds a task turn to its own.
-TASK_VERBS = ("list", "create", "update", "open", "checkpoint", "delete")
+JOB_VERBS = ("list", "create", "update", "open", "checkpoint", "delete")
 
 
-def task_field_problems(obj: dict) -> list[str]:
-    """The shape a `task` action must have. Whether the task EXISTS, is open or is due is the
-    handler's to judge against the store (engine/taskops.py) — this is only the grammar, so a
+def job_field_problems(obj: dict) -> list[str]:
+    """The shape a `job` action must have. Whether the task EXISTS, is open or is due is the
+    handler's to judge against the store (engine/jobops.py) — this is only the grammar, so a
     malformed call is corrected inside the schema-retry cycle and never costs a turn.
     """
     verb = str(obj.get("verb") or "")
-    if verb not in TASK_VERBS:
-        return [f"kind=task requires 'verb' to be one of {list(TASK_VERBS)}"]
+    if verb not in JOB_VERBS:
+        return [f"kind=job requires 'verb' to be one of {list(JOB_VERBS)}"]
     out = []
     tid = str(obj.get("id") or "")
     if verb in ("create", "update", "checkpoint", "delete") and not tid:
-        out.append(f"kind=task verb={verb} requires 'id' (the task's kebab-case id)")
+        out.append(f"kind=job verb={verb} requires 'id' (the task's kebab-case id)")
     elif tid and not is_slug(tid):
-        out.append(f"kind=task: 'id' must be a kebab-case task id, got {tid!r}")
+        out.append(f"kind=job: 'id' must be a kebab-case task id, got {tid!r}")
     if verb == "create":
-        out += [f"kind=task verb=create requires a non-empty {f!r}"
+        out += [f"kind=job verb=create requires a non-empty {f!r}"
                 for f in ("title", "brief") if not str(obj.get(f) or "").strip()]
     if verb == "checkpoint":
         if not obj.get("outcome"):
-            out.append("kind=task verb=checkpoint requires 'outcome' (advanced, no-work, "
+            out.append("kind=job verb=checkpoint requires 'outcome' (advanced, no-work, "
                        "blocked or deferred)")
         if not str(obj.get("summary") or "").strip():
-            out.append("kind=task verb=checkpoint requires 'summary' — what this run did for "
+            out.append("kind=job verb=checkpoint requires 'summary' — what this run did for "
                        "the task and what the next run picks up")
     if (wake := obj.get("wake")) not in (None, ""):
         try:
             date.fromisoformat(str(wake))
         except ValueError:
-            out.append(f"kind=task: 'wake' is a date YYYY-MM-DD (or \"\" to clear it), got "
+            out.append(f"kind=job: 'wake' is a date YYYY-MM-DD (or \"\" to clear it), got "
                        f"{wake!r}")
     stray = {"outcome", "summary", "accounting"} & set(obj) if verb != "checkpoint" else set()
     if stray:
-        out.append(f"kind=task: {sorted(stray)} belong to verb=checkpoint only")
+        out.append(f"kind=job: {sorted(stray)} belong to verb=checkpoint only")
     return out
 
 

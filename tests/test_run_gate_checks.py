@@ -221,8 +221,8 @@ async def test_a_routine_that_keeps_tasks_has_its_checks_answered_behind_a_built
         setup_gate, monkeypatch):
     """Inbox freight admits the fire before any check — but a routine that keeps TASKS needs to
     know WHICH tasks have work, so its checks are asked anyway and gate.json carries every
-    answer (rsched/tasks.due_for_run reads them); the decision stays "run"."""
-    from rsched import tasks
+    answer (rsched/jobs.due_for_run reads them); the decision stays "run"."""
+    from rsched import jobs
 
     cfg, _, runner = setup_gate
     cfg.capabilities = {"tasks": "on"}
@@ -230,7 +230,7 @@ async def test_a_routine_that_keeps_tasks_has_its_checks_answered_behind_a_built
               "task": "alpha"})
     ok_run(cfg, earlier())
     (cfg.dir / "state").mkdir(exist_ok=True)
-    tasks.save(cfg.dir, {"version": 1, "deleted": [], "run": {}, "tasks": [
+    jobs.save(cfg.dir, {"version": 1, "deleted": [], "run": {}, "tasks": [
         {"id": "alpha", "title": "a", "brief": "b", "state": "active",
          "wake": "2099-01-01"}]})
     (cfg.dir / "inbox").mkdir()
@@ -245,14 +245,14 @@ async def test_a_routine_that_keeps_tasks_has_its_checks_answered_behind_a_built
 
 async def test_a_task_due_by_its_own_clock_admits_a_fire_its_checks_would_skip(
         setup_gate, monkeypatch):
-    from rsched import tasks
+    from rsched import jobs
 
     cfg, _, runner = setup_gate
     cfg.capabilities = {"tasks": "on"}
     use(cfg, {"kind": "max_quiet", "days": 30})
     ok_run(cfg, earlier())
     (cfg.dir / "state").mkdir(exist_ok=True)
-    tasks.save(cfg.dir, {"version": 1, "deleted": [], "run": {}, "tasks": [
+    jobs.save(cfg.dir, {"version": 1, "deleted": [], "run": {}, "tasks": [
         {"id": "alpha", "title": "a", "brief": "b", "state": "active",
          "carry": "deferred by gate-test:1: waits"}]})
     marker = fake_engine(monkeypatch, cfg)

@@ -8,8 +8,8 @@ the only code the jail mounts.
 Protocol: argv[1] is `{version: 2, routine, routine_dir, routines_home, libraries_home, now,
 last_ok: {run_id, started, ended, fingerprints} | null, checks: [...], admit_reason?}`; stdout
 is `{version: 1, decision, reason, checks: [{id, kind, work, reason, fingerprint?}]}`. An
-`admit_reason` is a built-in reason the daemon already found (a routine that keeps tasks asks its
-checks anyway, to learn WHICH tasks have work): the decision is then "run" whatever they say.
+`admit_reason` is a built-in reason the daemon already found (a routine that keeps jobs asks its
+checks anyway, to learn WHICH jobs have work): the decision is then "run" whatever they say.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ def evaluate(ctx: dict) -> dict:
     if admit := str(ctx.get("admit_reason") or ""):
         # a reason the daemon found before any check (inbox freight, a task's own clock, …)
         # already decided "run"; the checks were asked anyway, so a routine that keeps TASKS
-        # learns which of them have work (rsched/tasks.py reads the rows from gate.json)
+        # learns which of them have work (rsched/jobs.py reads the rows from gate.json)
         found = "; ".join(f"{r['kind']}: {r['reason']}" for r in working)
         return {"version": 1, "decision": "run",
                 "reason": _cap(admit + (f"; {found}" if found else "")), "checks": results}

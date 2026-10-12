@@ -13,9 +13,9 @@ from . import (
     executor,
     goalops,
     interact,
+    jobops,
     manage_lane,
     secretgate,
-    taskops,
     thenscript,
     visionsteer,
 )
@@ -157,8 +157,8 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->h
         return create_routine.handle_create_routine(ctx, action)
     if action["kind"] == "manage_lane":
         return manage_lane.handle_manage_lane(ctx, action)
-    if action["kind"] == "task":
-        return taskops.handle_task(loop, action)
+    if action["kind"] == "job":
+        return jobops.handle_job(loop, action)
     if action["kind"] == "goal":
         return goalops.handle_goal(loop, action)
     if action["kind"] == "subruns":

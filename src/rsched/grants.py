@@ -31,7 +31,8 @@ demand):
       remind_confirm: always | creations | never  # GLOBAL consequence-reminder approval
       runs: last | all                 # previous-run read depth — a SETTING, no doc needed
       reminders: none | local | global # consequence-reminder stores — a SETTING too
-      tasks: off | on                  # the routine keeps TASKS (rsched/tasks.py) — a SETTING
+      jobs: off | on                  # the routine keeps JOBS (rsched/jobs.py) — a SETTING
+      #   (`tasks:` is the pre-D174 spelling, still read — rsched/jobs_compat.py)
 
 Which utils are "reserved" at all is library-defined: the union of every permission
 doc's `requires.utils`, at the grain the doc names — a bare `gmail` reserves every verb of
@@ -57,10 +58,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import jobs_compat
 from .engine.actionschema import KINDS
 from .ids import is_slug
+from .jobs import LEVELS as JOB_LEVELS
 from .reminders import LEVELS as REMINDER_LEVELS
-from .tasks import LEVELS as TASK_LEVELS
 
 # `read_rule` is deliberately NOT gated: a routine must be able to read the general rules
 # it holds, and reading library prose has no side effect worth a decision. The catalog
@@ -111,14 +113,14 @@ APPROVAL_DIALS = ("confirm", "rule_confirm", "remind_confirm")
 # which read their brief rather than the archive (loopsetup).
 RUN_HISTORY_LEVELS = ("none", "last", "all")
 # The SETTINGS half of a capabilities mapping — the approval dials, the previous-run read depth,
-# the reminder layer and the task layer — each with its all-off value. The user's choice per
+# the reminder layer and the job layer — each with its all-off value. The user's choice per
 # routine: never a permission doc's requirement, and kept through the floor with no permission
-# behind it. ONE vocabulary, read by the validator, the cascade and the floor alike. `tasks` is
+# behind it. ONE vocabulary, read by the validator, the cascade and the floor alike. `jobs` is
 # a setting rather than a permission for the reason `reminders` is: it changes how a routine
 # ORGANISES its own work, not what it may reach — every act a task leads to still passes the
 # same capabilities and gates as before.
 SETTING_DEFAULTS = {**dict.fromkeys(APPROVAL_DIALS, "always"), "runs": "none",
-                    "reminders": "none", "tasks": "off"}
+                    "reminders": "none", "jobs": "off"}
 
 
 def effective_settings(caps: dict) -> dict:
@@ -224,7 +226,8 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
     run-history depth and the reminder stores are SETTINGS the user chooses per routine,
     never something holding a doc switches on.
     """
-    known = ("actions", "utils") if requires else ("actions", "utils", *SETTING_DEFAULTS)
+    known = (("actions", "utils") if requires
+             else ("actions", "utils", *SETTING_DEFAULTS, jobs_compat.SETTING_ALIAS))
     if raw is None:
         return {}, []
     if not isinstance(raw, dict):
@@ -267,15 +270,8 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
             out["reminders"] = raw["reminders"]
         else:
             problems.append(f"{label}.reminders must be {' or '.join(REMINDER_LEVELS)}")
-    if "tasks" in raw:
-        # YAML 1.1 reads a bare `on`/`off` as a boolean: that is the parser's spelling of the
-        # same word, not a second convention, so it lands on the one canonical string.
-        value = (("on" if raw["tasks"] else "off") if isinstance(raw["tasks"], bool)
-                 else raw["tasks"])
-        if value in TASK_LEVELS:
-            out["tasks"] = value
-        else:
-            problems.append(f"{label}.tasks must be {' or '.join(TASK_LEVELS)}")
+    # the job layer, under either spelling — the whole deprecation lives in jobs_compat
+    problems += jobs_compat.normalize_setting(raw, JOB_LEVELS, label, out)
     return out, problems
 
 

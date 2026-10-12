@@ -84,8 +84,8 @@ export function describe(key, v) {
         c.reminders ? `reminders: ${c.reminders}` : "",
         // named where its dial is shown: only `global` writes a reminder anyone approves
         c.reminders === "global" && c.remind_confirm ? `reminder approval: ${c.remind_confirm}` : "",
-        // named only when on: a routine without the task layer has nothing to say about it
-        c.tasks === "on" ? "keeps tasks" : "",
+        // named only when on: a routine without the job layer has nothing to say about it
+        c.jobs === "on" ? "keeps jobs" : "",
       ].filter(Boolean).join(" · ") || "none";
     }
     case "rules": return (v || []).length ? `${v.length} rule${v.length === 1 ? "" : "s"}: ${list(v)}`

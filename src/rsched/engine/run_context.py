@@ -57,12 +57,12 @@ def _never_aborted() -> bool:
 
 def work_dir(ctx: RunContext) -> Path:
     """Where a run's RELATIVE paths resolve right now: the OPEN task's workspace
-    (engine/taskops.py), or the routine's own dir. Every seal is anchored on the routine's dir,
+    (engine/jobops.py), or the routine's own dir. Every seal is anchored on the routine's dir,
     not on this — a workspace is inside it, so moving the working directory moves nothing a
     seal guards. A free function over any context-shaped object: the file kinds are driven by
     lighter stand-ins too, and one with no task open simply has none.
     """
-    return getattr(ctx, "task_dir", None) or ctx.routine.dir
+    return getattr(ctx, "job_dir", None) or ctx.routine.dir
 
 
 def resolve_action_path(ctx: RunContext, rel: str, *, write: bool = False) -> Path:
@@ -265,11 +265,11 @@ class RunContext:
     claims_disputed: int = 0
     holds: int = 0
     interventions: int = 0
-    # The OPEN task (engine/taskops.py) and its workspace: while one is open, the run's
+    # The OPEN task (engine/jobops.py) and its workspace: while one is open, the run's
     # relative paths, scripts, shell and util calls and its memory notebook resolve in the
     # workspace instead of the routine's own dir (`work_dir`). Empty / None otherwise.
-    task_id: str = ""
-    task_dir: Path | None = None
+    job_id: str = ""
+    job_dir: Path | None = None
     # User UTTERANCES this leg: a settled blocking answer, a held reply, a dialog turn, an
     # injected message, a slash command. Not telemetry, and deliberately NOT carried across
     # legs — `create_routine` reads it to tell "the user has spoken since I drafted" from
@@ -575,9 +575,9 @@ class RunContext:
             **({"brief": self.brief} if self.brief else {}),
             **({"goals": self.goals} if self.goals else {}),
             **({"final": self.final} if self.final is not None else {}),
-            # the task the run is working on right now (engine/taskops.py) — the live tail's
-            # "where is it" for a routine whose work is several tasks
-            **({"task": self.task_id} if self.task_id else {}),
+            # the task the run is working on right now (engine/jobops.py) — the live tail's
+            # "where is it" for a routine whose work is several jobs
+            **({"job": self.job_id} if self.job_id else {}),
             # peak resident memory of the engine process (kB) — the rc=-9 post-mortem's
             # key datum (F348); the daemon reads the last write's value at close-out
             "vm_hwm_kb": _vm_hwm_kb(),

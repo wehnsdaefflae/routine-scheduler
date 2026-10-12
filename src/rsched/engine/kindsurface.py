@@ -324,20 +324,20 @@ user in the loop (a scheduled run) `list` still answers directly, but every CHAN
 queues a proposal on the Decisions page instead of applying — one call, then carry on with the \
 work that does not depend on it; your next run learns from your inbox whether the user \
 approved it."""),
-    (("task",), """- task: this routine keeps TASKS — standing units of its work, each with its \
+    (("job",), """- job: this routine keeps JOBS — standing units of its work, each with its \
 own workspace and, often, its own recipe — and this kind is how you manage them, via `verb`: \
 list · \
 create (id, title, brief; optional path = its workspace, wake, quiet_days) · update (id + what \
-changes, state active/paused/done included) · open (id, or none for the next due task) · \
+changes, state active/paused/done included) · open (id, or none for the next due job) · \
 checkpoint (id, outcome, summary, accounting) · delete (id; its workspace stays on disk). \
-GATED PROCESSING: every task your digest lists as DUE this run must be opened and checkpointed \
-before the engine lets you finish — one at a time: opening a task while another is open is \
+GATED PROCESSING: every job your digest lists as DUE this run must be opened and checkpointed \
+before the engine lets you finish — one at a time: opening a job while another is open is \
 refused, so checkpoint first (outcome `deferred`, saying why, when you set one aside). While a \
-task is OPEN your working directory IS its workspace: relative paths, scripts, shell and util \
+job is OPEN your working directory IS its workspace: relative paths, scripts, shell and util \
 calls and memory_read / memory_write resolve there, and its recipe (main.md + stages/ in the \
 workspace) is authoritative for its work. A checkpoint accounts for that recipe's `## Done when` \
-lines and opens the next due task. Create a task when standing work comes up that is not one \
-yet; never let one task's work hide inside another's checkpoint."""),
+lines and opens the next due job. Create a job when standing work comes up that is not one yet; \
+never let one job's work hide inside another's checkpoint. (These were `task` before 0.416.0.)"""),
     (("goal",), """- goal: the GOALS of this run — what a PERSON asked of it, each ONE checkable \
 end state (b1, b2, …). You are their scribe, never their author: every goal you set, add or \
 reword carries `quote`, the person's own words it came from, verbatim, and the engine refuses \

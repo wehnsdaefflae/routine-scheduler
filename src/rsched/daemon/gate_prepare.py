@@ -259,28 +259,28 @@ def _within(path: Path, roots: list[Path]) -> bool:
     return any(path == r or path.is_relative_to(r) for r in roots)
 
 
-def keeps_tasks(cfg: RoutineConfig) -> bool:
-    """Does this routine keep TASKS (rsched/tasks.py)? Then its checks are asked even when a
-    built-in reason already decided "run": which tasks have work is what its run needs from
-    them (`gate.json` → engine/taskops.py).
+def keeps_jobs(cfg: RoutineConfig) -> bool:
+    """Does this routine keep TASKS (rsched/jobs.py)? Then its checks are asked even when a
+    built-in reason already decided "run": which jobs have work is what its run needs from
+    them (`gate.json` → engine/jobops.py).
     """
     from ..grants import effective_settings, normalize_capabilities
 
-    return effective_settings(normalize_capabilities(cfg.capabilities)[0])["tasks"] == "on"
+    return effective_settings(normalize_capabilities(cfg.capabilities)[0])["jobs"] == "on"
 
 
-def tasks_clock_reason(cfg: RoutineConfig) -> str:
+def jobs_clock_reason(cfg: RoutineConfig) -> str:
     """A task due by its OWN clock — work an earlier run left, a wake date that came, a quiet
     limit passed, a task no check watches — admits the fire, whatever the checks would say:
     nothing else would ever bring the routine back for it.
     """
-    from .. import tasks
+    from .. import jobs
 
     now = datetime.now(ZoneInfo(cfg.tz))
-    due = tasks.clock_due(cfg.dir, list(cfg.run_gate.checks), today=now.date(), now=now)
+    due = jobs.clock_due(cfg.dir, list(cfg.run_gate.checks), today=now.date(), now=now)
     if not due:
         return ""
-    return "task(s) due by their own clock: " + "; ".join(f"{tid} ({why})" for tid, why in due)
+    return "job(s) due by their own clock: " + "; ".join(f"{tid} ({why})" for tid, why in due)
 
 
 def prepare_checks(cfg: RoutineConfig, server: ServerConfig, context: dict,
@@ -295,7 +295,7 @@ def prepare_checks(cfg: RoutineConfig, server: ServerConfig, context: dict,
     `runs_since`, the fleet's run record. Returns `(cmd, env, early_run_reason)`; a non-empty
     reason means the baseline already decides "run" and no predicate needs to execute.
 
-    `keep_going` (a routine that keeps tasks) asks the checks even then, carrying the reason
+    `keep_going` (a routine that keeps jobs) asks the checks even then, carrying the reason
     that already decided — `admit`, or the baseline's — as the kit's `admit_reason`.
     """
     checks = [c for c in cfg.run_gate.checks if c.get("kind") != "script"]
@@ -350,14 +350,14 @@ def child_main() -> None:
                 "version": 1, "decision": "run" if pending else "skip",
                 "reason": "pending inbox" if pending else "inbox empty"}))
             return
-        tasks_on = keeps_tasks(cfg)
+        jobs_on = keeps_jobs(cfg)
         builtin = ("pending inbox" if pending
                    else "an answer to one of its questions is waiting to be read"
                    if pending_answers(cfg.dir)
                    else "a note from a routine sharing one of its stores is waiting"
                    if pending_notes(cfg, server)
-                   else tasks_clock_reason(cfg) if tasks_on else "")
-        if builtin and not (tasks_on and mode == "checks"):
+                   else jobs_clock_reason(cfg) if jobs_on else "")
+        if builtin and not (jobs_on and mode == "checks"):
             sys.stdout.write(json.dumps({
                 "version": 1, "decision": "run", "reason": builtin,
                 **({"checks": []} if mode == "checks" and not pending else {})}))
@@ -365,7 +365,7 @@ def child_main() -> None:
         if mode == "checks":
             cmd, env, early = prepare_checks(cfg, server, payload["context"],
                                              payload["context"]["run_id"],
-                                             admit=builtin, keep_going=tasks_on)
+                                             admit=builtin, keep_going=jobs_on)
             if early:
                 sys.stdout.write(json.dumps({"version": 1, "decision": "run",
                                              "reason": early, "checks": []}))

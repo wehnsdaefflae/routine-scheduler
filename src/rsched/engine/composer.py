@@ -69,7 +69,7 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                  routines_home: Path | None = None, slug: str = "",
                  held_rules: list[str] | None = None,
                  store_notes: list[dict] | None = None, goals: list[dict] | None = None,
-                 conversation: bool = False, tasks_section: str = "") -> str:
+                 conversation: bool = False, jobs_section: str = "") -> str:
     from ..paths import read_json
 
     parts: list[str] = []
@@ -87,10 +87,10 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     from ..sharedstores import digest_section as notes_section
     if notes_block := notes_section(store_notes or []):
         parts.append(notes_block)
-    # The TASKS this run owes (engine/taskops.py), before the phase: for a routine whose
-    # work is its tasks, the due list IS where the run starts ("" for every other run; the
+    # The TASKS this run owes (engine/jobops.py), before the phase: for a routine whose
+    # work is its jobs, the due list IS where the run starts ("" for every other run; the
     # join below drops it).
-    parts.append(tasks_section)
+    parts.append(jobs_section)
     phase = read_json(routine_dir / "state" / "phase.json")
     parts.append(f"Current phase: {json.dumps(phase, ensure_ascii=False)}" if phase
                  else "Current phase: (none recorded — likely the first run)")

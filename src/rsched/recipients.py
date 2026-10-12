@@ -8,10 +8,10 @@ moment the sender still holds the context to redirect it.
 
 A refusal that only said "off" left the sender guessing where the work went, and the usual
 reason a routine is switched off is that its work MOVED — two routines merged, or several became
-the TASKS of one (docs/tasks.md). So every refusal carries SUGGESTIONS: routines that would read
+the JOBS of one (docs/jobs.md). So every refusal carries SUGGESTIONS: routines that would read
 the message, each with why, best first —
 
-1. the routine that CARRIES the target as a task: a task whose `origin` names it. The task is
+1. the routine that CARRIES the target as a job: a job whose `origin` names it. The job is
    named too, so the hand-off lands on the right work inside that routine;
 2. the target's lane-mates — routines fired in the same chain;
 3. the routines sharing a store with it;
@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import lanes, registry, sharedstores, tasks
+from . import jobs, lanes, registry, sharedstores
 from .config import ServerConfig
 
 #: How many suggestions a refusal carries — enough to choose between, short enough to read.
@@ -38,10 +38,10 @@ LIMIT = 6
 class Suggestion:
     slug: str
     why: str
-    task: str = ""          # the task inside `slug` that carries the work, when one does
+    job: str = ""           # the job inside `slug` that carries the work, when one does
 
     def as_dict(self) -> dict:
-        return {"slug": self.slug, "why": self.why, **({"task": self.task} if self.task else {})}
+        return {"slug": self.slug, "why": self.why, **({"job": self.job} if self.job else {})}
 
 
 def reads(info: registry.RoutineInfo) -> bool:
@@ -79,14 +79,14 @@ def suggest(server: ServerConfig, home: Path, target: str, *,
     live = {s: i for s, i in scan.items() if reads(i) and s != target and s not in exclude}
     out: dict[str, Suggestion] = {}
 
-    def add(slug: str, why: str, task: str = "") -> None:
+    def add(slug: str, why: str, job: str = "") -> None:
         if slug in live and slug not in out:
-            out[slug] = Suggestion(slug, why, task)
+            out[slug] = Suggestion(slug, why, job)
 
     for slug, reader in sorted(live.items()):
-        for t in tasks.load(reader.cfg.dir)["tasks"]:
+        for t in jobs.load(reader.cfg.dir)["jobs"]:
             if t.get("origin") == target:
-                add(slug, f"carries {target!r} as its task {t['id']!r}", t["id"])
+                add(slug, f"carries {target!r} as its job {t['id']!r}", t["id"])
     if (lane := lanes.lane_of(home, target)) is not None:
         for slug in lanes.member_slugs(lane):
             add(slug, f"fires beside it in the lane {lane.get('name') or lane.get('id')!r}")
@@ -105,15 +105,15 @@ def suggest(server: ServerConfig, home: Path, target: str, *,
 
 def render(suggestions: list[dict], *, naming: str = "in the title") -> str:
     """The suggestions as one sentence the refusal carries — the same words on both channels.
-    `naming` says where the sender names the carrying task: a report's title, a note's text.
+    `naming` says where the sender names the carrying job: a report's title, a note's text.
     """
     if not suggestions:
         return "No routine that would read it is related to this one."
     parts = []
     for s in suggestions:
         line = f"{s['slug']!r} ({s['why']}"
-        if s.get("task"):
-            line += f" — address {s['slug']!r} and name the task {s['task']!r} {naming}"
+        if s.get("job"):
+            line += f" — address {s['slug']!r} and name the job {s['job']!r} {naming}"
         parts.append(line + ")")
     return "Routines that would read it: " + "; ".join(parts) + "."
 

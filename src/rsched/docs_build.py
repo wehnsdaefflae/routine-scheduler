@@ -117,7 +117,7 @@ input[type="search"] { background: var(--plate-2); color: var(--ink);
 # A name here that no `docs/*.md` answers to costs nothing and says nothing, which is how
 # `subtasks` outlived the guide it named; the guide is `child-runs`.
 GUIDE_ORDER = ["getting-started", "examples", "authoring", "conversations", "playbooks",
-               "child-runs", "background-tasks", "tasks", "triggers", "schedule-once",
+               "child-runs", "background-tasks", "jobs", "triggers", "schedule-once",
                "run-gates", "lanes-tags", "patterns", "rules-permissions", "curated-rules",
                "rule-assists",
                "reminders", "items", "messages", "status-pages", "run-analytics", "search",

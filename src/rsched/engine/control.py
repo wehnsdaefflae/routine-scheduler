@@ -236,7 +236,9 @@ def run_user_command(loop, m: dict) -> None:
                                              grants=loop.grants)
             if counted is not None:
                 ctx.count_util(*counted)
-            raise CommandError("; ".join(problems))
+            from .renamedkinds import hint as renamed_kind_hint
+            raise CommandError("; ".join([*problems,
+                                          *filter(None, [renamed_kind_hint(action)])]))
         from .actionroute import dispatch_action  # actionroute imports this module
         obs = dispatch_action(loop, action, ctx)
     except CommandError as exc:

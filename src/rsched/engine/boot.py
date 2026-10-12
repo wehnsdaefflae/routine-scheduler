@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from .. import reports, rules, sharedstores
 from ..paths import read_json, resolve_rel
-from . import askback, enginenote, goals, guardscope, inbox, mediaops, runkind, taskops
+from . import askback, enginenote, goals, guardscope, inbox, jobops, mediaops, runkind
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
@@ -58,9 +58,9 @@ def boot(loop) -> None:
         # once per leg, beside the inbox drain above: a note is delivered exactly once
         store_notes = sharedstores.drain(ctx.server.routines_home, ctx.routine.slug,
                                          list(ctx.routine.fs_write_roots))
-        # the TASK ledger (engine/taskops.py): a fresh run decides what it owes, a resumed leg
+        # the TASK ledger (engine/jobops.py): a fresh run decides what it owes, a resumed leg
         # reads it back with its open task — before the digest, which names them
-        tasks_section = taskops.boot(ctx)
+        jobs_section = jobops.boot(ctx)
         # the GOALS (engine/goals.py): the brief's seed on a fresh run, the transcript's last
         # word on a resumed one — a conversation's outlive every reply
         ctx.goals = goals.replay(events, ctx.brief)
@@ -71,7 +71,7 @@ def boot(loop) -> None:
                                                           list(ctx.routine.rules)),
                               store_notes=store_notes, goals=ctx.goals,
                               conversation=runkind.is_conversation(ctx),
-                              tasks_section=tasks_section)
+                              jobs_section=jobs_section)
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"

@@ -85,7 +85,7 @@ is idempotent and driven from disk, so a task that finished just before the exit
 - API (`web/api_background.py`): `GET /conversations/{slug}/background` lists them,
   `POST …/background` drops an intent (the human/test analog of the engine action),
   `POST …/background/{id}/cancel` aborts one (`runner.abort` + a pid fallback for a task that outlived a
-  restart). Deleting a conversation tears down its detached tasks.
+  restart). Deleting a conversation tears down its detached jobs.
 - A detached run's transcript / sub-run tree resolve on the generic `/api/runs/{run_id}` endpoints
   (`_run_dir` searches `background_home` too).
 

@@ -3,7 +3,7 @@
 A routine switched off by the operator, or retired by its finish line, starts no run — so a
 report or a shared-store note addressed to it would never be read, and both channels refuse at
 sending. The refusal used to stop at "it is off"; the sender had to guess where the work went.
-The usual answer is that it MOVED — most plainly when several routines became the tasks of one —
+The usual answer is that it MOVED — most plainly when several routines became the jobs of one —
 so every refusal now names the routines that would read it, best first.
 """
 
@@ -16,7 +16,7 @@ import yaml
 
 from conftest import make_test_server
 from helpers import run_context
-from rsched import lanes, recipients, sharedstores, tasks
+from rsched import jobs, lanes, recipients, sharedstores
 from rsched.engine.fileops import do_write_file
 from rsched.grantpolicy import GrantPolicy
 
@@ -37,12 +37,12 @@ def _routine(server, slug: str, *, enabled: bool = True, tags: tuple[str, ...] =
 
 
 def _carry(server, slug: str, tid: str, origin: str) -> None:
-    """`slug` keeps a task `tid` that used to be the routine `origin`."""
-    task = tasks.new_task(tid, tid, "", by="operator")
-    task["origin"] = origin
-    doc = tasks.empty()
-    doc["tasks"].append(task)
-    tasks.save(server.routines_home / slug, doc)
+    """`slug` keeps a job `tid` that used to be the routine `origin`."""
+    job = jobs.new_job(tid, tid, "", by="operator")
+    job["origin"] = origin
+    doc = jobs.empty()
+    doc["jobs"].append(job)
+    jobs.save(server.routines_home / slug, doc)
 
 
 @pytest.fixture
@@ -67,8 +67,8 @@ def test_the_routine_carrying_the_work_comes_first_and_names_the_task(server, me
     got = recipients.suggest(server, server.routines_home, "old")
     assert [s.slug for s in got] == ["umbrella", "peer", "cousin", "far"]
     first = got[0]
-    assert first.task == "old-work"
-    assert "carries 'old' as its task 'old-work'" in first.why
+    assert first.job == "old-work"
+    assert "carries 'old' as its job 'old-work'" in first.why
     # store before tags, more shared tags before fewer; nobody who reads nothing is offered
     assert got[1].why == "shares the store grp-fau"
     assert got[2].why == "shares the tags fau, grant"
@@ -101,11 +101,11 @@ def test_a_routine_whose_config_cannot_be_read_still_reads(server):
 
 
 def test_the_suggestions_read_as_one_sentence():
-    text = recipients.render([{"slug": "umbrella", "why": "carries 'old' as its task 'old-work'",
-                               "task": "old-work"},
+    text = recipients.render([{"slug": "umbrella", "why": "carries 'old' as its job 'old-work'",
+                               "job": "old-work"},
                               {"slug": "peer", "why": "shares the store grp-fau"}])
     assert text.startswith("Routines that would read it: 'umbrella'")
-    assert "address 'umbrella' and name the task 'old-work' in the title" in text
+    assert "address 'umbrella' and name the job 'old-work' in the title" in text
     assert "'peer' (shares the store grp-fau)" in text
     assert recipients.render([]).startswith("No routine that would read it")
 
@@ -127,7 +127,7 @@ def test_a_note_to_a_switched_off_sharer_is_refused_with_the_sharers_that_read(s
     assert "'old' shares the store grp-fau but is disabled" in refusal
     assert "'umbrella'" in refusal and "'peer'" in refusal
     assert "'cousin'" not in refusal          # shares tags, not the store — a report reaches it
-    assert "name the task 'old-work' in the note" in refusal     # a note has no title
+    assert "name the job 'old-work' in the note" in refusal     # a note has no title
     assert "addressed `report`" in refusal
     obs = do_write_file({"kind": "write_file", "path": str(path),
                          "content": json.dumps({"from": "peer", "text": "hi"})},
@@ -145,12 +145,12 @@ def test_a_note_to_a_sharer_that_reads_still_lands(server, merged):
     assert refusal is not None and "does not share the store" in refusal
 
 
-# ---- the task's origin -----------------------------------------------------------------------
+# ---- the job's origin -----------------------------------------------------------------------
 
 
 def test_an_origin_that_is_not_a_slug_is_a_store_problem(server, merged):
-    doc = tasks.load(server.routines_home / "umbrella")
-    doc["tasks"][0]["origin"] = "Not A Slug"
-    tasks.save(server.routines_home / "umbrella", doc)
+    doc = jobs.load(server.routines_home / "umbrella")
+    doc["jobs"][0]["origin"] = "Not A Slug"
+    jobs.save(server.routines_home / "umbrella", doc)
     assert any("which is not a routine slug" in p
-               for p in tasks.problems(server.routines_home / "umbrella"))
+               for p in jobs.problems(server.routines_home / "umbrella"))

@@ -46,14 +46,14 @@ def _norm_rel(path: str) -> str:
 
 
 def is_recipe_path(path: str) -> bool:
-    """Is `path` (relative to the routine dir, or to an open task's workspace) part of the
-    routine's RECIPE? A task's own recipe is part of it too: `tasks/<id>/main.md` and
-    `tasks/<id>/stages/` are the operator's instructions for that task, sealed on the same terms
-    as the routine's (rsched/tasks.py).
+    """Is `path` (relative to the routine dir, or to an open job's workspace) part of the
+    routine's RECIPE? A job's own recipe is part of it too: `jobs/<id>/main.md` and its
+    `stages/` are the operator's instructions for that job, sealed on the same terms as the
+    routine's (rsched/jobs.py) — as is `tasks/<id>/`, the pre-D174 workspace default.
     """
     p = _norm_rel(path)
     parts = p.split("/")
-    if len(parts) >= 3 and parts[0] == "tasks":     # tasks/<id>/<the task's own recipe>
+    if len(parts) >= 3 and parts[0] in ("jobs", "tasks"):   # <ws>/<id>/<the job's own recipe>
         p = "/".join(parts[2:])
         return p in {"main.md", "stages"} or p.startswith("stages/")
     return any(p == pre.rstrip("/") or p.startswith(pre) for pre in RECIPE_PREFIXES)
@@ -95,10 +95,10 @@ class GrantPolicy:
     # store; `global` additionally reads the library's curated one (local overriding it) and is
     # the only level that may WRITE there. See rsched/reminders.py.
     reminders: str = "none"
-    # The task layer: off | on. On, the routine keeps TASKS — the `task` action exists for it
+    # The job layer: off | on. On, the routine keeps TASKS — the `job` action exists for it
     # and the engine holds its finish until every task due this run is processed
-    # (rsched/tasks.py, engine/taskops.py). A setting, like `reminders`: no permission behind it.
-    tasks: str = "off"
+    # (rsched/jobs.py, engine/jobops.py). A setting, like `reminders`: no permission behind it.
+    jobs: str = "off"
     # The four-state grant model's persistent NO: entity ids (entities.py) the user has
     # denied FOREVER (routine.yaml `grants:` false rows). deny() stops routing these to a
     # request — the answer is already given.
@@ -135,10 +135,10 @@ class GrantPolicy:
     libraries_home: Path | None = None
 
     def allows_kind(self, kind: str) -> bool:
-        if kind == "task":
+        if kind == "job":
             # the SETTING decides, for an admin leg too: without it there is no task store to
-            # act on and no gate holding the run to its tasks
-            return self.tasks_on
+            # act on and no gate holding the run to its jobs
+            return self.jobs_on
         if kind == "goal":
             # STRUCTURAL: goals are what a PERSON asked of a run, and nobody but its parent
             # speaks to a child (engine/goals.py)
@@ -230,11 +230,11 @@ class GrantPolicy:
         return self.reminders != "none"
 
     @property
-    def tasks_on(self) -> bool:
-        """Does this routine keep tasks? Off means the `task` kind is projected out of the
-        schema and the task gates never run.
+    def jobs_on(self) -> bool:
+        """Does this routine keep jobs? Off means the `job` kind is projected out of the
+        schema and the job gates never run.
         """
-        return self.tasks == "on"
+        return self.jobs == "on"
 
     def reminder_denial(self, scope: str) -> str | None:
         """May this run WRITE a reminder at that scope — or the refusal saying why not.
@@ -342,8 +342,8 @@ class GrantPolicy:
                     f"so this is a {'REVISION' if revising else 'CREATION'}. ")
         if need in GATED_KINDS and need not in self.actions and not self.admin:
             return self._kind_denial(need, mode)
-        if kind == "task" and not self.tasks_on:
-            return ("kind=task is switched OFF in this routine's settings (the task layer) — "
+        if kind == "job" and not self.jobs_on:
+            return ("kind=job is switched OFF in this routine's settings (the job layer) — "
                     "only the user can switch it on. Work through your recipe as it stands.")
         if kind == "util":
             refusal = utilgate.deny_util(self, action)

@@ -50,7 +50,7 @@ FINGERPRINT per check in that run's `gate.json`. No such run is itself work.
 
 ## Checks that watch a task
 
-A routine that keeps TASKS (docs/tasks.md) tags a check with the task it watches: `task: <id>`
+A routine that keeps TASKS (docs/jobs.md) tags a check with the task it watches: `task: <id>`
 beside `kind` and `id`, on any kind but the routine's own `max_quiet` backstop (a task's rest is
 its `quiet_days`). The kit never reads the tag; the engine does, from the run's `gate.json`: a
 tagged check that found work makes its task due this run, an untagged one that found work makes
@@ -70,7 +70,7 @@ Built in, never configured, because each one is work by construction:
 - a note from a routine sharing one of its stores waits (`rsched/sharedstores.py`);
 - for a routine that keeps tasks, a task is due by its OWN clock — work an earlier run left
   (`carry`), a wake date that has come, a quiet limit passed, or no check watching it
-  (`rsched/tasks.clock_due`): nothing else would ever bring the routine back for it;
+  (`rsched/jobs.clock_due`): nothing else would ever bring the routine back for it;
 - the last admitted run did not finish ok — it may have left work behind;
 - its configuration or recipe changed since the last ok run (`routine.yaml`, `tuning.yaml`,
   `main.md`, `stages/`, `state/finish-line.json`): a granted permission can unblock parked

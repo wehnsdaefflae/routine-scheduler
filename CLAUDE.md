@@ -83,9 +83,9 @@ one you are about to touch, not all of them.
   grant model (entities.py ids; allow/deny × now/forever, plus
   allow-once for the once-grantable classes: turn actions, secrets, fs-read and fs-write, D76), and each curated rule's provenance
 - `docs/child-runs.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
-  — the child-run and firing mechanisms; `docs/tasks.md` — the TASK layer (one routine whose
-  regular duties are several standing tasks: the setting, the store, the workspace as working
-  directory, gated processing, which tasks are due)
+  — the child-run and firing mechanisms; `docs/jobs.md` — the JOB layer (one routine whose
+  regular duties are several standing jobs: the setting, the store, the workspace as working
+  directory, gated processing, which jobs are due)
 - `docs/lanes-tags.md` — how routines relate to each other on THREE axes: a LANE is when
   they fire and in what order (daemon-owned, at most one, enforced), a SHARED STORE is which
   files they read and write together plus the notes channel between them (a directory under
@@ -215,14 +215,15 @@ one you are about to touch, not all of them.
   run's GOALS** (`engine/goals.py`) — what a PERSON asked of it, `b<n>` lines the run transcribes
   as a scribe, each carrying the person's own words (`quote`), which the engine must find in what
   they wrote or it refuses the goal; a later word is needed to reword or drop one. Offered at
-  depth 0 only (a child has its parent's brief), in routines and conversations alike. **`task` is the TASK layer**
-  (docs/tasks.md), present only where the routine's `capabilities.tasks` SETTING is `on`: the
-  run keeps its standing work as tasks in the engine-owned `state/tasks.json` and the engine
-  enforces GATED PROCESSING — every task due this run (a `task:`-tagged gate check that found
-  work, the task's own clock, or a fire whose checks were never asked) is opened and
+  depth 0 only (a child has its parent's brief), in routines and conversations alike. **`job` is the JOB layer**
+  (docs/jobs.md), present only where the routine's `capabilities.jobs` SETTING is `on` (`tasks:`
+  is the pre-D174 key, still read — `rsched/jobs_compat.py`): the run keeps its standing work as
+  jobs in the engine-owned `state/jobs.json` and the engine
+  enforces GATED PROCESSING — every job due this run (a `job:`-tagged gate check that found
+  work, the job's own clock, or a fire whose checks were never asked) is opened and
   checkpointed before the finish stands, and what a run never checkpointed is CARRIED. An OPEN
-  task lends the run its WORKSPACE as the working directory (`run_context.work_dir` — paths,
-  scripts, shell, utils, memory, notes), which is how a whole routine becomes a task unchanged;
+  job lends the run its WORKSPACE as the working directory (`run_context.work_dir` — paths,
+  scripts, shell, utils, memory, notes), which is how a whole routine becomes a job unchanged;
   every seal stays anchored on the routine dir. **`script` runs
   the routine's OWN `scripts/<name>.py`** — persistent helper TOOLING, deliberately NOT a co-equal
   interpreter of the routine: the recipe
@@ -369,7 +370,7 @@ one you are about to touch, not all of them.
   an addressed `report` as the channel that reaches that routine. A note — or an addressed
   report — to a routine that starts no run (switched off, retired) is refused the same way, and
   every such refusal SUGGESTS where it goes instead (`rsched/recipients.py`): the routine
-  carrying the addressee as a task (`origin`, docs/tasks.md "Merging routines") first, then its
+  carrying the addressee as a job (`origin`, docs/jobs.md "Merging routines") first, then its
   lane-mates, store-sharers and tag-sharers, each one a routine that reads. A note is coordination; a
   report is work an OWNER must act on.
   One `R<n>` namespace, one append-only

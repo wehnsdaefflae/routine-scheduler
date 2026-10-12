@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import archival, background, inbox, taskops
+from . import archival, background, inbox, jobops
 from .autocommit import autocommit
 from .finish_guard import normalize_escaped_newlines
 from .run_context import RunContext
@@ -129,9 +129,9 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
                     "delivered this run; it stays queued and opens the next "
                     "run/reply.]")
     if ctx.depth == 0:
-        # what the run owed its TASKS and never checkpointed is carried to the next run, and
-        # the summary says so (engine/taskops.py)
-        summary += taskops.close_out(ctx, status)
+        # what the run owed its JOBS and never checkpointed is carried to the next run, and
+        # the summary says so (engine/jobops.py)
+        summary += jobops.close_out(ctx, status)
     finish_payload = {"status": status, "summary": summary, "authored": authored}
     if reply_to:   # F438/D117: the reply targets an earlier message (conversations)
         finish_payload["reply_to"] = reply_to

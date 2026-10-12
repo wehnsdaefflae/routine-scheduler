@@ -11,8 +11,8 @@ from . import (
     goalreached,
     goals,
     inbox,
+    jobops,
     runkind,
-    taskops,
     verifier,
 )
 from .control import drain_injections
@@ -118,9 +118,9 @@ def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
                 verdicts: dict, *, final: bool) -> tuple[str, dict] | None:
     """`(message, keys)` for a finish that still owes work, or None.
 
-    GATED PROCESSING first (engine/taskops.py): a routine that keeps tasks may not end while a
+    GATED PROCESSING first (engine/jobops.py): a routine that keeps jobs may not end while a
     task due this run has no checkpoint — before the accounting, because the routine's own
-    Done when is answered once its tasks are. No once-only limit: one action settles it (a
+    Done when is answered once its jobs are. No once-only limit: one action settles it (a
     checkpoint, `deferred` if the run sets the task aside), so it can never trap a run.
 
     Then THE ACCOUNTING: one entry per Done-when line of the recipe and per open outcome of the
@@ -133,8 +133,8 @@ def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
 
     Both skip the reserved-finish turn (deferring it would force-finish with an engine string).
     """
-    if (tasks_owed := taskops.finish_owed(loop)) is not None:
-        return tasks_owed, {"tasks_owed": True}
+    if (jobs_owed := jobops.finish_owed(loop)) is not None:
+        return jobs_owed, {"jobs_owed": True}
     if owed is not None and not loop._finish_reserved:
         found = accounting.problems(verdicts, *owed, final=final)
         if any(found.values()):
@@ -190,7 +190,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                "Answer them, then finish again carrying the same `remind` op (or a revised "
                "one) — that re-submits the approval.", asked_back=True)
         return None   # deferred — the loop goes round again
-    # What the run still OWES before it may end: its due tasks, then its accounting
+    # What the run still OWES before it may end: its due jobs, then its accounting
     # (`_unanswered`). One rung, two questions, asked in that order.
     conversation = ctx.depth == 0 and runkind.is_conversation(ctx)
     owed = _owed(loop, ctx, action)

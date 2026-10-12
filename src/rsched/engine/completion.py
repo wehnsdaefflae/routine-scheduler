@@ -31,6 +31,7 @@ from .degrade import (
     _recover_transport,
     _turn_task_text,
 )
+from .renamedkinds import hint as renamed_kind_hint
 from .replyactions import reply_actions
 from .window import _override_window, compact_if_needed, note_prompt_size
 
@@ -44,6 +45,14 @@ MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 # Handled BEFORE the empty-completion branch: re-sending a refused prompt to the same model
 # usually earns another refusal, so a refusal is never blind-retried — see _handle_refusal (R5).
 REFUSAL_STOPS = frozenset({"refusal", "content_filter"})
+
+
+def diagnose(obj: dict) -> str:
+    """Everything we can say about an INVALID action object beyond the schema's own lines — a
+    renamed kind first (it is the one thing that fixes the action outright), then a field shift.
+    """
+    return "\n\n".join(part for part in (renamed_kind_hint(obj), field_shift_diagnosis(obj))
+                       if part)
 
 
 def fold_usage(usage_sum: dict, completion) -> None:
@@ -222,7 +231,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 {"role": "user", "content": retry_message(
                     exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""),
                     repeated=repeated,
-                    diagnosis=field_shift_diagnosis(completion.parsed or {})) + essence_note})
+                    diagnosis=diagnose(completion.parsed or {})) + essence_note})
             if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                 # Persistent violations under a provider-enforced grammar are often the
                 # grammar's fault (empty-string debris fields are its signature) — give

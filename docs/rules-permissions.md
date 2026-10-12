@@ -20,7 +20,7 @@ ownership:
   capability TOKENS rather than emittable kinds), reserved utils or single VERBS of them (every
   entry a permission doc's `requires.utils:` names — `signal:send`, `gmail:send`,
   `fau-mail:send`, `usenet:post`, `ntfy`, `browser-session`, `darknet`), and the settings: the
-  approval dials, the previous-run read depth, the reminder layer, the task layer. What every
+  approval dials, the previous-run read depth, the reminder layer, the job layer. What every
   routine does —
   the `util` action, its memory, its own `scripts/` — is no capability at all. Held via
   `routine.yaml`'s `capabilities:` mapping, changed **only by you** (the routine page), and
@@ -448,7 +448,7 @@ capabilities:
   remind_confirm: always        # curated-reminder approval: always | creations | never
   runs: last                    # previous-run read depth: none | last | all
   reminders: local              # consequence reminders: none | local | global
-  tasks: off                    # the task layer: off | on (docs/tasks.md)
+  tasks: off                    # the job layer: off | on (docs/jobs.md)
 ```
 
 A new routine's default is its settings pattern's; with no pattern at all it is
@@ -462,8 +462,8 @@ default because a caution a run leaves itself about its own actions is ordinary 
 `local` a run writes its own reminders and applies them beside every curated one that reaches
 it; `global` also lets it write the curated store — the curator's setting, every write approved
 under `remind_confirm`. See [reminders](reminders.md). `tasks: on` makes the routine keep its
-standing work as TASKS it creates and manages with the `task` action, processing every task due
-in a run before that run may end — see [tasks](tasks.md). A settings pattern written before a
+standing work as TASKS it creates and manages with the `job` action, processing every task due
+in a run before that run may end — see [tasks](jobs.md). A settings pattern written before a
 setting existed compares as holding its all-off value (`patterns.fields.canonical`), so adding
 one never marks every follower as departing from its pattern.
 

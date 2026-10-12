@@ -77,7 +77,7 @@ def problems(verdicts: dict[str, tuple[str, str]], done: list[dict],
 
 def gaps(found: dict[str, list[str]]) -> str:
     """What `problems` found, as one clause list — shared by the finish's deferral and a task
-    checkpoint's refusal (engine/taskops.py), which account for Done-when lines alike.
+    checkpoint's refusal (engine/jobops.py), which account for Done-when lines alike.
     """
     parts = []
     if found["missing"]:

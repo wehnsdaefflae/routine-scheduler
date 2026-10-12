@@ -70,7 +70,7 @@ KINDS: dict[str, tuple[str, dict[str, tuple[str, bool, str]]]] = {
         {"project": ("str", True, "the hub project slug the routine publishes"),
          "label": ("str", False, ("only feedback whose control id names this label as a whole "
                                   "segment counts (`fau · ards/doc/x` names fau, ards, doc, x) "
-                                  "— one task's section of a page several tasks share")),
+                                  "— one job's section of a page several jobs share")),
          "source": ("str", False, ("which entry of the web-auth secret holds the hub login "
                                    "(default `steward`)")),
          "auth_secret": ("secret", False, ("the secret holding the web logins (default "
@@ -150,13 +150,15 @@ SECRET_PARAMS = frozenset({"user_secret", "password_secret", "accounts_secret", 
 DEFAULT_AUTH_SECRET = "WEB_AUTH_SOURCES"   # noqa: S105 — the secret's NAME, never its value
 
 
-#: Keys every check may carry beside its kind's own parameters: its id, and the TASK it watches
-#: (rsched/tasks.py) — a check that finds work makes that task due; one that names no task
-#: makes every task due. The kit never reads `task`; the engine does, from gate.json.
-COMMON_KEYS = ("kind", "id", "task")
+#: Keys every check may carry beside its kind's own parameters: its id, and the JOB it watches
+#: (rsched/jobs.py) — a check that finds work makes that job due; one that names no job makes
+#: every job due. The kit never reads it; the engine does, from gate.json. `task:` is the
+#: pre-D174 spelling and stays accepted (rsched/jobs_compat.py), so a routine already on disk
+#: keeps the checks it has.
+COMMON_KEYS = ("kind", "id", "job", "task")
 
 
-def _is_task_id(value: object) -> bool:
+def _is_job_id(value: object) -> bool:
     return isinstance(value, str) and bool(re.fullmatch(r"[a-z0-9][a-z0-9-]*", value))
 
 
@@ -220,12 +222,13 @@ def _kind_problems(where: str, kind: str, check: dict) -> list[str]:
         out.append(f"{where}: weekdays.days are numbers 0 (Monday) to 6 (Sunday)")
     if kind == "max_quiet" and isinstance(check.get("days"), int) and check["days"] < 1:
         out.append(f"{where}: max_quiet.days must be at least 1")
-    if "task" in check and not _is_task_id(check["task"]):
-        out.append(f"{where}: task is the kebab-case id of the task this check watches")
-    elif kind in ("max_quiet", "script") and check.get("task"):
-        # how long a TASK may rest is its own clock (quiet_days, rsched/tasks.py): the last ok
-        # run is the routine's, so a max_quiet tagged to one task would never measure it
-        out.append(f"{where}: {kind} watches the routine, not one task — give the task "
+    named = [k for k in ("job", "task") if k in check]
+    if named and not all(_is_job_id(check[k]) for k in named):
+        out.append(f"{where}: job is the kebab-case id of the job this check watches")
+    elif kind in ("max_quiet", "script") and named:
+        # how long a JOB may rest is its own clock (quiet_days, rsched/jobs.py): the last ok
+        # run is the routine's, so a max_quiet tagged to one job would never measure it
+        out.append(f"{where}: {kind} watches the routine, not one job — give the job "
                    "quiet_days instead")
     if kind == "url_changed":
         sel = str(check.get("select") or "body")

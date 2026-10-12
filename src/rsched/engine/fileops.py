@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..grants import CONFIG_FILE
+from ..jobs import JOBS_FILE
 from ..paths import atomic_write, read_json
 from ..readmodels.statemap import STAGES_DIR
-from ..tasks import TASKS_FILE
 from . import docread, fileformat
 from .finishline import FILE as FINISH_LINE
 from .observations import OBS_CAP_CHARS
@@ -347,7 +347,7 @@ def _memory_gate(ctx: RunContext, resolved) -> str | None:
     for d in _routine_dirs(ctx):
         if _within(resolved, d / ".memory"):
             return MEMORY_REFUSAL
-        # …and a TASK's notebook (rsched/tasks.py): an open task's memory actions resolve in
+        # …and a JOB's notebook (rsched/jobs.py): an open job's memory actions resolve in
         # its workspace, so every `.memory/` under the routine is the engine's alike
         for base in (d, d.resolve()):
             if resolved.is_relative_to(base) and ".memory" in resolved.relative_to(base).parts:
@@ -371,18 +371,18 @@ def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
     return None
 
 
-TASKS_REFUSAL = ("state/tasks.json is the engine's task store — change a task with the `task` "
-                 "action (create / update / checkpoint / delete), which keeps the run's ledger "
-                 "and the gate that holds your finish in step with it")
+JOBS_REFUSAL = ("state/jobs.json is the engine's job store — change a job with the `job` "
+                "action (create / update / checkpoint / delete), which keeps the run's ledger "
+                "and the gate that holds your finish in step with it")
 
 
-def _tasks_gate(ctx: RunContext, resolved) -> str | None:
-    """The task store is the engine's (rsched/tasks.py): a generic write could clear a carry or
-    fake a checkpoint the gated processing reads, so it is reachable only through `task`.
+def _jobs_gate(ctx: RunContext, resolved) -> str | None:
+    """The job store is the engine's (rsched/jobs.py): a generic write could clear a carry or
+    fake a checkpoint the gated processing reads, so it is reachable only through `job`.
     """
-    if any(resolved in (d / TASKS_FILE, (d / TASKS_FILE).resolve())
+    if any(resolved in (d / JOBS_FILE, (d / JOBS_FILE).resolve())
            for d in _routine_dirs(ctx)):
-        return TASKS_REFUSAL
+        return JOBS_REFUSAL
     return None
 
 
@@ -401,9 +401,9 @@ def _removal_gate(ctx: RunContext, resolved: Path) -> str | None:
         line = d / FINISH_LINE
         if line.exists() and line.is_relative_to(resolved):
             return f"this would remove {FINISH_LINE}: {FINISH_LINE_REFUSAL}"
-        store = d / TASKS_FILE
+        store = d / JOBS_FILE
         if store.exists() and store.is_relative_to(resolved):
-            return f"this would remove {TASKS_FILE}: {TASKS_REFUSAL}"
+            return f"this would remove {JOBS_FILE}: {JOBS_REFUSAL}"
     return None
 
 
@@ -455,7 +455,7 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
     # line, a note nobody would read (unread whatever the policy says), and a removal of a
     # routine dir.
     err = (_memory_gate(ctx, resolved) or _finish_line_gate(ctx, resolved)
-           or _tasks_gate(ctx, resolved))
+           or _jobs_gate(ctx, resolved))
     if err is None and creates:
         from ..recipients import note_refusal
 

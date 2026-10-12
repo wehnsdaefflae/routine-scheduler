@@ -5,7 +5,7 @@
 // each is the approval level of an action that doc requires. Three are SETTINGS no doc switches
 // on: how far back a run reads its earlier runs (`runs`), the consequence-reminder layer
 // (`reminders`), who approves a write to the library's shared reminders (`remind_confirm`) and
-// the task layer (`tasks`: the routine keeps its standing work as tasks, docs/tasks.md).
+// the job layer (`jobs`: the routine keeps its standing work as jobs, docs/jobs.md).
 // The panel carried all three in its state and saved them with every save while showing a
 // control for none of them, so a save wrote back values the reader had never been shown. They
 // share one card, built in the approval dials' style, and the reminder approval is on it only at
@@ -14,7 +14,7 @@
 
 import { el } from "/static/util.js";
 import {
-  REMINDER_OPTIONS, REMIND_CONFIRM_OPTIONS, RUNS_OPTIONS, TASK_OPTIONS,
+  JOB_OPTIONS, REMINDER_OPTIONS, REMIND_CONFIRM_OPTIONS, RUNS_OPTIONS,
 } from "/static/components/abilities-data.js";
 
 /** One dial: a <select> over `options` resting on `current`. `set` records the choice and
@@ -48,7 +48,7 @@ export function settingsCard({ caps, stackRow, changed }) {
     el("div", { class: "ability-head" },
       el("span", { "aria-hidden": "true" }, "⚙"),
       el("div", {},
-        el("div", { class: "ability-name" }, "Run history, reminders & tasks"),
+        el("div", { class: "ability-name" }, "Run history, reminders & jobs"),
         el("div", { class: "muted small prose" },
           "settings rather than abilities: no conduct doc switches these on, and ticking one "
           + "never moves them"))),
@@ -57,5 +57,5 @@ export function settingsCard({ caps, stackRow, changed }) {
       row("reminders", "reminders", "the consequence-reminder layer", REMINDER_OPTIONS,
           () => { reveal(); changed(); }),
       approval,
-      row("tasks", "tasks", "the task layer — standing work kept as tasks", TASK_OPTIONS)));
+      row("jobs", "jobs", "the job layer — standing work kept as jobs", JOB_OPTIONS)));
 }

@@ -65,7 +65,7 @@ export function abilitiesGroup(ctx) {
          "has one — who approves a util change, who approves a rule change. Below the cards sit ",
          "the SETTINGS no doc switches on: how far back a run reads its earlier runs, the ",
          "consequence-reminder layer, — at global — who approves a reminder it writes to the ",
-         "library, and the TASK layer: on, the routine keeps its standing work as tasks it ",
+         "library, and the JOB layer: on, the routine keeps its standing work as tasks it ",
          "creates and manages itself, and a run may not end until every task due in it is ",
          "processed (the list shows under Tasks above). Enforcement reads the capabilities, not the conduct doc, so an ability whose ",
          "requirements are not all switched on fails closed — its card says so, with the switch ",
