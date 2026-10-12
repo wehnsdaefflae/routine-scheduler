@@ -113,6 +113,20 @@ last run owed it and what came of it, its workspace and the checks that watch it
 owes, and its finish is gated on exactly that). Creating and deleting are the run's. A job that
 used to be a routine says so on its row (`formerly the routine <slug>`).
 
+## On the run page
+
+The run's rail carries a **jobs** section: which of the routine's jobs THIS run has to do with —
+the one it is working on right now, what is still due, and what it checkpointed, with the
+outcome. The run page is where a run is actually watched, and the routine page's panel shows the
+STORE rather than this run (operator order: *"routines with tasks … need to display the task
+they're currently working on in the right sidebar"*).
+
+It reads the same `GET /api/routines/{slug}/jobs`. For the ledger's own run the open job leads;
+for a run that has ended, each job whose history still holds an entry for that run id reports the
+outcome it recorded then — so yesterday's run page never claims the job today's run has open. A
+run's `status.json` carries the open job's id too, but the engine clears it at close-out, which is
+why the rail reads the store instead. A routine without the job layer gains no section at all.
+
 ## Merging routines
 
 The layer exists so that several routines doing related standing work can become ONE: each

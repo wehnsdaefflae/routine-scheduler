@@ -55,7 +55,7 @@
     "static/views/library.js": 564,
     "static/views/messages.js": 430,
     "static/views/questions.js": 561,
-    "static/views/run.js": 648,
+    "static/views/run.js": 633,
     "static/views/stats.js": 450,
     "tests/conftest.py": 684,
     "tests/test_actions.py": 381,

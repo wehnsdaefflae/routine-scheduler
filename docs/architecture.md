@@ -953,6 +953,10 @@ meet. A conversation's spine is its own **working plan**
   The RAIL those cards sit in is one component too (`components/rail.js`, R341): the run view
   and the conversation view render the same collapsible sections, remembered per browser —
   they were divergent copies, and only the conversation one could collapse (F296/R340).
+  WHICH sections the run rail has is `components/runrail.js` — artifacts, files, state,
+  sub-runs, goal, plus two added LAZILY only for a run that has one: `oversight`
+  (`components/ladderstrip.js`) and `jobs` (`components/runjob.js`, F646 — which of the
+  routine's jobs this run is working on, is owed, or checkpointed; docs/jobs.md).
   UI: `static/views/conversations.js` + `components/chat.js` (work folded per reply,
   `[new-topic]` first-line marker → warn + one-click fork) + `components/artifacts.js`.
   **Refer-to** (messenger reply analog, run view + chat): every rendered message carries a

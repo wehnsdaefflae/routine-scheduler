@@ -12,13 +12,11 @@ import { setQuery, remount } from "/static/router.js";
 import { loadQuestions } from "/static/questions-store.js";
 import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
-import { createRail } from "/static/components/rail.js";
-import { wireRunRail } from "/static/resizable.js";
-import { createFileActivity } from "/static/components/fileactivity.js";
+import { createRunRail } from "/static/components/runrail.js";
 import { createPlanStrip } from "/static/components/planstrip.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createRunAccounting } from "/static/components/run-accounting.js";
-import { createSubRunTree } from "/static/components/subruntree.js";
+import { mountRunJob } from "/static/components/runjob.js";
 import { renderLadder } from "/static/components/ladderstrip.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtAbs, fmtDur, fmtTokens, skeleton, streamStatus,
@@ -97,33 +95,15 @@ export async function render(view, runId, query = {}) {
   const questionBox = el("div", {});
   col.append(questionBox);
 
-  // Side rail: the routine's state graph (current phase lit, updates on live phase
-  // transitions) + its artifacts. The second grid column beside the main column from 760px
-  // up (resizable, hideable — its grip is the sibling wireRunRail inserts), an ordinary
-  // collapsible block below the main column on a phone.
-  // R341: the SHARED rail component, the same one the conversation view renders — so each
-  // section is individually collapsible here too (R340), remembered per browser, instead of
-  // the divergent plain-caption copy this view used to carry.
-  const railHost = el("details", { class: "run-rail", open: true },
-    el("summary", { class: "small" }, "state & artifacts"));
-  view.append(railHost);
-  wireRunRail(railHost, "right");
-  const rail = createRail(railHost);
-  // WHAT THE RUN PRODUCED leads; the goal — this run's own accounting of what it answered for —
-  // comes last. Each section's collapsed state is remembered per browser, so a reader who wants
-  // the goal first keeps it open and everything else shut.
-  const artBody = rail.add("artifacts", el("div", {}));
-  const filesBody = rail.add("files", el("div", {}));
-  const graphBody = rail.add("state", el("div", {}));
-  const treeBody = rail.add("sub-runs", el("div", {}));
-  const goalBody = rail.add("goal", el("div", {}));
+  // Side rail: what the run produced, where it is, and what it answered for — its sections,
+  // their order and the two run-keyed pollers live in components/runrail.js.
+  const { rail, artBody, graphBody, goalBody, subRunTree, fileActivity } =
+    createRunRail(view, { runId, isLive: runLive });
   // stategraph + artifacts are HOME-scoped (routines vs conversations routes) — created
   // at boot once the run detail names its home; tree/files key off the run id (home-free).
   let stateGraph = null;
   let artifacts = null;
-  const subRunTree = createSubRunTree(treeBody, {
-    treeUrl: `/api/runs/${runId}/tree`, isLive: runLive });
-  const fileActivity = createFileActivity(filesBody, { url: `/api/runs/${runId}/files` });
+  let runJob = null;
 
   // sub-run selector (main + each spawned child); hidden until there is at least one sub-run
   const subBar = el("div", { class: "subbar", hidden: true });
@@ -502,6 +482,10 @@ export async function render(view, runId, query = {}) {
       statsUrl: `/api/runs/${runId}/phases` });
     artifacts = createArtifacts(artBody, { slug, base: "routines" });
     accounting = createRunAccounting(goalBody, { slug });
+    // F646, operator order: a routine with JOBS shows the one this run is working on, here
+    // where the run is actually watched. Adds its own rail section only once a read finds a job
+    // this run owed or opened — most routines keep none (components/runjob.js).
+    runJob = mountRunJob(rail, { slug, runId, isLive: runLive });
   }
   accounting?.set(detail);
   // The escalation ladder's strip — which rung is current, how long until the next escalation,
@@ -641,6 +625,7 @@ export async function render(view, runId, query = {}) {
                  artifacts?.destroy();
                  subRunTree.stop();   // its 3s poll reschedules while isLive(), which a torn-down
                                     // view freezes at its last non-terminal state — forever
+                 runJob?.stop();
                  transcript.destroy();
                  planStrip.destroy();
                  stopFollow();

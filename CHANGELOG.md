@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.417.0] — 2026-10-12
+
+### The run page's rail shows the job the run is working on
+
+The operator's order, 2026-10-08: *"routines with tasks (like the 'fau' routine) need to display
+the task they're currently working on in the right sidebar. be aware about the ambiguity of the
+'task' concept"* — F646, the half of that order 0.416.0's rename left to build. The ambiguity is
+gone (the rail's own sub-run card no longer claims the word), so the section is simply **jobs**,
+the same word the routine page's panel uses.
+
+**What it answers.** A run of a routine with jobs now says, where the run is actually watched,
+which job it is **working on now**, what is still **due this run**, and what it **checkpointed**
+with the outcome it recorded. Before this the open job was visible only on the routine page,
+which shows the STORE rather than this run — so the question "what is this run doing?" had no
+answer on the run's own page.
+
+**A run page is about its own run.** For the ledger's own run the open job leads; for a run that
+has ended, each job whose history still holds an entry for that run id reports the outcome it
+recorded *then*, so yesterday's run page never claims the job today's run has open. The run's
+`status.json` carries the open job's id as well, but the engine clears it at close-out — which is
+why the rail reads the store, not the run file. The section is **added only once a read finds a
+job this run has something to do with**: a routine without the job layer gains no caption at all
+(`components/ladderstrip.js`'s idiom — an always-present, always-empty card teaches a reader to
+skip the one place the answer is).
+
+**`static/views/run.js` was at its size ceiling**, so which sections the run rail has — and the
+two run-keyed pollers that fill them — moved into `components/runrail.js` (47 lines), and the new
+section is `components/runjob.js`. `views/run.js` 648 → 633 lines, its ratchet ceiling tightened
+to match. Seen rendered at rail width before shipping: the first look showed three jobs running
+together as one block of text, so a hairline separates them.
+
+Five browser tests (`tests/ui/test_run_job.py`), three of them proven red against 0.416.0 first.
+One of them pins the poller's teardown, because the suite's general leak check keys on the RUN id
+and this poll's path carries the ROUTINE's.
+
 ## [0.416.0] — 2026-10-12
 
 ### `task` meant two unrelated things; the one a routine manages for itself is now a JOB
