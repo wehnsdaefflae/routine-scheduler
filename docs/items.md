@@ -177,6 +177,20 @@ has no routing and simply waits in triage. Delivery itself never starts a run; a
 wants to be WOKEN by deliveries declares a `report` trigger on its own Triggers card
 (docs/triggers.md) — bursts coalesce into one run per cooldown window.
 
+**Where the detail cap bites.** A report's `detail` is capped at `reports.DETAIL_MAX` (4000
+characters) **in the DELIVERED message only**: the ledger row keeps it whole, and the cut
+message carries a marker naming its own `R<n>` as the row holding the rest (`reports.clip_detail`,
+implemented in `rsched/report_detail.py` — the bound belongs to the DELIVERY, not to the ledger;
+D177, the operator 2026-10-11: *"the ledger is cheap disk, the prompt is the scarce resource, and
+R2436's lost question would have been recoverable"*). The cap exists because a delivered report
+rides in the target's prompt, where length is what is scarce; the archive has no such constraint.
+The filer is told in its own observation how many characters did not reach the reader, while it
+can still lead with what matters (F660 — before that, the cut was silent and a truncated report
+read exactly like a complete one: 273 rows of the live ledger end mid-word at exactly 4000
+characters, and R2436's cut-off tail WAS the question it was asking, which left that exchange
+unclosable). Those 273 rows stay as they are — the text is gone from before this change and a
+re-cut would only make it look recoverable.
+
 **The terminal acknowledgment.** A reply row may set `closes: true` beside `answers` (the
 action layer rejects a bare `closes`): it settles its target as any answer does AND is itself
 born settled — it asks nothing back, so the exchange ENDS there instead of ratcheting (every

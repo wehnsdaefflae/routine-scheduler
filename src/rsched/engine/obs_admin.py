@@ -212,10 +212,14 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                     f"settle when this one does, so do not route them again."
                     if obs.get("supersedes") else "")
             # F660: a cut detail is named HERE, with the size of the loss, because this is
-            # the only moment the filer still holds the text it lost.
-            cut = (f" Its detail was TRUNCATED: {obs['detail_truncated']} characters were "
-                   "cut at the cap, so anything after that point — a question, a conclusion "
-                   "— did NOT reach the reader; re-file the rest as a follow-up if it did."
+            # the only moment the filer still holds the text it lost. D177: the loss is now
+            # only the DELIVERY's — the ledger row keeps the detail whole — so the warning
+            # says what the reader is missing without claiming the text is gone.
+            cut = (f" Its detail was TRUNCATED IN DELIVERY: {obs['detail_truncated']} "
+                   "characters past the cap did not reach the reader's prompt. The ledger row "
+                   "keeps it whole and the marker names that row, so nothing is lost — but a "
+                   "question or a conclusion after the cut is not what the reader will act on; "
+                   "lead with it, or re-file it as a short follow-up."
                    if obs.get("detail_truncated") else "")
             # F621: options made it a decision for the OPERATOR too. Say that the card
             # exists and that his answer comes back HERE — a run told only "filed" would

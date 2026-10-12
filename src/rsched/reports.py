@@ -65,6 +65,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import report_detail
 from .engine import inbox
 from .ids import now_iso
 from .paths import append_jsonl, file_lock, read_jsonl
@@ -74,37 +75,13 @@ REPORTS_FILE = "reports.jsonl"
 REPORT_ID_RE = re.compile(r"^R(\d+)$")
 
 TITLE_MAX = 300
-DETAIL_MAX = 4000
-
-#: What a cut detail says where it lands. F660: the cap used to be a bare slice, so a
-#: truncated report read exactly like a complete one — 273 rows of the live ledger end at
-#: exactly 4000 characters, mid-word, and R2436's cut-off tail WAS the question it was
-#: asking, which left that exchange unclosable from the ledger. The cap itself is a
-#: prompt-budget decision and is unchanged; only the silence is.
-TRUNCATION_NOTE = ("\n\n[TRUNCATED: {dropped} more characters were cut here at the "
-                   "{cap}-character report-detail cap — re-file the rest as a follow-up "
-                   "report if it carries a question or a conclusion.]")
-
-
-def clip_detail(detail: str) -> tuple[str, int]:
-    """The detail as it is stored and delivered, plus how many characters were dropped.
-
-    One helper for both write sites (the ledger row and the inbox message) so the two can
-    never disagree about what the reader is holding, and the note is counted INSIDE the cap
-    rather than pushing the row past it.
-    """
-    text = str(detail or "")
-    if len(text) <= DETAIL_MAX:
-        return text, 0
-    # Reserve the note's WORST-CASE width (the count can never exceed the input's own
-    # length) and compute the dropped count once against that reservation. A two-pass
-    # version would have to re-measure a note whose width changes with the count's digits,
-    # and the two passes can disagree — the row would then state a different figure from
-    # the one the filer is told, which is the defect this fix exists to remove.
-    reserve = len(TRUNCATION_NOTE.format(dropped=len(text), cap=DETAIL_MAX))
-    kept = max(0, DETAIL_MAX - reserve)
-    dropped = len(text) - kept
-    return text[:kept] + TRUNCATION_NOTE.format(dropped=dropped, cap=DETAIL_MAX), dropped
+#: The DELIVERY bound lives in `report_detail` (D177): the ledger's concern is identity,
+#: locking and lifecycle; what a message may cost another run's prompt is a formatting
+#: decision with a different reason to change. Re-exported because `reports.clip_detail` is
+#: the name every caller already knows.
+DETAIL_MAX = report_detail.DETAIL_MAX
+TRUNCATION_NOTE = report_detail.TRUNCATION_NOTE
+clip_detail = report_detail.clip_detail
 
 
 def reports_path(routines_home: Path) -> Path:
@@ -242,10 +219,14 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
                 if len(open_ids) >= OPEN_THREAD_CAP:
                     raise ThreadCapError(routine, target, open_ids)
             item_id = next_id(path)
-            kept_detail = clip_detail(detail)[0]
+            # D177: the ROW keeps the detail whole — the ledger is cheap disk and the prompt is
+            # the scarce resource, so only the delivery below is cut, and its marker names this
+            # row as where the rest still is. The 273 rows cut before this stay as they are.
+            full_detail = str(detail or "")
+            kept_detail = clip_detail(full_detail, item_id)[0]
             append_jsonl(path, {"id": item_id, "ts": now_iso(), "routine": routine,
                                 "run_id": run_id,
-                                "title": title[:TITLE_MAX], "detail": kept_detail,
+                                "title": title[:TITLE_MAX], "detail": full_detail,
                                 **({"target": target} if target else {}),
                                 **({"answers": answers} if answers else {}),
                                 **({"closes": True} if closes else {}),

@@ -611,47 +611,9 @@ def test_observation_renders_the_filed_id(tmp_path):
     assert home.is_dir()
 
 
-def test_an_over_long_detail_says_it_was_cut_everywhere_it_lands(tmp_path):
-    """F660: a `detail` past DETAIL_MAX was sliced bare — no marker in the text, no word to
-    the filer — so a truncated report was indistinguishable from a complete one.
-
-    Measured on the live ledger 2026-10-10: 273 rows end at exactly 4000 characters,
-    mid-word. The cost is not cosmetic. R2436 (scheduler-builder -> self-audit) ended
-    `"Changing what "` and its own text said the cut-off part was the one question back to
-    the reader and the reason the thread could not close — so the exchange became unclosable
-    from the ledger. The cap stays (it is a prompt-budget decision); what changes is that
-    the loss is VISIBLE: a marker in the stored row AND in the delivered message, and a
-    count of the dropped characters in the filer's own observation, while it can still
-    re-file the rest.
-    """
-    from rsched.reports import DETAIL_MAX, clip_detail
-    loop, home = _loop(tmp_path, slug="self-audit")
-    target = bare_routine(home, "routine-improver")
-    tail = "THE QUESTION BACK TO YOU"
-    detail = ("x" * DETAIL_MAX) + " " + tail
-    kept, dropped = clip_detail(detail)
-    assert dropped >= len(tail)                      # the tail is genuinely gone
-
-    obs = handle_report(loop, {"target": "routine-improver", "title": "long", "detail": detail})
-
-    row = _rows(home)[0]
-    assert len(row["detail"]) <= DETAIL_MAX          # the cap still bites, note included
-    assert tail not in row["detail"]                 # ... and still drops the tail
-    assert "TRUNCATED" in row["detail"].upper()      # but never silently
-    assert row["detail"] == kept                     # one clip for both write sites
-    delivered = json.loads((target / "inbox" / "msg-rep-R1.json").read_text(encoding="utf-8"))
-    assert "TRUNCATED" in delivered["text"].upper()  # the reader sees it too
-
-    # the filer learns it IN the observation, with the SAME figure the row states, while it
-    # can still act — a count that disagreed with the row would be its own defect
-    rendered = format_observation(obs)
-    assert "truncated" in rendered.lower() and str(dropped) in rendered
-    assert str(dropped) in row["detail"]
-
-    # a detail that fits is untouched and says nothing about truncation
-    obs2 = handle_report(loop, {"target": "routine-improver", "title": "short", "detail": "d"})
-    assert _rows(home)[1]["detail"] == "d"
-    assert "truncated" not in format_observation(obs2).lower()
+# The detail cap's own claims live in test_report_detail.py (D177): the ROW keeps the detail
+# whole and only the DELIVERED message is clipped. This file is over the house size bar and may
+# only shrink, so the addition went where its source module did.
 
 
 def test_a_targeted_report_always_writes_its_inbox_delivery(tmp_path):

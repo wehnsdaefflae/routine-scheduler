@@ -111,9 +111,11 @@ def _decision_question(report_id: str, title: str, detail: str, target: str) -> 
     """The prose the OPERATOR reads on the card for a report-born decision (F621).
 
     He gets the report's own words, and the two facts a card has to carry to be answerable
-    without opening anything: which report this is, and who acts on the answer. The detail is
-    already capped by `reports.clip_detail` where it is stored; here it rides whole — the
-    page renders block markdown, which is what a report's evidence is written in.
+    without opening anything: which report this is, and who acts on the answer. The detail
+    rides WHOLE — `reports.clip_detail` bounds the delivered message, where a run's prompt
+    budget is the scarce thing (D177), and neither the ledger row nor this card is under that
+    constraint. The page renders block markdown, which is what a report's evidence is written
+    in, and a question the operator must answer is the last place to cut the evidence.
     """
     owner = (f"**{target}** owns the work and will be told what you decide"
              if target else "it is in triage — whoever picks it up will be told what you decide")

@@ -15,6 +15,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.418.0] — 2026-10-12
+
+### A report's detail is cut only where it is READ, never where it is kept (D177)
+
+The operator's answer, 2026-10-11, in his own words: *"the ledger is cheap disk, the prompt is
+the scarce resource, and R2436's lost question would have been recoverable"*. The 4000-character
+`detail` cap used to bite at BOTH write sites, so the ledger row was cut exactly like the
+delivered message and the dropped text existed nowhere at all. R2436's cut-off tail WAS the
+question it was asking, which left that exchange unclosable from the ledger — the specimen this
+answers.
+
+**Where the cap bites now.** The `reports.jsonl` row stores the detail **whole**. Only the
+message delivered into the target's inbox is clipped, because that is what rides in a run's
+prompt, and its truncation marker names its own `R<n>` as the row that holds the rest:
+*"The ledger row R2436 in .control/reports.jsonl holds this detail WHOLE — read it there."*
+Before, the marker could only tell the reader to ask the filer for text that no longer existed.
+
+**What is unchanged.** The cap itself (`DETAIL_MAX`, 4000) and the filer's own warning from
+0.409.1, which still names how many characters did not reach the reader while the run can still
+act on it — its wording now says the loss is the DELIVERY's, not the archive's. The **273 rows
+already cut** before this change stay exactly as they are: that text is gone, and re-cutting
+them would only make it look recoverable. The decision card a report with `options` files
+(F621) also carries the detail whole — `_decision_question`'s docstring claimed the cap had
+already bitten upstream, which is no longer true.
+
+`clip_detail(detail, item_id="")` takes the row id for the marker and reserves the marker's
+width against a fixed-width placeholder, so the dropped count is identical whether or not the id
+is known yet — the filer's observation measures its clip before the id is minted under the
+ledger lock, and a figure that disagreed with the delivered message would be the very defect
+F660 removed. Pinned by its own test.
+
+**The DELIVERY bound is now its own module**, `src/rsched/report_detail.py` — the cap, the
+truncation note and `clip_detail`, pure text with no filesystem or ledger. The size ratchet
+forced the question and the answer was already there: `reports.py` owns identity, locking and
+lifecycle, while what a message may cost another run's prompt is a formatting decision with a
+different reason to change (revisited whenever model context changes). `reports.clip_detail`,
+`reports.DETAIL_MAX` and `reports.TRUNCATION_NOTE` are re-exported, because that is the name
+every caller already knows and `engine/admin_handlers.py` calls it to measure the filer's
+warning; a test pins the re-export. `reports.py` 412 → 393 lines, `tests/test_reports.py`
+816 → 778, both ceilings tightened in `tests/size_ratchet.json`, and the claims moved with
+their code into `tests/test_report_detail.py`.
+
 ## [0.417.0] — 2026-10-12
 
 ### The run page's rail shows the job the run is working on
