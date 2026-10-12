@@ -15,6 +15,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.416.0] — 2026-10-12
+
+### `task` meant two unrelated things; the one a routine manages for itself is now a JOB
+
+The operator's order, 2026-10-09: *"the 'tasks' i introduced as subordinate jobs a routine manages
+itself (see the 'fau' routine) introduced ambiguity. we already use 'tasks' elsewhere (the right
+sidebar in the routine run page shows it). you need to resolve that ambiguity"* — decided as D174
+option (c), **rename BOTH senses**, because renaming one leaves the other claiming the word in a
+surface it no longer belongs to. Both halves ship here (F645), and they close the collision that
+made `task` and `subtask` two action kinds one letter apart meaning unrelated things.
+
+**Sense B — a run's own decomposition — is SUB-RUNS.** The run page's right sidebar labelled its
+card `tasks` in exactly the place the operator pointed at, while the thing he had just built and
+named had no presence on that page at all. `static/components/tasktree.js` →
+`subruntree.js` (`createTaskTree` → `createSubRunTree`, the `tt-` CSS prefix → `sr-`),
+`readmodels/tasktree.py` → `subruntree.py`, and both views' `rail.add("tasks")` →
+`rail.add("sub-runs")`.
+
+**Sense A — the standing units of work a routine keeps — are JOBS, with the kind `job`.** The
+whole vocabulary moved together: the action kind, `capabilities.jobs`, the store
+`state/jobs.json`, the default workspace `jobs/<id>`, the routes
+`GET/PATCH /api/routines/{slug}/jobs[/{id}]`, the run-gate check key `job:`, `status.json`'s live
+`job` field, the routine page's **Jobs** section, the abilities dial, `docs/jobs.md`, and every
+engine string a run reads — the digest heading, `JOB OPEN —`, the finish rung that holds a run to
+its due jobs, the carry line its summary gains, and the store seal's refusal.
+
+**The ≤350-line ratchet 0.413.0 froze made the split mandatory, and it was the right boundary.** A
+renamed path is a NEW file to `tests/size_ratchet.json`, and `--update` refuses to baseline one
+over the bar, so `taskops.py`'s 461 lines could not merely move. What a run is TOLD about its jobs
+— the digest section and the open-job briefing, pure reading — is now `engine/jobbrief.py` (147),
+and `engine/jobops.py` (334) keeps the verbs, the ledger and the gates.
+
+**Nothing on disk had to be migrated for the live routine to keep working.** `fau` holds
+`tasks: 'on'`, a 134 KB `state/tasks.json`, ~40 checks keyed `task: <id>` and five workspaces
+under `tasks/`; its `routine.yaml` is the operator's file, not the engine's. So all four old
+spellings are still READ and never written back, and the whole deprecation lives in one owner,
+`rsched/jobs_compat.py`, which is the single file to delete when it ends: the capabilities key,
+the store file (the first save writes the new name; the old file is never deleted), the check key,
+and `tasks/<id>/` as a sealed recipe prefix. The abilities dial now writes `jobs`, because a
+deprecation that keeps handing out the old spelling can never end.
+
+**The action kind gets no alias — and a run still emitting it is told so.** D174 asked for zero
+residual ambiguity, so `kind: "task"` is gone. The bare schema refusal would be
+`kind: 'task' is not one of [...33 kinds]`: accurate, and useless to a run whose recipe is stale —
+three rejections of one correctable mistake is how the run in F637 died. New
+`engine/renamedkinds.py` names the replacement and why, through the retry's existing `diagnosis`
+channel, and says nothing at all for any other invalid action.
+
 ## [0.415.1] — 2026-10-12
 
 ### A written-out count in contract prose is now a claim the suite checks
