@@ -55,20 +55,13 @@ function markChip(r) {
   return chip(r.outcome || "checkpointed", OUTCOME_CHIP[r.outcome] || "");
 }
 
-// A hairline between jobs, not a gap. LOOKED AT at rail width (330px) with three jobs: title,
-// chips, id and note stacked with nothing between them read as ONE block of text, and the second
-// job's title looked like a continuation of the first one's note. Inline because both
-// stylesheets sit at their size ceiling (tests/size_ratchet.json) — the variable is the same
-// `--rule` every other separator in base.css uses.
-const SEP = "border-top:1px solid var(--rule);margin-top:6px;padding-top:6px";
-
-function jobNode(r, idx) {
+function jobNode(r) {
   const job = r.job;
   const kids = [
-    el("div", {}, el("b", {}, job.title || job.id)),
+    el("div", { class: "rj-title" }, el("b", {}, job.title || job.id)),
     el("div", { class: "small" }, markChip(r), " ",
       chip(job.state, STATE_CHIP[job.state] || "")),
-    el("div", { class: "faint small mono" }, `${job.id} · ${job.workspace || ""}`),
+    el("div", { class: "rj-where faint small mono" }, `${job.id} · ${job.workspace || ""}`),
   ];
   // The note is the one line that says what this job IS about: the brief while it is open, the
   // checkpoint summary once it is not, the carry when something was left owed. Full text on
@@ -77,8 +70,7 @@ function jobNode(r, idx) {
   else if (r.mark === "open" && r.brief) {
     kids.push(el("div", { class: "faint small prose", title: r.brief }, r.brief));
   }
-  return el("div", { "data-run-job": job.id, "data-job-mark": r.mark,
-                     style: idx ? SEP : null }, ...kids);
+  return el("div", { "data-run-job": job.id, "data-job-mark": r.mark }, ...kids);
 }
 
 /**
@@ -103,7 +95,7 @@ export function mountRunJob(rail, { slug, runId, isLive }) {
     } else {
       rail.toggle("jobs", true);
     }
-    host.replaceChildren(...rows.map((r, i) => jobNode(r, i)));
+    host.replaceChildren(...rows.map(jobNode));
   }
 
   async function refresh() {

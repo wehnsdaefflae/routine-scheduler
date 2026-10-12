@@ -1,0 +1,56 @@
+/* The RUN RAIL's cards — the narrow column beside a run's transcript (components/runrail.js).
+ *
+ * Why a THIRD stylesheet exists at all: `views.css` (2024 lines) and `base.css` (1203) are both
+ * far over the repo's 350-line house bar and frozen at their ratchet ceilings, so neither may
+ * grow. The bar is PER FILE, so the answer is the same here as it is for an over-bar Python
+ * module or JS view: another file. 0.417.0 shipped the jobs section's separator as an INLINE
+ * style on the reasoning that "no CSS could be added", which was simply wrong — and an inline
+ * rule is worse than a class twice over: the browser suite's idiom is to assert the COMPUTED
+ * style a class produces, and an inline one cannot be themed, overridden or found by a reader
+ * grepping the stylesheets for what a card looks like.
+ *
+ * Loaded after views.css (static/index.html), so these rules win a tie on specificity order.
+ * Everything here is tokens from base.css — no colour, size or spacing literal belongs in a
+ * card: a theme switch has to reach it.
+ *
+ * Scope: the rail's own cards. The rail FRAME (.run-rail, .rail-cap, the resize grip) stays in
+ * views.css and base.css where the conversation rail shares it.
+ */
+
+/* ---------- the jobs card (components/runjob.js): which job this run is working on ---------- */
+
+.runjob {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--t-xs);
+}
+
+/* One job per block. A hairline rather than a gap, because a gap at this width reads as the
+ * same block with loose leading: three jobs rendered with no separator at all looked like one
+ * run-on paragraph, with the second job's title continuing the first one's note (seen in the
+ * rendered look, not in five green browser tests — artifacts/f646-run-rail-jobs.png). The
+ * FIRST block takes no rule: there is nothing above it to separate from.
+ */
+.runjob > [data-run-job] + [data-run-job] {
+  border-top: 1px solid var(--rule);
+  margin-top: var(--s2);
+  padding-top: var(--s2);
+}
+
+/* The job this run has OPEN is the question the card exists to answer, so its title carries the
+ * weight. A checkpointed or merely due job is reported, not announced.
+ */
+.runjob > [data-job-mark="open"] .rj-title {
+  color: var(--ink);
+}
+
+.runjob .rj-title {
+  color: var(--ink-2);
+}
+
+/* The workspace/id line is reference, not reading — it is there to be copied, so it stays
+ * monospaced and quiet even on the open job.
+ */
+.runjob .rj-where {
+  word-break: break-all;
+}

@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.418.1] — 2026-10-12
+
+### A frozen stylesheet means a NEW stylesheet, not an inline style
+
+0.417.0 shipped the run rail's job separator as an **inline style**, with the reasoning stated in
+its own entry: *"Both stylesheets are frozen at their ceilings, so a UI change may add NO CSS"*.
+The operator corrected it the same day: **the house bar is per FILE.** `views.css` (2024 lines)
+and `base.css` (1203) are both frozen at their ratchet ceilings and may not grow — but nothing
+ever stopped a THIRD stylesheet, any more than an over-bar Python module stops a new module. The
+ratchet governs `static/**/*.css` by glob, so a new file is measured like any other and simply
+has to be ≤ 350 lines; `static/index.html` is not governed at all, and nothing in `tests/` pins
+the stylesheet list.
+
+**`static/rail.css` (56 lines)** now carries the run rail's own cards, linked after `views.css`
+so a rail rule wins a specificity tie. The jobs card's rules are classes again: the separator is
+a `[data-run-job] + [data-run-job]` sibling rule, and the open job's title takes `--ink` while a
+checkpointed or due one takes `--ink-2` — a hierarchy the inline version could not express at
+all, since it could only repeat one declaration per node.
+
+**An inline style is worse than a class twice over** here: this suite's own idiom is to assert
+the COMPUTED style a class produces (`tests/ui/test_background_chip.py` says so in its
+docstring), and an inline rule cannot be themed, overridden or found by a reader grepping the
+stylesheets for what a card looks like. The new browser test asserts the computed border width
+on the first and second job AND that the node carries no `style` attribute at all.
+
+No behaviour changes: the same six browser tests pass, plus the new one, and the theme tests
+confirm a third stylesheet breaks nothing about light/dark.
+
 ## [0.418.0] — 2026-10-12
 
 ### A report's detail is cut only where it is READ, never where it is kept (D177)
@@ -86,7 +114,9 @@ skip the one place the answer is).
 two run-keyed pollers that fill them — moved into `components/runrail.js` (47 lines), and the new
 section is `components/runjob.js`. `views/run.js` 648 → 633 lines, its ratchet ceiling tightened
 to match. Seen rendered at rail width before shipping: the first look showed three jobs running
-together as one block of text, so a hairline separates them.
+together as one block of text, so a hairline separates them. *(That hairline shipped as an INLINE
+style on the false reasoning stated above — that no CSS could be added. The bar is per FILE and a
+new stylesheet was always available; corrected in 0.418.1, `static/rail.css`.)*
 
 Five browser tests (`tests/ui/test_run_job.py`), three of them proven red against 0.416.0 first.
 One of them pins the poller's teardown, because the suite's general leak check keys on the RUN id

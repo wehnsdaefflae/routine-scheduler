@@ -100,6 +100,40 @@ def test_an_older_run_reports_what_it_did_not_what_is_open_now(ui, ui_page):
     expect(row).not_to_contain_text("working on it now")
 
 
+def test_each_job_is_its_own_block_from_the_stylesheet(ui, ui_page):
+    """The rendered-look defect, pinned where a class can be checked: three jobs with nothing
+    between them read as ONE run-on paragraph, the second job's title continuing the first's
+    note. 0.417.0 fixed it with an INLINE style on the reasoning that both stylesheets were at
+    their size ceilings — wrong, since the house bar is per FILE: the rules now live in
+    `static/rail.css` and this asserts the COMPUTED border, so a stylesheet that loses the rule
+    fails here instead of passing on a class that does nothing."""
+    ledger = {"run_id": f"uir:{TS}", "open": "ards",
+              "due": [{"id": "ards", "why": ["up"]}, {"id": "doc", "why": ["up"]}], "done": {}}
+    _keep_jobs(ui, ledger=ledger, rows=[
+        ARDS,
+        {"id": "doc", "title": "Documentation handover", "state": "active",
+         "brief": "the handover doc", "workspace": "jobs/doc"}])
+    ui.seed_run("uir", TS, "running", summary="")
+
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui_page.goto(f"{ui.url}/#/run/uir:{TS}")
+    first = ui_page.locator("[data-run-job='ards']")
+    second = ui_page.locator("[data-run-job='doc']")
+    expect(first).to_be_visible()
+    expect(second).to_be_visible()
+
+    # the FIRST block has nothing above it to separate from
+    assert ui_page.evaluate(
+        "() => getComputedStyle(document.querySelector(\"[data-run-job='ards']\"))"
+        ".borderTopWidth") == "0px"
+    # ... the second carries the hairline, and it comes from the stylesheet, not an inline rule
+    assert ui_page.evaluate(
+        "() => getComputedStyle(document.querySelector(\"[data-run-job='doc']\"))"
+        ".borderTopWidth") == "1px"
+    assert ui_page.evaluate(
+        "() => document.querySelector(\"[data-run-job='doc']\").getAttribute('style')") is None
+
+
 def test_the_job_poll_dies_with_the_run_view(ui, ui_page):
     """`tests/ui/test_view_teardown.py` catches a leaked poller by the RUN ID in its URL, and
     this one's path is the ROUTINE's (`/api/routines/{slug}/jobs`) — so the general check
