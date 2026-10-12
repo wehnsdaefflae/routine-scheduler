@@ -895,7 +895,7 @@ def test_cancel_background(client, monkeypatch):
 
 def test_background_run_resolves_on_runs_endpoint(client):
     """The _run_dir search tuple includes background_home, so a detached run's transcript/tree
-    resolve on the generic /api/runs endpoints (what the rail's task tree fetches)."""
+    resolve on the generic /api/runs endpoints (what the rail's sub-run tree fetches)."""
     c, server = client
     slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
     task = _bg_task(server, f"bg-{slug}-ffff", slug)

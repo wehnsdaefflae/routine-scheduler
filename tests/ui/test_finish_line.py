@@ -181,7 +181,7 @@ def test_a_runs_page_shows_that_runs_own_accounting(ui, ui_page):
     expect(acct.locator('[data-acct="d2"]')).to_have_class(re.compile(r"\bv-met\b"))
     caps = ui_page.locator(".run-rail .rail-cap")
     assert [c.strip().lower() for c in caps.all_inner_texts()] == [
-        "artifacts", "files", "state", "tasks", "goal"]
+        "artifacts", "files", "state", "sub-runs", "goal"]
 
 
 def test_revise_recipe_lands_on_the_runs_message_box_ready_to_edit_the_recipe(ui, ui_page):

@@ -49,7 +49,7 @@ def ladder_state(run_dir: Path, *, turn: int = 0) -> dict | None:
     `turn` is the run's current turn, used only to count the interval down; 0 leaves
     `turns_to_next` None, which is honest for a finished run — there is no next escalation.
 
-    Memoized on the run's own transcript fingerprint, like the task tree: the rail polls this.
+    Memoized on the run's own transcript fingerprint, like the sub-run tree: the rail polls this.
     """
     from . import memo
 

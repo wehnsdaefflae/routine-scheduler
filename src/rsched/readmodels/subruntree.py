@@ -1,4 +1,4 @@
-"""The recursive task tree read-model — for the run/conversation rail's live decomposition view.
+"""The recursive sub-run tree read-model — for the run/conversation rail's live decomposition view.
 
 A run's children (sequential `subtask`s and parallel `spawn`s alike) live on disk under
 `runs/<ts>/sub/<n>/`, each its own routine with its own transcript. This module reconstructs the

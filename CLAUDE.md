@@ -705,7 +705,7 @@ by a test, by the engine, or by a past incident.
   Decisions page, the run view's inline forms) — four of them had four throttles and the daemon's
   load depended on which tab was open; a fifth consumer SUBSCRIBES, it does not fetch. The same
   rule the other way: a component that POLLS takes a predicate for whether anybody can see it
-  (`createTaskTree`'s `isLive`, `activityFeed`'s `isOpen`) and its view's teardown stops it
+  (`createSubRunTree`'s `isLive`, `activityFeed`'s `isOpen`) and its view's teardown stops it
   (`tests/ui/test_view_teardown.py`, `tests/ui/test_bus_budget.py`). `EventBus.publish` may be
   called from any thread — it hands each put to its subscriber's loop — so a sync route running
   in the threadpool publishes directly instead of hopping by hand.

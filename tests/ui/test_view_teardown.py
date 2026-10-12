@@ -2,7 +2,7 @@
 
 Every poller in the console is armed by a view and has to be disarmed by that view's
 teardown. Nothing in the suite could see a request that fires AFTER navigation, which is how
-the run view shipped a task-tree poller it never stopped: its `isLive()` predicate reads a
+the run view shipped a sub-run tree poller it never stopped: its `isLive()` predicate reads a
 state variable frozen at whatever it held when the view was torn down, so leaving a live run
 left a GET /api/runs/<id>/tree every three seconds for the rest of the browser session — one
 more per run page visited, serving a rail nobody could see.
@@ -39,14 +39,14 @@ def test_run_view_stops_its_task_tree_poll(ui, ui_page):
     ui.seed_run("uir", "20260714-070000", "running")
     ui_page.goto(f"{ui.url}/#/run/uir:20260714-070000")
     # the rail's tasks card is up, so the poller is armed
-    expect(ui_page.locator(".tasktree")).to_be_visible()
+    expect(ui_page.locator(".subruntree")).to_be_visible()
     ui_page.wait_for_timeout(3500)          # let at least one poll round happen while mounted
     _leave(ui_page)
 
     after = watch_requests(ui_page, API)
     ui_page.wait_for_timeout(QUIET_MS)
     tree = [u for u in after if "/tree" in u]
-    assert not tree, f"the task-tree poll outlived the run view: {tree}"
+    assert not tree, f"the sub-run tree poll outlived the run view: {tree}"
 
 
 def test_leaving_a_run_silences_every_run_scoped_request(ui, ui_page):
@@ -54,7 +54,7 @@ def test_leaving_a_run_silences_every_run_scoped_request(ui, ui_page):
     still be asked for — tree, files, plan, transcript or events."""
     ui.seed_run("uir", "20260714-070000", "running")
     ui_page.goto(f"{ui.url}/#/run/uir:20260714-070000")
-    expect(ui_page.locator(".tasktree")).to_be_visible()
+    expect(ui_page.locator(".subruntree")).to_be_visible()
     _leave(ui_page)
 
     after = watch_requests(ui_page, API)
@@ -66,14 +66,14 @@ def test_leaving_a_run_silences_every_run_scoped_request(ui, ui_page):
 def test_a_missing_run_does_not_keep_polling_for_itself(ui, ui_page):
     """A pruned run's link (a stale search hit, an old notification) renders "Run not found" —
     and used to return no teardown at all, so the rail it had already mounted kept asking for
-    the missing run's task tree every three seconds while that page stood, and its duration
+    the missing run's sub-run tree every three seconds while that page stood, and its duration
     clock ticked on for the rest of the tab's life."""
     after = watch_requests(ui_page, API)
     ui_page.goto(f"{ui.url}/#/run/uir:20200101-000000")
     expect(ui_page.locator("#view")).to_contain_text("Run not found")
     ui_page.wait_for_timeout(QUIET_MS)
     tree = [u for u in after if "20200101-000000/tree" in u]
-    assert len(tree) <= 1, f"the missing run's task tree was polled: {tree}"
+    assert len(tree) <= 1, f"the missing run's sub-run tree was polled: {tree}"
 
 
 def test_a_transcript_page_landing_after_you_left_does_not_scroll_the_next_page(ui, ui_page):
@@ -283,10 +283,10 @@ def test_a_task_tree_stopped_before_its_first_read_lands_stays_stopped(ui, ui_pa
                   lambda route: route.continue_() if held else held.append(route))
     ui_page.goto(ui.url)
     ui_page.wait_for_selector(".topbar")
-    ui_page.evaluate("""() => import('/static/components/tasktree.js').then((m) => {
+    ui_page.evaluate("""() => import('/static/components/subruntree.js').then((m) => {
         const host = document.createElement('div');
         document.body.append(host);
-        window.__tree = m.createTaskTree(host, {
+        window.__tree = m.createSubRunTree(host, {
           treeUrl: '/api/runs/uir:20260714-070000/tree', isLive: () => true });
     })""")
     until(lambda: held, what="the first tree read to be asked for", page=ui_page)
@@ -295,7 +295,7 @@ def test_a_task_tree_stopped_before_its_first_read_lands_stays_stopped(ui, ui_pa
     held[0].continue_()
     ui_page.wait_for_timeout(QUIET_MS)
     tree = [u for u in after if u.endswith("/tree")]
-    assert not tree, f"a stopped task tree kept polling: {tree}"
+    assert not tree, f"a stopped sub-run tree kept polling: {tree}"
 
 
 def test_leaving_a_development_view_stops_its_run_finished_reread(ui, ui_page):

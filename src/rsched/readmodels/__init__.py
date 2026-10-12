@@ -15,7 +15,7 @@ Members: `surface` (the setup surface — what a routine still needs, joined fro
 `surface_caps`), `remedies` (the same rows in words), `stats` (usage rollups),
 `run_health` (recipe-version and time-window regression flags),
 `util_stats` (per-util reliability), `statemap` (stage graph + per-phase instrument
-panel), `fileactivity` (per-file read/write counts), `tasktree` (the recursive child
+panel), `fileactivity` (per-file read/write counts), `subruntree` (the recursive child
 tree), `items` (the system-maintenance index: findings, decisions, bug reports),
 `summaries` (each routine's latest finish message, shaped as a fourth item type so the
 Messages page can serve both), plus

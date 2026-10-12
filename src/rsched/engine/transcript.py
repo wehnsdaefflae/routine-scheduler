@@ -153,7 +153,7 @@ def read_events(path: Path, offset: int = 0) -> tuple[list[dict], int]:
                 ev = None
             # Valid JSON that is not an OBJECT (a list, a string, a number) is as malformed as
             # broken JSON here: every reader does `ev.get(...)`, and one such line crashed
-            # tasktree, fileactivity and statemap for the whole transcript.
+            # subruntree, fileactivity and statemap for the whole transcript.
             if isinstance(ev, dict):
                 events.append(ev)
             else:

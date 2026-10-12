@@ -924,32 +924,32 @@ pre.hl-json .tok-const { color: var(--warn); }
 .filelist .rail-sub { margin-top: 6px; padding: 0 4px; letter-spacing: .04em;
   text-transform: uppercase; font-size: 9.5px; }
 
-/* the recursive task tree: sequential subtasks (→) + parallel subruns (⇉), each with a
+/* the recursive sub-run tree: sequential subtasks (→) + parallel subruns (⇉), each with a
    per-node turn-budget meter (amber ≥85%, red over) and its children nested */
-.tasktree { display: flex; flex-direction: column; gap: 1px; font-family: var(--f-display); }
-.tt-row {
+.subruntree { display: flex; flex-direction: column; gap: 1px; font-family: var(--f-display); }
+.sr-row {
   display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2);
   padding: 2px 4px; border-radius: 6px;
 }
-.tt-icon, .tt-mode { width: 12px; text-align: center; flex: none; }
-.tt-mode { color: var(--ink-3); }
-.tt-mode.tt-sequential { color: var(--signal); }
-.tt-label { flex: 1 1 auto; min-width: 0; color: var(--ink); overflow: hidden;
+.sr-icon, .sr-mode { width: 12px; text-align: center; flex: none; }
+.sr-mode { color: var(--ink-3); }
+.sr-mode.sr-sequential { color: var(--signal); }
+.sr-label { flex: 1 1 auto; min-width: 0; color: var(--ink); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
-.tt-wf { flex: none; }
-.tt-meter {
+.sr-wf { flex: none; }
+.sr-meter {
   flex: none; width: 40px; height: 5px; border-radius: 3px;
   background: var(--plate-2); overflow: hidden;
 }
-.tt-bar { display: block; height: 100%; background: var(--signal); }
-.tt-bar.warn { background: var(--warn); }        /* >=85% of the allotment */
-.tt-bar.over { background: var(--err); }         /* past it */
-.tt-turns { flex: none; width: 40px; text-align: right; }
-.tt-s-running > .tt-icon { color: var(--signal); }
-.tt-s-ok > .tt-icon { color: var(--ok); }
-.tt-s-failed > .tt-icon { color: var(--err); }
-.tt-s-aborted > .tt-icon { color: var(--warn); }
-.tt-children { margin-left: 11px; border-left: 1px solid var(--rule-2); padding-left: 6px; }
+.sr-bar { display: block; height: 100%; background: var(--signal); }
+.sr-bar.warn { background: var(--warn); }        /* >=85% of the allotment */
+.sr-bar.over { background: var(--err); }         /* past it */
+.sr-turns { flex: none; width: 40px; text-align: right; }
+.sr-s-running > .sr-icon { color: var(--signal); }
+.sr-s-ok > .sr-icon { color: var(--ok); }
+.sr-s-failed > .sr-icon { color: var(--err); }
+.sr-s-aborted > .sr-icon { color: var(--warn); }
+.sr-children { margin-left: 11px; border-left: 1px solid var(--rule-2); padding-left: 6px; }
 
 /* the run + conversations views' side rails: grid columns beside the content wherever the
    viewport can hold one (the block below), ordinary collapsible blocks in the flow on a phone

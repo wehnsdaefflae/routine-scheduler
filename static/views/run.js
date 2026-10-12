@@ -18,7 +18,7 @@ import { createFileActivity } from "/static/components/fileactivity.js";
 import { createPlanStrip } from "/static/components/planstrip.js";
 import { createStateGraph } from "/static/components/stategraph.js";
 import { createRunAccounting } from "/static/components/run-accounting.js";
-import { createTaskTree } from "/static/components/tasktree.js";
+import { createSubRunTree } from "/static/components/subruntree.js";
 import { renderLadder } from "/static/components/ladderstrip.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtAbs, fmtDur, fmtTokens, skeleton, streamStatus,
@@ -115,13 +115,13 @@ export async function render(view, runId, query = {}) {
   const artBody = rail.add("artifacts", el("div", {}));
   const filesBody = rail.add("files", el("div", {}));
   const graphBody = rail.add("state", el("div", {}));
-  const treeBody = rail.add("tasks", el("div", {}));
+  const treeBody = rail.add("sub-runs", el("div", {}));
   const goalBody = rail.add("goal", el("div", {}));
   // stategraph + artifacts are HOME-scoped (routines vs conversations routes) — created
   // at boot once the run detail names its home; tree/files key off the run id (home-free).
   let stateGraph = null;
   let artifacts = null;
-  const taskTree = createTaskTree(treeBody, {
+  const subRunTree = createSubRunTree(treeBody, {
     treeUrl: `/api/runs/${runId}/tree`, isLive: runLive });
   const fileActivity = createFileActivity(filesBody, { url: `/api/runs/${runId}/files` });
 
@@ -470,7 +470,7 @@ export async function render(view, runId, query = {}) {
       `${err.message} — it may have been pruned by retention.`));
     // Nothing further mounts, so what already has stops here — and with it nothing is left
     // for a teardown to do.
-    taskTree.stop();
+    subRunTree.stop();
     planStrip.destroy();
     clearInterval(durTimer);
     return null;
@@ -596,8 +596,8 @@ export async function render(view, runId, query = {}) {
       } else if (ev.type === "observation" || ev.type === "finish") {
         pendingAction = null; setWaiting(WORKING.has(curState));
       }
-      if (ev.type === "subrun_start") { addSubTab(ev.payload.n, ev.payload.label); taskTree.refresh(); }
-      if (ev.type === "subrun_end") taskTree.refresh();
+      if (ev.type === "subrun_start") { addSubTab(ev.payload.n, ev.payload.label); subRunTree.refresh(); }
+      if (ev.type === "subrun_end") subRunTree.refresh();
       // a deliverable landed — the rail refreshes without waiting for run end
       if (ev.type === "observation" && !ev.payload?.error
           && (ev.payload?.kind === "write_file" || ev.payload?.kind === "edit_file")
@@ -616,7 +616,7 @@ export async function render(view, runId, query = {}) {
       if (s.model) setModel(s.model);
       showQuestion(s.question);
       if (TERMINAL.has(s.state)) {
-        artifacts?.refresh(); taskTree.refresh(); fileActivity.refresh();
+        artifacts?.refresh(); subRunTree.refresh(); fileActivity.refresh();
         // the accounting is written with the finish: read it once the run has ended
         if (accounting && !accountingRead) {
           accountingRead = true;
@@ -639,7 +639,7 @@ export async function render(view, runId, query = {}) {
   return () => { disposed = true;
                  if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
                  artifacts?.destroy();
-                 taskTree.stop();   // its 3s poll reschedules while isLive(), which a torn-down
+                 subRunTree.stop();   // its 3s poll reschedules while isLive(), which a torn-down
                                     // view freezes at its last non-terminal state — forever
                  transcript.destroy();
                  planStrip.destroy();

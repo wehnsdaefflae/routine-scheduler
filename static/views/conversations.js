@@ -1,7 +1,7 @@
 // Conversations tab, chat-first, in the RUN-PAGE layout: the conversation owns the full
 // main column; everything else lives in margin rails (the run view's .run-rail pattern).
 // Left rail: a dense one-line-per-conversation list (state dot, title, time — details in a
-// hover card, tags collapse into one filter select). Right rail: state graph, task tree,
+// hover card, tags collapse into one filter select). Right rail: state graph, sub-run tree,
 // and the artifact panel. On wide screens the rails park FIXED in the viewport margins
 // beside the 1180px column; otherwise they are ordinary collapsible blocks above the chat.
 // A conversation is one continuous run: sending into a live reply injects; sending into a
@@ -23,7 +23,7 @@ import { createArtifacts } from "/static/components/artifacts.js";
 import { createRail } from "/static/components/rail.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createStateGraph } from "/static/components/stategraph.js";
-import { createTaskTree } from "/static/components/tasktree.js";
+import { createSubRunTree } from "/static/components/subruntree.js";
 import { adminToggle } from "/static/components/admintoggle.js";
 import { busy, chip, el, emptyState, relTime, toast, toastError } from "/static/util.js";
 import { wireRunRail } from "/static/resizable.js";
@@ -253,7 +253,7 @@ export async function render(view, slug, _query = {}) {
     // the state graph rides at the top of the artifact rail: current phase lit up,
     // re-highlighted live on the live-stream state events below
     const graphBody = rail.add("state", el("div", {}));
-    const treeBody = detail.run_id ? rail.add("tasks", el("div", {})) : el("div", {});
+    const treeBody = detail.run_id ? rail.add("sub-runs", el("div", {})) : el("div", {});
     const filesBody = detail.run_id ? rail.add("files", el("div", {})) : el("div", {});
     // NO browser section here (F561, operator 2026-10-01: "we wanna remove the browser preview
     // in the sidebar. it is redundant now that we have the browser preview chip"). The rail used
@@ -271,7 +271,7 @@ export async function render(view, slug, _query = {}) {
     const stateGraph = createStateGraph(graphBody, {
       graphUrl: `/api/conversations/${slug}/stategraph`,
       ...(detail.run_id ? { statsUrl: `/api/runs/${detail.run_id}/phases` } : {}) });
-    const taskTree = detail.run_id ? createTaskTree(treeBody, {
+    const subRunTree = detail.run_id ? createSubRunTree(treeBody, {
       treeUrl: `/api/runs/${detail.run_id}/tree`, isLive: () => !TERMINAL.has(curState) }) : null;
     const fileActivity = detail.run_id
       ? createFileActivity(filesBody, { url: `/api/runs/${detail.run_id}/files` }) : null;
@@ -325,7 +325,7 @@ export async function render(view, slug, _query = {}) {
     paintBackground(detail.background || []);
 
     cleanup.push(() => { clearInterval(bgTimer);
-                         artifacts.destroy(); taskTree?.stop(); });
+                         artifacts.destroy(); subRunTree?.stop(); });
 
     const chat = createChat(chatBox, {
       answer: (qid, text, decision) => api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),
@@ -369,7 +369,7 @@ export async function render(view, slug, _query = {}) {
       // (a conversation loops — it has no single workflow phase to highlight)
       stateGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
-      if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); taskTree?.refresh();
+      if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); subRunTree?.refresh();
                              fileActivity?.refresh(); }
       armPolls();            // the run going live or terminal changes what is worth polling for
       refreshBackground();   // a finished detached task wakes the conversation → catch it here
@@ -389,7 +389,7 @@ export async function render(view, slug, _query = {}) {
                            pendingEcho.node?.remove(); pendingEcho = null;   // the real bubble takes over (F295)
                          }
                          chat.add(ev); scrollDown();
-                         if (ev.type === "subrun_start" || ev.type === "subrun_end") taskTree?.refresh();
+                         if (ev.type === "subrun_start" || ev.type === "subrun_end") subRunTree?.refresh();
                          if (ev.type === "observation" && ["read_file", "view_image", "write_file",
                              "edit_file"].includes(ev.payload?.kind)) fileActivity?.poke(); },
       onState: (s) => { setState(s.state);   // setState re-lights the state diagram

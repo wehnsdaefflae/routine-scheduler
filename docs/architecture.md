@@ -520,7 +520,7 @@ and the capabilities digest's catalog listing):
   **Where a rung is VISIBLE**: four transcript event types (`oversight_dispatch`,
   `oversight_directive`, `oversight_skipped`, `oversight_no_directive` — in `EVENT_TYPES`, so the
   console and `run-once` both render them), the directive's prose as a `user_injection` carrying
-  `via: "oversight"` (which is what lets a reader tell a rung from the operator), the task tree's
+  `via: "oversight"` (which is what lets a reader tell a rung from the operator), the sub-run tree's
   `↑` for the `oversight` child mode, and the run rail's **oversight strip**
   (`readmodels/ladder.py` → the run detail's `ladder` field → `components/ladderstrip.js`),
   a section added only for a run that HAS a rung.
@@ -716,8 +716,8 @@ and the capabilities digest's catalog listing):
   the `general-task` seed workflow carries a standardized `decompose_decision()` gate
   (inline | sequential | parallel); `converse` handles decomposition as inline prose.
   Children are killed at parent finish (never outlive it); exits fold usage into the parent. The
-  recursive tree is visualized live in the run/conversation rail (`rsched/readmodels/tasktree.py` →
-  `static/components/tasktree.js`). `subrun_start`/`subrun_end` events carry `mode` (sequential/parallel)
+  recursive tree is visualized live in the run/conversation rail (`rsched/readmodels/subruntree.py` →
+  `static/components/subruntree.js`). `subrun_start`/`subrun_end` events carry `mode` (sequential/parallel)
   + the child's allotted budget — payload EXTENSIONS, not new event types. Children running at an interruption are dead on resume — boot marks each aborted
   (`history.orphaned_children` → a synthesized `subrun_end`) and tells the model; finished-child
   results ARE replayed (announcements reconstituted from `subrun_end` events).
@@ -1303,7 +1303,7 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   database, no cache files; parsing is memoized per file behind a stat() fingerprint
   (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs, copies returned —
   the disk stays the source of truth on every lookup. Every other derived view lives in
-  **`rsched/readmodels/`** (stats, run_health, util_stats, statemap, fileactivity, tasktree,
+  **`rsched/readmodels/`** (stats, run_health, util_stats, statemap, fileactivity, subruntree,
   items — the maintenance index of findings/decisions/bug reports, docs/items.md — summaries —
   each routine's latest finish message, shaped as a fourth item type and merged into the same
   page — and messages — a routine's four message folders, docs/messages.md) on the

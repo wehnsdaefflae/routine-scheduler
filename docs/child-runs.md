@@ -196,7 +196,7 @@ summary and re-plans — only the run-level budget hard-stops the whole tree.
 
 ## Visualization
 
-The run and conversation rails carry a **task-tree** card (below the state graph): the recursive
+The run and conversation rails carry a **sub-run tree** card (below the state graph): the recursive
 tree of sequential subtasks (→), parallel subruns (⇉) and oversight rungs (↑), each a node with a state icon, its
 workflow pattern, and a per-node turn-budget meter (amber ≥85%, red over), children nested. It is
 a read-model over the on-disk `sub/` transcripts — live while the run runs. In the transcript,

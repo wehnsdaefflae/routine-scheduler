@@ -23,7 +23,7 @@ by default, in the same jail and with no secret at all. Other actions: read/writ
 work into child tasks — `spawn` parallel sub-workflows (monitor with `subruns`, `kill`, `wait`) or
 run ordered `subtask` steps sequentially (each a fresh-context child on its own pattern + budget) —
 ask the user (blocking or deferred), or finish. Children never outlive the parent; the recursive
-task tree is shown live in the run rail. A conversation can also `detach` a LONG job that OUTLIVES a
+sub-run tree is shown live in the run rail. A conversation can also `detach` a LONG job that OUTLIVES a
 reply (its own daemon-managed process, reporting back on completion). The engine commits each routine's working dir automatically. Endpoints
 are model **transports** only, and there are two kinds: any OpenAI-compatible API
 (OpenRouter, Featherless, vLLM, local Ollama) and the Anthropic Messages API — which is also

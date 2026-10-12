@@ -5,7 +5,7 @@
 //
 // The mount is LAZY: nothing loads or polls until start() is called (the Dashboard calls it when
 // its section is open), so a collapsed section costs nothing — and it stays lazy AFTERWARDS.
-// `isOpen()` is the same predicate shape createTaskTree takes: start() arms the wiring once,
+// `isOpen()` is the same predicate shape createSubRunTree takes: start() arms the wiring once,
 // and every refresh the bus or the 4 s poll would make is skipped while the section is shut.
 // Without it, one click open and one click closed left three fetches (routines, 300 runs,
 // status) firing every four seconds for content nobody could see, for the life of the tab — the

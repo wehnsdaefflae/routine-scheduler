@@ -1,8 +1,8 @@
-"""The recursive task-tree read-model (web/tasktree.py): reconstruct a run's children from the
+"""The recursive sub-run tree read-model (web/subruntree.py): reconstruct a run's children from the
 on-disk sub/ transcripts, with live stats for running nodes and nested grandchildren."""
 
 from rsched.engine.transcript import Transcript
-from rsched.readmodels.tasktree import build_tree
+from rsched.readmodels.subruntree import build_tree
 
 
 def test_build_tree_reconstructs_recursive_children(tmp_path):

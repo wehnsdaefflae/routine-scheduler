@@ -68,7 +68,7 @@ def test_malformed_line_skipped_with_log_trace(tmp_path, caplog):
 
 def test_a_line_that_is_json_but_not_an_object_is_skipped(tmp_path, caplog):
     """Every reader does `ev.get(...)`: one valid-JSON line that is a list, a string or a
-    number used to come back as an "event" and crash tasktree, fileactivity and statemap."""
+    number used to come back as an "event" and crash subruntree, fileactivity and statemap."""
     path = tmp_path / "t.jsonl"
     body = (json.dumps({"type": "header"}) + "\n" + '["a", "list"]\n"a string"\n42\nnull\n'
             + json.dumps({"type": "finish", "payload": {}}) + "\n")

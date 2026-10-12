@@ -212,7 +212,7 @@ other running.
 ## Conversation branches: inherited child numbering, and a branch of a branch (E3.7)
 
 (a) A branch copies its parent's transcript, `subrun_start` events included. Verify whether the
-branch's first child reuses a number the inherited transcript already holds (the task tree and the
+branch's first child reuses a number the inherited transcript already holds (the sub-run tree and the
 hand-back paths key on it); fix it, or delete this half if it does not.
 (b) The ⚑ refusal flag and ⟲ rewind read a reply's opening from the transcript
 (`engine/rewind.reply_opening`); a branch records only its immediate fork point

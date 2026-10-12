@@ -1,4 +1,4 @@
-// The recursive task tree: a run's SEQUENTIAL subtasks (→) and PARALLEL subruns (⇉), each a
+// The recursive sub-run tree: a run's SEQUENTIAL subtasks (→) and PARALLEL subruns (⇉), each a
 // node with a state icon, its workflow pattern, and a per-node turn-budget meter (amber ≥85%,
 // red over). Fed by the read-model at /api/runs/<id>/tree (a walk of the on-disk sub/ tree).
 // Refreshes on demand (the run view calls refresh() on live-stream state events) and polls itself while
@@ -14,34 +14,34 @@ const STATE_ICON = { running: "◐", ok: "●", partial: "◑", failed: "✕", a
 // nobody could name.
 const MODE_ICON = { sequential: "→", parallel: "⇉", oversight: "↑" };
 
-export function createTaskTree(container, { treeUrl, isLive }) {
-  const box = el("div", { class: "tasktree" });
+export function createSubRunTree(container, { treeUrl, isLive }) {
+  const box = el("div", { class: "subruntree" });
   container.append(box);
   let timer = null;
 
   function node(n) {
     const st = n.state || "running";
     const kids = [
-      el("span", { class: "tt-icon", title: st }, STATE_ICON[st] || "○"),
-      el("span", { class: `tt-mode tt-${n.mode}`, title: n.mode + " child" }, MODE_ICON[n.mode] || "•"),
-      el("span", { class: "tt-label" }, `${n.n}. ${n.label || "(child)"}`),
+      el("span", { class: "sr-icon", title: st }, STATE_ICON[st] || "○"),
+      el("span", { class: `sr-mode sr-${n.mode}`, title: n.mode + " child" }, MODE_ICON[n.mode] || "•"),
+      el("span", { class: "sr-label" }, `${n.n}. ${n.label || "(child)"}`),
     ];
-    if (n.workflow) kids.push(el("span", { class: "tt-wf faint small" }, n.workflow));
+    if (n.workflow) kids.push(el("span", { class: "sr-wf faint small" }, n.workflow));
     const budget = n.budget && n.budget.turns > 0 ? n.budget.turns : 0;
     const used = n.turns || 0;
     if (budget) {
       const frac = Math.min(1, used / budget);
       const cls = used > budget ? "over" : frac >= 0.85 ? "warn" : "";
-      kids.push(el("span", { class: "tt-meter", title: `${used} / ${budget} turns` },
-        el("span", { class: `tt-bar ${cls}`, style: `width:${Math.round(frac * 100)}%` })));
-      kids.push(el("span", { class: "tt-turns faint small" }, `${used}/${budget}`));
+      kids.push(el("span", { class: "sr-meter", title: `${used} / ${budget} turns` },
+        el("span", { class: `sr-bar ${cls}`, style: `width:${Math.round(frac * 100)}%` })));
+      kids.push(el("span", { class: "sr-turns faint small" }, `${used}/${budget}`));
     } else {
-      kids.push(el("span", { class: "tt-turns faint small" }, `${used}t`));
+      kids.push(el("span", { class: "sr-turns faint small" }, `${used}t`));
     }
-    const row = el("div", { class: `tt-row tt-s-${st}`, title: n.summary || "" }, ...kids);
-    const wrap = el("div", { class: "tt-node" }, row);
+    const row = el("div", { class: `sr-row sr-s-${st}`, title: n.summary || "" }, ...kids);
+    const wrap = el("div", { class: "sr-node" }, row);
     if (n.children && n.children.length) {
-      const sub = el("div", { class: "tt-children" });
+      const sub = el("div", { class: "sr-children" });
       n.children.forEach((c) => sub.append(node(c)));
       wrap.append(sub);
     }
@@ -67,7 +67,7 @@ export function createTaskTree(container, { treeUrl, isLive }) {
       // transient refresh errors keep the last render; a FIRST load failing must
       // not read as "no subtasks yet"
       if (!loadedOnce) box.replaceChildren(
-        el("div", { class: "faint small" }, `subtask tree unavailable — ${err.message}`));
+        el("div", { class: "faint small" }, `sub-run tree unavailable — ${err.message}`));
     }
   }
 

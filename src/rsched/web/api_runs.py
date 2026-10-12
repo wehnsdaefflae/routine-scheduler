@@ -260,11 +260,11 @@ def run_file(request: Request, run_id: str, path: str):
 
 @router.get("/runs/{run_id}/tree")
 def run_tree(request: Request, run_id: str) -> dict:
-    """The recursive task tree: this run's sequential subtasks + parallel subruns, each a node
+    """The recursive sub-run tree: this run's sequential subtasks + parallel subruns, each a node
     with mode / state / live turns / allotted budget and its own children nested. A read-model
     over the on-disk sub/ transcripts (nothing is written) — the rail's decomposition view.
     """
-    from ..readmodels.tasktree import build_tree
+    from ..readmodels.subruntree import build_tree
 
     _, run_dir = _run_dir(request, run_id)
     return {"tree": build_tree(run_dir)}
