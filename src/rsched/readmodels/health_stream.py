@@ -49,6 +49,8 @@ BLOCKED_EVENTS: dict[str, str] = {
                     "draining, or its `main` model role names a model the catalog no longer serves",
     "lane_fire_refused": "a due lane fire armed nothing — the previous chain is still in "
                          "flight",
+    "fire_paused": "a due fire was skipped because scheduling was paused — a routine skip is "
+                   "never made up, so the next run is a full cron interval away",
     "lane_fire_paused": "a due lane fire was skipped because scheduling was paused — the "
                         "fire is gone, not deferred, and the next one is a full cron "
                         "interval away",

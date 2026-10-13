@@ -7,7 +7,8 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"util_killed"|"finish_gate_failed"|"observation_render_failed"
         |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
-        |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"scheduler_tick_error"
+        |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"fire_paused"
+        |"scheduler_tick_error"
         |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
@@ -233,15 +234,13 @@ lane_fire_refused: a DUE scheduled lane fire armed nothing because the previous 
 is still in flight (the lane analog of fire_refused; routine = the lane id, run_id
 empty). One-off overlap is benign; a run of these is a wedged chain starving the lane.
 
-lane_fire_paused: a DUE scheduled lane fire was skipped because global scheduling is
-paused (routine = the lane id, run_id empty; carries `cron` and `next_fire`). The skip
-and the watermark move are both deliberate — pause promises that resuming does not
-backlog-fire, and moving the watermark is what keeps boot catch-up from making the fire
-up. The consequence is that the fire is GONE rather than deferred, and its cost scales
-with the lane's cron interval, not with the pause: a 65-minute pause on 2026-09-26
-spanned the 05:00 Saturday fire of a WEEKLY lane, and its two members went dark for
-eight days (F573). Every other way a lane fails to run already wrote an event; the one
-that costs the most wrote only a log.info line, in a journal the audit cannot read.
+fire_paused / lane_fire_paused: a DUE fire — a routine's own, or a scheduled lane's — was
+skipped because global scheduling is paused. routine = the slug or the lane id, run_id
+empty, both carrying `cron` and `next_fire`, because the COST of a dropped fire is the cron
+interval and not the pause. Both are written by `daemon/pause_skip.py`, whose docstring
+carries the rest: why a lane's dropped fire moves two watermarks and can be made up at the
+resume while a routine's is simply gone, and the measured asymmetry (2026-10-14) that made
+the routine event necessary.
 
 wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
 the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in

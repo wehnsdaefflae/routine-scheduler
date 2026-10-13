@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.419.0] — 2026-10-14
+
+### A paused routine fire is now on the record, like a paused lane fire always was
+
+The global pause has written a health event for a skipped **lane** fire since F573. The
+**routine** path — the one every lane-less routine fires on — wrote a `log.info` line and
+nothing else, and the journal is the one surface this instance's own audit cannot read.
+
+The asymmetry was measured, not reasoned about. A pause held from **~03:00 to 21:52 on
+2026-10-13**; it ate six lane fires, each of which is on the record, and it ate both of
+`scheduler-builder`'s (cron `0 6,14`, in no lane) with the health stream saying **nothing at
+all**. The audit run that noticed had to prove it from the *absence* of a run directory —
+`scheduler-builder` holding five hand-overs and shipping nothing was the only visible symptom.
+Two routines on this instance fire outside every lane, so this was the one class of due work
+that could vanish leaving no trace a reader could reach.
+
+- **New event `fire_paused`** (`daemon/scheduler.py`): routine = the slug, `run_id` empty,
+  carrying `cron` and `next_fire` exactly as `lane_fire_paused` does. Registered in the
+  writer's vocabulary (`health_events.py`) **and** in the reader's `BLOCKED_EVENTS`
+  (`readmodels/health_stream.py`) — a new name in the writer alone is how the console stayed
+  blind to all six of the events that module's docstring describes.
+- The detail says the fire is **not made up**: `lane_catchup.resume_catchup` makes up a lane
+  fire still early in its cadence, and there is no routine analog, so for a daily routine the
+  work is a day late and for a weekly one a week.
+- Two tests, both **red before the change**, and the first verified **bidirectionally** — with
+  the emitter stashed and everything else in place, it fails; only the instrumentation makes it
+  pass, so it cannot be satisfied by the fixture alone.
+
 ## [0.418.1] — 2026-10-12
 
 ### A frozen stylesheet means a NEW stylesheet, not an inline style

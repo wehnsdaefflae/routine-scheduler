@@ -17,12 +17,12 @@ import time
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 
-from .. import firetimes, lane_fires, lanes, registry
+from .. import firetimes, lanes, registry
 from .. import lane_runs as lane_runs_store
 from ..config import ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
-from . import pause, restart, runner_reap
+from . import pause, pause_skip, restart, runner_reap
 from .backup_watch import BackupWatch
 from .detached import DetachedManager
 from .events import EventBus
@@ -258,6 +258,9 @@ class Scheduler:
                     self.next_fires[slug] = firetimes.next_fire(info.cfg, now) or due
                     if is_paused:
                         log.info("scheduling paused — skipped due fire of %r", slug)
+                        pause_skip.routine_fire_dropped(
+                            self.server, slug, getattr(info.cfg, "cron", "") or "",
+                            self.next_fires[slug])
                         continue
                     await self.runner.fire(info.cfg, reason="schedule")
                 # D71: due LANE fires — arm the sequential chain; LaneRunManager
@@ -276,32 +279,13 @@ class Scheduler:
                         # A deliberate skip is a HANDLED fire, so it moves the watermark. Only
                         # an arm stamped it before, so the operator's pause left the lane's last
                         # due fire reading as unarmed, and the next boot — nightly, here — made
-                        # it up as a whole chain and blamed the daemon for being down. Pause's
-                        # own promise is that resuming does not backlog-fire (daemon/pause.py).
-                        lane_fires.stamp(self.server.routines_home, lane_id)
-                        # …and record WHAT the stamp handled, so lifting the pause can make it
-                        # up (D156 option C). The watermark alone says "handled" and cannot say
-                        # "handled by dropping it", which is why the weekly lane's lost fire was
-                        # invisible to both catch-up paths.
-                        lane_fires.stamp_paused_skip(self.server.routines_home, lane_id,
-                                                     due.isoformat())
-                        # …and because that watermark move is what STOPS catch-up making it up,
-                        # the skip is permanent: this fire is gone, not postponed. On a daily
-                        # lane that costs hours; on a WEEKLY one a pause measured in minutes
-                        # costs seven days (F573: a 65-minute pause on 2026-09-26 spanned the
-                        # 05:00 fire of a weekly lane, whose two members then went dark for
-                        # eight days with nothing but a log.info line as witness — and this
-                        # routine's audit cannot read the journal). Every OTHER way a lane
-                        # fails to run writes an event; the costliest one wrote none.
-                        log_health_event(
-                            self.server.routines_home, "lane_fire_paused",
-                            routine=lane_id, run_id="",
-                            detail=f"{lane.get('name') or lane_id}: due lane fire skipped "
-                                   f"because scheduling is paused - the watermark moves with "
-                                   f"it, so this fire is GONE rather than deferred and the "
-                                   f"next one is a whole cron interval away",
-                            cron=str(lane.get("cron") or ""),
-                            next_fire=self.lane_next_fires[lane_id].isoformat())
+                        # it up as a whole chain and blamed the daemon for being down, and the
+                        # OWED stamp beside it is what lets the resume make it up (D156 C).
+                        # Both, with the event, live in `pause_skip` beside the routine path:
+                        # the two were inlined here and DRIFTED, which is how a lane-less
+                        # routine's dropped fire ended up the one kind with no record at all.
+                        pause_skip.lane_fire_dropped(
+                            self.server, lane, due, self.lane_next_fires[lane_id])
                         continue
                     rec = lane_runs_store.arm(
                         self.server.routines_home, lane,

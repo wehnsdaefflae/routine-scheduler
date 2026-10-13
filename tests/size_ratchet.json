@@ -7,7 +7,7 @@
     "src/rsched/daemon/gate_prepare.py": 384,
     "src/rsched/daemon/runner.py": 474,
     "src/rsched/daemon/runner_reap.py": 368,
-    "src/rsched/daemon/scheduler.py": 482,
+    "src/rsched/daemon/scheduler.py": 466,
     "src/rsched/endpoints/base.py": 524,
     "src/rsched/endpoints/openai_compat.py": 359,
     "src/rsched/engine/actions.py": 659,
