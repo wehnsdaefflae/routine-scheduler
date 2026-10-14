@@ -38,7 +38,7 @@ STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
 def build_stamp(repo: Path | None) -> str:
     """Short commit + date of the running checkout ('46e48e3 2026-07-13'), '' if unknown.
 
-    Computed once at boot: deploys always restart the daemon, so the stamp can't go stale.
+    Computed once at boot: the build RUNNING, not the on-disk checkout (8 h apart 2026-10-14).
     """
     if not repo:
         return ""
