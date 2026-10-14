@@ -197,6 +197,21 @@ default. Routines and the system model reference a model by its catalog **name**
 - `fallbacks` — the ordered **failover chain**: catalog model names tried in order when this
   model fails hard. See *Failover & cooldowns* below.
 
+### A listed model is not necessarily an enabled one
+
+A subscription proxy's `/v1/models` is the proxy's REGISTRY, not its upstream's answer: it can list
+a model the upstream provider has published but not switched on for the account. The live case
+(2026-10-14): CLIProxyAPI listed `gemini-4-argon-high` under the Antigravity sign-in while Google's
+own `fetchAvailableModels` for the same account carried the model only as `gemini-4-argon-disabled`
+with an empty quota — every enabled model there has a `remainingFraction` — and every call
+answered `404 Requested entity was not found`. The *test* result therefore carries a `hint`
+(`endpoints/failure_hints.py`, shown above the raw error): NOT FOUND from a proxy reads "listed,
+not enabled for this account yet", `unknown provider for model` reads "no signed-in account
+serves this id", and `auth_unavailable` reads "every account that could serve it is cooling
+down or out of quota". The raw error stays beneath it, and an error nobody has explained gets no
+invented hint. The proxy also cools the model after a 404, so a retry within minutes answers 503
+with the same cause inside.
+
 ### Model-id picker
 
 Typing a provider model id by hand was how a catalog entry ended up naming something the

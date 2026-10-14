@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.420.1] — 2026-10-14
+
+### A failed endpoint test says what the failure means
+
+Gemini 4 Argon, bound through the Antigravity sign-in, answered `404 Requested entity was not
+found` on every call. The cause was not ours: Google's `fetchAvailableModels` for the account
+carried the model only as `gemini-4-argon-disabled` with an empty quota (every enabled model has a
+`remainingFraction`), while CLIProxyAPI's registry listed it as `gemini-4-argon-high` — listed,
+not enabled. The *test* result now carries a `hint` line (`endpoints/failure_hints.py`) for that
+and for the two other proxy refusals that read like defects (`unknown provider for model`,
+`auth_unavailable`); the raw error stays beneath it. docs/endpoints.md: "A listed model is not
+necessarily an enabled one".
+
 ## [0.420.0] — 2026-10-14
 
 ### Reasoning effort is a setting of its own — and Antigravity (Gemini) is a console sign-in

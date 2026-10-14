@@ -64,6 +64,7 @@ export async function renderEndpoints(view) {
     if (!r.ok) {
       return el("div", { class: "test-result bad" },
         `✗ call failed${r.auth ? " (looks like an auth problem — check the key/token)" : ""}\n`,
+        r.hint ? el("span", { "data-test-hint": true }, `${r.hint}\n`) : null,
         el("span", { class: "dim" }, r.error || "no detail"));
     }
     const verdict = r.schema_ok

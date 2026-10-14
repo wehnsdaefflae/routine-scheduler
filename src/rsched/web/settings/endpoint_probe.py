@@ -14,7 +14,14 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...endpoints import EndpointRegistry, cliproxy_login, cliproxy_mgmt, cliproxy_quota, model_ids
+from ...endpoints import (
+    EndpointRegistry,
+    cliproxy_login,
+    cliproxy_mgmt,
+    cliproxy_quota,
+    failure_hints,
+    model_ids,
+)
 from ...endpoints.base import EndpointError
 from ...schema_guard import SchemaViolation, parse_reply
 from .common import server_of
@@ -236,4 +243,5 @@ async def test_endpoint(request: Request, name: str, body: TestBody) -> dict:
     try:
         return await asyncio.to_thread(call)
     except EndpointError as exc:
-        return {"ok": False, "error": str(exc), "auth": exc.auth}
+        return {"ok": False, "error": str(exc), "auth": exc.auth,
+                "hint": failure_hints.explain(str(exc))}
