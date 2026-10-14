@@ -11,8 +11,10 @@
 // goes on deciding when the routine fires; the file stops recording a time of its own.
 // Pass opts.onChange to hear every edit as it happens — `{friendly: value(), catchup:
 // catchup()}` — for a caller that keeps a draft (the routine page's settings form) rather than
-// saving on a button of its own. A CUSTOM cron (one the friendly vocabulary cannot express)
-// shows as its own read-only choice, so building the editor never rewrites it.
+// saving on a button of its own. CUSTOM is the cadence the reader writes as a five-field cron
+// — for what the friendly vocabulary cannot say ("06:00 and 14:00") — and a stored cron the
+// others cannot express opens on it unchanged, so building the editor never rewrites it.
+// Switching to it starts the field from the cadence it replaces, ready to be extended.
 //
 // Also home to the client half of the friendly vocabulary: cronToFriendly mirrors the
 // server's rsched.schedule.cron_to_friendly (same shapes, same custom fallback), and
@@ -26,15 +28,13 @@ const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "", opts = {}) {
   const spec = { time: "07:00", weekdays: [1], day: 1, minute: 0, ...initial };
   const lm = opts.laneManaged || null;
-  const frequencies = lm ? [] : ["manual", "hourly", "daily", "weekly", "monthly"];
+  const frequencies = lm ? [] : ["manual", "hourly", "daily", "weekly", "monthly", "custom"];
   if (opts.allowDisabled) frequencies.unshift("disabled");
-  const custom = !lm && spec.frequency === "custom";
+  const label = (f) => (f === "custom" ? "Custom cron" : f[0].toUpperCase() + f.slice(1));
   const freq = el("select", { "data-nopersist": true,
     ...(lm && !opts.allowDisabled ? { disabled: true } : {}) },
     ...frequencies.map((f) =>
-      el("option", { value: f, ...(spec.frequency === f ? { selected: true } : {}) },
-        f[0].toUpperCase() + f.slice(1))),
-    ...(custom ? [el("option", { value: "custom", selected: true }, "Custom cron")] : []),
+      el("option", { value: f, ...(spec.frequency === f ? { selected: true } : {}) }, label(f))),
     ...(lm ? [el("option", { value: "lane-managed",
       selected: spec.frequency !== "disabled" }, "Lane managed")] : []));
   const time = el("input", { type: "time", value: spec.time, "data-nopersist": true });
@@ -52,7 +52,18 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     dayBoxes.map((c) => c.node));
   const day = el("input", { type: "number", min: 1, max: 31, value: spec.day,
     style: "width:70px", "data-nopersist": true });
-  const detail = el("span", { class: "row", style: "gap:6px" });
+  const cron = el("input", { type: "text", value: spec.cron || "", "data-custom-cron": "",
+    "data-nopersist": true, spellcheck: "false", placeholder: "0 6,14 * * *",
+    "aria-label": "cron expression", class: "mono", style: "width:16ch" });
+  // the shape only — five fields; whether each field parses is the server's answer on save
+  const cronShape = el("span", { class: "muted small" });
+  const checkShape = () => {
+    const n = cron.value.trim().split(/\s+/).filter(Boolean).length;
+    cron.setAttribute("aria-invalid", String(n !== 5));
+    cronShape.textContent = n === 5 ? "minute · hour · day of month · month · day of week"
+      : `a cron has five fields (minute · hour · day of month · month · day of week) — this has ${n}`;
+  };
+  const detail = el("span", { class: "row", style: "gap:6px;flex-wrap:wrap" });
 
   // catchup: what to do when a scheduled fire was missed (daemon down / overrun). Only offered
   // when the caller opts in, and only meaningful for a real schedule — hidden for "manual".
@@ -97,8 +108,15 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
             + "clock. What changes is the file — it stops claiming a time of its own.")))
     : null;
 
+  let shown = freq.value;
   function sync() {
     const f = freq.value;
+    // entering Custom from a cadence: start from that cadence's cron, so "daily at 06:00"
+    // becomes "0 6 * * *" to extend rather than a blank field to write from memory
+    if (f === "custom" && shown !== "custom" && !cron.value.trim()) {
+      cron.value = friendlyToCron(specFor(shown));
+    }
+    shown = f;
     detail.replaceChildren();
     if (f === "disabled") {
       detail.append(el("span", { class: "muted" }, "no new runs — including manual and triggered starts; existing runs are unchanged"));
@@ -110,8 +128,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     else if (f === "daily") detail.append(document.createTextNode("at"), time);
     else if (f === "weekly") detail.append(document.createTextNode("on"), weekdayRow, document.createTextNode("at"), time);
     else if (f === "monthly") detail.append(document.createTextNode("on day"), day, document.createTextNode("at"), time);
-    else if (f === "custom") detail.append(el("code", {}, spec.cron || ""),
-      el("span", { class: "muted" }, " — a cron the choices here cannot express; pick one to replace it"));
+    else if (f === "custom") { checkShape(); detail.append(cron, cronShape); }
     else detail.append(el("span", { class: "muted" }, "runs only when you click Run now"));
     if (catchupRow) catchupRow.style.display = (f === "manual" || f === "disabled" || lm) ? "none" : "";
   }
@@ -123,6 +140,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   for (const input of [freq, time, minute, day, catchupSel, ...dayBoxes.map((c) => c.box)]) {
     input?.addEventListener("change", notify);
   }
+  cron.addEventListener("input", () => { checkShape(); notify(); });
 
   const node = el("div", {},
     el("div", { class: "row", style: "gap:8px" }, freq, detail),
@@ -131,21 +149,26 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     serverTz ? el("div", { class: "muted small", style: "margin-top:4px" },
       `times are in the server's timezone (${serverTz})`) : null);
 
+  // the spec the controls hold for cadence `f` — value() for the selected one, and the
+  // cadence Custom starts from
+  function specFor(f) {
+    // lane-managed: the stored spec rides back UNCHANGED — the suppression lives in
+    // the daemon, and a save from this page must not rewrite the routine's own cron
+    if (f === "disabled") return { frequency: "disabled" };
+    if (lm) return initial.frequency === "disabled" ? { frequency: "manual" } : initial;
+    if (f === "custom") return { frequency: "custom", cron: cron.value.trim() };
+    if (f === "manual") return { frequency: "manual" };
+    if (f === "hourly") return { frequency: "hourly", minute: Number(minute.value) };
+    if (f === "daily") return { frequency: "daily", time: time.value };
+    if (f === "weekly") return { frequency: "weekly", time: time.value,
+      weekdays: dayBoxes.flatMap((c, i) => (c.box.checked ? [i] : [])) };
+    return { frequency: "monthly", time: time.value, day: Number(day.value) };
+  }
+
   const api = {
     node,
     value() {
-      // lane-managed: the stored spec rides back UNCHANGED — the suppression lives in
-      // the daemon, and a save from this page must not rewrite the routine's own cron
-      const f = freq.value;
-      if (f === "disabled") return { frequency: "disabled" };
-      if (lm) return initial.frequency === "disabled" ? { frequency: "manual" } : initial;
-      if (f === "custom") return initial;
-      if (f === "manual") return { frequency: "manual" };
-      if (f === "hourly") return { frequency: "hourly", minute: Number(minute.value) };
-      if (f === "daily") return { frequency: "daily", time: time.value };
-      if (f === "weekly") return { frequency: "weekly", time: time.value,
-        weekdays: dayBoxes.flatMap((c, i) => (c.box.checked ? [i] : [])) };
-      return { frequency: "monthly", time: time.value, day: Number(day.value) };
+      return specFor(freq.value);
     },
     catchup() {
       return catchupSel ? catchupSel.value : "skip";
@@ -171,9 +194,20 @@ function parseDow(dow) {
   return out.length && out.every((x) => x >= 0 && x <= 6) ? out : null;
 }
 
+// Friendly spec → cron, the client half of rsched.schedule.friendly_to_cron — only ever the
+// starting text of a Custom field, so a spec it cannot render starts that field blank.
+function friendlyToCron(s) {
+  const [hh, mm] = String(s.time || "07:00").split(":").map(Number);
+  if (s.frequency === "hourly") return `${s.minute} * * * *`;
+  if (s.frequency === "daily") return `${mm} ${hh} * * *`;
+  if (s.frequency === "weekly" && s.weekdays?.length) return `${mm} ${hh} * * ${s.weekdays.join(",")}`;
+  if (s.frequency === "monthly") return `${mm} ${hh} ${s.day} * *`;
+  return "";
+}
+
 // Cron string → friendly spec, mirroring rsched.schedule.cron_to_friendly: the four simple
-// cadences round-trip, anything else comes back {frequency: "custom", cron} (read-only in
-// every editor, and not drag-reschedulable).
+// cadences round-trip, anything else comes back {frequency: "custom", cron} (edited as cron
+// text in every editor, and not drag-reschedulable).
 export function cronToFriendly(cron) {
   const c = (cron || "").trim();
   if (!c) return { frequency: "manual" };

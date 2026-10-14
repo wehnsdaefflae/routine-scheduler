@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.421.0] — 2026-10-14
+
+### A custom cron is edited in the schedule editor
+
+- **Custom cron is a cadence of its own** beside Manual … Monthly, in the routine's Schedule
+  section and in a lane's schedule alike: its field takes a five-field cron (`0 6,14 * * *` —
+  what the friendly choices cannot say), and the accept stores it as written. It used to be a
+  read-only display whose only edits were "pick another cadence" or "use the pattern's value".
+- Entering Custom from another cadence starts the field from that cadence's cron (daily at
+  06:00 → `0 6 * * *`), and a field without five fields says so as it is typed.
+- `schedule.friendly_to_cron` takes `{"frequency": "custom", "cron": …}` and refuses anything but
+  five fields croniter parses. Before, it refused `custom` outright, so any save that sent a
+  custom-cron routine's schedule back — a catch-up change on that page included — answered 400.
+
 ## [0.420.1] — 2026-10-14
 
 ### A failed endpoint test says what the failure means

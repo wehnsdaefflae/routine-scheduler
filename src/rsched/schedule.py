@@ -1,11 +1,13 @@
-"""Friendly schedule ↔ cron translation, so the UI never shows raw cron or asks for a tz.
+"""Friendly schedule ↔ cron translation, so the UI never asks for a tz and asks for raw cron
+only when the friendly cadences cannot say what the reader wants.
 
 Friendly spec (what the UI sends/receives):
-  {"frequency": "manual|hourly|daily|weekly|monthly",
+  {"frequency": "manual|hourly|daily|weekly|monthly|custom",
    "time": "HH:MM",        # daily/weekly/monthly (local time)
    "minute": 0-59,          # hourly
    "weekdays": [0-6, ...],  # weekly — a SET of days (0=Sunday … 6=Saturday), e.g. Mon-Fri
-   "day": 1-31}             # monthly
+   "day": 1-31,             # monthly
+   "cron": "m h dom mon dow"}  # custom — a five-field cron, stored as written
 
 The routine still stores a cron string (croniter drives the scheduler); this module is the
 single source of truth for the round-trip. Timezone is the server's local zone — set once at
@@ -18,6 +20,8 @@ import os
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from croniter import croniter
 
 WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
@@ -94,6 +98,15 @@ def friendly_to_cron(spec: dict | None) -> str:
     freq = spec.get("frequency", "manual")
     if freq in ("manual", "disabled"):
         return ""
+    if freq == "custom":
+        # the one cadence the reader writes as cron: five fields, the shape every other
+        # cadence produces and cron_to_friendly reads back (croniter alone also takes six)
+        cron = spec.get("cron")
+        cron = cron.strip() if isinstance(cron, str) else ""
+        _check(bool(cron), "a custom schedule needs a cron expression")
+        _check(len(cron.split()) == 5 and croniter.is_valid(cron),
+               f"not a five-field cron expression: {cron!r}")
+        return cron
     if freq == "hourly":
         minute = _int(spec.get("minute", 0), "minute")
         _check(0 <= minute <= 59, "minute must be 0-59")
@@ -120,7 +133,7 @@ def friendly_to_cron(spec: dict | None) -> str:
 
 def cron_to_friendly(cron: str) -> dict:
     """Cron string → friendly spec. Unrecognized crons come back as
-    {'frequency': 'custom', 'cron': <raw>} so the UI can show them read-only.
+    {'frequency': 'custom', 'cron': <raw>}, which friendly_to_cron takes back verbatim.
     """
     cron = (cron or "").strip()
     if not cron:

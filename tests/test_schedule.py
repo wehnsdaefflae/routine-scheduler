@@ -2,6 +2,7 @@
 
 import pytest
 
+from helpers import routine_yaml
 from rsched.schedule import cron_to_friendly, describe, friendly_to_cron, server_tz
 
 
@@ -27,6 +28,39 @@ def test_friendly_cron_roundtrip(spec, cron):
 def test_unrecognized_cron_is_custom():
     f = cron_to_friendly("*/5 9-17 * * 1-5")
     assert f["frequency"] == "custom" and f["cron"] == "*/5 9-17 * * 1-5"
+
+
+def test_custom_is_a_cadence_the_reader_writes():
+    """Custom is written as cron and stored as written — the spec cron_to_friendly hands the
+    editor for a stored cron comes back through friendly_to_cron unchanged, so a page save never
+    rewrites one (it used to be refused as an unknown frequency, a 400 on any save)."""
+    assert friendly_to_cron({"frequency": "custom", "cron": "  0 6,14 * * *  "}) == "0 6,14 * * *"
+    for cron in ("0 6,14 * * *", "*/5 9-17 * * 1-5", "0 10 * * MON-FRI"):
+        assert friendly_to_cron(cron_to_friendly(cron)) == cron
+
+
+@pytest.mark.parametrize("cron", [None, "", "   ", "0 6 * *", "0 6 * * * *", "99 6 * * *",
+                                  "every day", 7])
+def test_a_custom_cron_that_is_not_five_valid_fields_is_refused(cron):
+    """Five fields, each one croniter parses: a six-field (seconds) cron is valid to croniter
+    but is no cron the rest of the console reads, so it is refused here rather than stored."""
+    with pytest.raises(ValueError, match="cron"):
+        friendly_to_cron({"frequency": "custom", "cron": cron})
+
+
+def test_the_routine_patch_saves_a_custom_cron(api_client, make_routine):
+    c, _ = api_client
+    root = make_routine(slug="cust")
+    body = {"schedule": {"friendly": {"frequency": "custom", "cron": "0 6,14 * * *"},
+                         "catchup": "run_once"}}
+    assert c.patch("/api/routines/cust", json=body).status_code == 200
+    sched = routine_yaml(root)["schedule"]
+    assert sched["cron"] == "0 6,14 * * *" and sched["catchup"] == "run_once"
+    assert sched["tz"] == server_tz()
+    bad = {"schedule": {"friendly": {"frequency": "custom", "cron": "0 25 * * *"}}}
+    r = c.patch("/api/routines/cust", json=bad)
+    assert r.status_code == 400 and "cron" in r.json()["detail"]
+    assert routine_yaml(root)["schedule"]["cron"] == "0 6,14 * * *"
 
 
 def test_dow_range_reads_as_weekly_set():
