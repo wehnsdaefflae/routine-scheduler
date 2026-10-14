@@ -15,6 +15,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.420.0] — 2026-10-14
+
+### Reasoning effort is a setting of its own — and Antigravity (Gemini) is a console sign-in
+
+**Effort left the model catalog.** The catalog carried "Opus high", "Opus xhigh", "Sonnet
+medium", "Astra max" … — one row per level of one model, so every routine wanting another level
+needed another row (27 rows for 13 models). Effort is now chosen where a model is USED:
+
+- `routine.yaml` `efforts: {main, tool_call, uncensored}` beside `models:` (conversations too),
+  `system_effort` and `compaction_effort` in config.yaml, and a trial's `efforts:`. The registry
+  applies a role's level to WHICHEVER model serves it — a failover rung included — and a role with
+  no model of its own runs the system model at the role's level, else at `system_effort`.
+  `ModelConfig.effort` is gone (no tolerance shim: the live catalog and 49 routine files were
+  migrated in this release).
+- Every place that picks a model now picks an effort beside it: the routine page's Models group
+  (one block, one accept), the conversation composer and header, Settings → system and compaction
+  model, and the run page's switch — which can now raise the effort of a LIVE run without touching
+  its model. `--effort role=level` on `run-once`/`engine-run`; the daemon passes a trial's efforts
+  that way. Settings patterns carry `efforts` (a governed field).
+- New `config/routine_scrub.py`, `cli_overrides.py`, `web/patch_bindings.py`,
+  `web/settings/system_models.py` and `static/components/runswitch.js` took code out of files the
+  size ratchet holds at their ceilings.
+
+**Antigravity sign-in from the console.** CLIProxyAPI's `-antigravity-login` (Google OAuth,
+serves the `gemini-*` ids and `gpt-oss`) joins Claude and Codex in the endpoint card's sign-in /
+re-authenticate flow — no terminal. Consent redirects to `localhost:51121/oauth-callback`; the
+paste-back box and `callback_path` handle it like the other two. Port 51121 is published on
+loopback for the terminal fallback (`tests/test_deploy_proxy_ports.py` pins every provider's
+port).
+
+**No free text where the UI can suggest.** `GET /api/settings/endpoints/{name}/model-ids` lists
+the ids an endpoint itself serves; the model form and the endpoint card's test box offer them as a
+dropdown (a text box only when the listing fails, with the reason).
+
+**A model's window is read from data, not guessed.** A proxy that lists ids and no figures left a
+Gemini model on the endpoint's 25,000-token default. `limits.refresh` now falls back to
+OpenRouter's public catalog under the name vendors share (`gemini-4-argon-high` →
+`google/gemini-4-argon`: 1,048,576 tokens), `source: reference`. Argon needs no number typed
+anywhere.
+
 ## [0.419.0] — 2026-10-14
 
 ### A paused routine fire is now on the record, like a paused lane fire always was

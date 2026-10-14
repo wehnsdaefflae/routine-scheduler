@@ -1,9 +1,10 @@
 """The proxy's management binding, resolved per ENDPOINT — and which of its accounts serve
 which endpoint.
 
-CLIProxyAPI is one process holding several credentials (a Claude account, a Codex account),
-reached through as many endpoints as the operator configured — one per provider here, both
-on the same base_url. Two facts follow, and both used to be wrong on the cards:
+CLIProxyAPI is one process holding several credentials (a Claude account, a Codex account, an
+Antigravity — Google — account), reached through as many endpoints as the operator configured —
+one per provider here, all on the same base_url. Two facts follow, and both used to be wrong
+on the cards:
 
 - The management key belongs to the PROXY, not to an endpoint. An endpoint without its own
   `quota_source: cliproxy` binding resolves to a sibling's on the same origin (`binding`), so
@@ -26,10 +27,13 @@ from ..config import EndpointConfig
 from .base import EndpointError, resolve_api_key
 
 # auth-file provider name → the management login route's provider name, and the card label
-LOGIN_PROVIDER = {"claude": "anthropic", "codex": "codex"}
-LABEL = {"claude": "Claude", "codex": "Codex"}
-# a model id's family → the auth-file provider that serves it (prefix match, first wins)
-MODEL_FAMILY = (("claude-", "claude"), ("gpt-", "codex"), ("codex-", "codex"),
+LOGIN_PROVIDER = {"claude": "anthropic", "codex": "codex", "antigravity": "antigravity"}
+LABEL = {"claude": "Claude", "codex": "Codex", "antigravity": "Antigravity"}
+# a model id's family → the auth-file provider that serves it (prefix match, FIRST wins, so the
+# order is load-bearing: Antigravity serves `gpt-oss-120b-medium`, which the generic `gpt-` →
+# Codex prefix would otherwise claim)
+MODEL_FAMILY = (("claude-", "claude"), ("gemini-", "antigravity"), ("gpt-oss", "antigravity"),
+                ("gpt-", "codex"), ("codex-", "codex"),
                 ("o1", "codex"), ("o3", "codex"), ("o4", "codex"))
 
 

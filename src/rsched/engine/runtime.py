@@ -154,7 +154,8 @@ def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
 
 
 def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None = None,
-                model_overrides: dict | None = None, on_event=None,
+                model_overrides: dict | None = None,
+                effort_overrides: dict | None = None, on_event=None,
                 resume_from: str | None = None) -> tuple[str, Path]:
     """Execute one run of the routine at routine_dir. Returns (final status, run dir).
     on_event(obj) is called for every transcript event (used by `rsched run-once`). When
@@ -168,6 +169,8 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     # only an unloadable file (cfg None) stops a run
     if model_overrides:
         cfg.models.update(model_overrides)
+    if effort_overrides:
+        cfg.efforts.update(effort_overrides)
     registry = EndpointRegistry(server)
     ts = resume_from or run_ts or make_run_ts()
     run_dir = routine_dir / "runs" / ts
@@ -176,7 +179,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     run_dir.mkdir(parents=True, exist_ok=True)
     # append mode — resume adds after the tail; on_event echoes every event to the caller
     transcript = Transcript(run_dir / "transcript.jsonl", on_event=on_event)
-    _, orch_ref = registry.for_model("main", cfg.models)
+    _, orch_ref = registry.for_model("main", cfg.models, cfg.efforts)
     ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=ts,
                      run_dir=run_dir, transcript=transcript,
                      budgets=Budgets.from_config(cfg.budgets))

@@ -966,14 +966,14 @@ def _gate_loop(monkeypatch, *, usage, phase="", stages=(), entered=(), stage_mar
                                                      or (msgs, {"elided": 1})))
 
     class _Reg:
-        def for_model(self, kind, models):
+        def for_model(self, kind, models, efforts):
             raise RuntimeError("no tool_call model in this stub")
 
     coverage = {"declared": list(stages), "entered": list(entered),
                 "skipped": [s for s in stages if s not in entered]}
     ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=""),
                           usage=usage, tokens_remaining=lambda: remaining, registry=_Reg(),
-                          routine=SimpleNamespace(models={}), run_dir=None, phase=phase,
+                          routine=SimpleNamespace(models={}, efforts={}), run_dir=None, phase=phase,
                           turn=turn, turns_remaining=lambda: turns_left,
                           stage_coverage=lambda: coverage,
                           transcript=SimpleNamespace(event=lambda *a, **k: None),

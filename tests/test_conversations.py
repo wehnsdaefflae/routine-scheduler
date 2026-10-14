@@ -1103,7 +1103,7 @@ def test_autolabel_rewrites_config_atomically(server, monkeypatch):
 
     class FakeRegistry:
         def __init__(self, _server): ...
-        def for_model(self, kind, models):
+        def for_model(self, kind, models, efforts):
             return FakeEndpoint(), SimpleNamespace(model="m", effort=None, temperature=None, max_tokens=None)
 
     monkeypatch.setattr("rsched.endpoints.EndpointRegistry", FakeRegistry)
@@ -1132,7 +1132,7 @@ def test_autolabel_uses_the_conversations_own_model(server, monkeypatch):
 
     class FakeRegistry:
         def __init__(self, _server): ...
-        def for_model(self, kind, models):
+        def for_model(self, kind, models, efforts):
             seen["kind"], seen["models"] = kind, dict(models)
             return FakeEndpoint(), SimpleNamespace(model="m", effort=None, temperature=None, max_tokens=None)
         def for_system(self):

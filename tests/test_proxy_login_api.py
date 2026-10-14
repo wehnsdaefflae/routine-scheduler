@@ -55,6 +55,40 @@ def test_accounts_route_resolves_the_proxys_binding_and_names_each_cards_provide
     assert asked == [("cliproxy", ["claude"]), ("cliproxy", ["codex"])]
 
 
+def test_a_gemini_endpoint_is_an_antigravity_card_with_its_own_signin(api_client, monkeypatch):
+    """The third provider: an endpoint whose models are Gemini ids (or gpt-oss, matched before
+    the generic gpt- → Codex prefix) resolves the sibling's binding, is offered the
+    Antigravity account row and sign-in only, and carries no Claude quota."""
+    c, _tmp = api_client
+    _add_proxy_pair(c)
+    assert c.post("/api/settings/endpoints", json={
+        "name": "gemini-proxy", "kind": "anthropic",
+        "base_url": "http://cliproxy:8317"}).status_code == 200
+    for name, model in (("Gem", "gemini-3-pro"), ("Oss", "gpt-oss-120b-medium")):
+        assert c.post("/api/settings/models", json={
+            "name": name, "endpoint": "gemini-proxy", "model": model}).status_code == 200
+    view = {e["name"]: e for e in c.get("/api/settings/endpoints").json()["endpoints"]}
+    assert view["gemini-proxy"]["proxy_management"] is True
+    assert view["gemini-proxy"]["has_subscription_quota"] is False
+    asked: list = []
+    monkeypatch.setattr(endpoint_probe.cliproxy_login, "accounts",
+                        lambda bound, providers: asked.append(sorted(providers))
+                        or {"supported": True, "ok": True, "accounts": [], "providers": []})
+    assert c.get("/api/settings/endpoints/gemini-proxy/proxy-accounts").json()["ok"]
+    assert asked == [["antigravity"]]
+    monkeypatch.setattr(endpoint_probe.cliproxy_quota, "read_quota",
+                        lambda bound: {"supported": True, "ok": True, "windows": {}})
+    assert c.get("/api/settings/endpoints/gemini-proxy/quota").json() == {"supported": False}
+    monkeypatch.setattr(endpoint_probe.cliproxy_login, "start",
+                        lambda bound, provider: {"ok": True, "provider": provider,
+                                                 "url": "https://accounts.example/consent",
+                                                 "state": "s9", "callback_port": 51121,
+                                                 "callback_path": "/oauth-callback"})
+    r = c.post("/api/settings/endpoints/gemini-proxy/proxy-login",
+               json={"provider": "antigravity"})
+    assert r.json()["callback_port"] == 51121 and r.json()["callback_path"] == "/oauth-callback"
+
+
 def test_quota_applies_to_the_claude_card_only(api_client, monkeypatch):
     c, _tmp = api_client
     _add_proxy_pair(c)

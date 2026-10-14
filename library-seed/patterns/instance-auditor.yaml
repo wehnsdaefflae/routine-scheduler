@@ -65,6 +65,7 @@ settings:
   connections: {}
   machines: []
   models: {}
+  efforts: {}
   deliberation: standard
   ladder:
     enabled: false

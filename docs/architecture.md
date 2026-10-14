@@ -335,11 +335,20 @@ prefix from cache while re-writing the conversation every turn, which reads as h
 
 
 The **model catalog** (`config.ModelConfig`, `ServerConfig.models`) binds a provider model id to
-an endpoint and owns the PER-MODEL attributes — `multimodal`, `context_tokens`, `effort`,
+an endpoint and owns the PER-MODEL attributes — `multimodal`, `context_tokens`,
 `temperature`, `max_tokens` (each None inherits the endpoint kind default / the endpoint's own
 value; `max_tokens` — the model's real OUTPUT limit, sent on every engine call — falls back to
 `DEFAULT_MODEL_MAX_TOKENS` 16_384, and Settings flags unset/implausible values so "set correctly"
 is auditable), plus `fallbacks:` — the ordered FAILOVER chain (catalog names, NOT transitive).
+**Reasoning effort is NOT a catalog attribute**: it is a setting of its own, chosen where the
+model is USED — `routine.yaml` `efforts: {role: level}` (a conversation's too), the server's
+`system_effort` / `compaction_effort`, and a trial's `efforts:` — so one catalog entry serves
+every level (the catalog once carried "Opus high", "Opus xhigh", … as one row per level, and
+every routine wanting another level needed another row). The registry applies the role's level
+to WHICHEVER model serves it, a failover rung included (`EndpointRegistry.for_model(kind,
+models, efforts)`); a role with no model of its own runs the system model at the role's level,
+else at `system_effort`. `config.base.EFFORT_LEVELS` is the one vocabulary
+(`low|medium|high|xhigh|max`; the `openai` kind folds the top two into its own top level).
 Endpoints hold only transport + auth + those DEFAULTS; `multimodal` is NOT on the endpoint (one
 endpoint serves many models with different windows and vision support). Each **routine
 references models BY NAME** (`routine.yaml` `models:` maps a role → catalog name): `main` (the
@@ -347,14 +356,15 @@ loop — and every spawned child's default), `tool_call` (the `llm` action), opt
 `uncensored` — plus the two DECISION roles `decision` / `decision_media`, which name a decision
 model (below) and fall back to the instance's decision defaults instead. A chat role left unset falls back to the server's single `system_model` (also a catalog
 name) — the ONE model for pre-routine machine work (the clarify flow + workflow
-generation/suggestion). A MODEL TRIAL (`trial:`, `rsched/trials.py`) replaces chat roles for the
-routine's next N fires without touching `models:` — the daemon names the trial's models to the
-engine per run, exactly as `run-once --model` does by hand. A single `llm`/`spawn`/`subtask` call may override its model per call
+generation/suggestion). A MODEL TRIAL (`trial:`, `rsched/trials.py`) replaces chat roles (and
+their efforts) for the routine's next N fires without touching `models:` / `efforts:` — the
+daemon names the trial's models and efforts to the engine per run, exactly as `run-once --model
+… --effort …` does by hand. A single `llm`/`spawn`/`subtask` call may override its model per call
 (`model:` a role — main|tool_call|uncensored — or a CATALOG model name; D81, extended by
 the 2026-08-22 order retiring the subroutine role. The `list_models` action shows the
 catalog; an unconfigured `uncensored` or an unknown name is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
-`.for_model(kind, routine.models)` / `.for_system()` produce a RESOLVED `ModelRef` (endpoint,
-model id, effort + the filled-in multimodal/context_tokens/temperature/max_tokens) — the runtime
+`.for_model(kind, routine.models, routine.efforts)` / `.for_system()` produce a RESOLVED `ModelRef`
+(endpoint, model id, the role's effort + the filled-in multimodal/context_tokens/temperature/max_tokens) — the runtime
 handle, no longer parsed from yaml. `supports_media(mime, *, multimodal)` and compaction
 (`ref.context_tokens`) take the resolved model's values; `complete()` gains a `temperature` kwarg.
 Editing a catalog model updates every routine that names it. **Failover** (`endpoints/failover.py`)

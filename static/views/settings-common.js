@@ -57,8 +57,23 @@ export async function panelSection(view, url, skel, render) {
 // the requests, once per turn, and nothing in the console said so.
 export function temperatureHint() {
   return el("span", { class: "hint" },
-    "rejected by current Claude models — they are steered with effort, and a value here costs "
-    + "a retry per turn");
+    "rejected by current Claude models — they are steered with the role's effort (set on the "
+    + "routine page), and a value here costs a retry per turn");
+}
+
+// A reasoning-effort <select>: blank (the provider's own default) plus the server's levels
+// (`effort_levels` in the settings payload — the server owns the vocabulary). Effort belongs to
+// the ROLE a model is used in, never to the catalog entry, so the only places that pick one
+// here are the two instance-wide model choices. A level the server no longer lists but the
+// config still holds is kept and marked, as the compaction-model picker does for a model.
+export function effortSelect(levels, current, label) {
+  const sel = el("select", { "aria-label": label },
+    el("option", { value: "" }, "provider default"),
+    ...levels.map((l) => el("option", { value: l }, l)));
+  if (current && !levels.includes(current))
+    sel.append(el("option", { value: current }, `${current} (unknown)`));
+  sel.value = current || "";
+  return sel;
 }
 
 export function remoteTester(input) {

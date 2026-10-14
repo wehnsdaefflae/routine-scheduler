@@ -152,6 +152,39 @@ def _output_cap(window: int, published: int | None) -> int:
                window // OUTPUT_WINDOW_DIVISOR)
 
 
+#: The providers whose silence is worth answering from the reference catalog: a gateway or
+#: subscription proxy that lists ids and no figures, and the Anthropic wire (`table`). OpenRouter,
+#: Nano-GPT and Ollama publish their own figures, which are the authority wherever they exist.
+REFERENCE_FOR = frozenset({"openai", "table"})
+
+
+class _Reference:
+    """The reference catalog, read at most ONCE per refresh and only when a model needs it."""
+
+    def __init__(self) -> None:
+        self._table: dict | None = None
+
+    def get(self, model_id: str) -> tuple[int, int | None] | None:
+        if self._table is None:
+            self._table = catalogs.reference_table()
+        return self._table.get(catalogs.reference_name(model_id))
+
+
+def _figures(table: dict, mid: str, provider: str,
+             reference: _Reference) -> tuple[tuple[int, int | None] | None, str | None]:
+    """`(figures, source)` for one model, most authoritative first: what its own provider
+    published; the static Claude table; then the reference catalog under the name vendors share
+    (`source: reference` — a figure for the MODEL, read for a route that publishes none).
+    """
+    if hit := table.get(mid):
+        return hit, provider
+    if (static := _static_window(mid)) is not None:
+        return (static, None), "table"
+    if provider in REFERENCE_FOR and (hit := reference.get(mid)):
+        return hit, "reference"
+    return None, None
+
+
 # ------------------------------------------------------------------------------- the refresh ----
 
 def refresh(server, *, force: bool = False) -> dict:
@@ -179,6 +212,7 @@ def refresh(server, *, force: bool = False) -> dict:
     out: dict = {"fetched": now.isoformat(),
                  "checked_models": [_key(mc.endpoint, mc.model) for mc in server.models.values()]}
     misses: list[str] = []
+    reference = _Reference()
     cached_served = cache.get(SERVED_KEY)
     prev_served: dict = cached_served if isinstance(cached_served, dict) else {}
     served_out: dict[str, list[str]] = {}
@@ -199,11 +233,7 @@ def refresh(server, *, force: bool = False) -> dict:
         elif kept := prev_served.get(ep_name):
             served_out[ep_name] = kept
         for mid in model_ids:
-            hit = table.get(mid)
-            if hit is None and (static := _static_window(mid)) is not None:
-                hit, provider_used = (static, None), "table"
-            else:
-                provider_used = provider
+            hit, provider_used = _figures(table, mid, provider, reference)
             if hit is None:
                 misses.append(f"{ep_name}/{mid}")
                 # keep whatever we knew before rather than forgetting it on one bad fetch

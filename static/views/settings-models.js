@@ -5,30 +5,34 @@
 // Split out of settings-endpoints.js, which held three independent surfaces in one 654-line
 // closure: the transports, this catalog, and the proxy sign-in flow. An endpoint is HOW to
 // reach a provider; a model is a named entry with its own attributes — multimodality, context
-// window, effort, temperature — and routines reference the model, never the endpoint. Two
-// concepts, two modules.
+// window, temperature — and routines reference the model, never the endpoint. Two concepts, two
+// modules. Reasoning EFFORT is not one of those attributes: it is chosen where the model is
+// used (per role on a routine's page, per conversation), so here only the two instance-wide
+// model choices — the system model and the compaction model — carry one.
 //
 // `reload` is the endpoints view's own load(): every save here re-reads the whole settings
 // payload, because a model change moves the system-model and compaction pickers too.
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { savedToast, temperatureHint } from "/static/views/settings-common.js";
+import { modelIdPicker } from "/static/components/model-id-picker.js";
+import { effortSelect, savedToast, temperatureHint } from "/static/views/settings-common.js";
 import { act, el, toast } from "/static/util.js";
 
-const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];   // "" = inherit / provider default
-
-/** The three catalog panels, in the order the page shows them. */
-export function modelPanels({ endpoints, models, systemModel, compactionModel, reload }) {
+/** The three catalog panels, in the order the page shows them. `effortLevels` is the server's
+ *  vocabulary (`effort_levels` in the settings payload). */
+export function modelPanels({ endpoints, models, systemModel, systemEffort, compactionModel,
+                              compactionEffort, effortLevels, reload }) {
   // ---- the model catalog: named models bound to an endpoint -----------------------------------
   function modelsSection(endpoints, models) {
     const box = el("div", { class: "panel mt" });
     box.append(
       el("div", { class: "small", style: "font-weight:600" }, "Models"),
       el("div", { class: "muted small", style: "margin:2px 0 6px" },
-        "Named models bound to an endpoint. Each carries its OWN multimodality, context window, ",
-        "effort and temperature — one endpoint serves many models. Routines and conversations ",
-        "pick a model by name."));
+        "Named models bound to an endpoint. Each carries its OWN multimodality, context window ",
+        "and temperature — one endpoint serves many models. Routines and conversations pick a ",
+        "model by name, and reasoning effort per role (on the routine page, or per conversation) — ",
+        "never on the model."));
     if (!endpoints.length) {
       box.append(el("div", { class: "muted small" }, "add an endpoint above first"));
       return box;
@@ -50,10 +54,9 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
 
   function modelBody(name, f) {
     return {
-      name, endpoint: f.epSel.value, model: f.modelIn.value.trim(),
+      name, endpoint: f.epSel.value, model: f.modelIn.value(),
       multimodal: mmValue(f.mmSel),
       context_tokens: f.ctxIn.value.trim() ? Number(f.ctxIn.value) : null,
-      effort: f.effSel.value || null,
       temperature: f.tempIn.value.trim() ? Number(f.tempIn.value) : null,
       max_tokens: f.mtIn.value.trim() ? Number(f.mtIn.value) : null,
       fallbacks: f.fbIn.value(),
@@ -67,12 +70,13 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
     ollama: "read from this Ollama server's /api/show — leave blank to track it",
     openai: "read from the provider's /models listing — leave blank to track it",
     table: "no metadata API for this kind; a built-in table supplies the window",
+    reference: "this route publishes no figures; read from the public OpenRouter catalog under the model's shared name — leave blank to track it",
     endpoint: "no provider figure for this model id — the endpoint's own default applies",
     floor: "no provider figure for this model id — the engine floor applies",
     config: "set by hand here, which overrides what the provider reports",
   };
   const sourceWord = (m) => ({ openrouter: "from openrouter", nanogpt: "from nano-gpt",
-    ollama: "from ollama", openai: "from the provider", table: "from the built-in table",
+    ollama: "from ollama", openai: "from the provider", table: "from the built-in table", reference: "from the reference catalog",
     endpoint: "endpoint fallback", floor: "engine fallback", config: "model override",
   })[m.window?.window_source] || "inherit";
 
@@ -116,7 +120,11 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
   function modelFields(m, endpoints, models = []) {
     const epSel = el("select", {}, endpoints.map((e) => el("option", {}, e.name)));
     if (m.endpoint) epSel.value = m.endpoint;
-    const modelIn = el("input", { type: "text", value: m.model || "", placeholder: "model id (e.g. openai/gpt-4o)", style: "width:220px" });
+    // The id is picked from what the endpoint itself serves (components/model-id-picker.js); the
+    // listing is asked for lazily, when the form is first opened or its endpoint changes — a
+    // catalog page holds one form per model.
+    const modelIn = modelIdPicker({ value: m.model || "", placeholder: "model id (e.g. openai/gpt-4o)" });
+    epSel.onchange = () => modelIn.setEndpoint(epSel.value);
     const mmSel = mmSelect(m.multimodal);
     // The placeholder now says where the effective figure CAME FROM. Leaving these blank is the
     // correct, normal state since limits are discovered — an empty box that said only "inherit"
@@ -125,24 +133,21 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
     const ctxIn = el("input", { type: "number", value: m.context_tokens ?? "",
       title: SOURCE_HINT[m.window?.window_source] || "",
       placeholder: `${sourceWord(m)} (${(m.context_effective || 0).toLocaleString()})` });
-    const effSel = el("select", {}, EFFORTS.map((e) => el("option", { value: e }, e || "default")));
-    effSel.value = m.effort || "";
     const tempIn = el("input", { type: "number", step: "0.1", value: m.temperature ?? "", placeholder: "inherit" });
     const mtIn = el("input", { type: "number", value: m.max_tokens ?? "",
       placeholder: `inherit (${(m.max_tokens_effective || 0).toLocaleString()})` });
     const fbIn = fallbackPicker(m.fallbacks || [], models, m.name);
-    return { epSel, modelIn, mmSel, ctxIn, effSel, tempIn, mtIn, fbIn };
+    return { epSel, modelIn, mmSel, ctxIn, tempIn, mtIn, fbIn };
   }
 
   function modelFieldRows(f) {
     return el("div", {},
       el("div", { class: "field-row mt" },
         el("label", { class: "field" }, el("span", {}, "endpoint"), f.epSel),
-        el("label", { class: "field" }, el("span", {}, "model id"), f.modelIn)),
+        el("label", { class: "field" }, el("span", {}, "model id"), f.modelIn.node)),
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "multimodal"), f.mmSel),
         el("label", { class: "field" }, el("span", {}, "Context window (tokens)"), f.ctxIn),
-        el("label", { class: "field" }, el("span", {}, "effort"), f.effSel),
         el("label", { class: "field" }, el("span", {}, "temperature"), f.tempIn,
           temperatureHint())),
       el("div", { class: "field-row" },
@@ -150,11 +155,23 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
         el("label", { class: "field" }, el("span", {}, "fallbacks (failover order)"), f.fbIn.node)));
   }
 
+  // Ask the endpoint for its model ids the first time the form is opened, not when the page
+  // builds — one form per catalog entry would otherwise be one listing request each.
+  function lazyDetails(f, details) {
+    details.addEventListener("toggle", () => {
+      if (details.open && !details.dataset.asked) {
+        details.dataset.asked = "1";
+        f.modelIn.setEndpoint(f.epSel.value);
+      }
+    });
+    return details;
+  }
+
   function modelItem(m, endpoints, models) {
     const f = modelFields(m, endpoints, models);
     const saveBtn = el("button", { class: "btn small primary" }, "save changes");
     saveBtn.onclick = () => act(saveBtn, async () => {
-      if (!f.modelIn.value.trim()) { toast("enter a model id"); return; }
+      if (!f.modelIn.value()) { toast("enter a model id"); return; }
       savedToast(await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "PUT",
         body: modelBody(m.name, f) }), `${m.name}: updated`);
       await reload();
@@ -184,10 +201,10 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
               title: SOURCE_HINT[m.window?.window_source] || "" },
             `${(m.window?.context_tokens || 0).toLocaleString()} tok · ${sourceWord(m)}`)),
         delBtn),
-      el("details", { class: "mt" },
+      lazyDetails(f, el("details", { class: "mt" },
         el("summary", { style: "cursor:pointer;font-size:12px" }, "edit fields"),
         modelFieldRows(f),
-        el("div", { class: "row mt" }, saveBtn)));
+        el("div", { class: "row mt" }, saveBtn))));
   }
 
   function addModelForm(endpoints, models) {
@@ -196,12 +213,12 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
     const save = el("button", { class: "btn primary" }, "add model");
     save.onclick = () => act(save, async () => {
       if (!nameIn.value.trim()) { toast("name it"); return; }
-      if (!f.modelIn.value.trim()) { toast("enter a model id"); return; }
+      if (!f.modelIn.value()) { toast("enter a model id"); return; }
       savedToast(await api("/api/settings/models", { method: "POST",
         body: modelBody(nameIn.value.trim(), f) }), `model ${nameIn.value.trim()} added`);
       await reload();
     });
-    return el("details", { class: "panel mt" },
+    return lazyDetails(f, el("details", { class: "panel mt" },
       el("summary", { style: "cursor:pointer;font-weight:600" }, "+ add model"),
       el("div", { class: "field-row mt" },
         el("label", { class: "field" }, el("span", {}, "name"), nameIn)),
@@ -211,13 +228,13 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
         "Blank context and output limits use provider metadata, then endpoint defaults. ",
         "The context window includes input and output; max_tokens reserves output tokens. ",
         "fallbacks = other catalog models, tried in the order shown when this model's provider fails hard."),
-      el("div", { class: "row mt" }, save));
+      el("div", { class: "row mt" }, save)));
   }
 
   // The ONE fallback model for machine work that isn't a routine yet (the new-routine clarify
   // creation flow + workflow generation). Setting it is what makes the instance "llm_ready". Pick a
   // catalog model by NAME; each routine then picks its own roles on its own page.
-  function systemModelEditor(models, systemModel) {
+  function systemModelEditor(models, systemModel, systemEffort) {
     const box = el("div", { class: "panel mt" });
     box.append(
       el("div", { class: "small", style: "font-weight:600" }, "System model"),
@@ -226,7 +243,8 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
         "clarify flow and workflow generation. Required before you can create routines. ",
         "Each routine then picks its own ", el("strong", {}, "main"), " / ",
         el("strong", {}, "tool-call"), " models on its page (children run main by default) — ",
-        "any role a routine leaves unset falls back to this system model. (A model may also name its ",
+        "any role a routine leaves unset falls back to this system model, at the effort the routine sets ",
+        "for that role, else at the effort chosen here. (A model may also name its ",
         "own per-model ", el("strong", {}, "fallbacks"), " above — a separate hard-failure failover chain.)"));
     if (!models.length) {
       box.append(el("div", { class: "muted small" }, "add a model above first"));
@@ -234,39 +252,49 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
     }
     const sel = el("select", {}, models.map((m) => el("option", {}, m.name)));
     if (systemModel) sel.value = systemModel;
+    const eff = effortSelect(effortLevels, systemEffort, "System model effort");
     const save = el("button", { class: "btn small primary" }, systemModel ? "update" : "set");
     save.onclick = () => act(save, async () => {
-      await api("/api/settings/system-model", { method: "PUT", body: { name: sel.value } });
-      toast(`system model → ${sel.value}`); await reload();
+      await api("/api/settings/system-model", { method: "PUT",
+        body: { name: sel.value, effort: eff.value } });
+      toast(`system model → ${sel.value}${eff.value ? ` (effort ${eff.value})` : ""}`);
+      await reload();
     });
     box.append(el("div", { class: "row", style: "margin:5px 0" },
-      el("span", { class: "ref-tag", style: "min-width:100px;text-align:center" }, "system"), sel, save));
+      el("span", { class: "ref-tag", style: "min-width:100px;text-align:center" }, "system"), sel,
+      el("label", { class: "small muted" }, "effort ", eff), save));
     return box;
   }
 
-  function compactionModelEditor(models, current) {
+  function compactionModelEditor(models, current, currentEffort) {
     const sel = el("select", { "aria-label": "Context compaction model" },
       el("option", { value: "" }, "Automatic"),
       ...models.map((m) => el("option", { value: m.name }, m.name)));
     if (current && !models.some((m) => m.name === current))
       sel.append(el("option", { value: current }, `${current} (unavailable)`));
     sel.value = current || "";
+    // Automatic runs the tool-call role's own model AT ITS effort, so a dedicated model is the
+    // only thing an effort here can belong to — the server drops it when the name is blank.
+    const eff = effortSelect(effortLevels, currentEffort, "Context compaction effort");
+    const sync = () => { eff.disabled = !sel.value; };
+    sel.addEventListener("change", sync); sync();
     const save = el("button", { class: "btn small primary" }, "save compaction model");
     save.onclick = () => act(save, async () => {
-      await api("/api/settings/compaction-model", { method: "PUT", body: { name: sel.value } });
+      await api("/api/settings/compaction-model", { method: "PUT",
+        body: { name: sel.value, effort: sel.value ? eff.value : "" } });
       toast(`compaction model → ${sel.value || "Automatic"}`); await reload();
     });
     return el("div", { class: "panel mt" },
       el("div", { class: "small", style: "font-weight:600" }, "Context compaction model"),
       el("p", { class: "muted small" },
         "Builds navigable history in the background; does not change the foreground context window, main model, or observation compression. ",
-        "Automatic uses tool-call when its window fits, otherwise the current main model. ",
+        "Automatic uses tool-call (at that role's effort) when its window fits, otherwise the current main model. ",
         "An unavailable or too-small dedicated model falls back with a recorded reason. ",
         "If archival fails, the deterministic digest and full transcript remain."),
-      el("div", { class: "row" }, sel, save));
+      el("div", { class: "row" }, sel, el("label", { class: "small muted" }, "effort ", eff), save));
   }
 
   return [modelsSection(endpoints, models),
-          systemModelEditor(models, systemModel),
-          compactionModelEditor(models, compactionModel)];
+          systemModelEditor(models, systemModel, systemEffort),
+          compactionModelEditor(models, compactionModel, compactionEffort)];
 }

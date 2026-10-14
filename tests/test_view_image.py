@@ -51,11 +51,11 @@ class _Endpoint:
 
 
 def _ctx(tmp_path, endpoint):
-    routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], fs_write_roots=[], models={})
+    routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], fs_write_roots=[], models={}, efforts={})
     # for_model returns (endpoint, resolved ModelRef): the model's multimodal flag is what the
     # executor passes into supports_media (one endpoint serves many models).
     ref = SimpleNamespace(multimodal=endpoint.multimodal, context_tokens=200_000) if endpoint else None
-    registry = SimpleNamespace(for_model=lambda k, m: (endpoint, ref)) if endpoint else None
+    registry = SimpleNamespace(for_model=lambda k, m, e: (endpoint, ref)) if endpoint else None
     return SimpleNamespace(routine=routine, grants=None, depth=0,
                            root_run_dir=tmp_path / "runs" / "x",
                            read_roots=lambda: list(routine.fs_read_roots),
@@ -596,7 +596,7 @@ def test_auto_attach_uses_the_same_pre_flight_as_view_image(tmp_path, monkeypatc
                                supports_media=lambda _m, *, multimodal: True)
     ctx = _ctx(tmp_path, endpoint)
     monkeypatch.setattr(ctx.registry, "for_model",
-                        lambda _role, _models: (endpoint, SimpleNamespace(multimodal=True)),
+                        lambda _role, _models, _efforts: (endpoint, SimpleNamespace(multimodal=True)),
                         raising=False)
     _png(tmp_path / "ok.png", 1024, 768)
     _png(tmp_path / "giant.png", 9000, 9000)

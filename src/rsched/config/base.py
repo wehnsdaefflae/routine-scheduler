@@ -84,6 +84,13 @@ MODEL_KINDS = ("main", "tool_call", "uncensored")
 # a decision model there would be a name it cannot find. Both sit in the same `models:` map.
 DECISION_ROLES = ("decision", "decision_media")
 ROUTINE_MODEL_ROLES = MODEL_KINDS + DECISION_ROLES
+# REASONING EFFORT is a setting of its own, beside the model it applies to — never a second
+# catalog entry per level (the catalog once carried "Opus high", "Opus xhigh", … as five rows
+# of one model, and every routine that wanted another level needed another row). A routine
+# sets `efforts: {role: level}` for the chat roles; the server sets `system_effort` for the
+# system model. A role with no level takes the provider's own default. The five names are the
+# `anthropic` wire's; the `openai` kind folds xhigh/max into its own top level.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 # How much of the model's thinking lands ON PAPER — the persistent prose channel (`say`,
 # plus a notes-file discipline at the top stop). Ordered stops, not a continuum: models
 # follow qualitatively distinct contracts, not "verbosity 0.7". Composer wording per stop

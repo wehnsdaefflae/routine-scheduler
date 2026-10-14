@@ -1,9 +1,8 @@
 """MODEL TRIALS (rsched/trials.py) — "run this routine on catalog model X for its next N fires".
 
 A trial is config the operator accepted; everything after that is DERIVED: it is active while
-fewer than `runs` of the routine's runs have recorded its id in their durable usage record, every
-fire while it is active is armed (trial.json + `--model` to the engine), and it stops applying by
-itself. Nothing but the operator's next accepted change ever writes the field again.
+fewer than `runs` of the routine's runs have recorded its id in their usage record, every fire
+while it is active is armed (trial.json + `--model`/`--effort`), and it stops applying by itself.
 """
 
 from __future__ import annotations
@@ -27,8 +26,8 @@ from rsched.engine.config_bridge import trial_value
 from rsched.engine.runtime import run_routine
 from rsched.health_events import log_workflow_usage
 
-TRIAL = {"id": "t-20261008-sonnet-high", "models": {"main": "sonnet-high"}, "runs": 3,
-         "reason": "is the routine's opus overkill for a digest?"}
+TRIAL = {"id": "t-20261008-sonnet-high", "models": {"main": "sonnet"}, "runs": 3,
+         "efforts": {"main": "high"}, "reason": "is the routine's opus overkill for a digest?"}
 
 
 def _with_trial(d, trial=TRIAL):
@@ -59,7 +58,7 @@ def test_a_trial_loads_from_routine_yaml(make_routine):
     assert not problems
     assert cfg is not None and cfg.trial is not None
     assert (cfg.trial.id, cfg.trial.models, cfg.trial.runs) == (
-        "t-20261008-sonnet-high", {"main": "sonnet-high"}, 3)
+        "t-20261008-sonnet-high", {"main": "sonnet"}, 3)
     assert cfg.models == {}                       # the routine's own binding is untouched
 
 
@@ -106,7 +105,7 @@ def test_trial_is_a_next_run_routine_field():
 
 def test_a_trial_counts_its_runs_from_the_usage_stream(make_routine, tmp_path):
     d = _with_trial(make_routine(slug="counted"))
-    server = _catalog(tmp_server(tmp_path, create=False), "sonnet-high")
+    server = _catalog(tmp_server(tmp_path, create=False), "sonnet")
     cfg, _ = load_routine(d)
     assert trials.state(server, cfg)["state"] == trials.ACTIVE
     assert trials.state(server, cfg)["recorded"] == 0
@@ -130,7 +129,7 @@ def test_a_trial_naming_a_model_the_catalog_lacks_is_ignored(make_routine, tmp_p
     cfg, _ = load_routine(d)
     now = trials.state(server, cfg)
     assert now["state"] == trials.IGNORED
-    assert "'sonnet-high' is not in the model catalog" in now["problem"]
+    assert "'sonnet' is not in the model catalog" in now["problem"]
     run_dir = d / "runs" / "20261008-120000"
     run_dir.mkdir(parents=True)
     assert trials.arm(server, cfg, run_dir) is None
@@ -171,19 +170,19 @@ def test_no_trial_is_no_state(make_routine, tmp_path):
 def test_arming_writes_the_trial_into_the_run_dir_only_while_it_is_active(make_routine,
                                                                            tmp_path):
     d = _with_trial(make_routine(slug="armed"), {**TRIAL, "runs": 1})
-    server = _catalog(tmp_server(tmp_path, create=False), "sonnet-high")
+    server = _catalog(tmp_server(tmp_path, create=False), "sonnet")
     cfg, _ = load_routine(d)
     first = d / "runs" / "20261008-120000"
     first.mkdir(parents=True)
     assert trials.arm(server, cfg, first) is not None
     assert json.loads((first / runrecord.TRIAL_FILE).read_text()) == {
-        "id": TRIAL["id"], "models": {"main": "sonnet-high"}, "runs": 1}
-    assert trials.overrides(first) == {"main": "sonnet-high"}
+        "id": TRIAL["id"], "models": {"main": "sonnet"}, "efforts": {"main": "high"}, "runs": 1}
+    assert trials.overrides(first) == {"models": {"main": "sonnet"}, "efforts": {"main": "high"}}
     _record(server.routines_home, "armed", "20261008-120000", trial=TRIAL["id"])
     second = d / "runs" / "20261008-130000"
     second.mkdir(parents=True)
     assert trials.arm(server, cfg, second) is None             # one run recorded it: done
-    assert trials.overrides(second) == {}
+    assert trials.overrides(second) == {"models": {}, "efforts": {}}
 
 
 # ---------------------------------------------------------------- the daemon
@@ -192,8 +191,8 @@ def test_arming_writes_the_trial_into_the_run_dir_only_while_it_is_active(make_r
 async def _fire_and_capture(monkeypatch, server, cfg, *, resume_ts=""):
     seen: list[dict] = []
 
-    def cmd(passed_server, target, run_ts, *, resume=False, models=None):
-        seen.append({"ts": run_ts, "resume": resume, "models": dict(models or {})})
+    def cmd(passed_server, target, run_ts, *, resume=False, **roles):
+        seen.append({"ts": run_ts, "resume": resume, **roles})
         return ["bash", "-c", "true"]
 
     monkeypatch.setattr(runner_state, "engine_cmd", cmd)
@@ -213,10 +212,10 @@ async def _fire_and_capture(monkeypatch, server, cfg, *, resume_ts=""):
 async def test_a_fire_while_the_trial_is_active_names_its_models(make_routine, tmp_path,
                                                                  monkeypatch):
     d = _with_trial(make_routine(slug="fired"))
-    server = _catalog(tmp_server(tmp_path, create=False), "sonnet-high")
+    server = _catalog(tmp_server(tmp_path, create=False), "sonnet")
     cfg, _ = load_routine(d)
     seen = await _fire_and_capture(monkeypatch, server, cfg)
-    assert seen["models"] == {"main": "sonnet-high"}
+    assert seen["models"] == {"main": "sonnet"} and seen["efforts"] == {"main": "high"}
     assert json.loads((d / "runs" / seen["ts"] / runrecord.TRIAL_FILE).read_text())["id"] \
         == TRIAL["id"]
 
@@ -224,7 +223,7 @@ async def test_a_fire_while_the_trial_is_active_names_its_models(make_routine, t
 async def test_a_fire_after_the_trial_finished_is_an_ordinary_run(make_routine, tmp_path,
                                                                  monkeypatch):
     d = _with_trial(make_routine(slug="after"), {**TRIAL, "runs": 1})
-    server = _catalog(tmp_server(tmp_path, create=False), "sonnet-high")
+    server = _catalog(tmp_server(tmp_path, create=False), "sonnet")
     _record(server.routines_home, "after", "20261001-120000", trial=TRIAL["id"])
     cfg, _ = load_routine(d)
     seen = await _fire_and_capture(monkeypatch, server, cfg)
@@ -237,15 +236,15 @@ async def test_a_resume_keeps_the_trial_its_run_started_under(make_routine, tmp_
     """The run dir's own trial.json decides — even once the trial has finished, a resumed
     trial run is still one."""
     d = _with_trial(make_routine(slug="resumed"), {**TRIAL, "runs": 1})
-    server = _catalog(tmp_server(tmp_path, create=False), "sonnet-high")
+    server = _catalog(tmp_server(tmp_path, create=False), "sonnet")
     _record(server.routines_home, "resumed", "20261001-120000", trial=TRIAL["id"])
     run_dir = d / "runs" / "20261001-120000"
     run_dir.mkdir(parents=True)
     (run_dir / runrecord.TRIAL_FILE).write_text(json.dumps(
-        {"id": TRIAL["id"], "models": {"main": "sonnet-high"}, "runs": 1}), encoding="utf-8")
+        {"id": TRIAL["id"], "models": {"main": "sonnet"}, "runs": 1}), encoding="utf-8")
     cfg, _ = load_routine(d)
     seen = await _fire_and_capture(monkeypatch, server, cfg, resume_ts="20261001-120000")
-    assert seen["resume"] and seen["models"] == {"main": "sonnet-high"}
+    assert seen["resume"] and seen["models"] == {"main": "sonnet"}
 
 
 # ---------------------------------------------------------------- the engine
@@ -255,26 +254,27 @@ def test_a_trial_run_records_its_trial_and_the_model_it_ran_on(make_routine, scr
     """The whole loop without a subprocess: armed run dir → the engine on the override →
     the record the next fire counts."""
     d = _with_trial(make_routine(slug="engine"), {**TRIAL, "runs": 1})
-    server = _catalog(server_for(d), "sonnet-high")
+    server = _catalog(server_for(d), "sonnet")
     cfg, _ = load_routine(d)
     run_dir = d / "runs" / "20261008-140000"
     run_dir.mkdir(parents=True)
     trials.arm(server, cfg, run_dir)
     scripted([write_file("state/a.txt"), finish()])
-    status, _ = run_routine(d, server, run_ts="20261008-140000",
-                            model_overrides=trials.overrides(run_dir))
+    roles = trials.overrides(run_dir)
+    status, _ = run_routine(d, server, run_ts="20261008-140000", model_overrides=roles["models"],
+                            effort_overrides=roles["efforts"])
     assert status == "ok"
     stream = d.parent / ".control" / "workflow-usage.jsonl"
     (rec,) = [json.loads(x) for x in stream.read_text().splitlines()]
     assert rec["fingerprint"]["trial"] == TRIAL["id"]
-    assert rec["fingerprint"]["model"] == "sonnet-high"
+    assert rec["fingerprint"]["model"] == "sonnet"
     assert trials.state(server, cfg)["state"] == trials.FINISHED
 
 
 # ---------------------------------------------------------------- the filing check
 
 
-CATALOG = SimpleNamespace(models={"sonnet-high": object()})
+CATALOG = SimpleNamespace(models={"sonnet": object()})
 
 
 def test_the_filing_check_passes_a_sound_trial_and_a_clear():
@@ -297,7 +297,7 @@ def test_a_run_files_a_trial_proposal_and_a_bad_one_is_refused(make_routine, scr
     """End to end through `ask_user`: the sound proposal becomes a decision carrying the trial
     as its `config_patch`; the one naming a model the catalog lacks files nothing."""
     d = make_routine(slug="optimizer")
-    server = _catalog(server_for(d), "sonnet-high")
+    server = _catalog(server_for(d), "sonnet")
     scripted([
         {"say": "propose a trial", "kind": "ask_user", "mode": "deferred",
          "question": "Try sonnet-high for three runs?", "config_patch": {"trial": TRIAL}},
@@ -323,7 +323,7 @@ def web(tmp_path, make_routine):
     make_routine(slug="webr")
     server = make_test_server(tmp_path, models={
         "m": {"endpoint": "dummy", "model": "m"},
-        "sonnet-high": {"endpoint": "dummy", "model": "sonnet", "effort": "high"}})
+        "sonnet": {"endpoint": "dummy", "model": "sonnet"}})
     with authed_client(server) as c:
         yield c, tmp_path / "routines" / "webr"
 
@@ -364,7 +364,7 @@ def test_the_routine_detail_carries_the_trial_state(web):
     _record(d.parent, "webr", "1", trial=TRIAL["id"])
     trial = c.get("/api/routines/webr").json()["trial"]
     assert (trial["state"], trial["recorded"], trial["runs"]) == ("active", 1, 3)
-    assert trial["models"] == {"main": "sonnet-high"} and trial["reason"] == TRIAL["reason"]
+    assert trial["models"] == {"main": "sonnet"} and trial["reason"] == TRIAL["reason"]
 
 
 def test_a_trial_the_catalog_cannot_serve_is_a_routine_problem(web):
@@ -382,4 +382,4 @@ def test_validate_names_a_trial_the_catalog_cannot_serve(cli_server, make_routin
 
     _with_trial(make_routine(slug="validated"))
     assert cli.main(["validate", "validated"]) == 1
-    assert "'sonnet-high' is not in the model catalog" in capsys.readouterr().out
+    assert "'sonnet' is not in the model catalog" in capsys.readouterr().out

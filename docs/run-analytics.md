@@ -53,8 +53,9 @@ At run start the engine stamps the current recipe commit into the run
 
 A recipe version answers "did this CHANGE help?"; a **model trial** asks the same of the model
 (operator, 2026-10-08): is this routine's model more than its work needs, or not enough? A trial is
-ordinary config — `trial: {id, models, runs, reason}` in routine.yaml (`config/trialconf.py`),
-e.g. `{id: t-20261008-sonnet-high, models: {main: sonnet-high}, runs: 5, reason: …}` — that a
+ordinary config — `trial: {id, models, efforts, runs, reason}` in routine.yaml
+(`config/trialconf.py`), e.g. `{id: t-20261008-sonnet-high, models: {main: Sonnet},
+efforts: {main: high}, runs: 5, reason: …}` — that a
 capable maintenance routine (config-optimizer) PROPOSES as an `ask_user` `config_patch` and the
 operator applies with the Decisions page's one **approve & apply** (`{"trial": null}` clears one).
 The filing check refuses a malformed trial or a model the catalog lacks on the turn it is filed
@@ -68,9 +69,9 @@ From the accept on, everything is DERIVED (`rsched/trials.py`) and nothing write
   from this stream, so a restart or a retention sweep loses no run and a fire that never reached
   the engine (a gate skip, a failed launch) fakes none.
 - **Armed per fire.** While active, EVERY fire — schedule, lane, trigger, catch-up, manual — gets
-  `trial.json` (`{id, models, runs}`) in its new run dir before the engine exists (the runner, beside
+  `trial.json` (`{id, models, efforts, runs}`) in its new run dir before the engine exists (the runner, beside
   a hand-started run's brief), and the runner names the models to `engine-run` as `--model
-  role=name`. The engine runs the routine on them for that run (children included), and the run's
+  role=name` and the efforts as `--effort role=level`. The engine runs the routine on them for that run (children included), and the run's
   record carries `fingerprint.trial` beside `fingerprint.model` (the catalog name it ran on) and
   `fingerprint.effort` (engine/runrecord.py). A resume reads the run dir's OWN `trial.json`, so a run keeps the
   trial it started under even once the trial has finished. `rsched run-once` arms nothing.
@@ -287,7 +288,7 @@ STARTED:
 | rule texts | the library's rule file as committed then | — |
 | `model_id` | the run's own transcript header, else its status | the run dir is gone |
 | model (catalog name) | the routine's own `models.main` | the routine ran on the system model, whose history is on record nowhere |
-| effort | — | always: the catalog is unversioned, and before 0.396.0 the subscription transport dropped effort anyway |
+| effort | the routine's own `efforts.main` (or `system_effort`) | a rebuilt run before 0.420.0, when effort lived on the unversioned catalog row — unknown, and before 0.396.0 the subscription transport dropped it anyway |
 | recipe | the record's `recipe_commit`, else the recipe version committed then | — |
 
 `quality` comes from the run's `status.json` and transcript where retention kept them (two runs

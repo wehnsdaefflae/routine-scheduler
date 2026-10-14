@@ -50,11 +50,11 @@ class _Registry:
     def __init__(self, tool_ep, unc_ep=None):
         self.tool_ep, self.unc_ep = tool_ep, unc_ep
 
-    def for_model(self, kind, models):
+    def for_model(self, kind, models, efforts):
         assert kind == "tool_call"
         return self.tool_ep, ModelRef("tool-ep", "tool-model", name="tool-cat")
 
-    def for_uncensored(self, models):
+    def for_uncensored(self, models, efforts):
         if self.unc_ep is None:
             return None
         return self.unc_ep, ModelRef("unc-ep", "unc-model", name="honeypot")
@@ -69,7 +69,7 @@ class _Transcript:
 
 
 def _ctx(registry):
-    return SimpleNamespace(registry=registry, routine=SimpleNamespace(models={}),
+    return SimpleNamespace(registry=registry, routine=SimpleNamespace(models={}, efforts={}),
                            add_usage=lambda u: None, referrals=0,
                            transcript=_Transcript())
 
@@ -155,15 +155,15 @@ class _GoneRegistry(_Registry):
         super().__init__(tool_ep, unc_ep)
         self.gone = gone
 
-    def for_model(self, kind, models):
+    def for_model(self, kind, models, efforts):
         if self.gone == "tool_call":
             raise EndpointError("model 'retired' is not in the catalog")
-        return super().for_model(kind, models)
+        return super().for_model(kind, models, efforts)
 
-    def for_uncensored(self, models):
+    def for_uncensored(self, models, efforts):
         if self.gone == "uncensored":
             raise EndpointError("model 'retired' is not in the catalog")
-        return super().for_uncensored(models)
+        return super().for_uncensored(models, efforts)
 
 
 def test_an_unresolvable_classifier_counts_as_an_answer_rather_than_failing_the_run():

@@ -101,7 +101,7 @@ def _adopt_model(loop, pair) -> tuple:
 
 def next_action(loop) -> tuple[dict | None, dict]:
     ctx = loop.ctx
-    chain = ctx.registry.for_model_chain("main", ctx.routine.models)
+    chain = ctx.registry.for_model_chain("main", ctx.routine.models, ctx.routine.efforts)
     # The chain HEAD is what the routine was configured with, whatever is serving now. Recorded
     # once so a failure verdict can name the model the operator chose as well as the one that
     # failed (F547/D146) — `main_model` below cannot, because it follows every switch.

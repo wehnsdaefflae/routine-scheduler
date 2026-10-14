@@ -51,6 +51,7 @@ FIELDS: tuple[Field, ...] = (
     Field("connections", "reach", "Connections", "map"),
     Field("machines", "reach", "Machines", "set"),
     Field("models", "models", "Models", "map"),
+    Field("efforts", "models", "Reasoning effort", "map"),
     Field("deliberation", "models", "Deliberation", "scalar"),
     # The escalation ladder, split by authority class (docs/architecture.md): `ladder` is CONFIG
     # (whether runs of this routine are supervised at all, and the ceiling on ladder height),
@@ -174,6 +175,7 @@ def snapshot(cfg) -> dict:
         "connections": dict(cfg.connections or {}),
         "machines": list(cfg.machines or []),
         "models": dict(cfg.models or {}),
+        "efforts": dict(cfg.efforts or {}),
         "deliberation": cfg.deliberation,
         # The ladder's config block, defaults filled in so a routine that never mentioned it
         # compares equal to one that wrote the defaults out (the same reason budgets does it).

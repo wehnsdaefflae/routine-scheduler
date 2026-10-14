@@ -41,9 +41,9 @@ TRIAL_FILE = "trial.json"
 #: Every RoutineConfig field is in exactly one of these two sets (tests/test_runrecord.py fails
 #: on a field in neither, so a new field is DECIDED, never hashed by default). BEHAVIOUR is what
 #: a run may use and how far it may go — the config hash covers these and nothing else.
-BEHAVIOUR = frozenset({"models", "connections", "machines", "grants", "budgets", "permissions",
-                       "shared_reminders", "capabilities", "fs_read_roots", "fs_write_roots",
-                       "ladder"})
+BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "grants", "budgets",
+                       "permissions", "shared_reminders", "capabilities", "fs_read_roots",
+                       "fs_write_roots", "ladder"})
 #: What does not change what a run DOES: who the routine is and where it shows (identity), WHEN
 #: it runs (its clock, its triggers, its gate, its off switch), how long its runs are kept,
 #: whether ANOTHER routine may edit it (`improve`) — and what the fingerprint measures as a

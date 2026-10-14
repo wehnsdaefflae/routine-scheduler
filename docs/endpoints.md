@@ -3,9 +3,12 @@
 An **endpoint** is a model *transport*: one place the scheduler can send a chat completion
 and get an answer back. Endpoints never act on their own — the scheduler's engine is the
 only agent loop. A **model** is a named entry in the *catalog* that binds a provider model id
-to an endpoint and carries the per-model attributes — multimodality, context window, effort,
+to an endpoint and carries the per-model attributes — multimodality, context window,
 temperature. One endpoint serves many models, so those attributes live on the model, not the
-endpoint. You configure endpoints and models once (Settings → Endpoints, or
+endpoint. Reasoning **effort** is deliberately NOT one of them: it is a property of the job a
+model is doing, so it is chosen per role (a routine's `efforts:`, a conversation's own, and the
+server's `system_effort` — see *Effort* below), never on the catalog entry. You configure
+endpoints and models once (Settings → Endpoints, or
 `~/.config/routine-scheduler/config.yaml`), then every routine and the system model **picks a
 model by name**.
 
@@ -38,16 +41,19 @@ OpenAI chat-completions dialect, cloud or local.
    only, values are never returned) and warns when an inline key **shadows** a set secret:
    the inline key wins, so editing the secret changes nothing until the inline key is
    removed.
-3. **Test it.** Enter a model id on the card and hit *test* — you get latency, whether the
+3. **Test it.** Pick a model id on the card (the dropdown lists what the endpoint itself says
+   it serves — see *Model-id picker* below) and hit *test* — you get latency, whether the
    model respected a JSON schema, and the raw error (with an auth hint) if the call failed.
    Fix problems here, not mid-run.
 4. **Add the models it serves.** In the endpoint list's **Models** section → *+ add model*.
    Name it (the name is what routines reference — e.g. `gpt-4o`, `glm`, `opus`), pick the
-   endpoint, enter the provider's model id, and set its attributes: **multimodal** (default by
-   the endpoint kind), **context window**, **effort**, **temperature**. One endpoint can serve
+   endpoint, pick the provider's model id from the list the endpoint serves, and set its
+   attributes: **multimodal** (default by the endpoint kind), **context window**,
+   **temperature**. One endpoint can serve
    many models with different windows and vision support — add one catalog entry per model.
 5. **Point roles at models.** Set the server-wide **system model** (used only for setup-time
-   work: routine creation and workflow generation) by picking a catalog model, and per
+   work: routine creation and workflow generation) by picking a catalog model (plus an optional **effort** for it — blank is the provider's
+   default), and per
    routine the model roles — **main** (the orchestrator loop; spawned children run it by
    default, and a call may override per child), **tool_call** (the `llm` action), and the
    optional **uncensored** (the refusal-clarification harness — see below — and, in a
@@ -99,7 +105,7 @@ system_model: glm                 # the fallback model for setup-time work — a
     backend — get one degraded retry without it, so it is safe to leave on.
   - `json_object`: weaker "any JSON" mode; the scheduler's validator does the rest.
 - `tool_choice` — `anthropic` kind only: how the action tool is offered. `auto` (the default)
-  lets a model's configured effort and its thinking reach it; `forced` keeps a route validated
+  lets the role's reasoning effort and its thinking reach it; `forced` keeps a route validated
   only forced (the Codex models the subscription proxy serves on this wire), at the cost of the
   effort — a forced call is answered without thinking. Config-only: a Settings save that does
   not send it keeps what config.yaml says.
@@ -112,7 +118,7 @@ system_model: glm                 # the fallback model for setup-time work — a
 - `temperature` — optional **default** temperature catalog models inherit when unset. Current
   Claude models removed the sampling parameters and answer 400 to one; that 400 is absorbed
   (the field is dropped for one degraded retry), so setting it costs a wasted round trip per
-  turn on those models rather than failing them — steer them with `effort` instead. It still
+  turn on those models rather than failing them — steer them with the role's effort instead. It still
   works on everything else the wire serves, Haiku and a proxy's `gpt-*` ids included.
 - `quota_source` — `cliproxy` binds the PROXY to its management API (the edit form calls
   the field *Proxy management (CLIProxyAPI)*): the signed-in account rows on the card, the
@@ -120,8 +126,10 @@ system_model: glm                 # the fallback model for setup-time work — a
   the Claude subscription quota read (`docs/claude-proxy-cutover.md`, "Signing in, and
   signing back in"). One binding per proxy is enough — an endpoint without its own resolves a
   sibling's on the same origin — and each card shows the accounts for ITS models, by model
-  family (`claude-*` → Claude, `gpt-*`/`o*`/`codex-*` → Codex); the quota line appears only
-  on a card whose models are Claude's.
+  family (`claude-*` → Claude, `gemini-*` and `gpt-oss*` → Antigravity — matched before the
+  generic `gpt-*`/`o*`/`codex-*` → Codex); the quota line appears only on a card whose models
+  are Claude's. Claude, Codex and Antigravity (Google) all sign in from the card; the terminal
+  is only a fallback for when the console itself is broken.
 - `quota_key_var` / `quota_auth_index` — management key secret name and optional account selector.
 - `extra_body` — merged into every request body (`openai` kind only). This is where
   aggregator routing lives, e.g. OpenRouter provider pinning:
@@ -146,7 +154,9 @@ vary *per model*. Leave an attribute unset (or blank in the UI) to inherit the e
 default. Routines and the system model reference a model by its catalog **name**.
 
 - `endpoint` — the configured endpoint that transports this model (required).
-- `model` — the provider's model id (required), e.g. `openai/gpt-4o`, `z-ai/glm-5.2`.
+- `model` — the provider's model id (required), e.g. `openai/gpt-4o`, `z-ai/glm-5.2`. The
+  Settings form fills this from the endpoint's own listing (*Model-id picker* below) rather than
+  a free-text box.
 - `multimodal` — whether this model takes image/PDF input natively. **Default by the endpoint
   kind**: on for `anthropic` (images + PDFs), off for `openai`. Set
   it explicitly to turn native vision *on* for an `openai` vision model (GPT-4o, Gemini) or
@@ -175,9 +185,6 @@ default. Routines and the system model reference a model by its catalog **name**
   past a fifth of the window). Without it the estimate was corrected only by a provider's
   oversize 400 — six of those in a fortnight, four in one run. Character counts are only used
   internally when estimating text or trimming a string.
-- `effort` — a reasoning-effort hint: `low | medium | high | xhigh | max`. Each kind maps it to
-  its own reasoning knob (`openai` collapses `xhigh` / `max` → `high`); lower it if a reasoning
-  model spends its whole output budget thinking instead of answering.
 - `temperature` — sampling temperature; inherits the endpoint's when unset. Leave it blank on a
   current Claude model — see the endpoint field above.
 - `max_tokens` — the requested **output** cap per completion, sent on every engine call
@@ -190,6 +197,36 @@ default. Routines and the system model reference a model by its catalog **name**
 - `fallbacks` — the ordered **failover chain**: catalog model names tried in order when this
   model fails hard. See *Failover & cooldowns* below.
 
+### Model-id picker
+
+Typing a provider model id by hand was how a catalog entry ended up naming something the
+endpoint never served. The model form's id field, and the endpoint card's *test* box, are
+therefore a `<select>` filled from `GET /api/settings/endpoints/{name}/model-ids` —
+`{ok, ids: [...sorted...], error?}`, read-only and refused for the routine token like every
+`/api/settings` read. The server asks the endpoint the same way `limits` does (OpenRouter's
+and Nano-GPT's own listings; for everything else `GET {models route}` — `{base}/models` on an
+`openai` endpoint, `{base}/v1/models` on an `anthropic` one, so a subscription proxy answers
+`{"data": [{"id": …}]}`), with the endpoint's own key, resolved on the server and never
+returned. The route never raises: an unreachable endpoint, a refused key or a body that is no
+listing comes back as `{ok: false, error}` with a fixed one-line reason (no upstream body). The
+page then falls back to a plain text input and shows that reason. Two details: a value the
+catalog already holds is kept as an option even when the listing lacks it, marked *not listed*
+(opening a card never silently changes config); and a proxy lists no model for a credential it
+cannot use, so a signed-out account makes its models vanish from the picker — sign in from the
+card first (`claude-proxy-cutover.md`).
+
+### Effort (not a catalog attribute)
+
+Reasoning effort — `low | medium | high | xhigh | max`, blank = the provider's own default —
+is chosen where a model is USED, so one catalog entry serves every level instead of one row per
+level: per role on a routine's page (`efforts: {role: level}`), per conversation, and for the
+system model and the context-compaction model in Settings (`system_effort` / `compaction_effort`,
+saved with `PUT /api/settings/system-model` and `PUT /api/settings/compaction-model`, both
+`{name, effort}`; the page's list of levels is `effort_levels` in the endpoints payload). A role with no model of its own runs the system
+model at the role's effort if the routine sets one, else at `system_effort`. Each kind maps the
+level to its own reasoning knob (`openai` collapses `xhigh` / `max` → `high`); lower it if a
+reasoning model spends its whole output budget thinking instead of answering.
+
 ### Failover & cooldowns (`fallbacks`)
 
 A provider outage at cron-fire time used to kill the run after the transport's own retries
@@ -198,7 +235,7 @@ engine instead **fails over**:
 
 - **Mid-turn**: when the serving model fails hard (retries exhausted, or a non-retryable
   error such as a dead host or bad key), the turn is re-issued to the next chain member —
-  with *its* endpoint, effort, temperature, and max_tokens. The switch is logged visibly as
+  with *its* endpoint, temperature, and max_tokens (the effort stays the role's). The switch is logged visibly as
   a transcript `error` event carrying a `failover` payload (`from`/`to`/`cooldown_s`), and
   every turn's usage records the model that actually served it, so spend attribution stays
   correct. Only when the whole chain is exhausted does the run fail as before.
@@ -389,7 +426,7 @@ and effort from a forced call. Measured through the proxy on 2026-10-08: forced,
 effort `low` and `max` answered alike (467 and 551 output tokens, no thinking); on `auto` it
 thought, and Opus 5, Sonnet 5 and Fable 5 all answered with the action, on a first turn and a
 third, with the real composed prompt and the full schema. From 0.370.2 to 0.395.0 every call was
-forced, so no catalog effort reached a Claude model on a structured turn. 0.372.0 had tried
+forced, so no configured effort reached a Claude model on a structured turn. 0.372.0 had tried
 `auto` once and Opus then answered `tool_use` with nothing readable — a shape never reproduced
 since; it can no longer cost a run, because an `auto` reply no action can be read from is
 re-asked ONCE with the tool forced inside the same call (`stop_details["forced_reask"]` marks
@@ -436,7 +473,7 @@ What can be discovered, per kind:
 | `openai` @ Ollama | `POST /api/show` → the arch's `context_length` | none — derived from the window |
 | `openai`, other | `max_model_len` / `context_length` if the gateway emits one (vLLM does) | rarely — derived from the window |
 | `anthropic` @ Anthropic | a built-in Claude table (see below) | none — derived from the window |
-| `anthropic` @ a proxy | whatever its `/v1/models` carries, then the table for Claude ids | the same |
+| `anthropic` @ a proxy | whatever its `/v1/models` carries, then the table for Claude ids, then the **reference catalog** (below) | the same |
 
 **The output cap is deliberately NOT maxed out.** Providers validate
 `input + requested_output <= window` up front, and the engine subtracts `max_tokens` from the
@@ -456,6 +493,20 @@ CLIProxyAPI listing carries ids and nothing else. Either route sits one segment 
 (`{base}/v1/models`), because an `anthropic` base_url omits the `/v1` an `openai` one carries.
 The built-in Claude table is the fallback for an id that was listed WITHOUT figures, not a
 property of the provider.
+
+**The reference catalog answers for every other model such a route serves.** A proxy that lists
+ids and no figures used to leave a Gemini or `gpt-oss` model on the endpoint default (25,000 here:
+a million-token model compacted at 15,000). After the provider's own figures and the Claude table,
+the refresh reads OpenRouter's PUBLIC `/models` (no key; one read per refresh, only when a model
+needs it) and matches by the name vendors share — `catalogs.reference_name`: last path segment,
+lower-cased, any `:variant` and one trailing thinking level dropped, so the proxy's
+`gemini-4-argon-high` finds `google/gemini-4-argon` (1,048,576 tokens, 65,536 output). Primary
+rows only, and where two vendors share a name the SMALLER window wins (a guess too high overfills
+the model; one too low only compacts earlier). It applies to gateways and the Anthropic wire
+(`limits.REFERENCE_FOR`) — never to OpenRouter, Nano-GPT or Ollama, whose own listings are the
+authority. The Settings card says `source: reference`, so a figure read about the model rather
+than reported by the route is never mistaken for a measurement; type a number on the model to
+override it.
 
 Anthropic's own listing is the one published source this instance does not read. It has carried
 `max_input_tokens`, `max_tokens` and a capability tree since March 2026, and every configured
@@ -615,7 +666,7 @@ usable fallback the run fails honestly, naming the category).
   the schema on such a 503, but `json_object` avoids that extra probe every turn.
 - **Truncated / empty answers from reasoning models** → the model spent its output budget
   thinking. The engine already maps effort to the provider's reasoning knob; pick a lower
-  effort for that model role, or a non-reasoning model.
+  effort for that model role (the routine page's effort control), or a non-reasoning model.
 - **A run failed with "refused the turn (… category=…)"** → the provider's safety
   classifier declined the prompt (an HTTP 200, not an outage — see *Failover & cooldowns*).
   Give that catalog model a `fallbacks:` entry pointing at a model without that classifier

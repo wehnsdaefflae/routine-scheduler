@@ -44,6 +44,8 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "run_gate": (NEXT_RUN, "admission is evaluated before the next automatic engine starts"),
     "models": (NEXT_RUN, ("the transport is bound per turn, but swapping a model mid-run is the "
                           "run page's model-switch control, not a config edit")),
+    "efforts": (NEXT_RUN, ("the reasoning effort is bound per turn like the model; changing it "
+                           "mid-run is the run page's model-switch control, not a config edit")),
     "trial": (NEXT_RUN, ("a model trial is armed when the daemon FIRES a run: its models are "
                          "named to the engine at launch, so a run already going finishes on the "
                          "model it booted with and the trial starts with the next fire")),
@@ -100,15 +102,15 @@ ADOPTABLE = tuple(f for f, (half, _) in CLASSIFICATION.items() if half == LIVE)
 #: on the operator's click. The engine may not import the web layer, which is why the two sets
 #: are spelled out here; `tests/test_configflow.py` pins each one to its model.
 ROUTINE_PATCH_FIELDS = frozenset({
-    "enabled", "run_gate", "schedule", "budgets", "models", "trial", "connections", "grants",
-    "machines", "name", "description", "tags", "pattern", "hub_tab", "permissions",
+    "enabled", "run_gate", "schedule", "budgets", "models", "efforts", "trial", "connections",
+    "grants", "machines", "name", "description", "tags", "pattern", "hub_tab", "permissions",
     "capabilities", "rules", "shared_reminders", "improve", "deliberation", "keep_runs",
     "fs_read_roots", "fs_write_roots",
     # the escalation ladder: its config block, and its two tuning knobs
     "ladder", "ladder_rung_height", "oversight_turns",
 })
 CONVERSATION_PATCH_FIELDS = frozenset({
-    "title", "tags", "workdir", "budgets", "models", "machines", "connections",
+    "title", "tags", "workdir", "budgets", "models", "efforts", "machines", "connections",
     "deliberation", "fs_read_roots", "fs_write_roots",
 })
 

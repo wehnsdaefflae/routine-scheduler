@@ -167,11 +167,13 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
     # crash the build here.
     sel = str(action.get("model") or "main")
     if sel == "uncensored":
-        target = parent_ctx.registry.for_uncensored(parent_ctx.routine.models)
-        _, sub_ref = target if target is not None else \
-            parent_ctx.registry.for_model("main", parent_ctx.routine.models)
+        target = parent_ctx.registry.for_uncensored(parent_ctx.routine.models,
+                                                    parent_ctx.routine.efforts)
+        _, sub_ref = target if target is not None else parent_ctx.registry.for_model(
+            "main", parent_ctx.routine.models, parent_ctx.routine.efforts)
     elif sel in ("main", "tool_call"):
-        _, sub_ref = parent_ctx.registry.for_model(sel, parent_ctx.routine.models)
+        _, sub_ref = parent_ctx.registry.for_model(
+            sel, parent_ctx.routine.models, parent_ctx.routine.efforts)
     else:
         _, sub_ref = parent_ctx.registry.for_name(sel)
     child_budgets = parent_ctx.child_budgets(overrides=alloc_overrides)

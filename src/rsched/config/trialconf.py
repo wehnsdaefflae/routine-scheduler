@@ -16,7 +16,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..ids import is_slug
-from .base import MODEL_KINDS
+from .base import EFFORT_LEVELS, MODEL_KINDS
 
 #: The most runs one trial may span — enough to see past one odd run, few enough that a trial
 #: stays an experiment rather than a quiet re-binding of the routine's model.
@@ -24,7 +24,7 @@ TRIAL_MAX_RUNS = 20
 
 
 class TrialConfig(BaseModel):
-    """`{id, models, runs, reason}` — strict, and no other key: a misspelled `run:` read as
+    """`{id, models, efforts, runs, reason}` — strict, and no other key: a misspelled `run:` read as
     absent would make a five-run trial a no-op that nothing reports.
     """
 
@@ -36,6 +36,10 @@ class TrialConfig(BaseModel):
     # Role → catalog model NAME, the chat roles only (main / tool_call / uncensored) — usually
     # just `main`. Replaces those roles for the trial's runs; a role left out keeps its own.
     models: dict[str, str] = Field(min_length=1)
+    # Role → reasoning effort for the trial's runs, a role left out keeps the routine's own
+    # (config.base.EFFORT_LEVELS). Effort is its own setting, so a trial of "this model at a
+    # higher level" names the same model with another level — it needs no extra catalog row.
+    efforts: dict[str, str] = Field(default_factory=dict)
     runs: int = Field(ge=1, le=TRIAL_MAX_RUNS)
     # Why it is being tried — what the operator reads beside the chip, and what the results are
     # read against.
@@ -57,6 +61,15 @@ class TrialConfig(BaseModel):
         if blank := sorted(role for role, name in v.items() if not name.strip()):
             raise ValueError(f"no catalog model named for {blank}")
         return {role: name.strip() for role, name in v.items()}
+
+    @field_validator("efforts")
+    @classmethod
+    def _effort_levels(cls, v: dict[str, str]) -> dict[str, str]:
+        if bad := sorted(r for r, level in v.items()
+                         if r not in MODEL_KINDS or level not in EFFORT_LEVELS):
+            raise ValueError(f"efforts {bad}: a chat role ({', '.join(MODEL_KINDS)}) set to one "
+                             f"of {', '.join(EFFORT_LEVELS)}")
+        return dict(v)
 
     @field_validator("reason")
     @classmethod

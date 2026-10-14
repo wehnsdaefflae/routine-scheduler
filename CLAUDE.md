@@ -186,7 +186,7 @@ one you are about to touch, not all of them.
   every ignore in pyproject.toml carries its house-style reason). Both MUST be green in every
   commit; `uv run pre-commit install` wires them into git.
 - `uv run rsched run-once <slug>` — execute one run from the CLI (slug under `routines_home`, or a dir
-  path), streaming events. `--model kind=catalog-name` overrides a model role (catalog names, not endpoint:model pairs); `--quiet` drops the stream.
+  path), streaming events. `--model kind=catalog-name` overrides a model role (catalog names, not endpoint:model pairs) and `--effort kind=level` a role's reasoning effort (effort is its own setting, `routine.yaml` `efforts:` — never a catalog row per level); `--quiet` drops the stream.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
 - `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>]`
   — see `rsched --help`. `validate` checks every routine's `routine.yaml`, lints its recipe
@@ -587,7 +587,8 @@ by a test, by the engine, or by a past incident.
   spawner is using. A spawner whose config was never loaded from a file is refused before a
   process exists. Never give either flag a default — the fallback is `~`, i.e. production,
   and a tmp-homed test once spent real money and real ledger rows there. A model trial's run
-  is told its models the same way (`--model role=name`, from the run dir's own `trial.json`).
+  is told its models and efforts the same way (`--model role=name`, `--effort role=level`, from
+  the run dir's own `trial.json`).
 - **A model trial ends by COUNTING, never by a write.** `trial:` in routine.yaml
   (`rsched/trials.py`) is active while fewer than `runs` depth-0 usage runs carry its id in
   `fingerprint.trial`; every fire while it is active is armed (`trial.json` in the run dir,
@@ -747,7 +748,8 @@ by a test, by the engine, or by a past incident.
 - **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
   what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
   metadata APIs; a listing that carries NO figures — every `anthropic` endpoint here is a
-  subscription proxy, whose `/v1/models` is ids only — falls back to a built-in Claude table),
+  subscription proxy, whose `/v1/models` is ids only — falls back to a built-in Claude table,
+  then to OpenRouter's public catalog under the name vendors share: `source: reference`),
   caches it under
   `<routines>/.control/model-limits.json` — derived state, never config — and refreshes on a 24h
   TTL from the scheduler tick (new model keys refresh immediately). Context windows use

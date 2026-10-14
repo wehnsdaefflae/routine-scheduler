@@ -15,8 +15,11 @@ import { act, el, toast } from "/static/util.js";
 //: listens, so that page fails to load — its address still carries the code, and pasting it
 //: here finishes the sign-in (docs/claude-proxy-cutover.md). The rows and the sign-in
 //: controls come filtered from the server by the provider of the models bound to this
-//: endpoint: the Claude card shows the Claude account, the Codex card the Codex one.
-const PROVIDER_LABEL = { claude: "Claude", anthropic: "Claude", codex: "Codex" };
+//: endpoint: the Claude card shows the Claude account, the Codex card the Codex one, a card serving
+//: Gemini ids the Antigravity (Google) one. The sign-in is the same three steps for all of them;
+//: only the callback port and path differ, and the server names both in its reply.
+const PROVIDER_LABEL = { claude: "Claude", anthropic: "Claude", codex: "Codex",
+  antigravity: "Antigravity" };
 
 export function proxyAccounts(ep, onSignedIn) {
   const base = `/api/settings/endpoints/${encodeURIComponent(ep.name)}`;
@@ -66,7 +69,7 @@ export function proxyAccounts(ep, onSignedIn) {
     // an OAuth code + state: never a draft (formpersist would also refuse it by its words)
     const paste = el("textarea", { rows: "2", style: "width:100%", "aria-label": `${label} sign-in response`,
       "data-nopersist": true,
-      placeholder: `http://localhost:${s.callback_port}/callback?code=…&state=…   (or the code the page shows)` });
+      placeholder: `http://localhost:${s.callback_port}${s.callback_path}?code=…&state=…   (or the code the page shows)` });
     const finish = el("button", { class: "btn small primary" }, "finish sign-in");
     const cancel = el("button", { class: "btn small" }, "cancel");
     const status = el("div", {});

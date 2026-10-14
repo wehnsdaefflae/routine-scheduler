@@ -173,13 +173,13 @@ def test_scaffold_reports_an_unreadable_instruction_file(cli_server, tmp_path, c
 def test_run_once_exit_codes_and_event_stream(cli_server, make_routine, scripted, capsys):
     from conftest import finish, write_file
 
-    assert cli.cmd_run_once(_args(routine="missing", model=None, quiet=True)) == 2
+    assert cli.cmd_run_once(_args(routine="missing", model=None, effort=None, quiet=True)) == 2
     assert "missing routine.yaml" in capsys.readouterr().err
 
     make_routine(slug="oncer")
     scripted([write_file("state/probe.txt", content="x", say="Probing the state dir."),
               finish(status="ok", summary="all done")])
-    rc = cli.cmd_run_once(_args(routine="oncer", model=None, quiet=False))
+    rc = cli.cmd_run_once(_args(routine="oncer", model=None, effort=None, quiet=False))
     assert rc == 0                                          # ok → exit 0
     captured = capsys.readouterr()
     assert "Probing the state dir." in captured.out         # the live event stream rendered
@@ -187,7 +187,7 @@ def test_run_once_exit_codes_and_event_stream(cli_server, make_routine, scripted
 
     make_routine(slug="failer")
     scripted([finish(status="failed", summary="could not")])
-    assert cli.cmd_run_once(_args(routine="failer", model=None, quiet=True)) == 1
+    assert cli.cmd_run_once(_args(routine="failer", model=None, effort=None, quiet=True)) == 1
 
 
 # ---- main() dispatch --------------------------------------------------------------------

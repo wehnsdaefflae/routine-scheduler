@@ -168,7 +168,7 @@ def is_refusal(ctx, text: str) -> bool:
               "asked task, or merely fails/malfunctions without declining.\n\n"
               f"REPLY (head):\n{text.strip()[:_REPLY_CAP]}")
     try:
-        endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
+        endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models, ctx.routine.efforts)
         completion = endpoint.complete(
             [{"role": "user", "content": prompt}], model=ref.model,
             schema=CLASSIFY_SCHEMA, effort=ref.effort, temperature=ref.temperature,
@@ -232,7 +232,7 @@ def _isolate(ctx, task: str, refusal: str) -> dict | None:
     """One schema'd subcall on the tool_call model: name the minimal fragment of the
     refused task that plausibly triggered the refusal. None = no usable isolation.
     """
-    endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
+    endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models, ctx.routine.efforts)
     prompt = ("A model refused a task. Decompose the task and isolate the MINIMAL "
               "fragment that plausibly triggered the refusal — either ONE STEP in its "
               "sequence of actions, or a WORD/PHRASE that appears throughout it. "
@@ -267,7 +267,7 @@ def _deliver_to_harness(ctx, essence: str) -> dict:
     an exception: `clarify_refusal` promises its ONE event whatever happens.
     """
     try:
-        target = ctx.registry.for_uncensored(ctx.routine.models)
+        target = ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts)
         if target is None:
             return {"referred": False,
                     "harness_note": "no uncensored model configured — refusal recorded, "

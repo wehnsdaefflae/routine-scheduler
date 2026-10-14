@@ -221,7 +221,7 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
         return []
     ctx = loop.ctx
     try:
-        endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models)
+        endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models, ctx.routine.efforts)
         completion = endpoint.complete(
             [{"role": "user", "content": _prompt(claims, summary, _tail(loop),
                                                  _actions(loop))}],

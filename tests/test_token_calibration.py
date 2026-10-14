@@ -23,12 +23,12 @@ class _CalibRegistry(_FakeRegistry):
     """Serves REF for the run's turns — a big honest window, so the only thing that can
     move the compaction gate in these tests is the measured ratio."""
 
-    def for_model(self, kind, models):
+    def for_model(self, kind, models, efforts):
         if kind == "tool_call":
-            return super().for_model(kind, models)
+            return super().for_model(kind, models, efforts)
         return self.main_ep, REF
 
-    def for_model_chain(self, kind, models):
+    def for_model_chain(self, kind, models, efforts):
         return [(self.main_ep, REF)]
 
 

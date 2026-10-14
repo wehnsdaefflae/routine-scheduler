@@ -14,7 +14,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...endpoints import EndpointRegistry, cliproxy_login, cliproxy_mgmt, cliproxy_quota
+from ...endpoints import EndpointRegistry, cliproxy_login, cliproxy_mgmt, cliproxy_quota, model_ids
 from ...endpoints.base import EndpointError
 from ...schema_guard import SchemaViolation, parse_reply
 from .common import server_of
@@ -194,6 +194,15 @@ async def proxy_login_complete(request: Request, name: str,
     bound = _proxy_binding(request, name)
     return await asyncio.to_thread(cliproxy_login.complete, bound, body.provider, body.state,
                                    body.response)
+
+
+@router.get("/settings/endpoints/{name}/model-ids")
+async def endpoint_model_ids(request: Request, name: str) -> dict:
+    """The model ids this endpoint itself says it serves, for the model-id pickers. Soft
+    errors: `{"ok": false, "error": …}` and the page falls back to a text box. The endpoint's
+    key is resolved here and never leaves (endpoints/model_ids.py).
+    """
+    return await asyncio.to_thread(model_ids.list_ids, _endpoint(request, name))
 
 
 class TestBody(BaseModel):

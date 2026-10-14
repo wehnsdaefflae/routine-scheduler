@@ -86,7 +86,7 @@ def test_proxy_reauth_from_each_endpoints_own_card(ui, ui_page, monkeypatch):
     monkeypatch.setattr(cliproxy_login, "accounts", fake_accounts)
     monkeypatch.setattr(cliproxy_login, "start", lambda cfg, provider: {
         "ok": True, "provider": provider, "url": "https://consent.invalid/authorize?x=1",
-        "state": "st-1", "callback_port": 54545})
+        "state": "st-1", "callback_port": 54545, "callback_path": "/callback"})
     completed: list = []
 
     def complete(cfg, provider, state, pasted):
@@ -141,7 +141,8 @@ def test_a_double_pressed_reauth_starts_one_sign_in(ui, ui_page, monkeypatch):
     def start(cfg, provider):
         started.append(provider)
         return {"ok": True, "provider": provider, "url": "https://consent.invalid/authorize",
-                "state": f"st-{len(started)}", "callback_port": 54545}
+                "state": f"st-{len(started)}", "callback_port": 54545,
+                "callback_path": "/callback"}
     monkeypatch.setattr(cliproxy_login, "start", start)
 
     def slow(route):                      # hold the POST so the second press lands while it is out
@@ -155,3 +156,65 @@ def test_a_double_pressed_reauth_starts_one_sign_in(ui, ui_page, monkeypatch):
     expect(card.get_by_role("link", name="1. open the sign-in page ↗")).to_be_visible()
     ui_page.wait_for_timeout(500)
     assert started == ["anthropic"], f"one press, {len(started)} sign-ins"
+
+
+def test_a_gemini_endpoint_is_signed_in_to_antigravity_from_its_own_card(ui, ui_page, monkeypatch):
+    """The third provider, end to end in the console: the card of an endpoint serving Gemini ids
+    lists the Antigravity account and offers only its sign-in; the consent page sends the
+    browser to localhost:51121/oauth-callback, whose address is pasted back to finish. No
+    terminal, and the Claude card of the same proxy does not offer it."""
+    from rsched.config import ModelConfig
+    from rsched.endpoints import cliproxy_login
+
+    ui.server_cfg.endpoints["claude-proxy"] = EndpointConfig(
+        kind="anthropic", base_url="http://127.0.0.1:1", quota_source="cliproxy")
+    ui.server_cfg.endpoints["gemini-proxy"] = EndpointConfig(
+        kind="anthropic", base_url="http://127.0.0.1:1")
+    ui.server_cfg.models["Opus"] = ModelConfig(name="Opus", endpoint="claude-proxy",
+                                                model="claude-opus-5")
+    ui.server_cfg.models["Gem"] = ModelConfig(name="Gem", endpoint="gemini-proxy",
+                                               model="gemini-3-pro")
+    ui.server_cfg.models["Oss"] = ModelConfig(name="Oss", endpoint="gemini-proxy",
+                                               model="gpt-oss-120b-medium")
+    monkeypatch.setattr(cliproxy_quota, "read_quota",
+                        lambda cfg: {"supported": True, "ok": True, "windows": {}})
+    accounts = [{"name": "antigravity-me.json", "provider": "antigravity",
+                 "label": "me@gmail.example", "status": "error",
+                 "status_message": "token expired", "unavailable": True, "disabled": False,
+                 "next_retry_after": ""}]
+    labels = {"claude": ("anthropic", "Claude"), "antigravity": ("antigravity", "Antigravity")}
+
+    def fake_accounts(cfg, providers):
+        return {"supported": True, "ok": True,
+                "accounts": [a for a in accounts if a["provider"] in providers],
+                "providers": [{"id": labels[p][0], "label": labels[p][1]}
+                              for p in sorted(providers)]}
+    monkeypatch.setattr(cliproxy_login, "accounts", fake_accounts)
+    monkeypatch.setattr(cliproxy_login, "start", lambda cfg, provider: {
+        "ok": True, "provider": provider, "url": "https://accounts.invalid/o/oauth2/auth",
+        "state": "st-g", "callback_port": 51121, "callback_path": "/oauth-callback"})
+    completed: list = []
+
+    def complete(cfg, provider, state, pasted):
+        completed.append((provider, state, pasted))
+        accounts[0].update(status="ok", status_message="", unavailable=False)
+        return {"ok": True, "provider": provider}
+    monkeypatch.setattr(cliproxy_login, "complete", complete)
+
+    ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
+    gem = ui_page.locator(".panel", has=ui_page.get_by_text("gemini-proxy", exact=True)).first
+    claude = ui_page.locator(".panel", has=ui_page.get_by_text("claude-proxy", exact=True)).first
+    expect(gem).to_contain_text("✗ Antigravity me@gmail.example: token expired")
+    expect(claude).not_to_contain_text("Antigravity")
+    expect(claude.get_by_role("button", name="re-authenticate Antigravity")).to_have_count(0)
+    gem.get_by_role("button", name="re-authenticate Antigravity", exact=True).click()
+    expect(gem.get_by_role("link", name="1. open the sign-in page ↗")).to_have_attribute(
+        "href", "https://accounts.invalid/o/oauth2/auth")
+    expect(gem).to_contain_text("localhost:51121")
+    box = gem.get_by_label("Antigravity sign-in response")
+    expect(box).to_have_attribute("placeholder", re.compile(r"localhost:51121/oauth-callback\?code="))
+    address = "http://localhost:51121/oauth-callback?code=g-code&state=st-g"
+    box.fill(address)
+    gem.get_by_role("button", name="finish sign-in", exact=True).click()
+    expect(gem).to_contain_text("✓ Antigravity me@gmail.example: ok")
+    assert completed == [("antigravity", "st-g", address)]

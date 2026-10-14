@@ -1,13 +1,15 @@
 // Settings → LLM endpoints + the model catalog. Endpoints are transports (how to reach a
 // provider: kind, base_url, auth); MODELS are named entries bound to an endpoint carrying the
-// per-model attributes (multimodal, context window, effort, temperature). Routines/conversations
-// and the system model reference a model by NAME. Also a live test call whose FULL outcome is
-// surfaced — latency, schema verdict, parsed answer, and the raw error detail (auth hint) on fail.
+// per-model attributes (multimodal, context window, temperature). Routines/conversations
+// and the system model reference a model by NAME; reasoning effort is chosen per role, not here.
+// Also a live test call whose FULL outcome is surfaced — latency, schema verdict, parsed answer,
+// and the raw error detail (auth hint) on fail.
 
 import { api } from "/static/api.js";
 import { quotaLine } from "/static/components/quota.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { proxyAccounts } from "/static/components/proxy-accounts.js";
+import { modelIdPicker } from "/static/components/model-id-picker.js";
 import { modelPanels } from "/static/views/settings-models.js";
 import { savedToast, temperatureHint } from "/static/views/settings-common.js";
 import { act, el, toast } from "/static/util.js";
@@ -51,7 +53,9 @@ export async function renderEndpoints(view) {
     listBox.append(addForm());
     listBox.append(...modelPanels({
       endpoints: data.endpoints, models: data.models || [], systemModel: data.system_model,
-      compactionModel: data.compaction_model, reload: load }));
+      systemEffort: data.system_effort, compactionModel: data.compaction_model,
+      compactionEffort: data.compaction_effort, effortLevels: data.effort_levels || [],
+      reload: load }));
   }
 
   // The live test call: show EVERYTHING the API reports, not a bare ok/violated —
@@ -103,15 +107,18 @@ export async function renderEndpoints(view) {
 
   function item(ep) {
     const info = KIND[ep.kind] || { title: ep.kind, keyLabel: "key", subscription: false, hint: "" };
-    const modelInput = el("input", { type: "text", placeholder: "model id (e.g. opus)", style: "width:220px" });
+    // the id to test: what this endpoint says it serves, or a text box when it cannot say
+    const modelInput = modelIdPicker({ placeholder: "model id (e.g. opus)", label: "model to test" });
+    modelInput.setEndpoint(ep.name);
     const resultBox = el("div", {});
     const testBtn = el("button", { class: "btn small" }, "test");
     testBtn.onclick = async () => {
-      if (!modelInput.value.trim()) { toast("enter a model id to test"); return; }
+      const testModel = modelInput.value();
+      if (!testModel) { toast("enter a model id to test"); return; }
       testBtn.disabled = true;
       resultBox.replaceChildren(el("div", { class: "test-result" }, "calling the model…"));
       try {
-        const r = await api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}/test`, { method: "POST", body: { model: modelInput.value.trim() } });
+        const r = await api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}/test`, { method: "POST", body: { model: testModel } });
         resultBox.replaceChildren(testResult(r));
       } catch (err) {
         resultBox.replaceChildren(el("div", { class: "test-result bad" }, `✗ ${err.message}`));
@@ -247,7 +254,9 @@ export async function renderEndpoints(view) {
     // The signed-in accounts and the way back in, on every endpoint of a bound proxy (the
     // binding is the proxy's, resolved server-side) — a finished sign-in also changes what the
     // quota read returns, so it reloads that row.
-    const proxy = ep.proxy_management ? proxyAccounts(ep, loadQuota) : null;
+    // (and what a signed-in account serves, so the model-id list is asked again)
+    const proxy = ep.proxy_management
+      ? proxyAccounts(ep, () => { loadQuota(); modelInput.setEndpoint(ep.name, true); }) : null;
 
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
@@ -261,7 +270,7 @@ export async function renderEndpoints(view) {
       usageRow,
       proxy ? proxy.box : null,
       keyRow,
-      el("div", { class: "row mt" }, modelInput, testBtn),
+      el("div", { class: "row mt", style: "align-items:flex-start" }, modelInput.node, testBtn),
       resultBox,
       editForm);
   }

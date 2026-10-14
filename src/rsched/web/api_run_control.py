@@ -22,7 +22,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from ..config import DELIBERATION_LEVELS, load_routine
+from ..config import DELIBERATION_LEVELS, EFFORT_LEVELS, load_routine
 from ..daemon.runner_state import abort_process
 from ..ids import now_iso
 from ..paths import read_json
@@ -159,7 +159,8 @@ def _set_pause(request: Request, run_id: str, value: bool) -> dict:
     return {"ok": True, "pause": value}
 
 class ModelSwitch(BaseModel):
-    model: str           # a catalog model name
+    model: str = ""      # a catalog model name — blank leaves the role's model as it is
+    effort: str = ""     # a reasoning level — blank leaves the role's effort as it is
     kind: str = "main"   # main | tool_call | uncensored (the honeypot role)
 
 @router.post("/runs/{run_id}/model")
@@ -169,8 +170,12 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     """
     _, run_dir = _run_dir(request, run_id)
     server = request.app.state.server
-    if body.model not in server.models:
+    if not (body.model or body.effort):
+        raise HTTPException(400, "name a model, an effort, or both")
+    if body.model and body.model not in server.models:
         raise HTTPException(400, f"unknown model {body.model!r} — add it to the catalog first")
+    if body.effort and body.effort not in EFFORT_LEVELS:
+        raise HTTPException(400, f"unknown effort {body.effort!r} (one of {EFFORT_LEVELS})")
     if body.kind not in ("main", "tool_call", "uncensored"):
         raise HTTPException(400, "kind must be main|tool_call|uncensored")
     require_active(run_dir, "switch")
@@ -181,10 +186,15 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     ctrl = read_json(run_dir / "control.json")
     pending = ctrl.get("switch_model") if isinstance(ctrl, dict) else None
     sw = dict(pending) if isinstance(pending, dict) else {}
-    sw[body.kind] = body.model
+    if body.model:
+        sw[body.kind] = body.model
+    if body.effort:
+        sw[f"{body.kind}_effort"] = body.effort
     sw["ts"] = now_iso()
     merge_control(run_dir, {"switch_model": sw})
-    return {"ok": True, "switch": f"{body.kind} → {body.model}"}
+    said = [f"{body.kind} → {body.model}"] * bool(body.model)
+    said += [f"{body.kind} effort → {body.effort}"] * bool(body.effort)
+    return {"ok": True, "switch": "; ".join(said)}
 
 class DeliberationSwitch(BaseModel):
     level: str   # one of DELIBERATION_LEVELS

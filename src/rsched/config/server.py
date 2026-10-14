@@ -9,7 +9,7 @@ import yaml
 from pydantic import Field
 
 from ..paths import config_file, expand, read_yaml
-from .base import BlankableStr, HomePath, _Config, _validate_lenient
+from .base import EFFORT_LEVELS, BlankableStr, HomePath, _Config, _validate_lenient
 from .decisionconf import DecisionEndpointConfig, DecisionModelConfig, decision_problems
 from .modelconf import EndpointConfig, MachineConfig, ModelConfig
 
@@ -97,8 +97,14 @@ class ServerConfig(_Config):
     # generation/suggestion and the new-routine clarify flow. A catalog model NAME;
     # routines set their own (also by name), falling back to this when a role is unset.
     system_model: str = ""
+    # The reasoning effort that system model runs at (config.base.EFFORT_LEVELS); blank = the
+    # provider's default. Effort is the USE's setting, not the catalog entry's.
+    system_effort: str = ""
     # Background navigable-history archival only; blank preserves automatic tool-call/main routing.
     compaction_model: str = ""
+    # The reasoning effort that compaction model runs at (config.base.EFFORT_LEVELS); blank = the
+    # provider's default. Background archival is cheap work, so a low level is the usual choice.
+    compaction_effort: str = ""
     # The DECISION catalog behind the `decide` action (config/decisionconf.py): typed
     # classifiers that return probabilities, never text — so a catalog of their own, which no
     # chat role can resolve into. `decision_model` is a call's default; `decision_media_model`
@@ -189,6 +195,11 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
                 problems.append(f"models.{name}: fallback {fb!r} is not a catalog model")
     if cfg.system_model and cfg.system_model not in cfg.models:
         problems.append(f"system_model: {cfg.system_model!r} is not a catalog model")
+    for field in ("system_effort", "compaction_effort"):
+        if getattr(cfg, field) and getattr(cfg, field) not in EFFORT_LEVELS:
+            problems.append(f"{field}: {getattr(cfg, field)!r} is not one of "
+                            f"{', '.join(EFFORT_LEVELS)} (ignored)")
+            setattr(cfg, field, "")
     if cfg.compaction_model and cfg.compaction_model not in cfg.models:
         problems.append(f"compaction_model: {cfg.compaction_model!r} is not a catalog model")
     for name, mac in cfg.machines.items():

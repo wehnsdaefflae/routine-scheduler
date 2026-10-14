@@ -34,6 +34,33 @@ def test_compaction_setting_validates_persists_clears_and_guards_deletion(tmp_pa
         assert c.delete("/api/settings/models/archive").status_code == 200
 
 
+def test_the_compaction_model_carries_its_own_effort(tmp_path):
+    """`PUT /api/settings/compaction-model` takes `{name, effort}`: a level lands beside the
+    model, a bad one is refused untouched, blank clears the key, and Automatic (blank name)
+    drops an effort that has no model of its own to belong to."""
+    server = make_test_server(tmp_path)
+    with TestClient(create_app(server, with_scheduler=False)) as c:
+        c.headers["Authorization"] = "Bearer test-token"
+        url = "/api/settings/compaction-model"
+        assert c.post("/api/settings/endpoints", json={"name": "archive-ep", "kind": "openai"}).status_code == 200
+        assert c.post("/api/settings/models", json={"name": "archive", "endpoint": "archive-ep", "model": "archive-id"}).status_code == 200
+        r = c.put(url, json={"name": "archive", "effort": "low"})
+        assert r.status_code == 200 and r.json()["compaction_effort"] == "low"
+        assert load_server_config(server.source)[0].compaction_effort == "low"
+        payload = c.get("/api/settings/endpoints").json()
+        assert payload["compaction_effort"] == "low"
+        assert payload["effort_levels"] == ["low", "medium", "high", "xhigh", "max"]
+        assert c.get("/api/settings/models").json()["compaction_effort"] == "low"
+        assert c.put(url, json={"name": "archive", "effort": "turbo"}).status_code == 400
+        assert load_server_config(server.source)[0].compaction_effort == "low"   # untouched
+        assert c.put(url, json={"name": "archive"}).json()["compaction_effort"] is None
+        assert load_server_config(server.source)[0].compaction_effort == ""
+        c.put(url, json={"name": "archive", "effort": "high"})
+        r = c.put(url, json={"name": "", "effort": "high"})        # Automatic: no model, no effort
+        assert r.json() == {"ok": True, "compaction_model": None, "compaction_effort": None}
+        assert load_server_config(server.source)[0].compaction_effort == ""
+
+
 def test_unknown_config_compaction_model_is_diagnosed(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text("compaction_model: missing\n")
@@ -55,14 +82,14 @@ def test_archival_selection_keeps_foreground_window(tmp_path, monkeypatch, dedic
                        context_tokens=1000 if small else 100000, max_tokens=1000)
     events, selected, windows = [], [], []
 
-    def for_name(name):
+    def for_name(name, effort=None):
         assert name == "archive"
         if unavailable:
             raise RuntimeError("unavailable")
         return "archive-endpoint", archive
 
-    ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=dedicated),
-        routine=SimpleNamespace(models={}), usage={}, phase="", tokens_remaining=lambda: None,
+    ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=dedicated, compaction_effort=""),
+        routine=SimpleNamespace(models={}, efforts={}), usage={}, phase="", tokens_remaining=lambda: None,
         stage_coverage=_no_stages,
         registry=SimpleNamespace(for_model=lambda *a: ("tool-endpoint", tool), for_name=for_name),
         transcript=SimpleNamespace(event=lambda kind, data: events.append(data)))
@@ -103,7 +130,7 @@ def test_a_tool_call_candidate_that_cannot_be_resolved_is_reported_not_swallowed
 
     ctx = SimpleNamespace(
         server=SimpleNamespace(compaction_model=""),
-        routine=SimpleNamespace(models={}), usage={}, phase="", tokens_remaining=lambda: None,
+        routine=SimpleNamespace(models={}, efforts={}), usage={}, phase="", tokens_remaining=lambda: None,
         stage_coverage=_no_stages,
         registry=SimpleNamespace(for_model=for_model),
         transcript=SimpleNamespace(event=lambda kind, data: events.append(data)))
@@ -132,7 +159,7 @@ def test_archival_falls_back_to_the_main_model_when_the_tool_window_is_too_small
                     context_tokens=1000, max_tokens=500)
     events, selected = [], []
     ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=""),
-        routine=SimpleNamespace(models={}), usage={}, phase="", tokens_remaining=lambda: None,
+        routine=SimpleNamespace(models={}, efforts={}), usage={}, phase="", tokens_remaining=lambda: None,
         stage_coverage=_no_stages,
         registry=SimpleNamespace(for_model=lambda *a: ("tool-endpoint", tool)),
         transcript=SimpleNamespace(event=lambda kind, data: events.append(data)))
@@ -159,7 +186,7 @@ def test_archival_is_skipped_when_no_model_can_hold_the_middle(tmp_path, monkeyp
     tiny = ModelRef(endpoint="ep", model="tiny", name="tiny", context_tokens=4000, max_tokens=500)
     events, selected = [], []
     ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=""),
-        routine=SimpleNamespace(models={}), usage={}, phase="", tokens_remaining=lambda: None,
+        routine=SimpleNamespace(models={}, efforts={}), usage={}, phase="", tokens_remaining=lambda: None,
         stage_coverage=_no_stages,
         registry=SimpleNamespace(for_model=lambda *a: ("tiny-endpoint", tiny)),
         transcript=SimpleNamespace(event=lambda kind, data: events.append(data)))

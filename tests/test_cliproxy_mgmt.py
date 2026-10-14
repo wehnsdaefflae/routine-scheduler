@@ -15,7 +15,12 @@ from rsched.endpoints.base import EndpointError
     (["gpt-6-astra"], {"codex"}),
     (["openai/gpt-4o", "o4-mini", "codex-mini"], {"codex"}),
     (["claude-opus-5", "gpt-6-astra"], {"claude", "codex"}),
-    (["gemini-2.5-pro"], set()),          # no known family: UNKNOWN, shows everything
+    (["gemini-3-pro", "gemini-2.5-flash"], {"antigravity"}),
+    # Antigravity also serves gpt-oss, which the generic gpt- → Codex prefix must not claim
+    (["gpt-oss-120b-medium"], {"antigravity"}),
+    (["openai/gpt-oss-120b-medium", "gpt-6-astra"], {"antigravity", "codex"}),
+    (["claude-opus-5", "gemini-3-pro", "gpt-6-astra"], {"claude", "antigravity", "codex"}),
+    (["mistral-large"], set()),           # no known family: UNKNOWN, shows everything
     ([], set()),
 ])
 def test_providers_follow_the_model_family(ids, expected):

@@ -22,7 +22,13 @@ from fastapi import HTTPException
 from pydantic import AfterValidator
 
 from .. import entities
-from ..config import DECISION_ROLES, DEFAULT_BUDGETS, ROUTINE_MODEL_ROLES
+from ..config import (
+    DECISION_ROLES,
+    DEFAULT_BUDGETS,
+    EFFORT_LEVELS,
+    MODEL_KINDS,
+    ROUTINE_MODEL_ROLES,
+)
 from ..paths import expand
 from .model_fit import model_window_problem
 
@@ -74,6 +80,25 @@ def validate_models(server, mapping: dict | None) -> dict:
     return dict(mapping or {})
 
 
+def validate_efforts(mapping: dict | None) -> dict:
+    """Role → reasoning effort: a CHAT role and one of EFFORT_LEVELS. REPLACE wholesale, so a
+    role left out (or blanked) runs at the provider's default. Effort is its own setting beside
+    `models` — it needs no catalog entry per level.
+    """
+    out: dict = {}
+    for role, level in (mapping or {}).items():
+        if role not in MODEL_KINDS:
+            raise HTTPException(400, f"efforts.{role}: unknown role (expected one of "
+                                     f"{', '.join(MODEL_KINDS)})")
+        if level in ("", None):
+            continue
+        if level not in EFFORT_LEVELS:
+            raise HTTPException(400, f"efforts.{role}: {level!r} is not one of "
+                                     f"{', '.join(EFFORT_LEVELS)}")
+        out[role] = level
+    return out
+
+
 def validate_trial(server, value: dict) -> dict:
     """A MODEL TRIAL (rsched/trials.py), shaped already by `TrialConfig` at the model edge:
     every model it names must be in the catalog and able to run a turn — the two checks a
@@ -91,6 +116,16 @@ def validate_trial(server, value: dict) -> dict:
         if window := model_window_problem(server, name):
             raise HTTPException(400, window)
     return trial.model_dump()
+
+
+def effort_picker(server, cfg) -> dict:
+    """What the effort pickers need: each chat role's level (null = the provider's default —
+    effort is a setting of its own beside the model, never a catalog row per level), the levels
+    on offer, and the effort the system model runs at when a role names no model.
+    """
+    return {"efforts": {role: cfg.efforts.get(role) or None for role in MODEL_KINDS},
+            "effort_levels": list(EFFORT_LEVELS),
+            "system_effort": server.system_effort or None}
 
 
 def decision_picker(server) -> dict:

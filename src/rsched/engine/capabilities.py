@@ -255,7 +255,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
     # since the engine's refusal is what actually enforces it (engine/visionsteer.py).
     multimodal = False
     try:
-        _endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
+        _endpoint, ref = ctx.registry.for_model("main", ctx.routine.models, ctx.routine.efforts)
         multimodal = bool(ref.multimodal)
         parts.append(f"Model: {ref.endpoint}/{ref.model} — context window ≈ "
                      f"{ref.context_tokens:,} tokens; the engine archives the middle of "

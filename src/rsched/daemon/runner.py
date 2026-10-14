@@ -333,8 +333,7 @@ class Runner:
                 # the run started under, even once the trial itself has finished
                 spawn = asyncio.create_task(asyncio.create_subprocess_exec(
                     *runner_state.engine_cmd(self.server, str(cfg.dir), run.run_ts,
-                                             resume=resume,
-                                             models=trials.overrides(run.run_dir)),
+                                             resume=resume, **trials.overrides(run.run_dir)),
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.PIPE,
                     start_new_session=True,

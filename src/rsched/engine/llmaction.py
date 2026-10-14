@@ -30,7 +30,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
     role = str(action.get("model") or "tool_call")
     try:
         if role == "uncensored":
-            target = ctx.registry.for_uncensored(ctx.routine.models)
+            target = ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts)
             if target is None:
                 return {"kind": "llm",
                         "error": "model role 'uncensored' is not configured for this routine "
@@ -38,7 +38,7 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
                                  "→ Models). Use the default role, or ask the user to set one."}
             endpoint, ref = target
         elif role in ("main", "tool_call"):
-            endpoint, ref = ctx.registry.for_model(role, ctx.routine.models)
+            endpoint, ref = ctx.registry.for_model(role, ctx.routine.models, ctx.routine.efforts)
         elif role in ctx.server.models:
             endpoint, ref = ctx.registry.for_name(role)
         else:
@@ -123,12 +123,12 @@ def do_list_models(ctx: RunContext) -> dict:
     roles: dict = {}
     for role in ("main", "tool_call"):
         try:
-            _, ref = ctx.registry.for_model(role, ctx.routine.models)
+            _, ref = ctx.registry.for_model(role, ctx.routine.models, ctx.routine.efforts)
             roles[role] = {"catalog": ref.name, "endpoint": ref.endpoint, "model": ref.model}
         except EndpointError as exc:
             roles[role] = {"error": str(exc)}
     try:
-        unc = ctx.registry.for_uncensored(ctx.routine.models)
+        unc = ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts)
         roles["uncensored"] = ({"catalog": unc[1].name, "endpoint": unc[1].endpoint,
                                 "model": unc[1].model} if unc else None)
     except EndpointError as exc:
@@ -139,7 +139,6 @@ def do_list_models(ctx: RunContext) -> dict:
             _, ref = ctx.registry.resolve(name)
             models.append({"name": name, "endpoint": ref.endpoint, "model": ref.model,
                            "multimodal": ref.multimodal, "context_tokens": ref.context_tokens,
-                           "effort": ref.effort,
                            "fallbacks": list(ctx.server.models[name].fallbacks)})
         except EndpointError as exc:
             models.append({"name": name, "error": str(exc)})

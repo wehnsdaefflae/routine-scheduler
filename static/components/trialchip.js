@@ -6,10 +6,15 @@
 
 import { el } from "/static/util.js";
 
-// "sonnet-high" for the main role, "tool_call fast-model" for any other
-function modelsLine(models) {
-  return Object.entries(models || {})
-    .map(([role, name]) => (role === "main" ? name : `${role} ${name}`)).join(", ");
+// "Sonnet · high" for the main role, "tool_call fast-model" for any other — the model and the
+// effort the trial runs it at (effort is its own setting, so a trial may change only that).
+function modelsLine(models, efforts) {
+  const roles = [...new Set([...Object.keys(models || {}), ...Object.keys(efforts || {})])];
+  return roles.map((role) => {
+    const set = [(models || {})[role], (efforts || {})[role] && `${(efforts || {})[role]} effort`]
+      .filter(Boolean).join(" · ");
+    return role === "main" ? set : `${role} ${set}`;
+  }).join(", ");
 }
 
 export function trialChip(trial, slug) {
@@ -17,7 +22,7 @@ export function trialChip(trial, slug) {
   const title = [trial.reason, `trial ${trial.id}`].filter(Boolean).join(" · ");
   if (trial.state === "active") {
     return el("span", { class: "chip trial", title, "data-trial": "active" },
-      `trial · ${modelsLine(trial.models)} · ${trial.recorded} of ${trial.runs} runs`);
+      `trial · ${modelsLine(trial.models, trial.efforts)} · ${trial.recorded} of ${trial.runs} runs`);
   }
   if (trial.state === "finished") {
     return el("a", { class: "chip trial", title, "data-trial": "finished",

@@ -271,7 +271,7 @@ def test_a_listed_id_with_no_published_limits_is_served_but_undiscovered(tmp_pat
     seen = {}
 
     def fake(url, headers=None):
-        seen["url"] = url
+        seen.setdefault("url", url)     # the proxy listing is asked first; the reference after
         return {"data": [{"id": "gpt-6-astra", "object": "model", "owned_by": "openai"},
                          {"id": "gpt-5.6-terra", "object": "model", "owned_by": "openai"}]}
     monkeypatch.setattr(catalogs, "_get", fake)

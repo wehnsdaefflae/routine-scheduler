@@ -95,7 +95,7 @@ class SubrunManager:
         if not sel or sel in ("main", "tool_call"):
             return None
         if sel == "uncensored":
-            if ctx.registry.for_uncensored(ctx.routine.models) is None:
+            if ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts) is None:
                 return ("model role 'uncensored' is not configured for this routine — "
                         "it needs a models.uncensored catalog entry (routine page → "
                         "Models). Drop the override, or ask the user to set one.")

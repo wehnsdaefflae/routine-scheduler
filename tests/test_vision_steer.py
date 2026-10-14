@@ -28,10 +28,10 @@ class _Endpoint:
 
 
 def _ctx(tmp_path, endpoint):
-    routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], fs_write_roots=[], models={})
+    routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], fs_write_roots=[], models={}, efforts={})
     ref = SimpleNamespace(multimodal=endpoint.multimodal, context_tokens=200_000) \
         if endpoint else None
-    registry = SimpleNamespace(for_model=lambda k, m: (endpoint, ref)) if endpoint else None
+    registry = SimpleNamespace(for_model=lambda k, m, e: (endpoint, ref)) if endpoint else None
     return SimpleNamespace(routine=routine, grants=None, depth=0,
                            root_run_dir=tmp_path / "runs" / "x",
                            read_roots=lambda: list(routine.fs_read_roots),

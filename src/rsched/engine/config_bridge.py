@@ -32,7 +32,8 @@ def resolve(ctx, cpatch: dict | None) -> tuple[str, str]:
 
 #: What a model trial looks like, said in the refusal so the next filing gets it right.
 TRIAL_SHAPE = ('{"trial": {"id": "t-<yyyymmdd>-<model>", "models": {"main": "<catalog model '
-               'name>"}, "runs": <1-20>, "reason": "<what the trial should show>"}}')
+               'name>"}, "efforts": {"main": "<low|medium|high|xhigh|max>"} (optional), '
+               '"runs": <1-20>, "reason": "<what the trial should show>"}}')
 
 
 def trial_value(server, patch: dict | None) -> str:

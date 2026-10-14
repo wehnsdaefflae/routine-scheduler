@@ -3,10 +3,11 @@
 The proxy owns the OAuth flow (docs/claude-proxy-cutover.md): it mints the consent URL,
 receives the authorization code and writes the auth file. What the console adds is the
 HANDOFF for a browser that is not on the server. The consent page redirects to
-`http://localhost:54545/callback` (Claude; 1455 for Codex) — `localhost` on the OPERATOR'S
-device, where nothing listens, so the page fails to load. The address bar still carries the
-code and the state; the operator pastes that address (or the code the page shows) back into
-the console, and the proxy's management callback completes the exchange.
+`http://localhost:54545/callback` (Claude; 1455 for Codex; `51121/oauth-callback` for
+Antigravity) — `localhost` on the OPERATOR'S device, where nothing listens, so the page fails
+to load. The address bar still carries the code and the state; the operator pastes that
+address (or the code the page shows) back into the console, and the proxy's management callback
+completes the exchange.
 
 Everything the management key sees stays on the server, like `cliproxy_quota`: the dicts
 returned here carry a consent URL, a state, a status word and the proxy's own one-line
@@ -31,7 +32,9 @@ from .cliproxy_mgmt import client as _client
 
 # login-route provider name → card label (the auth-file names are cliproxy_mgmt's)
 PROVIDERS = {login: LABEL[auth] for auth, login in LOGIN_PROVIDER.items()}
-CALLBACK_PORT = {"anthropic": 54545, "codex": 1455}
+# where each consent page sends the browser: the port the proxy would listen on and the path
+CALLBACK_PORT = {"anthropic": 54545, "codex": 1455, "antigravity": 51121}
+CALLBACK_PATH = {"anthropic": "/callback", "codex": "/callback", "antigravity": "/oauth-callback"}
 STATUS_POLL_S = 20        # how long `complete` waits for the proxy's token exchange
 # a token-shaped word: 40+ characters of the base64/JWT/API-key alphabet and nothing else —
 # a JSON fragment or a sentence never matches, a leaked credential always does
@@ -78,7 +81,7 @@ def accounts(cfg: EndpointConfig, providers=frozenset(), *, timeout: int = 15) -
             rows = [_account_view(f) for f in auth_files(client, url)]
         if wanted:
             rows = [r for r in rows if r["provider"] in wanted]
-        offered = sorted(wanted or LOGIN_PROVIDER)
+        offered = [p for p in LOGIN_PROVIDER if not wanted or p in wanted]
         return {"supported": True, "ok": True, "accounts": rows,
                 "providers": [{"id": LOGIN_PROVIDER[p], "label": LABEL[p]} for p in offered]}
     except EndpointError as exc:
@@ -107,7 +110,8 @@ def start(cfg: EndpointConfig, provider: str, *, timeout: int = 15) -> dict:
             raise EndpointError("The proxy did not return a sign-in link"
                                 + (f": {why}" if why else "."))
         return {"ok": True, "provider": provider, "url": str(reply["url"]),
-                "state": str(reply["state"]), "callback_port": CALLBACK_PORT[provider]}
+                "state": str(reply["state"]), "callback_port": CALLBACK_PORT[provider],
+                "callback_path": CALLBACK_PATH[provider]}
     except EndpointError as exc:
         return {"ok": False, "error": str(exc)}
     except (httpx.HTTPError, ValueError, TypeError):
@@ -116,10 +120,11 @@ def start(cfg: EndpointConfig, provider: str, *, timeout: int = 15) -> dict:
 
 def parse_response(pasted: str, state: str) -> tuple[str, str]:
     """What the operator pasted → (code, state). Three shapes are accepted: the whole
-    callback address (`http://localhost:54545/callback?code=…&state=…` — the page that
-    failed to load on their device), `code#state` as a consent page shows it, or the bare
-    code. A state inside the paste must be THIS sign-in's — a code from an older attempt
-    would be refused by the proxy anyway, and the refusal should name the reason.
+    callback address (`http://localhost:54545/callback?code=…&state=…`, or Antigravity's
+    `…:51121/oauth-callback?…` — the page that failed to load on their device), `code#state` as
+    a consent page shows it, or the bare code. A state inside the paste must be THIS sign-in's —
+    a code from an older attempt would be refused by the proxy anyway, and the refusal should
+    name the reason.
     """
     text = pasted.strip()
     if not text:

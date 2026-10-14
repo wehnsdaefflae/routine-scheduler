@@ -46,8 +46,8 @@ def test_deployed_config_keys_load_exactly(tmp_path):
             "cc": {"kind": "anthropic"},
         },
         "models": {"ds": {"endpoint": "openrouter", "model": "deepseek/deepseek-chat",
-                          "multimodal": False, "context_tokens": 200_000, "effort": "high"}},
-        "system_model": "ds",
+                          "multimodal": False, "context_tokens": 200_000}},
+        "system_model": "ds", "system_effort": "high",
     })
     assert problems == []
     assert (server.bind, server.port, server.token) == ("0.0.0.0", 9000, "s3cret")  # noqa: S104
@@ -63,8 +63,8 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     assert server.endpoints["cc"].kind == "anthropic"
     mc = server.models["ds"]
     assert mc.name == "ds" and mc.endpoint == "openrouter" and mc.model == "deepseek/deepseek-chat"
-    assert mc.multimodal is False and mc.context_tokens == 200_000 and mc.effort == "high"
-    assert server.system_model == "ds"
+    assert mc.multimodal is False and mc.context_tokens == 200_000
+    assert server.system_model == "ds" and server.system_effort == "high"
     # derived properties hang off libraries_home
     assert server.libraries_home == server.libraries_home == server.libraries_home
     assert server.rules_home == server.libraries_home / "rules"

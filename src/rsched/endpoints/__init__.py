@@ -62,10 +62,12 @@ class EndpointRegistry:
             self._cache[name] = make_endpoint(cfg)
         return InstrumentedEndpoint(self._cache[name])
 
-    def resolve(self, name: str) -> tuple[InstrumentedEndpoint, ModelRef]:
+    def resolve(self, name: str,
+                effort: str | None = None) -> tuple[InstrumentedEndpoint, ModelRef]:
         """A catalog model NAME → its serving endpoint adapter + a fully-resolved ModelRef:
-        the provider id and effort verbatim, and the per-model multimodal/context/temperature
-        with the serving endpoint's kind-default / own values filled in for any left unset.
+        the provider id verbatim, the `effort` the CALLER chose (a role's setting — the catalog
+        entry carries none), and the per-model multimodal/context/temperature with the serving
+        endpoint's kind-default / own values filled in for any left unset.
         """
         mc = self.server.models.get(name)
         if mc is None:
@@ -91,7 +93,7 @@ class EndpointRegistry:
         # Read-only from the cache: `resolve` is on the per-turn path and never makes a network
         # call, so a miss is simply the next tier down.
         found = limits.lookup(self.server.routines_home, mc.endpoint, mc.model) or {}
-        ref = ModelRef(endpoint=mc.endpoint, model=mc.model, effort=mc.effort,
+        ref = ModelRef(endpoint=mc.endpoint, model=mc.model, effort=effort or None,
                        multimodal=multimodal,
                        context_tokens=(mc.context_tokens
                                       or limits.window_tokens(found)
@@ -104,7 +106,8 @@ class EndpointRegistry:
                        name=name)
         return self.get(mc.endpoint), ref
 
-    def resolve_chain(self, name: str) -> list[tuple[InstrumentedEndpoint, ModelRef]]:
+    def resolve_chain(self, name: str,
+                      effort: str | None = None) -> list[tuple[InstrumentedEndpoint, ModelRef]]:
         """The model plus its fallbacks TRANSITIVELY — breadth-first, in declaration order.
         Self-references, duplicates, and unresolvable fallback names are skipped (the config
         loader flags them as problems) — a bad chain entry must never break the primary's
@@ -124,8 +127,11 @@ class EndpointRegistry:
         the primary itself declared is tried before anything only a fallback declared. A
         model's chain is therefore "my own alternatives first, then theirs", which is the
         reading its author had in mind when they wrote the list.
+
+        Every member runs at the ONE `effort` the caller chose for the role: effort belongs to
+        the use, not to the model, so a failover never changes how hard the work is thought about.
         """
-        chain = [self.resolve(name)]
+        chain = [self.resolve(name, effort)]
         seen = {name}
         mc = self.server.models.get(name)
         queue = list(mc.fallbacks if mc else [])
@@ -135,7 +141,7 @@ class EndpointRegistry:
                 continue
             seen.add(fb)
             try:
-                chain.append(self.resolve(fb))
+                chain.append(self.resolve(fb, effort))
             except EndpointError:
                 # Unresolvable (missing endpoint, bad model) — skip it, but still follow what
                 # it declared: a broken rung must not truncate the ladder below it.
@@ -144,36 +150,43 @@ class EndpointRegistry:
             queue.extend(f for f in (fb_mc.fallbacks if fb_mc else []) if f not in seen)
         return chain
 
-    def for_model_chain(self, kind: str,
-                        models: dict[str, str]) -> list[tuple[InstrumentedEndpoint, ModelRef]]:
-        """A routine role's full failover chain (primary first). The engine's turn
-        completion walks it when the picked model fails hard mid-turn.
+    def for_model_chain(self, kind: str, models: dict[str, str],
+                        efforts: dict[str, str]) -> list[tuple[InstrumentedEndpoint, ModelRef]]:
+        """A routine role's full failover chain (primary first), at the role's effort. The
+        engine's turn completion walks it when the picked model fails hard mid-turn. A role the
+        routine left unset runs the server's system model — at the role's own effort when the
+        routine names one, else at the server's `system_effort`.
         """
-        name = models.get(kind) or self.server.system_model
-        if not name:
+        if name := models.get(kind):
+            return self.resolve_chain(name, efforts.get(kind))
+        if not self.server.system_model:
             raise EndpointError(f"no model configured for {kind!r} (and no system_model fallback)")
-        return self.resolve_chain(name)
+        return self.resolve_chain(self.server.system_model,
+                                  efforts.get(kind) or self.server.system_effort)
 
-    def for_model(self, kind: str, models: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef]:
+    def for_model(self, kind: str, models: dict[str, str],
+                  efforts: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef]:
         """Resolve one of a routine's model roles (main/tool_call) by catalog name.
         A role the routine left unset falls back to the server's system_model (also a name).
         Cooldown-aware: a model whose provider just failed hard is skipped for its first
         not-cooling fallback (failover.pick), so every resolution site avoids a known-bad
         provider without changing.
         """
-        return failover.pick(self.for_model_chain(kind, models))
+        return failover.pick(self.for_model_chain(kind, models, efforts))
 
-    def for_name(self, name: str) -> tuple[InstrumentedEndpoint, ModelRef]:
+    def for_name(self, name: str,
+                 effort: str | None = None) -> tuple[InstrumentedEndpoint, ModelRef]:
         """Resolve a CATALOG model by its NAME — the per-call `model` override path (an
         action naming a concrete catalog model instead of a role). Cooldown-aware like
         for_model (the model's own fallbacks: chain applies); raises EndpointError for a
         name the catalog does not carry — callers turn that into a teaching rejection
         naming the available models (the `list_models` action shows the same catalog).
         """
-        return failover.pick(self.resolve_chain(name))
+        return failover.pick(self.resolve_chain(name, effort))
 
     def for_uncensored(
-            self, models: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef] | None:
+            self, models: dict[str, str],
+            efforts: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef] | None:
         """The routine's OPTIONAL uncensored model — the target a refused `llm` tool-call is
         re-referred to. Unlike for_model, this has NO system_model fallback: an unset role
         returns None, which means "referral off" (referring a refusal to the same censored
@@ -183,7 +196,7 @@ class EndpointRegistry:
         name = models.get("uncensored")
         if not name:
             return None
-        return failover.pick(self.resolve_chain(name))
+        return failover.pick(self.resolve_chain(name, efforts.get("uncensored")))
 
     def for_system(self) -> tuple[InstrumentedEndpoint, ModelRef]:
         """The one model for pre-routine machine work (workflow generation/suggestion, the
@@ -191,4 +204,5 @@ class EndpointRegistry:
         """
         if not self.server.system_model:
             raise EndpointError("no system_model configured")
-        return failover.pick(self.resolve_chain(self.server.system_model))
+        return failover.pick(self.resolve_chain(self.server.system_model,
+                                                self.server.system_effort))

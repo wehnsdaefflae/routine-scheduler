@@ -33,6 +33,14 @@ function modelControl(detail, slug, isLive) {
   const mainSel = mkSel(detail.models?.main || "", `default · ${sysLabel}`, "main model");
   const uncSel = mkSel(detail.models?.uncensored || "", "none · uncensored off",
     "uncensored model — where refused requests are delivered");
+  // Each role's reasoning effort — its own setting, so any model takes any level. The tool-call
+  // role keeps the effort it was created with (like its model, it is set before the first reply).
+  const mkEffort = (cur, title) => el("select",
+    { title, class: "tight", style: "width:auto;padding:3px 6px" },
+    el("option", { value: "" }, "effort: default"),
+    (detail.effort_levels || []).map((l) => el("option", { value: l, selected: cur === l || null }, l)));
+  const mainEff = mkEffort(detail.efforts?.main || "", "main reasoning effort");
+  const uncEff = mkEffort(detail.efforts?.uncensored || "", "uncensored reasoning effort");
   // The decide action's model, once the instance has decision models: one picker, for calls
   // that carry no images. The image role is a routine-page setting; it is carried through
   // untouched here, because the PATCH below replaces the whole role map.
@@ -46,7 +54,7 @@ function modelControl(detail, slug, isLive) {
       selected: detail.models?.decision === m.name || null }, m.name)));
   const apply = el("button", { class: "btn small primary", hidden: true }, "apply");
   const show = () => { apply.hidden = false; };
-  mainSel.onchange = show; uncSel.onchange = show;
+  mainSel.onchange = show; uncSel.onchange = show; mainEff.onchange = show; uncEff.onchange = show;
   if (decSel) decSel.onchange = show;
   apply.onclick = async () => {
     const mainName = mainSel.value, uncName = uncSel.value;
@@ -58,22 +66,29 @@ function modelControl(detail, slug, isLive) {
     const decName = decSel ? decSel.value : detail.models?.decision;
     if (decName) models.decision = decName;
     if (detail.models?.decision_media) models.decision_media = detail.models.decision_media;
+    // the same wholesale replace for efforts: send every role's level, tool_call's unchanged
+    const efforts = {};
+    if (mainEff.value) efforts.main = mainEff.value;
+    if (detail.efforts?.tool_call) efforts.tool_call = detail.efforts.tool_call;
+    if (uncEff.value) efforts.uncensored = uncEff.value;
     const saved = await act(apply, async () => {
-      const res = await api(`/api/conversations/${slug}`, { method: "PATCH", body: { models } });
+      const res = await api(`/api/conversations/${slug}`, { method: "PATCH",
+        body: { models, efforts } });
       if (isLive() && detail.run_id) {
         // a live reply switches each role at its next turn boundary
-        if (mainName) await api(`/api/runs/${detail.run_id}/model`,
-          { method: "POST", body: { model: mainName, kind: "main" } }).catch(() => {});
-        if (uncName) await api(`/api/runs/${detail.run_id}/model`,
-          { method: "POST", body: { model: uncName, kind: "uncensored" } }).catch(() => {});
+        for (const [kind, model, effort] of [["main", mainName, mainEff.value],
+                                             ["uncensored", uncName, uncEff.value]])
+          if (model || effort) await api(`/api/runs/${detail.run_id}/model`,
+            { method: "POST", body: { model, effort, kind } }).catch(() => {});
       }
       return res;
-    }, `model → ${mainName || sysLabel}${uncName ? ` · uncensored → ${uncName}` : ""}`);
+    }, `model → ${mainName || sysLabel}${mainEff.value ? ` · ${mainEff.value}` : ""}`
+      + `${uncName ? ` · uncensored → ${uncName}` : ""}`);
     if (saved) apply.hidden = true;
   };
   return el("span", { class: "conv-model" },
-    el("span", { class: "faint small" }, "model"), mainSel,
-    el("span", { class: "faint small" }, "uncensored"), uncSel,
+    el("span", { class: "faint small" }, "model"), mainSel, mainEff,
+    el("span", { class: "faint small" }, "uncensored"), uncSel, uncEff,
     ...(decSel ? [el("span", { class: "faint small" }, "decide"), decSel] : []), apply);
 }
 

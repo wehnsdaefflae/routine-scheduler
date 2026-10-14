@@ -125,17 +125,20 @@ def arm(server: ServerConfig, cfg: RoutineConfig, run_dir: Path) -> TrialConfig 
     if now["state"] != ACTIVE:
         return None
     atomic_write_json(Path(run_dir) / TRIAL_FILE,
-                      {"id": trial.id, "models": dict(trial.models), "runs": trial.runs})
+                      {"id": trial.id, "models": dict(trial.models),
+                       "efforts": dict(trial.efforts), "runs": trial.runs})
     log.info("trial_armed routine=%s trial=%s run %d of %d", cfg.slug, trial.id,
              now["recorded"] + 1, trial.runs)
     return trial
 
 
-def overrides(run_dir: Path) -> dict[str, str]:
-    """The role → catalog-name overrides the run dir's `trial.json` carries — what the runner
-    names to `engine-run` as `--model`. {} for a run that is no trial run.
+def overrides(run_dir: Path) -> dict[str, dict[str, str]]:
+    """What the run dir's `trial.json` overrides, as `engine_cmd`'s keyword arguments — role →
+    catalog name under `models` (`--model`) and role → level under `efforts` (`--effort`). Both
+    {} for a run that is no trial run.
     """
     doc = read_json(Path(run_dir) / TRIAL_FILE)
-    models = doc.get("models") if isinstance(doc, dict) else None
-    return ({str(role): str(name) for role, name in models.items()}
-            if isinstance(models, dict) else {})
+    doc = doc if isinstance(doc, dict) else {}
+    return {key: ({str(role): str(value) for role, value in found.items()}
+                  if isinstance(found := doc.get(key), dict) else {})
+            for key in ("models", "efforts")}

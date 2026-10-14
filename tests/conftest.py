@@ -314,14 +314,14 @@ class ScriptedRegistry(EndpointRegistry):
                                         context_tokens=self.endpoint.context_tokens,
                                         name=name or "system")
 
-    def for_model(self, kind, models):
+    def for_model(self, kind, models, efforts):
         return self.resolve((models or {}).get(kind) or "system")
 
-    def for_model_chain(self, kind, models):
+    def for_model_chain(self, kind, models, efforts):
         # the engine's failover seam walks the chain; scripted tests have a chain of one
-        return [self.for_model(kind, models)]
+        return [self.for_model(kind, models, efforts)]
 
-    def for_uncensored(self, models):
+    def for_uncensored(self, models, efforts):
         name = (models or {}).get("uncensored")
         return self.resolve(name) if name else None
 

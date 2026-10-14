@@ -27,12 +27,9 @@ from ..paths import read_yaml
 from .config_fields import (
     BudgetsPatch,
     clean_tags,
-    validate_connections,
-    validate_machines,
-    validate_models,
     validate_roots,
-    validate_trial,
 )
+from .patch_bindings import apply_bindings
 from .routines_common import (
     _git_commit,
     _info,
@@ -98,6 +95,8 @@ class RoutinePatch(BaseModel):
     #                                          key is a 422 here, never a silent revert at load
     models: dict | None = None              # {main|tool_call|uncensored: catalog name,
     #                                          decision|decision_media: decision model}
+    efforts: dict | None = None             # {main|tool_call|uncensored: low|…|max} — a setting
+    #                                          of its own, never a catalog row per level
     # A MODEL TRIAL (rsched/trials.py), REPLACED whole. An explicit `"trial": null` CLEARS it —
     # `patch_routine` keeps that one null, which `exclude_none` would read as "not sent".
     trial: TrialConfig | None = None
@@ -424,29 +423,7 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
             live = signal_config_change(info, list(tuning), dict(tuning))
             return {"ok": True, "updated": list(tuning),
                     **({"told_live_run": True} if live else {})}
-    # Validate per-routine models: known kinds, each a catalog model NAME. Models REPLACE
-    # wholesale (not merge) so blanking a kind clears it back to the system_model fallback.
-    if "models" in updates:
-        raw["models"] = validate_models(_state(request).server, updates.pop("models"))
-    # Validate connection bindings: known provider, non-empty account label; REPLACE wholesale
-    # (blanking a provider clears it). Existence of the connection is NOT required — a routine may
-    # bind ahead of connecting; the engine injects nothing until the account is connected.
-    if "connections" in updates:
-        raw["connections"] = validate_connections(updates.pop("connections"))
-    # Validate machine bindings: each a name in the instance catalog; REPLACE wholesale (an empty
-    # list clears them). Unlike connections, we DO require catalog membership — a machine name is
-    # meaningless off the catalog, and the picker only offers catalog names.
-    if "machines" in updates:
-        raw["machines"] = validate_machines(_state(request).server, updates.pop("machines"))
-    # A MODEL TRIAL: every model it names meets the checks a `models:` binding meets, because
-    # for its runs it IS one. Replaced whole (the generic merge below would blend two trials);
-    # null removes the key, so "no trial" has one spelling.
-    if "trial" in updates:
-        trial = updates.pop("trial")
-        if trial is None:
-            raw.pop("trial", None)
-        else:
-            raw["trial"] = validate_trial(_state(request).server, trial)
+    apply_bindings(_state(request).server, raw, updates)
     # Validate the grant-decision rows (entities.py ids → bool); REPLACE wholesale —
     # removing a row returns that entity to undecided (asked on first use / requestable).
     if "grants" in updates:

@@ -42,7 +42,8 @@ def test_accounts_is_an_allowlist_projection_that_never_carries_a_token(proxy, m
     out = cliproxy_login.accounts(proxy)          # no providers known: everything, both controls
     assert out["ok"] and out["supported"]
     assert out["providers"] == [{"id": "anthropic", "label": "Claude"},
-                                {"id": "codex", "label": "Codex"}]
+                                {"id": "codex", "label": "Codex"},
+                                {"id": "antigravity", "label": "Antigravity"}]
     claude, codex = out["accounts"]
     assert claude == {"name": "claude-me.json", "provider": "claude", "label": "me@example.org",
                       "status": "error", "status_message": "token expired",
@@ -55,9 +56,22 @@ def test_accounts_is_an_allowlist_projection_that_never_carries_a_token(proxy, m
     assert "secret" not in dumped and "sk-ant" not in dumped
     # an endpoint whose models are Codex's sees the Codex account and the Codex control only —
     # and a provider with no sign-in route contributes nothing
-    only = cliproxy_login.accounts(proxy, {"codex", "gemini"})
+    only = cliproxy_login.accounts(proxy, {"codex", "mistral"})
     assert [a["provider"] for a in only["accounts"]] == ["codex"]
     assert only["providers"] == [{"id": "codex", "label": "Codex"}]
+
+
+def test_an_antigravity_card_sees_the_antigravity_account_and_its_one_control(proxy, monkeypatch):
+    """A Gemini endpoint resolves to the antigravity auth-file provider: its row and its
+    sign-in are offered, exactly as the Codex card does for Codex."""
+    mock_proxy(monkeypatch, lambda request: httpx.Response(200, json={"files": [
+        {"name": "antigravity-me.json", "type": "antigravity", "email": "me@gmail.example",
+         "status": "active"},
+        {"name": "claude-me.json", "provider": "claude", "email": "me@example.org"}]}))
+    out = cliproxy_login.accounts(proxy, cliproxy_mgmt.providers_of(["gemini-3-pro"]))
+    assert [a["provider"] for a in out["accounts"]] == ["antigravity"]
+    assert out["accounts"][0]["label"] == "me@gmail.example"
+    assert out["providers"] == [{"id": "antigravity", "label": "Antigravity"}]
 
 
 @pytest.mark.parametrize("reply", [httpx.Response(403, text="management-secret"),
@@ -78,8 +92,10 @@ def test_a_bad_base_url_is_a_soft_error_before_any_request(monkeypatch):
 # ---- starting a sign-in -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("provider", "port"), [("anthropic", 54545), ("codex", 1455)])
-def test_start_asks_the_proxy_for_a_webui_consent_link(proxy, monkeypatch, provider, port):
+@pytest.mark.parametrize(("provider", "port", "path"), [
+    ("anthropic", 54545, "/callback"), ("codex", 1455, "/callback"),
+    ("antigravity", 51121, "/oauth-callback")])
+def test_start_asks_the_proxy_for_a_webui_consent_link(proxy, monkeypatch, provider, port, path):
     def handler(request):
         assert request.url.path == f"/v0/management/{provider}-auth-url"
         assert request.url.params["is_webui"] == "true"
@@ -88,13 +104,13 @@ def test_start_asks_the_proxy_for_a_webui_consent_link(proxy, monkeypatch, provi
     mock_proxy(monkeypatch, handler)
     out = cliproxy_login.start(proxy, provider)
     assert out == {"ok": True, "provider": provider, "url": "https://claude.ai/oauth/authorize?x=1",
-                   "state": "st-1", "callback_port": port}
+                   "state": "st-1", "callback_port": port, "callback_path": path}
 
 
 def test_start_refuses_an_unknown_provider_without_a_request(proxy, monkeypatch):
     mock_proxy(monkeypatch, lambda request: pytest.fail("no request expected"))
     out = cliproxy_login.start(proxy, "gemini")
-    assert not out["ok"] and "anthropic, codex" in out["error"]
+    assert not out["ok"] and "anthropic, codex, antigravity" in out["error"]
 
 
 @pytest.mark.parametrize("reply", [
@@ -165,6 +181,25 @@ def test_complete_hands_the_code_over_and_polls_until_the_exchange_settles(proxy
     assert seen[0] == ("POST", "/v0/management/oauth-callback")
     assert [p for m, p in seen[1:]] == ["/v0/management/get-auth-status"] * 3
     assert slept == [1, 1]
+
+
+def test_complete_signs_antigravity_in_through_the_same_generic_callback(proxy, monkeypatch):
+    seen: list = []
+
+    def handler(request):
+        seen.append((request.method, request.url.path))
+        if request.url.path.endswith("/oauth-callback"):
+            assert json.loads(request.content) == {"provider": "antigravity", "state": "st-1",
+                                                   "code": "g-code"}
+            return httpx.Response(200, json={"status": "ok"})
+        return httpx.Response(200, json={"status": "ok"})
+    mock_proxy(monkeypatch, handler)
+    out = cliproxy_login.complete(
+        proxy, "antigravity", "st-1",
+        "http://localhost:51121/oauth-callback?code=g-code&state=st-1", sleep=lambda s: None)
+    assert out == {"ok": True, "provider": "antigravity"}
+    assert seen == [("POST", "/v0/management/oauth-callback"),
+                    ("GET", "/v0/management/get-auth-status")]
 
 
 def test_complete_reports_the_proxys_refusal_in_its_own_words(proxy, monkeypatch):

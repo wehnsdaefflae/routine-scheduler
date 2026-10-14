@@ -258,11 +258,11 @@ def test_resolve_chain_unresolvable_rung_does_not_truncate_the_ladder(tmp_path):
 
 def test_for_model_avoids_cooling_provider(tmp_path):
     reg = EndpointRegistry(_catalog_server(tmp_path / "routines"))
-    assert reg.for_model("main", {})[1].name == "prime"      # system_model fallback
+    assert reg.for_model("main", {}, {})[1].name == "prime"      # system_model fallback
     failover.mark_failed("epA", "m-a")
-    assert reg.for_model("main", {})[1].name == "backup"     # resolve-time avoidance
+    assert reg.for_model("main", {}, {})[1].name == "backup"     # resolve-time avoidance
     failover.mark_failed("epB", "m-b")
-    assert reg.for_model("main", {})[1].name == "prime"      # all cooling → primary
+    assert reg.for_model("main", {}, {})[1].name == "prime"      # all cooling → primary
 
 
 def test_instrumented_endpoint_marks_provider_health_failures():

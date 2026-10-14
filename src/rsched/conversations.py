@@ -160,6 +160,7 @@ def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> st
 
 def create_conversation(server: ServerConfig, *, slug: str, first_message: str,  # noqa: PLR0913 — the parameter list IS the composer's config surface (scaffold's twin)
                         workdir: str = "", models: dict[str, str] | None = None,
+                        efforts: dict[str, str] | None = None,
                         permissions: list[str] | None = None,
                         capabilities: dict | None = None, deliberation: str = "",
                         playbook_slug: str = "",
@@ -243,6 +244,7 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
                      "version": meta.get("version", 0)},
         **({"playbook": {"slug": playbook_slug, "commit": commit}} if pb else {}),
         **({"models": models} if models else {}),
+        **({"efforts": efforts} if efforts else {}),
         "permissions": active_perms,
         "rules": active_rules,
         # D55/F339: OAuth bindings chosen on the composer, so reply #1 already acts as the
@@ -296,8 +298,9 @@ def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
     try:
         from .endpoints import EndpointRegistry
 
-        models = read_yaml(conv_dir / "routine.yaml", {}).get("models") or {}
-        endpoint, ref = EndpointRegistry(server).for_model("main", models)
+        saved = read_yaml(conv_dir / "routine.yaml", {})
+        endpoint, ref = EndpointRegistry(server).for_model(
+            "main", saved.get("models") or {}, saved.get("efforts") or {})
         comp = endpoint.complete(
             [{"role": "user", "content":
               "Title this new conversation with an agent, and tag it. First message:\n---\n"

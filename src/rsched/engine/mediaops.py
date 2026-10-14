@@ -141,7 +141,7 @@ def natively_viewable(ctx: RunContext, rel: str) -> tuple[str, str] | None:
     readable local file at all (a URL, a flag, a missing path).
     """
     try:
-        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
+        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models, ctx.routine.efforts)
     except Exception:
         # an unresolvable main model is the vision-util's case, not this one — and a run whose
         # model cannot be resolved must never be told it can see the file
@@ -181,7 +181,7 @@ def do_view_image(action: dict, ctx: RunContext) -> dict:
     """
     prompt = str(action.get("prompt") or "")
     try:
-        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
+        endpoint, ref = ctx.registry.for_model("main", ctx.routine.models, ctx.routine.efforts)
     except Exception:
         endpoint, ref = None, None
     multimodal = bool(ref.multimodal) if ref else False

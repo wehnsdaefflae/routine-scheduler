@@ -53,8 +53,10 @@ from the pinned image (`compose run --user 0:0`), so it needs no sudo, and it ha
 file under `auth/`, not only the unreadable ones: a root file the proxy can read but not write
 is a token refresh it cannot save.
 
-Host ports are loopback only: 8317 for the API, 54545 for Claude OAuth and 1455 for
-Codex OAuth. Use the proxy login flow, not a Claude setup-token.
+Host ports are loopback only: 8317 for the API, and one OAuth callback port per provider —
+54545 for Claude, 1455 for Codex, 51121 for Antigravity (Google; it serves the `gemini-*` ids and
+`gpt-oss-120b-medium`). The callback ports matter only for the terminal fallback below; the
+console path needs none of them. Use the proxy login flow, not a Claude setup-token.
 
 ## Signing in, and signing back in
 
@@ -65,15 +67,18 @@ subscription window is spent. The first needs a fresh sign-in; the second only w
 2026-09-14 both hit at once (Codex in weekly cooldown, the Claude refresh token invalid) and
 every run whose fallback chain ran through the proxy died at turn 0.
 
-**From the console** (the normal way): each proxy endpoint's card lists the proxy's
-accounts for ITS models — the Claude endpoint's card the Claude account, the Codex
-endpoint's the Codex one, decided by the family of the model ids bound to that endpoint —
-and offers that provider's sign-in; one endpoint per proxy carrying *Proxy management:
-CLIProxyAPI* (the management key) serves every sibling on the same origin. On the card
-press *re-authenticate Claude* (or, on the Codex card, *re-authenticate Codex*). The card
-shows a link — open it and finish consent.
+**From the console** (the normal way, for all three providers — no terminal is ever needed):
+each proxy endpoint's card lists the proxy's accounts for ITS models — the Claude endpoint's
+card the Claude account, the Codex endpoint's the Codex one, an endpoint serving Gemini ids the
+Antigravity one, decided by the family of the model ids bound to that endpoint (`gemini-*` and
+`gpt-oss*` are Antigravity's, matched before the generic `gpt-*` → Codex) — and offers that
+provider's sign-in; one endpoint per proxy carrying *Proxy management: CLIProxyAPI* (the
+management key) serves every sibling on the same origin. On the card press *re-authenticate
+Claude* (on the Codex card *re-authenticate Codex*, on the Antigravity card *re-authenticate
+Antigravity*). The card shows a link — open it and finish consent.
 The consent page then sends the browser to `http://localhost:54545/callback?code=…&state=…`
-(`localhost:1455` for Codex). That address is the PROXY'S callback and exists only on the
+(`localhost:1455/callback` for Codex, `localhost:51121/oauth-callback` for Antigravity). That
+address is the PROXY'S callback and exists only on the
 server, so on your own device the page fails to load — its address bar still carries the
 code. Copy the whole address, paste it into the card's box and press *finish sign-in*; if
 the consent page shows a code instead of redirecting, paste that. The console hands the
@@ -87,7 +92,7 @@ the read-only routine token like every config-mutating route.
 port over SSH so the redirect lands on the server, then run the proxy's own login:
 
 ```bash
-ssh -N -L 54545:127.0.0.1:54545 mark@192.168.0.128
+ssh -N -L 54545:127.0.0.1:54545 mark@192.168.0.128      # 1455 for Codex, 51121 for Antigravity
 ```
 
 On the server:
@@ -97,7 +102,8 @@ docker compose exec cliproxy /CLIProxyAPI/CLIProxyAPI --claude-login --no-browse
 ```
 
 Open the printed URL and finish consent; with the tunnel up the redirect completes by
-itself. Codex has the same two routes (`--codex-login`, or the card) with port 1455.
+itself. Codex has the same two routes (`--codex-login`, or the card) with port 1455, and so
+has Antigravity (`--antigravity-login`, or the card) with port 51121.
 `exec` runs as the service's own user, so the new login is written as the instance's uid like
 every other file there. Never add `-u root` (or `-u 0`): a root 0600 login is the file that
 stopped every backup.
@@ -121,14 +127,28 @@ endpoints:
     base_url: http://cliproxy:8317
     key_var: CLIPROXY_API_KEY
     tool_choice: forced
+  antigravity-proxy:           # Gemini ids (and gpt-oss-120b-medium) through the Google login
+    kind: anthropic
+    base_url: http://cliproxy:8317
+    key_var: CLIPROXY_API_KEY
 ```
+
+An endpoint whose models are Gemini ids is the third card: it shows the Antigravity account and
+the *re-authenticate Antigravity* control. An endpoint with no models bound yet offers all three
+sign-ins (unknown family shows everything), so the first Google sign-in needs no terminal and no
+models: add the endpoint, sign in on its card, and the model-id picker then lists the proxy's
+`gemini-*` ids (the proxy lists nothing for an account it cannot use). Whether a given Gemini model holds the action schema on this wire has not been
+validated here — use the endpoint test before binding a routine to one.
 
 Use the proxy root URL, without /v1. For a host installation use
 http://127.0.0.1:8317. A blank quota_auth_index automatically selects the single
 enabled Claude account; select an explicit index when there is more than one.
-Bind catalog models to exact IDs from /v1/models, then verify inference. Set each
-model's effort and vision support deliberately: it reaches every call, structured turns
-included, because the action tool is offered on `auto`. The proxy strips `thinking` and
+Bind catalog models to exact IDs from /v1/models — the Settings model form offers exactly that
+list in a dropdown (the endpoint's own `/v1/models`, read with its key on the server), then
+verify inference. Reasoning effort is NOT a catalog attribute: it is chosen per role on the
+routine's page, per conversation, and for the system model in Settings, and it reaches every
+call, structured turns included, because the action tool is offered on `auto`. Set vision
+support deliberately per model. The proxy strips `thinking` and
 `output_config.effort` from any call that FORCES a tool, which is why nothing is forced unless
 the endpoint says `tool_choice: forced` (docs/endpoints.md — until 0.396.0 every structured turn
 was forced, and no effort reached a Claude model). The proxy's catalog lists ids and no
@@ -179,6 +199,9 @@ bindings are saved privately in `cliproxy/production-cutover.json` as historical
 The inherited 2,000,000-character context setting was made explicit on migrated
 entries, preserving the prior configuration rather than inheriting the proxy's
 smaller default. Other attributes and fallback chains were retained.
+
+Effort was a per-model catalog attribute then; it is a per-role setting now (the Effort column
+records what each entry carried at the time).
 
 | Catalog name | Explicit proxy model | Effort |
 | --- | --- | --- |

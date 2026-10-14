@@ -765,19 +765,19 @@ def test_registry_model_resolution():
     server.system_model = "sys"
     reg = EndpointRegistry(server)
     # a role the routine didn't set falls back to system_model (by name)
-    _, ref = reg.for_model("main", {})
+    _, ref = reg.for_model("main", {}, {})
     assert ref.model == "sys-id" and ref.name == "sys"
     # resolved attrs inherit the endpoint defaults (openai → text-only; endpoint's window)
     assert ref.multimodal is False and ref.context_tokens == 250_000
     # a routine's own model (by catalog name) wins, carrying its per-model attrs
-    _, ref = reg.for_model("main", {"main": "override"})
+    _, ref = reg.for_model("main", {"main": "override"}, {})
     assert ref.model == "override-id" and ref.multimodal is True and ref.context_tokens == 500_000
     # for_system returns the system_model
     _, sref = reg.for_system()
     assert sref.model == "sys-id"
     # no system_model + no routine model → error; unknown catalog name → error; unknown endpoint → error
     with pytest.raises(EndpointError):
-        EndpointRegistry(ServerConfig()).for_model("main", {})
+        EndpointRegistry(ServerConfig()).for_model("main", {}, {})
     with pytest.raises(EndpointError):
         reg.resolve("ghost")
     with pytest.raises(EndpointError):
@@ -795,10 +795,10 @@ def test_registry_for_uncensored():
     server.system_model = "sys"
     reg = EndpointRegistry(server)
     # unset uncensored role → None (NO system_model fallback: referral off)
-    assert reg.for_uncensored({}) is None
-    assert reg.for_uncensored({"main": "sys"}) is None
+    assert reg.for_uncensored({}, {}) is None
+    assert reg.for_uncensored({"main": "sys"}, {}) is None
     # explicitly named → resolves the endpoint + ref
-    _, ref = reg.for_uncensored({"uncensored": "abliterated"})
+    _, ref = reg.for_uncensored({"uncensored": "abliterated"}, {"uncensored": "high"})
     assert ref.model == "ablit-id" and ref.endpoint == "e1"
 
 

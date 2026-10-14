@@ -1,10 +1,10 @@
 """CLI helpers: _render_event (transcript event → console line for `rsched run-once`) and
-_parse_model_overrides (--model kind=name). Driven with plain dicts — no engine, no network.
+parse_model_overrides (--model kind=name). Driven with plain dicts — no engine, no network.
 Assertions target information content (what a reader needs on the line), not exact layout."""
 
 import pytest
 
-from rsched.cli import _parse_model_overrides
+from rsched.cli_overrides import parse_model_overrides
 from rsched.cli_render import _render_event
 
 # ---------------------------------------------------------------- _render_event
@@ -152,19 +152,19 @@ def test_render_an_unknown_event_type_plainly_never_drops_it():
     assert "no_such_event" in _render_event({"type": "no_such_event", "payload": {}})
 
 
-# ------------------------------------------------------- _parse_model_overrides
+# ------------------------------------------------------- parse_model_overrides
 
 
 def test_parse_model_overrides_accepts_every_role():
-    out = _parse_model_overrides(["main=opus", "tool_call=fast", "uncensored=raw"])
+    out = parse_model_overrides(["main=opus", "tool_call=fast", "uncensored=raw"])
     assert out == {"main": "opus", "tool_call": "fast", "uncensored": "raw"}
-    assert _parse_model_overrides([]) == {}
-    assert _parse_model_overrides(None) == {}
+    assert parse_model_overrides([]) == {}
+    assert parse_model_overrides(None) == {}
     # a repeated role: the last value wins (argparse append order)
-    assert _parse_model_overrides(["main=a", "main=b"]) == {"main": "b"}
+    assert parse_model_overrides(["main=a", "main=b"]) == {"main": "b"}
 
 
 def test_parse_model_overrides_rejects_junk():
     for bad in ("main", "=opus", "main=", "flavor=opus"):
         with pytest.raises(SystemExit):
-            _parse_model_overrides([bad])
+            parse_model_overrides([bad])

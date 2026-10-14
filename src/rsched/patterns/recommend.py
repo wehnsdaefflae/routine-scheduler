@@ -145,6 +145,8 @@ def _semantic_problem(key: str, value: object, server: object | None) -> bool:
             config_fields.validate_machines(server, value if isinstance(value, list) else [])
         elif key == "models" and server is not None:
             config_fields.validate_models(server, value if isinstance(value, dict) else {})
+        elif key == "efforts":
+            config_fields.validate_efforts(value if isinstance(value, dict) else {})
     except HTTPException as exc:
         log.info("recommend: dropping %s — the accept would refuse it (%s)", key, exc.detail)
         return True

@@ -63,7 +63,9 @@ class EndpointConfig(_Config):
 class ModelConfig(_Config):
     """One catalog model: a provider model id BOUND to a configured endpoint, plus the
     per-model attributes that used to (wrongly) sit on the endpoint. One endpoint serves
-    many models, so multimodality, context window, effort, and temperature belong here.
+    many models, so multimodality, context window and temperature belong here. Reasoning
+    EFFORT does not: it is chosen where the model is used (RoutineConfig.efforts, the server's
+    `system_effort`), so one catalog entry serves every level.
     A None attribute inherits the serving endpoint's default (multimodal → the endpoint
     kind's NATIVE_MM_KINDS default; context_tokens/temperature → the endpoint's own).
     Routines/conversations reference a model by its catalog NAME (see RoutineConfig.models).
@@ -76,10 +78,9 @@ class ModelConfig(_Config):
     multimodal: bool | None = None
     # None = discover the provider window, then inherit the endpoint default.
     context_tokens: int | None = None
-    effort: str | None = None          # reasoning-effort hint (low|medium|high|xhigh|max)
     # None = inherit the endpoint's temperature default. On a current Claude model it is
     # REJECTED and dropped on a degraded retry, so setting one there costs a wasted round
-    # trip per turn rather than failing — leave it blank and steer with `effort`.
+    # trip per turn rather than failing — leave it blank and steer with the role's effort.
     temperature: float | None = None
     # Requested OUTPUT token cap per completion, reserved separately from input. None uses
     # discovered output limits capped for this harness, then the endpoint/default fallback.

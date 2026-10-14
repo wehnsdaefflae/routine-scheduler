@@ -42,16 +42,16 @@ class _ChainRegistry:
     def __init__(self, head_ep, tail_ep, name="oversize-ep"):
         self.head_ep, self.tail_ep, self.name = head_ep, tail_ep, name
 
-    def for_model(self, kind, models):
+    def for_model(self, kind, models, efforts):
         return self.head_ep, ModelRef(self.name, "head-model", name="Head",
                                       context_tokens=1_000_000, max_tokens=16_384)
 
-    def for_model_chain(self, kind, models):
-        return [self.for_model(kind, models),
+    def for_model_chain(self, kind, models, efforts):
+        return [self.for_model(kind, models, efforts),
                 (self.tail_ep, ModelRef(self.name + "-b", "tail-model", name="Tail",
                                         context_tokens=1_000_000, max_tokens=16_384))]
 
-    def for_uncensored(self, models):
+    def for_uncensored(self, models, efforts):
         return None
 
 
@@ -220,7 +220,7 @@ def test_a_larger_window_downstream_does_not_earn_a_failover(make_routine):
     head = _FakeEndpoint([EndpointError(ANTHROPIC_400)])
     tail = _FakeEndpoint([VALID])
     reg = _ChainRegistry(head, tail, name="bigger-tail")
-    chain = reg.for_model_chain("main", {})
+    chain = reg.for_model_chain("main", {}, {})
     reg.for_model_chain = lambda *_a, **_k: [   # type: ignore[method-assign]
         chain[0], (tail, dataclasses.replace(chain[1][1], context_tokens=5_000_000))]
     loop = _loop(make_routine, reg)

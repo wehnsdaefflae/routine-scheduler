@@ -86,7 +86,7 @@ async def test_runner_hands_its_own_server_to_engine_cmd(tmp_path, make_routine,
     _, server = _write_config(tmp_path)
     seen: list = []
 
-    def cmd(passed_server, target, run_ts, *, resume=False, models=None):
+    def cmd(passed_server, target, run_ts, *, resume=False, models=None, efforts=None):
         seen.append((passed_server, target))
         return ["bash", "-c", "true"]
 

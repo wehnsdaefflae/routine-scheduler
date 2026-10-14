@@ -32,7 +32,7 @@ class _Registry:
         self.names: list[str] = []
         self._unc = unc
 
-    def for_model(self, kind, models):
+    def for_model(self, kind, models, efforts):
         self.roles.append(kind)
         ep = self.eps.setdefault(kind, _Ep())
         return ep, ModelRef(f"{kind}-ep", f"{kind}-model")
@@ -42,7 +42,7 @@ class _Registry:
         ep = self.eps.setdefault(name, _Ep())
         return ep, ModelRef("cat-ep", f"{name}-model", name=name)
 
-    def for_uncensored(self, models):
+    def for_uncensored(self, models, efforts):
         if not self._unc:
             return None
         self.roles.append("uncensored")
@@ -59,7 +59,7 @@ def _server(catalog=("glm-5", "opus-4")):
 
 
 def _ctx(registry):
-    return SimpleNamespace(registry=registry, routine=SimpleNamespace(models={}),
+    return SimpleNamespace(registry=registry, routine=SimpleNamespace(models={}, efforts={}),
                            server=_server(), add_usage=lambda u: None)
 
 
@@ -123,7 +123,7 @@ def test_llm_explicit_uncensored_is_not_re_referred():
 def _child_ctx(registry):
     return SimpleNamespace(sub_counter=[0], depth=0,
                            budgets=SimpleNamespace(max_subruns=5, max_subrun_depth=2),
-                           registry=registry, routine=SimpleNamespace(models={}),
+                           registry=registry, routine=SimpleNamespace(models={}, efforts={}),
                            server=_server())
 
 
@@ -174,7 +174,7 @@ def test_list_models_reports_an_unresolvable_uncensored_role_instead_of_raising(
     from rsched.engine.llmaction import do_list_models
 
     class _GoneUncensored(_Registry):
-        def for_uncensored(self, models):
+        def for_uncensored(self, models, efforts):
             raise EndpointError("model 'retired' is not in the catalog")
 
     obs = do_list_models(_ctx(_GoneUncensored()))
@@ -191,7 +191,7 @@ class _EmptyEp(_Ep):
 
 
 class _EmptyRegistry(_Registry):
-    def for_model(self, kind, models):
+    def for_model(self, kind, models, efforts):
         self.roles.append(kind)
         ep = self.eps.setdefault(kind, _EmptyEp())
         return ep, ModelRef(f"{kind}-ep", f"{kind}-model")
@@ -209,7 +209,7 @@ def test_an_empty_llm_completion_is_an_error_not_a_silent_empty_answer():
     """
     reg = _EmptyRegistry()
     usage: list[dict] = []
-    ctx = SimpleNamespace(registry=reg, routine=SimpleNamespace(models={}),
+    ctx = SimpleNamespace(registry=reg, routine=SimpleNamespace(models={}, efforts={}),
                           server=_server(), add_usage=usage.append)
     obs = do_llm({"prompt": "p", "say": "s"}, ctx)
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from ..config import DELIBERATION_LEVELS
+from ..config import DELIBERATION_LEVELS, EFFORT_LEVELS
 from ..paths import atomic_write_json, read_json
 from . import assist, deliberation, enginenote
 
@@ -58,7 +58,8 @@ def _fresh(loop, signal: str, last_ts: str) -> dict | None:
 def apply_model_switch(loop) -> None:
     """Turn-boundary: honour a mid-run model switch written to control.json by the web layer.
     The switch lands on the NEXT completion, since for_model re-resolves ctx.routine.models
-    every turn — the model, its context size, and effort all self-correct.
+    and ctx.routine.efforts every turn — the model, its context size, and effort all
+    self-correct. The model and the effort of a role are switched independently.
     """
     ctx = loop.ctx
     if (sw := _fresh(loop, "switch_model", loop._last_switch_ts)) is None:
@@ -70,6 +71,10 @@ def apply_model_switch(loop) -> None:
         if isinstance(name, str) and name in ctx.server.models:
             ctx.routine.models[kind] = name
             applied.append(f"{kind} → {name}")
+        level = sw.get(f"{kind}_effort")   # a reasoning level, switched on its own or with a model
+        if level in EFFORT_LEVELS:
+            ctx.routine.efforts[kind] = level
+            applied.append(f"{kind} effort → {level}")
     if applied:
         enginenote.append(loop, "model switched mid-run: " + "; ".join(applied)
                           + ". Continue the run on the new model.")

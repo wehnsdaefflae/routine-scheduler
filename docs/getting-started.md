@@ -50,7 +50,7 @@ tinted band, in the palette's violet — is how the system is changing and wheth
   Codex SUBSCRIPTION is billed, through CLIProxyAPI on the `anthropic` kind (see *The Claude
   proxy cutover*). A
   **model** is a named catalog entry bound to an endpoint, carrying its own context window,
-  vision support, effort, temperature, output limit (`max_tokens` — Settings flags models
+  vision support, temperature, output limit (`max_tokens` — Settings flags models
   where it's unset or implausible), and an optional ordered **fallback chain** — other
   catalog models the engine fails over to when this one's provider fails hard (transitively:
   the named list first, then each entry's own fallbacks), with a

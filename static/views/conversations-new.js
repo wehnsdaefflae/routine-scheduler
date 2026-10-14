@@ -71,8 +71,15 @@ export function mountComposerOnly(main) {
   const modelSel = roleSel("default · system model", "main model");
   const toolSel = roleSel("↳ same as main", "tool-call model");
   const uncSel = roleSel("none · uncensored off", "uncensored model — where refused requests are delivered");
+  // Each role's reasoning effort — a setting of its own, never a catalog row per level.
+  const effortSel = (role) => el("select", { "data-nopersist": "", "data-effort-role": role,
+    title: `${role} reasoning effort` }, el("option", { value: "" }, "effort: default"));
+  const efforts = { main: effortSel("main"), tool_call: effortSel("tool_call"),
+                    uncensored: effortSel("uncensored") };
   api("/api/settings/models").then((r) => {
     if (r.system_model) modelSel.options[0].textContent = `default · ${r.system_model}`;
+    for (const sel of Object.values(efforts))
+      (r.effort_levels || []).forEach((l) => sel.append(el("option", { value: l }, l)));
     (r.models || []).forEach((m) => {
       modelSel.append(modelOption(m.name, m.window));
       toolSel.append(modelOption(m.name, m.window));
@@ -144,6 +151,9 @@ export function mountComposerOnly(main) {
       } else if (modelSel.value) {
         fd.append("model", modelSel.value);
       }
+      const levels = Object.fromEntries(Object.entries(efforts)
+        .filter(([, sel]) => sel.value).map(([role, sel]) => [role, sel.value]));
+      if (Object.keys(levels).length) fd.append("efforts", JSON.stringify(levels));
       if (workdir.value.trim()) fd.append("workdir", workdir.value.trim());
       if (readRoots.value().length) fd.append("fs_read_roots", JSON.stringify(readRoots.value()));
       if (writeRoots.value().length) fd.append("fs_write_roots", JSON.stringify(writeRoots.value()));
@@ -193,18 +203,19 @@ export function mountComposerOnly(main) {
         + "model and the permissions stay changeable from its header afterwards")),
     // the pre-start settings — the same titled-section vocabulary the routine page uses
     ...settingsSection("Model",
-      "Which model answers this conversation — pick one from the catalog or start on the "
-      + "system default. You can switch the main and uncensored models any time from the top "
+      "Which model answers this conversation and how hard it reasons — pick a model from the "
+      + "catalog or start on the system default; effort is its own setting, so any model takes "
+      + "any level. You can switch the main and uncensored models any time from the top "
       + "of the conversation; the tool-call model can only be set here, before the "
       + "conversation starts. The uncensored role is where the refusal-handling machinery "
       + "hands a refused request's essence, so leave it off unless you want that.",
       el("div", { class: "col", style: "gap:8px" },
         el("label", { class: "faint small row", style: "gap:6px;align-items:center" },
-          "main", modelSel),
+          "main", modelSel, efforts.main),
         el("label", { class: "faint small row", style: "gap:6px;align-items:center" },
-          "tool-call", toolSel),
+          "tool-call", toolSel, efforts.tool_call),
         el("label", { class: "faint small row", style: "gap:6px;align-items:center" },
-          "uncensored", uncSel))),
+          "uncensored", uncSel, efforts.uncensored))),
     ...settingsSection("Project directory",
       "A folder on the server the agent may read and edit for this conversation. Leave empty "
       + "to keep it sandboxed to the conversation's own directory.",

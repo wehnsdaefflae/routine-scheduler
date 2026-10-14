@@ -28,8 +28,6 @@ from .base import (
     DEFAULT_PERMISSIONS,
     DEFAULT_RULES,
     DELIBERATION_LEVELS,
-    LADDER_KEYS,
-    ROUTINE_MODEL_ROLES,
     TUNING_KEYS,
     BlankableStr,
     HomePath,
@@ -39,7 +37,8 @@ from .base import (
     _validate_lenient,
     default_tz,
 )
-from .trialconf import TrialConfig, trial_load_problems
+from .routine_scrub import scrub_bindings
+from .trialconf import TrialConfig
 
 
 class RunGateConfig(BaseModel):
@@ -127,6 +126,11 @@ class RoutineConfig(_Config):
     # falls back to the server system_model. Resolved live via EndpointRegistry, so editing
     # a catalog model updates every routine that names it.
     models: dict[str, str] = Field(default_factory=dict)
+    # Role → reasoning effort (EFFORT_LEVELS) for the CHAT roles (main/tool_call/uncensored): a
+    # setting of its own beside `models:`, so one catalog model serves every level instead of a
+    # catalog row per level. A role with no entry runs at the provider's default. Whichever
+    # model of the role's failover chain serves a turn runs at this effort.
+    efforts: dict[str, str] = Field(default_factory=dict)
     # A MODEL TRIAL (rsched/trials.py): "run on these catalog models for the next N fires". The
     # daemon applies it per fire while fewer than `runs` runs have recorded it; `models:` above
     # stays the routine's own throughout. A finished trial stays here as history until the next
@@ -412,40 +416,7 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     if not cfg.description:
         problems.append("description is empty — every routine needs a one-line "
                         "description (shown in the UI)")
-    for kind in [k for k in cfg.models if k not in ROUTINE_MODEL_ROLES]:
-        hint = (" — the subroutine role is retired: children run the routine's MAIN model "
-                "by default (a call overrides per child); remove this key"
-                if kind == "subroutine" else "")
-        problems.append(f"models.{kind}: unknown model kind "
-                        f"(expected one of {ROUTINE_MODEL_ROLES}){hint}")
-        del cfg.models[kind]
-    problems += trial_load_problems(raw.get("trial"), cfg.trial)
-    from ..oauth.providers import PROVIDERS  # function-level: oauth imports secrets, not config
-    for prov in [p for p in cfg.connections if p not in PROVIDERS]:
-        problems.append(
-            f"connections.{prov}: unknown provider (expected one of {sorted(PROVIDERS)})")
-        del cfg.connections[prov]
-    for key in [k for k in cfg.budgets if k not in DEFAULT_BUDGETS]:
-        problems.append(f"budgets.{key}: unknown budget")
-        del cfg.budgets[key]
-    # deliberation lives in TUNING, never in config — a routine.yaml key is stale data
-    if "deliberation" in raw:
-        problems.append("deliberation: belongs in tuning.yaml (machine-tunable behavior) "
-                        "— the routine.yaml key is ignored")
-    for key in [k for k in cfg.ladder if k not in LADDER_KEYS]:
-        problems.append(f"ladder.{key}: unknown ladder key (expected one of "
-                        f"{sorted(LADDER_KEYS)})")
-        del cfg.ladder[key]
-    cfg.ladder = {**DEFAULT_LADDER, **cfg.ladder}
-    if not isinstance(cfg.ladder["enabled"], bool):
-        problems.append(f"ladder.enabled: expected true or false, got "
-                        f"{cfg.ladder['enabled']!r} (ignored)")
-        cfg.ladder["enabled"] = DEFAULT_LADDER["enabled"]
-    depth = cfg.ladder["max_depth"]
-    if not (isinstance(depth, int) and not isinstance(depth, bool) and depth > 0):
-        problems.append(f"ladder.max_depth: expected a whole number above zero, got "
-                        f"{depth!r} (ignored)")
-        cfg.ladder["max_depth"] = DEFAULT_LADDER["max_depth"]
+    problems += scrub_bindings(cfg, raw)
     tuning, tuning_problems = load_tuning(routine_dir)
     problems += tuning_problems
     cfg.tuning = tuning

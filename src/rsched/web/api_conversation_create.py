@@ -31,7 +31,7 @@ from .api_routine_edit import (
     PermissionsBody,
     resolve_permission_layers,
 )
-from .config_fields import validate_models, validate_roots
+from .config_fields import validate_efforts, validate_models, validate_roots
 from .conversations_common import (
     _save_attachments,
 )
@@ -151,6 +151,21 @@ def _resolve_create_models(server, model: str, models: str) -> dict[str, str] | 
     return {**(cfg or {}), **validate_models(server, per_role)}
 
 
+def _parse_efforts(raw: str) -> dict[str, str] | None:
+    """The composer's per-role reasoning effort — a JSON {role: level} map, blank when none was
+    picked. Checked by the PATCH's own validator, so the two doors agree.
+    """
+    if not raw.strip():
+        return None
+    try:
+        parsed = json.loads(raw)
+    except ValueError as exc:
+        raise HTTPException(400, f"efforts: invalid JSON ({exc})") from None
+    if not isinstance(parsed, dict):
+        raise HTTPException(400, "efforts: must be a {role: level} object")
+    return validate_efforts(parsed) or None
+
+
 #: The budgets the composer offers, each a whole number (-1 = unlimited where it applies).
 _BUDGET_FIELDS = ("max_turns", "max_total_turns", "max_wall_clock_min", "max_total_tokens")
 _RESTARTING = ("the server is restarting — the conversation was NOT created. Start it again "
@@ -169,6 +184,7 @@ class ComposerForm(BaseModel):
     workdir: str = ""           # the project directory: write root #1
     model: str = ""             # shorthand: one catalog model for main + tool_call
     models: str = ""            # JSON {role: catalog model}, wins over `model`
+    efforts: str = ""           # JSON {role: low|…|max} — each role's reasoning effort
     max_turns: str = ""         # per REPLY …
     max_total_turns: str = ""   # … except this one: cumulative over the conversation
     max_wall_clock_min: str = ""
@@ -224,6 +240,7 @@ async def create_conversation(request: Request,
     rule_slugs = _parse_rules(server, form.rules)
     conn_map = _parse_connections(form.connections)
     models_cfg = _resolve_create_models(server, form.model, form.models)
+    efforts_cfg = _parse_efforts(form.efforts)
     # R81, the create door: in the restart's exit window the fire is refused, so refuse BEFORE
     # anything lands — a conversation made and never started stays in the list, and the
     # retry after the restart makes a second one.
@@ -235,6 +252,7 @@ async def create_conversation(request: Request,
     try:
         conv_dir = conv_mod.create_conversation(server, slug=slug, first_message=text,
                                                 workdir=workdir, models=models_cfg,
+                                                efforts=efforts_cfg,
                                                 permissions=active_perms,
                                                 capabilities=caps_override,
                                                 deliberation=deliberation,

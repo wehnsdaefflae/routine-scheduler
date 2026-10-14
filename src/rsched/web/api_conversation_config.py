@@ -28,7 +28,9 @@ from .config_fields import (
     BudgetsPatch,
     clean_tags,
     decision_picker,
+    effort_picker,
     validate_connections,
+    validate_efforts,
     validate_machines,
     validate_models,
     validate_roots,
@@ -76,6 +78,7 @@ def detail(request: Request, slug: str) -> dict:
         # `catalog` = the picker, `catalog_meta` its per-model window sizing (R112/R128:
         # the picker shows what fits instead of letting an impossible pick die at reply #1).
         "models": {k: (info.cfg.models.get(k) or None) for k in ROUTINE_MODEL_ROLES},
+        **effort_picker(server, info.cfg),
         "system_model": server.system_model or None,
         **decision_picker(server),
         "catalog": list(server.models.keys()),
@@ -112,6 +115,7 @@ class ConversationPatch(BaseModel):
     workdir: str | None = None
     budgets: BudgetsPatch | None = None   # the runaway backstops, by name (config_fields)
     models: dict | None = None
+    efforts: dict | None = None       # {main|tool_call|uncensored: level} — REPLACE wholesale
     machines: list[str] | None = None   # catalog machine names (D102) — REPLACE wholesale
     connections: dict | None = None   # {provider: account} — bound OAuth connections (D55)
     deliberation: str | None = None   # DELIBERATION_LEVELS — applies at the next reply
@@ -165,6 +169,8 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
         raw.setdefault("budgets", {}).update(updates["budgets"])
     if "models" in updates:
         raw["models"] = validate_models(request.app.state.server, updates["models"])
+    if "efforts" in updates:
+        raw["efforts"] = validate_efforts(updates["efforts"])
     if "connections" in updates:
         raw["connections"] = validate_connections(updates["connections"])
     if "machines" in updates:

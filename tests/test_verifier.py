@@ -37,8 +37,8 @@ def _loop(tmp_path, parsed=None, *, raises=None, text=""):
             return _Completion(parsed, text)
 
     ctx = SimpleNamespace(
-        routine=SimpleNamespace(dir=tmp_path, models={}), phase="",
-        registry=SimpleNamespace(for_model=lambda kind, models: (
+        routine=SimpleNamespace(dir=tmp_path, models={}, efforts={}), phase="",
+        registry=SimpleNamespace(for_model=lambda kind, models, efforts: (
             _Endpoint(), SimpleNamespace(model="m", effort="", temperature=0.0,
                                          max_tokens=1000))),
         add_usage=lambda u: None)
@@ -98,7 +98,8 @@ def test_the_judge_is_the_tool_call_role_never_the_main_model(tmp_path):
     asked: list[str] = []
     loop = _loop(tmp_path, {"verdicts": []})
     inner = loop.ctx.registry.for_model
-    loop.ctx.registry.for_model = lambda kind, models: (asked.append(kind), inner(kind, models))[1]
+    loop.ctx.registry.for_model = lambda kind, models, efforts: (
+        asked.append(kind), inner(kind, models, efforts))[1]
     verifier.refuted(loop, _claims("a"), "done")
     assert asked == ["tool_call"]
     assert loop.calls[0]["purpose"] == "finish · verify claims"

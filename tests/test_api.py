@@ -1685,14 +1685,14 @@ def test_settings_models_crud(client):
     # the fixture seeds one catalog model "m" on endpoint "dummy", and it's the system model
     listing = c.get("/api/settings/endpoints").json()
     assert [m["name"] for m in listing["models"]] == ["m"] and listing["system_model"] == "m"
-    # add a multimodal model with an explicit context window + effort
+    # add a multimodal model with an explicit context window (a stale `effort` stores nothing)
     r = c.post("/api/settings/models", json={
         "name": "gpt4o", "endpoint": "dummy", "model": "openai/gpt-4o",
         "multimodal": True, "context_tokens": 512_000, "effort": "high"})
     assert r.status_code == 200
     raw = yaml.safe_load((tmp / "config.yaml").read_text())["models"]["gpt4o"]
     assert raw == {"endpoint": "dummy", "model": "openai/gpt-4o",
-                   "multimodal": True, "context_tokens": 512_000, "effort": "high"}
+                   "multimodal": True, "context_tokens": 512_000}
     gv = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "gpt4o")
     assert gv["multimodal_effective"] is True and gv["context_effective"] == 512_000
     # a model on an unknown endpoint is rejected

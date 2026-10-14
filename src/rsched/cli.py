@@ -14,26 +14,14 @@ import sys
 from pathlib import Path
 
 from .cli_daemon import LOG_FORMAT, cmd_daemon
+from .cli_overrides import parse_effort_overrides, parse_model_overrides
 from .cli_render import _render_event
-from .config import ROUTINE_MODEL_ROLES, load_server_config
+from .config import EFFORT_LEVELS, MODEL_KINDS, ROUTINE_MODEL_ROLES, load_server_config
 from .paths import expand
 
 #: A finished run's status → the process exit code (`run-once` and the daemon's `engine-run`).
 #: A partial run did its job as far as it went — 0; an abort is the shell's SIGINT 130.
 RUN_EXIT_CODES = {"ok": 0, "partial": 0, "failed": 1, "aborted": 130}
-
-
-def _parse_model_overrides(values: list[str]) -> dict[str, str]:
-    """--model main=gpt-4o (a catalog model NAME; repeatable per role)."""
-    out: dict[str, str] = {}
-    for val in values or []:
-        kind, _, name = val.partition("=")
-        if not (kind and name):
-            raise SystemExit(f"--model expects kind=name (a catalog model), got {val!r}")
-        if kind not in ROUTINE_MODEL_ROLES:
-            raise SystemExit(f"--model kind must be one of {ROUTINE_MODEL_ROLES}, got {kind!r}")
-        out[kind] = name
-    return out
 
 
 def _dir_across_homes(server, slug: str):
@@ -79,7 +67,8 @@ def cmd_run_once(args) -> int:
 
     try:
         status, run_dir = run_routine(routine_dir, server,
-                                      model_overrides=_parse_model_overrides(args.model),
+                                      model_overrides=parse_model_overrides(args.model),
+                                      effort_overrides=parse_effort_overrides(args.effort),
                                       on_event=None if args.quiet else on_event)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -133,7 +122,8 @@ def cmd_engine_run(args) -> int:
     signal.signal(signal.SIGTERM, lambda *_: request_abort())
     try:
         status, _ = run_routine(routine_dir, server, run_ts=args.run_ts,
-                                model_overrides=_parse_model_overrides(args.model),
+                                model_overrides=parse_model_overrides(args.model),
+                                effort_overrides=parse_effort_overrides(args.effort),
                                 resume_from=args.run_ts if getattr(args, "resume", False) else None)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -336,6 +326,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="override a routine model role: kind=name (a catalog model — a "
                         "decision model for decision/decision_media; kind: "
                         f"{'|'.join(ROUTINE_MODEL_ROLES)}, repeatable)")
+    r.add_argument("--effort", action="append",
+                   help=f"override a role's reasoning effort: kind=level (kind: "
+                        f"{'|'.join(MODEL_KINDS)}; level: {'|'.join(EFFORT_LEVELS)}; repeatable)")
     r.add_argument("--quiet", action="store_true", help="no event stream on stdout")
     r.set_defaults(fn=cmd_run_once)
 
@@ -354,6 +347,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="a MODEL TRIAL's role override, kind=name (a catalog model; "
                         "repeatable) — the daemon names a trial run's models here "
                         "(rsched/trials.py)")
+    e.add_argument("--effort", action="append",
+                   help="a MODEL TRIAL's role effort override, kind=level (repeatable)")
     e.set_defaults(fn=cmd_engine_run)
 
     v = sub.add_parser("validate", help="validate server config and routine.yaml files")

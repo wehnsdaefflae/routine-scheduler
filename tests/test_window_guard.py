@@ -29,14 +29,14 @@ class _Registry:
     def __init__(self, ep):
         self.ep = ep
 
-    def for_model(self, kind, models):
+    def for_model(self, kind, models, efforts):
         return self.ep, ModelRef("main-ep", "main-model",
                                  context_tokens=250_000, max_tokens=16_384)
 
-    def for_model_chain(self, kind, models):
-        return [self.for_model(kind, models)]
+    def for_model_chain(self, kind, models, efforts):
+        return [self.for_model(kind, models, efforts)]
 
-    def for_uncensored(self, models):
+    def for_uncensored(self, models, efforts):
         return None
 
 

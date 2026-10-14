@@ -1,6 +1,7 @@
-// Routine settings — MODELS: which catalog model runs each role, and — once the instance has
-// decision models — which one answers this routine's decide calls. Behind "more": how much of
-// the model's thinking lands on paper (deliberation).
+// Routine settings — MODELS: which catalog model runs each role and how hard it reasons
+// (effort — a setting of its own, so one catalog model serves every level), and — once the
+// instance has decision models — which one answers this routine's decide calls. Behind "more":
+// how much of the model's thinking lands on paper (deliberation).
 
 import { el } from "/static/util.js";
 import { settingsSection } from "/static/components/settings-section.js";
@@ -28,15 +29,31 @@ export function modelsGroup(ctx) {
   const decisions = d.decision_catalog || [];   // [{name, images}] — empty: no decide action
   const decDefaults = d.decision_defaults || {};
 
-  const models = fieldBlock(form, "models", (value, set) => {
-    const current = { ...(value || {}) };
+  const levels = d.effort_levels || [];     // the reasoning levels on offer, lowest first
+  const sysEffort = d.system_effort;        // what a role with no model of its own runs at
+
+  // One block over BOTH keys: a role's model and its effort are one row and one decision.
+  const models = fieldBlock(form, ["models", "efforts"], (value, set) => {
+    const current = { ...(value.models || {}) };
+    const efforts = { ...(value.efforts || {}) };
+    const emit = () => set({ models: { ...current }, efforts: { ...efforts } });
     const commit = (kind, v) => {
       if (v) current[kind] = v; else delete current[kind];
-      set({ ...current });
+      emit();
     };
-    const roleRow = (kind, desc, sel) => el("div", { class: "row", style: "margin:5px 0" },
+    const effortSelect = (kind) => {
+      const sel = el("select", { "data-effort-role": kind, "data-nopersist": true,
+        "aria-label": `${kind} reasoning effort`, title: "how hard the model reasons on each turn",
+        onchange: () => { if (sel.value) efforts[kind] = sel.value; else delete efforts[kind]; emit(); } },
+        el("option", { value: "" }, !current[kind] && sysEffort ? `effort: system (${sysEffort})`
+          : "effort: provider default"),
+        ...levels.map((l) => el("option", { value: l }, l)));
+      sel.value = efforts[kind] || "";
+      return sel;
+    };
+    const roleRow = (kind, desc, sel, extra = null) => el("div", { class: "row", style: "margin:5px 0" },
       el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, kind),
-      el("span", { class: "muted small", style: "min-width:150px" }, desc), sel);
+      el("span", { class: "muted small", style: "min-width:150px" }, desc), sel, extra);
     const decisionRows = !decisions.length ? [] : DECISION_ROLES.map(([kind, desc]) => {
       const offered = decisions.filter((m) => kind !== "decision_media" || m.images);
       // What a blank role means, worded as the engine resolves it (endpoints/decisions.py
@@ -63,7 +80,7 @@ export function modelsGroup(ctx) {
         ...(current[kind] && !catalog.includes(current[kind])
           ? [el("option", { value: current[kind] }, `${current[kind]} — not in the catalog`)] : []));
       sel.value = current[kind] || "";
-      return roleRow(kind, desc, sel);
+      return roleRow(kind, desc, sel, effortSelect(kind));
     });
     const refMonth = d.spend?.current?.referrals || 0;
     return el("div", {}, ...rows, ...decisionRows,
@@ -89,15 +106,15 @@ export function modelsGroup(ctx) {
     { labels: { ladder_rung_height: "rung height", oversight_turns: "rung budget" } });
 
   return settingsGroup({
-    form, title: "Models", hint: "which model runs each role",
-    keys: ["models", "deliberation", "ladder_rung_height", "oversight_turns"],
+    form, title: "Models", hint: "which model runs each role, and how hard it reasons",
+    keys: ["models", "efforts", "deliberation", "ladder_rung_height", "oversight_turns"],
     moreKeys: ["deliberation", "ladder_rung_height", "oversight_turns"],
     digest: () => `deliberation ${describe("deliberation", form.get("deliberation"))}`
       + ` · rung every ${form.get("ladder_rung_height") ?? 20} turns`,
     sections: [
       ...settingsSection({ title: "Models", id: "models" },
         catalog.length
-          ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
+          ? "which catalog model this routine uses for each role, and how hard it reasons (effort applies to whichever model serves the role — a failover included) — leave on system default to fall back to the system model"
             + (decisions.length ? "; the decision roles pick from the decision models and fall back to the instance's decision defaults" : "")
           : "add a model in Settings first",
         models.node),

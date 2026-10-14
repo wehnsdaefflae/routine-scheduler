@@ -26,6 +26,7 @@ services:
       - "127.0.0.1:8317:8317"
       - "127.0.0.1:54545:54545"  # Claude OAuth callback, tunnel for remote login
       - "127.0.0.1:1455:1455"    # Codex OAuth callback, tunnel for remote login
+      - "127.0.0.1:51121:51121"  # Antigravity (Google) OAuth callback, tunnel for remote login
     volumes:
       - type: bind
         source: ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy/config.yaml

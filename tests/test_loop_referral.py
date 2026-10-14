@@ -63,15 +63,15 @@ class _FakeRegistry:
         self.tool_ep = tool_ep if tool_ep is not None else main_ep
         self.main_name = main_name
 
-    def for_model(self, kind, models):
+    def for_model(self, kind, models, efforts):
         if kind == "tool_call":
             return self.tool_ep, ModelRef("tool-ep", "tool-model")
         return self.main_ep, ModelRef(self.main_name, "main-model")
 
-    def for_model_chain(self, kind, models):
+    def for_model_chain(self, kind, models, efforts):
         return [(self.main_ep, ModelRef(self.main_name, "main-model"))]
 
-    def for_uncensored(self, models):
+    def for_uncensored(self, models, efforts):
         if self.unc_ep is None:
             return None
         return self.unc_ep, ModelRef("unc-ep", "unc-model", name="honeypot")

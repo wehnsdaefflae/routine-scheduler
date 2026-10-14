@@ -35,7 +35,8 @@ def routine_yaml(settings: dict, *, tz: str) -> dict:
         out["run_gate"] = dict(settings["run_gate"])
     renamed = {"reminders": "shared_reminders"}
     for key in ("improve", "permissions", "capabilities", "rules", "reminders", "budgets",
-                "fs_read_roots", "fs_write_roots", "connections", "machines", "models", "tags"):
+                "fs_read_roots", "fs_write_roots", "connections", "machines", "models",
+                "efforts", "tags"):
         if key in settings:
             out[renamed.get(key, key)] = settings[key]
     for key in ("fs_read_roots", "fs_write_roots"):

@@ -111,6 +111,8 @@ export function describe(key, v) {
     case "machines": return list(v, "no machines");
     case "models": return Object.entries(v || {}).filter(([, m]) => m)
       .map(([k, m]) => `${k}: ${m}`).join(" · ") || "system default";
+    case "efforts": return Object.entries(v || {}).filter(([, l]) => l)
+      .map(([k, l]) => `${k}: ${l}`).join(" · ") || "provider default";
     case "deliberation": return String(v || "standard");
     // The escalation ladder (engine/ladder.py). `enabled` is the whole substance — a depth
     // nobody is watching under is noise — so the off state says only that.

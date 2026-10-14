@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from ...config import (
     DEFAULT_CONTEXT_TOKENS,
     DEFAULT_MODEL_MAX_TOKENS,
+    EFFORT_LEVELS,
     ENDPOINT_KINDS,
     NATIVE_MM_KINDS,
     EndpointConfig,
@@ -22,7 +23,7 @@ from ...config import (
 from ...endpoints import cliproxy_mgmt, limits
 from ...endpoints.base import api_key_source
 from ..model_fit import effective_window_pair, fit_fields
-from .common import reload_into, rewrite_block, server_of, update_config
+from .common import rewrite_block, server_of
 
 router = APIRouter()
 
@@ -148,7 +149,7 @@ def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None,
     kind = ep.kind if ep else ""
     found = found or {}
     return {"name": mc.name, "endpoint": mc.endpoint, "model": mc.model,
-            "multimodal": mc.multimodal, "effort": mc.effort, "temperature": mc.temperature,
+            "multimodal": mc.multimodal, "temperature": mc.temperature,
             "context_tokens": mc.context_tokens,
             "max_tokens": mc.max_tokens, "fallbacks": list(mc.fallbacks),
             "multimodal_effective": mc.multimodal if mc.multimodal is not None
@@ -171,7 +172,10 @@ def list_endpoints(request: Request) -> dict:
             "models": [_model_view(m, server.endpoints, _found(server, m), _served(server, m))
                        for m in server.models.values()],
             "system_model": server.system_model or None,
-            "compaction_model": server.compaction_model or None}
+            "system_effort": server.system_effort or None,
+            "effort_levels": list(EFFORT_LEVELS),
+            "compaction_model": server.compaction_model or None,
+            "compaction_effort": server.compaction_effort or None}
 
 
 @router.get("/settings/models")
@@ -181,7 +185,10 @@ def list_models(request: Request) -> dict:
     return {"models": [_model_view(m, server.endpoints, _found(server, m), _served(server, m))
                        for m in server.models.values()],
             "system_model": server.system_model or None,
-            "compaction_model": server.compaction_model or None}
+            "system_effort": server.system_effort or None,
+            "effort_levels": list(EFFORT_LEVELS),
+            "compaction_model": server.compaction_model or None,
+            "compaction_effort": server.compaction_effort or None}
 
 
 def _rewrite_endpoints(request: Request, mutate: Callable[[dict], None]) -> dict:
@@ -275,7 +282,6 @@ class ModelBody(BaseModel):
     model: str
     multimodal: bool | None = None    # None = default by the endpoint kind
     context_tokens: int | None = None  # None = inherit the endpoint's context_tokens
-    effort: str | None = None
     temperature: float | None = None  # None = inherit the endpoint's temperature
     max_tokens: int | None = None     # None = inherit the endpoint's max_tokens
     fallbacks: list[str] = []         # ordered failover chain (catalog model names)
@@ -319,35 +325,6 @@ def delete_model(request: Request, name: str) -> dict:
         models.pop(name, None)
 
     return _rewrite_models(request, mutate)
-
-
-class SystemModelBody(BaseModel):
-    name: str   # a catalog model name
-
-
-@router.put("/settings/system-model")
-def set_system_model(request: Request, body: SystemModelBody) -> dict:
-    """Set the ONE fallback model for machine work that isn't a routine yet — workflow
-    generation/suggestion and the new-routine clarify flow. Setting it is what makes the
-    instance 'llm_ready'; routines otherwise pick their own (also by catalog name).
-    """
-    s = server_of(request)
-    if body.name not in s.models:
-        raise HTTPException(400, f"unknown model {body.name!r} — add it to the catalog first")
-    path = update_config(request, lambda raw: raw.update(system_model=body.name))
-    reload_into(request, path, "system_model")
-    return {"ok": True, "system_model": s.system_model or None}
-
-
-@router.put("/settings/compaction-model")
-def set_compaction_model(request: Request, body: SystemModelBody) -> dict:
-    """Choose background archival only; an empty name restores Automatic routing."""
-    s = server_of(request)
-    if body.name and body.name not in s.models:
-        raise HTTPException(400, f"unknown model {body.name!r} — add it to the catalog first")
-    path = update_config(request, lambda raw: raw.update(compaction_model=body.name))
-    reload_into(request, path, "compaction_model")
-    return {"ok": True, "compaction_model": s.compaction_model or None}
 
 
 # Providers whose account balance the endpoint card can show, sniffed from base_url.

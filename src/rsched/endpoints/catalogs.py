@@ -13,6 +13,7 @@ answers MEAN (the output-cap policy, the precedence chain, the cache) is `limits
 from __future__ import annotations
 
 import logging
+import re
 from urllib.parse import urlsplit
 
 import httpx
@@ -88,7 +89,7 @@ def _origin(base_url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
-def _listed_ids(body: dict) -> set[str] | None:
+def listed_ids(body: dict) -> set[str] | None:
     """Every id in an OpenAI-shaped `{"data": [{"id": …}]}` listing, whether or not the row
     carried any limits. None for a shape that is not that listing at all.
     """
@@ -134,7 +135,49 @@ def _openrouter(ep) -> Listing:
         mx = top.get("max_completion_tokens") if isinstance(top, dict) else None
         out[str(row["id"])] = (int(ctx),
                                int(mx) if isinstance(mx, int | float) and mx else None)
-    return out, _listed_ids(body)
+    return out, listed_ids(body)
+
+
+#: The public catalog a model is read against when its OWN provider publishes no figures — see
+#: `reference_table`. OpenRouter's listing needs no key and carries every major vendor's model.
+REFERENCE_URL = "https://openrouter.ai/api/v1/models"
+#: A trailing thinking-level on an id (`gemini-4-argon-high`, `gpt-oss-120b-medium`): a subscription
+#: route serves one model as several ids that differ only in the level baked into them, and the
+#: window belongs to the model, not to the level.
+_LEVEL_SUFFIX = re.compile(r"-(?:minimal|low|medium|high|xhigh|max|thinking)$")
+
+
+def reference_name(model_id: str) -> str:
+    """A model id reduced to the name vendors share: the last path segment (`google/gemini-4-
+    argon` → `gemini-4-argon`), lower-cased, any `:variant` (`:free`, `:batch`) and one trailing
+    thinking level removed — so a proxy's `gemini-4-argon-high` and OpenRouter's
+    `google/gemini-4-argon` are the same name.
+    """
+    name = model_id.lower().rsplit("/", 1)[-1].split(":", 1)[0]
+    return _LEVEL_SUFFIX.sub("", name)
+
+
+def reference_table() -> dict[str, tuple[int, int | None]]:
+    """`{reference_name: (context, max output)}` from the public reference catalog, or `{}` when
+    it is unreachable. PRIMARY rows only (a `:variant` row is another offer of the model, often
+    with another output limit), and where two vendors share a name the SMALLER window wins — a
+    wrong guess upward overfills the model, one downward only compacts earlier.
+    """
+    body = _get(REFERENCE_URL)
+    out: dict[str, tuple[int, int | None]] = {}
+    for row in (body or {}).get("data") or []:
+        if not isinstance(row, dict) or ":" in str(row.get("id", ":")):
+            continue
+        ctx = row.get("context_length")
+        if not (isinstance(ctx, int | float) and ctx > 0):
+            continue
+        top = row.get("top_provider")
+        mx = top.get("max_completion_tokens") if isinstance(top, dict) else None
+        figures = (int(ctx), int(mx) if isinstance(mx, int | float) and mx else None)
+        key = reference_name(str(row["id"]))
+        if key not in out or figures[0] < out[key][0]:
+            out[key] = figures
+    return out
 
 
 def _nanogpt(ep) -> Listing:
@@ -178,7 +221,7 @@ def _openai_generic(ep) -> Listing:
         ctx = row.get("max_model_len") or row.get("context_length")
         if isinstance(ctx, int | float) and ctx > 0:
             out[str(row["id"])] = (int(ctx), None)
-    return out, _listed_ids(body)
+    return out, listed_ids(body)
 
 
 def _ollama(ep, model_ids: list[str]) -> Listing:

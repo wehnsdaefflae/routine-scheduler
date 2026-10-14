@@ -21,7 +21,7 @@ from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
 from ..engine.ladder import oversight_turns_for
 from ..readmodels.stats import monthly_spend
 from .api_jobs import layer_on
-from .config_fields import decision_picker
+from .config_fields import decision_picker, effort_picker
 from .decisions_read import _snooze_active
 from .routines_common import (
     _catalog,
@@ -221,14 +221,13 @@ def routine_detail(request: Request, slug: str) -> dict:
         # workflow that isn't there (hand-authored recipes carry an empty slug).
         "workflow_ref": {"slug": info.cfg.workflow_slug, "commit": info.cfg.workflow_commit,
                          "in_library": in_library},
-        # Per-routine model roles (main/tool_call/uncensored) — each a catalog model
-        # NAME, or null to fall back to the server system_model. `catalog` populates the picker.
-        # The two decision roles name a DECISION model, null falling back to the instance's
-        # decision defaults; their pickers read `decision_catalog` (empty → no rows at all).
+        # Per-routine model roles (main/tool_call/uncensored) — each a catalog model NAME, or null
+        # for the server system_model; `catalog` fills the picker. The two decision roles name a
+        # DECISION model (null → the instance's defaults); their pickers read `decision_catalog`.
         "models": {k: (info.cfg.models.get(k) or None) for k in ROUTINE_MODEL_ROLES},
         "catalog": list(server.models.keys()),
         "system_model": server.system_model or None,
-        **decision_picker(server),
+        **decision_picker(server), **effort_picker(server, info.cfg),
         # OAuth connection bindings {provider: account}; the picker's options come from
         # GET /api/settings/oauth (the connected accounts).
         "connections": dict(info.cfg.connections),
