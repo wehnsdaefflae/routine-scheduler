@@ -32,7 +32,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .. import reminder_checks as checks
 from .. import reminders as store
 from ..reminders import LABEL_HELP, Reminder
 from . import hold as hold_seam
@@ -245,106 +244,6 @@ def at_finish(loop, action: dict) -> str:
     return "\n" + "\n".join(_fired_line(h, "finish turn") for h in fired)
 
 
-def field_problems(action: dict, grants) -> list[str]:
-    """Semantic checks for the two side fields, run inside the schema-retry cycle
-    (`actions.validate_action`) so a malformed op is corrected and never becomes a turn.
-
-    The capability check lives here rather than in `GrantPolicy.deny`'s kind gate because these
-    fields ride EVERY kind, including the always-available ones the kind gate skips.
-    """
-    problems: list[str] = []
-    if (op := action.get("remind")) is not None:
-        problems += _remind_problems(op, grants)
-    if (fb := action.get("remind_feedback")) is not None:
-        # the capability gates the LAYER, not just the write: a run without it has no fires to
-        # label, and an accepted label there would answer a channel the docs say is closed
-        if grants is not None and (denial := grants.reminder_denial("local")):
-            problems.append(denial)
-        else:
-            problems += _feedback_problems(fb)
-    return problems
-
-
-def _remind_problems(op: object, grants) -> list[str]:
-    if not isinstance(op, dict):
-        return ['`remind` must be an object: {"op": "add|revise|delete", ...}']
-    verb = str(op.get("op") or "")
-    if verb not in ("add", "revise", "delete"):
-        return ['`remind.op` must be "add", "revise" or "delete"']
-    scope = str(op.get("scope") or "local")
-    if scope not in store.SCOPES:
-        return ['`remind.scope` must be "local" or "global"']
-    problems: list[str] = []
-    if grants is not None and (denial := grants.reminder_denial(scope)):
-        return [denial]
-    # the TRIGGER: omitted means `action`, the kind every reminder had before D152-C
-    kind = store.DEFAULT_KIND if op.get("kind") is None else op.get("kind")
-    if (p := checks.kind_problem(kind)) and verb != "delete":
-        return [p]          # every further check depends on which moment this watches
-    kind = kind if isinstance(kind, str) and kind in store.KINDS else store.DEFAULT_KIND
-    # the TARGET: another routine's slug. Setting a hook on someone else is a different act
-    # from leaving one for yourself, so it is checked here and refused outright for the two
-    # verbs that cannot mean it (a foreign hook is the TARGET's to revise or delete).
-    if (target := op.get("target")) is not None:
-        from ..ids import is_slug
-
-        if verb != "add":
-            problems.append(f"`remind.target` belongs to `op=add` — a hook another routine "
-                            f"holds is ITS to {verb}, which is what its disposition does")
-        elif not is_slug(str(target or "")):
-            problems.append("`remind.target` must be another routine's kebab-case slug — the "
-                            "routine whose runs this hook fires in")
-        elif scope == "global":
-            problems.append("`remind.target` and `scope=global` are two different reaches: a "
-                            "global reminder already reaches every routine it is curated for, "
-                            "so a target would mean nothing")
-    if verb == "add":
-        problems += [p for p in (checks.regex_problem(op.get("regex"), kind),
-                                 checks.description_problem(op.get("description"))) if p]
-        if scope == "global" and (p := checks.reach_problem(op.get("reach"))):
-            problems.append(p)
-    else:
-        if not str(op.get("id") or "").strip():
-            problems.append(f"`remind.op={verb}` needs the `id` of the reminder it changes")
-        if op.get("regex") is not None and (p := checks.regex_problem(op["regex"], kind)):
-            problems.append(p)
-        if op.get("description") is not None and (
-                p := checks.description_problem(op["description"])):
-            problems.append(p)
-        if op.get("reach") is not None and (p := checks.reach_problem(op["reach"])):
-            problems.append(p)
-        if verb == "revise" and all(op.get(k) is None for k in ("regex", "description",
-                                                                  "reach", "kind")):
-            problems.append("`remind.op=revise` needs what changes: a new `regex`, "
-                            "`description`, `kind` or `reach`")
-    if scope == "local" and op.get("reach") is not None:
-        problems.append("`remind.reach` belongs to a GLOBAL reminder — a local one reaches only "
-                        "this routine")
-    return problems
-
-
-def _feedback_problems(fb: object) -> list[str]:
-    if not isinstance(fb, dict):
-        return [('`remind_feedback` must be an object: {"id": "<reminder id>", '
-                 '"label": "could_not|would_have|did|didnt"}')]
-    problems = []
-    if not str(fb.get("id") or "").strip():
-        problems.append("`remind_feedback.id` must name the reminder whose fire you are "
-                        "labelling")
-    if str(fb.get("label") or "") not in store.LABELS:
-        problems.append(f"`remind_feedback.label` must be one of {list(store.LABELS)} — "
-                        f"{LABEL_HELP}")
-    # the DISPOSITION rides the same field (D152-C step 2): the moment a foreign hook fires is
-    # the moment its usefulness to its target is observable, so the say and the label are one act
-    if (disp := fb.get("disposition")) is not None and disp not in store.DISPOSITIONS:
-        problems.append(f"`remind_feedback.disposition` must be one of "
-                        f"{list(store.DISPOSITIONS)} — keep (leave it live), mute (silence it "
-                        "for the rest of this run), remove (delete it, and its owner cannot set "
-                        "that pattern on you again). It applies only to a hook ANOTHER routine "
-                        "set on you")
-    return problems
-
-
 def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) -> str:
     """Apply this action's `remind` / `remind_feedback` fields and return the ENGINE NOTE the
     observation carries — "" when the action had neither.
@@ -468,16 +367,54 @@ def _remove_from_set(loop, target: Reminder) -> None:
     loop.reminders = [r for r in loop.reminders if r.id != target.id]
 
 
+def _resolve_target(loop, op: dict, rid: str) -> Reminder | str:
+    """The reminder a `revise` or `delete` names — the live set first, the SHARED STORE second.
+
+    The live set alone could not answer for a curated row this routine does not hold (D186,
+    R2530). A `reach: listed` global reminder is in NO non-listing routine's live set by
+    construction, so a curator that does not list it could never name an id `delete` would
+    accept: the refusal was structural, not a lookup miss, and the row was permanent unless the
+    operator removed the file by hand. The reach gate decides when a row FIRES, not who may
+    curate it — so an op that says `scope: global` resolves against the library.
+
+    The fallback is deliberately narrow: only when the op NAMES global (`scope` is not left to
+    default), and only for a row the library actually holds. Everything about AUTHORITY stays
+    where it was — the scope-mismatch guard, `grants.reminder_denial`, the global approval step
+    and the commit all run on the returned target exactly as before.
+
+    Returns the reminder, or the refusal note. The two misses stay textually distinguishable so
+    a caller can tell a typo from a reach gate: "is not in the shared store" names the library,
+    "is live for this run" names this run's set.
+    """
+    if (target := store.find(loop.reminders, rid)) is not None:
+        return target
+    if str(op.get("scope") or "") == "global":
+        home = loop.ctx.server.reminders_home
+        try:
+            curated = store.load_global(home)
+        except OSError:
+            curated = []
+        if (target := store.find(curated, rid)) is not None:
+            return target
+        return (f"no reminder {rid!r} is in the shared store — nothing was "
+                f"{str(op.get('op') or '')}d; the curated ids are the Library tab's reminder "
+                "rows (a global row this routine does not list never appears in a hold)")
+    return (f"no reminder {rid!r} is live for this run — nothing was "
+            f"{str(op.get('op') or '')}d; the live ids are in the holds you have seen. If it is "
+            "a CURATED row this routine does not list, name `scope: global` and it is resolved "
+            "against the shared store")
+
+
 def _apply_op(loop, op: dict, poll_s: float) -> str:
     verb = str(op.get("op") or "")
     scope = str(op.get("scope") or "local")
     if verb == "add":
         return _add(loop, op, scope, poll_s)
     rid = str(op.get("id") or "")
-    target = store.find(loop.reminders, rid)
-    if target is None:
-        return (f"no reminder {rid!r} is live for this run — nothing was {verb}d; the live ids "
-                "are in the holds you have seen")
+    resolved = _resolve_target(loop, op, rid)
+    if isinstance(resolved, str):
+        return resolved
+    target = resolved
     if scope != target.scope and op.get("scope") is not None:
         return (f"{rid} is a {target.scope} reminder and a {verb} cannot move it — to promote a "
                 "proven local reminder, `add` it with scope global (its evidence is per-routine "

@@ -262,7 +262,8 @@ and what stays unlabelled is visible in the tally.
 ## The runtime
 
 `rsched/reminders.py` is the store — the record, the two homes, the union, the tally.
-`engine/remind.py` is the runtime — interception, the ops, the approval gate. The two side fields
+`engine/remind.py` is the runtime — interception, the ops, the approval gate — with
+`engine/remindfields.py` holding the write gate's own checks, which need no run state. The two side fields
 are `remind` (`{op: add|revise|delete, id?, regex?, description?, scope?, reach?}`) and `remind_feedback`
 (`{id, label}`), both modelled on `note`: optional on ANY kind, no turn cost, filed by the engine.
 
@@ -401,7 +402,16 @@ needs the live store the validator does not have:
   store "the store" is every record in it, not only the ones that reach the writing routine: a
   `listed` reminder it does not list still owns its pattern there, and its id — which a new
   entry once took, overwriting it;
-- an unknown id, or a `revise` that tries to move a reminder between scopes;
+- an unknown id, or a `revise` that tries to move a reminder between scopes. Which store answers
+  for the id is the op's own `scope`: the live set first, and when that misses AND the op says
+  `scope: global`, the curated store itself. It has to be, or a `reach: listed` record is
+  **permanent** — it is in no non-listing routine's live set by construction, so a curator that
+  does not list it could never name an id a `delete` would accept, while its own recipe assigns
+  it exactly that act. The reach gate decides when a record FIRES, not who may curate it. The
+  two misses read differently on purpose — "is in the shared store" names the library, "is live
+  for this run" names this run's set and points at `scope: global` — so a typo and a reach gate
+  are never confused. Resolution is all that widens: the dial, the approval and the commit below
+  are asked about the target exactly as before;
 - a `revise` or `delete` of a CURATED reminder by a routine whose dial stops at `local`. The
   write gate can only ask about the scope an op names, and a revise or delete need not name
   one — so the dial is asked again about the store the target lives in. Without it a routine

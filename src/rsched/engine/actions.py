@@ -20,7 +20,7 @@ from . import thenscript
 from .actionschema import KINDS, PSEUDO_UTILS
 from .decideaction import field_problems as decide_field_problems
 from .goalops import field_problems as goal_field_problems
-from .remind import field_problems as reminder_field_problems
+from .remindfields import field_problems as reminder_field_problems
 
 # The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine
 # files rather than an argument to the action: the note channel and the two halves of the
