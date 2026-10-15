@@ -464,9 +464,6 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
         err = _removal_gate(ctx, resolved)
     if err:
         return err
-    g = ctx.grants
-    if g is None:
-        return None
     if err := _engine_owned(ctx, resolved):
         return err
     # routine.yaml is config — never writable by ANY run (even the improver, even when the
@@ -476,6 +473,9 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
         return ("routine.yaml is config (permissions, capabilities, budgets, roots) — no run "
                 "edits it, not even the routine-improver (machine-tunable knobs live in "
                 "tuning.yaml); file a deferred ask_user instead")
+    # Only the RECIPE seal reads the policy; the two above are structural (F698).
+    if (g := ctx.grants) is None:
+        return None
     if not g.recipe_unlocked:
         from ..grantpolicy import is_recipe_path
 

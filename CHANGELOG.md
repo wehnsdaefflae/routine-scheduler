@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.424.2] — 2026-10-16
+
+### The engine's own write seals no longer depend on a grant policy being loaded (F698)
+
+`fileops._write_gate` returned early — `if g is None: return None` — **above** two refusals
+that have nothing to do with grants: `_engine_owned` (the `runs/`, `.util_outputs/` and
+`.doc_cache/` record the engine keeps *of* a run) and the `routine.yaml` refusal (config is the
+user's, editable by no run). Its own docstring says those structural seals "hold with no policy
+loaded", and `run_context.py:106` documents `grants=None` as *unrestricted* — so the strongest
+refusals in the file were exactly the ones an unrestricted context skipped.
+
+The early return now sits where it belongs: directly above the only seal that reads the policy
+(`g.recipe_unlocked`). Three lines moved, no behaviour change for any context that has a policy
+— which is every live run, so this was latent rather than exploited.
+
+Pinned by `tests/test_write_gate_without_a_policy.py` (4 tests). Shown red first on the
+pre-fix file, where both seal tests failed with `KeyError: 'error'` — i.e. the writes *landed*:
+a `runs/<ts>/status.json` was rewritten and a `routine.yaml` replaced.
+
 ## [0.424.1] — 2026-10-16
 
 ### The monthly dependency refresh, and the import convention a new ruff enforces
