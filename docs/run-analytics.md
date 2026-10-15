@@ -118,7 +118,7 @@ just after the newest recipe change with the runs just before it
 | `REGRESSION_WINDOW` | 5 | ≈ a week of a daily routine; one flaky run is only 20% of the sample |
 | `MIN_RUNS` | 3 | fewer runs on either side is a coin flip, not evidence |
 | `FAIL_RATE_JUMP` | +0.4 | one extra failure in 5 (+0.2) is flake; two is a pattern |
-| `BALLOON_RATIO` | 1.5× | median turns/tokens growth that marks real ballooning |
+| `BALLOON_RATIO` | 2.7× | median turns/tokens growth that marks real ballooning — the MEASURED p95 of adjacent-window variation on this instance (1063 adjacent 5-vs-5 windows, 2026-10-13: median 1.04, p75 1.38, p90 2.09, p95 2.73, max 7.16), not a guess |
 | `TURNS_FLOOR` / `TOKENS_FLOOR` | +5 / +20k | absolute floors so a 2→3-turn routine's ratio never flags noise |
 
 `partial` (budget-stopped) counts as not-ok: a recipe change that makes runs blow their

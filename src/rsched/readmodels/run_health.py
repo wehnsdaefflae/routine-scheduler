@@ -48,11 +48,21 @@ MIN_RUNS = 3
 # Fail-rate must jump by ≥ 0.4 (2 extra failures in a 5-run window) to flag: one extra
 # bad run in 5 (+0.2) is within normal flake; two is a pattern.
 FAIL_RATE_JUMP = 0.4
-# Turn/token medians must grow ≥ 1.5× AND by an absolute floor to flag "ballooning":
-# the ratio alone would flag a 2→3-turn routine (noise), the floor alone would miss a
-# small routine tripling. Floors: 5 turns is a real extra work phase; 20k tokens is
+# Turn/token medians must grow ≥ BALLOON_RATIO× AND by an absolute floor to flag
+# "ballooning": the ratio alone would flag a 2→3-turn routine (noise), the floor alone would
+# miss a small routine tripling. Floors: 5 turns is a real extra work phase; 20k tokens is
 # roughly a full extra context-load at typical per-turn sizes.
-BALLOON_RATIO = 1.5
+# 2.7 is MEASURED, not guessed (D181, decided 2026-10-15): it is the p95 of ADJACENT-WINDOW
+# variation on this instance — 1063 adjacent 5-vs-5 windows over .control/workflow-usage.jsonl
+# (1594 folded depth-0 runs, 210 actors, measured 2026-10-13) gave median 1.04, p75 1.38,
+# p90 2.09, p95 2.73, max 7.16. The former 1.5 sat INSIDE that ordinary spread: 20.4% of
+# windows cleared it with nothing having changed, so the flag reported routine variation as
+# regression. The regression this rule exists for is 6.8× (49,409 → 338,024 tokens, self-audit
+# 2026-09), far above either figure. Choosing the p95 means ~5% of ordinary windows still
+# clear it — that is what a p95 IS, and the floors below carry the rest.
+# Lowering this back under 2.7 re-enters the measured noise band; tests/test_balloon_ratio.py
+# fails if it is.
+BALLOON_RATIO = 2.7
 TURNS_FLOOR = 5
 TOKENS_FLOOR = 20_000
 

@@ -15,6 +15,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.424.0] — 2026-10-15
+
+### The cost-trend alarm fires on what is actually unusual (D181)
+
+`BALLOON_RATIO` — the median turns/tokens growth that makes `cost_trend_degraded` fire and
+flags a recipe regression on the routine page — was **1.5× since the heuristic's first day, and
+that was a guess sitting inside ordinary run-to-run variation**. Measured over 1063 adjacent
+5-vs-5 windows of this instance's own usage stream (1594 folded depth-0 runs, 210 actors,
+2026-10-13): median ratio 1.04, p75 1.38, p90 2.09, **p95 2.73**, max 7.16. So **20.4% of
+windows cleared 1.5× with nothing having changed** — three such events landed during the audit
+run that measured it (`voice-model-trainer` 61,686→168,807 tokens, `predatory-publisher-tarpit`
+34→62 turns, `tv-show-tracker` 56,437→98,404).
+
+- `BALLOON_RATIO` is now **2.7** — the measured p95, rounded down to one decimal — and the
+  constant's comment states the measurement rather than a rationale. The regression the rule was
+  built for is 6.8× (self-audit's 49,409 → 338,024 tokens), far above either figure.
+- New `tests/test_balloon_ratio.py` pins the figure **against the distribution**: the constant
+  may rise but may not fall back under the p95, the 6.8× case still flags, and the two
+  ordinary-variation windows above no longer do — with their absolute floors met, so only the
+  ratio can decide them. A future "let's catch more" tightening now fails a test instead of
+  quietly re-entering the noise band.
+- `docs/run-analytics.md`'s constant table carries the figure and its measurement.
+
+### §5 of prompt-anatomy is a verbatim example again, and stays one by construction (F672)
+
+The page the Help tab renders as *"every string the orchestrator sees"* had drifted in three
+ways at once, none of them visible to the checks that existed:
+
+- **Nine of fifteen kind bullets** quoted older wording than `kindsurface.KIND_PROSE`
+  (`llm`, `spawn`, `subtask`, `detach`, `list_models`, `subruns`, `kill`, `ask_user`, `report`).
+  One divergence reached behaviour rather than reading: the `subtask` bullet offered
+  `workflow: "generate"` *"to DRAFT one when none fits"* — `generate` is real for
+  `create_routine` alone (zero hits in `subruns.py`/`child.py`), so a run following the doc
+  would have its child refused.
+- **The ACTION SCHEMA dump disagreed with the bullets in the same section**: the bullets
+  advertised `goal`, `list_models` and `delete`/`move`/`mkdir` while the dump's `kind` enum
+  omitted all five — the example contradicted itself about the routine it portrays.
+- **Nine schema fields were missing and eight descriptions stale** — `options` still said
+  `maxItems: 5` where the schema says 26 (ask_user's cap is a validator constant, not the
+  field's).
+
+Both halves are now rendered from the composer itself for ONE kind set, and new
+`tests/test_prompt_anatomy_example.py` keeps them that way: every bullet the example's kinds
+earn must appear verbatim, no bullet may name a kind its own schema omits, and the dump must be
+byte-identical to `schema_for_kinds(<enum>, reminders=False)`. `test_prompt_anatomy.py` catches
+a field the schema no longer *defines* and pins individual engine strings; neither shape can see
+a bullet quoting last month's wording, which is why this drift survived.
+
 ## [0.423.1] — 2026-10-15
 
 ### The trigger appliers' deprecation came due today, and an undeleted one reds every gate
