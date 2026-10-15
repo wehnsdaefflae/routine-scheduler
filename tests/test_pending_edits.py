@@ -84,32 +84,15 @@ def test_a_web_edit_commits_the_edited_file_and_nothing_else(tmp_path):
     assert (rdir / "stages" / "export.md").read_text(encoding="utf-8") == "second\n"
 
 
-def test_a_trigger_edit_commits_routine_yaml_and_nothing_else(tmp_path):
-    """The same scoping for the trigger appliers, which share `_write_triggers`: they write one
-    file (routine.yaml) and must commit that one.
-    """
-    from rsched import libgit
-
+def test_a_spool_row_whose_kind_lost_its_applier_wedges_nothing(tmp_path):
+    """The three `trigger_*` appliers were deleted when their MIGRATION(expires=2026-10-15)
+    came due; the routes that queued them went in 0.369.0. A run parked on a person since
+    before then could still hold one in its spool, so the DRAIN has to stay safe without the
+    appliers: the unknown kind raises inside `apply_pending`, which records the row and drops
+    the file, and every edit queued behind it still applies. Raw, an applier that raised
+    escaped `apply_pending` AND the reap with the edit still spooled — so the same edit failed
+    at every later run's end and nothing queued behind it, of any kind, ever landed."""
     rdir = _routine(tmp_path)
-    libgit.init_repo(rdir)
-    libgit.commit(rdir, "seed", routines_home=tmp_path)
-    (rdir / "stages" / "bystander.md").write_text("dirty\n", encoding="utf-8")
-
-    pending_edits.apply_trigger_create(
-        rdir, {"entry": {"id": "t1", "type": "webhook", "token": "x"}}, tmp_path)
-
-    named = libgit.git(rdir, "show", "--name-only", "--format=", "HEAD").stdout.split()
-    assert named == ["routine.yaml"], f"the commit carried more than routine.yaml: {named}"
-
-
-@pytest.mark.parametrize("broken", ["triggers: [never closed\n", "- a list\n- not a mapping\n"])
-def test_a_routine_yaml_that_does_not_load_fails_one_edit_and_wedges_nothing(tmp_path, broken):
-    """routine.yaml can be broken under a live run — by hand, or by the run's own `shell` or
-    script, which the action-layer seal cannot stop (CLAUDE.md). The trigger appliers read it
-    raw: the YAMLError (or the AttributeError of a non-mapping) escaped `apply_pending` AND
-    the reap, with the edit still spooled — so the same edit failed at every later run's end
-    and every edit queued behind it, of any kind, never applied."""
-    rdir = _routine(tmp_path, broken)
     _spooled_before_0369(tmp_path, "trigger_create",
                          {"entry": {"id": "t1", "type": "webhook", "token": "x"}})
     pending_edits.queue(tmp_path, "r", "file", {"path": "stages/next.md", "content": "next"})
@@ -117,10 +100,11 @@ def test_a_routine_yaml_that_does_not_load_fails_one_edit_and_wedges_nothing(tmp
     rows = pending_edits.apply_pending(rdir, tmp_path, "r")
 
     assert [r["ok"] for r in rows] == [False, True]
-    assert "routine.yaml" in rows[0]["error"]
+    assert "trigger_create" in rows[0]["error"], rows[0]
     assert pending_edits.pending_count(tmp_path, "r") == 0, "the bad edit is dropped, not respooled"
     assert (rdir / "stages" / "next.md").read_text(encoding="utf-8") == "next"
-    assert (rdir / "routine.yaml").read_text(encoding="utf-8") == broken, "never rewritten"
+    saved = (rdir / "routine.yaml").read_text(encoding="utf-8")
+    assert saved == "enabled: true\n", "no applier reads or writes routine.yaml any more"
 
 
 def test_a_replayed_file_edit_lands_atomically(tmp_path):
@@ -140,25 +124,24 @@ def test_a_replayed_file_edit_lands_atomically(tmp_path):
     assert recipe.stat().st_ino != before, "written in place, not swapped in whole"
 
 
-def test_the_trigger_appliers_round_trip(tmp_path):
-    """create → retune → delete through the shared read/write pair, and a second report
-    trigger slipping in while queued is skipped rather than duplicated."""
-    rdir = _routine(tmp_path, "enabled: true\ntriggers:\n- {id: rep1, type: report}\n")
-    _spooled_before_0369(tmp_path, "trigger_create", {"entry": {"id": "rep2", "type": "report"}})
-    _spooled_before_0369(tmp_path, "trigger_create", {"entry": {"id": "hk", "type": "webhook"}})
-    _spooled_before_0369(tmp_path, "trigger_update",
-                         {"trigger_id": "hk", "fields": {"cooldown_s": 60}})
-    _spooled_before_0369(tmp_path, "trigger_delete", {"trigger_id": "rep1"})
-    _spooled_before_0369(tmp_path, "trigger_delete", {"trigger_id": "gone"})
+def test_every_stale_trigger_row_drains_without_stopping_the_queue(tmp_path):
+    """A spool holding SEVERAL pre-0.369.0 trigger rows (the shape a long-parked run leaves)
+    empties completely: each unknown kind is recorded as its own failure, none respools, and a
+    real edit behind all of them still lands. One bad row must never wedge the queue."""
+    rdir = _routine(tmp_path)
+    for kind, payload in (("trigger_create", {"entry": {"id": "rep2", "type": "report"}}),
+                          ("trigger_create", {"entry": {"id": "hk", "type": "webhook"}}),
+                          ("trigger_update", {"trigger_id": "hk", "fields": {"cooldown_s": 60}}),
+                          ("trigger_delete", {"trigger_id": "rep1"})):
+        _spooled_before_0369(tmp_path, kind, payload)
+    pending_edits.queue(tmp_path, "r", "file", {"path": "stages/last.md", "content": "landed"})
 
     rows = pending_edits.apply_pending(rdir, tmp_path, "r")
 
-    assert all(r["ok"] for r in rows)
-    assert rows[0]["result"]["skipped"] and rows[4]["result"]["skipped"]
-    import yaml
-    saved = yaml.safe_load((rdir / "routine.yaml").read_text(encoding="utf-8"))
-    assert saved == {"enabled": True, "triggers": [{"id": "hk", "type": "webhook",
-                                                    "cooldown_s": 60}]}
+    assert [r["ok"] for r in rows] == [False, False, False, False, True]
+    assert all("unknown edit kind" in r["error"] for r in rows[:4]), rows
+    assert pending_edits.pending_count(tmp_path, "r") == 0
+    assert (rdir / "stages" / "last.md").read_text(encoding="utf-8") == "landed"
 
 
 def test_replay_empty_spool_is_noop(tmp_path):

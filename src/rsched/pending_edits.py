@@ -31,11 +31,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from . import libgit, recipes, spool
 from .ids import now_iso
-from .paths import atomic_write, atomic_write_yaml, read_json, read_yaml, resolve_rel
+from .paths import atomic_write, read_json, resolve_rel
 
 # Edit kinds that may be queued — each one an endpoint that calls queue_or_apply. Every kind
 # here has an applier below; a kind without one is rejected at queue time (fail closed).
@@ -75,84 +73,17 @@ def apply_recipe_revert(routine_dir: Path, payload: dict, routines_home: Path) -
                                  routines_home=routines_home)
 
 
-def _read_triggers(routine_dir: Path) -> tuple[dict, list[dict]]:
-    """routine.yaml and its trigger entries — the read half of every trigger applier.
-
-    A file that does not parse (ValueError) or parses to something other than a mapping
-    (TypeError) fails THIS edit: `apply_pending` records it and drops it. Raw, a YAMLError
-    escaped the replay (and the reap around it) with the edit still spooled, so every later
-    run's end failed on the same file and every edit queued behind it never applied.
-    """
-    try:
-        raw = read_yaml(routine_dir / "routine.yaml", {})
-    except yaml.YAMLError as exc:
-        raise ValueError(f"routine.yaml does not parse: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise TypeError("routine.yaml is not a mapping")
-    return raw, [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
-
-
-def _write_triggers(routine_dir: Path, raw: dict, entries: list[dict], message: str,
-                    routines_home: Path) -> None:
-    raw["triggers"] = entries
-    atomic_write_yaml(routine_dir / "routine.yaml", raw)
-    # Scoped like apply_file's: this writes ONE file, so a trigger edit must not also ship
-    # whatever else is dirty in the routine's tree under "trigger created via web".
-    libgit.commit(routine_dir, f"{message} via web (queued mid-run)",
-                  routines_home=routines_home, paths=["routine.yaml"], only=True)
-
-
-def apply_trigger_create(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
-    """Append a server-built trigger entry to routine.yaml. The entry (with its token/id)
-    was built at request time so the URL could be returned then; the applier only lands it.
-    """
-    entry = dict(payload["entry"])
-    raw, entries = _read_triggers(routine_dir)
-    # a report trigger is unique per routine — if one slipped in meanwhile, keep the first
-    if entry.get("type") == "report" and any(t.get("type") == "report" for t in entries):
-        return {"skipped": "a report trigger already exists", "id": entry.get("id")}
-    _write_triggers(routine_dir, raw, [*entries, entry], f"add trigger {entry.get('id')}",
-                    routines_home)
-    return {"id": entry.get("id")}
-
-
-def apply_trigger_update(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
-    """Retune a live trigger's fields (cooldown/day-cap) in place."""
-    trigger_id = str(payload["trigger_id"])
-    fields = dict(payload.get("fields") or {})
-    raw, entries = _read_triggers(routine_dir)
-    target = next((t for t in entries if str(t.get("id")) == trigger_id), None)
-    if target is None:
-        return {"skipped": f"no trigger {trigger_id!r}", "id": trigger_id}
-    target.update(fields)
-    _write_triggers(routine_dir, raw, entries, f"retune trigger {trigger_id}", routines_home)
-    return {"id": trigger_id}
-
-
-def apply_trigger_delete(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
-    """Remove a trigger by id."""
-    trigger_id = str(payload["trigger_id"])
-    raw, entries = _read_triggers(routine_dir)
-    kept = [t for t in entries if str(t.get("id")) != trigger_id]
-    if len(kept) == len(entries):
-        return {"skipped": f"no trigger {trigger_id!r}", "id": trigger_id}
-    _write_triggers(routine_dir, raw, kept, f"remove trigger {trigger_id}", routines_home)
-    return {"id": trigger_id}
-
-
 APPLIERS: dict[str, Callable[[Path, dict, Path], dict]] = {
     "file": apply_file,
     "recipe_revert": apply_recipe_revert,
-    # MIGRATION(expires=2026-10-15): the trigger CRUD routes that queued these lost their last
-    # caller in 0.369.0 (2026-09-30, the Triggers card moved onto the settings accept) and were
-    # deleted after it, so nothing queues a trigger edit any more (they are not QUEUEABLE). A
-    # run parked on a person since before then can still hold one in its spool, replayed at
-    # that run's reap — these three appliers drain it. Delete them, `_read_triggers` and
-    # `_write_triggers` once the date passes.
-    "trigger_create": apply_trigger_create,
-    "trigger_update": apply_trigger_update,
-    "trigger_delete": apply_trigger_delete,
 }
+# The three `trigger_*` appliers (and the `_read_triggers`/`_write_triggers` pair they shared)
+# lived here to drain spools written before 0.369.0, when the Triggers card moved onto the
+# settings accept and the CRUD routes that queued them were deleted. Their
+# MIGRATION(expires=2026-10-15) came due and the drain is complete: no spool file exists on the
+# instance and `trigger_*` was never in QUEUEABLE_KINDS, so nothing could queue one. A stale
+# spooled edit of a kind with no applier is still safe — `apply_pending` raises ValueError for
+# it, records the row and drops the file, which is the same path a malformed edit takes.
 
 
 # -- the spool --------------------------------------------------------------------------

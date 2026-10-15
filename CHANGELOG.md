@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.423.1] — 2026-10-15
+
+### The trigger appliers' deprecation came due today, and an undeleted one reds every gate
+
+`pending_edits.py` carried `MIGRATION(expires=2026-10-15)` over the three `trigger_*` appliers
+and the `_read_triggers`/`_write_triggers` pair they shared. `tests/test_policy.py` fails a
+marker whose date is *past* (`expires < today`), so the file was one day from turning the fast
+stage red on every release gate on this host — including the builder's, which cannot ship
+without one. Deleted on its own terms: the routes that queued those edits went in 0.369.0 when
+the Triggers card moved onto the settings accept, `trigger_*` was never in `QUEUEABLE_KINDS`,
+and the instance holds **no** pending-edit spool file at all, so the drain the marker protected
+is complete. With them go the module's last uses of `yaml`, `read_yaml` and `atomic_write_yaml`
+(69 lines of `pending_edits.py`, 17 of its tests).
+
+The safety the marker worried about is now the test: a spooled row whose kind has no applier
+raises inside `apply_pending`, which records the failure row and drops the file, so a run parked
+on a person since September cannot wedge the queue — and every edit queued behind it still
+lands. Both new tests were probed in both directions (an applier re-registered makes the drain
+test fail; a re-introduced expired marker makes the policy test fail and removing it green).
+
 ## [0.423.0] — 2026-10-15
 
 ### A lane fire the resume decided NOT to make up says so where a reader looks
