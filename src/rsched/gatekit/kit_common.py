@@ -4,7 +4,7 @@ paths. Standard library only — this file runs inside the gate's Landlock jail.
 
 from __future__ import annotations
 
-import datetime as _dt
+import datetime as dt
 import hashlib
 import json
 import os
@@ -17,17 +17,17 @@ class UnknownError(Exception):
     """The check could not establish its answer — which a gate must read as work."""
 
 
-def now(ctx: dict) -> _dt.datetime:
-    return _dt.datetime.fromisoformat(str(ctx["now"]))
+def now(ctx: dict) -> dt.datetime:
+    return dt.datetime.fromisoformat(str(ctx["now"]))
 
 
-def since(ctx: dict) -> _dt.datetime:
+def since(ctx: dict) -> dt.datetime:
     """When the last run that finished ok started — what "new" and "changed" are measured from."""
     started = (ctx.get("last_ok") or {}).get("started")
     if not started:
         raise UnknownError("no earlier run finished ok, so there is nothing to compare against")
     try:
-        return _dt.datetime.fromisoformat(str(started))
+        return dt.datetime.fromisoformat(str(started))
     except ValueError as exc:
         raise UnknownError(f"the last ok run's start time {started!r} does not parse") from exc
 

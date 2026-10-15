@@ -7,7 +7,7 @@ verified TLS — the mailbox check sends a password.
 from __future__ import annotations
 
 import base64
-import datetime as _dt
+import datetime as dt
 import email.utils
 import imaplib
 import json
@@ -76,7 +76,7 @@ def _count(conn, folder: str, check: dict, cutoff, senders, domains) -> int:
     if typ != "OK":
         raise UnknownError(f"could not open folder {folder!r}")
     criteria = ("UNSEEN" if cutoff is None else
-                f'SINCE {(cutoff - _dt.timedelta(days=1)).strftime("%d-%b-%Y")}')
+                f'SINCE {(cutoff - dt.timedelta(days=1)).strftime("%d-%b-%Y")}')
     typ, data = conn.search(None, criteria)
     if typ != "OK":
         raise UnknownError(f"search in {folder!r} failed")

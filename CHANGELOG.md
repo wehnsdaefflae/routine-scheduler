@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.424.1] — 2026-10-16
+
+### The monthly dependency refresh, and the import convention a new ruff enforces
+
+`uv.lock` relocked with `uv lock --upgrade` (watermark was **2026-09-11**, 35 days stale): 37
+packages moved, 1 downgraded, 1 dropped. Notable: `ruff` 0.16.9 → 0.17.1, `mypy` 2.3.1 → 2.4.0,
+`pydantic` 2.13.5 → 2.14.1, `fastapi` 0.142.2 → 0.143.2, `litellm` 1.103.1 → 1.105.1,
+`playwright` 1.63.0 → 1.64.0, `multidict` 6.9.1 → 7.1.0, `pyee` 13 → 14; `filelock` 4.0.8 →
+3.32.7 (resolver downgrade); `pytest-base-url` dropped. `pytest` itself did not move.
+
+Upgrading surfaced **five lint errors in code nobody touched**: ruff 0.17.1 adds `datetime` →
+`dt` to its default import conventions, and under this repo's `select = ["ALL"]` that makes
+`import datetime as _dt` an ICN001 error. The repo already imported it as `dt` in three places,
+so the five `_dt` modules were conformed to the repo's own convention rather than the rule being
+ignored: `engine/assist_predicates.py`, `engine/finishline.py`, `gatekit/kit_common.py`,
+`gatekit/kit_local.py`, `gatekit/kit_net.py`. Pure rename, green under **both** ruff versions.
+
 ## [0.424.0] — 2026-10-15
 
 ### The cost-trend alarm fires on what is actually unusual (D181)

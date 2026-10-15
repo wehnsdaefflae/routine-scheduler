@@ -26,7 +26,7 @@ rules and reminders. This document holds only the end of the routine.
 
 from __future__ import annotations
 
-import datetime as _dt
+import datetime as dt
 import re
 from pathlib import Path
 
@@ -74,7 +74,7 @@ def _iso_date(raw: object) -> str:
     if not _DATE_RE.match(text):
         return ""
     try:
-        _dt.date.fromisoformat(text)
+        dt.date.fromisoformat(text)
     except ValueError:
         return ""
     return text
@@ -171,13 +171,13 @@ def _write(routine_dir: Path, doc: dict) -> None:
     atomic_write_json(target, doc)
 
 
-def today() -> _dt.date:
-    return _dt.datetime.now().astimezone().date()
+def today() -> dt.date:
+    return dt.datetime.now().astimezone().date()
 
 
-def is_reached(outcome: dict, on: _dt.date) -> bool:
+def is_reached(outcome: dict, on: dt.date) -> bool:
     if outcome["judge"] == "date":
-        return bool(outcome["date"]) and _dt.date.fromisoformat(outcome["date"]) <= on
+        return bool(outcome["date"]) and dt.date.fromisoformat(outcome["date"]) <= on
     return outcome["status"] == "met"
 
 
@@ -188,27 +188,27 @@ def open_outcomes(doc: dict) -> list[dict]:
     return [o for o in doc["outcomes"] if o["judge"] != "date" and o["status"] == "open"]
 
 
-def reached(doc: dict, on: _dt.date | None = None) -> str:
+def reached(doc: dict, on: dt.date | None = None) -> str:
     """Why this routine is finished — "" while it is not. The `until` date ends it whatever the
     outcomes say; otherwise every outcome must be reached (a routine with no outcomes and no
     `until` runs until it is switched off).
     """
     on = on or today()
-    if doc["until"] and _dt.date.fromisoformat(doc["until"]) < on:
+    if doc["until"] and dt.date.fromisoformat(doc["until"]) < on:
         return f"its end date {doc['until']} has passed"
     if doc["outcomes"] and all(is_reached(o, on) for o in doc["outcomes"]):
         return "every outcome of its finish line is reached"
     return ""
 
 
-def reached_by_calendar(doc: dict, on: _dt.date | None = None) -> str:
+def reached_by_calendar(doc: dict, on: dt.date | None = None) -> str:
     """Why this finish line stays reached whoever reopens it — its `until` date has passed, or
     every outcome is a date whose day has come. "" when reopening would put the routine back.
     """
     return reached({**doc, "outcomes": [{**o, "status": "open"} for o in doc["outcomes"]]}, on)
 
 
-def goal_reached(routine_dir: Path, on: _dt.date | None = None) -> bool:
+def goal_reached(routine_dir: Path, on: dt.date | None = None) -> bool:
     """Is this routine finished for good? The one question the scheduler and the retirement card
     both ask, so neither re-derives it.
     """

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import datetime as _dt
+import datetime as dt
 import fnmatch
 import json
 import subprocess
@@ -110,7 +110,7 @@ def runs_since(check: dict, ctx: dict) -> tuple[bool, str, str]:
                 if who == me or (wanted and who not in wanted) or rec.get("depth"):
                     continue
                 try:
-                    when = _dt.datetime.fromisoformat(str(rec.get("ts")))
+                    when = dt.datetime.fromisoformat(str(rec.get("ts")))
                 except ValueError:
                     continue
                 if when > cutoff:
@@ -174,9 +174,9 @@ def _lacking(value: object, field: str, where: str) -> tuple[bool, str, str]:
     return False, f"every item in {where} has a {field}", ""
 
 
-def _date(text: object) -> _dt.date:
+def _date(text: object) -> dt.date:
     try:
-        return _dt.date.fromisoformat(str(text)[:10])
+        return dt.date.fromisoformat(str(text)[:10])
     except ValueError as exc:
         raise UnknownError(f"{text!r} is not a YYYY-MM-DD date") from exc
 
@@ -194,7 +194,7 @@ def dates(check: dict, ctx: dict) -> tuple[bool, str, str]:
             doc = read_json_file(ctx, str(check["file"]))
         except FileNotFoundError:
             raise UnknownError(f"{check['file']} does not exist") from None
-        early = _dt.timedelta(days=int(check.get("within_days") or 0))
+        early = dt.timedelta(days=int(check.get("within_days") or 0))
         due = sorted(d for d in (_date(v) for v in _open_dates(doc, check) if v)
                      if d - early <= today)
         if due:
@@ -240,6 +240,6 @@ def weekdays(check: dict, ctx: dict) -> tuple[bool, str, str]:
 
 def max_quiet(check: dict, ctx: dict) -> tuple[bool, str, str]:
     quiet = now(ctx) - since(ctx)
-    if quiet >= _dt.timedelta(days=int(check["days"])):
+    if quiet >= dt.timedelta(days=int(check["days"])):
         return True, f"no ok run for {quiet.days} day(s) — the backstop is due", ""
     return False, f"the last ok run was {quiet.days} day(s) ago (backstop: {check['days']})", ""

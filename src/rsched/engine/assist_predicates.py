@@ -157,9 +157,9 @@ def _run_started(ctx) -> float:
     """The run's start as an epoch — `run_ts` is its local wall-clock stamp and survives a
     resume, where the engine's own monotonic clock restarts.
     """
-    import datetime as _dt
+    import datetime as dt
 
-    stamp = _dt.datetime.strptime(str(ctx.run_ts), "%Y%m%d-%H%M%S").astimezone()
+    stamp = dt.datetime.strptime(str(ctx.run_ts), "%Y%m%d-%H%M%S").astimezone()
     return stamp.timestamp()
 
 
