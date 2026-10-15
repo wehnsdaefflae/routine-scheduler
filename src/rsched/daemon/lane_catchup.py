@@ -107,6 +107,27 @@ def resume_catchup(server: ServerConfig, now: datetime) -> list[str]:
         if owed <= 0 or interval <= 0 or owed * 4 >= interval:
             log.info("lane resume catch-up declined lane=%s owed=%.0fs interval=%.0fs",
                      lane["id"], owed, interval)
+            # The DECISION not to make it up is a fact about due work, and for as long as it
+            # lived in `log.info` alone the journal was its only home — the one surface this
+            # instance's own audit cannot read. The skip itself is on the record
+            # (`lane_fire_paused`), so a reader could see the fire was dropped and could not
+            # see whether the resume had made it up or declined: the absence of a
+            # `lane_fire_catchup` was the whole signal, and absence reads the same as a
+            # daemon that never got there. Measured 2026-10-15: the Mon/Wed/Fri maintenance
+            # lane's 03:00 Wednesday fire was owed 13.9 h against its own 48 h cadence, the
+            # quarter-cadence ratio declined it, and the five routines it fires — every
+            # inbox this instance's routed reports are read in — stood dark from Monday to
+            # Friday with nothing but a log line to say why.
+            nxt_from_now = firetimes.next_fire(sched, now)
+            log_health_event(
+                home, "lane_catchup_declined", routine=lane["id"], run_id="",
+                detail=f"{lane.get('name') or lane['id']}: the fire the pause skipped at "
+                       f"{skipped.isoformat()} was NOT made up - {owed / 3600:.1f} h owed is "
+                       f"past a quarter of this lane's own {interval / 3600:.1f} h cadence, so "
+                       f"a make-up run would crowd the next fire rather than stand in for the "
+                       f"lost one. The lane next fires on its cron",
+                cron=str(lane.get("cron") or ""),
+                next_fire=nxt_from_now.isoformat() if nxt_from_now else "")
             continue
         rec = lane_runs.arm(home, lane, default_on_failure=lanes.default_on_failure(home),
                             armed_by="catchup")

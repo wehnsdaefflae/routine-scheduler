@@ -7,7 +7,8 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"util_killed"|"finish_gate_failed"|"observation_render_failed"
         |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
-        |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"fire_paused"
+        |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"lane_catchup_declined"
+        |"fire_paused"
         |"scheduler_tick_error"
         |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route",
  "routine": <slug>, "run_id": <id>, "detail": <str>}

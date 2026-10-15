@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.423.0] — 2026-10-15
+
+### A lane fire the resume decided NOT to make up says so where a reader looks
+
+A pause-skipped lane fire has three possible fates and only two were on the record: the skip
+(`lane_fire_paused`) and the make-up (`lane_fire_catchup`). The third — the resume looking at an
+owed fire and **declining** it because it came due too long ago for the lane's own cadence — was
+a `log.info`, and the journal is the one surface this instance's own audit cannot read. So a
+reader saw the fire dropped and then nothing, and "declined" was indistinguishable from a daemon
+that never reached the resume.
+
+- New health event **`lane_catchup_declined`**, in the machine-checked vocabulary and in
+  `BLOCKED_EVENTS`, so the console's blocked-work fold renders it like any other due-work-that-
+  did-not-happen. It carries the lane, the hours owed against that lane's own cadence, `cron`
+  and the `next_fire` a reader is waiting for.
+- Measured on this instance, which is why it exists: the Mon/Wed/Fri **maintenance** lane's
+  Wednesday 03:00 fire was skipped by the 2026-10-14 pause, was owed 13.9 h against its 48 h
+  cadence — past the quarter-cadence ratio — and was declined. Its five members
+  (`routine-improver`, `rules-review`, `config-optimizer`, `global-utils-review`,
+  `steward-hub-maintainer`) stood dark from Monday to Friday, which is every inbox this
+  instance's routed reports are read in, with nothing but a log line to say why.
+- The ratio itself is unchanged: this is instrumentation, not a policy change.
+
 ## [0.421.0] — 2026-10-14
 
 ### A custom cron is edited in the schedule editor
