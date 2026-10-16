@@ -3,6 +3,8 @@ effect:
   with: secures a local undo point before it edits a project repo, then names it in its summary
   without: edits in place with no undo point — the engine versions no project repo it was granted
   when: it has write access to a git project whose history you care about
+read_when: >-
+  Before your first edit to a git project outside your own routine directory.
 assists:
   - id: before-the-first-repo-edit
     moment: pre-action

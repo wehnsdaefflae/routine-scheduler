@@ -3,6 +3,18 @@ effect:
   with: looks up outside facts and existing solutions before relying on memory or building from scratch, source beside the fact
   without: answers from stale training; reinvents what exists
   when: always — any run can meet an outside fact it only half knows
+read_when: >-
+  When a step turns on an outside fact you are not certain of, and before you build something
+  that may already exist.
+assists:
+  - id: on-the-first-search
+    moment: observation
+    predicate: web-lookup-returned
+    payload: remind
+    line: >-
+      Before anything that came back becomes a fact in your work: confirm a load-bearing fact
+      with a second independent source, prefer the primary one, cite only pages you actually
+      fetched and keep each source beside its fact.
 tags: [tool-use, research, web]
 ---
 # rule: web-research — look it up before relying on memory or building from scratch

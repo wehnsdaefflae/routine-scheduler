@@ -3,6 +3,17 @@ effect:
   with: acts on each piece of your feedback in the run that reads it or hands it back visibly for you to order; judges itself by whether what it publishes is used and says so once when it is not
   without: files feedback for a later run; keeps publishing to an empty room
   when: it publishes something you or others respond to — a hub page, a digest, a vote list
+read_when: >-
+  When you read feedback, votes or a mid-run message about what you publish, and before you
+  finish with any of it unhandled.
+assists:
+  - id: when-feedback-is-read
+    moment: observation
+    predicate: feedback-read
+    payload: remind
+    line: >-
+      Each item that just came back is a task for this run: list them now, act on each or hand
+      it back where the user will see it before you finish, and mark one read only after that.
 tags: [feedback, publishing, accountability]
 ---
 # rule: feedback-loop — act on what readers say; notice when nobody responds

@@ -12,8 +12,8 @@ binding and unbinding is the user's, and this module is the web layer's arm for 
 is the library's, editable on the Library tab and — for a routine holding the rule-authoring
 capability — with the `write_rule` action, under its own approval level (grants.rule_confirm)
 because a revision lands on every holder. The prompt names each held rule beside the one line
-saying WHEN it applies (`when_lines`), read from the rule itself at every boot, so a routine's
-picture of its rules is never a copy that drifted.
+saying WHEN to read it (`when_lines`, the rule's own `read_when:`), read from the rule itself at
+every boot, so a routine's picture of its rules is never a copy that drifted.
 """
 
 from __future__ import annotations
@@ -61,18 +61,52 @@ def summaries(rules_home: Path, slugs: list[str]) -> dict[str, str]:
 
 
 def when_lines(rules_home: Path, slugs: list[str]) -> list[str]:
-    """`<slug> — <when it applies>` per held rule, in the held order — what the prompt shows
-    so a run knows which rule to read before which moment. A rule the library no longer carries
-    says so; `read_rule` names what is there.
+    """`<slug> — <when to read it>` per held rule, in the held order — what the prompt shows
+    so a run knows which rule to read before which moment. The moment is the rule's own
+    `read_when:`, written to the run; a rule the library no longer carries says so, and
+    `read_rule` names what is there.
     """
     docs = {d["slug"]: d for d in library_docs.list_docs(rules_home)}
     out = []
     for slug in slugs:
         doc = docs.get(slug)
-        when = ((doc.get("effect") or {}).get("when") or doc.get("summary") or "") if doc \
+        when = (doc.get("read_when") or doc.get("summary") or "") if doc \
             else "not in the library any more"
         out.append(f"{slug} — {when}")
     return out
+
+
+#: The digest line is read on EVERY run of every holder, so it is a sentence, not a paragraph.
+READ_WHEN_MAX = 200
+
+
+def read_when_problems(raw: object) -> list[str]:
+    """A rule's `read_when:` — the moment a RUN reads it in full, said to the run.
+
+    The state digest names each held rule beside this line, and for most rules it is the only
+    trigger there is. Before it existed the digest showed `effect.when`, which is written to
+    the person deciding whether to HOLD the rule ("always — every run meets decisions…"), and a
+    held rule was read in 1–3% of the runs holding it. "Always" answers the holding question
+    and names no moment, so a line that opens with it is refused.
+    """
+    text = " ".join(str(raw or "").split())
+    if not text:
+        return [("needs a read_when: line — the moment a run should read this rule in full, "
+                 'written to the run ("before you …", "when a … comes back"). The digest '
+                 "shows it beside the slug; effect.when is for the person deciding whether to "
+                 "hold the rule and cannot stand in")]
+    problems = []
+    if not isinstance(raw, str):
+        problems.append("read_when must be one line of text")
+    if len(text) < 20:
+        problems.append(f"read_when is too short to name a moment ({text!r})")
+    if len(text) > READ_WHEN_MAX:
+        problems.append(f"read_when is {len(text)} characters — at most {READ_WHEN_MAX}; every "
+                        "run of every holder reads it, and the rationale belongs in the body")
+    if text.lower().startswith("always"):
+        problems.append("read_when opens with 'always', which names no moment — say which "
+                        "situation in a run makes this rule the one to read")
+    return problems
 
 
 def apply_changes(rules_home: Path, routine_dir: Path, add: list[str],

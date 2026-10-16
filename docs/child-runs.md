@@ -54,6 +54,12 @@ The two in-engine modes are real routines on disk under `runs/<ts>/sub/<n>/` whi
 their own context window, pattern and finish summary. Decomposition is **recursive**: a child can
 decompose again (bounded by `max_subrun_depth`).
 
+A child's config is a copy of its parent's with permissions and capabilities off
+(`childrun._sub_routine`) — so it holds its parent's GENERAL RULES, and their assists fire in it.
+Its state digest is the one-line `(subrun — no routine state digest; …)` plus the same rules
+section a routine's digest carries (`composer.rules_section`): each held rule beside the moment
+to read it. Before 0.404.0 it carried the line alone, and not one of 112 child runs read a rule.
+
 A child's number `n` NAMES that directory, so it is unique across every leg of the run — read
 off the child directories already there (`childrun.claim_child`) — while the `max_subruns`
 allowance COUNTS the children of the current leg and starts afresh with each one. The two were

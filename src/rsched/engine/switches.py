@@ -183,9 +183,10 @@ def apply_rule_additions(loop) -> None:
     assist.rules_bound(loop, slugs)
 
 
-# The two carriers of a rule's prose inside a live thread. A bound rule is NOT inlined in the
+# The carriers of a rule's prose inside a live thread. A bound rule is NOT inlined in the
 # composed prompt — the digest lists slugs and the run reads what it needs — so the text can
-# only be in a mid-run bind note or in a read_rule observation.
+# only be in a mid-run bind note, in a read_rule observation, or framed beneath the first
+# assist of that rule to fire (`assist.withdraw` cuts that one out of the message it rode).
 def _carries_rule(content: str, slug: str) -> bool:
     return (f"the user bound the general rule {slug!r}" in content
             or f"OBSERVATION (read_rule {slug}," in content)
@@ -223,12 +224,19 @@ def apply_rule_drop(loop) -> None:
         for i, msg in enumerate(loop.messages):
             content = str(msg.get("content") or "")
             hit = [s for s in slugs if _carries_rule(content, s)]
-            if not hit:
+            if hit:
+                loop.messages[i] = {**msg, "content":
+                                    f"[removed: the general rule(s) {', '.join(hit)} were "
+                                    f"unbound by the user and their text was withdrawn from "
+                                    f"this context]"}
+                erased += 1
                 continue
-            loop.messages[i] = {**msg, "content":
-                                f"[removed: the general rule(s) {', '.join(hit)} were unbound "
-                                f"by the user and their text was withdrawn from this context]"}
-            erased += 1
+            cut = content
+            for slug in slugs:
+                cut = assist.withdraw(cut, slug) or cut
+            if cut != content:
+                loop.messages[i] = {**msg, "content": cut}
+                erased += 1
     for slug in slugs:
         ctx.consulted_rules.discard(slug)
     named = ", ".join(repr(s) for s in slugs)

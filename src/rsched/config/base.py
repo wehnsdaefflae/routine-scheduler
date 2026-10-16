@@ -62,10 +62,11 @@ DEFAULT_CAPABILITIES = {"actions": ["write_util", "revise_util"], "utils": [],
 # meets (a pattern adds the rules of its KIND of work on top). A rule is a GENERAL rule —
 # principle prose the run applies to its own particular case — and it lives in ONE place, the
 # library. A routine holds slugs, not copies: `rules:` in routine.yaml; the prompt names each
-# held rule with the one line saying when it applies. The run reads the prose on demand
-# (`read_rule`). Read-only to every run; only the USER changes the set or the prose (the
-# Library tab). Improvement of the RULES THEMSELVES is the rules-review meta routine's job —
-# it observes how runs actually interpreted each one and proposes revisions.
+# held rule with the one line saying when to read it (`read_when:`). The run reads the prose
+# on demand (`read_rule`), and the first assist of a rule to fire brings it whole. Read-only to
+# every run; only the USER changes the set or the prose (the Library tab). Improvement of the
+# RULES THEMSELVES is the rules-review meta routine's job — it observes how runs actually
+# interpreted each one and proposes revisions.
 DEFAULT_RULES = ["evidence-discipline", "ask-policy", "fix-the-cause", "problem-routing",
                  "decision-record", "web-research"]
 # Each routine picks its own models: the MAIN orchestrator loop, the model TOOL_CALLs (the

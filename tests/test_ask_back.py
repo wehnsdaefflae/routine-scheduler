@@ -43,6 +43,7 @@ effect:
   with: names the evidence behind every claim it makes
   without: may state a claim with nothing behind it
   when: before any claim in a summary
+read_when: before you write any claim into a summary or a report
 tags: [evidence, claims, summaries]
 ---
 # rule: show-your-work — every claim carries its evidence

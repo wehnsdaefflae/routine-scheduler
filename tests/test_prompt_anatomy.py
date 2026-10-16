@@ -191,6 +191,15 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # line is deliberately terse, and terseness is only honest if the rest is reachable.
         "[RULE ",
         "the full rule: read_rule name=",
+        # …and the FIRST assist of a rule carries the rule itself, framed so an erase can cut
+        # it out; the digest names each rule beside the moment to READ it (`read_when:`)
+        "delivered once with its first assist this run",
+        "each line names the moment to read that rule",
+        # the send gate (engine/sendgate.py): a send in the user's name needs a fresh read of
+        # its outbox; a util holding his identity that no permission lists never runs
+        "SEND REFUSED — nothing was sent.",
+        "the user may have sent it himself, or an earlier run did",
+        "REFUSED — nothing ran.",
         "a general rule you practise applies to how this run ends",
         # The consequence-reminder layer: the standing instruction (harness), the ONE
         # observation that is not a dispatch result (observations), the anti-livelock rule

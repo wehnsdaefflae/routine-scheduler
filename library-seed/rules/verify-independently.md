@@ -3,6 +3,17 @@ effect:
   with: checks irreversible or outward-facing deliverables from outside its own reasoning — a mechanical check first, else a fresh-context child given the criteria, not the reasoning
   without: re-reads its own work, which confirms a mistake about as often as it catches one
   when: its deliverables are sent, published, submitted or expensive to redo
+read_when: >-
+  Before you send, publish or submit a deliverable, or hand over one that is expensive to redo.
+assists:
+  - id: before-it-goes-out
+    moment: pre-action
+    predicate: outbound-message
+    payload: hold
+    line: >-
+      A sent message cannot be recalled. Check it from outside the reasoning that wrote it — a
+      mechanical check, or a read against what was asked — and once it is sent, read back what
+      was actually delivered.
 tags: [verification, subruns, quality]
 ---
 # rule: verify-independently — check the deliverable from outside the reasoning that made it

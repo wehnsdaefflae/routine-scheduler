@@ -237,6 +237,7 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     callers decide whether that is a retry or a silent fallback.
     """
     from ..grantpolicy import REQUEST_ROUTE_MARK
+    from . import sendgate
     from .authoring import recreate_denial  # function-level: authoring pulls in the ask stack
     from .availability import request_denial
 
@@ -247,7 +248,10 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
                 or validate_action(candidate, allowed_kinds=loop.allowed_tools,
                                    grants=loop.grants)
                 or recreate_denial(loop, candidate)
-                or request_denial(loop, candidate))
+                or request_denial(loop, candidate)
+                # a send in the operator's name with no fresh read of its outbox — refused
+                # here, so the corrected action is the read itself and no turn is spent
+                or sendgate.refusal(loop, candidate))
     if problems and any(REQUEST_ROUTE_MARK in str(p) for p in problems):
         loop.ctx.last_denial_turn = loop.ctx.turn + 1   # the turn this refusal is costing
     if problems and isinstance(candidate, dict):

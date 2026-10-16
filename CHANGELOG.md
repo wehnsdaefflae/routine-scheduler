@@ -15,6 +15,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.404.0] — 2026-10-09
+
+### Runs read the rules they hold — at the moment each applies
+
+Measured over the transcripts on disk (367 top-level runs, 112 child runs): a held rule was read
+in 1–3% of the runs holding it, 16% of routine runs ever called `read_rule`, and runs followed a
+fired assist line to its rule 4 times in 177. The rule text reached a run mainly when a recipe
+ordered the read. Four changes, each at the cause:
+
+- **Every rule names the moment a run reads it — `read_when:`.** The state digest showed each
+  held rule beside `effect.when`, which is written to the PERSON deciding whether to hold the
+  rule ("always — every run meets decisions…"): a fine answer to that question and no moment at
+  all for a run. The digest now shows the rule's own `read_when:` — "Before you send a message
+  that expects a reply, and before you call any thread unanswered or silent." — under a heading
+  that says to read the rule in full BEFORE acting. The linter requires the key, refuses one
+  that opens with "always" and caps it at 200 characters (`rules.read_when_problems`).
+- **The first assist of a rule brings the whole rule.** A fired line used to end "(the full
+  rule: read_rule name=…)". Now the first assist of a rule to fire in a run carries the rule's
+  text beneath its line, framed by two marker lines; a later one carries the line and the
+  pointer. A resumed leg owes the body again only where its replay lost it (an observation's
+  tail), and an ERASE unbind cuts the framed body out of the message it rode and keeps the
+  message (`assist._delivered` / `withdraw`).
+- **Eight rules gain their first assists** — nine assists over seven new predicates in
+  `engine/assist_acts.py`: a message about to go out under the user's name HOLDS for
+  `write-as-the-principal` and `verify-independently` (one interruption, the first send of a
+  run only); once sent, `correspondence` asks for the thread to be recorded; the first web
+  search to come back reminds `web-research`'s corroborate-and-cite line; feedback read,
+  code written, a new util and a tracked file removed are `feedback-loop`'s,
+  `make-failure-visible`'s, `work-order`'s and `change-scope`'s moments. Each keys on what the
+  library DECLARES — a permission tagged `as-operator`, a `net: outbound` util tagged `web` +
+  `search`/`research`, a util tagged `feedback` — never on a util's name.
+  `evidence-discipline` and `audit-coverage` stay without one on purpose: their moment is a
+  claim in the finish summary, and the tightest pattern for it fired at 12% of finishes,
+  mostly wrongly, at a rung that costs a turn.
+- **A send in your name runs only right after its outbox was read — enforced, for every
+  channel, including utils nobody has written yet** (your order of 2026-10-02 and today).
+  `engine/sendgate.py` refuses a send at the validation seam — inside the schema-retry cycle,
+  so no turn is spent and the corrected action is the read — unless that channel's outbox was
+  read within 3 turns and after its previous send; the refusal names the call to make, and each
+  send consumes its read. It keys on your IDENTITY, not on util names: each `as-operator`
+  permission (`outbound-mail`, `messaging-signal`, `-telegram`, `-whatsapp`, `-zulip`,
+  `usenet`) now declares in `outbox:` the credentials that act as you, the utils allowed to hold
+  them with the verbs that cannot send, and the read (`rsched/outbox.py`). Any util or script
+  whose DECLARED credentials reach one is classified: an unlisted util is refused outright, an
+  unclassified verb is a send, and a script is read by its `gu` calls — a verb built at runtime,
+  a callee held without a readable call, or a credential it declares itself makes it a send.
+  `write_util` asks you every time before a util would hold your identity. The linter holds each
+  `as-operator` doc to an outbox for every send it reserves. `messaging-discord` and
+  `notifications` are not `as-operator`: they send notices TO you — and keying the first-send
+  hold on `communication` + `outbound` would have held a Discord notice as "your words".
+  On this instance no library util is refused (`usenet-nzb`, which holds the news password, is
+  listed); seven routine scripts in four routines (`freelance-radar`, `grants-radar`,
+  `llmsectest-weekday`, `voice-model-trainer`) now count as sends and need their channel's
+  outbox read before a run calls them — the two `build.py` scripts only because their `calls:`
+  line names Gmail without using it.
+- **`interface-craft` is re-curated from 18 design skills** (Anthropic's `frontend-design`,
+  impeccable, interface-design, mblode's ui-design, Emil Kowalski's skills, OpenAI's frontend
+  guidance and twelve more, surveyed today). It keeps all seven bullets and adds two —
+  hierarchy does most of the work; use real content and never invent proof — and widens the
+  defaults it names to the card kit and template chrome. The design lesson the sources teach
+  between them: a list of what to land on becomes the next default (Anthropic's own 2025
+  suggestions are its 2026 tells), so the rule leans on process and keeps one absolute. The
+  provenance now cites the Apache-2.0 copy of Anthropic's skill, with its license under
+  `docs/licenses/`, rather than the all-rights-reserved plugin copy.
+- **A child run is told which rules it holds.** Its config is a copy of its parent's, so it
+  held the rules and their assists fired in it — but its digest named none of them, and no
+  child run read one. It now carries the same rules section (`composer.rules_section`).
+- **`rsched validate` reports prose citing a retired rule** (`workflows/rulecites.py`): a slug
+  the library's history deleted and its tree no longer carries, named in a routine's `main.md`,
+  `stages/` or `.memory/` — one NOTE row per file, never a failure. On this instance it finds 21
+  citations in 9 routines, 2 of them in recipes (`newsletter-digest`, `tv-show-tracker-…`).
+
+**Migrations** (MIGRATION(expires=2026-11-30)): `migrate_superseded_docs` first replaces the
+six sending permissions and `interface-craft` whole, each only while the live doc is still its
+0.403.0 text (all seven are, today). Then `migrate_rule_read_when`: every live
+rule gains `read_when:` and the eight their `assists:` block — inserted as frontmatter keys,
+prose untouched, because the live library has drifted from the seed (two revised rules, two
+the seed never had, whose lines the migration carries). A rule that already has a key keeps it,
+and nothing is written that would add a lint problem. Dry-run against a copy of the live
+library: 18 rules changed, none left, lint clean.
+
 ## [0.403.0] — 2026-10-09
 
 ### The console serves a file the routine was permitted to read (D172)

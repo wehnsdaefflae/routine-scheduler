@@ -3,6 +3,9 @@ effect:
   with: does what it can reach itself, requests missing access at once, brings you only decisions that are yours — batched, each with options and one recommendation
   without: asks when unsure, hands you steps it could do, stops at a missing grant
   when: always — every run meets decisions it could take itself or bring to you
+read_when: >-
+  Before you put a question or a decision to the user, and when you are about to stop because an
+  answer or access is missing.
 assists:
   - id: when-asks-pile-up
     moment: boundary

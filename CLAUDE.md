@@ -75,7 +75,10 @@ one you are about to touch, not all of them.
   one-shot migration each batch needs to reach a live library)
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer (each doc's
   `effect:` line — what a routine holding it DOES differently — is what the page labels its
-  on/off control with, and the linter requires it), the two-layer
+  on/off control with, and the linter requires it; a RULE also requires `read_when:`, the
+  moment a RUN reads it in full, which is what the state digest shows beside the held slug —
+  `effect.when` answers whether to HOLD it, said "always" for most rules, and held rules were
+  read in 1–3% of the runs holding them), the two-layer
   permission set, the SETUP SURFACE (`readmodels/surface.py` is the JOIN; the rows come from
   `surface_needs` / `surface_schedule` / `surface_caps` speaking `surface_nodes`' vocabulary,
   `readmodels/remedies.py` says the same rows in WORDS, `library_impact.py` reads the join
@@ -188,7 +191,9 @@ one you are about to touch, not all of them.
   prose (`main.md`, `stages/`) AND reports its SETUP SURFACE (`readmodels/surface.py` joined with
   `readmodels/remedies.py`: what the held docs, bound rules and reserved utils still need, each
   unmet line ending in the remedy that settles it — a `blocks` row fails the command, a
-  `warn`/`note` row is reported only); `lint` covers the library. `engine-run` is internal
+  `warn`/`note` row is reported only), plus any recipe or memory prose still citing a rule the
+  library RETIRED (`workflows/rulecites.py`, read off the library repo's history — a NOTE, never
+  a failure); `lint` covers the library. `engine-run` is internal
   (daemon-spawned).
 
 ## Core contracts — extend, never repurpose
@@ -401,6 +406,22 @@ one you are about to touch, not all of them.
   capability (holding the rule IS the decision), the predicate is named and resolved from
   `engine/assist_predicates.py` because a rule may never ship code, and the seed sync being
   ADD-ONLY means each batch needs a one-shot migration to reach live rules (docs/rule-assists.md).
+  The FIRST assist of a rule to fire in a run carries the rule's whole text beneath its line
+  (`assist._delivered`, framed so an erase unbind can cut it out): a bare line pointing at
+  `read_rule` was followed to the rule 4 times in 177. The predicates that read an ACT live in
+  `engine/assist_acts.py` and key on what the LIBRARY declares — a permission tagged
+  `as-operator` speaks to a person as the operator (not `communication` + `outbound`, which also
+  fit the Discord bot's notices to him), a `net: outbound` util tagged `web` +
+  `search`/`research` looks things up — never on a util's name.
+  **A send in the operator's name is GATED on its outbox** (`engine/sendgate.py`, his order of
+  2026-10-02/10-09): it runs only right after that channel's outbox was read (≤3 turns, after
+  the channel's previous send), refused at the validation seam otherwise. It keys on his
+  IDENTITY, not on a util list: an `as-operator` permission's `outbox:` (`rsched/outbox.py`)
+  names the credentials that act as him, the utils allowed to hold them with their
+  `never_sends` verbs, and the read; any util or script whose DECLARED credentials reach one is
+  classified — an unlisted util is refused outright, an unclassified verb or a script call the
+  gate cannot read is a send — and `write_util` always asks before a util would hold one. That
+  is what makes it hold for utils nobody has written yet; never key it on util names.
   The MOMENT and the PAYLOAD are coupled: `pre-action` can only HOLD (a chosen action is only
   reachable by stopping it), the free moments can only REMIND. A hold — from either layer —
   goes through ONE seam (`engine/hold.py`): the canonical string is computed once, sources are

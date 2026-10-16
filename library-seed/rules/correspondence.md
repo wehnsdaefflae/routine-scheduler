@@ -3,6 +3,18 @@ effect:
   with: keeps every sent message open until answered, replies inside the thread with enough context, reads every channel the counterpart uses before calling a thread silent, chases once or records the silence as the answer
   without: sends and moves on; answers arrive unread; threads scatter
   when: it sends things to people or projects and expects replies
+read_when: >-
+  Before you send a message that expects a reply, and before you call any thread unanswered or
+  silent.
+assists:
+  - id: once-it-is-sent
+    moment: observation
+    predicate: outbound-message-sent
+    payload: remind
+    line: >-
+      This thread is open until it is answered. Record it now where you keep what you send — the
+      date, the recipient, whether a reply is expected — so a later run can tell an answer from
+      silence.
 tags: [communication, correspondence, follow-up]
 ---
 # rule: correspondence — a message you sent is an open thread until it is answered

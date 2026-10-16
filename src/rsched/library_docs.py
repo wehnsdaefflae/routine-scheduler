@@ -92,6 +92,12 @@ def list_docs(home: Path) -> list[dict]:
                     # label; `when` answers the actual question, which is whether it is for
                     # THIS routine.
                     "effect": _effect(meta.get("effect")),
+                    # A RULE's other `when`, written to the RUN rather than to the person: the
+                    # moment to read it in full, which the state digest shows beside the held
+                    # slug (`rules.when_lines`). `effect.when` answers "should this routine hold
+                    # it?" and so cannot do this job — "always" is a fine answer to that
+                    # question and no answer at all to "when do I read it?" (rules dir only).
+                    "read_when": " ".join(str(meta.get("read_when") or "").split()),
                     "title": _title(path.stem),
                     "tags": meta.get("tags") or [],
                     # the capabilities this doc's instructions presume (permissions dir only)

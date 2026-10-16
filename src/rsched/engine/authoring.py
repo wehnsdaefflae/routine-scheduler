@@ -14,6 +14,8 @@ nothing to catch it, so a run reports it and the user deletes it.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from .. import sandbox, utils_header, utils_lib, utils_run
 from ..ids import is_slug
 from ..paths import resolve_rel
@@ -136,16 +138,25 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     # new grant for every routine that calls the util, in the shape of a fix.
     widened = ([] if creating
                else utils_header.widening(utils_lib.read_util(home, name) or "", content))
+    # A util that would hold the operator's IDENTITY on a channel — a mailbox password, a
+    # linked messenger session — is asked about at every level and every time too: it can
+    # speak as him (engine/sendgate.py refuses it until the library lists it).
+    speaks = _identity_reach(home, content)
     approved_for_run = ("approval:write_util" in getattr(ctx, "granted_now", set())
-                        and not widened)
-    if widened or (not approved_for_run
-                   and (ctx.grants is None or ctx.grants.needs_confirm(creating))):
+                        and not widened and not speaks)
+    if widened or speaks or (not approved_for_run
+                             and (ctx.grants is None or ctx.grants.needs_confirm(creating))):
         verb = "create" if creating else "revise"
         excerpt = (f"anchor:\n{str(action.get('anchor'))[:180]}\nreplacement:\n"
                    f"{str(action.get('replacement') or '')[:180]}" if edit_mode
                    else f"First lines:\n{content.strip()[:400]}")
         reach = (f" This revision lets it reach {', '.join(widened)} — which every routine "
                  "calling it then reaches too." if widened else "")
+        reach += "".join(
+            f" It would hold your identity on {channel} ({', '.join(creds)}): it can act as "
+            "you there, runs only once a permission lists it with the verbs that cannot send, "
+            "and every send through it needs that channel's outbox read first."
+            for channel, creds in speaks.items())
         ask = handle_ask(loop, {
             "question": f"Approve {verb} of global util '{name}'?{reach}"
                         f"{_impact_note(ctx, 'util', name, content)} "
@@ -327,3 +338,13 @@ def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
     utils_lib.git_commit(home, f"remove {name}", routines_home=ctx.server.routines_home,
                          paths=[f"utils/{name}"])
     return {"kind": "remove_util", "name": name, "removed": True}
+
+
+def _identity_reach(home, content: str) -> dict[str, list[str]]:
+    """The operator identities a util with this source would hold (`outbox.identity_reach`)."""
+    from .. import outbox
+
+    channels = outbox.read_library_outbox(Path(home) / "permissions")
+    if not channels:
+        return {}
+    return outbox.identity_reach(utils_header.parse_header(content), home, channels)

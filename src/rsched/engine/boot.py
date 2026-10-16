@@ -9,7 +9,7 @@ from __future__ import annotations
 from .. import reports, rules, sharedstores
 from ..paths import read_json, resolve_rel
 from . import askback, enginenote, goals, guardscope, inbox, mediaops, runkind, taskops
-from .composer import build_system_prompt, kickoff_message, state_digest
+from .composer import build_system_prompt, kickoff_message, rules_section, state_digest
 from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
 from .transcript import read_events
@@ -74,7 +74,11 @@ def boot(loop) -> None:
                               tasks_section=tasks_section)
     else:
         msgs = []
-        digest = "(subrun — no routine state digest; everything you need is in the instruction)"
+        # A child holds its parent's rules (`childrun._sub_routine` copies the config), so it
+        # is told which ones and when to read each — without the list it read none of them
+        digest = "\n\n".join(filter(None, [
+            "(subrun — no routine state digest; everything you need is in the instruction)",
+            rules_section(rules.when_lines(ctx.server.rules_home, list(ctx.routine.rules)))]))
     # slash commands queued while no run was live EXECUTE at boot (below) — only prose
     # messages become the prompt's MESSAGES sections, and a report another routine addressed
     # here gets its own section rather than being read as something the user said

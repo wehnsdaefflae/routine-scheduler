@@ -3,6 +3,18 @@ effect:
   with: does the least certain decisive step first, proves it thin end to end, commits once the next lookup would not change the action, hardens in the same run
   without: works in reading order, polishes an unproven approach, re-decides settled questions
   when: it builds something whose approach is not proven in advance — code, a pipeline, a training setup, a document structure
+read_when: >-
+  Before you start building something whose approach is not proven yet — code, a pipeline, a
+  training setup, a document structure.
+assists:
+  - id: when-a-new-tool-exists
+    moment: observation
+    predicate: util-created
+    payload: remind
+    line: >-
+      A new tool's approach is unproven until it has run end to end. Take one thin path through
+      the whole job first — the step that would invalidate the rest — and harden it only once
+      that path holds.
 tags: [planning, sequencing, self-management]
 ---
 # rule: work-order — prove the uncertain part first, commit to it, then harden

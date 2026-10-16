@@ -3,6 +3,9 @@ effect:
   with: collects every finding before filtering; states what it examined, what it skipped and why; labels uncertainty instead of dropping it
   without: filters while looking; a narrowed scan reads like a clean one
   when: it reviews, audits or scans and reports "all clear" or "nothing new"
+read_when: >-
+  Before you report a review, audit or scan — above all one that found nothing new or says all
+  clear.
 tags: [review, audit, reporting]
 ---
 # rule: audit-coverage — report everything you found and everything you did not examine

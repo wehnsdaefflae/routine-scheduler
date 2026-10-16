@@ -152,11 +152,17 @@ def cmd_validate(args) -> int:
                sorted(p for p in server.routines_home.iterdir()
                       if p.is_dir() and not p.name.startswith("."))
                if server.routines_home.is_dir() else [])
+    from . import library_docs
     from .readmodels.remedies import surface_lines
     from .readmodels.surface import routine_surface
     from .trials import ignored_problem, roles_problem
     from .workflows.recipelint import recipe_notes
+    from .workflows.rulecites import citation_notes, retired_rules
 
+    # Rule citations are read against the LIBRARY — what it carries and what it retired — so
+    # both sets are taken once for the whole walk
+    retired = retired_rules(server.libraries_home)
+    live = set(library_docs.slugs(server.rules_home))
     for d in targets:
         cfg, problems = load_routine(d)
         # A model trial naming a model the catalog lacks is ignored at every fire — the loader
@@ -194,6 +200,10 @@ def cmd_validate(args) -> int:
             print(f"  {ln}")
         for ln in recipe:
             print(f"  NOTE  recipe · {ln}")
+        # …and a fourth: does its prose cite a rule the library has retired? Reported like
+        # the recipe notes, never counted (workflows/rulecites.py)
+        for ln in citation_notes(d, retired, live):
+            print(f"  NOTE  rule citation · {ln}")
         total.extend(problems)
         total.extend(blocking)
     for line in _instance_problems(server):

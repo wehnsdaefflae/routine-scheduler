@@ -208,10 +208,10 @@ before re-discovering anything; revise notes that turned out wrong instead of ap
 contradictions. read_file / write_file are rejected on .memory/ paths."""),
     (("read_rule",), """- read_rule: read a GENERAL RULE from the shared library — \
 `name: "list"` for the catalog, `name: "<slug>"` for one rule's prose. The rules that bind you are \
-named in your digest beside when each applies; read one when its moment comes and apply it to \
-the case in front of you. Reading one you do NOT hold applies it for the rest of this run \
-only; which rules bind you is the user's call, so if one keeps proving necessary, name it in \
-your finish summary."""),
+named in your digest beside the moment to read each; read one in full when that moment comes \
+and apply it to the case in front of you. Reading one you do NOT hold applies it for the rest \
+of this run only; which rules bind you is the user's call, so if one keeps proving necessary, \
+name it in your finish summary."""),
     (("write_rule",), """- write_rule: author a NEW general rule, or revise an existing one, in \
 the shared library — `content` (the complete rule markdown) to create, `anchor` + `replacement` \
 to revise in place. What you write binds EVERY routine holding that rule from its next run, so \

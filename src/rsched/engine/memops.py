@@ -50,11 +50,12 @@ def do_memory_read(action: dict, ctx: RunContext) -> dict:
             "lines": len(content.splitlines()), "truncated": truncated}
 
 def do_read_rule(action: dict, ctx: RunContext) -> dict:
-    """Read a general RULE from the shared library — the only way a run sees rule prose.
+    """Read a general RULE from the shared library — the run's own way to its prose (the
+    engine has two more: a mid-run bind note, and the first assist of a rule to fire).
 
     Rules live in ONE place and are read-only to every run: this action never writes, and the
     held set is routine.yaml config the user owns. The prose is deliberately NOT in the
-    composed prompt — the digest names each held rule beside when it applies; the run
+    composed prompt — the digest names each held rule beside the moment to read it; the run
     fetches the one it needs, so an unread rule costs nothing every turn. `name: "list"`
     returns the catalog (mirroring `util name=list`), which is how a run reaches a rule it
     does not hold: it applies for this run only, and asking the user to make it permanent is

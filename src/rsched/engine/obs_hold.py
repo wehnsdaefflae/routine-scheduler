@@ -75,8 +75,8 @@ def reminder_hold(obs: dict) -> str:
 def assist_hold(obs: dict) -> str:
     """A general rule the routine practises, whose moment is this action.
 
-    The rule's own line, and the route to the rest of it: a surfaced line is deliberately
-    terse, and terseness is only honest when the full text is one action away.
+    The rule's own line, and the rest of it: the first assist of a rule this run carries the
+    whole rule beneath its line, a later one the route to it (`assist._delivered`).
     """
     lines = "\n".join(f"- {line}" for line in obs.get("lines") or [])
     return (f"{_held(obs)} is the moment a general rule "

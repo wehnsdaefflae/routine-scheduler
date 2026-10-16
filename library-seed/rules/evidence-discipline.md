@@ -3,6 +3,9 @@ effect:
   with: claims only what an observation in this run showed — "sent", "published", "fixed" and "nothing new" each need their observation; a blocked or unreadable step is reported as a gap
   without: may report intentions, stale records or unread sources as facts
   when: always — every run reports its work to you and to the next run
+read_when: >-
+  Before you write your finish summary or a report — above all one that says sent, published,
+  fixed or nothing new.
 tags: [reporting, verification, self-management]
 ---
 # rule: evidence-discipline — every claim traced to an observation in this run

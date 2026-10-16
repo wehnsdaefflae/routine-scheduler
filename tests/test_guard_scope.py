@@ -300,6 +300,7 @@ def test_each_ledger_is_rebuilt_from_what_its_events_record(tmp_path):
     assert loop.assist_undo_points == {Path("/q/repo")}
     assert loop._challenged == {"d1", "g2"}
     assert loop._evict_warned is True
+    assert loop.outbox_checked == {}     # an unconfigured loop holds no channels
     assert loop.reminder_owed == {"rem-1": 1}
     # the next reply of a conversation reads none of it
     loop = SimpleNamespace(ctx=_ctx(tmp_path, conversation=True))

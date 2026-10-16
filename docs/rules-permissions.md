@@ -61,13 +61,30 @@ the linter requires the key.
 It exists because the doc's TITLE cannot do the job. A title names a topic — `ask policy — when
 and how to involve the user` — which tells a reader nothing they can act on, and beside a bare
 checkbox it does not even say what ticking the box would do (operator, 2026-08-30). The two
-facts a control needs are what changes, and that this control is what changes it; `effect:`
-carries the first, and the panel frames it with the second ("on — this routine can: …" for a
-permission, "bound — every run reads it and: …" for a rule, since holding one and binding the
-other are not the same act).
+facts a control needs are what changes, and that this control is what changes it. `effect:`
+carries both sides of the comparison — `with` (on), `without` (off) — and `when`, which answers
+whether the doc is for THIS routine at all (`components/effectline.js` renders the three rows).
+`effect.when` is written to the person choosing; what a RUN is told about when to read a rule is
+a separate key, `read_when:` (below).
 
 The linter can only check presence and a length floor — whether a sentence is really a behaviour
 is the author's job — so it also refuses one short enough to be a restatement of the title.
+
+### `read_when:` — the moment a run reads the rule
+
+Every RULE also carries a one-line `read_when:`, written to the run: the moment it should read
+that rule in full ("Before you send a message that expects a reply, and before you call any
+thread unanswered or silent."). The state digest shows it beside each held slug
+(`rules.when_lines`), so for most rules it is the only trigger there is.
+
+It is its own key because `effect.when` cannot do this job. That line answers the HOLDING
+question — "always — every run meets decisions it could take itself or bring to you" is a good
+answer to "should this routine hold ask-policy?" and no answer at all to "when do I read it?".
+While the digest showed `effect.when`, a held rule was read in 1–3% of the runs holding it
+(0.404.0's measurement over the transcripts on disk), and runs that did read one were mostly
+told to by their recipe. So the linter (`rules.read_when_problems`) requires the key, refuses
+one that opens with "always", and caps it at `READ_WHEN_MAX` characters, since every run of
+every holder reads it.
 
 ### `expects:` — the soft edge
 
@@ -336,9 +353,10 @@ Conversations take all but `decision-record` (their spine is the plan file) and 
 that kind ([patterns](patterns.md)) — a steward's `feedback-loop` and `correspondence`, a
 maintainer's `change-scope` and `make-failure-visible`.
 
-Each rule's `effect:` states WHEN it applies; that line is what the state digest shows
-beside the held slug (`rules.when_lines`), so a run knows which rule to read before which
-moment without carrying the prose.
+Each rule's `read_when:` names the moment to read it; that line is what the state digest
+shows beside the held slug (`rules.when_lines`), so a run knows which rule to read before which
+moment without carrying the prose. A child run holds its parent's rules, and its digest carries
+the same lines.
 
 Improvement passes are deliberately NOT rules: the bundled **routine-improver**
 meta routine sweeps every routine that doesn't set `improve: false` in its
@@ -373,7 +391,9 @@ the run's finish summary or a deferred `ask_user`.
 
 A new routine starts with the rules of its settings pattern. The prompt never inlines the prose
 — the state digest names each held rule with its moment and the run reads what it needs, which
-keeps every turn lean. "Recommend for this routine" on the routine page proposes a different set
+keeps every turn lean. The engine puts the prose in front of a run at two moments of its own: a
+mid-run bind note, and the first [assist](rule-assists.md) of a rule to fire, which carries the
+whole rule beneath its line. "Recommend for this routine" on the routine page proposes a different set
 when the finished recipe calls for one, as a pending change ([patterns](patterns.md)).
 
 ### Who may change the TEXT
@@ -401,6 +421,14 @@ There is deliberately **no `remove_rule`**. Deleting a rule silently un-binds ev
 unlike a util there is no callers check to catch it, so a run that believes a rule should go
 says so in a `report` or a deferred `ask_user` and you delete it on the Library tab.
 
+A deleted rule also leaves its CITATIONS behind: a recipe step or a memory note that names it
+("read the `status-page` rule first") now sends a run to a rule that is not there, and the run
+finds out by a failed `read_rule`. The 2026-09-30 consolidation retired 24 rules, and nine days
+later 40 citations across 13 routines still named them. `rsched validate` reports them
+(`workflows/rulecites.py`): a slug the library's history DELETED and its tree no longer carries,
+cited in a routine's `main.md`, `stages/` or `.memory/` — one NOTE row per file, never a
+failure. It never guesses from shape; only the library knows what it retired.
+
 ### `assists:` — surfacing the rule at the moment it applies
 
 A rule may declare **assists**: `(moment, predicate) → line` entries in its own frontmatter
@@ -424,8 +452,8 @@ an action to stop and none of them has one. `rule-assists.md` carries the table 
 examples; this page does not restate it.
 
 The rule does not shrink, it FACTORS: the trigger moves off the model, the operative line
-becomes the surfaced payload, and the rationale stays in the body where `read_rule` reaches
-it. A predicate is named, never shipped — a rule is prose in a git-synced multi-writer
+becomes the surfaced payload, and the rationale stays in the body — delivered whole with the
+rule's first assist in a run, and reachable with `read_rule` after that. A predicate is named, never shipped — a rule is prose in a git-synced multi-writer
 directory. Validation runs in `lint_rule_text`, so one check covers `write_rule`, the Library
 PUT, `rsched lint` and the Library page's per-rule problems.
 
@@ -519,6 +547,8 @@ requires:
   utils: [signal:send]         # reserved utils (or one verb of one) presumed, BY NAME
 expects:                       # the SOFT edge — presumed, never enforced (see above)
   fs-read: ["/path"]           # entity CLASS → names; "*" = at least one of the class
+outbox:                        # `as-operator` docs only: the user's identity per channel, the
+  <channel>: {…}               #   utils allowed to hold it and the read every send owes (below)
 ---
 # permission: <name> — <summary>
 <a SHORT body: shown in the UI, and appended to the prompt's CAPABILITIES section when held>
@@ -560,6 +590,45 @@ keeps or drops (docs/patterns.md). Nothing writes a permission into a routine at
 
 The messenger docs are one per channel rather than one bundle: each names a different reserved
 verb with a different credential; holding one is a decision about a different audience.
+
+### Sends in the user's name — the outbox gate
+
+Six of them send AS THE USER — `outbound-mail`, `messaging-signal`, `-telegram`, `-whatsapp`,
+`-zulip` and `usenet` — and say so with the `as-operator` tag. Every send through one of them
+runs only right after that channel's outbox was read for it, because the user may have sent the
+message himself or an earlier run did (his order, 2026-10-02 and 2026-10-09). That is ENFORCED,
+not advised (`engine/sendgate.py`): a send with no read of its outbox within the last 3 turns,
+and after the channel's previous send, is refused at the validation seam — inside the
+schema-retry cycle, so it costs no turn and the corrected action is the read — naming the call
+to make. Each send consumes its read.
+
+The gate keys on the user's IDENTITY, not on a list of utils, which is what makes it hold for a
+util nobody has written yet. Each `as-operator` doc declares, per channel, in `outbox:`
+(`rsched/outbox.py`): the credentials that act as him (`identity:` — secret names, session-store
+paths), every util permitted to hold them with the verbs that cannot send (`never_sends`, plus
+an optional `send_if` for a verb whose plain form is a dry run), the `check` regex over the
+canonical action string that counts as reading the outbox, and the `run` call a refusal names.
+Code can only hold an identity by DECLARING it — the sandbox injects and mounts nothing else —
+so for any util or script call the gate asks which identities its declared credentials reach:
+
+- a listed util is classified by its verb; anything outside `never_sends` — a verb nobody
+  classified included — is a send;
+- a util that reaches an identity and is NOT listed is refused outright, directly or from a
+  script ("can act as the user … and the <doc> permission does not list it");
+- a routine script is classified by the `gu` calls in its source: a verb it builds at runtime,
+  a callee it holds without a call the gate can read, or a credential it declares itself makes
+  it a send.
+
+The linter holds every `as-operator` doc to an outbox channel for each send it reserves, with
+that send outside `never_sends`. `write_util` asks the user every time — whatever the routine's
+approval level — before it creates or revises a util that would hold his identity, and the
+question names the channel and the credentials. What stays outside: a credential nobody marked
+as an identity (a mailbox added later is covered once its permission names its secret), `shell`
+(it is handed no secret), and a send the user types himself as a slash command. The doc's
+conduct note says the same thing in prose; the gate is what holds it.
+
+`messaging-discord` and `notifications` are outbound but not tagged: the bot's posts and the
+push are notices TO the user, not his words to someone else.
 
 ### What enforcement looks like
 

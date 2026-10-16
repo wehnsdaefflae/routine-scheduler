@@ -3,6 +3,17 @@ effect:
   with: writes as you — first person, the recipient's register, short, no machine tells or meta-narration — and learns from every edit you made to an approved draft
   without: writes in the model's default register, which recipients read as machine-written
   when: its text goes out under your name or is read as yours
+read_when: >-
+  Before you draft or send text that goes out under the user's name or will be read as theirs.
+assists:
+  - id: before-it-goes-out
+    moment: pre-action
+    predicate: outbound-message
+    payload: hold
+    line: >-
+      This goes out as the user's own words. First make sure it has not gone out already — they
+      may have sent it themselves. Then send the text they approved, not your draft of it; if
+      nobody approved it, read it once for self-narration, inflated wording and machine tells.
 tags: [writing, style, communication]
 ---
 # rule: write-as-the-principal — text that goes out as the user's reads as theirs

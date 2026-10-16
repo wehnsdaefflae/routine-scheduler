@@ -3,6 +3,18 @@ effect:
   with: changes exactly what the task needs — reuses what exists (standard library, platform, installed dependency before new code), adds nothing speculative, finishes what it starts with dependents migrated and every reference to a removed thing settled
   without: tidies around the task, builds parallel mechanisms, leaves prose naming things it deleted
   when: it edits code, recipes or documents others rely on
+read_when: >-
+  Before you edit code, a recipe or a document others rely on, and right after you delete or
+  rename anything something else may name.
+assists:
+  - id: after-a-removal
+    moment: observation
+    predicate: tracked-path-removed
+    payload: remind
+    line: >-
+      You removed or renamed something under version control. Find every document, test and
+      recipe that names it and settle each one in this same change; leave no fallback and no
+      reference to what no longer exists.
 tags: [code, scope, maintenance]
 ---
 # rule: change-scope — change exactly what the task needs, then finish the change

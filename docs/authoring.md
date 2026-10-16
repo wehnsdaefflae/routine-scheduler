@@ -86,7 +86,12 @@ level (`always` / `creations` / `never`) decides when you're asked first. A run 
 you approve on the Decisions page, the selftest passes, the util is committed — and is
 immediately available to every other routine. One rule sits above all of that: a util the
 user **deleted** from the library is never recreated silently — the engine rejects the
-write and has the routine ask first ([sandboxing](sandboxing.md) § never recreate).
+write and has the routine ask first ([sandboxing](sandboxing.md) § never recreate). Two kinds
+of change are asked about at every level and every time: a revision that widens what the util
+reaches, and any util that would hold your IDENTITY on a channel — a mailbox password, a linked
+messenger session. The question names the channel and the credentials; such a util then runs
+only once its permission lists it, and every send through it waits for a fresh read of that
+channel's outbox ([rules-permissions](rules-permissions.md#sends-in-the-users-name--the-outbox-gate)).
 
 ## Workflow patterns — control flow as a Python file
 
@@ -213,8 +218,10 @@ candidates you rejected with the reason…
 ```
 
 The linter enforces the shape: the `effect:` block (`with` / `without` / `when` — what holding
-the rule changes, which is what the routine page labels its control with, and the `when` line the
-state digest shows beside the held slug), three tags at the minimum, the heading form
+the rule changes and whether a routine should hold it, which is what the routine page labels its
+control with), a `read_when:` line — the moment a RUN reads the rule in full, written to the run,
+which the state digest shows beside the held slug and which may not open with "always" (it names
+no moment) — three tags at the minimum, the heading form
 `# rule: <slug> — <summary>`, and **no** `requires:` (a rule grants nothing). A rule may declare
 `expects:` (an entity its prose presumes) and `assists:` (its operative line, surfaced at the
 moment it applies — [rule assists](rule-assists.md)).

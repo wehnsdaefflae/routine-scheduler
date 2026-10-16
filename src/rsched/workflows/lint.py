@@ -123,6 +123,7 @@ def lint_rule_text(raw: str, *, filename: str) -> list[str]:
     """
     from ..assists import normalize_assists
     from ..grants import normalize_expects
+    from ..rules import read_when_problems
     problems: list[str] = []
     try:
         meta, body = frontmatter.parse(raw)
@@ -146,7 +147,9 @@ def lint_rule_text(raw: str, *, filename: str) -> list[str]:
         problems.append(f"{filename}: suspiciously short for a general rule")
     problems += [f"{filename}: {p}" for p in normalize_assists(meta.get("assists"))[1]]
     problems += _effect_problems(meta, filename, "the run reads it and applies it")
+    problems += [f"{filename}: {p}" for p in read_when_problems(meta.get("read_when"))]
     return problems
+
 
 
 def _effect_problems(meta: dict, filename: str, subject: str) -> list[str]:
@@ -197,6 +200,7 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
     validated here so a typo is caught at authoring time, never at 3am in a run.
     """
     from ..grants import normalize_capabilities, normalize_expects
+    from ..outbox import as_operator_problems, normalize_outbox
 
     problems = []
     try:
@@ -224,6 +228,13 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
         problems += [f"{filename}: {p}" for p in req_problems]
     problems += [f"{filename}: {p}" for p in normalize_expects(meta.get("expects"))[1]]
     problems += _effect_problems(meta, filename, "the routine can do the thing")
+    # A send in the operator's name owes a read of its outbox first (engine/sendgate.py): the
+    # declaration must parse, and a doc tagged `as-operator` must make one for every send
+    reserved = normalize_capabilities(meta.get("requires"), label="requires",
+                                      requires=True)[0].get("utils") or []
+    problems += [f"{filename}: {p}" for p in
+                 normalize_outbox(meta.get("outbox"), reserved=list(reserved))[1]]
+    problems += [f"{filename}: {p}" for p in as_operator_problems(meta)]
     return problems
 
 

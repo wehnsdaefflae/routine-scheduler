@@ -37,6 +37,7 @@ from . import (
     recall,
     remind,
     requests,
+    sendgate,
 )
 from .actions import ALWAYS_KINDS
 from .actionschema import brief_value
@@ -130,6 +131,9 @@ class EngineLoop:
     assist_user_replies: Any
     assists: Any
     assists_fired: set[str]
+    assist_bodies: set[str]
+    outbox: Any
+    outbox_checked: dict[str, int]
     base_grants: Any
     consumed_dir: Any
     ctx: Any
@@ -345,6 +349,7 @@ class EngineLoop:
                 key = failure_key(action)
                 self.failures[key] = self.failures.get(key, 0) + 1
         fired = assist.at_observation(self, action, obs)
+        sendgate.observed(self, action, obs)   # an outbox read stamps; a send consumes it
         ctx.transcript.event("observation",
                              assist.recorded(self, mediaops.without_bytes(obs), fired),
                              turn=ctx.turn)
@@ -386,7 +391,7 @@ class EngineLoop:
         # …and the observation-moment assists ride the same tail, for the rules whose
         # moment is "what just came back" rather than "what you are about to do" — asked
         # before the observation was recorded (`_observe`), read here in their place.
-        text += assist.tail(fired)
+        text += assist.tail(self, fired)
         # …and the run's OWN archived history is the third store this layer
         # feeds from: when what just happened overlaps an archived topic, the
         # tail names the file rather than leaving the run to remember it.

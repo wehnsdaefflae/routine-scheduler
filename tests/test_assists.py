@@ -82,7 +82,8 @@ def test_the_rule_linter_rejects_a_bad_block(tmp_path):
     Library PUT, `rsched lint`, and the Library GET's per-rule problems."""
     head = ("---\ntags: [a, b, c]\neffect:\n  with: does the thing it is asked to do here\n"
             "  without: does not do the thing it is asked to do\n"
-            "  when: the situation the rule governs comes up\n")
+            "  when: the situation the rule governs comes up\n"
+            "read_when: before the situation the rule governs comes up\n")
     body = "---\n# rule: x — y\n\nbody line one\nbody line two\n"
     bad = head + "assists:\n  - id: a1\n    moment: nowhere\n    predicate: repeated-failure\n"
     problems = lint_rule_text(bad + body, filename="x.md")
@@ -103,7 +104,10 @@ def test_the_seed_rules_that_declare_assists_are_valid():
         if got:
             declared[path.stem] = got
     assert set(declared) == {"ask-policy", "fix-the-cause", "problem-routing",
-                             "decision-record", "interface-craft", "git-checkpoint"}
+                             "decision-record", "interface-craft", "git-checkpoint",
+                             "write-as-the-principal", "verify-independently", "correspondence",
+                             "web-research", "feedback-loop", "make-failure-visible",
+                             "work-order", "change-scope"}
     # every registered predicate is used by a shipped rule — a predicate nothing declares is
     # engine code with no reader
     used = {a.predicate for rule in declared.values() for a in rule}
@@ -226,7 +230,9 @@ def test_an_observation_assist_rides_the_tail_of_the_second_failure(make_routine
     shown = prompt_text(ep)
     assert "[RULE fix-the-cause — the same call has now failed twice this run]" in shown
     assert "change route after the second failure" in shown
-    assert "read_rule name=fix-the-cause" in shown           # the rest of the rule stays put
+    # the FIRST assist of a rule brings the rule whole, framed so an erase can cut it out
+    assert "--- the full rule fix-the-cause, delivered once with its first assist" in shown
+    assert "# rule: fix-the-cause — s\\nbody\\n--- end of rule fix-the-cause ---" in shown
     assert shown.count("[RULE fix-the-cause") == 1           # once per run, not per failure
     observations = [e for e in events if e["type"] == "observation"]
     assert "[RULE" not in json.dumps(observations[0])        # the FIRST failure is information

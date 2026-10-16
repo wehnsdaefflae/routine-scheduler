@@ -23,7 +23,8 @@ RULE_A = """---
 effect:
   with: does the thing
   without: skips it
-  when: before any change that ships
+  when: always — every routine ships changes
+read_when: before you ship any change
 tags: [a, b, c]
 ---
 # rule: alpha — the first principle
@@ -72,13 +73,32 @@ def test_binding_records_a_slug_and_copies_nothing(lib, routine):
     assert (routine / "main.md").read_text(encoding="utf-8") == "# Run flow\n\nDo the work.\n"
 
 
-def test_when_lines_say_when_each_held_rule_applies(lib):
-    """The prompt names a held rule beside its moment, read from the rule itself at every boot;
-    a rule without an effect falls back to its summary and a vanished one says so."""
+def test_when_lines_say_when_to_read_each_held_rule(lib):
+    """The prompt names a held rule beside the moment to READ it — its own `read_when:`, never
+    `effect.when`, which answers whether to HOLD it ("always") and names no moment. Read from
+    the rule itself at every boot; a rule without one falls back to its summary and a vanished
+    one says so."""
     assert rules_mod.when_lines(lib, ["alpha", "beta", "gone"]) == [
-        "alpha — before any change that ships",
+        "alpha — before you ship any change",
         "beta — the second principle",
         "gone — not in the library any more"]
+
+
+@pytest.mark.parametrize(("raw", "fragment"), [
+    (None, "needs a read_when"),
+    ("", "needs a read_when"),
+    ("soon", "too short"),
+    ("always — every run meets decisions it could take", "names no moment"),
+    ("Always, really, whenever anything happens", "names no moment"),
+    ("before " + "x" * rules_mod.READ_WHEN_MAX, "at most"),
+    (["before you ship", "a change"], "one line of text"),
+])
+def test_a_read_when_must_name_a_moment(raw, fragment):
+    assert any(fragment in p for p in rules_mod.read_when_problems(raw))
+
+
+def test_a_read_when_that_names_a_moment_passes():
+    assert rules_mod.read_when_problems("Before you send a message that expects a reply.") == []
 
 
 def test_a_library_edit_reaches_every_holder_with_no_migration(lib, routine):
@@ -218,3 +238,31 @@ def test_user_bound_rule_reaches_a_live_run_once(make_routine, tmp_path, lib):
                       {"add_rules": {"slugs": ["alpha"], "ts": "t2"}})
     apply_rule_additions(loop)
     assert len(loop.messages) == 1
+
+
+def test_a_child_run_is_told_which_rules_it_holds(make_routine, scripted):
+    """A child holds its parent's rules (its config is a copy), and its assists fire — but its
+    digest named none of them, so in 112 child runs not one rule was read. It now carries the
+    same rules section as a routine's digest, from the same renderer."""
+    from conftest import finish, spawn, wait_
+    from helpers import server_for
+    from rsched.engine.runtime import run_routine
+
+    d = make_routine(slug="parent")
+    server = server_for(d)
+    server.rules_home.mkdir(parents=True)
+    (server.rules_home / "alpha.md").write_text(RULE_A, encoding="utf-8")
+    raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
+    (d / "routine.yaml").write_text(yaml.safe_dump({**raw, "rules": ["alpha"]}),
+                                    encoding="utf-8")
+    parent = "(no previous runs)"           # only the parent's digest carries it
+    ep = scripted([(parent, spawn("CHILD-A: compute X.")), ("CHILD-A", finish(summary="42")),
+                   (parent, wait_(all_=True)), (parent, finish())])
+    status, _run_dir = run_routine(d, server, run_ts="20261009-130000")
+    assert status == "ok"
+    child = next(c for c in ep.calls if "CHILD-A" in str(c["messages"][0]["content"])
+                 and parent not in str(c["messages"][0]["content"]))
+    system = child["messages"][0]["content"]
+    assert "(subrun — no routine state digest" in system
+    assert "GENERAL RULES you practise" in system
+    assert "- alpha — before you ship any change" in system

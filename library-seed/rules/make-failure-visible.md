@@ -3,6 +3,17 @@ effect:
   with: writes code that fails loudly and tests that fail on the regression they name — each watched failing once; no verification step swallows an exit code
   without: may ship catch-alls, silent fallbacks, `|| true` or tests that stay green while the thing breaks
   when: it writes scripts, utils, pipelines or tests later runs rely on
+read_when: >-
+  Before you write a script, util, pipeline or test a later run will rely on.
+assists:
+  - id: when-code-is-written
+    moment: observation
+    predicate: code-written
+    payload: remind
+    line: >-
+      Code you just wrote must fail loudly: no handler without a named reaction, no fallback
+      that hides an error, no step that swallows an exit code. Watch any test you wrote fail
+      once before you trust it passing.
 tags: [code, testing, error-handling]
 ---
 # rule: make-failure-visible — code and tests you write must fail loudly

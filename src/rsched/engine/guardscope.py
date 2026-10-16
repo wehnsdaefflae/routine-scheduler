@@ -70,8 +70,8 @@ def rebuild(loop, events: list[dict]) -> None:
     """Seed every once-only ledger from the events inside this leg's scope. Called by `boot`
     on a resumed leg, after `configure` built them empty — a fresh run has nothing to read.
     """
-    from . import assist, finishgate, hold, remind_ledger, window
+    from . import assist, finishgate, hold, remind_ledger, sendgate, window
 
     scoped = in_scope(loop.ctx, events)
-    for layer in (hold, remind_ledger, assist, finishgate, window):
+    for layer in (hold, remind_ledger, assist, finishgate, sendgate, window):
         layer.rebuild(loop, scoped)

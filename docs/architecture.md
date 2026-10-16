@@ -261,7 +261,18 @@ the limits (single-writer status.json preserved).
   violating run leave byte-identical traces differing only in reasoning — but relevance is a
   property of the situation, which IS in the trace: the rule you cannot check, you can time.
   One fire per assist per run (per reply, in a conversation); a predicate that raises is inert.
+  The first assist of a rule to fire in a run brings the rule's whole text beneath its line —
+  runs followed a bare line to `read_rule` 4 times in 177. The predicates that read an ACT (a
+  send as the user, a web search, code written, a tracked file removed) live in
+  `engine/assist_acts.py` and key on what the library declares about the thing acted on — a
+  permission's tags, a util's header — never on a util's name.
   Full narration in [rule assists](rule-assists.md).
+- **A send in the user's name waits for a read of its outbox** (`engine/sendgate.py` +
+  `rsched/outbox.py`). Refused at the validation seam unless that channel's outbox was read
+  within 3 turns and after its previous send. Keyed on the user's IDENTITY — the credentials an
+  `as-operator` permission declares — so any util or script whose declared credentials reach one
+  is classified, an unlisted util is refused, and a util written tomorrow cannot speak as him
+  until the library lists it. Stamps and consumptions replay on a resumed leg.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →
@@ -1095,8 +1106,9 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   back to nothing the user reasoned about. The queue is for a run that HAS a user, just not now.
 - **Rules** (`library-seed/rules/`, `# rule:` heading, NO requires — lint-enforced): GENERAL
   rules — principle prose a run applies to its own case. ONE copy each, in the library: a routine
-  holds SLUGS (`routine.yaml` `rules:`), named in the state digest with the moment each applies
-  (`rules.when_lines`, from each rule's own `effect:`) and read on demand with `read_rule`, so revising the
+  holds SLUGS (`routine.yaml` `rules:`), named in the state digest — a child run's too — with the
+  moment to read each (`rules.when_lines`, from each rule's own `read_when:`) and read on demand
+  with `read_rule`, so revising the
   library text reaches every holder at its next run with no migration and no fork to drift. Nothing
   is copied into a routine dir and no LLM adapts anything at creation — a rule is general by
   construction, so the decompose pipeline only receives the held slugs as an index.

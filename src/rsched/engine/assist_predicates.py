@@ -20,6 +20,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from .assist_acts import ACTS
+
 
 @dataclass(frozen=True)
 class Situation:
@@ -298,7 +300,8 @@ _LOOK_UTILS = frozenset({"browser-session", "vision"})
 
 #: name -> Predicate. The linter validates a rule's `predicate:` against these keys, so a
 #: name removed here turns every rule that declares it into a lint error rather than a
-#: silently dead assist.
+#: silently dead assist. The checks over what a run DOES to the world live in
+#: `assist_acts.py` and join this one registry below.
 PREDICATES: dict[str, Predicate] = {
     "repeated-failure": Predicate(
         moment="observation", check=_repeated_failure,
@@ -326,3 +329,5 @@ PREDICATES: dict[str, Predicate] = {
         moment="pre-finish", check=_rendered_output_unseen,
         describes="this run wrote pages or documents and never looked at them rendered"),
 }
+PREDICATES.update({name: Predicate(moment=moment, check=check, describes=describes)
+                   for name, (moment, check, describes) in ACTS.items()})

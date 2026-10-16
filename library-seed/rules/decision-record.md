@@ -3,6 +3,9 @@ effect:
   with: appends what it changed, chose and rejected where the next run reads it first
   without: leaves only artefacts; the next run re-buys old lessons
   when: a routine that works one problem across runs — not a conversation, whose plan file is its spine
+read_when: >-
+  Before you finish a run that chose between options, changed an approach or left something
+  deliberately undone.
 assists:
   - id: ledger-before-finish
     moment: pre-finish

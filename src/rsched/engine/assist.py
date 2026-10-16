@@ -33,6 +33,14 @@ its transcript, so every event that carries an assist's line NAMES it (`assists`
 action's observation, an observation whose tail carried one, a boundary ENGINE NOTE, a finish
 deferral. The observation-moment assists are asked before their observation is recorded for
 exactly that reason (`EngineLoop._observe`).
+
+The FIRST assist of a rule to fire in a scope brings the whole rule with it (`_delivered`): the
+line names the move, the body below it is what the move rests on. Measured before this, a run
+followed a fired line to `read_rule` 4 times in 177, so the rule's text was in context almost
+only when a recipe ordered the read. A later assist of the same rule carries its line alone —
+the text is already above it — and so does one whose rule the user bound mid-run, which
+arrived whole with its bind note. The body is framed by two marker lines so an unbind the user
+asks to ERASE can cut exactly it out of the message it rode (`withdraw`).
 """
 
 from __future__ import annotations
@@ -60,6 +68,7 @@ def configure(loop) -> None:
     loop.assist_user_replies = None     # the user-replies watermark, seeded at the 1st boundary
     loop.assist_undo_points = set()     # repos found clean this run: HEAD restores them
     loop.assist_undo_found = None       # …and the one found for the action in flight (`recorded`)
+    loop.assist_bodies = set()          # rules whose full text an assist delivered this scope
 
 
 def rebuild(loop, events: list[dict]) -> None:
@@ -70,17 +79,27 @@ def rebuild(loop, events: list[dict]) -> None:
 
     The user-replies watermark is NOT carried: it is the leg's arrival edge by design — what
     the user said before a leg's first boundary is that leg's task (`at_boundary`).
+
+    A rule's body counts as delivered only where the resumed prompt still SHOWS it: a hold, a
+    boundary note and a finish deferral replay their text verbatim, an observation's tail does
+    not — so a body that rode a tail is owed again, with the next assist of that rule.
     """
     loop.assists_fired = set()
     loop.assist_finish_deferred = False
     loop.assist_undo_points = set()
+    loop.assist_bodies = set()
     for ev in events:
         if ev.get("type") not in ("observation", "user_injection"):
             continue
         payload = ev.get("payload") or {}
-        loop.assists_fired.update(str(k) for k in payload.get("assists") or [])
-        if payload.get("kind") == "finish" and payload.get("assist"):
+        keys = [str(k) for k in payload.get("assists") or []]
+        loop.assists_fired.update(keys)
+        deferral = payload.get("kind") == "finish" and payload.get("assist")
+        if deferral:
             loop.assist_finish_deferred = True
+        if ev.get("type") == "user_injection" or deferral \
+                or payload.get("kind") == "assist_hold":
+            loop.assist_bodies.update(k.split("/", 1)[0] for k in keys)
         if payload.get("undo_point"):
             loop.assist_undo_points.add(Path(str(payload["undo_point"])))
 
@@ -144,12 +163,66 @@ def _matching(loop, moment: str, situation: Situation) -> list[Assist]:
 
 
 def _rendered(assist: Assist) -> str:
-    """One line, one shape, every moment — so the run reads it at a glance and knows both
-    what fired and where the rest of it lives.
+    """The fired line alone — one shape at every moment, so the run reads at a glance what
+    fired and where the rest of the rule lives. `_delivered` decides whether the rest comes too.
     """
-    describes = PREDICATES[assist.predicate].describes
-    return (f"[RULE {assist.rule} — {describes}] {assist.line} "
-            f"(the full rule: read_rule name={assist.rule})")
+    return f"{_head(assist)} (the full rule: read_rule name={assist.rule})"
+
+
+def _head(assist: Assist) -> str:
+    return f"[RULE {assist.rule} — {PREDICATES[assist.predicate].describes}] {assist.line}"
+
+
+def body_open(rule: str) -> str:
+    """The marker line above a delivered rule body — and the anchor `withdraw` cuts from."""
+    return f"--- the full rule {rule}, delivered once with its first assist this run ---"
+
+
+def body_close(rule: str) -> str:
+    return f"--- end of rule {rule} ---"
+
+
+def _delivered(loop, fired: list[Assist]) -> list[str]:
+    """What each fired assist puts in front of the run: its line, and — for the first assist
+    of its rule this scope — the rule's whole text beneath it, read from the library now.
+
+    A rule the user bound to this live run already arrived whole with its bind note
+    (`ctx.consulted_rules`), and a rule the library no longer carries keeps the bare line and
+    its pointer; neither is owed a body.
+    """
+    from .. import library_docs
+
+    out = []
+    for assist in fired:
+        rule = assist.rule
+        body = ""
+        if rule not in loop.assist_bodies and rule not in loop.ctx.consulted_rules:
+            try:
+                raw = library_docs.read_doc(loop.ctx.server.rules_home, rule)
+            except OSError:
+                raw = None
+            body = library_docs.doc_body(raw).strip() if raw else ""
+        if not body:
+            out.append(_rendered(assist))
+            continue
+        loop.assist_bodies.add(rule)
+        out.append(f"{_head(assist)}\n{body_open(rule)}\n{body}\n{body_close(rule)}")
+    return out
+
+
+def withdraw(content: str, rule: str) -> str | None:
+    """`content` with every body of `rule` an assist delivered cut out, or None when it
+    carries none — what an ERASE unbind does to a message an assist's body rode. Only the
+    framed body goes: the observation or note around it is the run's own record and stays.
+    """
+    start, end = body_open(rule), body_close(rule)
+    if start not in content:
+        return None
+    out = content
+    while (i := out.find(start)) != -1 and (j := out.find(end, i)) != -1:
+        out = (out[:i] + f"[removed: the general rule {rule} was unbound by the user and its "
+               "text was withdrawn from this context]" + out[j + len(end):])
+    return out
 
 
 def hold(loop, action: dict, rendered: str) -> dict | None:
@@ -174,7 +247,7 @@ def hold(loop, action: dict, rendered: str) -> dict | None:
         return None
     hold_seam.mark_held(loop, SOURCE, rendered)
     return {"kind": "assist_hold", "action": rendered,
-            "lines": [_rendered(a) for a in fired],
+            "lines": _delivered(loop, fired),
             "assists": [a.key for a in fired]}
 
 
@@ -188,9 +261,9 @@ def at_observation(loop, action: dict, obs: dict) -> list[Assist]:
     return _matching(loop, "observation", Situation(loop=loop, action=action, obs=obs))
 
 
-def tail(fired: list[Assist]) -> str:
+def tail(loop, fired: list[Assist]) -> str:
     """The tail appended to an observation — "" when nothing fired."""
-    return ("\n" + "\n".join(_rendered(a) for a in fired)) if fired else ""
+    return ("\n" + "\n".join(_delivered(loop, fired))) if fired else ""
 
 
 def recorded(loop, payload: dict, fired: list[Assist]) -> dict:
@@ -224,7 +297,7 @@ def at_boundary(loop) -> None:
         loop.assist_user_replies = replies
     if loop.assists:
         for assist in _matching(loop, "boundary", Situation(loop=loop)):
-            enginenote.append(loop, _rendered(assist), assists=[assist.key])
+            enginenote.append(loop, _delivered(loop, [assist])[0], assists=[assist.key])
     loop.assist_user_replies = replies
 
 
@@ -243,7 +316,7 @@ def at_finish(loop, action: dict) -> tuple[str, list[str]] | None:
     if not fired:
         return None
     loop.assist_finish_deferred = True
-    lines = "\n".join(_rendered(a) for a in fired)
+    lines = "\n".join(_delivered(loop, fired))
     message = ("OBSERVATION (finish deferred): a general rule you practise applies to how this "
                f"run ends.\n{lines}\nAct on it and finish again — this is asked once per run "
                "(once per reply, in a conversation), so the next finish stands either way.")

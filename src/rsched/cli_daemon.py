@@ -64,6 +64,15 @@ def cmd_daemon(_args) -> int:
     # sync above only adds missing patterns
     from .migrate_converse_goals import run_migration as carry_converse_goals
     carry_converse_goals(server)
+    # MIGRATION(expires=2026-11-30): docs this release rewrites whole — the six permissions
+    # that send as the operator (their outbox), and interface-craft's curated body — BEFORE
+    # the read_when pass, so a rewritten rule lands as written rather than with a key added
+    from .migrate_superseded_docs import run_migration as carry_superseded_docs
+    carry_superseded_docs(server)
+    # MIGRATION(expires=2026-11-30): every live rule gains `read_when:` and eight their first
+    # assists — after the seed sync, which only adds missing rules
+    from .migrate_rule_read_when import run_migration as carry_rule_read_when
+    carry_rule_read_when(server)
     adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
     # MIGRATION(expires=2026-11-30): every past run's record gains the fingerprint and quality
     # the change measurement reads, rebuilt from git and the runs' own files — after the library

@@ -14,6 +14,12 @@ This is the library-curated half of the same relevance-trigger layer the
 author: there the model learns a pattern from its own surprise, here the library states one
 deliberately. They are not two mechanisms.
 
+An assist is the ENGINE noticing a moment. Where no predicate can see the moment, the run has
+to notice it itself, from the rule's `read_when:` line — the one line the state digest shows
+beside each held slug, written to the run and naming when to read that rule in full
+([rules-permissions](rules-permissions.md#read_when--the-moment-a-run-reads-the-rule)). The two
+are the same promise kept by different noticers, and a rule carries both.
+
 ## Why timing and not enforcement
 
 It is tempting to CHECK a rule instead — decide mechanically whether a run complied, and flag
@@ -44,13 +50,14 @@ compliance check at all. The impossibility result blocked grading, not timing.
 A rule's prose does double duty today: teach the model to notice the moment, and say what to
 do once it applies. An assist takes the first duty off the model, so the message at the moment
 condenses to the second — one pointed line. The rule itself keeps its full rationale and
-caveats, read on demand with `read_rule`, and the surfaced line always names that route.
+caveats: the FIRST assist of a rule to fire in a run brings them along beneath its line, and
+every later one names the route back (`read_rule`).
 
 | part | was | becomes |
 |---|---|---|
 | the trigger | "when…" scaffolding the model held and matched | a deterministic predicate — off the model entirely |
 | the operative line | buried in the body | the surfaced payload, short, shown only when relevant |
-| the full rationale | permanently resident in the run's attention | on-demand reference behind the trigger |
+| the full rationale | permanently resident in the run's attention | delivered whole with the rule's first assist this run, on demand after that |
 
 Two caveats, or the condensation misfires. **Terseness is earned by trigger precision**: a
 short line fired at the wrong moment is worse than the full rule read deliberately, because a
@@ -58,6 +65,28 @@ run trusts a fired assist to be relevant. And the payload line is **authored del
 its own field** — never auto-truncated from the body — because the caveat-heavy rules
 (`write-as-the-principal`: detectors are not ground truth) are exactly the ones a machine-made
 excerpt would misrepresent.
+
+## The first assist brings the rule
+
+The line names the move; the body is what the move rests on — its caveats, its exceptions, the
+reason it exists. Until 0.404.0 a fired line ended "(the full rule: read_rule name=…)" and left
+the read to the run, and the run almost never took it: across the transcripts on disk, 4 of 177
+fires were followed by a `read_rule` of that rule within three turns, and a held rule was read
+at all in 1–3% of the runs holding it. The rule's text reached a run mainly when a recipe
+ordered the read.
+
+So the first assist of a rule to fire in a guard scope carries the rule's whole text, read from
+the library at that moment and framed by two marker lines (`assist.body_open` / `body_close`);
+a later assist of the same rule carries its line and the pointer. The cost is one rule body —
+about 500 tokens — per rule per run, paid only at a moment the rule applies. Two cases get the
+line alone: a rule the user bound to this live run, whose bind note already delivered the
+text whole (`ctx.consulted_rules`), and a rule the library no longer carries.
+
+A resumed leg owes a body again only where the resumed prompt no longer shows it: a hold, a
+boundary note and a finish deferral replay their text verbatim, an observation's tail does not,
+so `assist.rebuild` counts a body as delivered from the first three and not from the fourth.
+An unbind the user asks to ERASE cuts the framed body out of whatever message it rode
+(`assist.withdraw`) and leaves the observation or note around it standing.
 
 ## The declaration
 
@@ -184,8 +213,9 @@ them firing had the rule still holding actions and deferring the finish of a run
 bound.
 
 `DEFAULT_RULES` is not empty, so this layer is live in most routines from the day it ships —
-which is why precision, not coverage, is the budget, and why only four of the eight assists
-cost a turn (the one `hold` and the three `pre-finish` reminders).
+which is why precision, not coverage, is the budget, and why only six of the seventeen assists
+can cost a turn: the three `hold`s (two of them share one moment, and a hold stops an action
+once however many rules match it) and the three `pre-finish` reminders.
 
 ## The payload axis, and what exists
 
@@ -205,9 +235,14 @@ batches so far have run and, like every migration here, been deleted once they c
 a migration is idempotent, skips a rule an operator has edited (a local edit outranks the seed
 there too), and names everything it skips rather than passing over it quietly. One that comes
 with a prose revision — `problem-routing`'s did — replaces the whole file, and only while the
-live copy is still byte-identical to the seed it supersedes.
+live copy is still byte-identical to the seed it supersedes. One that adds only FRONTMATTER keys
+— 0.404.0's `migrate_rule_read_when`, which gave every live rule its `read_when:` and eight
+their first assists — needs no such comparison: it inserts the keys above the closing `---`,
+touches no prose, leaves a rule that already carries the key alone, and writes nothing that
+would add a lint problem the rule did not have. It had to work that way, because by then
+rules-review had revised two seeded rules and authored two the seed never had.
 
-## The eight
+## The seventeen
 
 | rule | moment | predicate | why this moment |
 |---|---|---|---|
@@ -219,6 +254,14 @@ live copy is still byte-identical to the seed it supersedes.
 | `decision-record` | pre-finish | `ledger-untouched` | the reasoning behind the artefacts is lost at exactly this moment, and only here can the run still write it down |
 | `interface-craft` | pre-finish | `rendered-output-unseen` | the run wrote a page, a picture or a document people will look at and never looked at the rendered result |
 | `problem-routing` | pre-finish | `unclosed-delivered-report` | the run was handed work by another routine and is ending without answering it — after the finish nothing is left that can close the row but a person reading the ledger |
+| `write-as-the-principal` | pre-action | `outbound-message` | a message is about to go out under the user's name; a sent message cannot be recalled, so the line has to land before the send |
+| `verify-independently` | pre-action | `outbound-message` | the same send: the last moment a check from outside the reasoning that wrote it can still change what goes out |
+| `correspondence` | observation | `outbound-message-sent` | the send just landed, so the thread is open from here — and the record of it is cheapest while the message is still on screen |
+| `web-research` | observation | `web-lookup-returned` | a web search just came back; corroborating, citing only what was fetched and keeping the source beside the fact all start here |
+| `feedback-loop` | observation | `feedback-read` | readers' feedback just came back; every item is a task for this run while the list is in view |
+| `make-failure-visible` | observation | `code-written` | code a later run relies on was just written; its handlers, fallbacks and tests are being decided now |
+| `work-order` | observation | `util-created` | a new tool now exists, whose approach nothing has proven yet — the point where a thin end-to-end proof is still cheap |
+| `change-scope` | observation | `tracked-path-removed` | a file under version control was deleted or moved away, and whatever named it now names nothing |
 
 `git-checkpoint` is the rung the design note reserves for HOLD: a crisp pre-action predicate
 AND an irreversible cost to skipping. It fires on the FIRST such write only, which is what
@@ -233,6 +276,35 @@ the run's OWN first edit as uncommitted work, and held its second edit into the 
 "The whole run" spans its legs: the finding is named on the observation of the write the check
 let through (`undo_point`), and a resumed leg rebuilds the set from it — the same false hold
 otherwise came back one restart later.
+
+The seven predicates that read an ACT live in `engine/assist_acts.py` and join the one registry.
+Each keys on what the LIBRARY declares about the thing acted on, never on a util's name — which
+keeps a rule from naming a tool and lets a new channel join a moment by being described. That
+makes two tag conventions load-bearing. A PERMISSION doc tagged `as-operator` reserves a
+channel that speaks to a person as the user — mail, Signal, Telegram, WhatsApp, Zulip, a news
+post. It is a tag of its own because `communication` + `outbound` also describe the bot that
+posts notices TO the operator (`messaging-discord`), and holding a run's first Discord notice
+"as the user's own words" was the false trigger that showed it. A UTIL whose header declares
+`net: outbound` and tags `web` plus `search` or `research` looks the outside world up (`search`
+alone also tags local code search, `research` alone a model call), and a util tagged `feedback`
+reads what readers said. Each misses rather than guesses: a send through a util no permission
+reserves, or a page fetched without a search, is not seen.
+
+`outbound-message` is the second rung to HOLD, for the reason `git-checkpoint` is: the cost of
+skipping is irreversible. It holds only a routine's first send per run, and its two rules share
+the one interruption — the hold seam stops an action once and shows every rule that matched.
+What EVERY send owes is not an assist's job, because an assist fires once: the check that the
+operator has not already sent the message himself is ENFORCED by the send gate
+(`engine/sendgate.py`, [rules-permissions](rules-permissions.md#sends-in-the-users-name--the-outbox-gate)),
+which refuses any send without a fresh read of its outbox. The hold's line repeats it for the
+first send, beside the voice and verification lines no gate can check.
+
+Two default-tier rules have no assist, on purpose. `evidence-discipline` and `audit-coverage`
+both turn on a claim the run makes in its finish summary — "sent", "nothing new", "all clear" —
+and the only way to see that claim is to pattern-match the summary. Measured over the
+transcripts on disk, the tightest pattern still fired at 12% of finishes, mostly on summaries
+that made no such claim ("no deliverable changed this turn"), at a rung that costs a turn. That
+is the wrong-moment line this layer exists not to fire; their `read_when:` carries them instead.
 
 Three predicates read signals the engine already keeps, which is why they are cheap:
 `asks-piling-up` reads `ctx.asks_deferred` (the churn telemetry for a decision thrown over the
@@ -255,8 +327,8 @@ often. The `hold` rung does spend a turn, and its wording asks the run to say in
 `say` when a rule turned out not to apply; a structured label there is the next increment, not
 a gap left by accident. `scaffold` and `do` need a helper channel that does not exist.
 
-That increment now has a price on it. The one `hold`-payload assist in the library,
-`git-checkpoint/before-the-first-repo-edit`, stands at 31 / 31 / 10 fires in
+That increment now has a price on it. The first `hold`-payload assist in the library,
+`git-checkpoint/before-the-first-repo-edit`, stood at 31 / 31 / 10 fires in
 `llmsectest-weekday`, `self-audit` and `routine-improver` — 72 turns bought, and no way to tell
 a useful hold from a false positive, which is the one number that decides whether a trigger
 keeps a turn-costing rung. Wiring it is four coupled changes and not three: `remind_feedback`

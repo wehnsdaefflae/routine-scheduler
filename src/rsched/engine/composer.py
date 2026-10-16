@@ -65,6 +65,22 @@ def _plan_text(routine_dir: Path) -> str:
         "rest, and TRIM it: a plan this long belongs in stages/<name>.md]")
 
 
+def rules_section(held_rules: list[str]) -> str:
+    """The held GENERAL RULES, one `- <slug> — <when to read it>` line each ("" for none).
+
+    ONE wording for both digests that carry it — a routine's state digest and a child run's
+    (`boot.py`): a child holds its parent's rules, and before it was told so it read none of
+    them in 112 runs. The line names the moment to read the rule IN FULL; the prose itself is
+    never inlined (the library holds one copy, and an unread rule costs nothing).
+    """
+    if not held_rules:
+        return ""
+    return ("GENERAL RULES you practise — each line names the moment to read that rule. When "
+            "the moment comes, read it in full with read_rule BEFORE you act, and apply the "
+            "principle to your own case:\n"
+            + "\n".join(f"- {line}" for line in held_rules))
+
+
 def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict], *,
                  routines_home: Path | None = None, slug: str = "",
                  held_rules: list[str] | None = None,
@@ -143,10 +159,7 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         parts.append("artifacts/ delivered so far, newest first (the user sees these rendered in "
                      "the side panel; re-writing a filename UPDATES that artifact in place — "
                      "extend what is there instead of making report-2.md): " + arts)
-    if held_rules:
-        parts.append("GENERAL RULES you practise — read one with read_rule when its moment "
-                     "comes and apply the principle to your own case:\n"
-                     + "\n".join(f"- {line}" for line in held_rules))
+    parts.append(rules_section(held_rules or []))
     runs_dir = routine_dir / "runs"
     runs = sorted(runs_dir.glob("*/result.md")) if runs_dir.is_dir() else []
     if runs:

@@ -3,6 +3,9 @@ effect:
   with: treats a correction, a defect or a repeated failure as a cause to remove; names the standing preference behind a correction; installs the fix where the next run will read it, in this run
   without: patches the instance; you give the same correction again
   when: always — any run can be corrected, fail twice or ship a defect
+read_when: >-
+  When a check fails, an artefact comes out wrong or the user corrects you — before your next
+  attempt.
 assists:
   - id: on-a-correction
     moment: boundary

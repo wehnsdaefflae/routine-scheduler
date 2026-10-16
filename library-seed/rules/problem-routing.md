@@ -3,6 +3,9 @@ effect:
   with: fixes what is in its remit, sends the rest to its owner as a diagnosis, answers what it was handed in the same run
   without: escalates everything to you or drops what it noticed
   when: always — every run notices problems that are not its own task
+read_when: >-
+  When you notice a problem that is not your task, and before you finish a run that another
+  routine handed work to.
 assists:
   - id: work-handed-to-you-this-run
     moment: pre-finish
