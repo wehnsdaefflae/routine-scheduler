@@ -161,11 +161,11 @@ class Scheduler:
             if missed is not None:
                 log.info("catchup routine=%s missed_fire=%s → one make-up run", slug, missed)
                 await self.runner.fire(info.cfg, reason="catchup")
-        # Scheduled LANES: the fire table above is process memory, so a fire that came due
-        # while the daemon was down is made up here, once (daemon/lane_catchup.py). The
-        # LaneRunManager tick fires member 0 of any chain this arms.
-        from .lane_catchup import boot_catchup as lane_boot_catchup
-        lane_boot_catchup(self.server, _now())
+        # Fires nobody was there for: a scheduled LANE's (its fire table is process memory) and
+        # a ROUTINE's the pause dropped with no resume left to read it (D183). Both ARM.
+        from . import lane_catchup, routine_catchup
+        lane_catchup.boot_catchup(self.server, _now())
+        routine_catchup.catchup(self.server, _now(), at="at boot")
 
     def _log_loop_failure(self, what: str, exc: Exception) -> None:
         """One bad pass must never kill scheduling for good — at BOOT as much as in the loop.
@@ -260,7 +260,7 @@ class Scheduler:
                         log.info("scheduling paused — skipped due fire of %r", slug)
                         pause_skip.routine_fire_dropped(
                             self.server, slug, getattr(info.cfg, "cron", "") or "",
-                            self.next_fires[slug])
+                            due, self.next_fires[slug])
                         continue
                     await self.runner.fire(info.cfg, reason="schedule")
                 # D71: due LANE fires — arm the sequential chain; LaneRunManager

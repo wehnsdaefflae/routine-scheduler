@@ -1414,6 +1414,17 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
     `catchup: run_once`. The policy is the lane's `catchup` field (`run_once` by default, `skip`
     to let a missed fire go; the lane editor and `PATCH /api/lanes/<id>` set it). A lane with no
     watermark yet is stamped and left alone, so the first boot after the upgrade fires nothing.
+    A fire the operator's PAUSE dropped is made up for a ROUTINE too, by the same ratio
+    (D183, `daemon/routine_catchup.py` + `rsched/routine_fires.py`): the skip stamps the fire
+    as owed, the resume and the next boot make up at most one per routine while less than a
+    quarter of that routine's own cadence has passed, armed as a one-shot so the daemon still
+    owns spawning, and a decline files `routine_catchup_declined` carrying both numbers. It is
+    NOT gated on the routine's boot `catchup` field: that field is about a daemon that was
+    down, where many fires may have been missed, while a pause-skipped fire is one the daemon
+    was up for and the operator's own pause dropped — every routine on this instance reads
+    `catchup: skip`, so gating on it would make the rule a no-op. Measured 2026-10-14: four
+    consecutive dropped fires of `scheduler-builder` (`0 6,14`, in no lane) with nothing in the
+    health stream to say so, while the six lane fires the same pause ate were each on record.
     The dashboard's week strip renders the same rule: `/api/schedule/week` withholds a
     suppressed member's cron fires (drawing them would show runs the daemon never fires) and
     ships the lane's own fire times instead; the strip draws a scheduled lane as ONE labelled

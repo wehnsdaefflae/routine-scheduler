@@ -18,34 +18,41 @@ holding five hand-overs and had shipped nothing. Two routines on this instance f
 every lane, so this was the one class of due work that could vanish leaving no trace a reader
 could reach.
 
-The asymmetry that remains is deliberate and the details say so: a LANE's dropped fire is
-recorded as owed (`lane_fires.stamp_paused_skip`) and `lane_catchup.resume_catchup` makes it up
-when the pause lifts while it is still early in the lane's own cadence. There is no routine
-analog, so a routine's dropped fire is simply gone: a daily routine is a day late, a weekly one
-a week.
+Since D183 the two paths are SYMMETRIC: both record the dropped fire as owed — a lane's in
+`lane_fires`, a routine's in `routine_fires` — and both are made up by their catch-up
+(`lane_catchup.resume_catchup`, `routine_catchup.catchup`) while the fire is still early in
+the subject's own cadence. What differs is only the watermark: a lane needs one because its
+fire table is process memory, while a routine's runs are its own record.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from .. import lane_fires
+from .. import lane_fires, routine_fires
 from ..config import ServerConfig
 from ..health_events import log_health_event
 
 
-def routine_fire_dropped(server: ServerConfig, slug: str, cron: str,
+def routine_fire_dropped(server: ServerConfig, slug: str, cron: str, due: datetime,
                          next_fire: datetime) -> None:
-    """Record that the pause skipped `slug`'s due fire — `fire_paused`, keyed on the slug.
+    """Record that the pause skipped `slug`'s due fire — `fire_paused`, keyed on the slug —
+    and stamp the fire as OWED so a catch-up can make it up (D183).
 
     Carries `cron` and `next_fire` for the same reason the lane event does: the COST of the
     skip is the cron interval, not the pause, so a reader who cannot see the cadence cannot
     tell a ten-minute inconvenience from a lost week.
+
+    The OWED stamp is the half the routine path lacked. The event says the fire was dropped;
+    only the stamp says it is still owed, which is what `routine_catchup` reads at the resume
+    and at boot. One entry per routine: a pause swallowing two fires owes one run.
     """
+    routine_fires.stamp_paused_skip(server.routines_home, slug, due.isoformat())
     log_health_event(
         server.routines_home, "fire_paused", routine=slug, run_id="",
-        detail=f"due fire skipped because scheduling is paused - a routine skip is not made "
-               f"up when the pause lifts, so {slug} next runs at its following cron fire",
+        detail=f"due fire skipped because scheduling is paused - it is recorded as OWED, so "
+               f"the resume (or the next boot) makes it up while less than a quarter of "
+               f"{slug}'s own cadence has passed; past that it next runs on its cron",
         cron=str(cron or ""), next_fire=next_fire.isoformat())
 
 

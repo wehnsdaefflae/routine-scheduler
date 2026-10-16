@@ -11,7 +11,7 @@ import logging
 
 from fastapi import APIRouter, Request
 
-from ...daemon import lane_catchup
+from ...daemon import lane_catchup, routine_catchup
 from ...daemon import pause as pause_ctl
 from .common import server_of
 
@@ -51,11 +51,22 @@ def resume_scheduling(request: Request) -> dict:
     from datetime import UTC, datetime
 
     made_up: list[str] = []
+    routines_made_up: list[str] = []
+    now = datetime.now(UTC)
     try:
-        made_up = lane_catchup.resume_catchup(server, datetime.now(UTC))
+        made_up = lane_catchup.resume_catchup(server, now)
     except Exception:
         # Broad on purpose, and the comment above says why: the pause is lifted the moment the
         # sentinel is gone, and that is what the caller asked for. A make-up failure must be
         # loud in the log and invisible to the resume.
         log.exception("lane resume catch-up failed after lifting the pause")
-    return {"ok": True, "paused": False, "lanes_made_up": made_up}
+    # D183: the same for a ROUTINE's dropped fire. A lane's was always made up and a routine's
+    # never was, and the routine that lost the most to that asymmetry is the one that builds
+    # this instance — four consecutive fires, five handed-over items, nothing shipped for three
+    # days. Its own try: one subject's failure must not cost the other's make-up either.
+    try:
+        routines_made_up = routine_catchup.catchup(server, now, at="when the pause was lifted")
+    except Exception:
+        log.exception("routine resume catch-up failed after lifting the pause")
+    return {"ok": True, "paused": False, "lanes_made_up": made_up,
+            "routines_made_up": routines_made_up}

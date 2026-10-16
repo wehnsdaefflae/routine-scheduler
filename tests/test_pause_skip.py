@@ -80,17 +80,19 @@ def test_the_blocked_fleet_fold_can_see_a_paused_routine_skip():
     assert BLOCKED_EVENTS["fire_paused"].strip()
 
 
-async def test_a_dropped_lane_fire_is_recorded_as_owed_and_a_routines_is_not(make_routine,
-                                                                             tmp_path,
-                                                                             monkeypatch):
-    """The asymmetry that REMAINS is deliberate, and this pins it so neither half drifts.
+async def test_a_dropped_fire_is_recorded_as_owed_for_a_lane_and_for_a_routine(make_routine,
+                                                                               tmp_path,
+                                                                               monkeypatch):
+    """Both halves are SYMMETRIC since D183, and this pins it so neither drifts again.
 
-    A lane's dropped fire is stamped as owed, which is what lets `lane_catchup.resume_catchup`
-    make it up when the pause lifts. A routine's is not: there is no routine analog, so its
-    fire is gone and the event says so. If someone later adds a routine make-up, this test is
-    what tells them the event's wording has to change with it.
+    A lane's dropped fire was always stamped as owed, which is what lets
+    `lane_catchup.resume_catchup` make it up when the pause lifts. A routine's was not stamped
+    anywhere, so it was simply gone — four consecutive fires of `scheduler-builder` that way
+    (2026-10-14). It is now stamped in `routine_fires` and read by
+    `routine_catchup.catchup` at the resume and at boot, so the event's wording changed with
+    it: this test is the one that said it would have to.
     """
-    from rsched import lane_fires, lanes
+    from rsched import lane_fires, lanes, routine_fires
     from rsched.daemon import pause
 
     make_routine(slug="member")
@@ -113,7 +115,9 @@ async def test_a_dropped_lane_fire_is_recorded_as_owed_and_a_routines_is_not(mak
 
     # the LANE's dropped fire is owed — the stamp the resume reads
     assert lane_fires.last_paused_skip(server.routines_home, lane["id"]) is not None
-    # the ROUTINE's is not owed anywhere: no store carries it, and its detail says so
+    # …and so is the ROUTINE's, in its own store (never the lane file: one subject per store)
+    assert routine_fires.last_paused_skip(server.routines_home, "member") is not None
     assert lane_fires.last_paused_skip(server.routines_home, "member") is None
     routine_ev = health_events(server.routines_home, event="fire_paused")[-1]
-    assert "not made up" in routine_ev["detail"]
+    assert "OWED" in routine_ev["detail"]
+    assert "not made up" not in routine_ev["detail"], "the old wording outlived the asymmetry"

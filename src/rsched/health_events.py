@@ -8,7 +8,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"lane_catchup_declined"
-        |"fire_paused"
+        |"fire_paused"|"fire_catchup"|"routine_catchup_declined"
         |"scheduler_tick_error"
         |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
@@ -238,10 +238,10 @@ empty). One-off overlap is benign; a run of these is a wedged chain starving the
 fire_paused / lane_fire_paused: a DUE fire — a routine's own, or a scheduled lane's — was
 skipped because global scheduling is paused. routine = the slug or the lane id, run_id
 empty, both carrying `cron` and `next_fire`, because the COST of a dropped fire is the cron
-interval and not the pause. Both are written by `daemon/pause_skip.py`, whose docstring
-carries the rest: why a lane's dropped fire moves two watermarks and can be made up at the
-resume while a routine's is simply gone, and the measured asymmetry (2026-10-14) that made
-the routine event necessary.
+interval and not the pause. Both are written by `daemon/pause_skip.py`, which records each as
+OWED. fire_catchup / routine_catchup_declined say what became of a ROUTINE's (D183,
+`daemon/routine_catchup.py`): ONE make-up as a one-shot under a quarter of its own cadence,
+else a DECLINE with both numbers — absence reads like a daemon that never got there.
 
 wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
 the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in

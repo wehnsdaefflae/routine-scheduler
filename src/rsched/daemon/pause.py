@@ -6,7 +6,13 @@ While the sentinel exists the scheduler fires NOTHING on its own:
     resuming does not backlog-fire every routine that came due while paused. A skipped
     LANE fire also moves the lane's on-disk watermark (`rsched/lane_fires.py`), because
     that promise has to survive the next boot too: boot catch-up makes up a due fire
-    nobody handled, and a deliberate skip is handled;
+    nobody handled, and a deliberate skip is handled. What a skip DOES leave is a record
+    that the fire is OWED — a lane's in `lane_fires`, a routine's in `routine_fires` — and
+    lifting the pause makes up at most ONE fire per subject, and only while less than a
+    quarter of that subject's own cadence has passed (D156 for lanes, D183 for routines:
+    "skip, don't backlog" is right for a frequent cron and wrong for a twice-daily
+    routine, which loses half a day per skip). Past that ratio the make-up would crowd
+    the next fire, and the decline is itself an event;
   * trigger and one-shot intake is DEFERRED (their ticks don't run) — spooled webhook
     events and armed one-shots fire after resume; a one-shot is never consumed unfired;
   * manual "run now" BYPASSES the pause on purpose: it is the operator's explicit
