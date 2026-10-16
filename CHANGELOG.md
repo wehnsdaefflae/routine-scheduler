@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.426.1] — 2026-10-16
+
+### Fixed
+- **A 402 that says "retry after in-flight requests settle" is a transient, not a dead
+  run.** OpenRouter answers 402 for two unrelated conditions and names which in the body:
+  the account is *out of credit* (fatal — waiting changes nothing), or the provider is
+  *reserving credit the account has* against requests already in the air ("This request
+  would exceed your available credits given your current in-flight requests. Retry after
+  in-flight requests settle, or add credits"). `raise_for_status` classified both as fatal,
+  so the second shape killed runs with no retry and no failover: the live conversation
+  `c-20261016-075101` died **twice inside 30 seconds** on 2026-10-16 (11:17:51, 11:18:21),
+  each time logging `model_chain_exhausted … after 0 rungs` while the condition was
+  clearing itself. A 402 whose body names in-flight requests is now retryable — the same
+  body-level judgment `endpoints/openai_compat.py` already makes for the priced-out 402
+  (F362) — and an out-of-credit 402 stays fatal, which is what failed `sprind:20260818-093527`
+  correctly. New `tests/test_endpoint_402_concurrency.py` pins both directions plus the
+  untouched neighbours (401/403 auth, 408/409/429/5xx retryable, 404 fatal, 200 silent).
+
 ## [0.426.0] — 2026-10-16
 
 ### Changed

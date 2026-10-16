@@ -396,26 +396,26 @@ def _transport_cause(exc: httpx.HTTPError, timeout: float) -> str:
     return text or type(exc).__name__
 
 
-#: Statuses that mean "the request never got a verdict", so sending it again can work:
-#: 408 request timeout, 409 conflict, 429 rate limit, and every 5xx (anthropic's 529
-#: overloaded rides that branch). The same set the Anthropic and OpenAI SDKs retry.
-#: 408 is here because a proxy answers it when its own upstream stream drops —
-#: `codex-proxy: HTTP 408 … stream disconnected before completion` — and classifying that
-#: transient as fatal skipped the one-second retry and spent a MODEL SWITCH on it: a
-#: 300 s cooldown on a healthy provider plus a cold cache write on both models.
+#: Statuses that mean "the request never got a verdict", so sending it again can work: 408
+#: request timeout, 409 conflict, 429 rate limit, every 5xx (529 rides that branch) — what
+#: both provider SDKs retry — and a 402 whose body names in-flight requests, where the
+#: provider holds credit the account HAS and says "retry after in-flight requests settle".
+#: An out-of-credit 402 stays fatal. 408 is here because a proxy answers it when its own
+#: upstream stream drops, and calling that fatal spent a MODEL SWITCH on a transient.
 RETRYABLE_STATUSES = frozenset({408, 409, 429})
 
 
 def raise_for_status(resp: httpx.Response, name: str) -> None:
     """The shared HTTP-status classifier: 401/403 → auth (the UI says "check the key"),
-    408/409/429/5xx → retryable (see RETRYABLE_STATUSES), any other non-200 → fatal.
+    408/409/429/5xx and a concurrency 402 → retryable, any other non-200 → fatal.
     """
     if resp.status_code == 200:
         return
     msg = f"{name}: HTTP {resp.status_code}: {resp.text[:300]}"
     if resp.status_code in (401, 403):
         raise EndpointError(msg, auth=True)
-    if resp.status_code in RETRYABLE_STATUSES or resp.status_code >= 500:
+    transient_402 = resp.status_code == 402 and "in-flight requests" in resp.text
+    if resp.status_code in RETRYABLE_STATUSES or resp.status_code >= 500 or transient_402:
         raise EndpointError(msg, retryable=True, retry_after=_retry_after_seconds(resp))
     raise EndpointError(msg)
 
