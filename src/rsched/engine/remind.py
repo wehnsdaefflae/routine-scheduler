@@ -386,6 +386,7 @@ def _resolve_target(loop, op: dict, rid: str) -> Reminder | str:
     a caller can tell a typo from a reach gate: "is not in the shared store" names the library,
     "is live for this run" names this run's set.
     """
+    verb = str(op.get("op") or "")
     if (target := store.find(loop.reminders, rid)) is not None:
         return target
     if str(op.get("scope") or "") == "global":
@@ -396,13 +397,12 @@ def _resolve_target(loop, op: dict, rid: str) -> Reminder | str:
             curated = []
         if (target := store.find(curated, rid)) is not None:
             return target
-        return (f"no reminder {rid!r} is in the shared store — nothing was "
-                f"{str(op.get('op') or '')}d; the curated ids are the Library tab's reminder "
-                "rows (a global row this routine does not list never appears in a hold)")
-    return (f"no reminder {rid!r} is live for this run — nothing was "
-            f"{str(op.get('op') or '')}d; the live ids are in the holds you have seen. If it is "
-            "a CURATED row this routine does not list, name `scope: global` and it is resolved "
-            "against the shared store")
+        return (f"no reminder {rid!r} is in the shared store — nothing was {verb}d; the "
+                "curated ids are the Library tab's reminder rows (a global row this routine "
+                "does not list never appears in a hold)")
+    return (f"no reminder {rid!r} is live for this run — nothing was {verb}d; the live ids are "
+            "in the holds you have seen. If it is a CURATED row this routine does not list, "
+            "name `scope: global` and it is resolved against the shared store")
 
 
 def _apply_op(loop, op: dict, poll_s: float) -> str:

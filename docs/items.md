@@ -223,6 +223,25 @@ cap for the same reason a reply and a fold are — it reduces the count.
 moves the work here** (the row joins this thread and stays live until this one settles), while
 **settling declares it finished** (the row ends now, and this report holds nothing).
 
+**A disposal belongs to the row's RECIPIENT** (D182, operator-answered 2026-10-15). `answers`
+and `settles` dispose of a row only for the routine the row was DELIVERED to — which is what the
+schema always said (`answers` is "the id of a report you RECEIVED") and what nothing enforced:
+the action layer validated the GRAMMAR of `answers`/`settles`/`supersedes` thoroughly and the
+relationship not at all, so a row left the ledger whenever ANY report named it, its own sender's
+included. Measured over the 2,110-row ledger before the fix: **492 disposals were made by
+someone who was not the row's owner, 317 of them of rows never routed to anyone** — those went
+with nobody having read them. The operator's own bug report R2552 disappeared from every open
+view 14 seconds after he filed it, settled by its own follow-up.
+
+The gate is a WRITE precondition in the report handler (`report_threads.disposable`), with two
+refusals that stay apart because they need different moves: a row delivered elsewhere is its
+owner's to answer — reply to the owner, or `supersedes` it to take the thread over — while an
+**unrouted row must be routed before it can be settled at all**, since there is no owner to
+dispose of it. A FOLDED row's owner is its carrier's target, followed to the end of the chain,
+so the ordinary route-then-reply pass is unaffected. The READ model is deliberately untouched:
+the rows already disposed of this way stay settled, because re-deriving them would hand triage
+hundreds of rows at once.
+
 **The fold: one thread, one owner.** A report may declare `supersedes: ["R<n>", …]` beside its
 `target` — "these rows are now this thread". Each named row gets a `superseded` event
 (`{ts, by, to}`), and from then on reads whatever the carrier reads: `settled` when the carrier

@@ -239,9 +239,11 @@ def test_a_reply_and_a_fold_are_never_capped(home):
     """Both REDUCE the thread count. Capping the way out is how a cap loses a finding."""
     _fill_to_cap(home)
     audit = _loop(home, "self-audit")
+    # D182: a reply disposes of a row DELIVERED to the replier, so the owner files one first.
+    handle_report(_loop(home, "global-utils-review"), {"target": "self-audit", "title": "mine"})
     assert handle_report(audit, {"target": "global-utils-review", "title": "answering",
-                                 "answers": "R1"})["filed"]
-    _fill_to_cap(home)                       # back up to the cap (R1 is answered, R4 added)
+                                 "answers": "R4"})["filed"]
+    _fill_to_cap(home)                       # back up to the cap (R1-R3 still open, R6-R8 added)
     folded = handle_report(audit, {"target": "global-utils-review", "title": "consolidating",
                                    "supersedes": ["R2", "R3"]})
     assert folded["filed"] and folded["supersedes"] == ["R2", "R3"]

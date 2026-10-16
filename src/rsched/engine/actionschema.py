@@ -310,18 +310,18 @@ ACTION_SCHEMA: dict = {
                                   "and read on its next scheduled run; without it, the report "
                                   "goes to triage. Omit it rather than guess"},
         "answers": {"type": "string",
-                    "description": "report: OPTIONAL — the id (R<n>) of a report you RECEIVED "
-                                   "that this one answers: what you did about it, or why you "
-                                   "will not. That is how a report gets closed"},
+                    "description": "report: OPTIONAL — the id (R<n>) of a report DELIVERED TO "
+                                   "YOU that this one answers: what you did about it, or why "
+                                   "you will not. That is how a report gets closed"},
         "settles": {
             "type": "array", "items": {"type": "string"}, "maxItems": SETTLES_MAX,
-            "description": "report: OPTIONAL — every report id (R<n>) this one TERMINALLY "
-                           "SETTLES. `answers` records the ONE exchange this reply belongs to; "
-                           "`settles` is the many-rows claim: list every OTHER row this reply "
-                           "disposes of and each becomes settled, naming this report as what "
-                           "settled it. Use it when one reply genuinely answers several rows, "
-                           "and on a report that asks nothing back — with `settles` a reply "
-                           "needs no `answers` to carry `closes`"},
+            "description": "report: OPTIONAL — every report id (R<n>) DELIVERED TO YOU that "
+                           "this one TERMINALLY SETTLES. `answers` records the ONE exchange "
+                           "this reply belongs to; `settles` is the many-rows claim: every "
+                           "OTHER row it disposes of becomes settled, naming this report as "
+                           "what settled it. A row is disposed of ONLY by its recipient — one "
+                           "addressed elsewhere is theirs, one unrouted needs an owner first. "
+                           "With `settles` a reply needs no `answers` to carry `closes`"},
         "closes": {"type": "boolean",
                    "description": "report: with `answers` or `settles` — this reply COMPLETES "
                                   "the exchange: it settles its target(s) AND is itself born "

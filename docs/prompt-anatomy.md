@@ -773,7 +773,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "answers": {
    "type": "string",
-   "description": "report: OPTIONAL \u2014 the id (R<n>) of a report you RECEIVED that this one answers: what you did about it, or why you will not. That is how a report gets closed"
+   "description": "report: OPTIONAL \u2014 the id (R<n>) of a report DELIVERED TO YOU that this one answers: what you did about it, or why you will not. That is how a report gets closed"
   },
   "settles": {
    "type": "array",
@@ -781,7 +781,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
     "type": "string"
    },
    "maxItems": 20,
-   "description": "report: OPTIONAL \u2014 every report id (R<n>) this one TERMINALLY SETTLES. `answers` records the ONE exchange this reply belongs to; `settles` is the many-rows claim: list every OTHER row this reply disposes of and each becomes settled, naming this report as what settled it. Use it when one reply genuinely answers several rows, and on a report that asks nothing back \u2014 with `settles` a reply needs no `answers` to carry `closes`"
+   "description": "report: OPTIONAL \u2014 every report id (R<n>) DELIVERED TO YOU that this one TERMINALLY SETTLES. `answers` records the ONE exchange this reply belongs to; `settles` is the many-rows claim: every OTHER row it disposes of becomes settled, naming this report as what settled it. A row is disposed of ONLY by its recipient \u2014 one addressed elsewhere is theirs, one unrouted needs an owner first. With `settles` a reply needs no `answers` to carry `closes`"
   },
   "closes": {
    "type": "boolean",
@@ -973,7 +973,6 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   }
  }
 }
-
 # EXAMPLE of a valid reply
 {
  "say": "Digest puts this run at the scan stage \u2014 reading its module before acting.",

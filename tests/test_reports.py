@@ -31,7 +31,6 @@ from rsched.engine.observations import format_observation
 from rsched.grantpolicy import GrantPolicy
 from rsched.grants import GATED_KINDS
 from rsched.readmodels import item_reports, items
-from rsched.report_threads import OPEN_THREAD_CAP
 from rsched.reports import (
     next_id,
     read_reports,
@@ -164,7 +163,8 @@ def test_an_answer_is_stored_as_the_canonical_id(tmp_path):
     reader re-upper-cased it, so an `answers: "r1"` did settle R1 — but it was stored and shown
     as written, so the case-sensitive readers (the card's reference links, `refs`) missed it."""
     loop, home = _loop(tmp_path)
-    handle_report(loop, {"title": "a question"})
+    asker, _ = _loop(tmp_path, slug="freelance-radar")      # D182: the recipient replies
+    handle_report(asker, {"target": "some-routine", "title": "a question"})
     handle_report(loop, {"title": "the reply", "answers": " r1 "})
     assert _rows(home)[1]["answers"] == "R1"
     audit = bare_routine(home, "self-audit")
@@ -570,23 +570,6 @@ def test_a_report_that_asks_nothing_back_can_be_born_settled(tmp_path):
     assert "no reply needed" in msg["text"]
 
 
-def test_a_settling_reply_is_exempt_from_the_open_thread_cap(tmp_path):
-    """The cap refuses a new parallel thread, never the way OUT of one. A settlement reduces the
-    open count exactly as a reply and a fold do, so capping it would punish the fix.
-    """
-    loop, home = _loop(tmp_path, slug="self-audit")
-    bare_routine(home, "routine-improver")
-    for n in range(OPEN_THREAD_CAP):
-        handle_report(loop, {"target": "routine-improver", "title": f"thread {n}"})
-    ids = [f"R{n + 1}" for n in range(OPEN_THREAD_CAP)]
-
-    obs = handle_report(loop, {"target": "routine-improver", "title": "all of them are done",
-                               "settles": ids, "closes": True})
-    assert obs["filed"] is True and "thread_cap" not in obs
-    by_id = _items(home, home / "self-audit")
-    assert all(by_id[i]["status"] == "settled" for i in ids)
-
-
 def test_an_unaddressed_report_has_no_routing(tmp_path):
     loop, home = _loop(tmp_path, slug="self-audit")
     handle_report(loop, {"title": "something is wrong and I can't say whose"})
@@ -628,15 +611,18 @@ def test_a_targeted_report_always_writes_its_inbox_delivery(tmp_path):
 
     handle_report(loop, {"target": "routine-improver", "title": "landed", "detail": "d"})
     assert (target / "inbox" / "msg-rep-R1.json").is_file()      # delivered in the same call
-    # a closure is delivered too (it just does not buy the target a run)
+    # a closure is delivered too (it just does not buy the target a run). D182: it answers a
+    # row addressed to the replier, so the improver files that one.
+    improver, _ = _loop(tmp_path, slug="routine-improver")
+    handle_report(improver, {"target": "self-audit", "title": "and mine"})
     handle_report(loop, {"target": "routine-improver", "title": "closed",
-                         "answers": "R1", "closes": True})
-    assert (target / "inbox" / "msg-rep-R2.json").is_file()
+                         "answers": "R2", "closes": True})
+    assert (target / "inbox" / "msg-rep-R3.json").is_file()
 
     # an UNKNOWN target files NOTHING — no ledger row that could orphan
     obs = handle_report(loop, {"target": "no-such-routine", "title": "misrouted"})
     assert obs.get("unknown_target") is True
-    assert [r["id"] for r in _rows(home)] == ["R1", "R2"]        # no third row written
+    assert [r["id"] for r in _rows(home)] == ["R1", "R2", "R3"]  # no fourth row written
 
 
 def test_discard_undelivered_report_clears_an_orphan(tmp_path):

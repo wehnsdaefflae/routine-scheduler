@@ -78,6 +78,72 @@ def open_threads(rows: list[dict], *, routine: str, target: str) -> list[str]:
             and _is_open(r, disposed)]
 
 
+def owner_of(rows: list[dict], rid: str) -> str | None:
+    """Whose row is this — the routine it was DELIVERED to — or `""` when nobody owns it yet.
+    `None` means the ledger does not have the id at all.
+
+    A FOLDED row's owner is its carrier's target, following the chain to its end: `supersedes`
+    makes the carrier the row's thread, so the thread's owner is who holds it (the same reading
+    `readmodels/item_reports.report_row_item` renders as "folded into R<n> → <owner>"). Without
+    that, handing rows to their owner and then answering as that owner — the ordinary
+    consolidate-then-reply pass — would refuse itself.
+    """
+    by_id = {str(r.get("id") or "").strip().upper(): r for r in rows}
+    seen: set[str] = set()
+    at = str(rid).strip().upper()
+    while at and at in by_id and at not in seen:
+        seen.add(at)
+        row = by_id[at]
+        if target := str(row.get("target") or "").strip():
+            return target
+        fold = row.get("superseded")
+        fold = fold if isinstance(fold, dict) else {}
+        nxt = str(fold.get("by") or "").strip().upper()
+        if not nxt:
+            return str(fold.get("to") or "").strip()
+        at = nxt
+    return None if not seen else ""
+
+
+def disposable(rows: list[dict], ids: list[str], *,
+               replier: str) -> tuple[list[str], list[str], list[str]]:
+    """Split `ids` into those `replier` may dispose of, those delivered to SOMEONE ELSE, and
+    those nobody has been given yet — the caller's order, each id named once (D182).
+
+    `answers` and `settles` dispose of a row *for the routine the row was delivered to*: the
+    engine's own prose says `answers` is "the id of a report you RECEIVED". Nothing enforced
+    that, so a row left the ledger whenever ANY report named it — including its own sender's.
+    Measured over the 2,110-row ledger before the fix: 492 rows were disposed of by someone
+    who was not their owner, 317 of them never routed to anyone, so they left triage with no
+    owner having read them. The operator's own bug report R2552 vanished that way 14 seconds
+    after he filed it.
+
+    Two refusals, kept apart because they need different moves: a row delivered elsewhere is
+    its owner's to answer (reply to the owner, or `supersedes` it to take the thread over),
+    while an UNROUTED row has to be routed before it can be settled at all. An id the ledger
+    does not have is `unrouted` too — there is nothing to own.
+
+    This is a WRITE precondition only. The read model is deliberately untouched, so the rows
+    already disposed of this way stay settled: re-deriving them would hand triage back
+    hundreds of rows at once, which is not what fixing the gate means.
+    """
+    allowed: list[str] = []
+    elsewhere: list[str] = []
+    unrouted: list[str] = []
+    for raw in ids:
+        rid = str(raw).strip().upper()
+        if not rid or rid in allowed or rid in elsewhere or rid in unrouted:
+            continue
+        owner = owner_of(rows, rid)
+        if owner and owner == replier:
+            allowed.append(rid)
+        elif owner:
+            elsewhere.append(rid)
+        else:
+            unrouted.append(rid)
+    return allowed, elsewhere, unrouted
+
+
 def supersedable(rows: list[dict], ids: list[str]) -> tuple[list[str], list[str]]:
     """Split `ids` into those a new report may take over and those it may not, preserving the
     caller's order and naming each id once. Unusable means unknown to the ledger, already

@@ -164,9 +164,13 @@ def handle_report(loop, action: dict) -> dict:
             return unreadable
     answers = str(action.get("answers") or "").strip()
     wanted = [str(i).strip().upper() for i in (action.get("supersedes") or [])]
+    settles = [str(i).strip().upper() for i in (action.get("settles") or []) if str(i).strip()]
+    # One read of the ledger answers both preconditions below — which rows this report may fold
+    # into itself, and which it may dispose of.
+    rows = (reports.read_reports(reports.reports_path(home))
+            if wanted or settles or answers else [])
     folded: list[str] = []
     if wanted:
-        rows = reports.read_reports(reports.reports_path(home))
         folded, unusable = report_threads.supersedable(rows, wanted)
         if unusable:
             # Naming them beats folding what it can: a run told "3 of 5 taken over" has to
@@ -175,7 +179,20 @@ def handle_report(loop, action: dict) -> dict:
             return {"kind": "report", "target": target, "supersedes": wanted,
                     "unusable": unusable, "reason": "unknown to the ledger, retracted, or "
                     "already folded into another thread — a row belongs to exactly one"}
-    settles = [str(i).strip().upper() for i in (action.get("settles") or []) if str(i).strip()]
+    # D182: `answers` and `settles` dispose of a row FOR THE ROUTINE IT WAS DELIVERED TO. The
+    # grammar was validated thoroughly and the relationship not at all, so any report naming a
+    # row retired it — its own sender's included: 492 rows left this ledger that way, 317 of
+    # them never routed to anyone, so they went with nobody having read them. Checked here,
+    # against the ledger, because the author is the one who can act on the refusal; the read
+    # model is untouched, so what was already disposed of stays settled.
+    if wanted_disposals := ([answers.upper()] if answers else []) + settles:
+        _ok, elsewhere, unrouted = report_threads.disposable(rows, wanted_disposals,
+                                                            replier=ctx.routine.slug)
+        if elsewhere or unrouted:
+            return {"kind": "report", "target": target, "undeliverable_disposal": True,
+                    "elsewhere": [(rid, report_threads.owner_of(rows, rid) or "")
+                                  for rid in elsewhere],
+                    "unrouted": unrouted}
     try:
         filed = reports.file_report(home, routine=ctx.routine.slug, run_id=ctx.run_id,
                                     title=title, detail=detail, target=target,

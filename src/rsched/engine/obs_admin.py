@@ -204,6 +204,25 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             return (f"OBSERVATION (report REFUSED — `supersedes` names rows that cannot be "
                     f"taken over: {', '.join(obs['unusable'])}. Each is {obs.get('reason')}. "
                     "Nothing was filed; re-emit without them.)")
+        if obs.get("undeliverable_disposal"):
+            # D182: the two refusals need different moves, so they are never merged into one
+            # "not yours" sentence. A row delivered elsewhere is its owner's to answer; an
+            # unrouted row has to reach an owner before anyone can settle it.
+            parts = []
+            if elsewhere := obs.get("elsewhere") or []:
+                named = ", ".join(f"{rid} → {owner or 'unknown'}"
+                                  for rid, owner in elsewhere)
+                parts.append("delivered to another routine, so only that routine disposes of "
+                             f"it: {named}. Reply to its owner instead, or re-emit with "
+                             "`supersedes` naming it to take the thread over")
+            if unrouted := obs.get("unrouted") or []:
+                parts.append("NOT ROUTED YET, so nobody has read it and there is no owner "
+                             f"to dispose of it: {', '.join(unrouted)}. Route it first (a "
+                             "report with `supersedes` naming it and a `target`), then the "
+                             "owner settles it")
+            return ("OBSERVATION (report REFUSED — `answers`/`settles` dispose of a row only "
+                    "for the routine the row was delivered TO. " + "; and ".join(parts)
+                    + ". Nothing was filed.)")
         if obs.get("filed"):
             where = (f"delivered to {obs['target']!r} — it reads this on its next scheduled "
                      "run (no run was started)" if obs.get("target")
