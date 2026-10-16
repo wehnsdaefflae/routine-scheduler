@@ -161,7 +161,7 @@ def _set_pause(request: Request, run_id: str, value: bool) -> dict:
 class ModelSwitch(BaseModel):
     model: str = ""      # a catalog model name — blank leaves the role's model as it is
     effort: str = ""     # a reasoning level — blank leaves the role's effort as it is
-    kind: str = "main"   # main | tool_call | uncensored (the honeypot role)
+    kind: str = "main"   # main | tool_call | uncensored (the takeover role)
 
 @router.post("/runs/{run_id}/model")
 def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:

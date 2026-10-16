@@ -77,39 +77,28 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
     reply, truncated = truncate(reply)
     out = {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
            "reply": reply, "usage": completion.usage, "truncated": truncated}
-    # Refusal clarification (engine/refusal.py): a free-text reply that a classification
-    # subcall (markers only fast-path CONFIRM) judges a content refusal is FLAGGED, its
-    # trigger isolated, and ONLY the isolated essence delivered to the uncensored model
-    # as a normal call (operator, 2026-08-22: authentic environment, dummy responses
-    # managed in the background). Everything ELSE goes back to the PRIMARY model with
-    # the essence factored out — "without danger of refusal" — and that answer serves
-    # the observation; the refusal record rides beside it. A schema'd reply is an answer
-    # by construction, and an explicit `model: uncensored` call is the caller's own
-    # probe — neither is clarified.
+    # Refusal takeover (engine/refusal.py, operator 2026-10-16): a free-text reply the
+    # classification subcall judges a content REFUSAL is re-issued WHOLE on the routine's
+    # uncensored model - same messages, same schema - and its reply IS the answer (the
+    # honeypot era's essence-excision, which discarded the uncensored reply and
+    # re-asked the refusing model with the trigger blanked out, is retired with its
+    # premise). A schema'd reply is an answer by construction, and an explicit
+    # `model: uncensored` call is the caller's own probe - neither is taken over.
+    # The turn-level back-off episode is untouched here: a sub-call is not a turn.
     if role != "uncensored" and completion.parsed is None \
             and refusal.is_refusal(ctx, completion.text):
-        record = refusal.clarify_refusal(
-            ctx, task=str(action.get("prompt") or ""), refusal=completion.text,
-            where="llm", model=ref.name or ref.model)
+        record, takeover_reply = refusal.reissue_on_uncensored(
+            ctx, messages=messages, schema=schema, purpose=(purpose + " - re-issued")[:80],
+            refusal=completion.text, where="llm", model=ref.name or ref.model)
         out["refusal"] = record
-        essence = record.get("isolated")
-        if essence and essence in str(action.get("prompt") or ""):
-            sanitized = str(action.get("prompt") or "").replace(
-                essence, "[this part is handled separately]")
-            try:
-                remainder = endpoint.complete(
-                    [*messages[:-1], {"role": "user", "content": sanitized}],
-                    model=ref.model, schema=schema, effort=ref.effort,
-                    temperature=ref.temperature, max_tokens=ref.max_tokens,
-                    purpose=(purpose + " · remainder")[:80], kind="llm_action")
-            except EndpointError:
-                remainder = None
-            if remainder is not None and (remainder.text or remainder.parsed is not None):
-                ctx.add_usage(remainder.usage)
-                r2 = (remainder.text if remainder.parsed is None
-                      else json.dumps(remainder.parsed, ensure_ascii=False, indent=1))
-                out["reply"], out["truncated"] = truncate(r2)
-                out["remainder_processed"] = True
+        if takeover_reply is not None:
+            r2 = (takeover_reply["text"] if takeover_reply["parsed"] is None
+                  else json.dumps(takeover_reply["parsed"], ensure_ascii=False, indent=1))
+            reply_text, truncated = truncate(r2)
+            out.update({"reply": reply_text, "truncated": truncated,
+                        "takeover": True, "endpoint": takeover_reply["endpoint"],
+                        "model": takeover_reply["model"],
+                        "usage": takeover_reply["usage"]})
     return out
 
 def do_list_models(ctx: RunContext) -> dict:

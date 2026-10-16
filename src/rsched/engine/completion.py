@@ -11,11 +11,10 @@ from __future__ import annotations
 import json
 import time
 
-from ..endpoints import failover
 from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.base import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import overflow, refusal, turndebris
+from . import overflow, turndebris, turntakeover
 from .actions import (
     KIND_EXAMPLES,
     field_shift_diagnosis,
@@ -29,7 +28,6 @@ from .degrade import (
     _handle_refusal,
     _intercept_refusal_finish,
     _recover_transport,
-    _turn_task_text,
 )
 from .renamedkinds import hint as renamed_kind_hint
 from .replyactions import reply_actions
@@ -101,17 +99,12 @@ def _adopt_model(loop, pair) -> tuple:
 
 def next_action(loop) -> tuple[dict | None, dict]:
     ctx = loop.ctx
-    chain = ctx.registry.for_model_chain("main", ctx.routine.models, ctx.routine.efforts)
-    # The chain HEAD is what the routine was configured with, whatever is serving now. Recorded
-    # once so a failure verdict can name the model the operator chose as well as the one that
-    # failed (F547/D146) — `main_model` below cannot, because it follows every switch.
-    if not ctx.configured_model and chain:
-        head = chain[0][1]
-        ctx.configured_model = f"{head.endpoint}/{head.model}"
-    endpoint, ref = failover.pick(chain)   # first chain member not in provider cooldown
-    ref = _override_window(loop, ref)      # re-apply any run-local window correction (F278)
-    ctx.main_model = f"{ref.endpoint}/{ref.model}"     # in status.json; updates on a switch
-    compact_if_needed(loop, endpoint, ref)
+    # The uncensored TAKEOVER window (engine/refusal.py, operator 2026-10-16): while
+    # a back-off window is open the uncensored model serves THIS turn, consuming one
+    # turn of it; the regular chain serves again the turn after it closes (the
+    # hand-back). A window that cannot resolve its target here is closed by
+    # refusal.takeover_turn itself.
+    chain, endpoint, ref, on_takeover = turntakeover.serve_turn_head(loop)
     usage_sum: dict = {"in": 0, "out": 0}   # + "model"/"provider" attribution (str) on success
     schema = None if loop._schema_off else loop.action_schema
     if loop._shed_schema_turns > 0:
@@ -120,7 +113,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
     prev_raw: str | None = None
     # Shared across attempts: one refusal-clarification pass per turn (free-text OR
     # classifier-refusal path), and the consecutive-empty streak from the CURRENT model.
-    refstate = {"referral_tried": False, "empty": 0}
+    refstate = {"takeover_tried": False, "empty": 0}
     overflow.new_turn(loop)         # the oversize-shrink allowance is per TURN, like these
     turndebris.new_turn(loop)       # what elicits only this turn's action, dropped on success
     attempt = 0
@@ -157,7 +150,8 @@ def next_action(loop) -> tuple[dict | None, dict]:
             # never a usable action and never a same-model retry — flag + clarify
             # (engine/refusal.py), then advance the fallback chain (_handle_refusal
             # raises when the chain is exhausted).
-            switched = _handle_refusal(loop, completion, chain, ref, attempt, refstate)
+            switched, tk = _handle_refusal(loop, completion, chain, ref, attempt, refstate)
+            on_takeover = on_takeover or tk   # a takeover-served turn never resets
         elif completion.parsed is None and not completion.text.strip():
             switched = _handle_empty(loop, completion, chain, ref, attempt, refstate)
             if switched is None:
@@ -184,12 +178,22 @@ def next_action(loop) -> tuple[dict | None, dict]:
             # declined a darknet-sourcing task with exactly such a finish, and the whole
             # clarification pipeline stayed dark — referrals 0, no `refusal` event,
             # because the action parsed cleanly). Intercept it, clarify, and re-drive.
-            if (not refstate["referral_tried"]
-                    and _intercept_refusal_finish(loop, candidate, ref, refstate)):
-                attempt -= 1   # the re-driven turn is not a schema violation
-                continue
+            if not refstate["takeover_tried"]:
+                intercepted, target = _intercept_refusal_finish(
+                    loop, candidate, ref, refstate)
+                if intercepted:
+                    if target is not None:
+                        endpoint, ref = _adopt_model(loop, target)
+                    on_takeover = True   # takeover-served, never resets
+                    attempt -= 1   # the re-driven turn is not a schema violation
+                    continue
             turndebris.drop(loop)
             usage_sum["model"] = f"{ref.endpoint}/{ref.model}"   # per-turn attribution
+            if not on_takeover:
+                # A turn the REGULAR chain completed cleanly RESETS the back-off
+                # episode (engine/refusal.py): the hand-back proved the regular
+                # model can serve again, so the next refusal starts at window 1.
+                ctx.refusal_level = 0
             return candidate, usage_sum
         except SchemaViolation as exc:
             raw = completion.text or json.dumps(completion.parsed or {})
@@ -200,30 +204,19 @@ def next_action(loop) -> tuple[dict | None, dict]:
                                            **({"provider": completion.provider}
                                               if completion.provider else {})})
             ctx.note_schema_retry()
-            # Refusal clarification (engine/refusal.py): a free-text reply that the
-            # classification subcall judges a content refusal — not merely a malformed
-            # action — is FLAGGED, its trigger isolated, and ONLY the isolated essence
-            # delivered to the uncensored HARNESS as a normal model call. The turn then
-            # continues on the NORMAL
-            # retry/failover path below: the harness only pretends to comply, so its
-            # output must never become this turn's action (whole-turn referral retired
-            # on the operator's order, 2026-08-22).
-            essence_note = ""
-            if (not refstate["referral_tried"] and completion.parsed is None
-                    and _is_prose_reply(completion.text)
-                    and refusal.is_refusal(ctx, completion.text)):
-                refstate["referral_tried"] = True
-                rec = refusal.clarify_refusal(ctx, task=_turn_task_text(loop),
-                                              refusal=completion.text, where="loop",
-                                              model=ref.name or ref.model)
-                if rec.get("isolated"):
-                    # Everything BESIDES the flagged essence stays with the main model
-                    # (operator, 2026-08-22): tell it the essence is handled separately
-                    # so the retry proceeds with the rest instead of re-refusing.
-                    essence_note = (
-                        f"\n\nNOTE: the fragment «{rec['isolated']}» in the current "
-                        "task was flagged and is being handled separately by another "
-                        "model — proceed with the REMAINDER of the task without it.")
+            # Refusal takeover (engine/refusal.py, operator 2026-10-16): a free-text
+            # reply the classification judges a content REFUSAL arms the back-off
+            # episode and hands the refused TURN to the routine's uncensored model
+            # whole - its output IS this turn's action (the honeypot
+            # essence-excision is retired with its premise).
+            if not refstate["takeover_tried"]:
+                adopted = turntakeover.engage_turn_takeover(loop, ref, completion)
+                if adopted is not None:
+                    refstate["takeover_tried"] = True
+                    endpoint, ref = adopted
+                    on_takeover = True   # takeover-served, never resets episode
+                    attempt -= 1
+                    continue
             # D146-C: when the object itself is field-shifted, say so instead of letting the
             # correction describe whichever field happened to carry a constraint.
             turndebris.append(
@@ -231,7 +224,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 {"role": "user", "content": retry_message(
                     exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""),
                     repeated=repeated,
-                    diagnosis=diagnose(completion.parsed or {})) + essence_note})
+                    diagnosis=diagnose(completion.parsed or {}))})
             if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                 # Persistent violations under a provider-enforced grammar are often the
                 # grammar's fault (empty-string debris fields are its signature) — give

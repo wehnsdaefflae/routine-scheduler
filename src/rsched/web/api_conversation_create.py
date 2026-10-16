@@ -125,8 +125,8 @@ def _parse_connections(raw: str) -> dict[str, str] | None:
 def _resolve_create_models(server, model: str, models: str) -> dict[str, str] | None:
     """Model roles at create time. `model` is the shorthand — one picked catalog name seeds
     main + tool_call. `models` is the full per-role JSON map (main / tool_call / uncensored),
-    so a conversation can START with a honeypot (uncensored) role already configured — the
-    role the refusal machinery hands a refused request's essence to, otherwise unreachable
+    so a conversation can START with an uncensored (takeover) role already configured — the
+    role the refusal machinery hands a refused request to whole, otherwise unreachable
     before the first reply. The per-role map, when present, wins over the shorthand. Every
     name is validated against the catalog + window exactly like the PATCH path (R112/R128).
     """

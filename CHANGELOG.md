@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.426.0] — 2026-10-16
+
+### Changed
+- **Refusal takeover with exponential back-off — the honeypot premise is retired**
+  (operator order 2026-10-16: "it's not a Honeypot anymore. We just wanna be able to
+  process all kinds of requests"). The 2026-08-22 design sent only the isolated
+  "essence" of a refusal trigger to the `uncensored` model as a diagnostic probe and
+  discarded its reply; on 2026-10-16 that premise failed live
+  (uncensored-model-radar:20261016-035417: Sonnet refused a bio probe, the one
+  harness delivery got a bare step string with no context, and the run then died on
+  an empty fallback chain). Now the refused REQUEST is re-driven WHOLE on the
+  uncensored model — its reply IS the answer / the turn's action — and every
+  consecutive regular-model refusal doubles the takeover window: **1 → 2 → 4 → 8 → 16
+  turns** (`engine/refusal.py` `TAKEOVER_CAP`), then the next request hands back to the
+  regular model. A clean regular turn resets the episode; a refusal BY the uncensored
+  model is an honest dead end, never a back-off rung. The `llm` seam re-issues a
+  refused sub-call whole (`refusal.reissue_on_uncensored`); the turn loop serves open
+  windows through `engine/turntakeover.py` (new — split off `refusal.py` at the
+  350-line house bar). Episode state (`refusal_level`, `takeover_left`) rides in
+  status.json and survives a resumed leg. No takeover available (no
+  `models.uncensored`) → the old honest path: flag, cool, advance `fallbacks:`, fail
+  naming the category. `docs/endpoints.md` *Refusal takeover* rewritten;
+  architecture/conversations guides and the flag UI prose updated.
+
 ## [0.425.0] — 2026-10-16
 
 ### Changed

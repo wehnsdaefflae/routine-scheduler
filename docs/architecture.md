@@ -944,7 +944,7 @@ meet. A conversation's spine is its own **working plan**
   its turn AND its finish's `ts`, because one that ran no turn of its own (a classifier refusal
   that exhausted the chain) shares the previous reply's turn number. A GET on the same path is the
   warning gate's preview, so the browser never re-derives which message opened a reply. The one
-  path on which the uncensored model answers and acts; the automatic path keeps the honeypot rule.
+  path on which the uncensored model answers and acts; since the 2026-10-16 takeover order the automatic path does too - a refused request is handed to the routine's uncensored model whole, with the exponential back-off (docs/endpoints.md).
 - Web: `web/api_conversations.py` (create/message are multipart — **attachments** land in
   `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
   images, `read_file`'s Markdown conversion for a PDF or an Office document). **Artifacts**:

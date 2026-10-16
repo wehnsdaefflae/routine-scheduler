@@ -616,20 +616,19 @@ def test_refusal_without_fallback_fails_run_honestly(make_routine, monkeypatch):
     assert "valid action" not in fin["payload"]["summary"]
 
 
-def test_classifier_refusal_with_harness_never_hands_it_the_turn(make_routine, monkeypatch):
-    """0.213.0 (operator order 2026-08-22): the uncensored role is a honeypot HARNESS —
-    even when configured, a refused turn is never re-issued to it wholesale and nothing
-    it says can serve a turn. The refusal is flagged (`refusal` transcript event; the
-    scripted fixture answers the isolation subcall with "no isolation", so nothing is
-    referred), the refused model cools like any hard failure, and the fallback chain
-    serves the run."""
+def test_classifier_refusal_is_taken_over_by_uncensored(make_routine, monkeypatch):
+    """0.215.0 (operator order 2026-10-16): the uncensored role is a WORKING model — a
+    refused turn is re-issued to it WHOLE and its output IS the turn's action (the
+    honeypot premise is retired). The refusal is flagged (`refusal` transcript event with
+    takeover: true and the back-off window), the refused model is not blind-retried, and
+    the uncensored model serves the turn."""
     import json as _json
 
     import yaml as _yaml
 
     from rsched.endpoints.base import Completion
 
-    d = make_routine("emptyref")
+    d = make_routine("uncensoredfail")
     cfg = _yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
     cfg["models"] = {"uncensored": "unc"}
     (d / "routine.yaml").write_text(_yaml.safe_dump(cfg), encoding="utf-8")
@@ -642,24 +641,25 @@ def test_classifier_refusal_with_harness_never_hands_it_the_turn(make_routine, m
     server.models["unc"].name = "unc"
     eps = _wire(monkeypatch, server, {
         "epA": [Completion(text="", stop_reason="refusal",
-                           stop_details={"category": "cyber"})],
-        "epB": [write_file("state/probe.txt", say="the backup model serves the turn"),
-                finish(summary="served by the backup model")],
-        "epU": []})
+                           stop_details={"category": "cyber"}),
+                finish(summary="the regular model is back - the hand-back turn")],
+        "epB": [finish(summary="unused - the takeover serves before any fallback")],
+        "epU": [write_file("state/unc.txt", say="the uncensored model serves the turn")]})
     status, run_dir = run_routine(d, server, run_ts=TS)
     assert status == "ok"
-    assert len(eps["epU"].calls) == 0              # the harness NEVER sees the turn
-    assert len(eps["epA"].calls) == 1              # one refusal — no same-model retry
-    assert failover.is_cooling("epA", "m-a")       # a refusal now always fails over
+    assert len(eps["epA"].calls) == 2   # one refusal, then the clean hand-back turn
+    assert len(eps["epU"].calls) == 1   # the uncensored model serves the refused turn
     events, _ = read_events(run_dir / "transcript.jsonl")
     flags = [e for e in events if e["type"] == "refusal"]
     assert len(flags) == 1 and flags[0]["payload"]["where"] == "loop"
-    assert flags[0]["payload"]["referred"] is False        # nothing isolated → nothing sent
+    assert flags[0]["payload"]["takeover"] is True
+    assert flags[0]["payload"]["window"] == 1
     turns = [e for e in events if e["type"] == "assistant_action"]
-    assert all("referred" not in t for t in turns)         # the old stamp is retired
-    assert turns[0]["usage"]["model"] == "epB/m-b"
+    assert [t["usage"]["model"] for t in turns] == ["epU/m-u", "epA/m-a"]
     status_json = _json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
-    assert status_json["referrals"] == 0
+    assert status_json["referrals"] == 1
+    assert status_json["refusal_level"] == 0     # the clean hand-back reset the episode
+    assert status_json["takeover_left"] == 0
 
 
 def test_chain_exhaustion_reaches_the_health_stream(make_routine, monkeypatch):

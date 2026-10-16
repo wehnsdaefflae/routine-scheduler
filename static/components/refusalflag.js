@@ -1,8 +1,9 @@
 // ⚑ Flag a conversation reply as a REFUSAL (operator decision 2026-10-01). Behind a warning
 // gate the reply and every reply after it are archived, the message that produced it is
 // re-sent, and the conversation's uncensored model answers it — and stays its main model from
-// then on. This is the one place the uncensored model answers and acts: the automatic refusal
-// path keeps treating it as a honeypot (engine/refusal.py), because there nobody decided.
+// then on. The automatic refusal path also hands refused requests to the uncensored model
+// whole (engine/refusal.py, takeover with back-off since 2026-10-16) — but this seam is the
+// person's own and the stronger one: the model STAYS the conversation's main from then on.
 //
 // The gate quotes what the SERVER will re-send (GET /api/runs/{id}/flag-refusal), never a
 // second reading of the transcript in the browser: which message opened a reply depends on the

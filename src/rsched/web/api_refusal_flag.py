@@ -6,10 +6,11 @@ D69 rewind's own cut and archive — `rewind.rewind_transcript(before_reply=…)
 that produced it is re-sent verbatim on the composer's own channel, and the uncensored model
 becomes the conversation's MAIN model from then on.
 
-This is the one path on which the uncensored model answers and acts. The automatic path
-(engine/refusal.py) keeps the honeypot rule — its output is evidence, never an answer —
-because nobody decided anything there; here a person did, per reply, behind a warning gate
-that says what is discarded and what is NOT undone (files written, messages sent).
+Since the takeover order (2026-10-16, engine/refusal.py) the automatic path also hands a
+refused request to the uncensored model whole — with the back-off windows; this seam stays
+the PERSON's own and the stronger one: a person decided, per reply, behind a warning gate
+that says what is discarded and what is NOT undone (files written, messages sent) — and the
+uncensored model stays the conversation's MAIN model from then on, not for one request.
 
 Two verbs on one resource. GET says what a flag WOULD do — the message it re-sends, the
 model that takes over or that one must be picked — so the gate quotes the server's own

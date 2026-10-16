@@ -29,13 +29,11 @@ if TYPE_CHECKING:
 # Sentinel default for "argument not passed" where None is a meaningful value.
 _UNSET: Any = object()
 
-
 #: The prefix `engine/background.py` names its threads with (`background-<handle>`). Read here
 #: rather than imported, deliberately: `add_usage` is on the hot path of every model call and
 #: must not pull a module that imports the executor, and a NAME is all the two sides need to
 #: agree on. A test pins the two together so renaming one cannot silently unpark every booking.
 BACKGROUND_THREAD_PREFIX = "background-"
-
 
 def background_parking_key() -> str | None:
     """The key a BACKGROUND thread's spend parks under, or None on any other thread.
@@ -46,7 +44,6 @@ def background_parking_key() -> str | None:
     """
     name = threading.current_thread().name
     return name if name.startswith(BACKGROUND_THREAD_PREFIX) else None
-
 
 def _never_aborted() -> bool:
     """`RunContext.aborted` until a loop installs its own: a context no loop drives (a test,
@@ -217,6 +214,8 @@ class RunContext:
     _budget_warned: set = field(default_factory=set)
     schema_retries: int = 0           # cumulative schema-violation retries this run (telemetry)
     referrals: int = 0                # turns/llm-calls answered by the `uncensored` model (audit)
+    refusal_level: int = 0    # the uncensored back-off (engine/refusal.py, 2026-10-16)
+    takeover_left: int = 0
     schema_forcefails: int = 0        # turns that exhausted every schema attempt (telemetry)
     # Per-util execution telemetry: util name → {outcome: n}. Outcomes — ok / error
     # (non-zero exit) / usage_error (exit 2, argparse's bad-arguments convention) /
@@ -559,6 +558,7 @@ class RunContext:
             "schema_retries": self.schema_retries,
             "schema_forcefails": self.schema_forcefails,
             "referrals": self.referrals,
+            "refusal_level": self.refusal_level, "takeover_left": self.takeover_left,
             # the recipe version that produced this run (null: unversioned dir) — the
             # health view's bucket key; survives retention via the workflow-usage record
             "recipe_commit": self.recipe_commit,

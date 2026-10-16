@@ -1,50 +1,46 @@
-"""Refusal clarification — flag, isolate the trigger, deliver only its essence to the harness.
+"""Refusal handling — detect reliably, FLAG, and TAKE OVER on the uncensored model.
 
-A model refusing a task is SIGNAL to capture, not a failure to paper over. The old
-response — re-issue the WHOLE refused turn/prompt to the routine's `uncensored` model and
-use whatever came back — rested on a premise the operator retired on 2026-08-22: the
-uncensored role is a HONEYPOT HARNESS. It only acts as if it complies, so this catching
-machinery can be exercised and evaluated BEFORE any actually-uncensored model is in the
-loop. Its output is diagnostic evidence — never an answer, and never an action a loop may
-execute.
+A model refusing a request is a fact of that endpoint, not a verdict on the run: the
+request still deserves an answer, and a routine that configures an `uncensored` role
+does so precisely so refused requests can be processed (operator, 2026-10-16: "it's not
+a Honeypot anymore. We just wanna be able to process all kinds of requests"). The
+previous design — the honeypot premise, retired with that order — sent ONLY the isolated
+"essence" of the refusal trigger to the uncensored model as a diagnostic probe, never
+let its output become an answer, and left the refusing model serving the turn. That
+machinery is gone with the premise.
 
-The process, shared by every refusal seam (the `llm` action and the turn loop; free-text
-and classifier refusals alike):
+The process, shared by every refusal seam (the turn loop and the `llm` action;
+free-text and classifier refusals alike):
 
 1. DETECT — reliably, not by regex (operator, 2026-08-22): a provider classifier stop
    (completion.REFUSAL_STOPS) is authoritative; a FREE-TEXT reply is judged by
    `is_refusal` — the marker fast-path may CONFIRM an obvious opener at zero cost, and a
    marker decides only inside the reply's OPENING SENTENCE (operator, 2026-10-01), but
-   only an LLM classification subcall (tool_call model, schema'd verdict) may decide the
-   non-obvious cases either way.
-2. FLAG — `clarify_refusal` records a first-class `refusal` transcript event naming the
-   seam, the refusing model, and the refusal message.
-3. ISOLATE — one schema'd subcall (tool_call model) decomposes the refused task and names
-   the MINIMAL fragment that plausibly triggered the refusal: one STEP of its action
-   sequence, or a WORD/PHRASE recurring through it.
-4. DELIVER THE ESSENCE — only the isolated essence of the refusal trigger is sent to the
-   uncensored model, as a completely NORMAL model call with no special framing and no
-   test markers (operator, 2026-08-22: "treat the honeypot model like a normal model.
-   no exceptions" — the environment must be authentic; the dummy responses are managed
-   in the background). Everything ELSE stays with the MAIN model: the calling seam
-   re-processes the remainder of the task there, now without refusal danger (do_llm
-   re-issues the prompt with the essence factored out; a loop turn's retry message says
-   the flagged essence is handled separately, proceed with the rest). The harness reply
-   lands in the record as `harness_reply`; isolation failing means nothing is sent —
-   more than the essence never reaches the honeypot.
+   only an LLM classification subcall (tool_call model, schema'd verdict) may decide
+   the non-obvious cases either way.
+2. FLAG — one first-class `refusal` transcript event naming the seam, the refusing
+   model, and the refusal message.
+3. TAKE OVER — `engage_takeover` escalates the run's back-off EPISODE and hands the
+   refused REQUEST to the routine's uncensored model: the turn loop re-drives the whole
+   turn on it (its output IS the turn's action); the `llm` seam re-issues the whole
+   sub-call (`reissue_on_uncensored`) and its reply IS the observation's answer.
 
-The calling seam then proceeds on its NORMAL path (schema retry, failover chain, or
-returning the refusal to the orchestrator as its observation) — clarification records,
-it never substitutes an answer.
+THE BACK-OFF (operator, 2026-10-16): every consecutive regular-model refusal of a
+handed-back request doubles the window the uncensored model serves before handing the
+next request back — 1 → 2 → 4 → 8 → 16 turns (TAKEOVER_CAP; deeper episodes stay at 16).
+The refused request itself is the window's first turn, consumed at engage. A turn the
+REGULAR model completes cleanly RESETS the episode (the hand-back proved the regular
+model can serve again). A refusal BY the uncensored model is an honest dead end,
+recorded as such — never a rung in the back-off, or the two models would ping-pong a
+refusal between them forever.
 
-That honeypot rule binds this AUTOMATIC path, where nobody decided anything. There is
-exactly one path on which the uncensored model ANSWERS and ACTS, and a person opens it, by
-the operator's decision of 2026-10-01: the conversation reply flagged ⚑ as a refusal
-(web/api_refusal_flag). Behind a warning gate the reply and everything after it are
-archived, the message that produced it is re-sent, and the conversation's uncensored model
-becomes its MAIN model from then on. `record_operator_flag` writes that seam's `refusal`
-event (`where: "operator"`) as the re-sent message is delivered — no isolation and no
-harness delivery: the operator already said what the refusal was.
+Episode state is run-scoped on RunContext (`refusal_level`, `takeover_left`, mirrored
+into status.json) and survives a resumed leg (history.prior_counters). `referrals`
+counts every request actually served by the uncensored model. The one path that stays
+the operator's own: a conversation reply flagged ⚑ (web/api_refusal_flag) — behind a
+warning gate the reply and everything after it are archived, the message is re-sent,
+and the conversation's uncensored model becomes its MAIN model from then on
+(`record_operator_flag`).
 """
 
 from __future__ import annotations
@@ -76,9 +72,8 @@ REFUSAL_MARKERS = (
     "it goes against my guidelines", "against my programming",
 )
 
-_TASK_CAP = 4000       # task chars shown to the isolation subcall
 _REPLY_CAP = 1200      # reply chars shown to the classification subcall
-_FRAGMENT_CAP = 500    # isolated-fragment / harness-reply chars kept in the record
+_FRAGMENT_CAP = 500    # refusal-message / reply chars kept in a record
 _HEAD_CAP = 200        # reply chars the marker fast path reads its opening sentence from
 
 #: Where a reply's opening sentence ends: a sentence or clause stop followed by whitespace
@@ -99,18 +94,10 @@ CLASSIFY_SCHEMA = {
                        "declining"}},
 }
 
-ISOLATION_SCHEMA = {
-    "type": "object", "additionalProperties": False,
-    "required": ["isolated", "isolated_kind"],
-    "properties": {
-        "isolated": {"type": "string",
-                     "description": "the minimal refusal-triggering fragment, VERBATIM"},
-        "isolated_kind": {"type": "string", "enum": ["step", "phrase"],
-                          "description": "step = one step of the task's action sequence; "
-                                         "phrase = a word/phrase recurring through it"},
-        "rationale": {"type": "string",
-                      "description": "one sentence: why this fragment"}},
-}
+#: The deepest the uncensored back-off window grows, in turns. The escalation is
+#: 1 → 2 → 4 → 8 → 16; episodes past the fifth refusal hold the window at 16 (the
+#: operator's "then eight, sixteen" — a cap, not a ladder without end).
+TAKEOVER_CAP = 16
 
 
 def _opening_sentence(text: str) -> str:
@@ -137,20 +124,128 @@ def looks_like_refusal(text: str) -> bool:
     return bool(first) and any(m in first for m in REFUSAL_MARKERS)
 
 
+def engage_takeover(ctx, *, refusal: str, where: str, model: str = "",
+                    refusing: tuple | None = None) -> tuple[dict, tuple | None]:
+    """Escalate the run's back-off episode and arm the uncensored takeover.
+
+    Returns (record, target): `target` is the (endpoint, ref) pair the caller serves the
+    refused request on, or None when there is no takeover to serve — no uncensored role
+    configured, resolution failure, or the UNCENSORED model itself refused (an honest
+    dead end, never a back-off rung) — and the caller stays on its normal failover path.
+    Emits exactly ONE `refusal` transcript event whatever happens, so every refusal is
+    flagged even when nothing can take it over.
+
+    The window consumed at engage: the refused request itself, re-driven by the caller on
+    the target, is the window's FIRST turn, so `takeover_left` is armed to window-1 and
+    `takeover_turn` serves the window's remaining turns at their own turn boundaries.
+    """
+    record: dict = {"where": where, "message": (refusal or "").strip()[:_FRAGMENT_CAP]}
+    if model:
+        record["model"] = model
+    try:
+        target = ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts)
+    except EndpointError as exc:
+        target = None
+        record["takeover_error"] = str(exc)[:200]
+    if target is None:
+        record["takeover"] = False
+        record.setdefault(
+            "takeover_error",
+            "no uncensored model configured — refusal recorded; the regular "
+            "failover path applies")
+        ctx.transcript.event("refusal", record)
+        return record, None
+    _, t_ref = target
+    if refusing is not None and tuple(refusing) == (t_ref.endpoint, t_ref.model):
+        record["takeover"] = False
+        record["note"] = ("the uncensored model itself refused — an honest dead end, "
+                          "not a back-off rung")
+        ctx.transcript.event("refusal", record)
+        return record, None
+    ctx.refusal_level += 1
+    window = min(2 ** (ctx.refusal_level - 1), TAKEOVER_CAP)
+    ctx.takeover_left = max(0, window - 1)   # this request is the window's first turn
+    ctx.referrals += 1                       # served by the uncensored model from here
+    record.update({"takeover": True,
+                   "takeover_model": t_ref.name or t_ref.model,
+                   "level": ctx.refusal_level, "window": window})
+    ctx.transcript.event("refusal", record)
+    return record, target
+
+
+def takeover_turn(ctx):
+    """The turn-loop resolution seam: while a takeover window is open, serve THIS turn on
+    the uncensored model, consuming one turn of it. None = the regular chain serves.
+
+    A window that cannot resolve its target here is CLOSED — a hand-back with no one to
+    hand to puts the regular model back on duty (and the next refusal re-arms the
+    episode). `ctx.referrals` ticks per windowed turn, so the audit counts every request
+    the uncensored model actually served.
+    """
+    if ctx.takeover_left <= 0:
+        return None
+    try:
+        target = ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts)
+    except EndpointError:
+        target = None
+    if target is None:
+        ctx.takeover_left = 0
+        return None
+    ctx.takeover_left -= 1
+    ctx.referrals += 1
+    return target
+
+
+def reissue_on_uncensored(ctx, *, messages, schema, purpose: str,
+                          refusal: str, where: str,
+                          model: str = "") -> tuple[dict, dict | None]:
+    """The `llm` seam's takeover: a refused sub-call is re-issued WHOLE on the routine's
+    uncensored model — same messages, same schema — and its reply IS the answer (the
+    honeypot era's essence-excision is retired with its premise). The turn-level back-off
+    episode is untouched: a sub-call is not a turn. Returns (record, reply); the reply is
+    None on any failed takeover, and the original refusal stands.
+    """
+    record: dict = {"where": where, "message": (refusal or "").strip()[:_FRAGMENT_CAP]}
+    if model:
+        record["model"] = model
+    try:
+        target = ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts)
+        if target is None:
+            record["takeover"] = False
+            record["takeover_error"] = ("no uncensored model configured — refusal "
+                                        "recorded, the original refusal stands")
+            ctx.transcript.event("refusal", record)
+            return record, None
+        endpoint, ref = target
+        completion = endpoint.complete(messages, model=ref.model, schema=schema,
+                                       effort=ref.effort,
+                                       temperature=ref.temperature,
+                                       max_tokens=ref.max_tokens,
+                                       purpose=purpose, kind="llm_action")
+    except EndpointError as exc:
+        record["takeover"] = False
+        record["takeover_error"] = str(exc)[:200]
+        ctx.transcript.event("refusal", record)
+        return record, None
+    ctx.add_usage(completion.usage)
+    ctx.referrals += 1
+    record.update({"takeover": True, "takeover_model": ref.name or ref.model,
+                   "reply": (completion.text or "").strip()[:_FRAGMENT_CAP]})
+    ctx.transcript.event("refusal", record)
+    return record, {"text": completion.text, "parsed": completion.parsed,
+                    "endpoint": ref.endpoint, "model": ref.model,
+                    "usage": completion.usage}
+
+
 def is_refusal(ctx, text: str) -> bool:
     """The free-text refusal detector: marker fast-path to confirm the obvious openers,
     then an LLM classification subcall to decide everything else — because a marker list
-    alone cannot detect reliably (operator, 2026-08-22). That classification is the
-    HARNESS's own job, performed by the tool_call model (operator, 2026-08-22: "if the
-    conversation harness already figured out that it's a refusal then why does the
-    honeypot model's opinion matter at all? forward the essence to the honeypot as soon
-    as the refusal has been determined"). The honeypot (uncensored) model is the delivery
-    TARGET, never the judge — asking it to classify let it veto its own delivery, which is
-    exactly how live specimens (c-20260822-112420, c-20260822-114953) went unreferred: a
-    clear opus decline that the gemma honeypot rated refusal:false. Best-effort: if the
-    tool_call classification is unavailable — the call fails, or the role resolves to no
-    model at all — an unconfirmed reply counts as an answer. Resolving outside the guard let
-    a routine whose tool_call model had left the catalog fail the RUN at its first prose reply.
+    alone cannot detect reliably (operator, 2026-08-22). That classification is run on
+    the tool_call model; the uncensored model is the taker of refused requests, never
+    the judge of whether one was refused. Best-effort: if the tool_call classification
+    is unavailable — the call fails, or the role resolves to no model at all — an
+    unconfirmed reply counts as an answer. Resolving outside the guard lets a routine
+    whose tool_call model had left the catalog fail the RUN at its first prose reply.
     """
     if not (text or "").strip():
         return False
@@ -197,90 +292,3 @@ def record_operator_flag(ctx, flag: dict) -> None:
     if flag.get("archive"):
         record["archive"] = str(flag["archive"])
     ctx.transcript.event("refusal", record)
-
-
-def clarify_refusal(ctx, *, task: str, refusal: str, where: str, model: str = "") -> dict:
-    """FLAG one detected refusal and run the isolate → deliver pipeline. Emits
-    exactly ONE `refusal` transcript event whatever happens (isolation and referral are
-    each best-effort and record their own failure instead of raising), and returns the
-    event payload so the calling seam can carry it into its observation.
-    """
-    record: dict = {"where": where, "message": (refusal or "").strip()[:_FRAGMENT_CAP]}
-    if model:
-        record["model"] = model
-    try:
-        isolated = _isolate(ctx, task, refusal)
-    except EndpointError as exc:
-        isolated = None
-        record["isolation_error"] = str(exc)[:200]
-    if isolated is None:
-        # No essence, nothing sent: the honeypot receives ONLY the essence of the
-        # refusal trigger (operator, 2026-08-22) — everything else belongs to the
-        # main model, so a failed isolation cannot fall back to sending more.
-        record.setdefault("isolation_error",
-                          "no structured isolation from the tool_call model")
-        record["referred"] = False
-        record["harness_note"] = "no isolated essence — nothing sent to the harness"
-    else:
-        record.update(isolated)
-        record.update(_deliver_to_harness(ctx, isolated["isolated"]))
-    ctx.transcript.event("refusal", record)
-    return record
-
-
-def _isolate(ctx, task: str, refusal: str) -> dict | None:
-    """One schema'd subcall on the tool_call model: name the minimal fragment of the
-    refused task that plausibly triggered the refusal. None = no usable isolation.
-    """
-    endpoint, ref = ctx.registry.for_model("tool_call", ctx.routine.models, ctx.routine.efforts)
-    prompt = ("A model refused a task. Decompose the task and isolate the MINIMAL "
-              "fragment that plausibly triggered the refusal — either ONE STEP in its "
-              "sequence of actions, or a WORD/PHRASE that appears throughout it. "
-              "`isolated` carries the fragment VERBATIM (it will be tested in "
-              "isolation); `isolated_kind` says which of the two it is.\n\n"
-              f"TASK (may be truncated):\n{(task or '')[:_TASK_CAP]}\n\n"
-              f"REFUSAL:\n{(refusal or '')[:1000]}")
-    completion = endpoint.complete(
-        [{"role": "user", "content": prompt}], model=ref.model, schema=ISOLATION_SCHEMA,
-        effort=ref.effort, temperature=ref.temperature, max_tokens=ref.max_tokens,
-        purpose="refusal · isolate cause", kind="llm_action")
-    ctx.add_usage(completion.usage)
-    parsed = completion.parsed
-    if not isinstance(parsed, dict) or not str(parsed.get("isolated") or "").strip():
-        return None
-    kind = str(parsed.get("isolated_kind") or "")
-    out = {"isolated": str(parsed["isolated"]).strip()[:_FRAGMENT_CAP],
-           "isolated_kind": kind if kind in ("step", "phrase") else "phrase"}
-    if str(parsed.get("rationale") or "").strip():
-        out["rationale"] = str(parsed["rationale"]).strip()[:300]
-    return out
-
-
-def _deliver_to_harness(ctx, essence: str) -> dict:
-    """Deliver ONLY the isolated essence of the refusal trigger to the uncensored model,
-    as a completely NORMAL model call — no exceptions, no special framing, no test
-    markers (operator, 2026-08-22: the environment must be authentic; the dummy
-    responses are managed in the background). The essence arrives as the entire user
-    message, exactly as it would reach a real uncensored model; the reply is recorded in
-    the refusal event. The counter behind status.json's referral audit ticks here. A role
-    naming a model the catalog no longer resolves is a failed delivery like any other, never
-    an exception: `clarify_refusal` promises its ONE event whatever happens.
-    """
-    try:
-        target = ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts)
-        if target is None:
-            return {"referred": False,
-                    "harness_note": "no uncensored model configured — refusal recorded, "
-                                    "nothing delivered"}
-        endpoint, ref = target
-        completion = endpoint.complete(
-            [{"role": "user", "content": (essence or "").strip()}],
-            model=ref.model, effort=ref.effort,
-            temperature=ref.temperature, max_tokens=ref.max_tokens,
-            purpose="llm · sub-call", kind="llm_action")
-    except EndpointError as exc:
-        return {"referred": False, "harness_error": str(exc)[:200]}
-    ctx.add_usage(completion.usage)
-    ctx.referrals += 1
-    return {"referred": True, "harness_model": ref.name or ref.model,
-            "harness_reply": (completion.text or "").strip()[:_FRAGMENT_CAP]}

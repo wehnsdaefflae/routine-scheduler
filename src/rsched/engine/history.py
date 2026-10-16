@@ -188,7 +188,8 @@ def seen_paths(events: list[dict]) -> list[str]:
 # (F131/F132). The GLOBAL util-stats snapshot is transcript-derived and was always correct;
 # this only repairs the per-run status.json + finish event.
 _RESUME_COUNTER_FIELDS = ("asks_deferred", "schema_retries", "schema_forcefails", "referrals",
-                          "claims_challenged", "claims_disputed", "holds", "interventions")
+                          "claims_challenged", "claims_disputed", "holds", "interventions",
+                          "refusal_level", "takeover_left")
 
 
 def prior_counters(status: dict) -> dict:

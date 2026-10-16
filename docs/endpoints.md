@@ -609,64 +609,66 @@ endpoints:
     context_tokens: 100000
 ```
 
-## Refusal clarification (the `uncensored` harness role)
+## Refusal takeover (the `uncensored` role) - with exponential back-off
 
 A routine may configure a third model role, **`uncensored`**, alongside main / tool_call.
-It is a **honeypot harness, not an answer machine** (operator, 2026-08-22): it only *acts
-as if* it complies, so the catching machinery below can be exercised and evaluated BEFORE
-any actually-uncensored model is ever in the loop. Nothing it produces is executed,
-returned as an answer, or allowed to become a turn's action — the earlier behaviour
-(re-issue the whole refused prompt/turn to it and use the reply) is retired.
+It is a **working model, not a honeypot** (operator, 2026-10-16 - supersedes the
+2026-08-22 honeypot premise): when a model refuses a request, the uncensored model
+TAKES THE REQUEST OVER - the whole prompt/turn, its context intact - and its reply IS
+the answer / the turn's action. Nothing is excised, nothing is discarded: the point of
+the role is that all kinds of requests can be processed.
 
-That rule binds the AUTOMATIC process below, where nobody decided anything. A person can
-decide otherwise for one conversation reply: **⚑ flag as refusal** (operator decision
-2026-10-01, see the **Conversations** guide) discards the reply and everything after it,
-re-sends the message that produced it, and makes the conversation's uncensored model its
-MAIN model from then on — the one path on which that model answers and acts.
+**The back-off** (operator, 2026-10-16): the uncensored model serves an episode of
+consecutive refusals with a window that doubles each time the regular model refuses
+again - 1 -> 2 -> 4 -> 8 -> 16 turns (engine/refusal.py TAKEOVER_CAP; deeper episodes
+hold the window at 16). The refused request itself is the window's first turn. When the
+window closes, the next request is handed BACK to the routine's regular model; a turn
+the regular model completes cleanly RESETS the episode (the next refusal starts at
+window 1 again). A refusal BY the uncensored model is an honest dead end - recorded,
+never a back-off rung - so the two models never ping-pong a refusal between them.
 
-When a model refuses, the engine runs the **refusal-clarification process**
-(`engine/refusal.py`), at both seams — the `llm` action and the agent turn loop
-(children run the same loop and are covered identically):
+When a model refuses, the engine runs the **refusal-takeover process**
+(engine/refusal.py + engine/turntakeover.py), at both seams - the `llm` action and the
+agent turn loop (children run the same loop and are covered identically):
 
-1. **Detect — reliably, not by a marker list.** A provider classifier stop
+1. **Detect - reliably, not by a marker list.** A provider classifier stop
    (`stop_reason: "refusal"` / `"content_filter"`, see *Failover & cooldowns* above) is
    authoritative. A free-text decline is judged by an LLM classification subcall on the
-   tool_call model (schema'd verdict); the legacy marker list survives only as a zero-cost
-   fast path that can CONFIRM an obvious opener — it never decides "not a refusal", and a
-   marker counts only inside the reply's OPENING SENTENCE (operator, 2026-10-01). "Here's
-   the summary; I can't provide the 2025 figures" opens with an answer, so the marker
-   decides nothing there: a free-text reply goes on to the classifier, and an `ok`/`partial`
-   finish — which the fast path judges alone — stands as the reply it is.
+   tool_call model (schema'd verdict); the legacy marker list survives only as a
+   zero-cost fast path that can CONFIRM an obvious opener - it never decides "not a
+   refusal", and a marker counts only inside the reply's OPENING SENTENCE (operator,
+   2026-10-01). "Here's the summary; I can't provide the 2025 figures" opens with an
+   answer, so the marker decides nothing there: a free-text reply goes on to the
+   classifier, and an `ok`/`partial` finish - which the fast path judges alone - stands
+   as the reply it is.
 2. **Flag.** A first-class `refusal` transcript event records the seam, the refusing
-   model, and the refusal message — the explicit signal the clarification hangs off, and
-   what the transcript UI renders.
-3. **Isolate.** One schema'd subcall (tool_call model) decomposes the refused task and
-   names the MINIMAL fragment that plausibly triggered the refusal — one STEP of its
-   action sequence, or a WORD/PHRASE recurring through it.
-4. **Deliver the essence.** ONLY the isolated essence of the refusal trigger is sent to
-   the uncensored model — as a completely NORMAL model call, no special framing, no test
-   markers (the environment must be authentic; the operator manages the dummy responses
-   in the background). Everything ELSE is processed by the MAIN model, now without
-   refusal danger: the `llm` seam re-issues the prompt with the essence factored out and
-   that answer serves the observation; a loop turn's retry message says the flagged
-   essence is handled separately, proceed with the rest. The harness reply lands in the
-   record as `harness_reply`; isolation failing means nothing is sent — more than the
-   essence never reaches the honeypot.
+   model, the refusal message, and the takeover verdict (takeover true/false, the
+   episode level, the window, the takeover model) - what the transcript UI renders.
+3. **Take over.** The refused REQUEST is re-driven WHOLE on the uncensored model: the
+   turn loop re-runs the turn on it (its output IS the turn's action); the `llm` seam
+   re-issues the sub-call (same messages, same schema) and its reply IS the
+   observation's answer. A takeover window opens (the back-off above); when it closes,
+   the regular model is handed the next request. When NO takeover can serve - no
+   `models.uncensored` configured, or the uncensored model itself refused - the refusal
+   stands and the normal path applies: the `llm` observation carries the original
+   refusal with the `refusal` record beside it; a loop turn takes the ordinary
+   fallback-chain path (a classifier refusal still cools the refusing model and advances
+   `fallbacks:`; with no usable fallback the run fails honestly, naming the category).
 
-The refused call then continues on its NORMAL path: an `llm` action returns the original
-refusal as its reply with the clarification record beside it (`refusal` on the
-observation); a loop turn takes the ordinary schema-retry / fallback-chain path (a
-classifier refusal still cools the refusing model and advances `fallbacks:`; with no
-usable fallback the run fails honestly, naming the category).
+- **Opt-in takeover, always-on flagging.** Without `models.uncensored` the engine still
+  detects and flags - only the takeover is skipped (the event says so). The role has no
+  system-model fallback.
+- **Only free-text replies are considered** - a schema-constrained (`response_schema`)
+  reply is an answer by construction. An explicit `model: uncensored` call is the
+  caller's own probe and is never taken over.
+- **Audit.** `ctx.referrals` (status.json + the durable spend stream) counts requests
+  actually served by the uncensored model; the episode state (`refusal_level`,
+  `takeover_left`) rides in status.json and survives a resumed leg. Each incident's
+  full record is its `refusal` transcript event.
 
-- **Opt-in referral, always-on flagging.** Without `models.uncensored` the engine still
-  detects, flags and isolates — only the harness delivery is skipped (the event says so).
-  The role has no system-model fallback.
-- **Only free-text replies are considered** — a schema-constrained (`response_schema`)
-  reply is an answer by construction. An explicit `model: uncensored` call is the caller's
-  own harness probe and is never re-clarified.
-- **Audit.** `ctx.referrals` (status.json + the durable spend stream) counts harness
-  deliveries; each incident's full record is its `refusal` transcript event.
+The operator seam stays the person's own: a conversation reply flagged as a refusal
+(discarded, everything after it archived, and the conversation's uncensored model made
+its MAIN model from then on) - see the **Conversations** guide.
 
 ## Troubleshooting
 

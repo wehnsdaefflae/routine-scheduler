@@ -369,10 +369,11 @@ discarded reply's turn, the model that wrote it and the model that took over (th
 records it as a `refusal` transcript event, seam `operator`). The model never reads that line —
 it reads only your message.
 
-This is the one path on which the uncensored model **answers and acts**, because you decided
-it, reply by reply. The automatic refusal handling is unchanged and keeps the uncensored model a
-*honeypot*: a refusal the engine detects on its own only has its trigger isolated and delivered
-there as evidence, never an answer (see the **Endpoints** guide, *Refusal clarification*).
+The engine's automatic refusal handling now hands a refused request to the routine's
+uncensored model whole — its reply is the answer (operator order 2026-10-16, see the
+**Endpoints** guide, *Refusal takeover*). The ⚑ flag stays the person's own stronger
+seam: it discards the reply, archives everything after it, and makes the conversation's
+uncensored model its MAIN model from then on — not for one request, for good.
 
 ## Working on a project
 

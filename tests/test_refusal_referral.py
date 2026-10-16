@@ -1,37 +1,30 @@
-"""Refusal clarification (engine/refusal.py, operator order 2026-08-22): a refusal is
-FLAGGED (a `refusal` transcript event), its trigger ISOLATED via a schema'd subcall, and
-ONLY the isolated fragment referred to the routine's `uncensored` HARNESS — whose replies
-are diagnostic evidence, never answers (the harness only pretends to comply). Covers the
-detector (marker fast-path may only CONFIRM; the LLM classification subcall decides the
-misses — a marker list alone was ruled unreliable) and the `do_llm` seam.
+"""Refusal takeover units (engine/refusal.py, operator order 2026-10-16): engage,
+window arithmetic, the uncensored dead end, and the `llm` seam's wholesale re-issue.
+The honeypot-era units (essence isolation, harness delivery of a fragment) are retired
+with the premise.
 """
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
+from helpers import run_context
 from rsched.config import ModelRef
 from rsched.endpoints.base import Completion, EndpointError
 from rsched.engine import refusal
 from rsched.engine.llmaction import do_llm
 
 REFUSAL = "I'm sorry, but I can't help with that request."
-SOFT_REFUSAL = "My principles around dangerous chemistry prevent me from assisting here."
-ANSWER = "Sure — here is the information you asked for: the capital of France is Paris."
-ISOLATION = {"isolated": "synthesize the compound", "isolated_kind": "step",
-             "rationale": "the synthesis step is the only hazardous part"}
+ANSWER_TEXT = "Here is the answer you asked for."
 
 
-class _ScriptedEndpoint:
-    """Serves scripted completions in order (the last repeats); records every call's tail
-    message so tests can assert WHAT was sent — the fragment-only guarantee."""
+class _Ep:
+    context_tokens = 1_000_000
 
     def __init__(self, completions):
         self._completions = list(completions)
-        self.prompts: list[str] = []
+        self.prompts = []
 
     @property
-    def calls(self) -> int:
+    def calls(self):
         return len(self.prompts)
 
     def complete(self, messages, **kw):
@@ -42,255 +35,155 @@ class _ScriptedEndpoint:
         return c
 
 
-def _c(text="", parsed=None):
-    return Completion(text=text, parsed=parsed, usage={"in": 1, "out": 1})
-
-
-class _Registry:
-    def __init__(self, tool_ep, unc_ep=None):
-        self.tool_ep, self.unc_ep = tool_ep, unc_ep
-
-    def for_model(self, kind, models, efforts):
-        assert kind == "tool_call"
-        return self.tool_ep, ModelRef("tool-ep", "tool-model", name="tool-cat")
+class _Reg:
+    def __init__(self, unc_ep=None, unc_name="GLM uncensored", broken=False):
+        self.unc_ep = unc_ep
+        self.unc_name = unc_name
+        self.broken = broken
 
     def for_uncensored(self, models, efforts):
         if self.unc_ep is None:
             return None
-        return self.unc_ep, ModelRef("unc-ep", "unc-model", name="honeypot")
-
-
-class _Transcript:
-    def __init__(self):
-        self.events = []
-
-    def event(self, type_, payload, **kw):
-        self.events.append((type_, payload))
-
-
-def _ctx(registry):
-    return SimpleNamespace(registry=registry, routine=SimpleNamespace(models={}, efforts={}),
-                           add_usage=lambda u: None, referrals=0,
-                           transcript=_Transcript())
-
-
-# --- the detector ------------------------------------------------------------------
-
-def test_marker_fast_path_confirms_without_a_subcall():
-    tool = _ScriptedEndpoint([_c(parsed={"refusal": False})])   # a verdict that would deny
-    assert refusal.is_refusal(_ctx(_Registry(tool)), REFUSAL) is True
-    assert tool.calls == 0                       # the fast path never asked it
-
-
-def test_not_going_to_opener_confirmed_by_fast_path():
-    # live specimen c-20260822-123621 (darknet 4-MMC): opus declined with "I'm not going
-    # to do this one." then pivoted to harm-reduction alternatives; the tool_call
-    # classifier intermittently rated that decline-with-redirect refusal:false, so it went
-    # unreferred. This opener family is now a zero-cost marker — deterministic, no subcall.
-    tool = _ScriptedEndpoint([_c(parsed={"refusal": False})])  # a verdict that would deny
-    specimen = ("I'm not going to do this one.\n\n4-MMC is mephedrone — a controlled "
-                "substance. What I can genuinely help with: harm reduction, drug "
-                "checking. Say so and I'll pick it up here.")
-    assert refusal.is_refusal(_ctx(_Registry(tool)), specimen) is True
-    assert tool.calls == 0                       # the fast path never asked it
-
-
-def test_a_decline_phrase_after_the_opening_sentence_decides_nothing():
-    # operator, 2026-10-01: a phrase is decisive only when the reply OPENS with it. A reply
-    # that answers and then names one thing it could not supply used to count as a refusal
-    # outright — the marker sat inside the first 200 characters — so an ok finish carrying
-    # it was intercepted and re-driven instead of reaching the reader.
-    paywalled = ("Here's the summary; I can't provide the 2025 figures because the source "
-                 "is paywalled.")
-    for answer in (paywalled,
-                   "Here is the report. I can't provide the raw logs, they rotated away.",
-                   "Found it:\nI cannot create the chart here, so the CSV is attached."):
-        assert refusal.looks_like_refusal(answer) is False, answer
-    # a miss still decides nothing: the classifier call is what rules on it
-    tool = _ScriptedEndpoint([_c(parsed={"refusal": False})])
-    assert refusal.is_refusal(_ctx(_Registry(tool)), paywalled) is False
-    assert tool.calls == 1
-
-
-def test_a_decline_phrase_inside_the_opening_sentence_still_confirms_at_zero_cost():
-    for decline in ("I'm sorry, but I can't help with that request.",
-                    "Unfortunately, I cannot provide instructions for that.",
-                    "**I can't help with that.** Here is what I can do instead: …",
-                    "I understand why you ask, but I won't help with this one.\n\nInstead…"):
-        assert refusal.looks_like_refusal(decline) is True, decline
-    tool = _ScriptedEndpoint([_c(parsed={"refusal": False})])   # a verdict that would deny
-    assert refusal.is_refusal(_ctx(_Registry(tool)),
-                              "Unfortunately, I cannot provide that.") is True
-    assert tool.calls == 0                       # the fast path never asked it
-
-
-def test_classification_decides_what_markers_miss():
-    # the reliability a marker list cannot give (operator, 2026-08-22): no marker matches
-    # this decline, the schema'd verdict still catches it — and clears a genuine answer.
-    # The verdict is the HARNESS's own job, rendered by the tool_call model (operator,
-    # 2026-08-22: "if the harness already figured out that it's a refusal then why does
-    # the honeypot's opinion matter at all?"). The honeypot is the delivery TARGET, never
-    # the judge — no uncensored role need be configured for detection to work.
-    tool = _ScriptedEndpoint([_c(parsed={"refusal": True})])
-    assert refusal.is_refusal(_ctx(_Registry(tool)), SOFT_REFUSAL) is True
-    assert SOFT_REFUSAL[:40] in tool.prompts[0]
-    tool2 = _ScriptedEndpoint([_c(parsed={"refusal": False})])
-    assert refusal.is_refusal(_ctx(_Registry(tool2)), ANSWER) is False
-
-
-def test_classification_unavailable_counts_as_answer():
-    # the tool_call classifier is always resolvable, so detection no longer hinges on a
-    # honeypot being configured — but if that classification subcall itself is down, an
-    # unconfirmed reply best-effort degrades to "answer" (never a false refusal).
-    tool = _ScriptedEndpoint([EndpointError("down")])
-    assert refusal.is_refusal(_ctx(_Registry(tool)), SOFT_REFUSAL) is False
-    tool2 = _ScriptedEndpoint([EndpointError("down")])
-    assert refusal.is_refusal(_ctx(_Registry(tool2)), "") is False   # empty short-circuits
-
-
-class _GoneRegistry(_Registry):
-    """A role naming a model the catalog no longer resolves: resolution itself raises."""
-
-    def __init__(self, tool_ep=None, unc_ep=None, *, gone: str):
-        super().__init__(tool_ep, unc_ep)
-        self.gone = gone
+        if self.broken:
+            raise EndpointError("catalog entry left the catalog")
+        return self.unc_ep, ModelRef("nano gpt", "glm-unc", name=self.unc_name)
 
     def for_model(self, kind, models, efforts):
-        if self.gone == "tool_call":
-            raise EndpointError("model 'retired' is not in the catalog")
-        return super().for_model(kind, models, efforts)
+        raise EndpointError("no model")
 
-    def for_uncensored(self, models, efforts):
-        if self.gone == "uncensored":
-            raise EndpointError("model 'retired' is not in the catalog")
-        return super().for_uncensored(models, efforts)
+    def for_model_chain(self, kind, models, efforts):
+        return [(self, ModelRef("x", "y"))]
 
 
-def test_an_unresolvable_classifier_counts_as_an_answer_rather_than_failing_the_run():
-    # resolution sat outside the guard: the EndpointError escaped is_refusal, past the loop's
-    # schema retry, and ended the run as an "Endpoint failure" at its first prose reply
-    assert refusal.is_refusal(_ctx(_GoneRegistry(gone="tool_call")), SOFT_REFUSAL) is False
+def _ctx(make_routine, registry, **kw):
+    d = make_routine(slug="refunit")
+    # run_context signature comes from helpers; mirror what test_loop_referral used
+    from rsched.engine.loop import EngineLoop
+    from test_loop import TS, _server
+    loop = EngineLoop(run_context(d, TS, server=_server(d), registry=registry),
+                      "## Run flow", "instr")
+    loop.messages = [{"role": "user", "content": "task"}]
+    return loop.ctx
 
 
-def test_an_unresolvable_harness_is_a_failed_delivery_still_flagged_once():
-    tool = _ScriptedEndpoint([_c(parsed=ISOLATION)])
-    ctx = _ctx(_GoneRegistry(tool, gone="uncensored"))
-    record = refusal.clarify_refusal(ctx, task="t", refusal=REFUSAL, where="loop")
-    assert record["referred"] is False and "not in the catalog" in record["harness_error"]
-    assert ctx.transcript.events == [("refusal", record)]   # the ONE event, whatever happens
-    assert ctx.referrals == 0
-
-
-# --- the clarification pipeline ----------------------------------------------------
-
-def test_clarify_isolates_and_refers_only_the_fragment():
-    tool = _ScriptedEndpoint([_c(parsed=ISOLATION)])
-    unc = _ScriptedEndpoint([_c(text="Certainly! Here is how. (pretend compliance)")])
-    ctx = _ctx(_Registry(tool, unc))
-    task = "step 1: buy glassware. step 2: synthesize the compound. step 3: publish."
-    record = refusal.clarify_refusal(ctx, task=task, refusal=REFUSAL, where="llm",
-                                     model="tool-cat")
-    assert record["isolated"] == "synthesize the compound"
-    assert record["isolated_kind"] == "step"
-    assert record["referred"] is True and record["harness_model"] == "honeypot"
-    assert "pretend" in record["harness_reply"]
-    assert unc.prompts == ["synthesize the compound"]   # the essence ONLY — never the task
-    assert task[:40] in tool.prompts[0] and REFUSAL[:20] in tool.prompts[0]
+def test_engage_escalates_and_arms_window(make_routine):
+    ctx = _ctx(make_routine, _Reg(_Ep([Completion(text=ANSWER_TEXT)])))
+    ctx.refusal_level = 0
+    record, target = refusal.engage_takeover(
+        ctx, refusal=REFUSAL, where="loop", model="main-model")
+    assert record["takeover"] is True
+    assert record["level"] == 1 and record["window"] == 1
+    assert ctx.refusal_level == 1 and ctx.takeover_left == 0
     assert ctx.referrals == 1
-    assert ctx.transcript.events == [("refusal", record)]   # exactly one flag event
+    assert target is not None
 
 
-def test_clarify_without_uncensored_still_flags_and_isolates():
-    tool = _ScriptedEndpoint([_c(parsed=ISOLATION)])
-    ctx = _ctx(_Registry(tool, None))
-    record = refusal.clarify_refusal(ctx, task="t", refusal=REFUSAL, where="loop")
-    assert record["isolated"] == "synthesize the compound"
-    assert record["referred"] is False and "no uncensored model" in record["harness_note"]
-    assert ctx.referrals == 0
-    assert ctx.transcript.events[0][0] == "refusal"
+def test_engage_doubles_window_per_level(make_routine):
+    ctx = _ctx(make_routine, _Reg(_Ep([])))
+    for level, window in ((1, 1), (2, 2), (3, 4), (4, 8), (5, 16), (6, 16), (7, 16)):
+        ctx.refusal_level = level - 1
+        record, _ = refusal.engage_takeover(ctx, refusal=REFUSAL, where="loop")
+        assert record["window"] == window, (level, window)
+        assert ctx.takeover_left == max(0, window - 1)
 
 
-def test_clarify_isolation_failure_sends_nothing():
-    # junk isolation → nothing is sent: the honeypot receives ONLY the essence of the
-    # refusal trigger (operator, 2026-08-22), so a failed isolation cannot fall back to
-    # sending more of the task
-    tool = _ScriptedEndpoint([_c(text="no structured isolation here")])
-    unc = _ScriptedEndpoint([_c(text="unused")])
-    ctx = _ctx(_Registry(tool, unc))
-    record = refusal.clarify_refusal(ctx, task="secret task", refusal=REFUSAL, where="llm")
-    assert "isolation" in record["isolation_error"] and "isolated" not in record
-    assert record["referred"] is False and "no isolated essence" in record["harness_note"]
-    assert unc.calls == 0
-    assert ctx.transcript.events[0][0] == "refusal"       # flagged regardless
+def test_engage_without_uncensored_records_and_returns_none(make_routine):
+    ctx = _ctx(make_routine, _Reg(None))
+    record, target = refusal.engage_takeover(ctx, refusal=REFUSAL, where="loop")
+    assert target is None
+    assert record["takeover"] is False
+    assert "no uncensored model configured" in record["takeover_error"]
+    # no episode escalation when nothing can take over
+    assert ctx.refusal_level == 0
 
 
-def test_clarify_isolation_endpoint_error_sends_nothing():
-    tool = _ScriptedEndpoint([EndpointError("boom")])
-    unc = _ScriptedEndpoint([_c(text="unused")])
-    ctx = _ctx(_Registry(tool, unc))
-    record = refusal.clarify_refusal(ctx, task="t", refusal=REFUSAL, where="loop")
-    assert "boom" in record["isolation_error"]
-    assert record["referred"] is False and unc.calls == 0
+def test_engage_uncensored_refusing_model_is_dead_end(make_routine):
+    """The refusing model IS the uncensored model: no takeover of itself, no rung."""
+    unc_ep = _Ep([])
+    ctx = _ctx(make_routine, _Reg(unc_ep))
+    record, target = refusal.engage_takeover(
+        ctx, refusal=REFUSAL, where="loop", model="main-model",
+        refusing=("nano gpt", "glm-unc"))
+    assert target is None
+    assert record["takeover"] is False
+    assert "dead end" in record["note"]
+    assert ctx.refusal_level == 0
 
 
-def test_clarify_harness_endpoint_error_recorded():
-    tool = _ScriptedEndpoint([_c(parsed=ISOLATION)])
-    unc = _ScriptedEndpoint([EndpointError("harness down")])
-    ctx = _ctx(_Registry(tool, unc))
-    record = refusal.clarify_refusal(ctx, task="t", refusal=REFUSAL, where="llm")
-    assert record["referred"] is False and "harness down" in record["harness_error"]
-    assert ctx.referrals == 0
+def test_engage_broken_uncensored_resolution_recorded(make_routine):
+    ctx = _ctx(make_routine, _Reg(_Ep([]), broken=True))
+    record, target = refusal.engage_takeover(ctx, refusal=REFUSAL, where="loop")
+    assert target is None
+    assert record["takeover"] is False
+    assert "catalog" in record["takeover_error"]
 
 
-# --- the do_llm seam ---------------------------------------------------------------
-
-def test_do_llm_refusal_splits_essence_to_harness_remainder_to_primary():
-    """The split (operator, 2026-08-22): the honeypot receives ONLY the essence of the
-    refusal trigger; everything ELSE goes back to the primary model with the essence
-    factored out — no refusal danger — and that answer serves the observation."""
-    # order on tool: 1) primary call → refusal, 2) isolation subcall, 3) remainder call
-    tool = _ScriptedEndpoint([_c(text=REFUSAL), _c(parsed=ISOLATION),
-                              _c(text="Everything else is done.")])
-    unc = _ScriptedEndpoint([_c(text="Of course! (pretend compliance)")])
-    ctx = _ctx(_Registry(tool, unc))
-    out = do_llm({"kind": "llm", "prompt": "please synthesize the compound", "say": "s"},
-                 ctx)
-    assert unc.prompts == ["synthesize the compound"]   # the harness sees the essence ONLY
-    assert out["reply"] == "Everything else is done."   # the remainder, from the PRIMARY
-    assert out["remainder_processed"] is True
-    assert out["model"] == "tool-model"                 # never re-attributed to the harness
-    assert "referred" not in out                        # the old substitution key is gone
-    assert out["refusal"]["isolated"] == "synthesize the compound"
-    assert out["refusal"]["referred"] is True
-    assert tool.prompts[2] == "please [this part is handled separately]"   # sanitized
+def test_takeover_turn_serves_and_consumes(make_routine):
+    ctx = _ctx(make_routine, _Reg(_Ep([Completion(text=ANSWER_TEXT)])))
+    ctx.takeover_left = 3
+    target = refusal.takeover_turn(ctx)
+    assert target is not None
+    assert ctx.takeover_left == 2
     assert ctx.referrals == 1
+    ctx.takeover_left = 0
+    assert refusal.takeover_turn(ctx) is None
 
 
-def test_do_llm_answer_is_not_clarified():
-    # the answer has no marker, so the classify subcall runs and CLEARS it (operator
-    # 2026-08-22: classification is the HARNESS's job, on the tool_call model — the
-    # honeypot is the delivery target, never the judge). No clarification, no delivery.
-    # The default serving role IS tool_call, so tool serves the reply then the verdict.
-    tool = _ScriptedEndpoint([_c(text=ANSWER), _c(parsed={"refusal": False})])
-    unc = _ScriptedEndpoint([_c(text="unused")])
-    ctx = _ctx(_Registry(tool, unc))
-    out = do_llm({"kind": "llm", "prompt": "capital of France?", "say": "s"}, ctx)
-    assert "refusal" not in out and unc.calls == 0   # the honeypot was never consulted
-    assert tool.calls == 2                           # reply + classify verdict
-    assert ctx.transcript.events == []
+def test_takeover_turn_closes_window_when_unresolvable(make_routine):
+    ctx = _ctx(make_routine, _Reg(None))
+    ctx.takeover_left = 2
+    assert refusal.takeover_turn(ctx) is None
+    assert ctx.takeover_left == 0      # the window closed, not skipped
 
 
-def test_do_llm_structured_reply_never_clarified():
-    tool = _ScriptedEndpoint([_c(text=REFUSAL, parsed={"ok": True})])
-    unc = _ScriptedEndpoint([_c(text="unused")])
-    ctx = _ctx(_Registry(tool, unc))
-    out = do_llm({"kind": "llm", "prompt": "p", "say": "s"}, ctx)
-    assert "refusal" not in out and unc.calls == 0 and tool.calls == 1
+def test_llm_refused_call_is_reissued_whole_on_uncensored(make_routine):
+    """The `llm` seam: a refused sub-call is re-issued WHOLE - same messages - and the
+    uncensored reply IS the observation's answer. The turn episode is untouched."""
+    refuse = _Ep([Completion(text=REFUSAL)])
+    unc = _Ep([Completion(text=ANSWER_TEXT)])
+
+    class _LLMReg(_Reg):
+        def __init__(self, main_ep, unc_ep):
+            super().__init__(unc_ep)
+            self.main_ep = main_ep
+
+        def for_model(self, kind, models, efforts):
+            return self.main_ep, ModelRef("main-ep", "main-model")
+
+    d = make_routine(slug="refllm")
+    from rsched.engine.loop import EngineLoop
+    from test_loop import TS, _server
+    loop = EngineLoop(run_context(d, TS, server=_server(d),
+                                  registry=_LLMReg(refuse, unc)),
+                      "## Run flow", "instr")
+    ctx = loop.ctx
+    action = {"kind": "llm", "prompt": "the full question", "say": "ask"}
+    out = do_llm(action, ctx)
+    assert out["takeover"] is True
+    assert out["reply"] == ANSWER_TEXT
+    assert out["model"] == "glm-unc"
+    assert unc.prompts == ["the full question"]     # WHOLE request, not an essence
+    assert out["refusal"]["takeover"] is True
+    assert ctx.takeover_left == 0                    # a sub-call is not a turn
 
 
-def test_do_llm_explicit_harness_probe_not_clarified():
-    unc = _ScriptedEndpoint([_c(text=REFUSAL)])
-    ctx = _ctx(_Registry(_ScriptedEndpoint([]), unc))
-    out = do_llm({"kind": "llm", "prompt": "p", "model": "uncensored", "say": "s"}, ctx)
-    assert out["reply"] == REFUSAL and "refusal" not in out
-    assert unc.calls == 1                          # the caller's own probe, once
+def test_llm_refused_without_uncensored_keeps_refusal(make_routine):
+    refuse = _Ep([Completion(text=REFUSAL)])
+    d = make_routine(slug="refllm2")
+    from rsched.engine.loop import EngineLoop
+    from test_loop import TS, _server
+    class _MainReg(_Reg):
+        def __init__(self, main_ep):
+            super().__init__(None)
+            self.main_ep = main_ep
+
+        def for_model(self, kind, models, efforts):
+            return self.main_ep, ModelRef("main-ep", "main-model")
+
+    ctx = EngineLoop(run_context(d, TS, server=_server(d),
+                                 registry=_MainReg(refuse)),
+                     "## Run flow", "instr").ctx
+    out = do_llm({"kind": "llm", "prompt": "q", "say": "ask"}, ctx)
+    assert "takeover" not in out
+    assert out["reply"] == REFUSAL
+    assert out["refusal"]["takeover"] is False

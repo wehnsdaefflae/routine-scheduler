@@ -251,7 +251,7 @@ class ScriptedEndpoint:
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
                  timeout=600, temperature=None, cacheable=True):
         from rsched.engine import refusal as _refusal
-        if schema is _refusal.CLASSIFY_SCHEMA or schema is _refusal.ISOLATION_SCHEMA:
+        if schema is _refusal.CLASSIFY_SCHEMA:
             # The refusal-clarification subcalls (engine/refusal.py) ride the same
             # endpoint as the turns: answer them OUT-OF-BAND — "not a refusal" for the
             # classifier, "no usable isolation" for the isolator — consuming no scripted
@@ -261,7 +261,7 @@ class ScriptedEndpoint:
             # job, always available), so this path fires on ordinary turns too — bill it
             # ZERO usage so it stays invisible to scripted-turn usage arithmetic.
             # Refusal-behaviour tests use their own fakes.
-            parsed = {"refusal": False} if schema is _refusal.CLASSIFY_SCHEMA else None
+            parsed = {"refusal": False}
             return Completion(text="", parsed=parsed, usage={"in": 0, "out": 0})
         system = messages[0]["content"] if messages else ""
         with self.lock:
@@ -281,7 +281,7 @@ class ScriptedEndpoint:
                     self.replies.pop(i)
                     break
             if item is None:
-                raise AssertionError("ScriptedEndpoint ran out of matching replies")
+                raise AssertionError(f"{self.name} out of replies: {len(self.calls)} calls")
         if callable(item):
             item = item()
         if isinstance(item, Exception):

@@ -591,10 +591,10 @@ export function createTranscript(container, opts = {}) {
       ev.payload.raw ? el("details", { class: "raw" },
         el("summary", {}, "attempted reply"),
         el("pre", {}, ev.payload.raw)) : null),
-    // The refusal-clarification record (engine/refusal.py): the flag, the isolated
-    // trigger fragment, and the harness's pretend-compliance — shown as evidence, never
-    // as an answer (the uncensored role is a honeypot harness by design). The OPERATOR
-    // seam is the exception — a reply flagged by hand, whose takeover model then answers.
+    // The refusal record (engine/refusal.py): the flag, the takeover verdict (with the
+    // back-off episode's level and window), and the takeover model's reply head when it
+    // served. The OPERATOR seam is the person's own — a reply flagged by hand, whose
+    // takeover model then answers for good.
     refusal: (ev) => {
       const p = ev.payload;
       if (p.where === "operator") {

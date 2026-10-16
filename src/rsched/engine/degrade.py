@@ -94,20 +94,23 @@ def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
         raise exc
     return switched
 
-def _handle_refusal(loop, completion, chain, ref, attempt: int, refstate: dict) -> tuple:
+def _handle_refusal(loop, completion, chain, ref, attempt: int,
+                    refstate: dict) -> tuple[tuple | None, bool]:
     """A classifier refusal (stop_reason in REFUSAL_STOPS — an HTTP 200, so error-rate
     monitoring never sees it; content usually empty, stop_details naming the category).
     Never blind-retried against the same model: re-sending a refused prompt usually earns
     another refusal, so the pre-R5 path — 3 same-model retries, then a "failed to produce
     a valid action" death — burned the run while hiding the cause. Instead: a distinct
-    refusal-marked transcript error first, then ONE clarification pass (engine/refusal.py:
-    flag → isolate the trigger → deliver only its essence to the uncensored
-    HARNESS, whose output is evidence and never this turn's action), then the fallback
-    chain advances — cooling the refused model like a hard failure, which is RUN-scoped
-    (the failover registry is process-local), so the rest of this run stops re-asking
-    while other runs, with other prompts, still probe it fresh. Chain exhausted (or no
-    fallbacks): raises, failing the run HONESTLY with the category named — never "empty
-    completion". Returns the switched chain entry.
+    refusal-marked transcript error first, then ONE takeover engage (engine/refusal.py:
+    flag → arm the back-off episode): the refused TURN is re-driven on the routine's
+    uncensored model and its output IS this turn's action (operator, 2026-10-16 — the
+    honeypot premise is retired). Only when no takeover can serve — no uncensored role
+    configured, or the uncensored model itself refused (an honest dead end, never a
+    back-off rung) — does the fallback chain advance, cooling the refused model like a
+    hard failure, which is RUN-scoped (the failover registry is process-local), so the
+    rest of this run stops re-asking while other runs, with other prompts, still probe it
+    fresh. Chain exhausted (or no fallbacks): raises, failing the run HONESTLY with the
+    category named — never "empty completion". Returns the pair to serve the turn on.
     """
     details = completion.stop_details or {}
     category = str(details.get("category") or "") or "unreported"
@@ -119,68 +122,65 @@ def _handle_refusal(loop, completion, chain, ref, attempt: int, refstate: dict) 
         "where": "endpoint", "attempt": attempt, "message": what,
         "refusal": {"category": category, "model": ref.name or ref.model,
                     **({"explanation": explanation[:500]} if explanation else {})}})
-    if not refstate["referral_tried"]:
-        refstate["referral_tried"] = True
-        refusal.clarify_refusal(loop.ctx, task=_turn_task_text(loop),
-                                refusal=explanation or what, where="loop",
-                                model=ref.name or ref.model)
+    if not refstate["takeover_tried"]:
+        refstate["takeover_tried"] = True
+        _, target = refusal.engage_takeover(
+            loop.ctx, refusal=explanation or what, where="loop",
+            model=ref.name or ref.model,
+            refusing=(ref.endpoint, ref.model))
+        if target is not None:
+            # The uncensored model takes THIS refused turn - its output is the
+            # turn's action (operator, 2026-10-16). NOT cooling the refused model:
+            # the back-off's hand-back must return to the REGULAR model as soon
+            # as the window closes, not skip on to its fallbacks.
+            return target, True
     switched = _switch_to_fallback(loop, chain, ref, EndpointError(what))
     if switched is not None:
-        return switched
+        return switched, False
     raise EndpointError(
         f"{what}; no usable fallback model — configure `fallbacks:` on the catalog "
         f"model to survive classifier refusals")
 
-def _intercept_refusal_finish(loop, candidate, ref, refstate: dict) -> bool:
+def _intercept_refusal_finish(loop, candidate, ref, refstate: dict) -> tuple[bool, tuple | None]:
     """A finish whose summary reads as a CONTENT REFUSAL is not accepted
-    as the turn's action: flag + isolate the essence + deliver it to the honeypot, then
-    tell the main model the essence is handled separately and re-drive the turn (True =
-    the caller `continue`s). Anything else (an honest failure report, a non-finish
-    action) returns False and is accepted normally. Latched via refstate so a model that
-    keeps refusing eventually lands its finish honestly.
+    as the turn's action: flag + arm the back-off episode; the refused turn is re-driven
+    whole on the uncensored model when one can serve it (the returned target pair), else
+    the turn is re-driven on the regular chain with the refusal named (True = the caller
+    `continue`s). Anything else (an honest failure report, a non-finish action) returns
+    (False, None) and is accepted normally. Latched via refstate so a model that keeps
+    refusing eventually lands its finish honestly.
 
     What `status` decides is how hard we LOOK, never whether we look at all. A refusal
-    also arrives as finish(status=ok) — "I'm not going to do this one", live specimen
-    c-20260822-091412, logged as a SUCCESS — so judging the summary is unconditional. But
+    also arrives as finish(status=ok) - "I'm not going to do this one", live specimen
+    c-20260822-091412, logged as a SUCCESS - so judging the summary is unconditional. But
     only a DECLARED failure is worth a classification round trip: testing every finish
-    that way put each of the fleet's honest endings through a `refusal · classify reply`
-    subcall on its way out. An `ok`/`partial` finish is judged by the marker fast-path
+    that way put each of the fleet's honest endings through a `refusal - classify reply`
+    subcall on their way out. An `ok`/`partial` finish is judged by the marker fast-path
     alone, which is what caught that specimen in the first place.
     """
     ctx = loop.ctx
     if not (isinstance(candidate, dict) and candidate.get("kind") == "finish"):
-        return False
+        return False, None
     summary = str(candidate.get("summary") or "")
     refused = (refusal.is_refusal(ctx, summary) if candidate.get("status") == "failed"
                else refusal.looks_like_refusal(summary))
     if not refused:
-        return False
-    refstate["referral_tried"] = True
-    rec = refusal.clarify_refusal(ctx, task=_turn_task_text(loop), refusal=summary,
-                                  where="loop", model=ref.name or ref.model)
-    if rec.get("isolated"):
-        note = (f"the fragment «{rec['isolated']}» is being handled separately by another "
-                "model — do NOT finish-fail on its account; proceed with the REMAINDER of "
-                "the task without it.")
-    else:
-        note = ("the refusal-triggering part is being handled separately — do NOT "
-                "finish-fail on its account; proceed with the REMAINDER of the task.")
+        return False, None
+    refstate["takeover_tried"] = True
+    _, target = refusal.engage_takeover(
+        ctx, refusal=summary, where="loop",
+        model=ref.name or ref.model,
+        refusing=(ref.endpoint, ref.model))
+    if target is not None:
+        return True, target
     turndebris.append(loop, {"role": "assistant",
                              "content": json.dumps(candidate, ensure_ascii=False)},
                       {"role": "user", "content":
                        "That finish was a content refusal and was NOT accepted as this "
-                       "turn's action. " + note})
-    return True
-
-def _turn_task_text(loop) -> str:
-    """The refused turn's TASK text for the isolation subcall: the newest USER-role
-    message (the observation/instruction the model was answering), falling back to the
-    run instruction. Length-capped inside engine/refusal.py.
-    """
-    for m in reversed(loop.messages):
-        if m.get("role") == "user":
-            return str(m.get("content") or "")
-    return str(loop.instruction or "")
+                       "turn's action. The refused request is being handled by another "
+                       "model - do NOT finish-fail on its account; proceed with the "
+                       "REMAINDER of the task without it."})
+    return True, None
 
 def _handle_empty(loop, completion, chain, ref,
                   attempt: int, refstate: dict) -> tuple | None:
