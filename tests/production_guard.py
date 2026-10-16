@@ -54,14 +54,25 @@ def _instance_paths() -> tuple[Path, ...]:
     before any fixture redirects `~`, so these are the REAL ones even under the hermetic
     home. The homes come from `registry.all_homes` rather than an inline list, so a fourth
     home can never be added to the system and forgotten here.
+
+    The XDG STATE dir is here because it was the hole this guard could not see (F684): the
+    util-stats snapshot lives under `XDG_STATE_HOME` (default ~/.local/state) rather than in
+    any home, since a Landlock-jailed util can read that and not routines_home/.control — so
+    every test that finished an engine run rewrote the operator's live snapshot from fixture
+    data, and nothing refused it. Read the same way the production code does
+    (`readmodels/util_stats.snapshot_path`), at import time, so the REAL dir is protected even
+    once the hermetic fixture has pointed the variable at a tmp tree.
     """
+    import os
+
     from rsched.config import load_server_config
     from rsched.paths import config_file, expand
     from rsched.registry import all_homes
 
     server, _ = load_server_config()
+    state_home = Path(os.environ.get("XDG_STATE_HOME") or expand("~/.local/state"))
     paths = {*all_homes(server), server.libraries_home, config_file().parent,
-             expand("~/.credentials")}
+             expand("~/.credentials"), state_home / "routine-scheduler"}
     return tuple(sorted(p for p in paths if len(p.parts) > 2))   # never a root-ish path
 
 

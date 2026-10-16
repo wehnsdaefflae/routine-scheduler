@@ -15,6 +15,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.425.0] — 2026-10-16
+
+### Changed
+- **A report row is disposed of only by its recipient** (D182). `answers` and `settles` now
+  dispose of a row only for the routine it was DELIVERED to — which is what the schema always
+  said (`answers` is "the id of a report you RECEIVED") and what nothing enforced: the action
+  layer validated the grammar of `answers`/`settles`/`supersedes` thoroughly and the
+  relationship not at all, so a row left the ledger whenever any report named it, its own
+  sender's included. Measured over the live 2,110-row ledger: **492 disposals by a non-owner,
+  317 of them of rows never routed to anyone** — those left triage with nobody having read
+  them (the operator's own R2552 vanished 14 seconds after he filed it). New
+  `report_threads.disposable()` / `owner_of()`; the gate is a write precondition in the report
+  handler, with two refusals kept apart because they need different moves — a row delivered
+  elsewhere is its owner's to answer (reply, or `supersedes` it), an unrouted row must be
+  routed first. A folded row's owner is its carrier's target, through the chain.
+  **MIGRATION: the read model is untouched, so the rows already disposed of this way stay
+  settled** — re-deriving them would hand triage hundreds of rows at once.
+- **A pause-skipped ROUTINE fire is made up, as a lane's always was** (D183). The skip stamps
+  the fire as owed (`rsched/routine_fires.py`) and `daemon/routine_catchup.py` makes up at most
+  one per routine — at the resume and at boot — while less than a QUARTER of that routine's own
+  cadence has passed, else filing `routine_catchup_declined` with both numbers. The make-up is
+  armed as a one-shot, so the daemon still owns spawning. Measured 2026-10-14: a pause ate four
+  consecutive fires of `scheduler-builder` (`0 6,14`, in no lane); it held five handed-over
+  items and shipped nothing for three days, with nothing in the health stream to say why, while
+  the six lane fires the same pause ate were each on record. Deliberately NOT gated on the boot
+  `catchup` field: that field is about a daemon that was down, and every routine on this
+  instance reads `catchup: skip`, so gating on it would make the rule a no-op.
+- **A curated reminder resolves against the shared store** (R2530). `remind op=delete|revise
+  scope=global` resolved `rid` against the calling run's live set, so a `reach: listed` row was
+  unreachable to any curator that does not list it — permanent unless the operator deleted the
+  file by hand, while `rules-review`'s recipe assigns it exactly that act. Resolution now falls
+  back to the library when the op names `scope: global`; every authority gate (the dial, the
+  approval, the commit) is unchanged, and the two misses stay textually distinguishable.
+
+### Fixed
+- **The suite no longer rewrites the operator's util-stats snapshot** (F684). `snapshot_path()`
+  resolves through `XDG_STATE_HOME`/`Path.home()`, which the hermetic fixture's patched `expand`
+  could not catch, so every test that finished an engine run replaced the live
+  `~/.local/state/routine-scheduler/util-stats.json` with fixture data. Both halves land
+  together: the fence (`XDG_STATE_HOME` redirected in `conftest._hermetic_home`) and the floor
+  (the real state dir added to `tests/production_guard._instance_paths`, so the next un-fenced
+  write is refused rather than silent).
+
+### Internal
+- `engine/remindfields.py` splits the reminder write-gate checks out of `engine/remind.py`
+  (which is over the house size bar and may only shrink), beside `goalops.field_problems`.
+- New tests: `test_remind_global_resolution.py` (6), `test_report_disposal.py` (9),
+  `test_routine_catchup.py` (17), `test_state_home_fence.py` (5). Four existing cases that
+  encoded sender-settles were updated to the recipient contract, and `test_pause_skip.py`'s
+  asymmetry test now pins the symmetry its own docstring predicted.
+
 ## [0.424.2] — 2026-10-16
 
 ### The engine's own write seals no longer depend on a grant policy being loaded (F698)

@@ -186,10 +186,9 @@ def _hermetic_home(tmp_path, monkeypatch):
     subprocess a test spawns — a gate's preparation child inherits no monkeypatch. A test
     that needs its own config dir sets RSCHED_CONFIG after this and wins.
 
-    The generated-docs tree is the one home that follows neither the config nor the patched
-    `expand` (`docs_build.docs_out_dir` reads `paths.expand` directly), and every app the
-    suite builds mounts it at /docs — so it is redirected the same way, by its own variable,
-    and a test that builds docs sets RSCHED_DOCS_DIR after this and wins."""
+    Two homes follow neither the config nor the patched `expand`, so each gets its own
+    variable (set one after this and it wins): the docs tree mounted at /docs, and the XDG
+    state dir, whose snapshot resolves via `Path.home()` (F684, test_state_home_fence.py)."""
     from rsched import paths as _paths
     fake_home = tmp_path / "hermetic-home"
     real = _paths.expand
@@ -204,6 +203,7 @@ def _hermetic_home(tmp_path, monkeypatch):
     monkeypatch.setattr("rsched.config.server.expand", expand)
     monkeypatch.setenv("RSCHED_CONFIG", str(fake_home / ".config/routine-scheduler/config.yaml"))
     monkeypatch.setenv("RSCHED_DOCS_DIR", str(fake_home / ".cache/routine-scheduler/docs"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(fake_home / ".local/state"))
 
 
 @pytest.fixture(autouse=True)
