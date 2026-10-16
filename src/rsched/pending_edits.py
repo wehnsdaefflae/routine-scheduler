@@ -80,7 +80,7 @@ APPLIERS: dict[str, Callable[[Path, dict, Path], dict]] = {
 # The three `trigger_*` appliers (and the `_read_triggers`/`_write_triggers` pair they shared)
 # lived here to drain spools written before 0.369.0, when the Triggers card moved onto the
 # settings accept and the CRUD routes that queued them were deleted. Their
-# MIGRATION(expires=2026-10-15) came due and the drain is complete: no spool file exists on the
+# deprecation (marker expiry 2026-10-15) came due and the drain is complete: no spool file is on the
 # instance and `trigger_*` was never in QUEUEABLE_KINDS, so nothing could queue one. A stale
 # spooled edit of a kind with no applier is still safe — `apply_pending` raises ValueError for
 # it, records the row and drops the file, which is the same path a malformed edit takes.
