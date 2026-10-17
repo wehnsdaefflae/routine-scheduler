@@ -9,6 +9,7 @@ up the most recent due fire once when the watermark is older than it.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from conftest import FakeRunner
 from helpers import health_events, tmp_server
@@ -365,11 +366,23 @@ async def test_the_scheduler_records_what_its_paused_skip_dropped(make_routine, 
 def test_the_resume_endpoint_makes_up_the_dropped_fire(api_client):
     """The control the operator actually uses. DELETE /api/settings/pause lifts the pause AND
     reports which lanes it made up — the acknowledgement half: a resume that silently made up
-    a chain is as hard to audit as one that silently dropped it."""
+    a chain is as hard to audit as one that silently dropped it.
+
+    The route reads the REAL clock, so the lane's cron is derived from the dropped instant
+    instead of written by hand — the same correction the weekly/daily test above records. A
+    fixed `0 5 * * 6` with `now - 1h` stamped as its fire was a four-hour time bomb: between
+    Sat 00:00 and 03:59 UTC the NEXT Saturday fire is under four hours away, so an hour owed is
+    past a quarter of that gap and the judgement under test correctly DECLINES the make-up.
+    Measured over all 168 hours of a week: 4 failed, and one of them reddened the fast stage of
+    a release gate armed at 00:07 on a Saturday. Deriving the cron makes the interval a true
+    168 h at every hour.
+    """
     client, tmp_path = api_client
     home = tmp_path / "routines"
-    lane = lanes.create(home, name="Weekly Research", cron="0 5 * * 6", tz="UTC")
-    due = datetime.now(UTC) - timedelta(hours=1)
+    due = (datetime.now(UTC) - timedelta(hours=1)).replace(second=0, microsecond=0)
+    at = due.astimezone(ZoneInfo("UTC"))        # the lane's own zone, as configured below
+    cron = f"{at.minute} {at.hour} * * {(at.weekday() + 1) % 7}"   # cron Sunday is 0
+    lane = lanes.create(home, name="Weekly Research", cron=cron, tz="UTC")
     lane_fires.stamp(home, lane["id"], due.isoformat())
     lane_fires.stamp_paused_skip(home, lane["id"], due.isoformat())
 

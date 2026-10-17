@@ -46,11 +46,6 @@ def _policed() -> list[Path]:
     return markers.policed_paths(repo=REPO, package=SRC)
 
 
-def _migration_markers() -> list[tuple[Path, str]]:
-    """Every DECLARED `MIGRATION(expires=…)` marker in the policed tree, as (path, date)."""
-    return [(d.path, d.expires) for d in markers.declarations(_policed())]
-
-
 def test_migration_code_declares_expiry_and_expires():
     today = datetime.now(tz=UTC).date()
     problems = [
