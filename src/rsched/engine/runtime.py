@@ -219,8 +219,10 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                             allowed_tools=allowed_tools, resume=bool(resume_from)).run()
         from ..usage_log import log_workflow_usage
         from ..workflows import library
-        from . import outcome, runrecord
+        from . import obligations, outcome, runrecord
 
+        # what a person asked of it and this run did not finish waits for the next run
+        obligations.save(ctx)
         # what the routine EXISTS to produce, measured after its last turn (engine/outcome.py)
         # and recorded beside what the run cost — status.json and the usage row alike
         ctx.outcome_measures = outcome.measure(ctx)

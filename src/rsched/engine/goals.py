@@ -55,12 +55,17 @@ def blank(gid: str, text: str, quote: str, *, source: str, heard: int, turn: int
             "evidence": "", "disputed": "", "remains": "", "dropped_by": ""}
 
 
-def seed(brief: str) -> list[dict]:
-    """The ledger a run starts with: the operator's brief as goal `b1`, or nothing."""
-    return [blank("b1", brief, brief, source="brief", heard=0, turn=0)] if brief else []
+def seed(brief: str, carried: list[dict] | None = None) -> list[dict]:
+    """The ledger a run starts with: the obligations earlier runs left open (engine/
+    obligations.py), then the operator's brief as the next goal, or nothing.
+    """
+    ledger = [dict(g) for g in carried or []]
+    if brief:
+        ledger.append(blank(next_id(ledger), brief, brief, source="brief", heard=0, turn=0))
+    return ledger
 
 
-def replay(events: list[dict], brief: str) -> list[dict]:
+def replay(events: list[dict], brief: str, carried: list[dict] | None = None) -> list[dict]:
     """The ledger the transcript says: its last snapshot, else the seed."""
     ledger = None
     for ev in events:
@@ -70,7 +75,7 @@ def replay(events: list[dict], brief: str) -> list[dict]:
             ledger = payload["ledger"]
         elif ev.get("type") == "stopping_update" and isinstance(payload.get("goals"), list):
             ledger = payload["goals"]
-    return [dict(g) for g in ledger] if ledger is not None else seed(brief)
+    return [dict(g) for g in ledger] if ledger is not None else seed(brief, carried)
 
 
 def open_goals(ledger: list[dict]) -> list[dict]:
@@ -156,6 +161,8 @@ _MARK = {"open": "○", "met": "✓", "dropped": "✗"}
 
 def line(goal: dict) -> str:
     out = f"  {_MARK.get(goal['status'], '·')} [{goal['id']}] {goal['text']}"
+    if goal["status"] == "open" and goal.get("source") == "carried":
+        out += f" · asked {goal.get('since') or 'in an earlier run'}, still owed"
     if goal["status"] == "open" and goal.get("remains"):
         out += f" · last left unmet: {goal['remains']}"
     if goal["status"] == "dropped" and goal.get("dropped_by"):
@@ -181,9 +188,10 @@ def digest_section(ledger: list[dict], *, conversation: bool) -> str:
     rest = len(ledger) - len(shown)
     head = ("GOALS (what the person asked for in this conversation — you keep the list with "
             "`goal`; a reply with `final: true` meets every open one):" if conversation else
-            "GOALS (what a person asked of THIS run — the operator's brief and anything they "
-            "asked for since; a briefed run answers for these instead of its recipe's `## Done "
-            "when`):")
+            "GOALS (what a person asked of this routine — the operator's brief, anything they "
+            "asked for or approved since, and what earlier runs took on and did not finish, "
+            "carried until a run meets it; a briefed run answers for these instead of its "
+            "recipe's `## Done when`):")
     out = [head, *(line(g) for g in shown)]
     if rest > 0:
         out.append(f"  (+{rest} met or dropped earlier — `goal` verb=list shows them)")

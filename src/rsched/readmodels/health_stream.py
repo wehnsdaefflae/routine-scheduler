@@ -74,6 +74,9 @@ BLOCKED_EVENTS: dict[str, str] = {
                          "migration code is deleted",
     "migration_due_soon": "a MIGRATION marker expires within the warning window — the deletion "
                           "is owed before that date, or it lands on whoever ships that day",
+    "obligation_overdue": "something a person asked of this routine, or approved, has stayed "
+                          "unfinished for over a week — every run answers for it and none has "
+                          "met it (engine/obligations.py)",
 }
 
 #: Partial finishes, split by whether a budget forced them (health_events.py's own

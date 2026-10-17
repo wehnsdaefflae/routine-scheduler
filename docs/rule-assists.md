@@ -184,7 +184,7 @@ them firing had the rule still holding actions and deferring the finish of a run
 bound.
 
 `DEFAULT_RULES` is not empty, so this layer is live in most routines from the day it ships —
-which is why precision, not coverage, is the budget, and why only four of the eight assists
+which is why precision, not coverage, is the budget, and why only four of the nine assists
 cost a turn (the one `hold` and the three `pre-finish` reminders).
 
 ## The payload axis, and what exists
@@ -207,7 +207,7 @@ there too), and names everything it skips rather than passing over it quietly. O
 with a prose revision — `problem-routing`'s did — replaces the whole file, and only while the
 live copy is still byte-identical to the seed it supersedes.
 
-## The eight
+## The nine
 
 | rule | moment | predicate | why this moment |
 |---|---|---|---|
@@ -218,6 +218,7 @@ live copy is still byte-identical to the seed it supersedes.
 | `ask-policy` | boundary | `asks-piling-up` | several decisions are waiting on the user, which is the shape the rule is about |
 | `decision-record` | pre-finish | `ledger-untouched` | the reasoning behind the artefacts is lost at exactly this moment, and only here can the run still write it down |
 | `interface-craft` | pre-finish | `rendered-output-unseen` | the run wrote a page, a picture or a document people will look at and never looked at the rendered result |
+| `outcome-first` | boundary | `outcome-questioned` | a person's words — at boot, between runs, or mid-run — question what the routine PRODUCES ("do you even…", "zero interviews", "you need to get better"); answered then with the outcome and a change to what produces it, never with another self-check, which is what every such complaint had turned into before (engine/assist_outcome.py — a plain vocabulary over the person's own words, read only when they spoke) |
 | `problem-routing` | pre-finish | `unclosed-delivered-report` | the run was handed work by another routine and is ending without answering it — after the finish nothing is left that can close the row but a person reading the ledger |
 
 `git-checkpoint` is the rung the design note reserves for HOLD: a crisp pre-action predicate

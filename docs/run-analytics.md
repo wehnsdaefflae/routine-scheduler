@@ -573,6 +573,14 @@ store, never by reading a prefix), the repo's directory name for a commit that d
 (a routine's slug, or the library's own directory), empty for a scheduler tick. `total: 0`
 is the healthy reading.
 
+Owed WORK lands here too (`daemon/owed_watch.py`, daily): `obligation_overdue` names a routine
+whose `state/obligations.json` — what a person asked of it or approved, carried from run to run
+until one meets it (engine/obligations.py) — has held an item open longer than a week, with the
+item and what the last run left unmet. Its sibling never reaches this stream: a REPORT nobody
+owns for a week (addressed to nobody, or to a routine that starts no run) becomes an
+`unowned-report` decision on the Decisions page instead — route it to a routine or close it —
+because a homeless report needs an owner chosen, not a count raised.
+
 What both folds read — the parsed stream, each event's stamp already read as an instant — is
 memoized on the stream's stat fingerprint with single-flight misses: this rides a bus-event
 refresh path, and an un-memoized parse per request is what starved the daemon behind

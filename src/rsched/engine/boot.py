@@ -8,7 +8,17 @@ from __future__ import annotations
 
 from .. import reports, rules, sharedstores
 from ..paths import read_json, resolve_rel
-from . import askback, enginenote, goals, guardscope, inbox, jobops, mediaops, runkind
+from . import (
+    askback,
+    enginenote,
+    goals,
+    guardscope,
+    inbox,
+    jobops,
+    mediaops,
+    obligations,
+    runkind,
+)
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
@@ -61,9 +71,17 @@ def boot(loop) -> None:
         # the TASK ledger (engine/jobops.py): a fresh run decides what it owes, a resumed leg
         # reads it back with its open task — before the digest, which names them
         jobs_section = jobops.boot(ctx)
-        # the GOALS (engine/goals.py): the brief's seed on a fresh run, the transcript's last
-        # word on a resumed one — a conversation's outlive every reply
-        ctx.goals = goals.replay(events, ctx.brief)
+        # the GOALS (engine/goals.py): on a fresh routine run what earlier runs left open
+        # (engine/obligations.py) plus the brief; the transcript's last word on a resumed one —
+        # a conversation's outlive every reply
+        ctx.goals = goals.replay(events, ctx.brief, carried=(
+            [] if runkind.is_conversation(ctx) else obligations.carried(ctx.routine.dir)))
+        # an answer given on the Decisions page between runs is the person SPEAKING to this run:
+        # recorded as an `answer` event, so a goal may quote it — an approval ("you fix all of
+        # that") is exactly the request a run must be able to take on and carry
+        for qa in deferred_qa:
+            ctx.transcript.event("answer", {"qid": qa.get("qid", ""), "text": qa["answer"],
+                                            "source": "deferred", "question": qa["question"]})
         digest = state_digest(ctx.routine.dir, deferred_qa, open_qs,
                               routines_home=ctx.server.routines_home,
                               slug=ctx.routine.slug,

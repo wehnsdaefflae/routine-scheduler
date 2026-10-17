@@ -10,7 +10,8 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"lane_catchup_declined"
         |"fire_paused"|"fire_catchup"|"routine_catchup_declined"
         |"scheduler_tick_error"|"migration_due_soon"|"migration_expired"
-        |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route",
+        |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route"
+        |"obligation_overdue",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -248,6 +249,10 @@ the daemon, not a run; detail carries the failure cause, F197).
 migration_due_soon / migration_expired: a `MIGRATION(expires=)` declaration entered its 21-day
 window, or passed it (`daemon/marker_watch`, F702) — routine and run_id empty, both carrying
 `markers` and the date. An expiry reds every gate on this host; the lead time had no reader.
+
+obligation_overdue: what a person asked of a routine or approved has stayed open in its
+`state/obligations.json` longer than `obligations.OVERDUE_DAYS` (`daemon/owed_watch`) — one row
+per routine per day, `obligations` how many, the detail naming each and what the last run left.
 
 Best-effort: I/O errors are silently swallowed so logging never blocks the daemon or engine.
 """

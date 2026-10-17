@@ -24,7 +24,7 @@ from ..grants import CONFIG_FILE
 from ..jobs import JOBS_FILE
 from ..paths import atomic_write, read_json
 from ..readmodels.statemap import STAGES_DIR
-from . import docread, fileformat
+from . import docread, fileformat, obligations
 from .finishline import FILE as FINISH_LINE
 from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
@@ -374,15 +374,15 @@ def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
 JOBS_REFUSAL = ("state/jobs.json is the engine's job store — change a job with the `job` "
                 "action (create / update / checkpoint / delete), which keeps the run's ledger "
                 "and the gate that holds your finish in step with it")
+#: Engine-owned stores, changed only through their own action (a write could fake a checkpoint).
+_STORES: dict[str, str] = {JOBS_FILE: JOBS_REFUSAL, str(obligations.FILE): obligations.REFUSAL}
 
 
 def _jobs_gate(ctx: RunContext, resolved) -> str | None:
-    """The job store is the engine's (rsched/jobs.py): a generic write could clear a carry or
-    fake a checkpoint the gated processing reads, so it is reachable only through `job`.
-    """
-    if any(resolved in (d / JOBS_FILE, (d / JOBS_FILE).resolve())
-           for d in _routine_dirs(ctx)):
-        return JOBS_REFUSAL
+    for d in _routine_dirs(ctx):
+        for rel, why in _STORES.items():
+            if resolved in (d / rel, (d / rel).resolve()):
+                return why
     return None
 
 
@@ -401,9 +401,9 @@ def _removal_gate(ctx: RunContext, resolved: Path) -> str | None:
         line = d / FINISH_LINE
         if line.exists() and line.is_relative_to(resolved):
             return f"this would remove {FINISH_LINE}: {FINISH_LINE_REFUSAL}"
-        store = d / JOBS_FILE
-        if store.exists() and store.is_relative_to(resolved):
-            return f"this would remove {JOBS_FILE}: {JOBS_REFUSAL}"
+        for rel, why in _STORES.items():
+            if (d / rel).exists() and (d / rel).is_relative_to(resolved):
+                return f"this would remove {rel}: {why}"
     return None
 
 

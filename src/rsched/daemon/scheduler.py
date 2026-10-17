@@ -30,6 +30,7 @@ from .lane_runs import LaneRunManager
 from .library_watch import LibraryWatch
 from .marker_watch import MarkerWatch
 from .oauth_refresh import OAuthRefreshManager
+from .owed_watch import OwedWatch
 from .runner import Runner
 from .schedule_once import OneShotManager
 from .triggers import TriggerManager
@@ -72,18 +73,17 @@ class Scheduler:
         # durably; this manager advances it one member per tick — fire, wait for terminal,
         # apply the on_failure policy, fire the next (see daemon/lane_runs.py).
         self.lane_runs = LaneRunManager(server, runner)
-        # OAuth upkeep: refresh expiring connections before they lapse so a run always reads a
-        # live token; a no-op for non-expiring providers (daemon/oauth_refresh.py).
+        # OAuth upkeep: refresh expiring connections before they lapse (daemon/oauth_refresh.py).
         self.oauth = OAuthRefreshManager(server)
         # The library MOVES under its holders — a sync pull, a hand edit, a restored bundle — with
         # no writer to gate. This notices and files the breakage as a decision (library_watch.py).
         self.library = LibraryWatch(server)
-        # Two facts this product enforced and never READ about itself, both filed into the health
-        # stream: the nightly snapshot (backup_watch, F602 — the unit failed nineteen nights and
-        # nothing could say so) and a migration's declared deadline (marker_watch, F702 — policed
-        # by a test, warned about in a pytest warning nobody reads, so both times found too late).
+        # Facts this product held and never READ about itself, filed into the health stream: the
+        # nightly snapshot (backup_watch, F602), a migration's declared deadline (marker_watch,
+        # F702) — and owed work: an obligation open for days, a report nobody owns (owed_watch).
         self.backup = BackupWatch(server)
         self.markers = MarkerWatch(server)
+        self.owed = OwedWatch(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
         # D71: lanes with a cron of their own. A due lane fire ARMS the sequential chain (member 0
@@ -322,11 +322,11 @@ class Scheduler:
                 # library change — awaited here, either held every fire behind it.
                 self._off_tick("oauth", self.oauth.tick)
                 self._off_tick("library-watch", self.library.tick)
-                # …and the two readers of a fact nothing else surfaces, both filing into the health
-                # stream the console renders as "something due did not happen": backup state (F602
-                # — nineteen unbacked nights passed unseen) and a migration deadline (F702).
+                # …and the readers of facts nothing else surfaces, filing what is due and undone
+                # (backup state F602, a migration deadline F702, owed work — see __init__).
                 self._off_tick("backup-watch", self.backup.tick)
                 self._off_tick("marker-watch", self.markers.tick)
+                self._off_tick("owed-watch", self.owed.tick)
             except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
             except Exception as exc:

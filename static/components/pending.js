@@ -1,4 +1,4 @@
-// The Decisions page's four PENDING bands — records a run or the daemon filed that nobody has
+// The Decisions page's five PENDING bands — records a run or the daemon filed that nobody has
 // decided yet. Bands of their own rather than rows blended into the decision list, because none
 // is a question: no answer text, no options, two buttons each.
 //
@@ -20,10 +20,13 @@
 //    a card is a real third state, not a delay.
 // 4. REPLACEMENTS — a candidate routine-improver rebuilt and proved, waiting for the ONE swap
 //    accept (components/swap-card.js, engine/candidate.py).
+// 5. UNOWNED WORK — a report nobody would act on for a week: give it to a routine or close it
+//    (components/unowned-card.js, daemon/owed_watch.py).
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { SWAP, swapRow } from "/static/components/swap-card.js";
+import { UNOWNED, unownedRow } from "/static/components/unowned-card.js";
 import { el, groupHead, toast, toastError, when } from "/static/util.js";
 
 const DRIFT = "library-drift";
@@ -145,7 +148,8 @@ export function pendingBand({ onChanged } = {}) {
     const drift = recs.filter((r) => r.kind === DRIFT);
     const goals = recs.filter((r) => r.kind === GOAL);
     const swaps = recs.filter((r) => r.kind === SWAP);
-    const creations = recs.filter((r) => ![DRIFT, GOAL, SWAP].includes(r.kind));
+    const unowned = recs.filter((r) => r.kind === UNOWNED);
+    const creations = recs.filter((r) => ![DRIFT, GOAL, SWAP, UNOWNED].includes(r.kind));
     host.replaceChildren();
     // Finished routines first: this is the only band whose subject has ALREADY changed state.
     if (goals.length) {
@@ -156,6 +160,10 @@ export function pendingBand({ onChanged } = {}) {
     if (swaps.length) {
       host.append(band("Replacements", "a rebuilt routine proved beside the one it replaces",
         swaps, (rec) => swapRow(rec, { reload: load, onChanged })));
+    }
+    if (unowned.length) {
+      host.append(band("Unowned work", "nobody would act on these — give each an owner or close it",
+        unowned, (rec) => unownedRow(rec, { reload: load, onChanged })));
     }
     if (creations.length) {
       host.append(band("Queued creations",

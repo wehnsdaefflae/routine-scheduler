@@ -165,7 +165,7 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # and the claim check (accounting.deferral, verifier.challenge_message), and the rules
         # named with their moments (composer, rules.when_lines)
         "FINISH LINE (the operator's",
-        "GOALS (what a person asked of THIS run",
+        "GOALS (what a person asked of this routine",
         "GOALS (what the person asked for in this conversation",
         "GOALS: none yet. When the person asks for work",
         "whether this reply is FINAL",

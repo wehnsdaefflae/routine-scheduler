@@ -55,6 +55,7 @@ Where a rule absorbed earlier ones, the earlier slugs are named so their history
 | `decision-record` | this instance's LEDGER practice | Its `ledger-untouched` assist compares the LEDGER's size and mtime against the run's start; the old test raised 48 false deferrals in one window. |
 | `web-research` | this instance's record | Answers from stale training and rebuilt existing solutions; the rule adds prior art to fact-checking. |
 | `git-checkpoint` | this instance's record | Held by conversations editing external repositories: an undo point before the first write to a dirty tree. |
+| `outcome-first` | the 2026-10-17 investigation of freelance-radar and grants-radar | **Local and stark.** freelance-radar sent 89 applications over four months for zero interviews, and every judge — its Done when, its controls, self-audit's verdict "on_track" — read its own account; grants-radar found no new programme in 14 runs. The operator's complaints ("do you even send out applications?", "you need to get better") were each turned into more self-checking, and the turn-maximizing doctrine ("unspent budget is a defect") rewarded long runs. The rule says the outcome is the measure, a complaint about results is answered with results, and the budget is a backstop; its `outcome-questioned` assist (engine/assist_outcome.py) surfaces that at the moment a person's words question results. A default rule (`config.base.DEFAULT_RULES`). |
 
 ## Evaluated and rejected
 

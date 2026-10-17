@@ -67,7 +67,7 @@ DEFAULT_CAPABILITIES = {"actions": ["write_util", "revise_util"], "utils": [],
 # Library tab). Improvement of the RULES THEMSELVES is the rules-review meta routine's job —
 # it observes how runs actually interpreted each one and proposes revisions.
 DEFAULT_RULES = ["evidence-discipline", "ask-policy", "fix-the-cause", "problem-routing",
-                 "decision-record", "web-research"]
+                 "decision-record", "web-research", "outcome-first"]
 # Each routine picks its own models: the MAIN orchestrator loop, the model TOOL_CALLs (the
 # `llm` action) use, and an OPTIONAL UNCENSORED model a refused `llm` tool-call is
 # re-referred to. The uncensored role is opt-in and has NO system_model fallback: a routine

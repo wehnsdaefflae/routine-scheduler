@@ -102,8 +102,8 @@ def test_the_seed_rules_that_declare_assists_are_valid():
         assert problems == [], (path.stem, problems)
         if got:
             declared[path.stem] = got
-    assert set(declared) == {"ask-policy", "fix-the-cause", "problem-routing",
-                             "decision-record", "interface-craft", "git-checkpoint"}
+    assert set(declared) == {"ask-policy", "fix-the-cause", "problem-routing", "decision-record",
+                             "interface-craft", "git-checkpoint", "outcome-first"}
     # every registered predicate is used by a shipped rule — a predicate nothing declares is
     # engine code with no reader
     used = {a.predicate for rule in declared.values() for a in rule}

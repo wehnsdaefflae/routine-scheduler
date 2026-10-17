@@ -20,6 +20,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from .assist_outcome import outcome_questioned
+
 
 @dataclass(frozen=True)
 class Situation:
@@ -325,4 +327,7 @@ PREDICATES: dict[str, Predicate] = {
     "rendered-output-unseen": Predicate(
         moment="pre-finish", check=_rendered_output_unseen,
         describes="this run wrote pages or documents and never looked at them rendered"),
+    "outcome-questioned": Predicate(
+        moment="boundary", check=outcome_questioned,
+        describes="the person's words question what this routine PRODUCES"),
 }

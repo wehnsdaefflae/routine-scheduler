@@ -7,9 +7,11 @@ place it does. Materializing goes through the SAME `workflows.scaffold` / `rsche
 calls a conversation's confirmed creation uses — one materializer, not a second path that can
 drift from it.
 
-Four kinds ride this queue. Two are creations (`create_routine`, `manage_lane`); one is a SWAP
+Five kinds ride this queue. Two are creations (`create_routine`, `manage_lane`); one is a SWAP
 (`replace-routine`: a replacement candidate the improver created and proved takes the old
-routine's place — engine/candidate.py, `_materialize_replace`). The fourth,
+routine's place — engine/candidate.py, `_materialize_replace`); one is a DECISION with a choice
+(`unowned-report`: a report nobody has owned for a week, routed or closed by the operator —
+daemon/owed_watch.py, `_decide_unowned`, the only kind whose materialize takes a body). The fifth,
 `goal-reached`, is the opposite: a routine reporting that it is FINISHED. It is queued by
 `engine/goalreached.py` when its finish line is reached — by a run, by the calendar, or by the
 operator's own tick; by then the routine has already stopped running — that half is derived
@@ -21,7 +23,7 @@ with the card standing.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -35,6 +37,46 @@ router = APIRouter(tags=["pending"])
 
 class Discard(BaseModel):
     reason: str = ""
+
+
+class Choice(BaseModel):
+    """What the operator decided for an `unowned-report` card: route it to a routine, or close
+    it. Other kinds carry no body.
+    """
+
+    choice: Literal["route", "close"] = "route"
+    to: str = ""
+
+
+def _decide_unowned(server, rec: dict, body: Choice | None) -> dict:
+    """An UNOWNED report becomes the operator's decision (daemon/owed_watch.py): routed to a
+    routine as a report FROM the operator that takes the row over, or closed by one that settles
+    it — so the ledger says who decided, and nothing is answered in anybody else's name.
+    """
+    from .. import reports
+    from ..daemon.owed_watch import runs
+
+    f = rec.get("fields") or {}
+    rid, title = str(f.get("report") or ""), str(f.get("title") or "")
+    home = server.routines_home
+    if body is None or body.choice == "close":
+        filed = reports.file_report(
+            home, routine="operator", run_id="decisions-page", title=f"Closed: {title}",
+            detail=f"{rid} had no owner for {f.get('days')} days; the operator closed it.",
+            disposal=reports.Disposal(settles=(rid,), closes=True))
+        if filed is None:
+            raise HTTPException(503, "the report ledger is busy — try again")
+        return {"closed": rid}
+    if not runs(home, body.to):
+        raise HTTPException(400, f"{body.to!r} is not a routine that runs")
+    filed = reports.file_report(
+        home, routine="operator", run_id="decisions-page", target=body.to,
+        target_dir=home / body.to, supersedes=(rid,), title=f"Yours now: {title}",
+        detail=(f"{rid} had no owner for {f.get('days')} days, so the operator decided on the "
+                f"Decisions page that it is {body.to}'s. Its full text is {rid} in the ledger."))
+    if filed is None:
+        raise HTTPException(503, "the report ledger is busy — try again")
+    return {"routed": rid, "to": body.to, "report": filed[1]}
 
 
 @router.get("/pending-creations")
@@ -198,7 +240,7 @@ def _discard_replace(request: Request, rec: dict) -> None:
 
 
 @router.post("/pending-creations/{pid}/materialize")
-def materialize(request: Request, pid: str) -> dict:
+def materialize(request: Request, pid: str, body: Choice | None = None) -> dict:
     """Build what the run proposed. The record is dropped only once the proposal has
     materialized; one that fails stays on the page with the reason in the 4xx — a proposal
     the operator must look at again, to fix or discard, rather than a button that silently
@@ -218,6 +260,8 @@ def materialize(request: Request, pid: str) -> dict:
             out = _materialize_goal_reached(request, rec)
         elif rec.get("kind") == "replace-routine":
             out = _materialize_replace(request, rec)
+        elif rec.get("kind") == "unowned-report":
+            out = _decide_unowned(server, rec, body)
         else:
             raise HTTPException(400, f"unknown proposal kind {rec.get('kind')!r}")
     except ValueError as exc:

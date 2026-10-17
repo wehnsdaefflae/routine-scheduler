@@ -339,25 +339,25 @@ workspace) is authoritative for its work. A checkpoint accounts for that recipe'
 lines and opens the next due job. Create a job when standing work comes up that is not one yet; \
 never let one job's work hide inside another's checkpoint. (These were `task` before 0.416.0.)"""),
     (("goal",), """- goal: the GOALS of this run — what a PERSON asked of it, each ONE checkable \
-end state (b1, b2, …). You are their scribe, never their author: every goal you set, add or \
-reword carries `quote`, the person's own words it came from, verbatim, and the engine refuses \
-words it cannot find in what they wrote to this run. Via `verb`: set (goals: [{text, quote}, …] \
-— the opening list, while none is open) · add (goals: new ones, when they ask for more) · \
-change (id + goals: [the new wording], quoting words they wrote AFTER the goal was set) · drop \
-(id + quote: their later words that withdraw it — never because it got hard) · check (id + \
-evidence: it is met, checked against your own transcript once, like a finish's `met`) · list. \
-A goal is an outcome, not a step: the steps toward it belong in your plan. Every open goal is \
-answered at your finish — the state digest says how."""),
+end state (b1, b2, …). You are their scribe, never their author: every goal carries `quote`, \
+their own words verbatim, and the engine refuses words it cannot find in what they wrote. Via \
+`verb`: set (goals: [{text, quote}, …] — the opening list, while none is open) · add (goals: \
+new ones, when they ask for more) · change (id + goals: [the new wording], quoting words they \
+wrote AFTER the goal was set) · drop (id + quote: their later words that withdraw it — never \
+because it got hard) · check (id + evidence: met, checked against your transcript once) · list. \
+A goal is an outcome, not a step: the steps toward it belong in your plan. An APPROVAL is a \
+goal — "yes, do it", "you fix all of that" answering work you proposed: set it quoting that \
+answer. Every open goal is answered at your finish; one a routine run leaves open is CARRIED to \
+its next run until a run meets it."""),
     (("list_models",), """- list_models: the model catalog + this run's resolved role \
 bindings (main / tool_call / uncensored), read-only — consult it BEFORE setting a `model` \
 override on llm/spawn/subtask so the name you pass is one the catalog actually carries."""),
     (("subruns",), """- subruns: a status table of your child runs, whatever mode each was \
 started in (state, turns, elapsed)."""),
     (("kill", "wait"), """- kill: terminate child run "n". wait: block until child run \
-"n" / "all": true / any \
-unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished child hasn't \
-been reported to you yet, or when nothing is running. Children never outlive you — your \
-finish kills them."""),
+"n" / "all": true / any unreported exit (timeout_s, default 600) — it returns AT ONCE when a \
+finished child hasn't been reported to you yet, or when nothing is running. Children never \
+outlive you — your finish kills them."""),
     (("ask_user",), """- ask_user: mode "deferred" (default) files the question and CONTINUES \
 — plan around the missing \
 answer. Mode "blocking" pauses the run until answered; after {ask_timeout_min} minutes without \

@@ -81,6 +81,8 @@ def identity(kind: str, routine: str, fields: dict) -> tuple:
         return (kind, routine, str(fields.get("entity") or ""))
     if kind == "replace-routine":     # one standing swap per routine it would replace
         return (kind, str(fields.get("replaces") or ""))
+    if kind == "unowned-report":      # one standing decision per report nobody owns
+        return (kind, str(fields.get("report") or ""))
     return (kind, routine)
 
 

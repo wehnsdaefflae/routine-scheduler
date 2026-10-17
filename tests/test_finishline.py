@@ -377,7 +377,7 @@ def test_a_brief_stands_in_for_the_done_when_list(tmp_path):
     (tmp_path / "main.md").write_text(RECIPE, encoding="utf-8")
     ledger = goals.seed("re-check the Q3 figures only")
     text = finish_digest.digest_section(tmp_path, goals=ledger)
-    assert "GOALS (what a person asked of THIS run" in text
+    assert "GOALS (what a person asked of this routine" in text
     assert "[b1] re-check the Q3 figures only" in text
     assert "`b<n> met: <evidence>` or `b<n> unmet: <what remains>`" in text
     assert "one entry per line of your recipe" not in text   # the recipe's list is not owed

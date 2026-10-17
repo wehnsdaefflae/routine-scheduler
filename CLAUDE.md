@@ -566,7 +566,13 @@ by a test, by the engine, or by a past incident.
   `- d<n> · <stage> — <outcome>`), re-asked every run and never "already met"; a run started by
   hand with a BRIEF answers for its GOALS instead (`engine/goals.py`: the brief seeds `b1`, a
   person's mid-run requests add more, and a conversation keeps its goals across replies — a reply
-  declaring `final: true` must meet every open one). WHEN THE ROUTINE IS DONE
+  declaring `final: true` must meet every open one). A ROUTINE's goals left open at a run's end
+  are OBLIGATIONS (`engine/obligations.py`, the engine-owned `state/obligations.json`): the next
+  run's ledger starts with them (`source: carried`) and every finish answers for them until a run
+  meets one or the person drops it in later words — an approval is a goal, and an answer given
+  between runs is recorded at boot as an `answer` event so a run can quote it. One open over
+  a week is `obligation_overdue` on the blocked-work surface, and a report nobody owns for a
+  week becomes an `unowned-report` Decisions card (`daemon/owed_watch.py`). WHEN THE ROUTINE IS DONE
   FOR GOOD is the operator's FINISH LINE (`state/finish-line.json`, `engine/finishline.py`):
   outcomes each with a JUDGE — `date` (the calendar), `run` (a run proves it, its `met` checked),
   `you` (a run reports the distance and may never claim it) — plus an optional `until`. WHAT A
