@@ -26,6 +26,8 @@ const MAX_SERIES = 6;
 
 export const METRICS = {
   runs: { label: "runs", of: () => 1, fmt: (v) => String(Math.round(v)) },
+  volume: { label: "context volume", of: (r) => r.tokens_in + r.tokens_out + (r.tokens_cached || 0) + (r.tokens_cache_write || 0), fmt: fmtNum },
+  notional: { label: "notional cost", of: (r) => r.notional || 0, fmt: fmtUsd },
   tokens: { label: "tokens", of: (r) => r.tokens_in + r.tokens_out, fmt: fmtNum },
   tokens_in: { label: "tokens in", of: (r) => r.tokens_in, fmt: fmtNum },
   tokens_out: { label: "tokens out", of: (r) => r.tokens_out, fmt: fmtNum },
@@ -84,7 +86,7 @@ const s = svgEl;   // this file builds an SVG node on nearly every line; one let
 
 // ---- the chart: {metric, group, range, type} × per-run records → node ------------
 export function chartNode(spec, runs, colorOf) {
-  const metric = METRICS[spec.metric] || METRICS.tokens;
+  const metric = METRICS[spec.metric] || METRICS.volume;
   const days = lastDays(spec.range || 30);
   const inRange = new Set(days);
   const rows = runs.filter((r) => inRange.has(r.day));

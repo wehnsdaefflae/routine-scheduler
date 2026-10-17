@@ -206,10 +206,10 @@ class Completion:
     """One whole model reply: raw text, the natively schema-parsed object when the
     endpoint produced one, token usage, and the serving provider when reported.
 
-    usage keys: "in" (fresh input tokens) and "out" always; "cached_in" (input served
-    from the provider's prompt cache, ~0.1x price) and "cache_write" (input written into
-    it, ~1.25x) when the provider reports cache traffic; "cost" (real $) when known.
-    Adapters keep cache traffic OUT of "in" so token budgets keep their meaning.
+    usage keys: "in" (fresh input) and "out" always; "cached_in" (prompt-cache reads) and
+    "cache_write" when reported; "cost" (real $) when known; "notional" ($ at list price,
+    stamped by the instrumentation seam — endpoints/prices.py). Adapters keep cache traffic
+    OUT of "in" so token budgets keep their meaning.
     """
 
     text: str                     # raw reply text ("" when only parsed content came back)
@@ -241,19 +241,19 @@ def fold_usage(total: dict, delta: dict) -> None:
 
     Four hand-rolled versions of this existed — the turn sum, the run context's accumulator,
     the resumed-legs replay, and the per-completion fold — so growing the vocabulary meant
-    remembering four places. `cost` rounds to six places on every add rather than once at the
-    end, because these totals are read back and re-added across a resumed run's legs, where
-    float error compounds.
+    remembering four places. Dollars round to six places on every add, not once at the end:
+    totals are re-added across a resumed run's legs, where float error compounds.
 
     Zero and absent are the same thing here, so a delta carrying no cache traffic and no cost
-    adds no key. That is why a total which must always REPORT `in` and `out` — a run's
-    status.json — seeds them before folding: `{"in": 0, "out": 0}` first, then fold.
+    adds no key (an unpriced completion no `notional`). A total that must REPORT `in`/`out` —
+    a run's status.json — seeds them first: `{"in": 0, "out": 0}`, then fold.
     """
     for key in ("in", "out", "cached_in", "cache_write"):
         if delta.get(key):
             total[key] = total.get(key, 0) + int(delta[key])
-    if delta.get("cost"):
-        total["cost"] = round(total.get("cost", 0.0) + float(delta["cost"]), 6)
+    for key in ("cost", "notional"):
+        if delta.get(key):
+            total[key] = round(total.get(key, 0.0) + float(delta[key]), 6)
 
 
 class ChatEndpoint(Protocol):

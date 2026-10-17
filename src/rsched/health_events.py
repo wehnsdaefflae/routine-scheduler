@@ -127,13 +127,15 @@ An endpoint reporting no cache traffic at all is silent, not degraded.
 
 cost_trend_degraded: a finished routine's LAST runs are clearly worse than the ones before them —
 the routine page's regression heuristic (readmodels/run_health, same thresholds) keyed on TIME
-rather than on recipe version, evaluated at run end. Carries `window` and the two medians and fail
-rates it compared. The version-keyed flag beside it moves only when THIS routine's recipe moves,
-and the most expensive regressions move no recipe at all: a library RULE revision lands on every
-holder at once (error-recovery on 30 routines 2026-09-16, web-research on 136 09-18), and
-self-audit's weekly medians went 49,409 tokens / 87% ok to 338,024 / 43% under no recipe change of
-any kind while nothing on the instance said a word. Emitted per finished run while the comparison
-holds, so a run of them on one routine is the regression and their end is the new normal.
+rather than on recipe version, evaluated at run end. Carries `window` and the two medians it
+compared (`turns_median_*`, `volume_median_*` — volume being the whole context processed, which is
+what a run costs) and the fail rates. The version-keyed flag beside it moves only when THIS
+routine's recipe moves, and the most expensive regressions move no recipe at all: a library RULE
+revision lands on every holder at once (error-recovery on 30 routines 2026-09-16, web-research on
+136 09-18), and self-audit's weekly medians went 49,409 tokens / 87% ok to 338,024 / 43% under no
+recipe change of any kind while nothing on the instance said a word. Emitted per finished run while
+the comparison holds, so a run of them on one routine is the regression and their end is the new
+normal.
 
 model_failover: one rung of a role's fallback chain failed hard mid-turn and the next one served
 the turn (engine/degrade.py). The run finishes `ok` — the chain absorbed it — so nothing else
@@ -259,7 +261,6 @@ from .ids import now_iso
 from .paths import append_jsonl
 
 HEALTH_EVENTS_FILE = "health-events.jsonl"
-WORKFLOW_USAGE_FILE = "workflow-usage.jsonl"
 
 #: Re-exported for every reader that asks "is this event repeat-governed?" — the table and the
 #: reasoning live in `health_cooldown`, whose whole subject that is.
@@ -292,59 +293,6 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
             "run_id": run_id,
             "detail": detail[:500],
             **{k: v for k, v in fields.items() if v is not None},
-        })
-    except OSError:
-        pass
-
-
-def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noqa: PLR0913 — a flat record writer: one keyword per stream field keeps the vocabulary explicit
-                       workflow: str, depth: int, status: str, turns: int, tokens: int,
-                       cost: float = 0.0, referrals: int = 0,
-                       recipe_commit: str | None = None, library_commit: str | None = None,
-                       utils: dict | None = None,
-                       asks_deferred: int = 0, compression: dict | None = None,
-                       fingerprint: dict | None = None, quality: dict | None = None) -> None:
-    """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
-    the feedback stream the routine-improver routine mines to maintain the shared library it
-    owns (its `library-pass` stage) and the DURABLE spend series (run dirs fall to retention;
-    this stream survives — monthly spend aggregation reads it). Subruns report like any other
-    run (depth > 0), so per-purpose child workflows inform pattern evolution too. Best-effort,
-    like the health log.
-
-    Payload extensions (never a new shape): `recipe_commit` — the recipe version that
-    produced the run (health-by-recipe-version outlives retention thanks to this field);
-    `library_commit` — the LIBRARY's HEAD as of the run's END (depth 0 only), because a
-    rule revision reaches every holder at once and moves no recipe version: error-recovery
-    changed under 30 routines on 09-16 and web-research under 136 on 09-18, and a
-    per-recipe health comparison saw neither;
-    `utils` — the run's per-util outcome counts (RunContext.util_stats; ALWAYS present on
-    new records, even empty — its presence marks the record as util-counted, which is how
-    the Stats read-model knows not to double count the run from its transcript);
-    `asks_deferred` — deferred-question churn; `compression` — the run's output-compression
-    outcome counts and estimated saving (RunContext.compression_stats), the durable source
-    of the Stats tab's per-routine roll-up; `fingerprint` and `quality` — what made the run
-    and how it went (engine/runrecord.py; depth 0 only), the two halves every conclusion
-    about a change is drawn from (readmodels/change_effects.py).
-    """
-    try:
-        append_jsonl(Path(routines_home) / ".control" / WORKFLOW_USAGE_FILE, {
-            "ts": now_iso(),
-            "routine": routine,
-            "run_id": run_id,
-            "workflow": workflow or "(unknown)",
-            "depth": depth,
-            "status": status,
-            "turns": turns,
-            "tokens": tokens,
-            "cost": round(cost, 6),
-            "referrals": referrals,
-            "recipe_commit": recipe_commit,
-            "library_commit": library_commit,
-            "utils": utils or {},
-            "asks_deferred": asks_deferred,
-            "compression": compression or {},
-            **({"fingerprint": fingerprint} if fingerprint else {}),
-            **({"quality": quality} if quality else {}),
         })
     except OSError:
         pass

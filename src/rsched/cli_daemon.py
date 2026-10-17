@@ -67,6 +67,10 @@ def cmd_daemon(_args) -> int:
     # usage stream while it is rewritten
     from .migrate_runrecords import run_migration as rebuild_run_records
     rebuild_run_records(server)
+    # MIGRATION(expires=2026-12-15): every past usage record gains its leg's cache traffic and
+    # context volume, which every cost ranking now reads — after the rebuild above, same window
+    from .migrate_usage_volume import run_migration as backfill_usage_volume
+    backfill_usage_volume(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

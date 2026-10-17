@@ -755,6 +755,17 @@ by a test, by the engine, or by a past incident.
   slice carries both halves and a run finishing under 0.5 raises `cache_read_degraded`. Read the
   SLICE as well as the ratio: the four days that burned a weekly subscription limit were ONE
   endpoint going bad beside healthy ones.
+- **What a run COSTS is its VOLUME, never `tokens`.** `tokens` (fresh input + output) is what a
+  token BUDGET meters — adapters keep cache traffic out of it — and a subscription's `cost` is
+  0.0 on every call, so ranking by either put freelance-radar (33M cached tokens a run) among the
+  cheap routines. Every usage row carries `cached_in`, `cache_write`, `volume` (all four token
+  classes) and `notional_cost` (`usage_log.spend`); every cost RANKING reads `volume`, and a row
+  with `volume: null` is unmeasured, never zero. The dollar figure is priced at the
+  instrumentation seam (`endpoints/prices.py`) from ONE source per route — a metered route's
+  reported bill or its own published price for that exact id, a subscription route's list price
+  from the public catalog — re-read daily; what no source publishes stays UNPRICED (no figure,
+  named in `model-prices.json`'s `unpriced`). No static price table, no guessed rate: a fallback
+  is a frozen guess that looks like a measurement (operator, 2026-10-17).
 - **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
   what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
   metadata APIs; a listing that carries NO figures — every `anthropic` endpoint here is a

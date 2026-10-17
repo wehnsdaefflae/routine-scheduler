@@ -7,7 +7,7 @@ three times on this one, and its own verdict is `too few runs` — on this insta
 to July, for 96% of all routine changes. The same change reached every holder at once, though,
 so the holders' windows are POOLED: each routine adds the runs on either side of its boundary
 that carry its own key unchanged (at most `WINDOW` a side), its cost signals divided by its own
-median (change_signals.normalized) so a routine of a million tokens and one of ten thousand
+median (change_signals.normalized) so a routine of a hundred million volume and one of a million
 weigh alike, and the pool is judged like one routine's windows — `MIN_RUNS` a side, on the
 POOLED signals.
 
@@ -67,12 +67,12 @@ class _Pool:
         judged = judge(self.before, self.after, POOLED)
         enough = len(self.before) >= MIN_RUNS and len(self.after) >= MIN_RUNS
         sig = {s["name"]: s for s in judged["signals"]}
-        tokens, met = sig["tokens"], sig["met_rate"]
+        volume, met = sig["volume"], sig["met_rate"]
         return {"verdict": overall(judged["dimensions"]) if enough else "too few runs",
                 "runs_before": len(self.before), "runs_after": len(self.after),
                 "dimensions": judged["dimensions"], "reconstructed": reconstructed(self.runs),
-                "tokens_ratio": (round(tokens["after"] / tokens["before"], 2)
-                                 if tokens["before"] and tokens["after"] is not None else None),
+                "volume_ratio": (round(volume["after"] / volume["before"], 2)
+                                 if volume["before"] and volume["after"] is not None else None),
                 "met_rate_delta": (round(met["after"] - met["before"], 2)
                                    if met["before"] is not None and met["after"] is not None
                                    else None)}

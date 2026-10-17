@@ -48,10 +48,14 @@ MIN_RUNS = 3
 # Fail-rate must jump by ≥ 0.4 (2 extra failures in a 5-run window) to flag: one extra
 # bad run in 5 (+0.2) is within normal flake; two is a pattern.
 FAIL_RATE_JUMP = 0.4
-# Turn/token medians must grow ≥ BALLOON_RATIO× AND by an absolute floor to flag
+# Turn/volume medians must grow ≥ BALLOON_RATIO× AND by an absolute floor to flag
 # "ballooning": the ratio alone would flag a 2→3-turn routine (noise), the floor alone would
-# miss a small routine tripling. Floors: 5 turns is a real extra work phase; 20k tokens is
-# roughly a full extra context-load at typical per-turn sizes.
+# miss a small routine tripling. VOLUME is the whole context the model processed (usage_log:
+# fresh + output + cache reads + cache writes) — what a run costs; `tokens` leaves the cache
+# out, so a routine re-reading a 400k prefix every turn never ballooned by it. Floors: 5 turns
+# is a real extra work phase; 2,000,000 volume is the MEDIAN absolute change between adjacent
+# 5-run windows (2,179,949 over 740 windows of 76 actors, 2026-10-17) — growth smaller than the
+# ordinary drift of a window is not a regression whatever its ratio.
 # 2.7 is MEASURED, not guessed (D181, decided 2026-10-15): it is the p95 of ADJACENT-WINDOW
 # variation on this instance — 1063 adjacent 5-vs-5 windows over .control/workflow-usage.jsonl
 # (1594 folded depth-0 runs, 210 actors, measured 2026-10-13) gave median 1.04, p75 1.38,
@@ -59,12 +63,14 @@ FAIL_RATE_JUMP = 0.4
 # windows cleared it with nothing having changed, so the flag reported routine variation as
 # regression. The regression this rule exists for is 6.8× (49,409 → 338,024 tokens, self-audit
 # 2026-09), far above either figure. Choosing the p95 means ~5% of ordinary windows still
-# clear it — that is what a p95 IS, and the floors below carry the rest.
+# clear it — that is what a p95 IS, and the floors below carry the rest. Re-measured on VOLUME
+# when the heuristic moved to it (2026-10-17, 740 windows over the backfilled stream): median
+# 1.10, p75 1.42, p90 2.04, p95 2.51, max 5.76 — 2.7 stays outside that band too.
 # Lowering this back under 2.7 re-enters the measured noise band; tests/test_balloon_ratio.py
 # fails if it is.
 BALLOON_RATIO = 2.7
 TURNS_FLOOR = 5
-TOKENS_FLOOR = 20_000
+VOLUME_FLOOR = 2_000_000
 
 # recipe_log depth for bucketing — far beyond any real routine's recipe-change count
 _LOG_LIMIT = 500
@@ -91,9 +97,9 @@ def _stream_runs(server: ServerConfig, slug: str) -> list[dict]:
 
 def _empty_bucket(version: dict, *, current: bool) -> dict:
     return {**version, "current": current, "runs": 0, "ok": 0, "partial": 0, "failed": 0,
-            "aborted": 0, "fail_rate": None, "turns_median": 0, "tokens_median": 0,
+            "aborted": 0, "fail_rate": None, "turns_median": 0, "volume_median": 0,
             "asks_deferred": 0, "inferred_runs": 0, "first_ts": "", "last_ts": "",
-            "_turns": [], "_tokens": []}
+            "_turns": [], "_volume": []}
 
 
 def _assign(rec: dict, dated: list[tuple[datetime | None, str]]) -> tuple[str | None, bool]:
@@ -129,7 +135,8 @@ def regression_flag(before: list[dict], after: list[dict], *,
         return {"runs": len(recs),
                 "fail_rate": round(1 - ok / len(recs), 3) if recs else None,
                 "turns_median": _median([float(r.get("turns") or 0) for r in recs]),
-                "tokens_median": _median([float(r.get("tokens") or 0) for r in recs])}
+                "volume_median": _median([float(r["volume"]) for r in recs
+                                          if r.get("volume") is not None])}
 
     b, a = profile(before), profile(after)
     if len(before) < MIN_RUNS or len(after) < MIN_RUNS:
@@ -142,11 +149,11 @@ def regression_flag(before: list[dict], after: list[dict], *,
             and a["turns_median"] - b["turns_median"] >= TURNS_FLOOR):
         reasons.append(f"median turns ballooned {b['turns_median']:g} → "
                        f"{a['turns_median']:g} (≥{BALLOON_RATIO}× and +{TURNS_FLOOR})")
-    if (a["tokens_median"] >= BALLOON_RATIO * b["tokens_median"]
-            and a["tokens_median"] - b["tokens_median"] >= TOKENS_FLOOR):
-        reasons.append(f"median tokens ballooned {b['tokens_median']:,.0f} → "
-                       f"{a['tokens_median']:,.0f} (≥{BALLOON_RATIO}× and "
-                       f"+{TOKENS_FLOOR:,})")
+    if (a["volume_median"] >= BALLOON_RATIO * b["volume_median"]
+            and a["volume_median"] - b["volume_median"] >= VOLUME_FLOOR):
+        reasons.append(f"median volume ballooned {b['volume_median']:,.0f} → "
+                       f"{a['volume_median']:,.0f} (≥{BALLOON_RATIO}× and "
+                       f"+{VOLUME_FLOOR:,})")
     return {"evaluated": True, "flagged": bool(reasons), "reasons": reasons,
             "before": b, "after": a}
 
@@ -248,7 +255,8 @@ def _by_version(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
         status = str(rec.get("status") or "")
         b[status if status in ("ok", "partial", "failed", "aborted") else "failed"] += 1
         b["_turns"].append(float(rec.get("turns") or 0))
-        b["_tokens"].append(float(rec.get("tokens") or 0))
+        if rec.get("volume") is not None:      # an unmeasured run is no reading, never 0
+            b["_volume"].append(float(rec["volume"]))
         b["asks_deferred"] += int(rec.get("asks_deferred") or 0)
         b["inferred_runs"] += 1 if inferred else 0
         ts = str(rec.get("ts") or "")
@@ -259,7 +267,7 @@ def _by_version(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
     for b in [*buckets.values(), untracked]:
         b["fail_rate"] = round(1 - b["ok"] / b["runs"], 3) if b["runs"] else None
         b["turns_median"] = _median(b.pop("_turns"))
-        b["tokens_median"] = _median(b.pop("_tokens"))
+        b["volume_median"] = _median(b.pop("_volume"))
 
     # regression: runs under the newest version vs the runs immediately before them
     regression: dict = {"evaluated": False, "flagged": False, "reasons": []}

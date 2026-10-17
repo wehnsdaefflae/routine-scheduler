@@ -2116,9 +2116,9 @@ def test_a_cost_regression_reaches_the_health_stream_at_run_end(make_routine, sc
     stream = d.parent / ".control" / "workflow-usage.jsonl"
     stream.parent.mkdir(parents=True, exist_ok=True)
     rows = ([{"routine": "trender", "depth": 0, "status": "ok", "turns": 10,
-              "tokens": 10_000}] * 5
+              "volume": 1_000_000}] * 5
             + [{"routine": "trender", "depth": 0, "status": "ok", "turns": 100,
-                "tokens": 500_000}] * 4)
+                "volume": 50_000_000}] * 4)
     stream.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
     scripted([probe(), finish()])
     status, _run_dir = run_routine(d, _server(d), run_ts=TS)
@@ -2128,7 +2128,7 @@ def test_a_cost_regression_reaches_the_health_stream_at_run_end(make_routine, sc
     flagged = [e for e in events if e["event"] == "cost_trend_degraded"]
     assert len(flagged) == 1
     assert flagged[0]["routine"] == "trender" and flagged[0]["window"] == 5
-    assert flagged[0]["tokens_median_before"] == 10_000
+    assert flagged[0]["volume_median_before"] == 1_000_000
     assert "ballooned" in flagged[0]["detail"]
 
 

@@ -237,15 +237,13 @@ class SubrunManager:
                 "turns": sub.ctx.turn, "usage": usage,
                 **({"collected": list(sub.collected_paths)} if sub.collected_paths else {})})
             # children feed workflow-library optimization like any other run
-            from ..health_events import log_workflow_usage
+            from ..usage_log import log_workflow_usage
 
             pctx = self.parent.ctx
             log_workflow_usage(pctx.server.routines_home, routine=pctx.routine.slug,
                                run_id=f"{pctx.run_id}#sub{sub.n}", workflow=sub.workflow,
                                depth=sub.ctx.depth, status=sub.status or "unknown",
-                               turns=sub.ctx.turn,
-                               tokens=int(usage.get("in", 0)) + int(usage.get("out", 0)),
-                               cost=float(usage.get("cost") or 0.0),
+                               turns=sub.ctx.turn, usage=usage,
                                referrals=sub.ctx.referrals,
                                # the child ran under the parent's recipe version; its util
                                # counts are its OWN (parents never fold them — the Stats

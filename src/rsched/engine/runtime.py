@@ -121,8 +121,8 @@ def _log_cost_trend(ctx: RunContext, slug: str) -> None:
                 + "; ".join(trend["reasons"])),
         window=trend["window"],
         turns_median_before=before["turns_median"], turns_median_after=after["turns_median"],
-        tokens_median_before=before["tokens_median"],
-        tokens_median_after=after["tokens_median"],
+        volume_median_before=before["volume_median"],
+        volume_median_after=after["volume_median"],
         fail_rate_before=before["fail_rate"], fail_rate_after=after["fail_rate"])
 
 
@@ -217,15 +217,13 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     try:
         status = EngineLoop(ctx, body, instruction,
                             allowed_tools=allowed_tools, resume=bool(resume_from)).run()
-        from ..health_events import log_workflow_usage
+        from ..usage_log import log_workflow_usage
         from ..workflows import library
         from . import runrecord
 
         log_workflow_usage(server.routines_home, routine=cfg.slug, run_id=ctx.run_id,
                            workflow=prov.get("slug") or "", depth=0, status=status,
-                           turns=ctx.turn,
-                           tokens=int(ctx.usage.get("in", 0)) + int(ctx.usage.get("out", 0)),
-                           cost=float(ctx.usage.get("cost") or 0.0), referrals=ctx.referrals,
+                           turns=ctx.turn, usage=ctx.usage, referrals=ctx.referrals,
                            recipe_commit=ctx.recipe_commit,
                            # …and the library's HEAD, read ONCE here at the run's end: a
                            # rule revision lands on every holder without moving any

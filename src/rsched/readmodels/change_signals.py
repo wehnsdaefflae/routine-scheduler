@@ -36,7 +36,7 @@ class Signal:
     name: str
     dimension: str      # correctness · completeness · effectiveness
     better: str         # "lower" or "higher"
-    how: str            # "mean" of per-run values, or "median" (heavy-tailed: tokens, turns, time)
+    how: str            # "mean" of per-run values, or "median" (heavy-tailed: volume, turns, time)
     threshold: float    # mean: the absolute difference that counts; median: the ratio that does
     floor: float = 0.0  # median only: the absolute difference below which a ratio is noise
     label: str = ""
@@ -52,7 +52,9 @@ SIGNALS: tuple[Signal, ...] = (
     Signal("unmet", "completeness", "lower", "mean", 0.5, label="lines left unmet / run"),
     Signal("partial", "completeness", "lower", "mean", 0.2, label="partial finishes"),
     Signal("stages_skipped", "completeness", "lower", "mean", 0.5, label="stages skipped / run"),
-    Signal("tokens", "effectiveness", "lower", "median", 1.3, 20_000, label="tokens / run"),
+    # the whole context volume (usage_log.spend) — what a run costs; its floor is the median
+    # absolute drift between adjacent 5-run windows (run_health.VOLUME_FLOOR)
+    Signal("volume", "effectiveness", "lower", "median", 1.3, 2_000_000, label="volume / run"),
     Signal("turns", "effectiveness", "lower", "median", 1.3, 5, label="turns / run"),
     Signal("elapsed_s", "effectiveness", "lower", "median", 1.3, 120, label="minutes / run"),
     Signal("interventions", "effectiveness", "lower", "mean", 0.5,
@@ -70,7 +72,7 @@ DIMENSIONS = ("correctness", "completeness", "effectiveness")
 COUNTED_SINCE = {"challenged": "0.371.1", "disputed": "0.371.1", "holds": "0.371.1"}
 #: The signals for runs POOLED across routines (readmodels/change_fleet.py, change_timeline.py):
 #: a cost signal is first divided by its routine's own median (`normalized`), which leaves its
-#: absolute floor (20 000 tokens) meaning nothing — the ratio threshold alone decides.
+#: absolute floor (2 000 000 volume) meaning nothing — the ratio threshold alone decides.
 POOLED: tuple[Signal, ...] = tuple(replace(s, floor=0.0) if s.how == "median" else s
                                    for s in SIGNALS)
 
@@ -120,7 +122,7 @@ def run_signals(rec: dict) -> dict[str, float | None]:
         "unmet": _count(q, "unmet"),
         "partial": 1.0 if status == "partial" else 0.0,
         "stages_skipped": _count(q, "stages_skipped"),
-        "tokens": _num(rec.get("tokens")),
+        "volume": _num(rec["volume"]) if rec.get("volume") is not None else None,
         "turns": _num(rec.get("turns")),
         "elapsed_s": elapsed,
         "interventions": _count(q, "interventions"),

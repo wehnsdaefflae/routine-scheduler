@@ -9,9 +9,11 @@ runs behave exactly as before. The daemon sets a sink that publishes to the even
 center; an engine subprocess sets a `FileSink` that appends to `runs/<ts>/llm-tasks.jsonl`
 for the daemon to tail.
 
-Bookkeeping is strictly out-of-band: `complete()` returns the inner `Completion` unchanged,
-re-raises the inner exception, and never mutates `messages` — the engine's prompt-caching
-contract is untouched. A sink failure never breaks a real LLM call (recording is guarded).
+Bookkeeping is strictly out-of-band: `complete()` returns the inner `Completion` with ONE
+addition — its usage PRICED (`usage["notional"]`, `prices.price_usage`), because this is the one
+seam that knows the endpoint and model of every completion — re-raises the inner exception, and
+never mutates `messages`, so the engine's prompt-caching contract is untouched. A sink failure
+never breaks a real LLM call (recording is guarded).
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from pathlib import Path
 from typing import IO
 
 from ..ids import now_iso
-from . import attempts, failover
+from . import attempts, failover, prices
 from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, EndpointError, Message
 
 #: Task kinds whose prompt is a CONVERSATION — the only ones a cache breakpoint can pay for.
@@ -198,8 +200,10 @@ class InstrumentedEndpoint:
     all standard kwargs forwarded untouched.
     """
 
-    def __init__(self, inner: ChatEndpoint):
+    def __init__(self, inner: ChatEndpoint, routines_home: Path | None = None):
         object.__setattr__(self, "_inner", inner)
+        # where the reference price cache lives; None prices from the static table alone
+        object.__setattr__(self, "_home", routines_home)
 
     @property
     def name(self) -> str:
@@ -208,7 +212,7 @@ class InstrumentedEndpoint:
     def __getattr__(self, item):
         # adapter-specific attributes fall through to the wrapped endpoint. Guard `_inner`
         # so a missing attribute never recurses into itself.
-        if item == "_inner":
+        if item in ("_inner", "_home"):
             raise AttributeError(item)
         return getattr(self._inner, item)
 
@@ -225,10 +229,12 @@ class InstrumentedEndpoint:
         sink = _sink
         if sink is None:                       # fast path: nothing observing
             try:
-                return self._inner.complete(messages, **inner_kwargs)
+                comp = self._inner.complete(messages, **inner_kwargs)
             except EndpointError as exc:
                 self._mark_health(exc, model)
                 raise
+            prices.price_usage(self._home, self._inner.name, model, comp.usage)
+            return comp
         # No `process_id` here on purpose: the one live attributor is the daemon, which stamps
         # `rec.setdefault("process_id", run.run_id)` on the way into the task centre
         # (daemon/runner.py). `make_record` omits falsy keys, so nothing downstream changes.
@@ -249,6 +255,7 @@ class InstrumentedEndpoint:
             _emit(sink, make_record("failed", **common, error=str(exc)[:300]))
             raise
         _note_terminal(common["id"])
+        prices.price_usage(self._home, self._inner.name, model, comp.usage)
         _emit(sink, make_record("finished", **common, usage=comp.usage,
                                 provider=comp.provider or None))
         return comp
@@ -272,11 +279,13 @@ def observe_call(call, *, endpoint: str, model: str, purpose: str, kind: str):
     """Record a transport call that is not a chat completion — a decision model's
     (endpoints/decisions.py) — with the same started/finished/failed lifecycle, so it shows in
     the activity dock like any other model call. `call()` returns an object carrying `usage`
-    and `provider`; it is returned unchanged, and its exception re-raised.
+    and `provider`; it is returned with its usage priced (see below), and its exception re-raised.
     """
     sink = _sink
     if sink is None:
-        return call()
+        out = call()
+        prices.price_usage(None, endpoint, model, out.usage)
+        return out
     common: dict = {"id": uuid.uuid4().hex[:12], "endpoint": endpoint, "model": model,
                     "purpose": purpose, "kind": kind}
     started = make_record("started", **common)
@@ -290,6 +299,9 @@ def observe_call(call, *, endpoint: str, model: str, purpose: str, kind: str):
         _emit(sink, make_record("failed", **common, error=str(exc)[:300]))
         raise
     _note_terminal(common["id"])
+    # a decision model is configured apart from the catalog, so only what its provider
+    # REPORTED billing prices it (prices.price_usage); nothing is looked up for it
+    prices.price_usage(None, endpoint, model, out.usage)
     _emit(sink, make_record("finished", **common, usage=out.usage,
                             provider=out.provider or None))
     return out

@@ -117,7 +117,10 @@ def test_the_providers_own_figures_and_the_claude_table_come_first(tmp_path, mon
     assert own["context_tokens"] == 500_000 and own["source"] == "openai"   # what it published
 
 
-def test_the_reference_is_read_once_and_only_when_a_model_needs_it(tmp_path, monkeypatch):
+def test_the_reference_is_read_once_per_refresh(tmp_path, monkeypatch):
+    """One read serves both columns it carries: the limits of every model whose provider
+    publishes none, and every configured model's price (endpoints/prices.py) — so a refresh
+    reads it exactly once, even when the static window table already sized every model."""
     server = _proxy(tmp_path, "gemini-4-argon-high", "gpt-oss-120b-medium")
     seen = _answer(monkeypatch)
     limits.refresh(server, force=True)
@@ -125,7 +128,7 @@ def test_the_reference_is_read_once_and_only_when_a_model_needs_it(tmp_path, mon
     covered = _proxy(tmp_path / "b", "claude-sonnet-5")
     seen2 = _answer(monkeypatch)
     limits.refresh(covered, force=True)
-    assert catalogs.REFERENCE_URL not in seen2          # the Claude table answered: no read at all
+    assert seen2.count(catalogs.REFERENCE_URL) == 1     # read for the prices, once
 
 
 def test_openrouter_nanogpt_and_ollama_are_never_second_guessed(tmp_path, monkeypatch):

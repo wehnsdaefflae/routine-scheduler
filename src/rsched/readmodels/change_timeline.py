@@ -7,7 +7,7 @@ one ISO week at a time, on the same per-run signals (readmodels/change_signals.p
 
 - every routine counts ONCE per week, whatever its run count — the week's reading is not
   whichever routine happened to run most;
-- a cost signal (tokens, turns, wall time — the `median` ones) is read against the routine's own
+- a cost signal (volume, turns, wall time — the `median` ones) is read against the routine's own
   median over its whole history, so `1.2` is "a fifth dearer than usual" for a routine of ten
   thousand tokens and for one of a million alike; the fleet's value is the median of those;
 - a rate or a count (the `mean` ones) is read as it is, the fleet's value the mean of the

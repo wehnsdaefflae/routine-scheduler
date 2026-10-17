@@ -24,7 +24,7 @@ from rsched.daemon.runner import Runner
 from rsched.engine import runrecord
 from rsched.engine.config_bridge import trial_value
 from rsched.engine.runtime import run_routine
-from rsched.health_events import log_workflow_usage
+from rsched.usage_log import log_workflow_usage
 
 TRIAL = {"id": "t-20261008-sonnet-high", "models": {"main": "sonnet"}, "runs": 3,
          "efforts": {"main": "high"}, "reason": "is the routine's opus overkill for a digest?"}
@@ -45,7 +45,7 @@ def _catalog(server, *names):
 def _record(home, slug, run, *, trial="", depth=0):
     """One usage record the way a finished run writes it (runtime.run_routine)."""
     log_workflow_usage(home, routine=slug, run_id=f"{slug}:{run}", workflow="w", depth=depth,
-                       status="ok", turns=1, tokens=1,
+                       status="ok", turns=1, usage={"in": 1},
                        fingerprint={"engine": "x", "model": "m",
                                     **({"trial": trial} if trial else {})})
 

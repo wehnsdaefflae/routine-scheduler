@@ -67,7 +67,7 @@ export function mountHealth(box, slug, { onRecipeChanged = () => {} } = {}) {
         el("td", {}, outcomes(b),
           b.inferred_runs ? el("span", { class: "muted small", title: "runs from before version stamping — attributed by date (can be off by one run around a change)" }, ` · ~${b.inferred_runs} date-mapped`) : ""),
         el("td", { class: "num inline", "data-label": "med. turns" }, b.runs ? fmtNum(b.turns_median) : "—"),
-        el("td", { class: "num inline", "data-label": "med. tokens" }, b.runs ? fmtNum(b.tokens_median) : "—"),
+        el("td", { class: "num inline", "data-label": "med. volume" }, b.runs ? fmtNum(b.volume_median) : "—"),
         el("td", { class: "num inline", "data-label": "asks", title: "decisions deferred to you during these runs" }, b.asks_deferred ? String(b.asks_deferred) : "—"),
         el("td", {}, b.current && versions.length > 1 && b.commit
           ? el("button", { class: "btn small", title: "restore the recipe files to their state just before this change",
@@ -75,7 +75,7 @@ export function mountHealth(box, slug, { onRecipeChanged = () => {} } = {}) {
           : "")));
       parts.push(el("div", { class: "tablewrap" },
         el("table", { class: "list stack" },
-          el("thead", {}, el("tr", {}, ["version", "change", "date", "runs", "outcomes", "med. turns", "med. tokens", "asks", ""].map((x) => el("th", {}, x)))),
+          el("thead", {}, el("tr", {}, ["version", "change", "date", "runs", "outcomes", "med. turns", "med. volume", "asks", ""].map((x) => el("th", {}, x)))),
           el("tbody", {}, ...rows))));
       if (versions.every((b) => !b.runs)) {
         parts.push(el("div", { class: "muted small mt" }, "no runs recorded in the usage stream yet — health fills in as runs finish"));

@@ -5,7 +5,7 @@
 // list here shows its newest rows and folds the rest behind one "show all":
 //
 //   Weeks                  — the fleet week by week as small multiples (components/sparkline.js):
-//                            runs, failed share, lines met, tokens against each routine's usual,
+//                            runs, failed share, lines met, volume against each routine's usual,
 //                            interventions and challenges per run; releases as ticks, weeks
 //                            mostly rebuilt shaded;
 //   Releases               — each engine release judged on the POOLED runs of the routines that
@@ -72,9 +72,9 @@ const FLEET_SERIES = [
     pick: (w) => w.signals?.failed, format: fmt.share, lo: 0, minSpan: 0.1 },
   { key: "met_rate", label: "lines met", title: "share of owed Done-when lines met",
     pick: (w) => w.signals?.met_rate, format: fmt.share, hi: 1, minSpan: 0.2 },
-  { key: "tokens", label: "tokens ×", log: true, lo: 0.25, hi: 4, ref: 1,
-    title: "tokens per run against each routine's own median — ×1.00 is usual (log scale, ×0.25–×4)",
-    pick: (w) => w.signals?.tokens, format: fmt.ratio },
+  { key: "volume", label: "volume ×", log: true, lo: 0.25, hi: 4, ref: 1,
+    title: "context volume per run (fresh, output and cache tokens) against each routine's own median — ×1.00 is usual (log scale, ×0.25–×4)",
+    pick: (w) => w.signals?.volume, format: fmt.ratio },
   { key: "interventions", label: "interventions", title: "your interventions per run",
     pick: (w) => w.signals?.interventions, format: fmt.per, lo: 0, minSpan: 0.5 },
   { key: "challenged", label: "challenged", title: "claims the verifier challenged per run",
@@ -97,7 +97,7 @@ function releaseRow(r) {
       String(n)),
     el("td", { class: "inline" }, el("span", { class: "v-line" },
       verdictChip(r.verdict), r.reconstructed ? rebuiltMark() : null)),
-    el("td", { class: "num inline", "data-label": "tokens" }, ratio(r.tokens_ratio)),
+    el("td", { class: "num inline", "data-label": "volume" }, ratio(r.volume_ratio)),
     el("td", { class: "num inline", "data-label": "met" }, points(r.met_rate_delta)),
     el("td", { class: "chg-notes faint small" }, ...notes.flatMap((x, i) => (i ? [" · ", x] : [x]))));
 }
@@ -108,7 +108,7 @@ function releases(rows, folds) {
     th("release"), th("first seen"),
     th("routines", "routines whose behaviour key held still around the release — their runs pooled", "num"),
     th("verdict", "judged on the pooled runs before → after the release"),
-    th("tokens", "tokens per run after ÷ before, each routine against its own median", "num"),
+    th("volume", "context volume per run after ÷ before, each routine against its own median", "num"),
     th("met", "change of the owed lines met", "num"), th("")],
   foldEntries(rows.map((r) => [releaseRow(r)]), {
     keep: 12, key: "releases", state: folds, closed: `show all ${rows.length} releases` }));

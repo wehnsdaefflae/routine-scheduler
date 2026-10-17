@@ -14,16 +14,16 @@ from rsched.readmodels.run_health import (
     FAIL_RATE_JUMP,
     MIN_RUNS,
     REGRESSION_WINDOW,
-    TOKENS_FLOOR,
     TURNS_FLOOR,
+    VOLUME_FLOOR,
     recent_trend,
     regression_flag,
     routine_health,
 )
 
 
-def _rec(status="ok", turns=10, tokens=5000, **extra):
-    return {"status": status, "turns": turns, "tokens": tokens, **extra}
+def _rec(status="ok", turns=10, volume=500_000, **extra):
+    return {"status": status, "turns": turns, "volume": volume, **extra}
 
 
 # ---- the heuristic, constant by constant ---------------------------------------------
@@ -69,13 +69,13 @@ def test_turns_balloon_needs_ratio_and_floor():
     assert not regression_flag(before20, grown_but_under_ratio)["flagged"]
 
 
-def test_tokens_balloon_needs_ratio_and_floor():
-    before = [_rec(tokens=50_000) for _ in range(5)]
-    flagged = regression_flag(before, [_rec(tokens=50_000 * BALLOON_RATIO) for _ in range(5)])
-    assert flagged["flagged"] and "tokens ballooned" in flagged["reasons"][0]
+def test_volume_balloon_needs_ratio_and_floor():
+    before = [_rec(volume=5_000_000) for _ in range(5)]
+    flagged = regression_flag(before, [_rec(volume=5_000_000 * BALLOON_RATIO) for _ in range(5)])
+    assert flagged["flagged"] and "volume ballooned" in flagged["reasons"][0]
     # ratio met on a tiny base but the absolute growth is under the floor: noise
-    small = [_rec(tokens=1_000) for _ in range(5)]
-    assert not regression_flag(small, [_rec(tokens=1_000 + TOKENS_FLOOR - 1)
+    small = [_rec(volume=100_000) for _ in range(5)]
+    assert not regression_flag(small, [_rec(volume=100_000 + VOLUME_FLOOR - 1)
                                        for _ in range(5)])["flagged"]
 
 
@@ -93,12 +93,12 @@ def test_recent_trend_compares_the_last_two_windows():
     """The time-keyed flag is version-blind: it slices the tail into two windows and
     applies the SAME thresholds, which is the only way a library-rule revision — one that
     moves no recipe commit anywhere — can register at all."""
-    records = [_rec(tokens=10_000) for _ in range(REGRESSION_WINDOW)] + \
-              [_rec(tokens=200_000) for _ in range(REGRESSION_WINDOW)]
+    records = [_rec(volume=1_000_000) for _ in range(REGRESSION_WINDOW)] + \
+              [_rec(volume=20_000_000) for _ in range(REGRESSION_WINDOW)]
     verdict = recent_trend(records)
     assert verdict["evaluated"] and verdict["flagged"]
     assert verdict["window"] == REGRESSION_WINDOW
-    assert any("tokens ballooned" in r for r in verdict["reasons"])
+    assert any("volume ballooned" in r for r in verdict["reasons"])
     assert verdict["before"]["runs"] == verdict["after"]["runs"] == REGRESSION_WINDOW
 
 
@@ -128,10 +128,10 @@ def test_recent_trend_window_counts_runs_not_legs():
     """
     records = []
     for i in range(10):
-        tokens = 10_000 if i < 5 else 200_000
-        # two legs under ONE run_id: `turns` is cumulative, `tokens` per-leg (fold_legs)
-        records.append(_rec(run_id=f"r{i}", turns=40, tokens=tokens // 2))
-        records.append(_rec(run_id=f"r{i}", turns=80, tokens=tokens // 2))
+        volume = 1_000_000 if i < 5 else 20_000_000
+        # two legs under ONE run_id: `turns` is cumulative, `volume` per-leg (fold_legs)
+        records.append(_rec(run_id=f"r{i}", turns=40, volume=volume // 2))
+        records.append(_rec(run_id=f"r{i}", turns=80, volume=volume // 2))
 
     verdict = recent_trend(records)
     assert verdict["before"]["runs"] == REGRESSION_WINDOW, (
@@ -141,10 +141,10 @@ def test_recent_trend_window_counts_runs_not_legs():
         f"the 'after' side holds {verdict['after']['runs']} runs, not "
         f"{REGRESSION_WINDOW} — the window was sliced in legs")
     assert verdict["evaluated"], "a routine with 10 real runs of history must be judged"
-    assert verdict["flagged"] and any("tokens ballooned" in r for r in verdict["reasons"])
-    # the fold summed the per-leg tokens back into whole runs
-    assert verdict["before"]["tokens_median"] == 10_000
-    assert verdict["after"]["tokens_median"] == 200_000
+    assert verdict["flagged"] and any("volume ballooned" in r for r in verdict["reasons"])
+    # the fold summed the per-leg volume back into whole runs
+    assert verdict["before"]["volume_median"] == 1_000_000
+    assert verdict["after"]["volume_median"] == 20_000_000
 
 
 # ---- the read-model over stream + git -------------------------------------------------
@@ -179,19 +179,19 @@ def test_buckets_by_stamp_and_by_date(tmp_path):
 
     records = [  # 3 legacy ok runs under v1 (date-mapped), then 3 stamped failures on v2
         {"routine": "gitr", "run_id": f"gitr:2026070{i}-070000", "depth": 0, "status": "ok",
-         "turns": 8, "tokens": 4000, "ts": f"2026-07-0{i}T07:10:00+00:00"}
+         "turns": 8, "volume": 400_000, "ts": f"2026-07-0{i}T07:10:00+00:00"}
         for i in (2, 3, 4)
     ] + [
         {"routine": "gitr", "run_id": f"gitr:2026071{i}-070000", "depth": 0,
-         "status": "failed", "turns": 9, "tokens": 4100, "recipe_commit": v2,
+         "status": "failed", "turns": 9, "volume": 410_000, "recipe_commit": v2,
          "asks_deferred": 2, "ts": f"2026-07-1{i}T07:10:00+00:00"}
         for i in (1, 2, 3)
     ] + [
         # depth>0 and other-routine records must not leak into the buckets
         {"routine": "gitr", "run_id": "gitr:x#sub1", "depth": 1, "status": "ok",
-         "turns": 2, "tokens": 100, "ts": "2026-07-13T08:00:00+00:00"},
+         "turns": 2, "volume": 10_000, "ts": "2026-07-13T08:00:00+00:00"},
         {"routine": "other", "run_id": "other:x", "depth": 0, "status": "ok",
-         "turns": 2, "tokens": 100, "ts": "2026-07-13T08:00:00+00:00"},
+         "turns": 2, "volume": 10_000, "ts": "2026-07-13T08:00:00+00:00"},
     ]
     write_usage_stream(server.routines_home, records)
 
@@ -217,7 +217,7 @@ def test_current_version_shown_even_without_runs(tmp_path):
     server, d = _setup(tmp_path)
     write_usage_stream(server.routines_home, [
         {"routine": "gitr", "run_id": "gitr:a", "depth": 0, "status": "ok",
-         "turns": 5, "tokens": 100, "ts": "2026-07-05T07:00:00+00:00"}])
+         "turns": 5, "volume": 10_000, "ts": "2026-07-05T07:00:00+00:00"}])
     (d / "main.md").write_text("# v2\n", encoding="utf-8")
     _git(d, "add", "-A")
     _git(d, "commit", "-qm", "recipe: v2", date="2026-07-10T10:00:00+00:00")
@@ -234,7 +234,7 @@ def test_unversioned_dir_degrades_to_untracked(tmp_path):
     d.mkdir(parents=True)
     write_usage_stream(server.routines_home, [
         {"routine": "conv", "run_id": "conv:a", "depth": 0, "status": "ok",
-         "turns": 3, "tokens": 50, "ts": "2026-07-05T07:00:00+00:00"}])
+         "turns": 3, "volume": 5_000, "ts": "2026-07-05T07:00:00+00:00"}])
     h = routine_health(server, d, "conv")
     assert h["tracked"] is False and h["versions"] == []
     assert h["untracked"]["runs"] == 1
@@ -256,10 +256,10 @@ def test_payload_carries_the_time_trend_and_the_budget_endings(tmp_path):
 
     server, d = _setup(tmp_path)
     cheap = [{"routine": "gitr", "run_id": f"gitr:c{i}", "depth": 0, "status": "ok",
-              "turns": 5, "tokens": 10_000, "ts": f"2026-07-0{i}T07:00:00+00:00"}
+              "turns": 5, "volume": 1_000_000, "ts": f"2026-07-0{i}T07:00:00+00:00"}
              for i in range(1, 6)]
     dear = [{"routine": "gitr", "run_id": f"gitr:d{i}", "depth": 0, "status": "partial",
-             "turns": 5, "tokens": 200_000, "ts": f"2026-07-1{i}T07:00:00+00:00"}
+             "turns": 5, "volume": 20_000_000, "ts": f"2026-07-1{i}T07:00:00+00:00"}
             for i in range(1, 6)]
     write_usage_stream(server.routines_home, cheap + dear)
     control = server.routines_home / ".control"
@@ -272,7 +272,7 @@ def test_payload_carries_the_time_trend_and_the_budget_endings(tmp_path):
     h = routine_health(server, d, "gitr")
     assert not h["regression"]["flagged"]             # one recipe version: nothing to compare
     assert h["trend"]["evaluated"] and h["trend"]["flagged"]
-    assert any("tokens ballooned" in r for r in h["trend"]["reasons"])
+    assert any("volume ballooned" in r for r in h["trend"]["reasons"])
     assert h["endings"]["budget_exhausted"] == 1 and h["endings"]["run_partial"] == 0
 
 
@@ -345,18 +345,18 @@ def test_folding_legs_is_what_stops_a_steady_routine_flagging():
     window held a short continuation leg."""
     from rsched.readmodels.run_health import recent_trend
 
-    def run(rid, turns, tokens, legs=1):
-        out = [{"run_id": rid, "turns": turns, "tokens": tokens, "status": "ok", "depth": 0}]
-        if legs > 1:   # a continuation: cumulative turns, a small per-leg token count
-            out.append({"run_id": rid, "turns": turns + 2, "tokens": 2_000,
+    def run(rid, turns, volume, legs=1):
+        out = [{"run_id": rid, "turns": turns, "volume": volume, "status": "ok", "depth": 0}]
+        if legs > 1:   # a continuation: cumulative turns, a small per-leg volume
+            out.append({"run_id": rid, "turns": turns + 2, "volume": 200_000,
                         "status": "ok", "depth": 0})
         return out
 
     steady = []
     for i in range(5):
-        steady += run(f"a{i}", 100, 50_000)
+        steady += run(f"a{i}", 100, 5_000_000)
     for i in range(5):
-        steady += run(f"b{i}", 100, 50_000, legs=2)
+        steady += run(f"b{i}", 100, 5_000_000, legs=2)
 
     assert recent_trend(steady)["flagged"] is False, (
         "a routine whose per-run cost is flat must not flag because its later runs were "
@@ -385,15 +385,15 @@ def test_version_buckets_count_runs_not_legs(tmp_path):
     server, d = _setup(tmp_path)
     write_usage_stream(server.routines_home, [
         {"routine": "gitr", "run_id": "gitr:a", "depth": 0, "status": "ok",
-         "turns": 10, "tokens": 30_000, "ts": "2026-07-01T07:00:00+00:00"},
+         "turns": 10, "volume": 3_000_000, "ts": "2026-07-01T07:00:00+00:00"},
         {"routine": "gitr", "run_id": "gitr:a", "depth": 0, "status": "ok",
-         "turns": 14, "tokens": 2_000, "ts": "2026-07-01T08:00:00+00:00"},
+         "turns": 14, "volume": 200_000, "ts": "2026-07-01T08:00:00+00:00"},
         {"routine": "gitr", "run_id": "gitr:b", "depth": 0, "status": "ok",
-         "turns": 10, "tokens": 30_000, "ts": "2026-07-02T07:00:00+00:00"},
+         "turns": 10, "volume": 3_000_000, "ts": "2026-07-02T07:00:00+00:00"},
         {"routine": "gitr", "run_id": "gitr:b", "depth": 0, "status": "ok",
-         "turns": 12, "tokens": 2_000, "ts": "2026-07-02T08:00:00+00:00"},
+         "turns": 12, "volume": 200_000, "ts": "2026-07-02T08:00:00+00:00"},
         {"routine": "gitr", "run_id": "gitr:c", "depth": 0, "status": "ok",
-         "turns": 10, "tokens": 30_000, "ts": "2026-07-03T07:00:00+00:00"},
+         "turns": 10, "volume": 3_000_000, "ts": "2026-07-03T07:00:00+00:00"},
     ])
     memo.reset()
 
@@ -402,8 +402,8 @@ def test_version_buckets_count_runs_not_legs(tmp_path):
     assert bucket["runs"] == 3, (
         f"the bucket reports {bucket['runs']} runs for 3 runs of 5 legs — it counted legs")
     assert bucket["ok"] == 3
-    # the per-leg tokens folded back into whole runs, so the median is a run's real cost
-    assert bucket["tokens_median"] == 32_000
+    # the per-leg volume folded back into whole runs, so the median is a run's real cost
+    assert bucket["volume_median"] == 3_200_000
     # `turns` is cumulative across legs: the last leg's value is the run's total
     assert bucket["turns_median"] == 12
 
@@ -418,9 +418,9 @@ def test_a_continued_partial_is_not_one_failure_and_one_success(tmp_path):
     server, d = _setup(tmp_path)
     write_usage_stream(server.routines_home, [
         {"routine": "gitr", "run_id": "gitr:x", "depth": 0, "status": "partial",
-         "turns": 10, "tokens": 20_000, "ts": "2026-07-01T07:00:00+00:00"},
+         "turns": 10, "volume": 2_000_000, "ts": "2026-07-01T07:00:00+00:00"},
         {"routine": "gitr", "run_id": "gitr:x", "depth": 0, "status": "ok",
-         "turns": 18, "tokens": 5_000, "ts": "2026-07-01T09:00:00+00:00"},
+         "turns": 18, "volume": 500_000, "ts": "2026-07-01T09:00:00+00:00"},
     ])
     memo.reset()
 

@@ -8,7 +8,8 @@ hands every consumer the same parsed records.
 
 A record is one LEG of a run, not one run. A run the operator continues, or one that resumes
 after a restart, appends a further record under the same `run_id`, and the fields of a leg
-mean two different things: `tokens`, `cost` and the `compression` tally are the leg's OWN,
+mean two different things: the spend fields (`tokens`, `volume`, `notional_cost`, …) and the
+`compression` tally are the leg's OWN,
 while `turns`, `utils`, `referrals` and `asks_deferred` are CUMULATIVE — a resumed leg's boot
 reseeds them from the prior leg's status (`engine/history.prior_counters`, F131/F132). Summed
 record by record, a cumulative field counts every earlier leg again: a conversation answering
@@ -24,12 +25,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..health_events import WORKFLOW_USAGE_FILE
 from ..paths import read_jsonl
+from ..usage_log import WORKFLOW_USAGE_FILE
 from . import memo
 
-#: A leg's own spend — summed across a run's legs. Every other field is the newest leg's.
-_LEG_NUMBERS = ("tokens", "cost")
+#: A leg's own spend — summed across a run's legs (usage_log.spend). Every other field is the
+#: newest leg's. `notional_cost` may be null (no completion priced); two nulls stay null.
+_LEG_NUMBERS = ("tokens", "cost", "cached_in", "cache_write", "volume", "notional_cost")
 #: A leg's own count maps — summed key by key across a run's legs.
 _LEG_TALLIES = ("compression",)
 
@@ -88,6 +90,11 @@ def fold_legs(records: list[dict]) -> list[dict]:
             continue
         merged = dict(rec)
         for field in _LEG_NUMBERS:
+            if field not in prev and field not in rec:
+                continue
+            if prev.get(field) is None and rec.get(field) is None:
+                merged[field] = None
+                continue
             merged[field] = _number(prev.get(field)) + _number(rec.get(field))
         for field in _LEG_TALLIES:
             if isinstance(prev.get(field), dict) or isinstance(rec.get(field), dict):

@@ -46,7 +46,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ..paths import atomic_write_json, read_json
-from . import catalogs
+from . import catalogs, prices
 
 log = logging.getLogger("rsched.limits")
 
@@ -159,14 +159,22 @@ REFERENCE_FOR = frozenset({"openai", "table"})
 
 
 class _Reference:
-    """The reference catalog, read at most ONCE per refresh and only when a model needs it."""
+    """The reference catalog, read at most ONCE per refresh: the limits of any model whose own
+    provider publishes none, and every model's PRICE (`prices.refresh`), come from one listing.
+    """
 
     def __init__(self) -> None:
+        self._body: dict | None = None
         self._table: dict | None = None
+
+    def body(self) -> dict | None:
+        if self._body is None:
+            self._body = catalogs.fetch_reference() or {}
+        return self._body
 
     def get(self, model_id: str) -> tuple[int, int | None] | None:
         if self._table is None:
-            self._table = catalogs.reference_table()
+            self._table = catalogs.reference_table(self.body())
         return self._table.get(catalogs.reference_name(model_id))
 
 
@@ -248,6 +256,10 @@ def refresh(server, *, force: bool = False) -> dict:
                 "source": provider_used, "fetched": now.isoformat()}
     if served_out:
         out[SERVED_KEY] = served_out
+    try:   # the prices ride the same daily read of the same catalog (endpoints/prices.py)
+        prices.refresh(server, reference.body())
+    except Exception as exc:
+        log.warning("limits: price refresh failed: %s", exc)
     cache_path(home).parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(cache_path(home), out)
     written = len(_rows(out))

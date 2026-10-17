@@ -9,7 +9,7 @@ cannot serve is a PROBLEM, said in the page's problem panel rather than as a tri
 import yaml
 from playwright.sync_api import expect
 
-from rsched.health_events import log_workflow_usage
+from rsched.usage_log import log_workflow_usage
 
 TRIAL = {"id": "t-20261008-m", "models": {"main": "m"}, "runs": 5,
          "reason": "is the routine's own model overkill for a digest?"}
@@ -25,7 +25,7 @@ def _trial(ui, trial):
 
 def _record(ui, n: int, trial: str = TRIAL["id"]):
     log_workflow_usage(ui.routines, routine="uir", run_id=f"uir:2026100{n}-120000",
-                       workflow="w", depth=0, status="ok", turns=3, tokens=10,
+                       workflow="w", depth=0, status="ok", turns=3, usage={"in": 10},
                        fingerprint={"engine": "x", "model": "m", "trial": trial})
 
 

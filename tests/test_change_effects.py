@@ -24,7 +24,7 @@ def _home(tmp_path, records, *slugs):
 
 def test_a_recipe_change_that_costs_more_and_delivers_less_is_a_regression(tmp_path):
     runs = ([_run(i) for i in range(1, 6)]
-            + [_run(i, recipe="c2", tokens=90_000, met=1) for i in range(6, 11)])
+            + [_run(i, recipe="c2", volume=9_000_000, met=1) for i in range(6, 11)])
     (change,) = change_effects.changes(_home(tmp_path, runs))["routines"]["digest"]
     assert change["what"] == [{"kind": "recipe", "name": "", "from": "c1", "to": "c2"}]
     assert (change["runs_before"], change["runs_after"]) == (5, 5)
@@ -43,8 +43,8 @@ def test_a_change_still_collecting_its_runs_is_measuring_and_churn_is_too_few(tm
 
 
 def test_nothing_moving_past_its_noise_threshold_is_no_effect(tmp_path):
-    runs = ([_run(i, tokens=40_000) for i in range(1, 6)]
-            + [_run(i, recipe="c2", tokens=44_000) for i in range(6, 11)])
+    runs = ([_run(i, volume=4_000_000) for i in range(1, 6)]
+            + [_run(i, recipe="c2", volume=4_400_000) for i in range(6, 11)])
     (change,) = change_effects.changes(_home(tmp_path, runs))["routines"]["digest"]
     assert change["verdict"] == "no effect"
 
@@ -53,12 +53,12 @@ def test_a_release_is_judged_across_routines_and_never_cuts_a_routines_history(t
     runs = []
     for slug in ("digest", "triage"):
         runs += [_run(i, slug=slug) for i in range(1, 6)]
-        runs += [_run(i, slug=slug, engine="0.397.0", tokens=20_000) for i in range(6, 11)]
+        runs += [_run(i, slug=slug, engine="0.397.0", volume=2_000_000) for i in range(6, 11)]
     data = change_effects.changes(_home(tmp_path, runs, "digest", "triage"))
     assert data["routines"] == {"digest": [], "triage": []}     # a release is not a routine change
     (release,) = data["releases"]
     assert release["release"] == "0.397.0" and sorted(release["routines"]) == ["digest", "triage"]
-    assert release["verdict"] == "improved" and release["tokens_ratio"] == 0.5
+    assert release["verdict"] == "improved" and release["volume_ratio"] == 0.5
     assert (release["confounded"], release["smeared"]) == (0, 0)
 
 
@@ -87,21 +87,21 @@ def test_unfingerprinted_runs_conversations_and_children_are_not_measured(tmp_pa
 
 
 def test_model_fit_groups_runs_by_what_served_them(tmp_path):
-    runs = ([_run(i, tokens=60_000) for i in range(1, 5)]
-            + [_run(i, model="Sonnet high", trial="t-1", tokens=20_000, met=1)
+    runs = ([_run(i, volume=6_000_000) for i in range(1, 5)]
+            + [_run(i, model="Sonnet high", trial="t-1", volume=2_000_000, met=1)
                for i in range(5, 7)])
     fit = model_fit(_home(tmp_path, runs), "digest")
     assert [(g["model"], g["trial"], g["runs"]) for g in fit] == [
         ("Opus high", "", 4), ("Sonnet high", "t-1", 2)]
     assert fit[0]["met_rate"] == 1.0 and fit[1]["met_rate"] == 0.5
-    assert fit[1]["tokens"] == 20_000
+    assert fit[1]["volume"] == 2_000_000
 
 
 def test_a_signal_needs_both_its_threshold_and_its_floor_to_move():
-    tokens = next(s for s in change_signals.SIGNALS if s.name == "tokens")
-    assert change_signals.compare(1_000, 3_000, tokens) == 0       # 3x, but under the floor
-    assert change_signals.compare(40_000, 90_000, tokens) == -1
-    assert change_signals.compare(90_000, 40_000, tokens) == 1
+    volume = next(s for s in change_signals.SIGNALS if s.name == "volume")
+    assert change_signals.compare(100_000, 300_000, volume) == 0       # 3x, but under the floor
+    assert change_signals.compare(4_000_000, 9_000_000, volume) == -1
+    assert change_signals.compare(9_000_000, 4_000_000, volume) == 1
     met = next(s for s in change_signals.SIGNALS if s.name == "met_rate")
     assert change_signals.compare(0.9, 0.6, met) == -1 and change_signals.compare(None, 1, met) == 0
 
@@ -156,14 +156,14 @@ def test_a_rule_revised_alone_is_judged_on_every_holder_pooled(tmp_path):
     """Each holder ran once on either side — `too few runs` for each alone — and the pool of
     the three is judged; routines a hundred times apart in size weigh alike."""
     runs = []
-    for slug, size in (("digest", 1_000_000), ("triage", 10_000), ("scan", 50_000)):
-        runs += [_run(1, slug=slug, tokens=size),
-                 _run(2, slug=slug, tokens=size * 3, rules={"web-research": "r2"})]
+    for slug, size in (("digest", 100_000_000), ("triage", 1_000_000), ("scan", 5_000_000)):
+        runs += [_run(1, slug=slug, volume=size),
+                 _run(2, slug=slug, volume=size * 3, rules={"web-research": "r2"})]
     data = change_effects.changes(_home(tmp_path, runs, "digest", "triage", "scan"))
     assert all(chs[0]["verdict"] == "too few runs" for chs in data["routines"].values())
     (row,) = data["fleet"]
     assert (row["alone"], row["runs_before"], row["runs_after"]) == (3, 3, 3)
-    assert row["verdict"] == "regressed" and row["tokens_ratio"] == 3.0
+    assert row["verdict"] == "regressed" and row["volume_ratio"] == 3.0
     assert row["together"] is None
 
 
@@ -194,8 +194,8 @@ def test_a_rebuilt_change_says_so(tmp_path):
 def test_an_archived_routines_runs_count_for_the_fleet_and_not_for_its_successor(tmp_path):
     """`digest` was archived on 10-04 and created again: its runs before that are another
     routine's — never a change in the new one, still evidence about the release they ran."""
-    runs = ([_run(i, tokens=90_000) for i in range(1, 3)]
-            + [_run(3, tokens=30_000, engine="0.397.0")]
+    runs = ([_run(i, volume=9_000_000) for i in range(1, 3)]
+            + [_run(3, volume=3_000_000, engine="0.397.0")]
             + [_run(i, recipe="new") for i in range(5, 8)])
     home = _home(tmp_path, runs)
     old = home / ".archive" / "digest-20261004-000000"
@@ -222,15 +222,15 @@ def test_a_count_is_compared_only_where_it_was_counted_the_same_way():
 def test_the_fleet_week_by_week(tmp_path):
     """Each routine counts once a week; a cost reads against the routine's own median; a week
     without a run is kept, empty."""
-    runs = [_run(1, tokens=10_000), _run(2, tokens=30_000, engine="0.397.0"),
-            _run(1, slug="triage", tokens=500_000), _run(15, slug="triage", tokens=500_000)]
+    runs = [_run(1, volume=1_000_000), _run(2, volume=3_000_000, engine="0.397.0"),
+            _run(1, slug="triage", volume=50_000_000), _run(15, slug="triage", volume=50_000_000)]
     weeks = change_effects.changes(_home(tmp_path, runs, "digest", "triage"))["timeline"]
     assert [w["week"] for w in weeks] == ["2026-W40", "2026-W41", "2026-W42"]
     first, empty, last = weeks
     assert (first["runs"], first["routines"]) == (3, 2)
     assert first["releases"] == ["0.396.0", "0.397.0"]
-    assert first["signals"]["tokens"] == 1.0          # digest: (0.5+1.5)/2 → median 1; triage 1
-    assert empty["runs"] == 0 and empty["signals"]["tokens"] is None
+    assert first["signals"]["volume"] == 1.0          # digest: (0.5+1.5)/2 → median 1; triage 1
+    assert empty["runs"] == 0 and empty["signals"]["volume"] is None
     assert last["models"] == {"proxy/opus": 1}
 
 

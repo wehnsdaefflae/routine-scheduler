@@ -157,13 +157,20 @@ def reference_name(model_id: str) -> str:
     return _LEVEL_SUFFIX.sub("", name)
 
 
-def reference_table() -> dict[str, tuple[int, int | None]]:
+def fetch_reference() -> dict | None:
+    """The public reference catalog's whole listing, or None when it is unreachable. Two readers
+    take different columns from it: `reference_table` the limits, `prices.refresh` the prices.
+    """
+    return _get(REFERENCE_URL)
+
+
+def reference_table(body: dict | None = None) -> dict[str, tuple[int, int | None]]:
     """`{reference_name: (context, max output)}` from the public reference catalog, or `{}` when
     it is unreachable. PRIMARY rows only (a `:variant` row is another offer of the model, often
     with another output limit), and where two vendors share a name the SMALLER window wins — a
     wrong guess upward overfills the model, one downward only compacts earlier.
     """
-    body = _get(REFERENCE_URL)
+    body = fetch_reference() if body is None else body
     out: dict[str, tuple[int, int | None]] = {}
     for row in (body or {}).get("data") or []:
         if not isinstance(row, dict) or ":" in str(row.get("id", ":")):
@@ -184,21 +191,25 @@ def _nanogpt(ep) -> Listing:
     """Nano-GPT publishes limits only on its OWN route — the OpenAI-compatible `/api/v1/models`
     carries none. Not a documented stable contract, so a shape change degrades to the floor.
     """
-    body = _get(f"{_origin(ep.base_url or 'https://nano-gpt.com')}/api/models")
-    if body is None:
-        return {}, None
-    models = body.get("models")
-    text = models.get("text") if isinstance(models, dict) else None
+    text = nanogpt_models(ep)
     out: dict[str, tuple[int, int | None]] = {}
-    for mid, row in (text or {}).items() if isinstance(text, dict) else []:
-        if not isinstance(row, dict):
-            continue
+    for mid, row in text.items():
         ctx = row.get("maxInputTokens")
         if isinstance(ctx, int | float) and ctx > 0:
             mx = row.get("maxOutputTokens")
-            out[str(mid)] = (int(ctx), int(mx) if isinstance(mx, int | float) and mx else None)
-    served = {str(mid) for mid in text} if isinstance(text, dict) else None
-    return out, served
+            out[mid] = (int(ctx), int(mx) if isinstance(mx, int | float) and mx else None)
+    return out, (set(text) if text else None)
+
+
+def nanogpt_models(ep) -> dict[str, dict]:
+    """Nano-GPT's own `/api/models` text-model rows by id (limits AND prices), or {} when it did
+    not answer in the shape it publishes.
+    """
+    body = _get(f"{_origin(ep.base_url or 'https://nano-gpt.com')}/api/models")
+    models = body.get("models") if isinstance(body, dict) else None
+    text = models.get("text") if isinstance(models, dict) else None
+    return {str(k): v for k, v in text.items() if isinstance(v, dict)} \
+        if isinstance(text, dict) else {}
 
 
 def _openai_generic(ep) -> Listing:

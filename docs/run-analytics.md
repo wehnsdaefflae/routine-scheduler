@@ -118,8 +118,13 @@ just after the newest recipe change with the runs just before it
 | `REGRESSION_WINDOW` | 5 | ≈ a week of a daily routine; one flaky run is only 20% of the sample |
 | `MIN_RUNS` | 3 | fewer runs on either side is a coin flip, not evidence |
 | `FAIL_RATE_JUMP` | +0.4 | one extra failure in 5 (+0.2) is flake; two is a pattern |
-| `BALLOON_RATIO` | 2.7× | median turns/tokens growth that marks real ballooning — the MEASURED p95 of adjacent-window variation on this instance (1063 adjacent 5-vs-5 windows, 2026-10-13: median 1.04, p75 1.38, p90 2.09, p95 2.73, max 7.16), not a guess |
-| `TURNS_FLOOR` / `TOKENS_FLOOR` | +5 / +20k | absolute floors so a 2→3-turn routine's ratio never flags noise |
+| `BALLOON_RATIO` | 2.7× | median turns/volume growth that marks real ballooning — the MEASURED p95 of adjacent-window variation on this instance (1063 adjacent 5-vs-5 windows of tokens, 2026-10-13: median 1.04, p75 1.38, p90 2.09, p95 2.73, max 7.16; re-measured on VOLUME 2026-10-17 over 740 windows: median 1.10, p90 2.04, p95 2.51, max 5.76), not a guess |
+| `TURNS_FLOOR` / `VOLUME_FLOOR` | +5 / +2M | absolute floors so a 2→3-turn routine's ratio never flags noise; 2M is the median absolute change between adjacent windows' volume |
+
+The cost half reads VOLUME — the whole context the model processed (below, "What a run
+costs") — not `tokens`, which leaves the prompt cache out: a routine re-reading a 400k prefix
+every turn never ballooned by tokens. A run the stream could not measure (`volume: null`) is no
+reading, never a zero.
 
 `partial` (budget-stopped) counts as not-ok: a recipe change that makes runs blow their
 budgets IS a degradation. The flag renders as a banner in the routine's development view
@@ -186,7 +191,7 @@ is queued and applied when the run ends (D78-A, `pending_edits`), like a recipe 
 ## Measuring changes (`/api/changes`, Develop → Changes)
 
 The recipe-health flag above sees one kind of change (the recipe) through four coarse signals
-(status, turns, tokens, deferred asks). Every change that can alter what a routine does is now
+(status, turns, volume, deferred asks). Every change that can alter what a routine does is now
 measured, from the runs themselves, with nothing declared:
 
 - **What made a run.** Every depth-0 usage record carries a `fingerprint` (`engine/runrecord.py`):
@@ -212,7 +217,7 @@ the process: the same routine answering for the same Done when should be about a
 complete and as cheap from one run to the next. `readmodels/change_signals.py` reads fifteen
 signals per run in three dimensions — CORRECTNESS (failed or aborted, claims challenged and
 disputed, holds, failed util calls), COMPLETENESS (owed lines met, lines unmet, partial finishes,
-stages skipped) and EFFECTIVENESS (median tokens, turns and minutes, interventions, schema
+stages skipped) and EFFECTIVENESS (median volume, turns and minutes, interventions, schema
 retries, cache read share) — each with a direction and a noise threshold (a median also needs an
 absolute floor, so a 2→3-turn routine never reads as 50% worse).
 
@@ -412,6 +417,36 @@ with no upside, where the compressor produced a result the engine's own verifica
 the original was kept. Rejections cost the same wall clock as applications, so a row where they
 dominate is a routine paying for the feature and getting nothing back. Mechanism, eligibility and
 the verification itself: [docs/output-compression.md](output-compression.md).
+
+## What a run costs (`volume` and `notional_cost`)
+
+`tokens` — fresh input + output — is what a token BUDGET meters and nothing more: adapters keep
+prompt-cache traffic out of it so a budget keeps its meaning. It is not a cost. freelance-radar's
+last run read `tokens: 650,520, cost: 0.0` while it pushed 33 million cached tokens through the
+model, and every ranking that read `tokens` (routine-improver's orient, the trend alarm, the Stats
+tab, self-audit's cost alarm, which F545 then called "real but benign") put it among the cheap
+routines. On a subscription transport `cost` is 0.0 on every call, so it ranks nothing either.
+
+Every usage row therefore carries the spend in full (`usage_log.spend`, one place):
+`tokens`, `cached_in`, `cache_write`, `volume` (all four token classes together — the whole
+context the model processed) and `notional_cost` (the leg at list price). **Every cost ranking
+reads `volume`**: the trend alarm and the version buckets (`volume_median`), the change signal
+(`volume / run`, floor 2M), model fit, the Stats slices and the monthly spend series (which also
+shows `notional`), the dashboard's spend line and heartbeat.
+
+`notional_cost` comes from `endpoints/prices.py`, priced at the instrumentation seam the moment a
+completion finishes — so a recorded figure is what those tokens cost THEN. One source per model,
+decided by its ROUTE, never a chain of guesses: a metered route is priced by its provider (the
+bill it REPORTED on the call, else the prices it publishes for that exact id — OpenRouter's
+`/models`, Nano-GPT's `/api/models`); a subscription route at the model's LIST price from the
+public reference catalog under the name vendors share (a proxy's `claude-haiku-4-5-20251001` is
+OpenRouter's `anthropic/claude-haiku-4.5`). The rates are re-read daily with the model limits into
+`.control/model-prices.json`. What no source publishes is UNPRICED — a model without a price, or
+a call that used a token class whose rate its source does not publish, gets no figure at all, and
+the cache's `unpriced` list names every such configured model; nothing is estimated, defaulted or
+borrowed. Rows from before 2026-10-17 carry `notional_cost: null` (what those tokens cost at the
+prices of the day was never recorded), and their `volume` was backfilled from what each run
+itself recorded (`migrate_usage_volume.py`), `null` where nothing did.
 
 ## Prompt-cache health (Stats tab → the `prompt cache` card and the `cache` column)
 

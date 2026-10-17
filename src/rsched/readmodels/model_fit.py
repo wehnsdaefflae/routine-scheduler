@@ -22,7 +22,7 @@ from .change_keys import components
 from .change_signals import SIGNALS, aggregate, run_signals
 
 #: The signals a model's fit is read on — correctness and completeness first, then cost.
-FIT_SIGNALS = ("failed", "met_rate", "unmet", "disputed", "interventions", "tokens", "turns",
+FIT_SIGNALS = ("failed", "met_rate", "unmet", "disputed", "interventions", "volume", "turns",
                "elapsed_s")
 
 

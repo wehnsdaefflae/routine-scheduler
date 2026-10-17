@@ -164,7 +164,7 @@ def write_usage_stream(routines_home: Path, records: list[dict]) -> None:
 
 def measured_run(i: int, *, slug: str = "digest", recipe: str = "c1",
                  model: str = "Opus high", effort: str = "high", engine: str = "0.396.0",
-                 rules: dict | None = None, status: str = "ok", tokens: int = 40_000,
+                 rules: dict | None = None, status: str = "ok", volume: int = 4_000_000,
                  met: int = 2, owed: int = 2, trial: str = "", rebuilt: bool = False) -> dict:
     """One depth-0 usage record carrying the `fingerprint` and `quality` the change read models
     measure (engine/runrecord.py), run `i` on 2026-10-<i> (its run id stamped in UTC, as
@@ -173,7 +173,7 @@ def measured_run(i: int, *, slug: str = "digest", recipe: str = "c1",
     change tests and the browser suite's Changes pages read the same shape."""
     return {"ts": f"2026-10-{i:02d}T07:00:00+02:00", "routine": slug,
             "run_id": f"{slug}:202610{i:02d}-050000",
-            "depth": 0, "status": status, "turns": 20, "tokens": tokens,
+            "depth": 0, "status": status, "turns": 20, "volume": volume,
             "recipe_commit": recipe, "utils": {"websearch": {"ok": 3}},
             "fingerprint": {"engine": engine, "model": model, "effort": effort,
                             "model_id": f"proxy/{model.split(maxsplit=1)[0].lower()}",

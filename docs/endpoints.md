@@ -464,6 +464,19 @@ optional fields (a configured `temperature`, the effort knob) is degraded one 40
 A reply no action can be read from names what it carried — block types, a tool call's name,
 its input's type — in the run's empty-completion error.
 
+## Prices are DISCOVERED too — and never guessed
+
+The same daily refresh re-reads every configured model's PRICE into
+`<routines>/.control/model-prices.json` (`endpoints/prices.py`), so each completion carries a
+`notional` dollar figure for its whole context volume — fresh input, output, cache reads and
+writes — even on a subscription transport whose own `cost` is always 0.0. One source per model,
+chosen by its route: a metered endpoint (OpenRouter, Nano-GPT) is priced by its provider — the
+bill it reports on the call, else its own published rates for that exact id; a subscription
+proxy (every `anthropic` endpoint here, the codex and antigravity proxies) at the model's list
+price in the public reference catalog. There is no price to configure and no fallback table: a
+model no source prices is listed as `unpriced` and its calls carry no figure. docs/run-analytics.md
+("What a run costs") is where the figure is read.
+
 ## Windows and output caps are DISCOVERED — leave them blank
 
 You do not size a model's context window by hand. At boot and every 24 hours the daemon asks each

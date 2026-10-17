@@ -8,10 +8,11 @@
 import { api } from "/static/api.js";
 import { GROUPS, METRICS, RANGES, chartNode, colorMap, hideTip } from "/static/components/charts.js";
 import { el, emptyState, fmtDur, fmtInt, fmtNum, fmtUsd, skeleton, storage } from "/static/util.js";
+import { NBSP, foldRows, monthlySection, routineHref, statSection } from "/static/views/stats-parts.js";
 
 const CHARTS_KEY = "rsched.stats.charts";
 const DEFAULT_CHARTS = [
-  { metric: "tokens", group: "none", range: 30, type: "bars" },
+  { metric: "volume", group: "none", range: 30, type: "bars" },
   { metric: "cost", group: "endpoint", range: 30, type: "bars" },
 ];
 
@@ -23,10 +24,14 @@ function loadChartSpecs() {
   return DEFAULT_CHARTS.map((c) => ({ ...c }));
 }
 
-const NBSP = " ";
-
 function tokensOf(d) {
   return (d.tokens_in || 0) + (d.tokens_out || 0);
+}
+
+// The whole context the model processed — fresh, output, cache reads and writes. What a run
+// COSTS: `tokens` leaves the cache out, and every slice below is ranked by this.
+function volumeOf(d) {
+  return tokensOf(d) + (d.tokens_cached || 0) + (d.tokens_cache_write || 0);
 }
 
 // Prompt-cache read share: reads ÷ all cache traffic. The reads alone read as healthy on a
@@ -116,35 +121,6 @@ function chartsSection(runs) {
   return box;
 }
 
-// Show the first `keep` rows and hide the rest behind ONE row that reveals them. Stats is a
-// page of KPI tiles and two charts followed, today, by 20 000px of rows nobody scans — 172
-// monthly rows, 196 util rows. Every row is still here and still one click away; the page just
-// stops spending its height on them before anyone asks. The reveal row goes LAST, because a
-// hidden <tr> takes no space and the button therefore sits under what is shown.
-function foldRows(rows, keep, label) {
-  if (rows.length <= keep) return rows;
-  const rest = rows.slice(keep);
-  for (const r of rest) r.hidden = true;
-  const btn = el("button", { class: "btn small ghost" }, `show all ${rows.length} ${label}`);
-  btn.onclick = () => {
-    const opening = rest[0].hidden;
-    for (const r of rest) r.hidden = !opening;
-    btn.textContent = opening ? `show fewer ${label}` : `show all ${rows.length} ${label}`;
-  };
-  return [...rows, el("tr", { class: "fold-row" }, el("td", { colspan: "99" }, btn))];
-}
-
-// The frame every stat table on this page shares: a titled section, an optional sub-line
-// explaining where the numbers come from, and one horizontally scrollable table. `sub` takes a
-// string, an array of strings (el flattens its children), or null when the title already says
-// everything — el drops the null child, so there is no empty .sub div to style around.
-const statSection = (title, sub, head, body) => el("div", { class: "stat-section" },
-  el("h2", {}, title),
-  sub ? el("div", { class: "sub" }, sub) : null,
-  el("div", { class: "tablewrap boxed" },
-    el("table", { class: "stat-table" },
-      el("thead", {}, head), el("tbody", {}, ...body))));
-
 // Recipe length by routine (F371): how much INSTRUCTION each routine carries — one
 // violet bar per routine (deliberately not a usage-series color: this is prose mass,
 // not spend) plus a trend chip against the recipe as committed ~30 days ago (from each
@@ -179,12 +155,7 @@ function recipeSection(recipes) {
     body);
 }
 
-// Deep link for a routine/conversation row — null (plain text) when the home is unknown.
-const routineHref = (slug, kind) =>
-  kind === "routine" ? `#/routine/${slug}`
-    : kind === "conversation" ? `#/conversations/${slug}` : null;
-
-// A table over a {key: metrics} slice, sorted by total tokens desc.
+// A table over a {key: metrics} slice, sorted by context volume desc (readmodels/stats.py).
 function sliceTable(title, slice, keyLabel, extraCols, link) {
   const rows = Object.entries(slice || {});
   if (!rows.length) return null;
@@ -194,7 +165,9 @@ function sliceTable(title, slice, keyLabel, extraCols, link) {
     el("th", { class: "num" }, "runs"),
     el("th", { class: "num" }, "tokens in"),
     el("th", { class: "num" }, "tokens out"),
+    el("th", { class: "num", title: "the whole context the model processed: fresh + output + cache reads + cache writes" }, "volume"),
     el("th", { class: "num", title: "prompt-cache read share: reads ÷ (reads + writes). Blank = this endpoint reports no cache traffic" }, "cache"),
+    el("th", { class: "num", title: "what these tokens cost at list price, whatever transport carried them" }, "notional"),
     el("th", { class: "num" }, "cost"),
     el("th", { class: "num" }, "time"));
   const body = rows.map(([k, d]) => el("tr", {},
@@ -203,62 +176,12 @@ function sliceTable(title, slice, keyLabel, extraCols, link) {
     el("td", { class: "num" }, fmtInt(d.runs)),
     el("td", { class: "num" }, fmtInt(d.tokens_in)),
     el("td", { class: "num" }, fmtInt(d.tokens_out)),
+    el("td", { class: "num" }, fmtNum(volumeOf(d))),
     cacheCell(d),
+    el("td", { class: "num" }, fmtUsd(d.notional || 0)),
     el("td", { class: "num" }, fmtUsd(d.cost)),
     el("td", { class: "num" }, fmtDur(d.elapsed_s))));
   return statSection(title, null, head, body);
-}
-
-// Monthly spend by routine — the durable series (workflow-usage stream, survives run
-// retention): one row per routine, one column per month, tokens + cost per cell, a
-// growth chip when the latest month runs >20% over the one before.
-function monthlySection(monthly, kinds) {
-  const months = (monthly?.months || []).slice(-6);
-  const rows = Object.entries(monthly?.by_routine || {});
-  if (!months.length || !rows.length) return null;
-  const latest = months[months.length - 1];
-  const prev = months[months.length - 2];
-  const cell = (c) => (c ? `${fmtNum(c.tokens)} · ${fmtUsd(c.cost)}` : NBSP);
-  const head = el("tr", {}, el("th", {}, "routine"),
-    ...months.map((m) => el("th", { class: "num" }, m)),
-    el("th", {}, "trend"));
-  const rowFor = ([slug, cells]) => {
-    const cur = cells[latest];
-    const before = prev ? cells[prev] : null;
-    const growing = cur && before && cur.tokens > before.tokens * 1.2;
-    const shrinking = cur && before && cur.tokens < before.tokens * 0.8;
-    const href = routineHref(slug, kinds?.[slug]);
-    return el("tr", {},
-      el("td", {}, href ? el("a", { href }, slug) : slug),
-      ...months.map((m) => el("td", { class: "num" }, cell(cells[m]))),
-      el("td", {}, growing ? el("span", { class: "chip partial" }, "↑ growing")
-        : shrinking ? el("span", { class: "chip ok" }, "↓ shrinking")
-        : before && cur ? el("span", { class: "chip bare" }, "→ steady") : NBSP));
-  };
-  // A CONVERSATION is a one-off with a timestamp for a name, and the fleet has a hundred of
-  // them: as peers of the routines they made this table a list of `c-2026MMDD-HHMMSS` ids and
-  // buried the twenty rows a reader came for. They subtotal into one row that expands.
-  const isConv = ([slug]) => kinds?.[slug] === "conversation";
-  const convs = rows.filter(isConv);
-  const body = rows.filter((r) => !isConv(r)).map(rowFor);
-  if (convs.length) {
-    const totals = {};
-    for (const [, cells] of convs)
-      for (const m of months) {
-        const c = cells[m];
-        if (!c) continue;
-        totals[m] = totals[m] || { tokens: 0, cost: 0 };
-        totals[m].tokens += c.tokens || 0;
-        totals[m].cost += c.cost || 0;
-      }
-    body.push(...foldRows([el("tr", { class: "subtotal" },
-      el("td", {}, `conversations · ${convs.length}`),
-      ...months.map((m) => el("td", { class: "num" }, cell(totals[m]))),
-      el("td", {}, NBSP)), ...convs.map(rowFor)], 1, "conversations"));
-  }
-  return statSection("Monthly spend by routine",
-    "tokens · cost per calendar month, from the durable usage stream — unlike the tables above, this survives run retention",
-    head, body);
 }
 
 // Per-util execution stats — every global util's life story: created / last revised
@@ -397,9 +320,10 @@ export async function render(view) {
     const successPct = t.success_rate == null ? "—" : Math.round(t.success_rate * 100) + "%";
     parts.push(el("div", { class: "stats" },
       card("total runs", fmtInt(t.runs), `${fmtInt(t.routines)} routines · ${fmtInt(t.conversations)} conversations`),
-      card("tokens", fmtNum(tokensOf(t)), `${fmtNum(t.tokens_in)} in · ${fmtNum(t.tokens_out)} out`),
+      card("volume", fmtNum(volumeOf(t)), `${fmtNum(t.tokens_in)} in · ${fmtNum(t.tokens_out)} out · cache ${fmtNum((t.tokens_cached || 0) + (t.tokens_cache_write || 0))}`),
       card("prompt cache", cacheShare(t) == null ? "—" : Math.round(cacheShare(t) * 100) + "%",
         `${fmtNum(t.tokens_cached)} read · ${fmtNum(t.tokens_cache_write)} written`),
+      card("notional cost", fmtUsd(t.notional || 0), "at list price"),
       card("cost", fmtUsd(t.cost), "provider-reported"),
       card("compute time", fmtDur(t.elapsed_s), "summed wall-clock"),
       card("success rate", successPct, "finished ÷ graded")));

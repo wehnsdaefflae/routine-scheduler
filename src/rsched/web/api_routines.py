@@ -18,6 +18,7 @@ from .. import lanes, registry, schedule, trials
 from .. import triggers as triggers_mod
 from ..config import ROUTINE_MODEL_ROLES
 from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
+from ..endpoints.prices import USAGE_KEYS
 from ..engine.ladder import oversight_turns_for
 from ..readmodels.stats import monthly_spend
 from .api_jobs import layer_on
@@ -118,12 +119,11 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict,
         "last_run": ({"run_id": last.run_id, "ts": last.ts, "state": last.state,
                       "summary": last.summary[:280], "turns": last.turn,
                       "usage": last.usage, "elapsed_s": last.elapsed_s} if last else None),
-        # the heartbeat strip's window, newest first: state + finish outcome (partial is
-        # invisible in state) + the hover stats, flattened to keep the payload lean
+        # the heartbeat strip, newest first: state + finish outcome (partial) + flat hover stats
         "recent_runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state,
-                         "outcome": r.outcome, "turns": r.turn,
-                         "tokens": (r.usage.get("in") or 0) + (r.usage.get("out") or 0),
-                         "cost": r.usage.get("cost") or 0, "elapsed_s": r.elapsed_s}
+                         "outcome": r.outcome, "turns": r.turn, "elapsed_s": r.elapsed_s,
+                         "volume": sum(int(r.usage.get(k) or 0) for k in USAGE_KEYS),
+                         "notional": r.usage.get("notional"), "cost": r.usage.get("cost") or 0}
                         for r in info.runs[:HEARTBEAT_RUNS_N]],
         "open_questions": len(_awaiting_questions(info)),
         # >N unanswered deferred asks = the routine is starving on decisions; the

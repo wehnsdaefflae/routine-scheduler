@@ -39,7 +39,7 @@ _BAD_STATES = {"failed", "aborted"}
 
 def _empty() -> dict:
     return {"runs": 0, "tokens_in": 0, "tokens_out": 0, "tokens_cached": 0,
-            "tokens_cache_write": 0, "cost": 0.0, "elapsed_s": 0}
+            "tokens_cache_write": 0, "cost": 0.0, "notional": 0.0, "elapsed_s": 0}
 
 
 def _add(acc: dict, usage: dict, elapsed_s) -> None:
@@ -56,6 +56,10 @@ def _add(acc: dict, usage: dict, elapsed_s) -> None:
     acc["tokens_cache_write"] += int((usage or {}).get("cache_write") or 0)
     if (usage or {}).get("cost"):
         acc["cost"] = round(acc["cost"] + float(usage["cost"]), 6)
+    # what the run would cost at list price (endpoints/prices.py) — the figure a subscription
+    # transport, whose `cost` is always 0.0, still has
+    if (usage or {}).get("notional"):
+        acc["notional"] = round(acc["notional"] + float(usage["notional"]), 6)
     acc["elapsed_s"] += int(elapsed_s or 0)
 
 
@@ -95,8 +99,11 @@ def monthly_spend(server: ServerConfig) -> dict:
     the month its newest leg ended). Detached background tasks are attributed to their owner
     conversation, and a routine archived and created again keeps its runs under the archive's
     name (readmodels/incarnations.py) — the new routine's row is its own. Shape:
-    {"months": [...asc], "by_routine": {slug: {month: {runs, tokens, cost}}}} — routines
-    sorted by latest-month tokens, descending.
+    {"months": [...asc], "by_routine": {slug: {month: {runs, tokens, volume, notional, cost,
+    referrals}}}} — routines sorted by latest-month VOLUME (the whole context the model
+    processed), descending: `tokens` leaves the prompt cache out and `cost` is 0.0 on a
+    subscription, so neither ranks what a routine costs; `notional` is the list-price dollar
+    figure where one was recorded (usage_log.py), shown beside it, never ranked on.
     """
     from .incarnations import resolver
     from .usage_stream import usage_runs
@@ -114,20 +121,26 @@ def monthly_spend(server: ServerConfig) -> dict:
         slug = m.group(1) if (m := _BG_SLUG.fullmatch(slug)) else (name_of(rec) or "?")
         try:   # compute BEFORE folding: one malformed record (tokens as a dict, a
             tokens = int(rec.get("tokens") or 0)          # stray string cost) is skipped
-            cost = float(rec.get("cost") or 0.0)          # whole, like unparseable JSON —
-            referrals = int(rec.get("referrals") or 0)    # never a 500 on the dashboard
+            volume = int(rec.get("volume") or 0)          # whole, like unparseable JSON —
+            notional = float(rec.get("notional_cost") or 0.0)   # never a 500 on the
+            cost = float(rec.get("cost") or 0.0)          # dashboard
+            referrals = int(rec.get("referrals") or 0)
         except (TypeError, ValueError):
             continue
         months.add(month)
-        cell = by_routine[slug].setdefault(month, {"runs": 0, "tokens": 0, "cost": 0.0,
+        cell = by_routine[slug].setdefault(month, {"runs": 0, "tokens": 0, "volume": 0,
+                                                   "notional": 0.0, "cost": 0.0,
                                                    "referrals": 0})
         cell["runs"] += 1
         cell["tokens"] += tokens
+        cell["volume"] += volume
+        cell["notional"] = round(cell["notional"] + notional, 6)
         cell["cost"] = round(cell["cost"] + cost, 6)
         cell["referrals"] += referrals
     latest = max(months) if months else ""
+
     ordered = sorted(by_routine.items(),
-                     key=lambda kv: kv[1].get(latest, {}).get("tokens", 0), reverse=True)
+                     key=lambda kv: kv[1].get(latest, {}).get("volume", 0), reverse=True)
     return {"months": sorted(months), "by_routine": dict(ordered)}
 
 
@@ -173,6 +186,7 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
                              "tokens_cached": int((r.usage or {}).get("cached_in") or 0),
                              "tokens_cache_write": int((r.usage or {}).get("cache_write") or 0),
                              "cost": float((r.usage or {}).get("cost") or 0.0),
+                             "notional": float((r.usage or {}).get("notional") or 0.0),
                              "elapsed_s": int(r.elapsed_s or 0)})
             if info.runs:
                 by_routine[slug] = {**racc, "kind": kind,
@@ -180,7 +194,10 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
                                     "model": main_ref.model if main_ref else "unknown"}
 
     def _tok(d: dict) -> int:
-        return d["tokens_in"] + d["tokens_out"]
+        # the WHOLE context volume — fresh, output, cache reads and writes: ranking by fresh +
+        # output alone put a routine re-reading 40M cached tokens a run below one spending 1M
+        return (d["tokens_in"] + d["tokens_out"] + d["tokens_cached"]
+                + d["tokens_cache_write"])
 
     ok = sum(v for k, v in by_state.items() if k in _OK_STATES)
     bad = sum(v for k, v in by_state.items() if k in _BAD_STATES)

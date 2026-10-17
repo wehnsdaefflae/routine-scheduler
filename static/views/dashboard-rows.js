@@ -22,14 +22,15 @@ import { WORKING as RUNNING } from "/static/states.js";
 
 const LANES_OPEN_KEY = "rsched_dash_lanes_open";
 
-// "Jul: 1.2M tok · $4.31 (Jun: 0.9M · $3.10)" — the durable monthly series, not last-run
+// "Jul: 41M vol · $93.10 (Jun: 30M · $70.04)" — the durable monthly series, not last-run:
+// context volume and its notional list-price cost (readmodels/stats.monthly_spend)
 function spendLine(spend) {
   if (!spend?.current) return null;
-  const cell = (c) => c ? [fmtNum(c.tokens) + " tok", fmtCost({ cost: c.cost })].filter(Boolean).join(" · ") : "—";
+  const cell = (c) => c ? [fmtNum(c.volume) + " vol", fmtCost({ cost: c.notional })].filter(Boolean).join(" · ") : "—";
   const monthName = (m) => new Date(m + "-01T00:00:00").toLocaleString("en", { month: "short" });
   let text = `${monthName(spend.month)}: ${cell(spend.current)}`;
   if (spend.prev) text += `  (${monthName(spend.prev_month)}: ${cell(spend.prev)})`;
-  const growing = spend.prev && spend.current.tokens > spend.prev.tokens * 1.2;
+  const growing = spend.prev && spend.current.volume > spend.prev.volume * 1.2;
   return el("div", { class: "muted small",
     title: "this month's spend from the durable usage stream (survives run retention)" },
     text, growing ? el("span", { class: "chip partial", style: "margin-left:6px" }, "↑ growing") : null);

@@ -3,7 +3,7 @@
 // Recipe health — the recipe-version table, the regression flag with its roll-back, and the
 // cautions' tallies (views/routine-health.js, moved here from the production routine page).
 //
-//   Weeks        — the routine's own weeks as small multiples (components/sparkline.js): tokens
+//   Weeks        — the routine's own weeks as small multiples (components/sparkline.js): volume
 //                  and turns against its usual, lines met, interventions per run.
 //   Changes      — newest first, one row each: when · what changed · runs before → after · the
 //                  verdict · three tiny marks for correctness / completeness / effectiveness,
@@ -38,9 +38,9 @@ const MANY_RULES = 3;
 const KEEP = 10;
 
 const ROUTINE_SERIES = [
-  { key: "tokens", label: "tokens ×", log: true, lo: 0.25, hi: 4, ref: 1,
-    title: "tokens per run against this routine's own median — ×1.00 is usual (log scale, ×0.25–×4)",
-    pick: (w) => w.signals?.tokens, format: fmt.ratio },
+  { key: "volume", label: "volume ×", log: true, lo: 0.25, hi: 4, ref: 1,
+    title: "context volume per run (fresh, output and cache tokens) against this routine's own median — ×1.00 is usual (log scale, ×0.25–×4)",
+    pick: (w) => w.signals?.volume, format: fmt.ratio },
   { key: "turns", label: "turns ×", log: true, lo: 0.25, hi: 4, ref: 1,
     title: "turns per run against this routine's own median — ×1.00 is usual (log scale, ×0.25–×4)",
     pick: (w) => w.signals?.turns, format: fmt.ratio },
@@ -63,7 +63,7 @@ function signalTable(signals) {
     }
   }
   return el("table", { class: "list stack sig-table" },
-    el("thead", {}, el("tr", {}, th("signal"), th("before → after", "the runs before the change → the runs after it (a median for tokens, turns and minutes; a per-run mean or a share otherwise)", "num"), th(""))),
+    el("thead", {}, el("tr", {}, th("signal"), th("before → after", "the runs before the change → the runs after it (a median for volume, turns and minutes; a per-run mean or a share otherwise)", "num"), th(""))),
     el("tbody", {}, ...rows));
 }
 
@@ -200,7 +200,7 @@ function modelFit(groups) {
     th("failed", "share of runs failed or aborted", "num"),
     th("disputed", "claims disputed per run", "num"),
     th("interventions", "your interventions per run", "num"),
-    th("tokens", "median per run", "num"), th("turns", "median per run", "num"),
+    th("volume", "median context volume per run", "num"), th("turns", "median per run", "num"),
     th("minutes", "median per run", "num"))),
   el("tbody", {}, ...groups.map((g) => el("tr", { "data-model": g.model || g.model_id || "" },
     el("td", { class: "mono inline",
@@ -216,7 +216,7 @@ function modelFit(groups) {
     el("td", { class: "num inline", "data-label": "failed" }, pct(g.failed)),
     el("td", { class: "num inline", "data-label": "disputed" }, dec(g.disputed)),
     el("td", { class: "num inline", "data-label": "interv." }, dec(g.interventions)),
-    el("td", { class: "num inline", "data-label": "tokens" }, g.tokens == null ? "—" : fmtNum(g.tokens)),
+    el("td", { class: "num inline", "data-label": "volume" }, g.volume == null ? "—" : fmtNum(g.volume)),
     el("td", { class: "num inline", "data-label": "turns" }, dec(g.turns)),
     el("td", { class: "num inline", "data-label": "min" },
       g.elapsed_s == null ? "—" : (g.elapsed_s / 60).toFixed(1)))))));

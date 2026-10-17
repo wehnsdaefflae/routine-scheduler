@@ -60,7 +60,7 @@ class EndpointRegistry:
             if cfg is None:
                 raise EndpointError(f"endpoint {name!r} is not configured")
             self._cache[name] = make_endpoint(cfg)
-        return InstrumentedEndpoint(self._cache[name])
+        return InstrumentedEndpoint(self._cache[name], self.server.routines_home)
 
     def resolve(self, name: str,
                 effort: str | None = None) -> tuple[InstrumentedEndpoint, ModelRef]:

@@ -260,10 +260,10 @@ def test_routine_card_recent_runs_window(client):
                                      "20260702-070000", "20260701-070000"]
     assert rr[1]["state"] == "failed"
     assert rr[2]["state"] == "finished" and rr[2]["outcome"] == "partial"
-    # flattened hover stats, exactly the fields the strip needs (tokens = in + out)
+    # flattened hover stats the strip needs (volume = every token class; this run is unpriced)
     assert rr[0] == {"run_id": "apir:20260704-070000", "ts": "20260704-070000",
-                     "state": "aborted", "outcome": None, "turns": 2, "tokens": 14,
-                     "cost": 0.0123, "elapsed_s": 95}
+                     "state": "aborted", "outcome": None, "turns": 2, "volume": 14,
+                     "notional": None, "cost": 0.0123, "elapsed_s": 95}
 
 
 def test_patch_routine_and_409_guard(client):

@@ -178,20 +178,20 @@ def test_monthly_spend_reads_the_durable_stream(tmp_path):
     """Monthly per-routine spend comes from workflow-usage.jsonl (survives run retention):
     depth-0 entries only (a parent's usage already folds its children in), background-task
     slugs attributed to their owner, malformed/dateless lines skipped, routines ordered by
-    latest-month tokens."""
+    latest-month context volume (the whole context processed — `tokens` leaves the cache out)."""
     s = ServerConfig()
     s.routines_home = tmp_path / "routines"
     ctrl = s.routines_home / ".control"
     ctrl.mkdir(parents=True)
     entries = [
         {"ts": "2026-06-20T10:00:00+00:00", "routine": "alpha", "depth": 0,
-         "tokens": 1000, "cost": 0.5},
+         "tokens": 1000, "volume": 90_000, "notional_cost": 0.4, "cost": 0.5},
         {"ts": "2026-07-01T10:00:00+00:00", "routine": "alpha", "depth": 0,
-         "tokens": 3000, "cost": 1.5},
+         "tokens": 3000, "volume": 300_000, "notional_cost": 1.2, "cost": 1.5},
         {"ts": "2026-07-02T10:00:00+00:00", "routine": "alpha", "depth": 1,
          "tokens": 999_999, "cost": 9.0},                      # child — already in the parent
         {"ts": "2026-07-03T11:00:00+00:00", "routine": "bg-chat-1a2b3c4d", "depth": 0,
-         "tokens": 500},                                       # detached task → owner "chat"
+         "tokens": 500, "volume": 500},                        # detached task → owner "chat"
         {"ts": "", "routine": "x", "depth": 0, "tokens": 5},   # dateless → skipped
     ]
     with (ctrl / "workflow-usage.jsonl").open("w", encoding="utf-8") as fh:
@@ -200,12 +200,14 @@ def test_monthly_spend_reads_the_durable_stream(tmp_path):
         fh.write("not json\n")
     m = monthly_spend(s)
     assert m["months"] == ["2026-06", "2026-07"]
-    assert m["by_routine"]["alpha"]["2026-07"] == {"runs": 1, "tokens": 3000, "cost": 1.5,
-                                                   "referrals": 0}
+    assert m["by_routine"]["alpha"]["2026-07"] == {"runs": 1, "tokens": 3000,
+                                                   "volume": 300_000, "notional": 1.2,
+                                                   "cost": 1.5, "referrals": 0}
     assert m["by_routine"]["alpha"]["2026-06"]["tokens"] == 1000
-    assert m["by_routine"]["chat"]["2026-07"] == {"runs": 1, "tokens": 500, "cost": 0.0,
+    assert m["by_routine"]["chat"]["2026-07"] == {"runs": 1, "tokens": 500, "volume": 500,
+                                                  "notional": 0.0, "cost": 0.0,
                                                   "referrals": 0}
-    assert list(m["by_routine"]) == ["alpha", "chat"]          # latest-month tokens, desc
+    assert list(m["by_routine"]) == ["alpha", "chat"]          # latest-month volume, desc
 
 
 def test_monthly_spend_counts_a_continued_run_once(tmp_path):
@@ -223,7 +225,7 @@ def test_monthly_spend_counts_a_continued_run_once(tmp_path):
     (ctrl / "workflow-usage.jsonl").write_text(
         "".join(json.dumps(leg) + "\n" for leg in legs), encoding="utf-8")
     assert monthly_spend(s)["by_routine"]["alpha"]["2026-07"] == {
-        "runs": 1, "tokens": 150, "cost": 0.5, "referrals": 3}
+        "runs": 1, "tokens": 150, "volume": 0, "notional": 0.0, "cost": 0.5, "referrals": 3}
 
 
 def test_monthly_spend_without_stream(tmp_path):
