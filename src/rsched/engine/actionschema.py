@@ -484,8 +484,7 @@ ACTION_SCHEMA: dict = {
                                     "new routine is materialized from (default general-task)"},
         "pattern": {"type": "string",
                     "description": "create_routine: the SETTINGS pattern the new routine "
-                                   "follows — one the preview lists for its workflow (default: "
-                                   "the one that fits)"},
+                                   "follows (default: the one that fits its workflow)"},
         "setup": {"type": "array", "items": {"type": "string"}, "maxItems": 12,
                   "description": "create_routine: the user's answers to the settings "
                                  "pattern's questions — which folders, which mailbox and "
@@ -494,12 +493,10 @@ ACTION_SCHEMA: dict = {
                                  "accepts on its page; they never go into the instruction"},
         "done_when": {"type": "array", "items": {"type": "string"}, "maxItems": 8,
                       "description": "create_routine: what ONE finished run of the new routine "
-                                     "leaves behind, in the USER's own words — one outcome per "
-                                     'entry ("the digest is published and the link works"). '
-                                     "They become lines of its recipe's `## Done when`, which "
-                                     "every run accounts for at its finish. Carry the user's "
-                                     "answer verbatim; omit it rather than inventing outcomes "
-                                     "they did not state"},
+                                     "leaves behind, in the USER's own words, one per entry "
+                                     '("the digest is published and the link works"): lines of '
+                                     "its `## Done when`, accounted for at every finish. Carry "
+                                     "their answer verbatim; never invent one"},
         "finish_line": {"type": "array", "items": {"type": "string"}, "maxItems": 6,
                         "description": "create_routine: when the ROUTINE is done for good, one "
                                        "outcome per entry, each led by its judge — `run: "
@@ -512,12 +509,15 @@ ACTION_SCHEMA: dict = {
                                        "rather than inventing an ending"},
         "never": {"type": "array", "items": {"type": "string"}, "maxItems": 8,
                   "description": "create_routine: what a run of the new routine must NEVER "
-                                 "do, in the USER's own words — one prohibition per entry "
-                                 '("never mail the funder", "never touch the Drafts folder"). '
-                                 "Each becomes a line of its recipe's `## Never`; its "
-                                 "proposed settings leave off the permission, or add the rule "
-                                 "or reminder, that stops the action before it happens. Omit "
-                                 "it when they named none"},
+                                 'do, in the USER\'s words, one per entry ("never mail the '
+                                 'funder"): lines of its `## Never`, and its settings leave off '
+                                 "what would allow it. Omit it when they named none"},
+        "replaces": {"type": "string",
+                     "description": "create_routine: an EXISTING routine's slug — create a "
+                                    "REPLACEMENT CANDIDATE for it at once (routine-rebuild "
+                                    "permission): its settings minus its secrets, unscheduled, "
+                                    "plus ONE swap decision for the user. Then write its recipe "
+                                    "and prove it beside the old one"},
         "label": {"type": "string",
                   "description": "spawn/subtask/detach: short name shown in the run tree"},
         "turns": {"type": "integer", "minimum": 1,

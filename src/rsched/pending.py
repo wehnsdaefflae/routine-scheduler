@@ -79,6 +79,8 @@ def identity(kind: str, routine: str, fields: dict) -> tuple:
                 str(fields.get("target") or fields.get("name") or ""))
     if kind == "library-drift":
         return (kind, routine, str(fields.get("entity") or ""))
+    if kind == "replace-routine":     # one standing swap per routine it would replace
+        return (kind, str(fields.get("replaces") or ""))
     return (kind, routine)
 
 

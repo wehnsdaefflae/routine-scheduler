@@ -1,4 +1,4 @@
-// The Decisions page's three PENDING bands — records a run or the daemon filed that nobody has
+// The Decisions page's four PENDING bands — records a run or the daemon filed that nobody has
 // decided yet. Bands of their own rather than rows blended into the decision list, because none
 // is a question: no answer text, no options, two buttons each.
 //
@@ -18,9 +18,12 @@
 //    CALENDAR reached cannot be reopened — reopening changes nothing a date decides — so its
 //    card sends the reader to the routine's Goal settings to change the date instead. Leaving
 //    a card is a real third state, not a delay.
+// 4. REPLACEMENTS — a candidate routine-improver rebuilt and proved, waiting for the ONE swap
+//    accept (components/swap-card.js, engine/candidate.py).
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
+import { SWAP, swapRow } from "/static/components/swap-card.js";
 import { el, groupHead, toast, toastError, when } from "/static/util.js";
 
 const DRIFT = "library-drift";
@@ -141,13 +144,18 @@ export function pendingBand({ onChanged } = {}) {
     if (!recs.length) { host.replaceChildren(); return; }
     const drift = recs.filter((r) => r.kind === DRIFT);
     const goals = recs.filter((r) => r.kind === GOAL);
-    const creations = recs.filter((r) => r.kind !== DRIFT && r.kind !== GOAL);
+    const swaps = recs.filter((r) => r.kind === SWAP);
+    const creations = recs.filter((r) => ![DRIFT, GOAL, SWAP].includes(r.kind));
     host.replaceChildren();
     // Finished routines first: this is the only band whose subject has ALREADY changed state.
     if (goals.length) {
       host.append(band("Finished",
         "these routines reached their finish line and have stopped running",
         goals, goalRow));
+    }
+    if (swaps.length) {
+      host.append(band("Replacements", "a rebuilt routine proved beside the one it replaces",
+        swaps, (rec) => swapRow(rec, { reload: load, onChanged })));
     }
     if (creations.length) {
       host.append(band("Queued creations",

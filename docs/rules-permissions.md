@@ -540,7 +540,7 @@ expects:                       # the SOFT edge — presumed, never enforced (see
 (No setting in `requires:` — an approval level, a history depth, the reminder or task layer is your
 choice per routine, never a doc's demand; the linter refuses one.)
 
-The shipped set — 17 docs, one file each in `library-seed/permissions/`, which is what a fresh
+The shipped set — 19 docs, one file each in `library-seed/permissions/`, which is what a fresh
 install seeds and the authority this table is written from. A permission exists only where
 holding it is a DECISION: a channel that reaches a person, an act that changes what every
 routine shares, a reach outside the routine's own world.
@@ -552,6 +552,7 @@ routine shares, a reach outside the routine's own world.
 | `rule-authoring` | `write_rule` — author or revise a general rule in the shared library (the approval level is `rule_confirm`) | opt-in |
 | `recipe-authoring` | the `write_recipe` capability — revise this routine's OWN `main.md` / `stages/` / `tuning.yaml`; `routine.yaml` stays sealed regardless | opt-in |
 | `scheduling` | `schedule_run` — arm or cancel a one-shot future run of a routine | opt-in |
+| `routine-rebuild` | the `rebuild_routine` capability — `create_routine` with `replaces` creates a REPLACEMENT CANDIDATE at once (the old routine's settings without its secrets, unscheduled) and files the one swap decision (engine/candidate.py) | opt-in |
 | `shell` | the `shell` action — one host command per turn, in the run's own jail with no secret injected | opt-in |
 | `outbound-mail` | `gmail:send`, `fau-mail:send` — send email from the user's own mailboxes | opt-in |
 | `steward-publishing` | nothing; expects READ access to the shared kit — publish this routine's page on the Steward hub (see [status pages](status-pages.md)) | opt-in |

@@ -111,6 +111,9 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         if obs.get("error"):
             return (f"OBSERVATION (create_routine {slug!r} FAILED): {obs['error']}. Fix the "
                     "slug / workflow / instruction and try again.")
+        if obs.get("candidate"):                 # engine/candidate.py
+            return (f"OBSERVATION (create_routine: replacement candidate {slug!r} for "
+                    f"{obs.get('replaces')!r} CREATED at {obs.get('dir')}. {obs.get('next')})")
         if obs.get("draft"):
             # D92's preview step MUST NOT read as success: before 0.222.0 this fell through
             # to the created-copy below, so the agent announced a routine that did not exist

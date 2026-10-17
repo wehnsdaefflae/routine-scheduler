@@ -73,13 +73,12 @@ from .reminders import LEVELS as REMINDER_LEVELS
 # gated but no permission grants it: it is STRUCTURAL, added to a root conversation's policy
 # at setup (engine/loopsetup.build_base_policy) and to nothing else.
 GATED_KINDS = ("write_util", "revise_util", "remove_util", "write_rule", "write_recipe",
-               "detach", "schedule_run", "shell")
-# `write_recipe` is a capability TOKEN too, on the same terms: the model emits write_file /
-# edit_file and the engine decides from the PATH whether the target is this routine's own
-# recipe (grantpolicy.is_recipe_path). Before 0.261.0 that was not a capability at all — it
-# unlocked as a SIDE EFFECT of a user-granted fs_write_root covering the routine's own dir,
-# which meant granting a routine write access to its own working directory silently handed it
-# the right to rewrite its own instructions. Now it is a switch you throw on purpose.
+               "detach", "schedule_run", "shell", "rebuild_routine")
+# `write_recipe` is a capability TOKEN too: the model emits write_file / edit_file and the
+# engine decides from the PATH whether it is this routine's recipe (grantpolicy.is_recipe_path).
+# Before 0.261.0 it unlocked as a SIDE EFFECT of a write root covering the routine's own dir; now
+# it is a switch thrown on purpose. So is `rebuild_routine`: create_routine with `replaces`
+# writes a NEW routine's config (engine/candidate.py) only for a routine holding it.
 # `revise_util` is a CAPABILITY token, NOT an action kind: the model always emits
 # kind=write_util, and the engine decides create-vs-revise from whether the target slug
 # already exists in the library (see GrantPolicy.deny). Keeping it out of the action schema
@@ -93,10 +92,9 @@ CAPABILITY_ACTIONS = tuple(k for k in GATED_KINDS if k != "detach")
 # When no library permission doc requires a gated kind (e.g. the library predates it),
 # denials still name the doc that canonically covers its conduct.
 _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "revise_util": "util-authoring",
-                        "write_recipe": "recipe-authoring",
-                        "remove_util": "util-removal",
-                        "write_rule": "rule-authoring",
-                        "schedule_run": "scheduling", "shell": "shell"}
+                        "write_recipe": "recipe-authoring", "remove_util": "util-removal",
+                        "write_rule": "rule-authoring", "schedule_run": "scheduling",
+                        "shell": "shell", "rebuild_routine": "routine-rebuild"}
 # write_util approval policy, least → most permissive: "always" (user approves create AND
 # revise), "creations" (revisions are autonomous once the selftest passes; NEW utils ask),
 # "never".

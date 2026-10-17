@@ -25,18 +25,13 @@ leg's user-utterance count beside its pid, and the same leg may confirm once tha
 grown. A changed field on the confirming call is a DESIGN CHANGE, not a confirmation: it
 replaces the draft and restarts the round-trip.
 
-Structural rule (mirrors `detach`): valid ONLY from a ROOT CONVERSATION (depth 0, dir directly
-under conversations_home). A scheduled routine has no user in the loop to design a new routine
-with, and a within-reply child must not create routines as a side effect. The engine ALSO only
-surfaces the kind to a root conversation (loop.allowed_tools injection), so this is defence in
-depth, not the only gate.
+Structural rule: it MATERIALIZES only in a ROOT CONVERSATION; any other depth-0 run QUEUES a
+proposal (F328), a child run is refused, and a call with `replaces` creates a replacement
+CANDIDATE at once, its swap the one decision (engine/candidate.py).
 
-Unlike `detach` (which drops an intent for the daemon because an HTTP request cannot block on a
-minute-long build), the handler scaffolds SYNCHRONOUSLY: an engine turn already does long async
-work and returns an observation, the conversation user is waiting for the routine now, and the
-daemon's registry rescan (`registry_rescan_s`) picks the new dir up on its own timer — so no new
-daemon manager is needed. The slow step is the workflow decompose inside scaffold, which degrades
-to a no-LLM fallback when no endpoint is available (tests, offline).
+Unlike `detach`, the handler scaffolds SYNCHRONOUSLY: the user is waiting for the routine now,
+and the registry rescan (`registry_rescan_s`) picks the new dir up on its own timer. The slow
+step, scaffold's workflow decompose, degrades to a no-LLM fallback with no endpoint (tests).
 """
 
 from __future__ import annotations
@@ -46,6 +41,7 @@ from pathlib import Path
 
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
+from . import candidate
 from .run_context import RunContext
 from .runkind import is_root_conversation
 
@@ -377,8 +373,11 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
                  (optional; engine/finishline.from_words)
       never    — what a run must never do, in the USER's words (optional); lines of the
                  recipe's `## Never` and context for the settings it is proposed
+      replaces — an existing routine's slug: create a REPLACEMENT CANDIDATE (engine/candidate.py)
     Every field is part of the draft's identity, so changing one restarts the confirmation.
     """
+    if action.get("replaces"):      # created at once, never drafted — its swap is the decision
+        return candidate.create(ctx, action)
     slug = str(action.get("target") or "").strip()
     name = str(action.get("name") or "").strip()
     instruction = str(action.get("prompt") or "").strip()

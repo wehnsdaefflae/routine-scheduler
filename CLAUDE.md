@@ -396,6 +396,15 @@ one you are about to touch, not all of them.
   own routine.yaml, which no run may write. A within-reply CHILD (depth > 0) is
   refused outright and never sees the kinds: the queue is for a run that HAS a user, just not
   right now. Ungated like `report` — the approval is the gate, and it is a human.
+  ONE exception creates at once: `create_routine` with `replaces: <slug>` from a depth-0 run
+  holding the `rebuild_routine` capability (the `routine-rebuild` permission, routine-improver's)
+  makes a REPLACEMENT CANDIDATE (`engine/candidate.py`) — the old routine's routine.yaml with
+  its own slug, on no schedule, in no lane and WITHOUT its `grants`, so it holds no authority the
+  operator did not already give and cannot act in the principal's name — and files ONE
+  `replace-routine` card. Accepting it is the SWAP (`api_pending._materialize_replace`): the
+  candidate takes the old routine's lane place, cron and grants through the ordinary writers and
+  the old one is switched off (kept); discarding switches the candidate off.
+  `.control/candidates.json` says which routine is a candidate for which.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
   and an optional `request` ("<class>:<name>" entity id, entities.py): a typed ACCESS REQUEST the
   Decisions page settles with one of four decisions (allow/deny × now/forever). Forever-decisions
