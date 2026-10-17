@@ -72,7 +72,7 @@ const SHARES = new Set(["failed", "partial", "met_rate", "cache_share", "util_fa
 export function fmtSignal(name, v) {
   if (v === null || v === undefined) return "—";
   if (SHARES.has(name)) return `${Math.round(v * 100)}%`;
-  if (name === "tokens") return fmtNum(v);
+  if (name === "volume") return fmtNum(v);
   if (name === "elapsed_s") return (v / 60).toFixed(1);
   return String(Math.round(v * 100) / 100);
 }

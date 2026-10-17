@@ -355,8 +355,10 @@ moment without carrying the prose.
 
 Improvement passes are deliberately NOT rules: the bundled **routine-improver**
 meta routine sweeps every routine that doesn't set `improve: false` in its
-routine.yaml (an include-by-default toggle on the routine page) and runs the five lenses — bugfix, research,
-features, UI, efficiency — plus a fresh-eyes de-clutter pass on each, itself included.
+routine.yaml (an include-by-default toggle on the routine page), itself included, and starts each
+with an OUTCOME REVIEW — its measured outcome against its context volume — ending in one verdict:
+declare, improve, streamline (over its size budget) or rebuild (a candidate swapped with one
+accept, engine/candidate.py).
 
 ### Which rules bind a routine (the SET)
 

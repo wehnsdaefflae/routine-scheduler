@@ -42,13 +42,14 @@ Stats tab.
 ## How the system improves itself
 
 - **Across routines**: the `routine-improver` meta routine sweeps every routine
-  that hasn't opted out with `improve: false` — **itself included** — and improves
-  each through five lenses (bugfix, research, features, ui, efficiency) plus a fresh-eyes
-  de-clutter pass that hunts what accumulated over many revisions. It infers each routine's
-  intention from its recent runs, grounds changes in online research, applies the safe
-  reversible ones directly (committed per routine), and files a deferred question to the
-  **Decisions** page when unsure; answers are remembered in the LEDGERs, so user
-  interaction shrinks over time. Self-improvement is **outcome-gated**: every run is
+  that hasn't opted out with `improve: false` — **itself included** — and starts every
+  target with an **outcome review**: what the routine's own `scripts/outcome.py` measured run
+  by run (its OUTCOME contract, `outcome:` in routine.yaml) against what those runs cost in
+  context volume and notional dollars — never the routine's own health claims. The verdict is
+  *declare* (make it measurable), *improve*, *streamline* (over its size budget, the job is
+  deletion) or *rebuild*: a flat outcome at high cost gets a replacement CANDIDATE under a new
+  slug, proved beside the old routine and swapped in with one accept on the **Decisions** page.
+  Config changes go there too, as one-click proposals. Self-improvement is **outcome-gated**: every run is
   stamped with the recipe version that produced it, the Recipe health of the routine's
   development view (Develop → Changes) buckets outcomes by version, a deterministic
   heuristic flags a change whose runs got clearly worse — and one click rolls the recipe

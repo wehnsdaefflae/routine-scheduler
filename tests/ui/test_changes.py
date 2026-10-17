@@ -38,15 +38,15 @@ def _at(runs: list[dict]) -> list[dict]:
 def seed_changes(ui, make_routine) -> None:
     """`uir`: a recipe change that cost more and delivered less (regressed), then a model
     change still collecting its runs (measuring). `uis`: held still across an engine release
-    that halved its tokens (improved) — the release row."""
+    that halved its volume (improved) — the release row."""
     make_routine(slug="uis")
     uir = ([measured_run(i, slug="uir") for i in range(1, 6)]
-           + [measured_run(i, slug="uir", recipe="c2a9f3e1", tokens=90_000, met=1)
+           + [measured_run(i, slug="uir", recipe="c2a9f3e1", volume=9_000_000, met=1)
               for i in range(6, 11)]
-           + [measured_run(i, slug="uir", recipe="c2a9f3e1", model="Sonnet high", tokens=90_000,
+           + [measured_run(i, slug="uir", recipe="c2a9f3e1", model="Sonnet high", volume=9_000_000,
                            met=1) for i in (11, 12)])
     uis = ([measured_run(i, slug="uis") for i in range(1, 6)]
-           + [measured_run(i, slug="uis", engine="0.397.0", tokens=20_000) for i in range(6, 11)])
+           + [measured_run(i, slug="uis", engine="0.397.0", volume=2_000_000) for i in range(6, 11)])
     write_usage_stream(ui.routines, _at(uir) + _at(uis))
 
 
@@ -54,7 +54,7 @@ def seed_regression(ui) -> None:
     """`uir` alone, its newest change a regression."""
     write_usage_stream(ui.routines, _at(
         [measured_run(i, slug="uir") for i in range(1, 6)]
-        + [measured_run(i, slug="uir", recipe="c2a9f3e1", tokens=90_000, met=1)
+        + [measured_run(i, slug="uir", recipe="c2a9f3e1", volume=9_000_000, met=1)
            for i in range(6, 11)]))
 
 
@@ -177,10 +177,10 @@ def test_a_routines_development_view(ui, ui_page, make_routine):
     expect(detail).to_be_hidden()
     regressed.locator(".chg-toggle").click()
     expect(detail).to_be_visible()
-    tokens = detail.locator('tr[data-signal="tokens"]')
-    expect(tokens).to_contain_text("40.0k → 90.0k")
-    expect(tokens.locator(".sig-mark")).to_have_text("▲")
-    expect(tokens.locator(".sig-mark")).to_have_attribute("data-tone", "worse")
+    volume = detail.locator('tr[data-signal="volume"]')
+    expect(volume).to_contain_text("4.00M → 9.00M")
+    expect(volume.locator(".sig-mark")).to_have_text("▲")
+    expect(volume.locator(".sig-mark")).to_have_attribute("data-tone", "worse")
     met = detail.locator('tr[data-signal="met_rate"]')
     expect(met).to_contain_text("100% → 50%")
     expect(met.locator(".sig-mark")).to_have_text("▼")
@@ -249,14 +249,14 @@ def test_the_weeks_strip_draws_gaps_rebuilt_weeks_and_releases(ui, ui_page):
     days = [f"2026-09-{d:02d}" for d in (7, 8, 9, 10, 11, 21, 22, 23, 24, 25)]   # W37, W39
     write_usage_stream(ui.routines, _dated(
         [measured_run(i, slug="uir", rebuilt=True) for i in range(1, 6)]
-        + [measured_run(i, slug="uir", engine="0.397.0", tokens=60_000) for i in range(6, 11)],
+        + [measured_run(i, slug="uir", engine="0.397.0", volume=6_000_000) for i in range(6, 11)],
         days))
     ui_page.set_viewport_size(WIDE)
     ui_page.goto(f"{ui.url}/#/changes")
     strip = ui_page.locator(".spark-strip")
     expect(strip).to_have_attribute("data-weeks", "3")
     expect(strip.locator("figure.spark-cell")).to_have_count(6)
-    tokens = strip.locator('svg[data-spark="tokens"]')
+    tokens = strip.locator('svg[data-spark="volume"]')
     expect(tokens).to_have_attribute("role", "img")
     expect(tokens).to_have_attribute("aria-label", re.compile(r"newest ×\d.*1 week without a reading"))
     expect(tokens.locator("rect.spark-hit[data-gap]")).to_have_count(1)
@@ -278,7 +278,7 @@ def test_the_weeks_strip_draws_gaps_rebuilt_weeks_and_releases(ui, ui_page):
     cells = ui_page.locator(".spark-strip figure.spark-cell")
     expect(cells).to_have_count(4)
     assert cells.evaluate_all("(fs) => fs.map((f) => f.dataset.series)") == [
-        "tokens", "turns", "met_rate", "interventions"]
+        "volume", "turns", "met_rate", "interventions"]
     expect(ui_page.locator('svg[data-spark="turns"] rect[data-gap]')).to_have_count(1)
 
 
@@ -309,8 +309,8 @@ def test_changes_faster_than_the_routine_ran_fold_into_one_row(ui, ui_page):
     as ONE row that opens onto them; the judged change before them stands on its own."""
     write_usage_stream(ui.routines, _at(
         [measured_run(i, slug="uir") for i in range(1, 6)]
-        + [measured_run(i, slug="uir", recipe="c2a9f3e1", tokens=90_000, met=1) for i in range(6, 11)]
-        + [measured_run(i, slug="uir", recipe=f"c{i - 8}x", tokens=90_000, met=1)
+        + [measured_run(i, slug="uir", recipe="c2a9f3e1", volume=9_000_000, met=1) for i in range(6, 11)]
+        + [measured_run(i, slug="uir", recipe=f"c{i - 8}x", volume=9_000_000, met=1)
            for i in range(11, 17)]))
     ui_page.set_viewport_size(WIDE)
     ui_page.goto(f"{ui.url}/#/changes/uir")
@@ -342,7 +342,7 @@ def test_a_reading_on_rebuilt_runs_wears_the_mark(ui, ui_page):
     unknown), carry "≈" with what it means in the tooltip; a live run's change does not."""
     write_usage_stream(ui.routines, _at(
         [measured_run(i, slug="uir", rebuilt=True) for i in range(1, 6)]
-        + [measured_run(i, slug="uir", recipe="c2a9f3e1", tokens=90_000, met=1, rebuilt=True)
+        + [measured_run(i, slug="uir", recipe="c2a9f3e1", volume=9_000_000, met=1, rebuilt=True)
            for i in range(6, 11)]))
     ui_page.set_viewport_size(WIDE)
     ui_page.goto(f"{ui.url}/#/changes/uir")
@@ -392,7 +392,7 @@ def test_a_batch_of_rule_revisions_reads_as_a_count(ui, ui_page):
     rules = [f"rule-{c}" for c in "abcdefghijk"]
     write_usage_stream(ui.routines, _at(
         [measured_run(i, slug="uir", rules=dict.fromkeys(rules, "r1")) for i in range(1, 6)]
-        + [measured_run(i, slug="uir", rules=dict.fromkeys(rules, "r2"), tokens=90_000)
+        + [measured_run(i, slug="uir", rules=dict.fromkeys(rules, "r2"), volume=9_000_000)
            for i in range(6, 11)]))
     ui_page.set_viewport_size(WIDE)
     ui_page.goto(f"{ui.url}/#/changes/uir")

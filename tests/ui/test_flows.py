@@ -1050,9 +1050,9 @@ def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
 def test_spend_surfaces(ui, ui_page):
     entries = [
         {"ts": "2026-06-10T08:00:00+00:00", "routine": "uir", "depth": 0,
-         "tokens": 900_000, "cost": 0.9},
+         "tokens": 900_000, "volume": 900_000, "notional_cost": 0.9, "cost": 0.0},
         {"ts": "2026-07-10T08:00:00+00:00", "routine": "uir", "depth": 0,
-         "tokens": 2_000_000, "cost": 2.0},
+         "tokens": 2_000_000, "volume": 2_000_000, "notional_cost": 2.0, "cost": 0.0},
     ]
     ctrl = ui.routines / ".control"
     ctrl.mkdir(parents=True, exist_ok=True)
@@ -1064,8 +1064,8 @@ def test_spend_surfaces(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")   # dashboard: the card carries the compact month line
     ui_page.get_by_role("button", name="▦ card view").click()   # list is the default (D72)
     card = ui_page.locator(".card", has_text="Test uir")
-    expect(card).to_contain_text("Jul: 2.00M tok")
-    expect(card).to_contain_text("Jun: 900.0k tok")
+    expect(card).to_contain_text("Jul: 2.00M vol")
+    expect(card).to_contain_text("Jun: 900.0k vol")
     expect(card.locator(".chip.partial", has_text="growing")).to_be_visible()
 
     ui_page.goto(f"{ui.url}/#/stats")   # stats: the monthly table with the trend chip

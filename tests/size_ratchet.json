@@ -99,7 +99,7 @@
     "tests/test_triggers.py": 502,
     "tests/test_utils.py": 839,
     "tests/test_view_image.py": 604,
-    "tests/ui/conftest.py": 517,
+    "tests/ui/conftest.py": 516,
     "tests/ui/test_changes.py": 418,
     "tests/ui/test_flows.py": 2127,
     "tests/ui/test_lanes.py": 358,

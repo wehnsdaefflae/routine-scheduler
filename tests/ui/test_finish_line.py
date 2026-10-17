@@ -129,7 +129,8 @@ def test_the_latest_distance_links_to_the_run_that_reported_it(ui, ui_page):
 
 def test_what_a_finished_run_delivers_is_read_only_with_the_last_verdicts(ui, ui_page):
     main = ui.routines / "uir" / "main.md"
-    main.write_text(main.read_text(encoding="utf-8") + DONE_WHEN, encoding="utf-8")
+    main.write_text(main.read_text(encoding="utf-8").split("\n## Done when")[0] + DONE_WHEN,
+                    encoding="utf-8")
     for ts, d1 in (("20260712-070000", "met: all read"), ("20260713-070000",
                                                           "unmet: the mailbox refused the login")):
         run = ui.seed_run("uir", ts, "finished", summary="done")
@@ -164,7 +165,8 @@ def test_a_runs_page_shows_that_runs_own_accounting(ui, ui_page):
     """The run rail's goal section is THIS run's accounting, labelled with the lines it
     answered for. (Needs the run detail to carry the status's `accounting` list.)"""
     main = ui.routines / "uir" / "main.md"
-    main.write_text(main.read_text(encoding="utf-8") + DONE_WHEN, encoding="utf-8")
+    main.write_text(main.read_text(encoding="utf-8").split("\n## Done when")[0] + DONE_WHEN,
+                    encoding="utf-8")
     run = ui.seed_run("uir", "20260713-070000", "finished", summary="done")
     status = json.loads((run / "status.json").read_text(encoding="utf-8"))
     status["accounting"] = ["d1 unmet: the mailbox refused the login",

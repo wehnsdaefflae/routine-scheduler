@@ -25,6 +25,7 @@ import yaml
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import expect
 
+from helpers import declare_outcome
 from rsched.bootstrap import seed_libraries
 from rsched.config import load_server_config
 from rsched.paths import atomic_write_json
@@ -39,8 +40,7 @@ _UI_DIR = Path(__file__).parent
 # Host header that is not an IP literal, and a fixture console the sidecar must reach cannot
 # bind a loopback the sidecar does not share. They are named in the refusals below rather than
 # defaulted, because they exist ONLY inside that network: a default would turn one legible
-# one-line refusal on any other box into a CDP connect timeout followed by a bind error on an
-# address the machine does not have.
+# refusal on any other box into a CDP timeout and a bind error on an address it does not have.
 SIDECAR_CDP = "http://172.30.7.10:9222"
 SIDECAR_BIND = "172.30.7.2"
 HOW_TO_RUN = (f"Run the browser suite inside the engine container, where the compose `browser` "
@@ -58,9 +58,8 @@ HOW_TO_RUN = (f"Run the browser suite inside the engine container, where the com
 # is what the rerun shield below was absorbing: measured over the release gate's own ledger,
 # ~530 serial browser-test executions produced 3 reruns while every 3-worker invocation produced
 # dozens, and the full 3-worker browser gate timed out at 1500 s with 38 reruns. `loadgroup`
-# (switched on in tests/conftest.py whenever browser tests are selected) sends every item
-# carrying this group to the same worker, so the browser suite runs serially while the fast
-# suite keeps spreading across the rest.
+# (switched on in tests/conftest.py whenever browser tests are selected) sends every item in
+# this group to one worker: the browser suite runs serially while the fast suite spreads.
 BROWSER_GROUP = "browser"
 
 
@@ -314,7 +313,7 @@ def ui(tmp_path, monkeypatch, make_routine, library_template, test_tls) -> UiHar
     (so conversations can materialize `converse`), a stub runner, uvicorn on an
     ephemeral port. Tears the server down after the test.
     """
-    make_routine(slug="uir")
+    declare_outcome(make_routine(slug="uir"))
     # The generated-docs tree the Help tab reads. It is the one home that does NOT follow the
     # config file, so without this the suite reads ~/.cache and a Help assertion depends on
     # whether the machine happens to have run a build. `ui.docs` seeds it where a test wants
