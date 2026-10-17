@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 import yaml
@@ -219,6 +220,24 @@ def pid_alive(pid: int) -> bool:
     except FileNotFoundError:
         return False
     return not stat.rsplit(") ", 1)[1].startswith("Z")
+
+
+def weekly_cron_at(moment, tz: str = "UTC") -> str:
+    """A WEEKLY cron whose fire is exactly `moment` in zone `tz` — for a test that must stamp a
+    real fire of a real schedule against the live clock.
+
+    Writing the instant by hand instead is a clock-dependent bug that hides for most of the
+    week: `test_the_resume_endpoint_makes_up_the_dropped_fire` stamped `now - 1h` as the fire of
+    a fixed `0 5 * * 6` lane, and in the window Sat 00:00-03:59 UTC the next Saturday 05:00 fire
+    is under four hours away — so one hour owed is past the quarter-cadence bound that decides a
+    make-up, the judgement correctly declined, and the assertion failed. 4 of 168 hours, one of
+    which reddened a release gate armed at 00:07 on a Saturday. Derived, the interval is a true
+    168 h at every hour of the week.
+
+    Note the two weekday conventions: cron's Sunday is 0, Python's Monday is 0.
+    """
+    local = moment.astimezone(ZoneInfo(tz))
+    return f"{local.minute} {local.hour} * * {(local.weekday() + 1) % 7}"
 
 
 def mock_proxy(monkeypatch, handler) -> None:
