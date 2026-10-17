@@ -15,6 +15,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.428.0] — 2026-10-17
+
+What the operator had to do by hand on 2026-10-17 — replace freelance-radar (89 applications,
+zero interviews) and grants-radar (no new programme in 14 runs) with lean outcome-led
+rebuilds — now comes out of regular maintenance. Every judge on the instance had read the
+routine's own account, ranked its cost by a number that left the prompt cache out, and turned
+the operator's complaints about results into more self-checking.
+
+### Added
+- **Outcome contract** (`config/outcome.py`, `engine/outcome.py`). `outcome:` in routine.yaml
+  declares a principal and up to six measures; the routine's `scripts/outcome.py` computes them
+  from its own state after every run, recorded as `outcome_measures` in status.json and the
+  usage row. `GET /api/changes/{slug}/outcome` and an Outcome panel that leads the development
+  view read the series against cost. The setup surface's new `recipe:outcome` row BLOCKS
+  `rsched validate` until the contract, the script and a Done-when line naming a measure exist
+  (remedy `declare_outcome`); it is the routine's own row — never library drift, never a boot
+  note.
+- **Replacement candidates** (`engine/candidate.py`). `create_routine` with `replaces: <slug>`,
+  behind the new `rebuild_routine` capability (`routine-rebuild` permission), creates a candidate
+  at once — the old routine's settings without its secrets, unscheduled — and files ONE
+  `replace-routine` decision: accepting swaps lane place, cron and secrets and switches the old
+  routine off.
+- **Obligations** (`engine/obligations.py`). A routine's goals left open at a run's end carry
+  into the next run until one meets them; an answer given between runs is recorded as an
+  `answer` event so a run can quote it as a goal — an approval is a goal.
+- **Owed work reaches the operator** (`daemon/owed_watch.py`): `obligation_overdue` on the
+  blocked-work surface after a week, and an `unowned-report` Decisions card (route it or close
+  it) for a report nobody owns after a week.
+- **`outcome-first`** — a new default rule, with an `outcome-questioned` assist that surfaces it
+  when a person's words question results.
+- **Notional cost** (`endpoints/prices.py`): every completion priced at the instrumentation seam
+  from one source per route — a metered route's own bill or published price, a subscription
+  route's list price from the public catalog, re-read daily; unpublished stays unpriced.
+
+### Changed
+- **Every cost ranking reads VOLUME** — fresh, output, cache reads and writes — not `tokens`:
+  the trend alarm, the version buckets, the change signal, model fit, the Stats slices, monthly
+  spend, the dashboard spend line and the heartbeat. Usage rows carry `cached_in`,
+  `cache_write`, `volume` and `notional_cost` (`usage_log.py`, split out of `health_events.py`).
+  BALLOON_RATIO re-measured on volume (p95 2.51); VOLUME_FLOOR 2M.
+
+### Migration
+- `migrate_usage_volume.py`, MIGRATION(expires=2026-12-15): past usage rows backfilled with their
+  leg's cache traffic from what each run recorded; null where nothing did. `notional_cost` is
+  null on past rows.
+
 ## [0.427.0] — 2026-10-17
 
 ### Added
