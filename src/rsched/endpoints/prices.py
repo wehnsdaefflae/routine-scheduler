@@ -151,12 +151,25 @@ def refresh(server, reference_body: dict | None) -> dict:
         else:
             unpriced.append(f"{mc.endpoint}/{mc.model}")
     cache_path(home).parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(cache_path(home), {"fetched": datetime.now(UTC).isoformat(),
-                                         "rows": rows, "unpriced": unpriced})
+    atomic_write_json(cache_path(home), {
+        "fetched": datetime.now(UTC).isoformat(), "rows": rows, "unpriced": unpriced,
+        "checked": [f"{mc.endpoint}|{mc.model}" for mc in server.models.values()]})
     if unpriced:
         log.info("prices: %d configured model(s) have no published price: %s",
                  len(unpriced), ", ".join(unpriced))
     return {"priced": len(rows), "unpriced": unpriced}
+
+
+def missing(server) -> bool:
+    """Has a configured model never been through a price refresh? Read by `limits.stale`, so a
+    deploy that brings this cache, or a model added in Settings, is priced at the next tick
+    rather than at the limits cache's next daily expiry (0.428.0 left a day of runs unpriced).
+    """
+    data = read_json(cache_path(server.routines_home))
+    checked = data.get("checked") if isinstance(data, dict) else None
+    if not isinstance(checked, list):
+        return True
+    return any(f"{mc.endpoint}|{mc.model}" not in checked for mc in server.models.values())
 
 
 def price_for(routines_home: Path | None, endpoint: str, model: str) -> Rates | None:

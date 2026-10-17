@@ -19,7 +19,8 @@ import pytest
 
 from helpers import tmp_server
 from rsched.config import EndpointConfig, ModelConfig, ServerConfig
-from rsched.endpoints import EndpointRegistry, catalogs, limits
+from rsched.endpoints import EndpointRegistry, catalogs, limits, prices
+from rsched.paths import atomic_write_json
 
 
 def _server(tmp_path, *, endpoints=None, models=None) -> ServerConfig:
@@ -192,6 +193,8 @@ def test_a_dead_provider_never_raises(tmp_path, monkeypatch):
 def test_the_ttl_stops_a_refresh_per_tick(tmp_path, monkeypatch):
     server = _server(tmp_path)
     _cache(server, **{"or|moonshot/kimi-k3": {"context_tokens": 1, "max_output_tokens": 1}})
+    atomic_write_json(prices.cache_path(server.routines_home), {
+        "rows": {}, "checked": [f"{m.endpoint}|{m.model}" for m in server.models.values()]})
     assert limits.stale(server) is False
     calls = []
     monkeypatch.setattr(catalogs, "_get", lambda *a, **k: calls.append(1) or None)

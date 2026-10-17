@@ -474,8 +474,11 @@ chosen by its route: a metered endpoint (OpenRouter, Nano-GPT) is priced by its 
 bill it reports on the call, else its own published rates for that exact id; a subscription
 proxy (every `anthropic` endpoint here, the codex and antigravity proxies) at the model's list
 price in the public reference catalog. There is no price to configure and no fallback table: a
-model no source prices is listed as `unpriced` and its calls carry no figure. docs/run-analytics.md
-("What a run costs") is where the figure is read.
+model no source prices is listed as `unpriced` and its calls carry no figure. The cache records
+which models it CHECKED, and a configured model missing from that list makes the limits cache
+stale (`prices.missing`), so a new model — or a deploy that brings the price cache — is priced at
+the next tick rather than at the next daily expiry. docs/run-analytics.md ("What a run costs") is
+where the figure is read.
 
 ## Windows and output caps are DISCOVERED — leave them blank
 

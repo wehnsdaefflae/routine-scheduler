@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.428.1] — 2026-10-17
+
+### Fixed
+- **Runs are priced from the first tick after a deploy.** 0.428.0 refreshed prices only with
+  the model-limits cache, whose 24-hour TTL was still running from before the deploy — so
+  `.control/model-prices.json` was never written and every run since read `notional_cost: null`.
+  The price cache now records the models it checked, and a configured model it has never
+  checked makes the limits cache stale (`prices.missing`), which also prices a model added in
+  Settings at once.
+
 ## [0.428.0] — 2026-10-17
 
 What the operator had to do by hand on 2026-10-17 — replace freelance-radar (89 applications,

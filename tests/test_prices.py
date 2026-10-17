@@ -130,3 +130,17 @@ def test_the_seam_prices_every_completion(tmp_path):
     prices.refresh(server, REFERENCE)
     comp = InstrumentedEndpoint(Inner(), server.routines_home).complete([], model="claude-opus-5")
     assert comp.usage["notional"] == 5.0
+
+
+def test_a_model_never_priced_makes_the_limits_cache_stale(tmp_path, monkeypatch):
+    """0.428.0 shipped the price cache behind the limits TTL: a limits cache written before the
+    deploy stayed fresh for a day, so no run was priced until it expired."""
+    from rsched.endpoints import limits
+    server = _server(tmp_path)
+    monkeypatch.setattr(limits, "_missing_models", lambda *_: False)
+    monkeypatch.setattr(limits, "load", lambda _h: {"fetched": "2999-01-01T00:00:00+00:00"})
+    assert prices.missing(server) and limits.stale(server)
+    prices.refresh(server, REFERENCE)
+    assert not prices.missing(server) and not limits.stale(server)
+    server.models["new"] = ModelConfig(endpoint="proxy", model="claude-new")
+    assert prices.missing(server)       # a model added in Settings is priced at the next tick

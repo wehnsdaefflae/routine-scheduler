@@ -206,12 +206,8 @@ def refresh(server, *, force: bool = False) -> dict:
     home = server.routines_home
     cache = load(home)
     now = datetime.now(UTC)
-    if not force and not _missing_models(server, cache) and cache.get("fetched"):
-        try:
-            if datetime.fromisoformat(str(cache["fetched"])) + TTL > now:
-                return {"written": 0, "skipped": len(_rows(cache)), "misses": []}
-        except ValueError:
-            pass
+    if not force and not stale(server):
+        return {"written": 0, "skipped": len(_rows(cache)), "misses": []}
 
     by_endpoint: dict[str, list[str]] = {}
     for mc in server.models.values():
@@ -270,9 +266,11 @@ def refresh(server, *, force: bool = False) -> dict:
 
 
 def stale(server) -> bool:
-    """Is the cache older than the TTL (or absent)? The daemon's tick check."""
+    """Is the cache older than the TTL (or absent), or has a configured model never been
+    priced (`prices.missing`)? The daemon's tick check, and `refresh`'s own.
+    """
     cache = load(server.routines_home)
-    if _missing_models(server, cache):
+    if _missing_models(server, cache) or prices.missing(server):
         return True
     fetched = cache.get("fetched")
     if not fetched:
