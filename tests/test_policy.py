@@ -3,9 +3,14 @@
 1. **Delete-after-convergence** (migrations): one-shot migration code must declare its own
    expiry with a `MIGRATION(expires=YYYY-MM-DD)` marker comment next to the code, and the
    suite FAILS once that date passes — a "temporary" migration can never silently become
-   permanent. It fires for real: the 2026-08-31/09-01 batch was deleted on its expiry. The
-   deploy scripts are read too: they migrate the state they keep (backup.sh's snapshot
-   layout), and a marker nothing reads is exactly the silent permanence this exists to stop.
+   permanent. It fires for real: the 2026-08-31/09-01 batch was deleted on its expiry, and the
+   five settings-patterns markers of 2026-10-20 were deleted four days early because of it.
+   The grammar and the one reader live in `rsched.migration_markers`, which also says why
+   NARRATION about a marker is not a declaration (R2596: a tombstone comment that quoted its own
+   marker reddened `main` itself and blocked every release on the host) and why a back-compat
+   ALIAS TABLE must declare an expiry too (F699). The deploy scripts are read as well: they
+   migrate the state they keep (backup.sh's snapshot layout), and a marker nothing reads is
+   exactly the silent permanence this exists to stop.
 2. **Version discipline**: a bump of `rsched.__version__` must come with a matching
    `## [x.y.z]` header at the top of CHANGELOG.md (0.27 shipped without notes once).
    A pre-commit hook runs this file so the mismatch never reaches a commit.
@@ -17,55 +22,117 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import rsched
+from rsched import migration_markers as markers
 
 SRC = Path(rsched.__file__).parent
 REPO = Path(__file__).resolve().parent.parent
-
-MIGRATION_MARKER = re.compile(r"MIGRATION\(expires=(\d{4}-\d{2}-\d{2})\)")
-# code that LOOKS like a migration: a migrate-named def/class, a migrate-* CLI command, or a
-# migrate-named shell function in a deploy script
-MIGRATION_CODE = re.compile(r"def \w*migrat\w*|class \w*[Mm]igrat\w*|[\"']migrate-"
-                            r"|^\s*\w*migrat\w*\s*\(\)\s*\{", re.MULTILINE)
-
 
 #: How much notice a MIGRATION marker gives before its hard expiry (F628). The hard fail is
 #: unchanged and still the enforcement; this is LEAD TIME. The signal used to be binary and
 #: arrived the morning it was already too late, on the gate every release must pass — and it
 #: arrives for whoever happens to ship that day, not for whoever wrote the migration. Measured
-#: 2026-10-05: six markers in four modules expire on one single day (2026-10-20), so the person
-#: who meets that red has four modules to understand before anything of theirs can ship.
-MIGRATION_WARN_DAYS = 21
+#: 2026-10-05: six markers in four modules expired on one single day (2026-10-20), so the person
+#: who met that red would have had four modules to understand before anything of theirs shipped.
+MIGRATION_WARN_DAYS = markers.WARN_DAYS
 
 #: Where the warn window is written so it outlives the test run that computed it. Beside the
 #: gate's own evidence, which is already the place a verdict's detail is looked up.
 MIGRATION_WARN_FILE = REPO / ".audit-wt" / ".gate-evidence" / "migration-warn-window.txt"
 
 
+def _policed() -> list[Path]:
+    """The files the policy reads, pinned to THIS checkout — a worktree's own tree, never the
+    installed package's (F495: a bare pytest in a worktree imports the live tree's `src/`)."""
+    return markers.policed_paths(repo=REPO, package=SRC)
+
+
 def _migration_markers() -> list[tuple[Path, str]]:
-    """Every `MIGRATION(expires=…)` marker in the policed tree, as (path, date). One reader for
-    the hard check and the warning, so the two can never disagree about what is declared."""
-    found = []
-    for path in [*sorted(SRC.rglob("*.py")), *sorted((REPO / "deploy").glob("*.sh"))]:
-        text = path.read_text(encoding="utf-8")
-        found.extend((path, expires) for expires in MIGRATION_MARKER.findall(text))
-    return found
+    """Every DECLARED `MIGRATION(expires=…)` marker in the policed tree, as (path, date)."""
+    return [(d.path, d.expires) for d in markers.declarations(_policed())]
 
 
 def test_migration_code_declares_expiry_and_expires():
-    today = datetime.now(tz=UTC).date().isoformat()
+    today = datetime.now(tz=UTC).date()
     problems = [
-        f"{path.relative_to(REPO)}: migration expired {expires} — it has converged "
+        f"{d.path.relative_to(REPO)}: migration expired {d.expires} — it has converged "
         "on production; DELETE the migration code (the delete-after-convergence "
         "policy, see CLAUDE.md)"
-        for path, expires in _migration_markers() if expires < today]
-    for path in [*sorted(SRC.rglob("*.py")), *sorted((REPO / "deploy").glob("*.sh"))]:
-        text = path.read_text(encoding="utf-8")
-        if MIGRATION_CODE.search(text) and not MIGRATION_MARKER.search(text):
-            problems.append(
-                f"{path.relative_to(REPO)}: migration-shaped code without a "
-                "MIGRATION(expires=YYYY-MM-DD) marker — every one-shot migration must "
-                "declare when it is overdue for deletion")
+        for d in markers.expired(today, _policed())]
+    problems += [
+        f"{path.relative_to(REPO)}: migration-shaped code (or a back-compat alias table) "
+        "without a MIGRATION(expires=YYYY-MM-DD) marker — every one-shot migration and every "
+        "deprecation must declare when it is overdue for deletion. A comment that merely "
+        "MENTIONS a marker does not declare one (rsched.migration_markers.declares)"
+        for path in markers.undeclared(_policed())]
     assert not problems, "\n".join(problems)
+
+
+def test_narration_about_a_marker_is_not_a_declaration():
+    """R2596, the operator's ruling. 0.423.1 deleted the `trigger_*` appliers and left a
+    tombstone comment that SPELLED the marker it was describing; the morning after that date the
+    check read the sentence as a live declaration, `main` itself went red and every release on
+    this host was blocked by a comment about code that no longer existed.
+
+    Both directions are the assertion. A marker that OPENS its sentence declares — in a comment,
+    a docstring, after an em dash or a bracket, every form the live tree actually uses — and one
+    that follows a word is prose about one. The real specimen is the third case: it is the
+    tombstone as it was written, and it must not red a gate.
+    """
+    declaring = [
+        '"""One-shot boot migration onto ONE off switch — MIGRATION(expires=2026-11-15).',
+        "    # MIGRATION(expires=2026-11-15): `schedule.disabled` folded into one off switch",
+        "(MIGRATION(expires=2026-11-15)): the seed sync only ADDS missing patterns",
+        "MIGRATION(expires=2026-10-20)",
+        "# MIGRATION(expires=2026-11-15) — ONE-SHOT: move an existing install off root",
+    ]
+    narrating = [
+        "    # their MIGRATION(expires=2026-10-15) came due and the drain is complete",
+        ('    """The three `trigger_*` appliers were deleted when their '
+         "MIGRATION(expires=2026-10-15)\n    came due; the routes that queued them went too"),
+        "# the deprecation whose MIGRATION(expires=2026-10-15) we honoured in 0.423.1",
+    ]
+    for text in declaring:
+        hit = markers.MARKER.search(text)
+        assert hit and markers.declares(text, hit.start()), f"read as narration: {text!r}"
+    for text in narrating:
+        hit = markers.MARKER.search(text)
+        assert hit and not markers.declares(text, hit.start()), f"read as a declaration: {text!r}"
+
+
+def test_a_narrated_marker_cannot_excuse_a_real_migration(tmp_path):
+    """The grammar must not become a loophole: a file whose only marker is narration still has
+    migration-shaped code with nothing declared, so the check's second half flags it. Otherwise
+    "mention the marker in prose" would be a way to buy silence forever.
+    """
+    shaped = tmp_path / "migrate_thing.py"
+    shaped.write_text('"""Its MIGRATION(expires=2027-01-01) was honoured long ago."""\n\n'
+                      "def run_migration(server):\n    return {}\n", encoding="utf-8")
+    assert markers.undeclared([shaped]) == [shaped]
+    assert markers.declarations([shaped]) == []
+    shaped.write_text("# MIGRATION(expires=2027-01-01): the real thing\n"
+                      "def run_migration(server):\n    return {}\n", encoding="utf-8")
+    assert not markers.undeclared([shaped])
+    assert [d.expires for d in markers.declarations([shaped])] == ["2027-01-01"]
+
+
+def test_a_back_compat_alias_table_must_declare_an_expiry(tmp_path):
+    """F699: `jobs_compat.py` was the one deprecation here with no expiry, and the check could
+    not have seen it — its code is not migrate-named. What a back-compat layer in this repo IS
+    made of is an alias table: a constant holding the pre-rename SPELLING. A protocol adapter
+    named `*_compat.py` that deprecates nothing must stay unflagged, which is why the filename
+    is not the rule (`endpoints/openai_compat.py` would be flagged forever).
+    """
+    shim = tmp_path / "widget_compat.py"
+    shim.write_text('"""What the widget layer was called before the rename."""\n\n'
+                    'LEGACY_FILE = "state/widgets.json"\n'
+                    'SETTING_KEY, SETTING_ALIAS = "gadgets", "widgets"\n', encoding="utf-8")
+    assert markers.undeclared([shim]) == [shim], "an alias table with no expiry must be flagged"
+    adapter = tmp_path / "vendor_compat.py"
+    adapter.write_text('"""A vendor-compatible adapter — deprecates nothing."""\n\n'
+                       'ENDPOINT = "https://example.invalid/v1"\n'
+                       "def complete(prompt):\n    return prompt\n", encoding="utf-8")
+    assert not markers.undeclared([adapter]), "a protocol adapter is not a deprecation"
+    assert not markers.undeclared([Path(markers.__file__)]), "the policy module is not one either"
 
 
 def test_migrations_expiring_soon_are_warned_about_before_they_turn_red(recwarn):
@@ -77,19 +144,16 @@ def test_migrations_expiring_soon_are_warned_about_before_they_turn_red(recwarn)
     inside `MIGRATION_WARN_DAYS`, naming the file, the date and the days left. `pytest -W` shows
     it, the gate's log carries it, and the person who wrote the migration can still act on it.
 
+    The warning is no longer the only reader: `daemon/marker_watch` files the same window into
+    the health stream, where the console renders "something due did not happen" (F702). This is
+    the half a release gate sees; that is the half a person sees without running one.
+
     It must never fail: a warning that can fail is a second hard deadline with a different name,
     and the one above is deliberately the only one.
     """
     today = datetime.now(tz=UTC).date()
-    soon = []
-    for path, expires in _migration_markers():
-        try:
-            due = date.fromisoformat(expires)
-        except ValueError:                      # a malformed date is the hard check's business
-            continue
-        days = (due - today).days
-        if 0 <= days <= MIGRATION_WARN_DAYS:
-            soon.append((days, path.relative_to(REPO), expires))
+    soon = [(left, d.path.relative_to(REPO), d.expires)
+            for left, d in markers.due_soon(today, MIGRATION_WARN_DAYS, _policed())]
     if soon:
         lines = "\n".join(f"  {p}: MIGRATION expires {d} — {n} day(s) left"
                           for n, p, d in sorted(soon))
@@ -131,8 +195,7 @@ def test_the_warn_window_is_actually_delivered_and_not_merely_computed(recwarn):
     test_migrations_expiring_soon_are_warned_about_before_they_turn_red(recwarn)
     warned = [str(w.message) for w in recwarn.list if "MIGRATION marker" in str(w.message)]
     today = datetime.now(tz=UTC).date()
-    due = [(path, expires) for path, expires in _migration_markers()
-           if 0 <= (date.fromisoformat(expires) - today).days <= MIGRATION_WARN_DAYS]
+    due = markers.due_soon(today, MIGRATION_WARN_DAYS, _policed())
     if not due:
         assert not warned, "warned about an empty window"
         assert not MIGRATION_WARN_FILE.exists(), "a cleared window left its notice behind"
@@ -143,9 +206,9 @@ def test_the_warn_window_is_actually_delivered_and_not_merely_computed(recwarn):
     written = MIGRATION_WARN_FILE.read_text(encoding="utf-8")
     assert "MIGRATION WARN WINDOW" in written, written
     assert warned, "nothing was warned, so `-W error` could never escalate this"
-    for path, expires in due:
-        assert str(path.relative_to(REPO)) in written, (path, written)
-        assert expires in written, (expires, written)
+    for _left, declared in due:
+        assert str(declared.path.relative_to(REPO)) in written, (declared.path, written)
+        assert declared.expires in written, (declared.expires, written)
     assert "day(s) left" in written
 
 

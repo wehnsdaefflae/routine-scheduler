@@ -1202,11 +1202,18 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   each runs once on the production instance and is deleted after convergence — a pre-0.8
   backup converts by booting the matching older tag first. MACHINE-CHECKED: migration code
   must carry a `MIGRATION(expires=YYYY-MM-DD)` marker comment; `tests/test_policy.py` fails
-  once the date passes (and on migration-shaped code without a marker). It also WARNS — never
+  once the date passes (and on migration-shaped code, or a back-compat alias table, without a
+  marker). The grammar and the one reader behind all of it are `rsched.migration_markers`, where
+  a marker counts as a DECLARATION only when it opens its sentence — narration about one is
+  prose, after a tombstone comment quoting its own marker reddened `main` and blocked every
+  release on the host (R2596). It also WARNS — never
   fails — for every marker inside `MIGRATION_WARN_DAYS` (21 days, F628), naming the file, the date
   and the days left: the hard fail is correct enforcement but a binary signal arriving on the
   morning it is already too late, in front of whoever happens to ship that day rather than whoever
-  wrote the migration. Six markers in four modules once came due on one single date.
+  wrote the migration. Six markers in four modules once came due on one single date. Because a
+  warning on a passing test reaches nobody, `daemon/marker_watch` files the same window into the
+  health stream once a day — `migration_due_soon` / `migration_expired`, both on the blocked-work
+  surface, so a deadline is visible without running a gate (F702).
 - **Playbooks** (`library-seed/playbooks/<slug>/`, `MAIN.md` + optional on-demand detail files):
   reusable, generalized **conversation briefs** — the in-app analog of the save-instruction /
   use-instruction pattern. A playbook is NOT a workflow (the `converse` workflow stays the harness);
@@ -1769,7 +1776,7 @@ silent way. Three rules close that, each where it happened:
   localized messages. `routines_home` — whose health stream hears about it — is a REQUIRED
   argument, so every call site decides; only install-time seeding and a repo's first commit pass
   None. A migration that commits per routine records a commit that did not land under `failed`
-  (`migrate_settings_patterns`).
+  (`migrate_enabled`).
 
 **A stale lock is removed automatically — only when PROVABLY stale** (`gitlock`). The other
 choice was to leave every lock to a person behind a one-click remedy. It was rejected because

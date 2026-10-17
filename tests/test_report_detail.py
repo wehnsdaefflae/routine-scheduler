@@ -88,3 +88,21 @@ def test_an_over_long_detail_says_it_was_cut_everywhere_it_lands(tmp_path):
     obs2 = handle_report(loop, {"target": "routine-improver", "title": "short", "detail": "d"})
     assert _rows(home)[1]["detail"] == "d"
     assert "truncated" not in format_observation(obs2).lower()
+
+
+def test_the_schema_states_the_cap_a_filer_has_to_write_within():
+    """R2630: the cap was discoverable only by overrunning it. Two reports lost their tails on
+    one day and two more exist solely to re-send them, and `self-audit` carries a local reminder
+    whose whole purpose is hand-counting characters before every report — a workaround for a
+    number the schema can simply print.
+
+    The number in the `detail` description is pinned to the constant that enforces it: a prose
+    figure nothing checks is the next thing to go stale, and this one is read by every run on
+    every turn.
+    """
+    from rsched.engine.actionschema import ACTION_SCHEMA
+
+    described = ACTION_SCHEMA["properties"]["detail"]["description"]
+    assert str(DETAIL_MAX) in described, (
+        f"the detail field must state its {DETAIL_MAX}-character delivery cap: {described}")
+    assert "whole" in described, "and that the ledger row keeps the full text"

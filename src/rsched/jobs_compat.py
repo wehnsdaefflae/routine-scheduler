@@ -8,6 +8,19 @@ written back, so a routine that kept TASKS keeps working with nothing migrated.
 It lives in its own module for two reasons. The deprecation has ONE owner, so no call site can
 forget a spelling (the shape `log_health_event`'s cooldown uses); and when the aliases are
 finally dropped, this file is what gets deleted — not a scattering of `or` clauses.
+
+MIGRATION(expires=2027-01-15): a temporary thing declares when it is overdue, like every other
+one in this repo (F699 — this was the only deprecation here without a date, and the policy check
+could not have noticed: `migration_markers.SHAPED` matches migrate-named code and this is none,
+which is why that check now also reads an ALIAS TABLE as something that must declare an expiry).
+The date is measured rather than chosen: the rename shipped 2026-10-12 (0.416.0) and the STORE
+half has already converged by itself — `fau` writes `state/jobs.json` and its `state/tasks.json`
+has not been written since, because the first save after the rename writes the canonical name.
+What keeps this file alive is one hand-maintained config no code may rewrite: `fau/routine.yaml`
+still spells the `capabilities:` key `tasks:` and names `task:` on its run-gate checks. One
+quarter after the rename is time for that file to be edited in normal upkeep; on the date, read
+those two spellings and either rename them and delete this module, or move the marker with a
+reason. Do NOT delete it while they stand — `fau` loses its whole job layer.
 """
 
 from __future__ import annotations

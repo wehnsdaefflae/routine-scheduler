@@ -9,7 +9,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"lane_catchup_declined"
         |"fire_paused"|"fire_catchup"|"routine_catchup_declined"
-        |"scheduler_tick_error"
+        |"scheduler_tick_error"|"migration_due_soon"|"migration_expired"
         |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
@@ -125,78 +125,74 @@ count FALLS, and the cost is carried by a subscription's weighting rather than a
 bill — which is how September 2026 ran four days that way and burned a weekly limit.
 An endpoint reporting no cache traffic at all is silent, not degraded.
 
-cost_trend_degraded: a finished routine's LAST runs are clearly worse than the ones
-before them — the routine page's regression heuristic (readmodels/run_health, same
-thresholds) keyed on TIME rather than on recipe version, evaluated at run end. Carries
-`window` and the two medians and fail rates it compared. The version-keyed flag beside it
-moves only when THIS routine's recipe moves, and the most expensive regressions move no
-recipe at all: a library RULE revision lands on every holder at once (error-recovery on 30
-routines 2026-09-16, web-research on 136 09-18), and self-audit's weekly medians went
-49,409 tokens / 87% ok to 338,024 / 43% under no recipe change of any kind while nothing on
-the instance said a word. Emitted per finished run while the comparison holds, so a run of
-them on one routine is the regression and their end is the new normal being adopted.
+cost_trend_degraded: a finished routine's LAST runs are clearly worse than the ones before them —
+the routine page's regression heuristic (readmodels/run_health, same thresholds) keyed on TIME
+rather than on recipe version, evaluated at run end. Carries `window` and the two medians and fail
+rates it compared. The version-keyed flag beside it moves only when THIS routine's recipe moves,
+and the most expensive regressions move no recipe at all: a library RULE revision lands on every
+holder at once (error-recovery on 30 routines 2026-09-16, web-research on 136 09-18), and
+self-audit's weekly medians went 49,409 tokens / 87% ok to 338,024 / 43% under no recipe change of
+any kind while nothing on the instance said a word. Emitted per finished run while the comparison
+holds, so a run of them on one routine is the regression and their end is the new normal.
 
-model_failover: one rung of a role's fallback chain failed hard mid-turn and the next
-one served the turn (engine/degrade.py). The run finishes `ok` — the chain absorbed it —
-so nothing else downstream ever says the primary stopped serving: between 2026-09-12 and
-09-22 that happened 123 times across 28 runs and was found by reading transcripts days
-later. Carries `model` (the chain HEAD, the key a sweep groups by), `from_model`,
-`to_model` and `reason` (rate_limit · auth · refusal · empty · server · other) as
-structured fields, because "why is the fleet off its primary today" has to be answerable
-by a filter rather than by 300 characters of provider prose in `detail`.
+model_failover: one rung of a role's fallback chain failed hard mid-turn and the next one served
+the turn (engine/degrade.py). The run finishes `ok` — the chain absorbed it — so nothing else
+downstream ever says the primary stopped serving: between 2026-09-12 and 09-22 that happened 123
+times across 28 runs and was found by reading transcripts days later. Carries `model` (the chain
+HEAD, the key a sweep groups by), `from_model`, `to_model` and `reason` (rate_limit · auth ·
+refusal · empty · server · other) as structured fields, because "why is the fleet off its primary
+today" has to be answerable by a filter rather than by 300 characters of prose in `detail`.
 
-model_chain_exhausted: a role's WHOLE fallback chain was unusable mid-turn — every member
-failed hard or was cooling (engine/degrade.py, F491). Carries `model` (the chain HEAD, the
-key a sweep groups by), `last_model` (the member that failed last) and `cooldown_s` as
-structured fields. It exists for the same reason cache_read_degraded does: the per-run cost
-of a cooling primary is INVISIBLE. The chain absorbs it, the run finishes `ok`, and the tax
-is paid in wall-clock and tokens that no signal reports — on 2026-09-16, 11 of 13 fleet runs
-opened with "All credentials for model gpt-6-astra are cooling down", all 13 finished ok,
-and the health stream held one unrelated event. A single event is one provider hiccup; a run
-of them on one `model` is a primary that is not serving the fleet.
+model_chain_exhausted: a role's WHOLE fallback chain was unusable mid-turn — every member failed
+hard or was cooling (engine/degrade.py, F491). Carries `model` (the chain HEAD, the key a sweep
+groups by), `last_model` (the member that failed last) and `cooldown_s` as structured fields. It
+exists for the same reason cache_read_degraded does: the per-run cost of a cooling primary is
+INVISIBLE. The chain absorbs it, the run finishes `ok`, and the tax is paid in wall-clock and
+tokens that no signal reports — on 2026-09-16, 11 of 13 fleet runs opened with "All credentials
+for model gpt-6-astra are cooling down", all 13 finished ok, and the health stream held one
+unrelated event. A single event is one provider hiccup; a run of them on one `model` is a primary
+that is not serving the fleet.
 
-model_window_corrected: a completion 400'd with a context-overflow whose provider-stated
-maximum is SMALLER than the catalog entry's configured window — the config lies, the
-run's window guard shrank its local view to the provider's figure, re-clamped and
-retried (engine/completion.py, F278). detail names the entry to correct; the run
-survives, but every such event is a standing config defect an audit should surface.
+model_window_corrected: a completion 400'd with a context-overflow whose provider-stated maximum
+is SMALLER than the catalog entry's configured window — the config lies, the run's window guard
+shrank its local view to the provider's figure, re-clamped and retried (engine/completion.py,
+F278). detail names the entry to correct; the run survives, but every such event is a standing
+config defect an audit should surface.
 
-run_canceled: a user-requested abort killed the engine before it could write its own
-finish (same payload shape as orphaned_run, which is reserved for genuine crashes).
+run_canceled: a user-requested abort killed the engine before it could write its own finish (same
+payload shape as orphaned_run, which is reserved for genuine crashes).
 
 finish_gate_failed: the finish GATE raised, and the run finished anyway on its own authored
-summary (engine/finishstands.py, F658). It is the third possible outcome of a finish and must
-stay distinguishable from the other two: a gate that RAN and rejected defers and is recorded
-in the transcript as a deferral, and a gate that killed the engine was `orphaned_run` with
-rc=1 — which is what this event exists to stop, after one on 2026-10-09 cost a run that had
-already shipped two gated releases its summary, its status and its result.md. `detail` carries
-the exception and the innermost frame; `status` is the status the finish claimed and kept. A
-row here means the guards did NOT run, so nothing about that finish was checked.
+summary (engine/finishstands.py, F658). It is the third possible outcome of a finish and must stay
+distinguishable from the other two: a gate that RAN and rejected defers and is recorded in the
+transcript as a deferral, and a gate that killed the engine was `orphaned_run` with rc=1 — which
+is what this event exists to stop, after one on 2026-10-09 cost a run that had already shipped two
+gated releases its summary, its status and its result.md. `detail` carries the exception and the
+innermost frame; `status` is the status the finish claimed and kept. A row here means the guards
+did NOT run, so nothing about that finish was checked.
 
-observation_render_failed: a renderer RAISED on a live turn and the run read the raw result instead
-of ending (engine/obs_floor.py) — an engine defect; `detail` names the kind, exception and frame.
+observation_render_failed: a renderer RAISED on a live turn and the run read the raw result rather
+than ending (engine/obs_floor.py) — an engine defect; detail names kind, exception and frame.
 
-Both of those close-out events carry two OPTIONAL structured fields the reap fills in:
-`rc` (the engine process's exit status — negative means it died on that signal, so
-rc=-9 is a SIGKILL) and `vm_hwm_kb` (its peak resident memory, F348). They are fields
-rather than prose because the question they answer — "did anything die by signal in this
-window?" — has to be answerable by a filter. It was not: the five rc=-9 deaths of
-2026-09-01 were all recorded, but as `run_canceled` with the signal buried in `detail`,
-so a health sweep looking for failures read the window as clean (F422, whose premise —
-"rc=-9 emits no health-event" — was wrong; what it could not do was FIND them). Absent on
-every other event: only a close-out has a process to report on.
+Both of those close-out events carry two OPTIONAL structured fields the reap fills in: `rc` (the
+engine process's exit status — negative means it died on that signal, so rc=-9 is a SIGKILL) and
+`vm_hwm_kb` (its peak resident memory, F348). They are fields rather than prose because the
+question they answer — "did anything die by signal in this window?" — has to be answerable by a
+filter. It was not: the five rc=-9 deaths of 2026-09-01 were all recorded, but as `run_canceled`
+with the signal buried in `detail`, so a health sweep looking for failures read the window as
+clean (F422, whose premise — "rc=-9 emits no health-event" — was wrong; what it could not do was
+FIND them). Absent on every other event: only a close-out has a process to report on.
 
-They also carry `cause` (F480), the one word that says WHY the process is gone:
-`user_abort` · `oom_kill` (rc=-9) · `signal_kill` (any other signal — a supervisor stop,
-a deploy, a manual kill) · `engine_crash` (non-zero exit) · `no_finish` (exited cleanly
-and wrote no finish, an engine defect) · `daemon_restart` (the boot reap found the
-breadcrumb a deliberate shutdown left) · `unknown` (nothing established a cause). The
-live reap derives it from `rc`; the BOOT reap sets it explicitly, because it has no rc
-and the previous code filled that vacuum by asserting one — every dead-pid run at boot
-was written "orphaned by daemon restart" whether or not a restart had happened, and that
-sentence sent three investigations (F480, R1501, R1515) at a drain that works. `unknown`
-is therefore the expected majority reading at boot, and a deliberate one: an audit
-filtering for it is asking "what killed these runs?", not reading a defect.
+They also carry `cause` (F480), the one word that says WHY the process is gone: `user_abort` ·
+`oom_kill` (rc=-9) · `signal_kill` (any other signal — a supervisor stop, a deploy, a manual
+kill) · `engine_crash` (non-zero exit) · `no_finish` (exited cleanly and wrote no finish, an
+engine defect) · `daemon_restart` (the boot reap found the breadcrumb a deliberate shutdown
+left) · `unknown` (nothing established a cause). The live reap derives it from `rc`; the BOOT
+reap sets it explicitly, because it has no rc and the previous code filled that vacuum by
+asserting one — every dead-pid run at boot was written "orphaned by daemon restart" whether or
+not a restart had happened, and that sentence sent three investigations (F480, R1501, R1515) at
+a drain that works. `unknown` is therefore the expected majority reading at boot, and a
+deliberate one: an audit filtering for it is asking "what killed these runs?", not a defect.
 
 fire_refused: a fire produced no run. run_id empty (no run was created). Makes a routine
 that goes chronically un-fired visible to audit consumers instead of only a log.info line.
@@ -211,7 +207,7 @@ WHICH refusals are logged depends on the CAUSE, not on the fire reason:
     rsched/trials.roles_problem). Only `models.main` refuses a fire
     (daemon/runner.FIRE_BLOCKING_ROLES) - the loop resolves it on turn one, while a stale
     `tool_call`/`uncensored` may never be resolved at all and is reported by `rsched
-    validate` instead of taking a working routine dark.
+    validate` rather than taking a working routine dark.
 
 A deliberate global PAUSE is NOT this event: the scheduler skips those fires earlier — an
 intentional operator action is never logged as a refusal. Nor is `enabled: false`, which is
@@ -246,6 +242,10 @@ else a DECLINE with both numbers — absence reads like a daemon that never got 
 wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
 the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in
 the daemon, not a run; detail carries the failure cause, F197).
+
+migration_due_soon / migration_expired: a `MIGRATION(expires=)` declaration entered its 21-day
+window, or passed it (`daemon/marker_watch`, F702) — routine and run_id empty, both carrying
+`markers` and the date. An expiry reds every gate on this host; the lead time had no reader.
 
 Best-effort: I/O errors are silently swallowed so logging never blocks the daemon or engine.
 """

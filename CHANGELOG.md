@@ -15,6 +15,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.427.0] — 2026-10-17
+
+### Added
+- **A migration's deadline now reaches a person before it reaches the gate** (F702). The
+  delete-after-convergence policy had enforcement (`tests/test_policy.py`) and 21 days of lead
+  time (F628) and the lead time reached *nobody*: a warning on a PASSING test is folded into a
+  summary xdist suppresses, and the written window sits beside gate evidence nothing consumes.
+  Both times a deadline came due it was found by a blocked release — `pending_edits.py` on the
+  morning it expired, and the five settings-patterns markers by hand at an audit's orientation
+  three days out. New `daemon/marker_watch` files `migration_due_soon` / `migration_expired` into
+  the health stream once a day while the condition holds, both on `BLOCKED_EVENTS`, so a deadline
+  is visible on the console's blocked-work surface without running a gate. The latch is the
+  watch's own (`daemon/backup_watch`'s idiom), deliberately not `health_cooldown`: nothing in
+  `BLOCKED_EVENTS` may be suppressed there, because the blocked-fleet fold counts those rows.
+- `src/rsched/migration_markers.py` — the marker GRAMMAR and the one reader behind all of it, so
+  the hard check, the warning and the daemon watch can never disagree about what is declared.
+
+### Changed
+- **Narration about a marker is no longer read as a declaration** (R2596, the operator's ruling).
+  0.423.1 deleted the `trigger_*` appliers and left a tombstone that *quoted* the marker it was
+  describing; on the morning after that date `test_policy` read the sentence as a live
+  declaration, **`main` itself went red and every release on this host was blocked** by a comment
+  about code that no longer existed. A declaration is now one that OPENS its sentence — measured
+  over all 18 live occurrences, every real declaration is introduced (line start, `#`, `"""`, an
+  em dash, a bracket) and the only narration specimen follows a word. Deliberately conservative
+  in the safe direction: prose that happens to introduce a marker still counts and reds the gate,
+  visibly and one edit away, while the opposite error is the silent permanence the policy exists
+  to prevent. It cannot buy silence either — a file whose only marker is narration still trips
+  the missing-marker half.
+- **A back-compat alias table must declare an expiry** (F699), and `jobs_compat.py` now does
+  (2027-01-15). It was the one deprecation in the repo without a date and the check could not
+  have seen it: its code is not migrate-named. The policed shape is the one such a layer actually
+  has here — a constant holding the pre-rename SPELLING — and not the filename, which is a worse
+  signal than it looks (`endpoints/openai_compat.py` is a protocol adapter and would be flagged
+  forever). The date is measured: the rename shipped 2026-10-12, the STORE half has already
+  converged by itself (`fau` writes `state/jobs.json`), and what keeps the module alive is one
+  hand-maintained config no code may rewrite — `fau/routine.yaml`'s `tasks:` capabilities key and
+  its `task:` run-gate checks.
+- **A `memory_write` cap rejection now carries the budget, not only the overrun** (R2610). It
+  stated the RESULT size, from which no caller can compute what would fit: one run met five
+  consecutive rejections, three on the same note, which sat at 92 of 100 lines — so no net
+  addition could ever have succeeded, while "make the replacement shorter" invited exactly the
+  trim-and-retry loop it got. The message now names the note's current size, the anchor's, the
+  resulting budget, and replacing a LARGER anchor as the way out when that budget is zero.
+- **The `report` detail cap is in the schema** (R2630): 4000 characters, stated in the `detail`
+  field description and pinned by a test to `report_detail.DETAIL_MAX`. It was discoverable only
+  by overrunning it — two reports lost their tails in one day and two more existed solely to
+  re-send them, and one routine carries a reminder whose whole purpose is hand-counting
+  characters before every report.
+
+### Removed
+- **The settings-patterns migration, four days before it would have blocked every release**
+  (F709). `migrate_settings_patterns{,_domains,_goal,_spec}.py`, its recipes JSON and contract
+  doc, its test, the `cli_daemon` boot call and the `test_bootstrap` monkeypatch — ~1,169 lines
+  plus 166 KB of data. Five `MIGRATION(expires=2026-10-20)` declarations were about to red the
+  fast stage of every release gate on this host, exactly as the tombstone did, except these were
+  real declarations that no grammar fix could save. Convergence was proven first: all 34 live
+  routines carry `pattern:`, and `.control/migrations/settings-patterns.json` records 35 routines
+  / 114 conversations / 0 failed. The LIVE settings-patterns feature (`engine/create_routine`,
+  `engine/obs_admin`, `patterns/fields`) is untouched.
+
 ## [0.426.1] — 2026-10-16
 
 ### Fixed

@@ -28,6 +28,7 @@ from .detached import DetachedManager
 from .events import EventBus
 from .lane_runs import LaneRunManager
 from .library_watch import LibraryWatch
+from .marker_watch import MarkerWatch
 from .oauth_refresh import OAuthRefreshManager
 from .runner import Runner
 from .schedule_once import OneShotManager
@@ -56,10 +57,10 @@ class Scheduler:
         self.server = server
         self.runner = runner
         self.bus = bus
-        # Detached background tasks (the `detach` action): daemon-managed processes that outlive
-        # a conversation reply and report back on completion. The manager is the single writer of
-        # background_home; it is ticked after the cron-fire loop, like every manager below, and
-        # no longer once a restart has begun shutting the process down.
+        # Detached background tasks (the `detach` action): daemon-managed processes that outlive a
+        # conversation reply and report back on completion. The manager is the single writer of
+        # background_home; ticked after the cron-fire loop like every manager below, and no longer
+        # once a restart has begun shutting the process down.
         self.detached = DetachedManager(server, runner)
         # Event triggers (webhooks today): the web layer only spools events durably; this
         # manager turns them into coalesced fires at the tick (see daemon/triggers.py).
@@ -71,26 +72,25 @@ class Scheduler:
         # durably; this manager advances it one member per tick — fire, wait for terminal,
         # apply the on_failure policy, fire the next (see daemon/lane_runs.py).
         self.lane_runs = LaneRunManager(server, runner)
-        # OAuth token upkeep: refresh expiring connections before they lapse so a run always
-        # reads a live token (a no-op for non-expiring providers). See daemon/oauth_refresh.py.
+        # OAuth upkeep: refresh expiring connections before they lapse so a run always reads a
+        # live token; a no-op for non-expiring providers (daemon/oauth_refresh.py).
         self.oauth = OAuthRefreshManager(server)
-        # The library MOVES under its holders — a sync pull, a hand edit, a restored
-        # bundle — with no writer to gate. This notices and files the breakage as a
-        # decision (daemon/library_watch.py).
+        # The library MOVES under its holders — a sync pull, a hand edit, a restored bundle — with
+        # no writer to gate. This notices and files the breakage as a decision (library_watch.py).
         self.library = LibraryWatch(server)
-        # The nightly state snapshot is the one thing this product never read about itself: the
-        # backup unit failed nineteen nights running and no surface anywhere could say so. This
-        # reads the stamp `deploy/backup.sh` writes and files staleness into the health stream
-        # (daemon/backup_watch.py, F602).
+        # Two facts this product enforced and never READ about itself, both filed into the health
+        # stream: the nightly snapshot (backup_watch, F602 — the unit failed nineteen nights and
+        # nothing could say so) and a migration's declared deadline (marker_watch, F702 — policed
+        # by a test, warned about in a pytest warning nobody reads, so both times found too late).
         self.backup = BackupWatch(server)
+        self.markers = MarkerWatch(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
-        # D71: lanes with a cron of their own. A due lane fire ARMS the sequential
-        # chain (member 0 fires, the rest chain on completion — LaneRunManager);
-        # meanwhile every member of a scheduled lane is SUPPRESSED from the routine
-        # fire table above, so one fire path exists and nothing double-fires. A routine
-        # belongs to at most one lane (rsched.lanes), which is what makes "one fire path"
-        # a fact rather than a hope.
+        # D71: lanes with a cron of their own. A due lane fire ARMS the sequential chain (member 0
+        # fires, the rest chain on completion — LaneRunManager); meanwhile every member of a
+        # scheduled lane is SUPPRESSED from the routine fire table above, so one fire path exists
+        # and nothing double-fires. A routine belongs to at most one lane (rsched.lanes), which is
+        # what makes "one fire path" a fact rather than a hope.
         self.scheduled_lanes: list[dict] = []
         self.suppressed_members: set[str] = set()
         self.lane_next_fires: dict[str, datetime] = {}
@@ -322,11 +322,11 @@ class Scheduler:
                 # library change — awaited here, either held every fire behind it.
                 self._off_tick("oauth", self.oauth.tick)
                 self._off_tick("library-watch", self.library.tick)
-                # …and the one reader of backup state: a nightly snapshot that stopped
-                # completing is reported into the health stream, where the console already
-                # renders "something due did not happen" (F602 — nineteen unbacked nights
-                # passed unseen because nothing in this product read it at all).
+                # …and the two readers of a fact nothing else surfaces, both filing into the health
+                # stream the console renders as "something due did not happen": backup state (F602
+                # — nineteen unbacked nights passed unseen) and a migration deadline (F702).
                 self._off_tick("backup-watch", self.backup.tick)
+                self._off_tick("marker-watch", self.markers.tick)
             except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
             except Exception as exc:

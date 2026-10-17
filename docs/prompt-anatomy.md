@@ -929,11 +929,11 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "config_patch": {
    "type": "object",
-   "description": "ask_user: OPTIONAL \u2014 a proposed routine.yaml CONFIG change the user can one-click apply from the Decisions page (a run can never edit its own config). Shape = the PATCH /routines body, e.g. {\"budgets\": {\"max_turns\": 100}} or {\"schedule\": {\"friendly\": {\"frequency\": \"hourly\", \"minute\": 0}}}. Use it when a revise-recipe run is asked for a schedule / budget / model / permission / fs-roots change it cannot make itself. To propose the change for ANOTHER routine, name it: {\"routine\": \"suedlink-wlf\", \"budgets\": {\"max_turns\": 120}} \u2014 the apply then patches that routine, not you. A slug naming no installed routine is refused on this turn."
+   "description": "ask_user: OPTIONAL \u2014 a proposed routine.yaml CONFIG change the user can one-click apply from the Decisions page (a run can never edit its own config). Shape = the PATCH /routines body, e.g. {\"budgets\": {\"max_turns\": 100}} or {\"schedule\": {\"friendly\": {\"frequency\": \"hourly\", \"minute\": 0}}}. Use it when a revise-recipe run is asked for a schedule / budget / model / permission / fs-roots change it cannot make itself. To propose the change for ANOTHER routine, name it: {\"routine\": \"suedlink-wlf\", \"budgets\": {\"max_turns\": 120}} \u2014 the apply patches that routine, not you. A slug naming no installed routine is refused on this turn."
   },
   "request": {
    "type": "string",
-   "description": "ask_user: OPTIONAL \u2014 a typed ACCESS REQUEST, one grant-entity id \"<class>:<name>\" (e.g. \"util:discord\", \"fs-write:~/project\", \"secret:FOO_KEY\", \"machine:gpu-box\"). The user decides allow/deny, once (this run) or forever; the engine applies the decision \u2014 your question just says WHY. Use it when a denial names a requestable entity."
+   "description": "ask_user: OPTIONAL \u2014 a typed ACCESS REQUEST, one grant-entity id \"<class>:<name>\" (e.g. \"util:discord\", \"fs-write:~/project\", \"secret:FOO_KEY\", \"machine:gpu-box\"). The user decides allow/deny, once (this run) or forever; the engine applies the decision \u2014 your question just says WHY. Use it when a denial names an entity."
   },
   "title": {
    "type": "string",
@@ -941,7 +941,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "detail": {
    "type": "string",
-   "description": "report: the full description \u2014 the exact file or artefact, what is wrong, the evidence (a run id, a path:line, an error), and what 'done' looks like. Whoever picks this up has none of your context, so write it to stand alone"
+   "description": "report: the full description \u2014 the exact file or artefact, what is wrong, the evidence (a run id, a path:line, an error), and what 'done' looks like. Whoever picks this up has none of your context, so write it to stand alone. The DELIVERED copy is clipped at 4000 chars (the ledger row keeps it whole), so put the conclusion first"
   },
   "status": {
    "type": "string",

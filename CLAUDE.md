@@ -492,13 +492,23 @@ by a test, by the engine, or by a past incident.
   each runs once on the production instance and is deleted after convergence (a pre-0.8
   backup converts by booting the matching older tag first). Migration code MUST carry a
   `MIGRATION(expires=YYYY-MM-DD)` marker comment — `tests/test_policy.py` fails once the
-  date passes, and on migration-shaped code without a marker. **The hard fail keeps its teeth and
-  gets LEAD TIME** (F628): a second check in the same file WARNS — never fails — for every marker
-  inside `MIGRATION_WARN_DAYS` (21), naming the file, the date and the days left, so the deadline
-  reaches whoever wrote the migration instead of whoever happens to ship on the day it turns red.
-  Six markers in four modules once expired on one single day; `pytest -W` and the gate log both
-  carry the warning. A warning that can fail would be a second hard deadline under another name,
-  so it never can.
+  date passes, and on migration-shaped code without a marker. The grammar and its one reader are
+  `rsched.migration_markers`. **A marker DECLARES only when it opens its sentence**: narration
+  about one (`their MIGRATION(expires=…) came due`) is prose, because a tombstone comment that
+  quoted its own marker once reddened `main` itself and blocked every release on the host. So
+  write a completed migration's tombstone however you like — and never spell a live marker
+  mid-sentence, where it still counts. A **back-compat alias table** (a constant holding a
+  pre-rename spelling) must declare an expiry too: it is as temporary as a migration, and
+  migration-shaped-code detection cannot see it.
+  **The hard fail keeps its teeth and gets LEAD TIME** (F628): a second check in the same file
+  WARNS — never fails — for every marker inside `MIGRATION_WARN_DAYS` (21), naming the file, the
+  date and the days left, so the deadline reaches whoever wrote the migration instead of whoever
+  happens to ship on the day it turns red. Six markers in four modules once expired on one single
+  day; `pytest -W` and the gate log both carry the warning. A warning that can fail would be a
+  second hard deadline under another name, so it never can. And because a warning on a passing
+  test reaches nobody, the daemon files the same window into the health stream —
+  `migration_due_soon` / `migration_expired`, rendered on the blocked-work surface
+  (`daemon/marker_watch`, F702).
 - **Documentation is swept, not patched.** On any change, revise ALL affected doc surfaces
   (CLAUDE.md, `docs/`, `static/views/help.js`, README, docstrings) — not the one you were
   asked about. A module DOCSTRING is a doc surface: pdoc renders it on the Help tab beside the

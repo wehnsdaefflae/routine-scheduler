@@ -86,6 +86,37 @@ def test_an_edit_that_would_exceed_the_cap_is_refused_with_the_number(make_routi
         "- fact 0\n- fact 1\n")
 
 
+def test_the_refusal_carries_the_budget_and_not_only_the_overrun(make_routine, tmp_path):
+    """R2610: the message stated the RESULT size, from which no caller can compute what WOULD
+    fit. One run met five consecutive rejections, three on the same note — which sat at 92 of
+    100 lines, so no net addition could ever have succeeded, while "make the replacement
+    shorter" invited exactly the trim-and-retry loop it got. The numbers that determine the
+    next attempt are the note's current size and the anchor's, and when the budget is zero the
+    way out is replacing MORE of the note, which the message now names.
+    """
+    ctx = _ctx(make_routine, tmp_path)
+    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES - 8))
+    _write(ctx, "nearly-full", body, "a mature note")
+    obs = _edit(ctx, "nearly-full", "- fact 0",
+                "\n".join(f"- new {i}" for i in range(12)))
+    error = obs["error"]
+    assert f"currently has {MEMORY_NOTE_MAX_LINES - 8} lines" in error, error
+    assert "anchor covers 1" in error, error
+    assert "fits in 9 line(s)" in error, error        # 100 - (92 - 1)
+    assert "LARGER anchor" in error, error
+
+
+def test_a_note_at_the_cap_is_told_its_budget_is_zero(make_routine, tmp_path):
+    """The case that made the old wording actively misleading: at the cap, the budget for a
+    one-line anchor is exactly that one line, so "shorter" is unreachable advice unless the
+    anchor grows. The number says so instead of implying a retry."""
+    ctx = _ctx(make_routine, tmp_path)
+    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES))
+    _write(ctx, "at-cap", body, "a mature note")
+    obs = _edit(ctx, "at-cap", "- fact 0", "- fact 0\n- extra")
+    assert "fits in 1 line(s)" in obs["error"], obs["error"]
+
+
 def test_a_stale_or_ambiguous_anchor_is_refused_loudly(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path)
     _write(ctx, "case-state", "# case\n- one\n- one\n", "the open claim's state")

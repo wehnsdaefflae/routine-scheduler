@@ -34,10 +34,6 @@ def cmd_daemon(_args) -> int:
     from .utils_lib import ensure_library
     ensure_config()   # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
-    # MIGRATION(expires=2026-10-20): routines onto settings patterns, BEFORE the seed sync and
-    # before anything loads a routine.yaml that still names a domain
-    from .migrate_settings_patterns import run_migration
-    run_migration(server)
     # MIGRATION(expires=2026-11-15): `schedule.disabled` folded into the one off switch,
     # `enabled` — also before anything loads a routine.yaml, which no longer reads it
     from .migrate_enabled import run_migration as fold_off_switch

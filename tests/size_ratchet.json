@@ -30,7 +30,6 @@
     "src/rsched/grantpolicy.py": 385,
     "src/rsched/grants.py": 378,
     "src/rsched/lanes.py": 404,
-    "src/rsched/migrate_settings_patterns.py": 377,
     "src/rsched/readmodels/items.py": 353,
     "src/rsched/registry.py": 362,
     "src/rsched/reminders.py": 574,

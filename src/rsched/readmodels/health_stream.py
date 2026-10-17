@@ -69,6 +69,11 @@ BLOCKED_EVENTS: dict[str, str] = {
                      "out of its history until a later commit takes them",
     "backup_stale": "the nightly state snapshot has not completed for days — the instance is "
                     "running unbacked",
+    "migration_expired": "a MIGRATION marker is past its expiry, so the release gate is red on "
+                         "files nobody touched: no release can ship until the converged "
+                         "migration code is deleted",
+    "migration_due_soon": "a MIGRATION marker expires within the warning window — the deletion "
+                          "is owed before that date, or it lands on whoever ships that day",
 }
 
 #: Partial finishes, split by whether a budget forced them (health_events.py's own

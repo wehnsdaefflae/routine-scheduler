@@ -119,10 +119,21 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
         replacements = before.count(str(action["anchor"]))
         data = patched.rstrip() + "\n"
         if len(data.splitlines()) > MEMORY_NOTE_MAX_LINES:
+            # EVERY number the caller needs to size the next attempt, because the result size
+            # alone does not determine one (R2610): five consecutive rejections in one run, three
+            # on the same note, which sat at 92 of 100 lines — so NO net addition could ever have
+            # succeeded and "make the replacement shorter" invited a trim-and-retry loop for
+            # something only a larger anchor can fix. Current + anchor gives the budget; the way
+            # out when the budget is zero is replacing MORE of the note, not writing less.
+            anchor_lines = len(str(action["anchor"]).splitlines())
+            budget = MEMORY_NOTE_MAX_LINES - (len(before.splitlines()) - anchor_lines)
             return {"kind": "memory_write", "name": name, "error":
                     f"the edit would leave the note at {len(data.splitlines())} lines — notes "
-                    f"are capped at {MEMORY_NOTE_MAX_LINES}. The note is UNCHANGED on disk: "
-                    "make the replacement shorter, or split the topic into another note"}
+                    f"are capped at {MEMORY_NOTE_MAX_LINES}. The note is UNCHANGED on disk. It "
+                    f"currently has {len(before.splitlines())} lines and your anchor covers "
+                    f"{anchor_lines}, so a replacement fits in {max(budget, 0)} line(s). Replace "
+                    "a LARGER anchor (more of the note for your new text to fit in), condense "
+                    "what is already there, or split the topic into another note"}
     else:
         data = str(action["content"]).rstrip() + "\n"
     atomic_write(path, data)
