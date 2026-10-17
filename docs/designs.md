@@ -98,6 +98,53 @@ row returns to self-audit.
 
 ---
 
+## One name for a child run: "subrun" and "subtask" go (decided 2026-10-17, in conversation)
+
+**Decided by the operator in conversation 2026-10-17; no finding.** His words: *"sub-runs /
+subtasks (why two terms for the same thing? fix that)"*.
+
+**Problem.** CLAUDE.md and `engine/child.py` define ONE concept, the child run, with three
+scheduling modes. The vocabulary around it never followed. The same thing is called four names
+depending on where you look:
+- **child run** — `engine/child.py`, `engine/childrun.py`, docs/child-runs.md, the `CHILD RUN
+  FINISHED` notification;
+- **subrun / sub-run** — the budget keys `max_subruns` / `max_subrun_depth` (DEFAULT_BUDGETS,
+  every settings pattern, 36 live routine.yaml files), the `subruns` action kind, the transcript
+  events `subrun_start` / `subrun_end`, the console ("sub-runs" rail section, "sub-run tree",
+  "sub-run selector") — measured 2026-10-17: ~180 occurrences in src, ~180 in tests, 64 in static;
+- **subtask** — the `subtask` action kind (the sequential mode), ~90 in src;
+- **spawn** — the `spawn` action kind (the parallel mode).
+Worse, `static/components/subruntree.js` and `views.css` use "subtasks" for the SEQUENTIAL children
+and "subruns" for the PARALLEL ones, so "subrun" means both "any child" and "a parallel child".
+The operator, reading a routine's budget ("max_subruns") beside a recipe's "subtask", reasonably
+read them as two mechanisms.
+
+**Shape.** One noun everywhere a person or a model reads it: **child run** (plural "child runs";
+"children" where a short token is needed). Concretely:
+- budget keys `max_child_runs` / `max_child_depth`; the one-shot migration rewrites every
+  routine.yaml, every settings pattern and the conversation configs (MIGRATION marker, per the
+  migration rules), and `DEFAULT_BUDGETS` and the routine page's labels follow;
+- the action kinds: `spawn` and `subtask` become ONE kind, `child`, with a flat `mode` field
+  (`parallel` | `sequential`, the vocabulary `engine/child.py` already owns), and `subruns`
+  becomes `children`. KINDS, the schema, kindsurface, prompt-anatomy.md and its test move
+  together; the composer's kind copy says "child run";
+- transcript events `subrun_start` / `subrun_end` become `child_start` / `child_end` — EVENT_TYPES,
+  the web renderer and the meta routines move together, and stored transcripts are migrated
+  one-shot (a resume re-renders history, so old event names must not survive);
+- the console: "child runs" in the run rail, the tree and the selector; the tree marks mode with
+  its arrows, not with two nouns;
+- docs swept (CLAUDE.md, docs/child-runs.md, docs/architecture.md, help.js, docstrings).
+A conversation `branch` stays a mode of the same concept and keeps its user-facing verb.
+
+**First increment.** The model- and person-facing vocabulary: the `child` kind with `mode` (the
+two old kinds removed, not aliased — no backwards compatibility), `children` for `subruns`, the
+prompt wording and prompt-anatomy.md, and the console labels; red-first tests that the schema
+offers no `spawn`/`subtask`/`subruns` kind and that the rendered prompt never says "subrun" or
+"subtask". The budget keys, event names and their migrations are the second increment, in the
+same campaign.
+
+---
+
 # Handed over from the 0.371.0–0.372.2 review (2026-10-01)
 
 Everything below was PROPOSED by the review of 0.371.0 and the work that built 0.372.0–0.372.2,
