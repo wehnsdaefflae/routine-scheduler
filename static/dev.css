@@ -1,0 +1,12 @@
+/* The DEVELOPMENT view's additions — a fourth stylesheet for the same reason rail.css is a third:
+ * views.css and base.css sit frozen at their ratchet ceilings over the 350-line bar, and the bar
+ * is per FILE. Tokens only, like views.css: no colour of its own.
+ *
+ * The OUTCOME panel (components/outcome-panel.js) leads a routine's development view. A measure
+ * that moved the right way wears OK, the wrong way ERR; "no progress" in a count is ERR too,
+ * because a routine spending volume on a number that does not move is the reading the panel is
+ * there to surface. An undeclared contract is SUMMONS: it waits on a person to declare it. */
+.outcome-move.ok { color: var(--ok); }
+.outcome-move.bad, .outcome-table .bad { color: var(--err); }
+.outcome-panel .summons { color: var(--summons); }
+.outcome-table td .mono { margin-left: 4px; }

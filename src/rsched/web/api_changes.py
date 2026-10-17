@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from ..ids import is_slug
 from ..readmodels import change_effects
 from ..readmodels.model_fit import model_fit
+from ..readmodels.outcome_series import DEFAULT_WEEKS, review
 from ..readmodels.run_health import recipe_regression
 
 router = APIRouter(tags=["changes"])
@@ -58,6 +59,21 @@ def routine_changes(request: Request, slug: str) -> dict:
     return {"routine": slug, "changes": change_effects.changes(home)["routines"].get(slug, []),
             "timeline": change_effects.routine_timeline(home, slug),
             "model_fit": model_fit(home, slug)}
+
+
+@router.get("/changes/{slug}/outcome")
+def routine_outcome(request: Request, slug: str, weeks: int = DEFAULT_WEEKS) -> dict:
+    """What the routine EXISTS to produce, against what it cost (readmodels/outcome_series.py):
+    per declared measure what moved over the last `weeks`, the window's runs, volume and notional
+    dollars, and the run-by-run series. Nothing the routine says about itself is read.
+    """
+    from ..config import load_routine
+
+    home = _routine_home(request, slug)
+    cfg, _problems = load_routine(home / slug)
+    if cfg is None:
+        raise HTTPException(409, f"{slug}: routine.yaml does not load")
+    return review(home, cfg, weeks=max(1, min(weeks, 52)))
 
 
 @router.get("/changes/{slug}/summary")

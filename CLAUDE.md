@@ -77,7 +77,7 @@ one you are about to touch, not all of them.
   `effect:` line — what a routine holding it DOES differently — is what the page labels its
   on/off control with, and the linter requires it), the two-layer
   permission set, the SETUP SURFACE (`readmodels/surface.py` is the JOIN; the rows come from
-  `surface_needs` / `surface_schedule` / `surface_caps` speaking `surface_nodes`' vocabulary,
+  `surface_needs` / `surface_schedule` / `surface_caps` / `surface_outcome` speaking `surface_nodes`' vocabulary,
   `readmodels/remedies.py` says the same rows in WORDS, `library_impact.py` reads the join
   backwards, `daemon/library_watch.py` catches changes with no writer), the ACCESS-REQUEST
   grant model (entities.py ids; allow/deny × now/forever, plus
@@ -538,6 +538,20 @@ by a test, by the engine, or by a past incident.
   mutated; per-turn boilerplate is banned. Only compaction (its window clamp included),
   schema-retry cleanup, the media fallback and a rule unbind the user asked to ERASE
   (`switches.apply_rule_drop`) may rewrite it, each invalidating the provider cache by design.
+- **What a routine is FOR is its OUTCOME contract, and no run judges it.** `outcome:` in
+  routine.yaml (config/outcome.py: a `principal` and up to six `measures`, each a `count` or a
+  `level` with a `better` direction) is the operator's declaration; the routine's own
+  `scripts/outcome.py` prints `{<measure id>: <number>}` from its state, and the engine runs it
+  after every run's last turn (engine/outcome.py — shape-checked only; a failure records
+  `error`, never a zero) and records `outcome_measures` in status.json and the usage row, so
+  outcome and cost form ONE series (readmodels/outcome_series.py, `GET
+  /api/changes/{slug}/outcome`, the Outcome panel that LEADS the development view). Every other
+  judge reads the routine's own account — run `ok`, Done-when met, self-checks green — which is
+  how freelance-radar read healthy through 89 applications and no interview. The setup surface's
+  `recipe:outcome` row BLOCKS until the contract, the script and a Done-when line naming a
+  measure all exist (readmodels/surface_outcome.py); it is the routine's own row, so it is never
+  library drift and never in a boot note. Not the FINISH LINE: that says when a routine is done
+  for good; this is what a routine that never finishes keeps producing.
 - **What DONE means has three owners — none of them is a budget** (reports/goal.md).
   WHAT ONE FINISHED RUN LEAVES BEHIND is the recipe's `## Done when` (`engine/donewhen.py`,
   `- d<n> · <stage> — <outcome>`), re-asked every run and never "already met"; a run started by
@@ -652,7 +666,7 @@ by a test, by the engine, or by a past incident.
   client `FIX` map (`static/components/surface-view.js`, imported by the setup-check strip), the
   section anchor it lands on, and its `CASES` row — listed in `docs/rules-permissions.md`. Three
   are bound by equalities so the vocabulary cannot grow at one end alone: emitted kinds ↔
-  `REMEDIES` over the four emitter modules' ASTs (`_EMITTERS` in `tests/test_surface.py` — a
+  `REMEDIES` over the five emitter modules' ASTs (`_EMITTERS` in `tests/test_surface.py` — a
   join that moves into a new file joins that tuple or its kinds stop being checked), then
   `REMEDIES` ↔ the parsed `FIX` map ↔ the `CASES` table (`tests/ui/test_surface_fix.py`). The
   ANCHOR is the one nothing static can see: a kind whose link travels somewhere the act cannot be

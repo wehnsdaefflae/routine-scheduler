@@ -234,21 +234,18 @@ class RunContext:
     # Deferred-question churn: decisions this run threw over the wall to the user — a
     # deferred ask, a blocking ask that timed out / was parked / died with an abort.
     asks_deferred: int = 0
-    # Reports this run RECEIVED and has not answered — the ids drained from its inbox, minus
-    # the ones a `report … answers: <id>` has since closed. D131 (operator 2026-09-14): closing
-    # the thread is part of shipping the fix, not the next audit's bookkeeping. Carried across
-    # a resume like the counters, because a run that is held at its finish and comes back must
-    # still know what it owes. The `unclosed-delivered-report` assist is the only reader.
+    # Reports this run RECEIVED and has not answered — ids drained from its inbox, minus the ones
+    # a `report … answers: <id>` closed. D131: closing the thread is part of shipping the fix.
+    # Carried across a resume like the counters, since a run held at its finish still owes them.
+    # The `unclosed-delivered-report` assist is the only reader.
     reports_open: list[str] = field(default_factory=list)
-    # The turn a permission refusal cost at the validation seam (completion.action_candidate)
-    # — a refused action never becomes a turn, so without this the `capability-denied` assist
-    # could not tell that the action it sees was the run's SECOND choice.
+    # The turn a permission refusal cost at the validation seam (completion.action_candidate):
+    # a refused action is no turn, so the `capability-denied` assist needs it to see a 2nd choice.
     last_denial_turn: int = 0
     # The accounting the run's finish carried, set by the finish gate once it stands.
     accounting: list[str] = field(default_factory=list)
-    # The operator's one-line JOB BRIEF for a run started by hand (engine/brief.py); "" for
-    # every other run. It seeds goal b1; a briefed run answers for its goals instead of its
-    # recipe's Done when.
+    # The operator's one-line JOB BRIEF for a hand-started run (engine/brief.py), else "". It
+    # seeds goal b1; a briefed run answers for its goals instead of its recipe's Done when.
     brief: str = ""
     # The run's GOALS — what a person asked of it (engine/goals.py): seeded from the brief,
     # replayed from the transcript on a resume, kept by the `goal` action and stamped by a
@@ -256,6 +253,8 @@ class RunContext:
     goals: list[dict] = field(default_factory=list)
     # A conversation reply's own declaration (finish `final`): None until a finish declares it.
     final: bool | None = None
+    # What scripts/outcome.py measured at the run's end (engine/outcome.py); None = undeclared.
+    outcome_measures: dict | None = None
     # The run's QUALITY counters (engine/runrecord.py) — run-cumulative like asks_deferred, so a
     # resumed leg reseeds them (history.prior_counters): claims the verifier challenged and the
     # ones that stood disputed (the finish's and a goal check's), actions a caution held, and the
@@ -575,6 +574,7 @@ class RunContext:
             **({"brief": self.brief} if self.brief else {}),
             **({"goals": self.goals} if self.goals else {}),
             **({"final": self.final} if self.final is not None else {}),
+            **({"outcome_measures": self.outcome_measures} if self.outcome_measures else {}),
             # the task the run is working on right now (engine/jobops.py) — the live tail's
             # "where is it" for a routine whose work is several jobs
             **({"job": self.job_id} if self.job_id else {}),

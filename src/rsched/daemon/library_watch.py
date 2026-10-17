@@ -184,7 +184,9 @@ class LibraryWatch:
                 continue
             resolved.add(cfg.slug)
             for node in surface["nodes"]:
-                if node["severity"] == "blocks":
+                # a gap the routine's OWN config or recipe owns (the outcome row) is never the
+                # library's doing, so it is never filed as library drift
+                if node["severity"] == "blocks" and "recipe" not in node.get("source", {}):
                     gaps[f"{cfg.slug}:{node['id']}"] = (cfg.slug, node)
         return gaps, resolved
 

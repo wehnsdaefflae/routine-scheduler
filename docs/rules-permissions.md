@@ -120,11 +120,24 @@ COST — `blocks` (the call is rejected or fails), `interrupts` (the run stops m
 or `note`.
 
 `surface.py` is the JOIN only. The row vocabulary — the severities, `_node`, the one-row-per-
-entity merge — is `readmodels/surface_nodes.py`, and the rows themselves come from three
+entity merge — is `readmodels/surface_nodes.py`, and the rows themselves come from four
 emitters speaking it: `surface_needs.py` (util secrets, util filesystem stores, `expects:`),
-`surface_schedule.py` (the suppressed cron, the started-by-nothing check, the phase key) and
-`surface_caps.py` (capability coverage and the act that settles it). "Where a `fix` kind is emitted" is
-therefore one of those four modules, never `surface.py` alone.
+`surface_schedule.py` (the suppressed cron, the started-by-nothing check, the phase key),
+`surface_caps.py` (capability coverage and the act that settles it) and `surface_outcome.py` (the
+OUTCOME row, below). "Where a `fix` kind is emitted" is therefore one of those five modules,
+never `surface.py` alone.
+
+**The outcome row** (`recipe:outcome`, remedy `declare_outcome`) asks whether the routine says,
+and measures, what it exists to produce for its principal — three halves, each a `blocks` row
+until it is answered, so `rsched validate` fails on it: an `outcome:` contract in routine.yaml
+(config/outcome.py), a `scripts/outcome.py` that computes it (engine/outcome.py runs it at
+every run's end), and a `## Done when` line NAMING one of its measures by id — a recipe of only
+process lines can be met in full by a run that produces nothing, which is how freelance-radar
+met every line for four months and 89 applications without an interview. It is the ROUTINE's
+own row, never the library's: its `source` says `recipe`, so the library watch never files it
+as drift and the boot note never carries it (no run can declare its own success, and the gap
+fails no call a run makes). A conversation, a switched-off or retired routine, and a dir with
+no `main.md` owe none.
 
 Nothing is stored. The library MOVES — a run may revise the utils and rules its routine is made
 of, one copy each, reaching every holder at its next run — so a persisted resolution would be

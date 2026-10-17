@@ -19,8 +19,9 @@ parser). Subruns report like any other run (depth > 0).
 - `notional_cost` — the leg at list price (`endpoints/prices.py`), whatever transport carried
   it; `null` when no completion was priced. `cost` stays the provider's own reported figure,
   which is 0.0 on a subscription transport.
-- `outcome` (depth 0, when the routine declares one) — what the run's results script reported
-  (`engine/outcome.py`), so outcomes and cost form one time series.
+- `outcome_measures` (depth 0, when the routine declares an outcome) — what its
+  `scripts/outcome.py` reported at the run's end (`engine/outcome.py`), so outcome and cost form
+  one time series (`readmodels/outcome_series.py`).
 
 Payload extensions are never a new shape: `recipe_commit`, `library_commit` (the library HEAD
 at the run's END, depth 0 only — a rule revision reaches every holder without moving a recipe
@@ -80,7 +81,7 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
             "compression": compression or {},
             **({"fingerprint": fingerprint} if fingerprint else {}),
             **({"quality": quality} if quality else {}),
-            **({"outcome": outcome} if outcome else {}),
+            **({"outcome_measures": outcome} if outcome else {}),
         })
     except OSError:
         pass

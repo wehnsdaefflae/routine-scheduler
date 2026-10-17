@@ -49,11 +49,14 @@ BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "grants",
 #: whether ANOTHER routine may edit it (`improve`) — and what the fingerprint measures as a
 #: component of its own: `deliberation`, `rules` (their texts, by slug), `tuning` (tuning.yaml
 #: is part of the recipe) and `trial`, which outlives the trial as history (rsched/trials.py) and
-#: would split the runs after a finished trial from the identical runs before it.
+#: would split the runs after a finished trial from the identical runs before it — and `outcome`,
+#: the operator's declaration of what the routine is FOR: it measures a run, it changes nothing
+#: the run may do.
 NOT_BEHAVIOUR = frozenset({"slug", "dir", "name", "description", "tags", "hub_tab", "kind",
                            "owner", "workflow_slug", "workflow_commit", "playbook_slug",
                            "pattern", "enabled", "cron", "tz", "catchup", "triggers", "run_gate",
-                           "keep_runs", "improve", "deliberation", "rules", "tuning", "trial"})
+                           "keep_runs", "improve", "deliberation", "rules", "tuning", "trial",
+                           "outcome"})
 
 
 def short_hash(text: str) -> str:

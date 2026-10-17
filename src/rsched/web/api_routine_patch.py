@@ -20,6 +20,7 @@ from .. import rules as rules_mod
 from .. import schedule
 from ..config import DELIBERATION_LEVELS, write_tuning
 from ..config.base import DEFAULT_LADDER, LADDER_KEYS, TUNING_KEYS, _known_tz
+from ..config.outcome import OutcomeConfig
 from ..config.routine import RunGateConfig, RunGatePatch
 from ..config.trialconf import TrialConfig
 from ..engine.ladder import MIN_OVERSIGHT_TURNS
@@ -79,15 +80,11 @@ class SchedulePatch(BaseModel):
 
 
 class RoutinePatch(BaseModel):
-    # forbid unknown keys: this is the validated single-writer save path — a misspelled
-    # field silently dropped reads as "saved" to a direct API caller (and to the Decisions
-    # page's config-patch apply, which verifies its keys against `updated`); a 422 names
-    # the stray instead.
+    # forbid unknown keys: a misspelled field silently dropped reads as "saved" to a caller
+    # (the Decisions page's config-patch apply verifies `updated`); a 422 names the stray.
     model_config = ConfigDict(extra="forbid")
 
-    # the off switch (RoutineConfig.enabled) — strict, so `"no"` is a 422 rather than read as
-    # true: the dashboard's pause and goal retirement send it, and the friendly "disabled"
-    # cadence writes the same key
+    # the off switch (RoutineConfig.enabled) — strict, so `"no"` is a 422, never read as true
     enabled: StrictBool | None = None
     run_gate: RunGatePatch | None = None    # partial — validated MERGED, see _apply_run_gate
     schedule: SchedulePatch | None = None   # {"friendly":…, "catchup":…} (cron built server-side)
@@ -97,9 +94,11 @@ class RoutinePatch(BaseModel):
     #                                          decision|decision_media: decision model}
     efforts: dict | None = None             # {main|tool_call|uncensored: low|…|max} — a setting
     #                                          of its own, never a catalog row per level
-    # A MODEL TRIAL (rsched/trials.py), REPLACED whole. An explicit `"trial": null` CLEARS it —
-    # `patch_routine` keeps that one null, which `exclude_none` would read as "not sent".
+    # REPLACED whole, and an explicit null CLEARS it (`patch_routine` keeps that one null, which
+    # `exclude_none` would read as "not sent"): a MODEL TRIAL (rsched/trials.py) and the OUTCOME
+    # contract — what the routine exists to produce, as numbers (config/outcome.py)
     trial: TrialConfig | None = None
+    outcome: OutcomeConfig | None = None
     connections: dict | None = None         # {provider: account-label} OAuth connection bindings
     grants: dict | None = None              # {entity-id: bool} decision rows (secret exposure
     #                                          + deny-forever tombstones — entities.py)
@@ -375,8 +374,9 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     updates = patch.model_dump(exclude_none=True)
     if patch.run_gate is not None:
         updates["run_gate"] = patch.run_gate.model_dump(exclude_unset=True)
-    if "trial" in patch.model_fields_set and patch.trial is None:
-        updates["trial"] = None     # SENT as null: the one spelling of "clear the trial"
+    for key in ("trial", "outcome"):    # SENT as null: the one spelling of "clear it"
+        if key in patch.model_fields_set and getattr(patch, key) is None:
+            updates[key] = None
     return apply_updates(request, info, updates)
 
 

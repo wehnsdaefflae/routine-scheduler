@@ -31,7 +31,8 @@ consumer — the authoring approval — and lives apart. So does the PROSE readi
 these nodes as lines for an operator with no panel to click is `remedies.py`, a different
 audience rather than a different join.
 
-The JOIN is here; the four things it joins are four modules, because a file that grew a
+The JOIN is here; the things it joins are their own modules (the outcome row is
+`surface_outcome`), because a file that grew a
 `fix` kind every week reached 663 lines and every change re-read all of them to find the one
 it touched. `surface_nodes` is the row vocabulary (severities, `_node`, the merge rule),
 `surface_needs` the declared needs (util secrets, util stores, `expects:`),
@@ -47,6 +48,7 @@ from typing import TYPE_CHECKING, Any
 from .surface_caps import _absent_util_node, _uncovered_nodes
 from .surface_needs import _expects_nodes, _fs_nodes, _secret_nodes
 from .surface_nodes import _ORDER, BLOCKS, INTERRUPTS, NOTE, _node, _one_row_per_entity
+from .surface_outcome import _outcome_nodes
 from .surface_schedule import _phase_nodes, _schedule_nodes
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -102,6 +104,7 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     nodes += _expects_nodes(cfg, expects, machine_catalog)
     nodes += _schedule_nodes(server, cfg)
     nodes += _phase_nodes(server, cfg)
+    nodes += _outcome_nodes(server, cfg)
 
     # The library's `requires:`, read once: the util join below asks it (a covering doc decides
     # an absent util's remedy), as do the checks after it.
@@ -180,7 +183,9 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
 #: nothing else, because it exists for gaps the RUN would otherwise discover the hard way. A
 #: NOTE is addressed to the operator — a cron the lane suppresses, a phase file keyed wrong —
 #: and the run can neither act on it nor be saved a turn by it, so putting one in front of
-#: every run buys prompt noise. `rsched validate` and the routine page still show all three.
+#: every run buys prompt noise. `rsched validate` and the routine page still show all three. The
+#: boot note also drops a routine-owned row (`source.recipe`, the outcome row) whatever its
+#: severity: it fails no call the run makes and no run can close it (engine/boot.py).
 #:
 #: The prose rendering of these nodes — every `fix` kind said in words — is `remedies.py`.
 BOOT_SEVERITIES = (BLOCKS, INTERRUPTS)

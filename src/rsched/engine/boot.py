@@ -220,7 +220,11 @@ def _setup_gap_note(loop) -> None:
     if ctx.depth > 0:                # a child inherits its parent's resources, not its config
         return
     try:
-        lines = surface_lines(routine_surface(ctx.server, ctx.routine), BOOT_SEVERITIES)
+        surface = routine_surface(ctx.server, ctx.routine)
+        # a gap the routine's OWN declaration owns (the outcome row) fails no call the run makes
+        # and no run can close it, so it is the operator's and the improver's, never this note's
+        surface["nodes"] = [n for n in surface["nodes"] if not n["source"].get("recipe")]
+        lines = surface_lines(surface, BOOT_SEVERITIES)
     except (OSError, ValueError, AttributeError):
         return
     if not lines:

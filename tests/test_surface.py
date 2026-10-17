@@ -28,6 +28,7 @@ from helpers import write_util
 from rsched.readmodels import remedies as remedies_mod
 from rsched.readmodels import surface as surface_mod
 from rsched.readmodels import surface_caps, surface_needs, surface_nodes, surface_schedule
+from rsched.readmodels import surface_outcome as outcome_mod
 from rsched.readmodels.remedies import REMEDIES, surface_lines
 from rsched.readmodels.surface import (
     BLOCKS,
@@ -668,10 +669,9 @@ def test_a_gap_fixed_off_this_page_still_says_what_settles_it(tmp_path):
         "kind": "fix_phase", "expected": "phase"}
 
 
-#: Every module that may emit a surface row. The scans below read SOURCE, so a join moved
-#: into its own file has to be listed here or its `fix` kinds stop being held to the
-#: vocabulary — which is the failure the bindings exist to prevent, one split later.
-_EMITTERS = (surface_mod, surface_needs, surface_schedule, surface_caps)
+#: Every module that may emit a surface row. The scans below read SOURCE, so a join moved into
+#: its own file is listed here or its `fix` kinds stop being held to the vocabulary.
+_EMITTERS = (surface_mod, surface_needs, surface_schedule, surface_caps, outcome_mod)
 
 
 def _node_calls() -> list[ast.Call]:

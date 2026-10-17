@@ -5,6 +5,7 @@ over them.
 
 from types import SimpleNamespace
 
+from helpers import declare_outcome
 from rsched import cli
 from rsched.workflows.recipelint import recipe_notes
 
@@ -134,6 +135,7 @@ def test_validate_reports_the_recipe_and_stays_green(cli_server, make_routine, t
     (d / "stages").mkdir()
     (d / "stages" / "orient.md").write_text("# Orient\n", encoding="utf-8")
     (d / "main.md").write_text(MAIN, encoding="utf-8")   # routes to stages/report.md: absent
+    declare_outcome(d)
 
     assert cli.cmd_validate(SimpleNamespace(routine="testr")) == 0   # a REPORT, not a gate
     out = capsys.readouterr().out

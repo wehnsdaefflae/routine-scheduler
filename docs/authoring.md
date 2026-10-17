@@ -143,7 +143,11 @@ Rules of the form:
   creation collected them); every main finish accounts for each line (`engine/donewhen.py`,
   `engine/accounting.py`). Write outcomes the run's transcript can show, never "at least N",
   never a cap phrased as a quota, never a prohibition, and so that each line can honestly be
-  "not due" on a run where it does not apply. A harness (`meta` tag) carries none.
+  "not due" on a run where it does not apply. A harness (`meta` tag) carries none. A
+  materialized routine's `## Done when` must also carry at least one line NAMING a measure of its
+  OUTCOME contract by id (`outcome:` in routine.yaml, docs/rules-permissions.md "The outcome
+  row") — a recipe of process lines only can be met in full by a run that produced nothing for
+  its principal, and `rsched validate` fails it.
 - There is deliberately **no end-of-routine literal**. Whether a ROUTINE ever finishes for good
   is its operator's FINISH LINE (`state/finish-line.json`, `engine/finishline.py`), set on the
   routine page or proposed at creation — never a pattern's claim. A pattern for a job with an

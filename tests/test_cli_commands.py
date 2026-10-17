@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import yaml
 
+from helpers import declare_outcome
 from rsched import cli
 from rsched.paths import atomic_write_json
 
@@ -19,7 +20,7 @@ def _args(**kw):
 
 
 def test_validate_reports_ok_and_problems(cli_server, make_routine, capsys):
-    make_routine(slug="good")
+    declare_outcome(make_routine(slug="good"))
     broken = make_routine(slug="broken")
     raw = yaml.safe_load((broken / "routine.yaml").read_text(encoding="utf-8"))
     raw["description"] = ""
@@ -194,6 +195,6 @@ def test_run_once_exit_codes_and_event_stream(cli_server, make_routine, scripted
 
 
 def test_main_parses_and_dispatches(cli_server, make_routine, capsys):
-    make_routine(slug="viamain")
+    declare_outcome(make_routine(slug="viamain"))
     assert cli.main(["validate", "viamain"]) == 0
     assert "viamain: ok" in capsys.readouterr().out

@@ -37,6 +37,7 @@ from .base import (
     _validate_lenient,
     default_tz,
 )
+from .outcome import OutcomeConfig
 from .routine_scrub import scrub_bindings
 from .trialconf import TrialConfig
 
@@ -111,16 +112,14 @@ class RoutineConfig(_Config):
     # `playbook: {slug, commit}` binding). Empty = a fresh conversation. Drives the
     # Update-playbook button; a Save-as-playbook always creates a new one regardless.
     playbook_slug: BlankableStr = Field("", validation_alias=AliasPath("playbook", "slug"))
-    # Detached background tasks only: the spawning conversation ({slug, dir}). The
-    # DetachedManager reads this to deliver the finished result back. None for every
-    # normal routine/conversation (a declared field, so it survives the extra="ignore" drop).
+    # Detached background tasks only: the spawning conversation ({slug, dir}) DetachedManager
+    # delivers the result back to. None elsewhere (declared, so extra="ignore" keeps it).
     owner: dict | None = None
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
     # The heading this routine's card sits under on the Steward hub (docs/status-pages.md):
     # identity like `name`, named to the run in its harness contract. Empty = none named.
     hub_tab: BlankableStr = ""
-    # What this dir IS, when it is not an ordinary scheduled routine: "conversation" (an
-    # interactive session under conversations_home). Empty for a normal routine.
+    # What this dir IS when not an ordinary routine: "conversation" (under conversations_home).
     kind: BlankableStr = ""
     # Role → catalog model NAME (main/tool_call/uncensored). A role left unset
     # falls back to the server system_model. Resolved live via EndpointRegistry, so editing
@@ -131,11 +130,12 @@ class RoutineConfig(_Config):
     # catalog row per level. A role with no entry runs at the provider's default. Whichever
     # model of the role's failover chain serves a turn runs at this effort.
     efforts: dict[str, str] = Field(default_factory=dict)
-    # A MODEL TRIAL (rsched/trials.py): "run on these catalog models for the next N fires". The
-    # daemon applies it per fire while fewer than `runs` runs have recorded it; `models:` above
-    # stays the routine's own throughout. A finished trial stays here as history until the next
-    # accepted change clears or replaces it — nothing writes this field but that accept.
+    # A MODEL TRIAL (rsched/trials.py): "run on these catalog models for the next N fires" while
+    # fewer than `runs` runs recorded it. A finished one stays as history until the next accept.
     trial: TrialConfig | None = None
+    # What the routine EXISTS to produce for its principal, as numbers its scripts/outcome.py
+    # computes each run (config/outcome.py, engine/outcome.py). None = undeclared.
+    outcome: OutcomeConfig | None = None
     # OAuth connection bindings: provider id → account label (Settings → Connections). A run bound
     # here gets that provider's current access token injected into any util that declares it (as
     # <PROVIDER>_ACCESS_TOKEN). A RESOURCE binding like models/fs_roots — the binding is the grant;

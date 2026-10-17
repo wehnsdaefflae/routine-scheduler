@@ -246,3 +246,36 @@ def mock_proxy(monkeypatch, handler) -> None:
     factory = httpx.Client
     monkeypatch.setattr(cliproxy_mgmt.httpx, "Client", lambda **kw: factory(
         transport=httpx.MockTransport(handler), **kw))
+
+
+OUTCOME_SCRIPT = '''# /// script
+# dependencies = []
+# ///
+"""outcome — what this routine exists to produce, from its own state.
+
+usage: outcome
+"""
+import json
+
+print(json.dumps({"replies": 3}))
+'''
+
+
+def declare_outcome(routine_dir: Path, *, script: str = OUTCOME_SCRIPT) -> None:
+    """Make a fixture routine answer for its outcome the way a real one must (config/outcome.py):
+    the contract in routine.yaml, `scripts/outcome.py` measuring it, and a Done-when line naming
+    the measure — the three halves the setup surface's outcome row checks."""
+    import yaml
+
+    path = routine_dir / "routine.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw["outcome"] = {"principal": "the operator",
+                      "measures": [{"id": "replies", "label": "replies from people"}]}
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    (routine_dir / "scripts").mkdir(exist_ok=True)
+    (routine_dir / "scripts" / "outcome.py").write_text(script, encoding="utf-8")
+    main = routine_dir / "main.md"
+    text = main.read_text(encoding="utf-8")
+    if "## Done when" not in text:
+        text += "\n## Done when\n\n- d1 — the page shows this month's replies\n"
+    main.write_text(text, encoding="utf-8")

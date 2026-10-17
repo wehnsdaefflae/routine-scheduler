@@ -277,12 +277,11 @@ def _settings_post(request) -> bool:
 
 
 # ---- the binding: every kind the console renders lands on a control that performs it --------
-#
 # One row per `fix` kind, each seeding the routine state that makes the server emit it and
 # naming the ONE control that closes it. `landing` is plain CSS (the flash and the viewport
 # check go through `document.querySelector`); `control` is a locator, so it may address the
-# thing by its label where no attribute names it. A kind whose act NO console can perform
-# carries neither — it renders as prose, which is a different promise from a dead link.
+# thing by its label where no attribute names it. A kind no console can perform carries
+# neither: it renders as prose, a different promise from a dead link.
 
 
 @dataclass(frozen=True)
@@ -412,6 +411,7 @@ CASES = (
          landing=SCHED_CLEAR, control=lambda p: p.locator(SCHED_CLEAR)),
     # Nothing on any page records a phase — the recipe does, at its next run. Words, no link.
     Case("fix_phase", "state:phase", _seed_fix_phase, control=None),
+    Case("declare_outcome", "recipe:outcome", lambda ui, _mp: _configure(ui), control=None),
 )
 
 

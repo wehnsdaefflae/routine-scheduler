@@ -56,6 +56,8 @@ REMEDIES: dict[str, str] = {
     "lane_schedule": "clear this routine's cron so the file says what happens, or reschedule "
                      "the lane {name}",
     "fix_phase": "have the recipe record the phase under `{expected}`",
+    "declare_outcome": "give it {missing} — what it exists to produce for its principal, as "
+                       "numbers its runs answer for",
 }
 
 #: Which param decides between a kind's named and `:any` wording.

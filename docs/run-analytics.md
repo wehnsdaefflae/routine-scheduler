@@ -7,7 +7,8 @@ run-dir retention because they ride the durable workflow-usage stream
 (`~/routines/.control/workflow-usage.jsonl`).
 
 That stream holds one record per LEG, not per run: a continued or resumed run appends another
-record under the same `run_id`. A leg's `tokens`, `cost` and `compression` tally are its own,
+record under the same `run_id`. A leg's spend (`tokens`, `cached_in`, `cache_write`, `volume`,
+`cost`, `notional_cost`) and `compression` tally are its own,
 while `turns`, `utils`, `referrals` and `asks_deferred` are the run's running totals (a resumed
 leg's boot reseeds them). Every reader below therefore counts RUNS —
 `readmodels/usage_stream.usage_runs`, the stream folded once per change: the per-leg fields
@@ -18,6 +19,10 @@ A third layer measures what a run COSTS rather than what it did: prompt-cache he
 one reading that separates carrying context cheaply from paying for it twice. A fourth measures
 what an efficiency mechanism RETURNS — lossless output compression, per routine, on that same
 durable stream.
+
+And one layer is not about the process at all: a routine's **outcome** — what it exists to
+produce for its principal, measured every run against what it cost ([Outcomes](#outcomes-what-a-routine-exists-to-produce)).
+Every other layer here can read healthy while a routine produces nothing.
 
 A fifth measures the runs that never happened. Work the fleet owed and did not do leaves no
 run behind, so it leaves nothing on any of the four layers above; the health stream is where
@@ -417,6 +422,32 @@ with no upside, where the compressor produced a result the engine's own verifica
 the original was kept. Rejections cost the same wall clock as applications, so a row where they
 dominate is a routine paying for the feature and getting nothing back. Mechanism, eligibility and
 the verification itself: [docs/output-compression.md](output-compression.md).
+
+## Outcomes: what a routine exists to produce
+
+Every reading above judges the PROCESS: did the run fail, did it meet its Done-when lines, did it
+cost more than its usual. A routine can pass all of them and produce nothing — freelance-radar
+did for four months (89 applications, zero interviews), grants-radar for 14 runs (no new
+programme), and every judge on the instance, self-audit's included, read the routine's own
+account and called it healthy.
+
+So a routine declares its OUTCOME contract in routine.yaml (`outcome:`, `config/outcome.py`):
+its `principal` and up to six `measures`, each `{id, label, kind, better}` — a `count` is a
+running total (applications sent, euros won), a `level` a current reading (a weight, the
+programmes on the list). Its own `scripts/outcome.py` reads its state and prints one JSON
+object `{<id>: <number>}`; the engine runs it in the run's jail after the last turn of every
+depth-0 run (`engine/outcome.py`) and records what it printed — checked for shape only — as
+`outcome_measures` in status.json and in the usage row, `{"values": …}` or `{"error": …}`. A
+failed or malformed reading is an error, never a zero.
+
+`readmodels/outcome_series.review` reads that back over a window of weeks (default 4) — for each
+measure the readings, a count's change or a level's first → last, and `per_unit`, the window's
+volume per unit of progress (null when it made none); beside it the window's runs, volume and
+notional dollars. `GET /api/changes/{slug}/outcome?weeks=N` serves it and the Outcome panel
+LEADS the routine's development view (`components/outcome-panel.js`). It reads nothing the
+routine says about itself. routine-improver's outcome review reads the same series first, for
+every target, before any health claim (its recipe), and the setup surface's outcome row makes
+the contract mandatory (docs/rules-permissions.md, "The outcome row").
 
 ## What a run costs (`volume` and `notional_cost`)
 

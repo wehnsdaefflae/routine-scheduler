@@ -151,6 +151,8 @@ const FIX = {
            where: "the Routines page", href: "#/routines" } }),
   fix_phase: (f) => ({
     act: `record ${f.expected || "phase"} in state/phase.json`, where: "the recipe" }),
+  declare_outcome: (f) => ({
+    act: `give it ${f.missing || "an outcome contract"}`, where: "routine.yaml and the recipe" }),
 };
 
 /** Fully on screen. The second scroll is worth making only for a control the first one left off

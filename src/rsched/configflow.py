@@ -89,6 +89,8 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "hub_tab": (NEXT_RUN, "the harness contract names the hub heading once, at boot"),
     "title": (NEXT_RUN, "a label, not behaviour"),
     "workdir": (NEXT_RUN, "it is the first write root, computed at boot with the other roots"),
+    "outcome": (NEXT_RUN, ("the outcome contract is read when a run ENDS, to measure it; a run "
+                           "already going is measured against the contract it booted with")),
 }
 
 #: Only these carry a VALUE the engine adopts; the rest of LIVE would be meaningless to ship.
@@ -105,7 +107,7 @@ ROUTINE_PATCH_FIELDS = frozenset({
     "enabled", "run_gate", "schedule", "budgets", "models", "efforts", "trial", "connections",
     "grants", "machines", "name", "description", "tags", "pattern", "hub_tab", "permissions",
     "capabilities", "rules", "shared_reminders", "improve", "deliberation", "keep_runs",
-    "fs_read_roots", "fs_write_roots",
+    "fs_read_roots", "fs_write_roots", "outcome",
     # the escalation ladder: its config block, and its two tuning knobs
     "ladder", "ladder_rung_height", "oversight_turns",
 })

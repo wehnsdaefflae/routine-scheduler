@@ -3,6 +3,8 @@
 // Recipe health — the recipe-version table, the regression flag with its roll-back, and the
 // cautions' tallies (views/routine-health.js, moved here from the production routine page).
 //
+//   Outcome      — what the routine EXISTS to produce against what it cost (components/
+//                  outcome-panel.js): first, because every reading below is about process.
 //   Weeks        — the routine's own weeks as small multiples (components/sparkline.js): volume
 //                  and turns against its usual, lines met, interventions per run.
 //   Changes      — newest first, one row each: when · what changed · runs before → after · the
@@ -29,6 +31,7 @@ import { DIMENSIONS, dimMarks, fmtSignal, signalMark, verdictChip, whatChanged }
 import { foldEntries, rebuiltMark } from "/static/components/change-folds.js";
 import { onRunFinished } from "/static/components/run-finished.js";
 import { fmt, sparkStrip } from "/static/components/sparkline.js";
+import { mountOutcome } from "/static/components/outcome-panel.js";
 import { mountHealth } from "/static/views/routine-health.js";
 import { asButton, el, emptyState, fmtNum, skeleton, toDate, when } from "/static/util.js";
 
@@ -230,16 +233,19 @@ export async function render(view, slug) {
       el("h1", { class: "mono" }, slug),
       el("div", { class: "sub" }, "What changed in this routine and whether its runs got better. ",
         el("a", { href: `#/routine/${encodeURIComponent(slug)}` }, "The routine itself →")))));
+  const outcomeBox = el("div", { class: "outcome-panel" });
   const weeksHead = el("h2", { id: "sec-weeks", hidden: true }, "Weeks");
   const weeksBox = el("div", {});
   const changesBox = el("div", {}, skeleton(["100%", "100%", "70%"]));
   const fitBox = el("div", {}, skeleton(["100%", "60%"]));
   const healthBox = el("div", {}, skeleton(["60%", "90%"]));
   const changesHead = el("h2", { id: "sec-changes" }, "Changes");
-  view.append(weeksHead, weeksBox, changesHead, changesBox,
+  view.append(el("h2", { id: "sec-outcome" }, "Outcome"), outcomeBox,
+    weeksHead, weeksBox, changesHead, changesBox,
     el("h2", { id: "sec-model-fit" }, "Model fit"), fitBox,
     el("h2", { id: "sec-recipe-health" }, "Recipe health"), healthBox);
   const health = mountHealth(healthBox, slug);
+  const outcome = mountOutcome(outcomeBox, slug);
 
   const opened = new Set();   // the rows, groups and folds a reader opened survive a live re-read
   let alive = true, seq = 0;
@@ -266,6 +272,7 @@ export async function render(view, slug) {
   }
 
   await load();
-  const stop = onRunFinished(() => { load().catch(() => {}); health.reload(); }, { slug });
+  const stop = onRunFinished(() => { load().catch(() => {}); health.reload(); outcome.reload(); },
+    { slug });
   return () => { alive = false; stop(); health.dispose(); };
 }

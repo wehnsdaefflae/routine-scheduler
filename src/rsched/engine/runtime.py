@@ -219,7 +219,13 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                             allowed_tools=allowed_tools, resume=bool(resume_from)).run()
         from ..usage_log import log_workflow_usage
         from ..workflows import library
-        from . import runrecord
+        from . import outcome, runrecord
+
+        # what the routine EXISTS to produce, measured after its last turn (engine/outcome.py)
+        # and recorded beside what the run cost — status.json and the usage row alike
+        ctx.outcome_measures = outcome.measure(ctx)
+        if ctx.outcome_measures is not None:
+            ctx.write_status()
 
         log_workflow_usage(server.routines_home, routine=cfg.slug, run_id=ctx.run_id,
                            workflow=prov.get("slug") or "", depth=0, status=status,
@@ -234,7 +240,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                            compression=ctx.compression_stats,
                            # what made the run and how it went (engine/runrecord.py)
                            fingerprint=runrecord.fingerprint(ctx, orch_ref),
-                           quality=runrecord.quality(ctx))
+                           quality=runrecord.quality(ctx), outcome=ctx.outcome_measures)
         _log_cache_health(ctx, cfg.slug)
         # Both read the stream this run's record just landed in: the persisted util-stats
         # snapshot (the single source the Stats tab and the util-review routine share) and
