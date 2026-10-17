@@ -15,6 +15,7 @@ import re
 
 from playwright.sync_api import expect
 
+from helpers import PRODUCES
 from rsched.paths import atomic_write_json
 
 
@@ -30,7 +31,7 @@ def _queue(ui, *, pid="pc-20260827-030000-aaaaaa", kind="create_routine", routin
         "fields": fields if fields is not None else {
             "slug": "fau-comms-steward", "name": "FAU comms steward",
             "instruction": "Watch the comms inbox and stage replies for review.",
-            "workflow": "general-task"}})
+            "workflow": "general-task", "produces": PRODUCES}})
     return pid
 
 
@@ -45,6 +46,8 @@ def test_band_shows_the_proposal_with_what_would_be_created(ui, ui_page):
     # the instruction the routine would be BORN with is what matters before approving
     ui_page.get_by_text("what would be created").click()
     expect(ui_page.locator("pre.doc")).to_contain_text("Watch the comms inbox")
+    # …and, before it, what the routine exists to produce — its outcome contract
+    expect(ui_page.locator("[data-produces]")).to_contain_text("replies · count · higher")
 
 
 def test_create_it_materializes_and_clears_the_row(ui, ui_page):

@@ -177,8 +177,26 @@ def _is_stub(body: str) -> bool:
     """The observed failure: a stage module of one thin line that a run cannot act from."""
     return len([ln for ln in body.strip().splitlines() if ln.strip()]) < 2
 
+def _outcome_prompt(outcome) -> str:
+    """What the routine exists to produce (engine/outcome_words.py), told to the main call."""
+    if outcome is None:
+        return ""
+    from ..engine.outcome_words import done_when_line
+
+    rows = "\n".join(f"- `{m.id}` ({m.kind}, {m.better} is better) — {m.label}"
+                     for m in outcome.measures)
+    return (f"\n\nWhat this routine exists to PRODUCE for {outcome.principal} — its outcome, "
+            "counted after every run by its own `scripts/outcome.py`:\n" + rows + "\nAdd this "
+            f"line to `## Done when`, with its d-number: `- dN — {done_when_line(outcome)}`. "
+            "Make the stages keep, in `state/`, the dated records each measure is counted "
+            "from, and say in main that a run which finds no `scripts/outcome.py` writes it: "
+            "standard library only, reading only this routine's own records, printing ONE "
+            "JSON object of those ids and their numbers on its last line, with a "
+            "`--selftest`. A measure the records cannot support is left out, never estimated.")
+
+
 def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
-              done_when: list[str], never: list[str], slug: str) -> dict:
+              done_when: list[str], never: list[str], slug: str, outcome=None) -> dict:
     """Outline → main → one call per stage. Raises on any hard failure (the caller falls
     back to materialize).
 
@@ -245,6 +263,8 @@ def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
                    "section after `## Done when`, one `- <prohibition>` line per item, in "
                    "their words:\n" + "\n".join(f"- {line}" for line in never)) if never else ""
 
+    users_outcome = _outcome_prompt(outcome)
+
     def check_main(data: dict) -> str:
         main = str(data.get("main") or "").strip()
         if not main:
@@ -264,11 +284,18 @@ def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
             raise ValueError("; ".join(found))
         if never and not re.search(r"^## Never\s*$", main, re.MULTILINE):
             raise ValueError("main.md has no `## Never` section for what the user prohibited")
+        from ..readmodels.surface_outcome import names_a_measure
+
+        if outcome and not any(names_a_measure(line.get("text", ""),
+                                               [m.id for m in outcome.measures])
+                               for line in donewhen.parse(main)):
+            raise ValueError("no `## Done when` line names an outcome measure")
         return main
 
     main = complete(context + "The routine's stages are already planned — the OUTLINE (each "
                     "stage is generated as its own module):\n" + outline_txt + "\n\n"
-                    + _MAIN_RULES + users_done + users_never + _SELF_CONTAINED + pin_note,
+                    + _MAIN_RULES + users_done + users_never + users_outcome
+                    + _SELF_CONTAINED + pin_note,
                     MAIN_SCHEMA, MAIN_MAX_TOKENS, "main", check=check_main)
 
     def check_stage(data: dict) -> str:

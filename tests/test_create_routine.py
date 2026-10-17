@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 import yaml
 
+from helpers import PRODUCES
 from rsched.config import ServerConfig
 from rsched.engine import create_routine
 from rsched.engine.actions import validate_action
@@ -68,7 +69,7 @@ def _age_draft(ctx):
 
 ACTION = {"kind": "create_routine", "target": "arxiv-reading-list",
           "name": "Arxiv reading list", "prompt": "collect new AI papers and keep a list",
-          "workflow": "general-task"}
+          "workflow": "general-task", "produces": PRODUCES}
 
 
 def test_create_routine_registered_and_validated():
@@ -84,13 +85,13 @@ def test_create_routine_registered_and_validated():
 
 
 def test_create_routine_queues_outside_a_root_conversation(tmp_path):
-    """F328: no user in the loop means PROPOSE, not refuse. Creation stays
-    conversation-INITIATED — a scheduled run or a within-reply child leaves a proposal for the
-    Decisions page, and still creates nothing itself."""
+    """F328: no user in the loop means PROPOSE, not refuse — a scheduled run leaves a proposal
+    for the Decisions page and creates nothing itself; a within-reply child is refused."""
     from rsched import pending
 
     server = _server(tmp_path)
-    action = {"kind": "create_routine", "target": "x", "name": "X", "prompt": "p"}
+    action = {"kind": "create_routine", "target": "x", "name": "X", "prompt": "p",
+              "produces": PRODUCES}
     obs = create_routine.handle_create_routine(_ctx(server, home="routines_home"), action)
     assert obs["queued"] and not obs.get("created") and not obs.get("rejected")
     assert "Do NOT re-issue" in obs["next"]
@@ -363,9 +364,8 @@ def test_mid_build_oserror_is_teaching_error_and_leaves_no_dir(tmp_path, monkeyp
 
 
 def test_the_done_answer_becomes_the_recipe_s_done_when(tmp_path):
-    """What the person said one finished run delivers lands in the recipe's `## Done when`, in
-    their words — even on a degraded build with no generator, which appends them to the
-    pattern's own skeleton rather than losing them. Blank entries are dropped."""
+    """What the person said one finished run delivers lands in `## Done when` in their words,
+    even on a degraded build (appended to the pattern's skeleton, before the outcome line)."""
     from rsched.engine import donewhen
 
     server = _server(tmp_path)
@@ -376,7 +376,7 @@ def test_the_done_answer_becomes_the_recipe_s_done_when(tmp_path):
     obs = create_routine.handle_create_routine(ctx, action)
     assert obs.get("created")
     lines = donewhen.read(server.routines_home / ACTION["target"])
-    assert [x["text"] for x in lines][-2:] == ["the digest is published", "the link resolves"]
+    assert [x["text"] for x in lines][-3:-1] == ["the digest is published", "the link resolves"]
     assert [x["id"] for x in lines] == [f"d{i}" for i in range(1, len(lines) + 1)]
 
 

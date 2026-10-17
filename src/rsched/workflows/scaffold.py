@@ -36,7 +36,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
              fs_write_roots: list[str] | None = None, tags: list[str] | None = None,
              pattern: str = "", done_when: list[str] | None = None,
              finish_line: list[str] | None = None,
-             setup: list[str] | None = None, never: list[str] | None = None) -> Path:
+             setup: list[str] | None = None, never: list[str] | None = None,
+             outcome: dict | None = None) -> Path:
     """Create ~/routines/<slug>, FOLLOWING a settings pattern (docs/patterns.md).
 
     The routine is saved with its pattern's values — `pattern` names it, or the recommender
@@ -51,7 +52,10 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     the compile SEED: it is decomposed into main.md + stages/ and NOT persisted.
     `done_when` — what the person said one finished run delivers — becomes the recipe's
     `## Done when`; `never` — what they said a run must never do — its `## Never` (and
-    context for the settings recommended to stop it before the action). A one-line
+    context for the settings recommended to stop it before the action). `outcome` — the
+    contract the person settled (engine/outcome_words.py) — is written into routine.yaml as
+    declared, not proposed: their confirmation of the draft was the accept, and the recipe's
+    Done-when names its measures so the first run writes `scripts/outcome.py`. A one-line
     `description` (for the UI) is always written, falling back to the name. `tz` is the zone
     the schedule is in — empty means the server's (`config.default_tz`), the zone the console
     shows and saves schedules in.
@@ -96,8 +100,6 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     own_caps = {k: v for k, v in capabilities.items() if v}
     commit = library.head_commit(server.libraries_home)
 
-    from .adapt import decompose, dump_markdown
-
     # DECOMPOSE the single-file workflow (applied to the instruction) into the routine's OWN
     # main.md (entry state machine) + one markdown stage per step/state. The instruction is
     # consumed here (not persisted); rules are NOT part of the decomposition — they are
@@ -107,8 +109,12 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # routine dir must not exist until every file's content is in hand — a half-made skeleton
     # sitting in the routines home for minutes reads as a broken build (R478: the user watched
     # empty dirs, deleted them mid-flight, and the writes that followed crashed the run).
+    from ..config.outcome import OutcomeConfig
+    from .adapt import decompose, dump_markdown
+
     result = decompose(server, workflow_slug, instruction, done_when=list(done_when or []),
-                       never=list(never or []))
+                       never=list(never or []),
+                       outcome=OutcomeConfig.model_validate(outcome) if outcome else None)
     pattern = pattern or recommend.choose(server, workflow=workflow_slug, name=name,
                                           task=instruction)
     settings = (store.read(server.libraries_home, pattern) or {}).get("settings") or {}
@@ -156,6 +162,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "permissions": active_perms,
         "rules": active_rules,
         **({"capabilities": own_caps} if own_caps else {}),
+        **({"outcome": outcome} if outcome else {}),
         "budgets": dict(DEFAULT_BUDGETS),
         "retention": {"keep_runs": 30},
         # the pattern's values over the defaults — the routine is saved following it

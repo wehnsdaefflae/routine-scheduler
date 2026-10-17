@@ -449,6 +449,15 @@ routine says about itself. routine-improver's outcome review reads the same seri
 every target, before any health claim (its recipe), and the setup surface's outcome row makes
 the contract mandatory (docs/rules-permissions.md, "The outcome row").
 
+A NEW routine is born with it. `create_routine` refuses to create or queue anything without
+`produces` — `principal: <who>` and one `<id> · count|level · higher|lower — <what it counts>`
+line per measure, in the person's words (`engine/outcome_words.py`) — because "what is this for,
+counted how" is the question freelance-radar was never asked. Scaffold writes it into
+routine.yaml as declared (the person's confirmation of the draft is the accept), the recipe
+generator must give `## Done when` a line naming the measures, and the routine's first run writes
+`scripts/outcome.py` from the records its stages keep — until it does, the outcome row reads
+`unmeasured` and the engine records `{"error": …}`, never a zero.
+
 ## What a run costs (`volume` and `notional_cost`)
 
 `tokens` — fresh input + output — is what a token BUDGET meters and nothing more: adapters keep

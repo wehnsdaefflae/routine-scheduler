@@ -108,7 +108,9 @@ observation lists the patterns built on the chosen workflow with the questions e
 (`asks`); every question the task does not already answer is put to the person as a
 decision. Their answers ride `create_routine` as `setup`; what one finished run leaves behind
 rides as `done_when`, when the routine is done for good as `finish_line`, what a run must never
-do as `never`. The routine is saved with its pattern's values; what is specific to it — the
+do as `never`, and what it exists to produce — its outcome contract, required — as `produces`,
+which is written into routine.yaml as declared rather than proposed (docs/run-analytics.md,
+"Outcomes"). The routine is saved with its pattern's values; what is specific to it — the
 setup answers turned into settings (folders, a mailbox watch list for the gate, a cadence), the
 finish line, whatever else the recommender finds — waits as pending changes under "check the
 changes i recommend." (`patterns/recommend.at_creation`). So does the pattern's own `grants`:

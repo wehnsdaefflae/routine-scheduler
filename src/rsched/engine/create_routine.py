@@ -2,11 +2,9 @@
 clarified with the user into a real scheduled routine (D58), in TWO steps (D92):
 preview first, materialize only after the user has confirmed the draft.
 
-The operator's rule: routine creation is initiated from a conversation ONLY. Instead of a
-retired standalone wizard page, the conversation agent (or a `/create_routine` slash
-command) clarifies the task WITH the user in the normal chat, then emits this action. The
-FIRST call VALIDATES the named workflow against the live library, then stores a DRAFT (slug,
-name, instruction, workflow) under the conversation's own
+The conversation agent (or a `/create_routine` slash command) clarifies the task WITH the
+user in the normal chat, then emits this action. The FIRST call VALIDATES the named workflow
+against the live library, then stores a DRAFT under the conversation's own
 `state/routine-draft.json` and returns a preview observation carrying the pattern catalog —
 nothing is created yet; the
 agent relays the preview and finishes its reply. When the user answers, the agent calls
@@ -29,9 +27,7 @@ Structural rule: it MATERIALIZES only in a ROOT CONVERSATION; any other depth-0 
 proposal (F328), a child run is refused, and a call with `replaces` creates a replacement
 CANDIDATE at once, its swap the one decision (engine/candidate.py).
 
-Unlike `detach`, the handler scaffolds SYNCHRONOUSLY: the user is waiting for the routine now,
-and the registry rescan (`registry_rescan_s`) picks the new dir up on its own timer. The slow
-step, scaffold's workflow decompose, degrades to a no-LLM fallback with no endpoint (tests).
+It scaffolds SYNCHRONOUSLY (the user is waiting); the registry rescan picks the dir up.
 """
 
 from __future__ import annotations
@@ -41,7 +37,7 @@ from pathlib import Path
 
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
-from . import candidate
+from . import candidate, outcome_words
 from .run_context import RunContext
 from .runkind import is_root_conversation
 
@@ -234,7 +230,11 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
                     "honestly have none (a monitor, a digest) — then omit it, but ASK, because "
                     "a routine nobody asked runs forever. ASK A THIRD: is there anything a "
                     "run must NEVER do? Each answer goes in `never`, in their words — never "
-                    "into `done_when`, which lists outcomes. Pick the settings pattern from "
+                    "into `done_when`, which lists outcomes. ASK A FOURTH: what does this "
+                    "routine exist to PRODUCE, for whom, as numbers they would count "
+                    "(applications sent, interviews, euros won, kilograms) — never activity it "
+                    f"does to itself. Their answer goes in `produces`: {outcome_words.FORM}; "
+                    "nothing is created without it. Pick the settings pattern from "
                     "settings_patterns with them and ask each of its questions the task does "
                     "not answer; their answers go in `setup`. Then finish the reply — or put "
                     "the go-ahead itself to "
@@ -250,17 +250,21 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
     return obs
 
 
-def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
+# keyword-only, one per field the confirmed draft carries — bundling them would only move the list
+def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,  # noqa: PLR0913
                  workflow_slug: str, pattern: str = "", setup: list[str] | None = None,
                  done_when: list[str] | None = None,
                  finish_line: list[str] | None = None,
-                 never: list[str] | None = None) -> dict:
+                 never: list[str] | None = None,
+                 outcome: outcome_words.OutcomeConfig | str = "") -> dict:
     """The confirmed half: draft the fitted pattern if that is what the user picked, then build
     the routine from `workflow_slug`. Every failure here is an OBSERVATION the model can act on
     — a conversation run must never die because a build step did.
     """
     from ..workflows.scaffold import scaffold
 
+    if isinstance(outcome, str):        # the contract is the one field a confirm may not lack
+        return outcome_words.refusal(slug, outcome)
     if workflow_slug == GENERATE_SLUG:
         drafted = _generate_pattern(ctx, slug, name, instruction)
         if isinstance(drafted, dict):
@@ -276,7 +280,8 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
         routine_dir = scaffold(ctx.server, slug=slug, name=name, instruction=instruction,
                                workflow_slug=workflow_slug, description=description,
                                pattern=pattern, setup=setup, done_when=done_when,
-                               finish_line=finish_line, never=never)
+                               finish_line=finish_line, never=never,
+                               outcome=outcome.model_dump())
     except ValueError as exc:
         # bad slug, unknown workflow, or a dir that appeared mid-flight — a teaching rejection,
         # corrected by the model, never a crash
@@ -359,21 +364,9 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     root conversation; QUEUE the proposal for the operator anywhere else (F328). Returns the
     observation dict the loop records and renders.
 
-    Action fields:
-      target   — the new routine's kebab-case slug (required)
-      name     — its human display name (required)
-      prompt   — the clarified task instruction, decomposed into the routine's stages (required)
-      workflow — the library workflow pattern to materialize from (optional; DEFAULT_WORKFLOW)
-      pattern  — the settings pattern it follows (optional; the one that fits by default)
-      setup    — the user's answers to that pattern's questions (optional); they become the
-                 new routine's PROPOSED settings, accepted on its page
-      done_when — what one finished run leaves behind, in the USER's words (optional); lines
-                 of the recipe's `## Done when`
-      finish_line — when the routine is done for good, each outcome led by its judge
-                 (optional; engine/finishline.from_words)
-      never    — what a run must never do, in the USER's words (optional); lines of the
-                 recipe's `## Never` and context for the settings it is proposed
-      replaces — an existing routine's slug: create a REPLACEMENT CANDIDATE (engine/candidate.py)
+    The fields are the schema's (`actionschema`, kind copy in `kindsurface`); `replaces`
+    creates a REPLACEMENT CANDIDATE instead (engine/candidate.py), and `produces` is required
+    before anything is created or queued (engine/outcome_words.py).
     Every field is part of the draft's identity, so changing one restarts the confirmation.
     """
     if action.get("replaces"):      # created at once, never drafted — its swap is the decision
@@ -383,8 +376,8 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     instruction = str(action.get("prompt") or "").strip()
     workflow_slug = str(action.get("workflow") or "").strip() or DEFAULT_WORKFLOW
     pattern = str(action.get("pattern") or "").strip()
-    setup, done_when, finish_line, never = (_lines(action.get(k)) for k in
-                                            ("setup", "done_when", "finish_line", "never"))
+    setup, done_when, finish_line, never, outcome = (
+        _lines(action.get(k)) for k in ("setup", "done_when", "finish_line", "never", "produces"))
     server = ctx.server
 
     if (server.routines_home / slug).exists():
@@ -398,7 +391,12 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
 
     fields = {"slug": slug, "name": name, "instruction": instruction,
               "workflow": workflow_slug, "pattern": pattern, "setup": setup,
-              "done_when": done_when, "finish_line": finish_line, "never": never}
+              "done_when": done_when, "finish_line": finish_line, "never": never,
+              "produces": outcome}
+    declared = outcome_words.contract(outcome)
+    # malformed: refused anywhere; absent: refused before a proposal is queued (and at confirm)
+    if isinstance(declared, str) and (outcome or not (ctx.depth or is_root_conversation(ctx))):
+        return outcome_words.refusal(slug, declared)
     # A run with no user in the loop QUEUES instead of creating (F328). It is the same D92
     # draft, with a longer gap before the confirmation: the operator sees it on the Decisions
     # page and one click materializes it through this very scaffold path. Nothing is created
@@ -424,7 +422,9 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     # or a blocking ask answered inside this one (R1310).
     return _materialize(ctx, slug=slug, name=name, instruction=instruction,
                         workflow_slug=workflow_slug, pattern=pattern, setup=setup,
-                        done_when=done_when, finish_line=finish_line, never=never)
+                        done_when=done_when, finish_line=finish_line, never=never,
+                        outcome=declared)
+
 
 
 def _lines(raw: object) -> list[str]:

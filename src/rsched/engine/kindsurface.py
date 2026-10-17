@@ -276,37 +276,37 @@ repeats — no cron to clean up). Cancel with `cancel: true` (+ `id` for one, or
 all armed on the target). For a run to schedule its own follow-up ("re-check in 3 days") or arm \
 a milestone run on a sibling routine — gated by the scheduling permission."""),
     (("create_routine",), """- create_routine: turn what you and the user have worked out in \
-THIS conversation into a real \
-scheduled routine — `target` (its new kebab-case slug), `name` (its display name), `prompt` (the \
-clarified task, decomposed into the routine's stages — say WHAT it does, not when), and optional \
-`workflow` (the library pattern to build from, default general-task), `pattern` (the settings \
-pattern it follows), `setup` (the user's answers to that pattern's questions), `done_when` (what \
-one finished run leaves behind, in their words), `finish_line` (when the routine is done for \
-good, each outcome led by its judge) and `never` (what a run must never do, in their words). \
-PRECONDITION — settle the clarification WITH the user BEFORE the first call: what the routine \
-PRODUCES each run (the artefact by name and where it lands), what one finished run leaves \
-behind, whether it ever finishes for good, anything a run must never do, which workflow it is \
-built on, and every question its settings pattern asks that the task does not already \
-answer. ASK THESE AS DECISIONS, NOT AS PROSE: one `ask_user` per open point, each carrying \
-`options`, which the console renders as numbered picks — an option-less question is a blank box \
-that makes the user compose an answer you already knew how to offer. The test is whether you \
-could QUOTE the user's own answer for each; if you would be inferring one, it is still open, so \
-ask it. A draft that guesses presents your assumption as their decision, and the routine then \
-runs for months on it. The WORKFLOW question is always asked this way, and its options are the \
-catalog the draft observation carries — which always ends in `generate`, "draft a NEW pattern \
-fitted to this task", because no catalog covers every task and "none of these fit" must always \
-be one of the choices; picking it makes the confirming call draft that pattern and build on it. \
-It is a TWO-STEP flow: the first call stores a DRAFT and returns a preview — put its open \
-points to the user as those decisions and finish your reply, or put the go-ahead as a BLOCKING \
-ask_user; after the user answers, either way, call it again with the SAME fields to \
-materialize (its own dir, held rules, git repo). A changed field updates the draft instead. \
-The daemon picks it up on its next registry rescan; tell the user it exists (saved with its \
-pattern's settings) and that its page shows what is specific to it as changes waiting for their \
-accept. This is the ONLY way a routine is created. WITHOUT a user in the loop (a scheduled run) \
-the same call QUEUES a proposal on the Decisions page instead — one call, then carry on; your \
-next run learns from your inbox whether the user approved it. With `replaces: <slug>` (the \
-routine-rebuild permission) it creates a REPLACEMENT CANDIDATE at once instead, and files the \
-one swap decision: then write the candidate's recipe and prove it beside the old routine."""),
+THIS conversation into a real scheduled routine — `target` (its new kebab-case slug), `name` \
+(its display name), `prompt` (the clarified task, decomposed into the routine's stages — say \
+WHAT it does, not when), and optional `workflow` (the library pattern to build from, default \
+general-task), `pattern` (the settings pattern it follows), `setup` (the user's answers to that \
+pattern's questions), `done_when` (what one finished run leaves behind, in their words), \
+`finish_line` (when the routine is done for good, each outcome led by its judge) and `never` \
+(what a run must never do, in their words), and — required before anything is created or queued \
+— `produces`, its OUTCOME CONTRACT: who the results are for and the numbers they would count, in \
+the form the schema gives. PRECONDITION — settle the clarification WITH the user BEFORE the \
+first call: what the routine PRODUCES each run (the artefact by name and where it lands), what \
+one finished run leaves behind, whether it ever finishes for good, anything a run must never do, \
+which workflow it is built on, and every question its settings pattern asks that the task does \
+not already answer. ASK THESE AS DECISIONS, NOT AS PROSE: one `ask_user` per open point, each \
+carrying `options`, which the console renders as numbered picks — an option-less question is a \
+blank box that makes the user compose an answer you already knew how to offer. The test is \
+whether you could QUOTE the user's own answer for each; if you would be inferring one, it is \
+still open, so ask it — a guessed draft runs for months on your assumption. The WORKFLOW \
+question is always asked this way, and its options are the catalog the draft observation carries \
+— which always ends in `generate`, "draft a NEW pattern fitted to this task", because no catalog \
+covers every task and "none of these fit" must always be one of the choices; picking it makes \
+the confirming call draft that pattern and build on it. It is a TWO-STEP flow: the first call \
+stores a DRAFT and returns a preview — put its open points to the user as those decisions and \
+finish your reply, or put the go-ahead as a BLOCKING ask_user; after the user answers, either \
+way, call it again with the SAME fields to materialize (its own dir, held rules, git repo); a \
+changed field updates the draft instead. Tell the user it exists and that its page shows what is \
+specific to it as changes awaiting their accept. This is the ONLY way a routine is created. \
+WITHOUT a user in the loop (a scheduled run) the same call QUEUES a proposal on the Decisions \
+page instead — one call, then carry on; your next run learns from your inbox whether the user \
+approved it. With `replaces: <slug>` (the routine-rebuild permission) it creates a REPLACEMENT \
+CANDIDATE at once instead, and files the one swap decision: then write the candidate's recipe \
+and prove it beside the old routine."""),
     (("manage_lane",), """- manage_lane: manage routine LANES (ordered sets that fire \
 back-to-back on one clock) from THIS conversation via a `verb`: list (the whole store), create \
 (`name` + optional `members` + `on_failure` + `cron`), update (`target` = the lane id, plus any \

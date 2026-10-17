@@ -387,10 +387,12 @@ one you are about to touch, not all of them.
   renderer; `interact.py` is the ASK protocol alone. `create_routine` carries what the
   clarification settled beside the task, each in the user's own words and never folded into the
   instruction prose (R353): `pattern` + `setup` (the settings pattern and its answers),
-  `done_when` (the recipe's `## Done when`), `finish_line` (judge-led outcomes and `until`) and
-  `never` (the recipe's `## Never`). The routine is saved with its pattern's values; everything
-  specific to it lands as PENDING changes under "check the changes i recommend." — the engine
-  still never writes `routine.yaml`. `manage_lane list` answers directly (naming each
+  `done_when` (the recipe's `## Done when`), `finish_line` (judge-led outcomes and `until`),
+  `never` (the recipe's `## Never`) and `produces` — the OUTCOME contract, REQUIRED before
+  anything is created or queued (`engine/outcome_words.py`), written into routine.yaml as
+  declared because the confirmed draft is the accept. The routine is saved with its pattern's
+  values; everything specific to it lands as PENDING changes under "check the changes i
+  recommend." — the engine still never writes `routine.yaml`. `manage_lane list` answers directly (naming each
   lane's MEMBERS in fire order, F424); every mutating verb queues. A lane is the TEMPORAL axis
   only — no verb reaches a routine's settings or the stores it shares, because those are its
   own routine.yaml, which no run may write. A within-reply CHILD (depth > 0) is

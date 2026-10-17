@@ -103,7 +103,13 @@ def _materialize_routine(server, fields: dict) -> dict:
         return [t for t in raw if isinstance(t, str) and t.strip()] \
             if isinstance(raw, list) else []
 
+    from ..engine.outcome_words import contract
     from ..workflows.suggest import generate_description
+
+    declared = contract(lines("produces"))
+    if isinstance(declared, str):      # the queue refuses this, so only a hand-made record
+        raise HTTPException(422, f"this proposal carries no usable outcome contract "
+                                 f"({declared}) — discard it")
     routine_dir = scaffold(server, slug=slug, name=name,
                            instruction=instruction, workflow_slug=workflow_slug,
                            # a COMPREHENSIVE generated description — the same one a
@@ -116,7 +122,7 @@ def _materialize_routine(server, fields: dict) -> dict:
                            # conversation's confirmed call does — one materializer, one path
                            pattern=str(fields.get("pattern") or ""), setup=lines("setup"),
                            done_when=lines("done_when"), finish_line=lines("finish_line"),
-                           never=lines("never"))
+                           never=lines("never"), outcome=declared.model_dump())
     return {"created": "routine", "slug": slug, "dir": str(routine_dir)}
 
 

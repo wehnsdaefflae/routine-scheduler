@@ -19,9 +19,15 @@ import pytest
 import yaml
 
 from conftest import authed_client, seeded_server
+from helpers import PRODUCES
 from rsched import pending
 from rsched.engine.create_routine import handle_create_routine
 from rsched.engine.manage_lane import handle_manage_lane
+
+
+def _create(ctx, action: dict) -> dict:
+    """create_routine with the outcome contract every creation must carry."""
+    return handle_create_routine(ctx, {"produces": PRODUCES, **action})
 
 
 @pytest.fixture
@@ -44,7 +50,7 @@ def sched_ctx(server, make_routine):
 
 
 def test_scheduled_run_queues_a_routine_instead_of_being_refused(server, sched_ctx):
-    obs = handle_create_routine(sched_ctx, {
+    obs = _create(sched_ctx, {
         "target": "fau-comms-steward", "name": "FAU comms steward",
         "prompt": "Watch the comms inbox and stage replies.", "workflow": "general-task"})
     assert obs["queued"] is True and not obs.get("rejected")
@@ -69,16 +75,16 @@ def test_one_standing_proposal_per_ask_however_often_a_run_repeats_it(server, sc
     """
     ask = {"target": "fau-comms-steward", "name": "FAU comms steward",
            "prompt": "Watch the comms inbox and stage replies.", "workflow": "general-task"}
-    first = handle_create_routine(sched_ctx, ask)
+    first = _create(sched_ctx, ask)
     # the next run words it differently — it is still the same routine being asked for
-    again = handle_create_routine(sched_ctx, {**ask, "prompt": "Watch comms; draft replies."})
+    again = _create(sched_ctx, {**ask, "prompt": "Watch comms; draft replies."})
     assert again["id"] == first["id"]
     assert len(pending.load_all(server.routines_home)) == 1
     # …and what the operator would approve is what the FIRST run proposed, not a silent rewrite
     rec = pending.load_all(server.routines_home)[0]
     assert rec["fields"]["instruction"].startswith("Watch the comms inbox")
     # a DIFFERENT ask is a different card
-    handle_create_routine(sched_ctx, {**ask, "target": "fau-mail-steward"})
+    _create(sched_ctx, {**ask, "target": "fau-mail-steward"})
     assert len(pending.load_all(server.routines_home)) == 2
     # a lane proposal dedupes on its verb and target, not on the whole payload
     lane = {"verb": "create", "name": "FAU comms", "members": ["routine-improver"]}
@@ -111,16 +117,16 @@ def test_a_conversation_still_materializes_rather_than_queuing(server, tmp_path)
     d = conv_mod.create_conversation(server, slug="c-x", first_message="make me a routine")
     ctx = SimpleNamespace(server=server, routine=SimpleNamespace(slug="c-x", dir=d), depth=0,
                           run_id="c-x:1", user_replies=0)
-    obs = handle_create_routine(ctx, {"target": "newr", "name": "New", "prompt": "do it",
-                                      "workflow": "general-task"})
+    obs = _create(ctx, {"target": "newr", "name": "New", "prompt": "do it",
+                        "workflow": "general-task"})
     assert obs.get("draft") is True and not obs.get("queued")
     assert pending.load_all(server.routines_home) == []
 
 
 def test_notify_proposer_survives_a_routine_that_is_gone(server, sched_ctx):
     """A proposal can outlive its author. That is not an error — it just has nobody to tell."""
-    handle_create_routine(sched_ctx, {"target": "x1", "name": "X", "prompt": "p",
-                                      "workflow": "general-task"})
+    _create(sched_ctx, {"target": "x1", "name": "X", "prompt": "p",
+                        "workflow": "general-task"})
     rec = pending.load_all(server.routines_home)[0]
     assert pending.notify_proposer(server, rec, "approved") is True
     shutil.rmtree(server.routines_home / "routine-improver")
@@ -136,8 +142,8 @@ def client(server):
 
 
 def test_materialize_creates_the_routine_and_tells_the_proposer(server, sched_ctx, client):
-    handle_create_routine(sched_ctx, {"target": "fau-comms-steward", "name": "FAU comms steward",
-                                      "prompt": "Watch the inbox.", "workflow": "general-task"})
+    _create(sched_ctx, {"target": "fau-comms-steward", "name": "FAU comms steward",
+                        "prompt": "Watch the inbox.", "workflow": "general-task"})
     pid = client.get("/api/pending-creations").json()[0]["id"]
 
     r = client.post(f"/api/pending-creations/{pid}/materialize")
@@ -184,8 +190,8 @@ def test_a_materialized_lane_schedule_carries_its_zone_and_arms_now(server, sche
 
 
 def test_discard_removes_it_and_tells_the_proposer_why(server, sched_ctx, client):
-    handle_create_routine(sched_ctx, {"target": "nope", "name": "Nope", "prompt": "p",
-                                      "workflow": "general-task"})
+    _create(sched_ctx, {"target": "nope", "name": "Nope", "prompt": "p",
+                        "workflow": "general-task"})
     pid = client.get("/api/pending-creations").json()[0]["id"]
     r = client.post(f"/api/pending-creations/{pid}/discard",
                     json={"reason": "we already have one"})
@@ -200,8 +206,8 @@ def test_materialize_a_slug_that_appeared_meanwhile_is_a_legible_conflict(server
                                                                           client, make_routine):
     """A proposal can sit for days. If the operator made the routine by hand in the meantime,
     the click must say so — not half-build over it."""
-    handle_create_routine(sched_ctx, {"target": "taken", "name": "T", "prompt": "p",
-                                      "workflow": "general-task"})
+    _create(sched_ctx, {"target": "taken", "name": "T", "prompt": "p",
+                        "workflow": "general-task"})
     pid = client.get("/api/pending-creations").json()[0]["id"]
     make_routine(slug="taken")          # the operator built it by hand meanwhile
     r = client.post(f"/api/pending-creations/{pid}/materialize")
@@ -218,8 +224,8 @@ def test_the_engine_never_writes_routine_yaml_for_a_queued_creation(server, sche
     """The invariant the whole design hangs on: a run leaves a PROPOSAL, and only the web layer
     turns it into config — exactly as it already applies forever-grants."""
     before = set(server.routines_home.rglob("routine.yaml"))
-    handle_create_routine(sched_ctx, {"target": "ghost", "name": "G", "prompt": "p",
-                                      "workflow": "general-task"})
+    _create(sched_ctx, {"target": "ghost", "name": "G", "prompt": "p",
+                        "workflow": "general-task"})
     handle_manage_lane(sched_ctx, {"verb": "create", "name": "G", "members": []})
     assert set(server.routines_home.rglob("routine.yaml")) == before
     assert not (server.routines_home / ".control" / "lanes.json").exists()
@@ -228,8 +234,8 @@ def test_the_engine_never_writes_routine_yaml_for_a_queued_creation(server, sche
 
 
 def test_queued_records_carry_the_provenance_the_page_shows(server, sched_ctx):
-    handle_create_routine(sched_ctx, {"target": "prov", "name": "P", "prompt": "p",
-                                      "workflow": "general-task"})
+    _create(sched_ctx, {"target": "prov", "name": "P", "prompt": "p",
+                        "workflow": "general-task"})
     rec = pending.load_all(server.routines_home)[0]
     assert rec["routine"] == "routine-improver"
     assert rec["run_id"] == "routine-improver:20260827-030000"
@@ -268,7 +274,7 @@ def test_a_queued_proposal_never_renders_as_a_completed_action(server, sched_ctx
     lane = create_lane(server.routines_home, name="Professional · Daily",
                        members=[{"slug": "routine-improver"}])
 
-    created = handle_create_routine(sched_ctx, {
+    created = _create(sched_ctx, {
         "target": "fau-comms-steward", "name": "FAU comms steward",
         "prompt": "Watch the comms inbox.", "workflow": "general-task"})
     line = format_admin(created, "create_routine")

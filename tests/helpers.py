@@ -248,6 +248,9 @@ def mock_proxy(monkeypatch, handler) -> None:
         transport=httpx.MockTransport(handler), **kw))
 
 
+#: A `create_routine` `produces` field that settles an outcome contract (engine/outcome_words.py).
+PRODUCES = ["principal: the operator", "replies · count · higher — replies from people"]
+
 OUTCOME_SCRIPT = '''# /// script
 # dependencies = []
 # ///

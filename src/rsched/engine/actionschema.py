@@ -499,25 +499,24 @@ ACTION_SCHEMA: dict = {
                                      "their answer verbatim; never invent one"},
         "finish_line": {"type": "array", "items": {"type": "string"}, "maxItems": 6,
                         "description": "create_routine: when the ROUTINE is done for good, one "
-                                       "outcome per entry, each led by its judge — `run: "
-                                       "<an outcome a run can prove>`, `you: <an outcome only "
-                                       "the user decides>`, `YYYY-MM-DD: <reached on that "
-                                       "date>` — plus `until YYYY-MM-DD` to stop after a date "
-                                       "either way. Reaching it stops the routine and asks the "
-                                       "user to confirm. A routine that never ends (a monitor, "
-                                       "a digest) takes none, which is the common case: omit it "
-                                       "rather than inventing an ending"},
+                                       "outcome per entry led by its judge — `run: …` (a run "
+                                       "proves it), `you: …` (only the user decides), "
+                                       "`YYYY-MM-DD: …` — plus `until YYYY-MM-DD`. Most "
+                                       "routines never end (a monitor, a digest): omit it then"},
         "never": {"type": "array", "items": {"type": "string"}, "maxItems": 8,
                   "description": "create_routine: what a run of the new routine must NEVER "
                                  'do, in the USER\'s words, one per entry ("never mail the '
                                  'funder"): lines of its `## Never`, and its settings leave off '
                                  "what would allow it. Omit it when they named none"},
+        "produces": {"type": "array", "items": {"type": "string"}, "maxItems": 7,
+                     "description": "create_routine (required): what the routine exists to "
+                                    "PRODUCE, in the user's words — `principal: <who>` once, "
+                                    "then per measure `<id> · <count|level> · <higher|lower> — "
+                                    "<what it counts>`; its own scripts/outcome.py counts them"},
         "replaces": {"type": "string",
                      "description": "create_routine: an EXISTING routine's slug — create a "
-                                    "REPLACEMENT CANDIDATE for it at once (routine-rebuild "
-                                    "permission): its settings minus its secrets, unscheduled, "
-                                    "plus ONE swap decision for the user. Then write its recipe "
-                                    "and prove it beside the old one"},
+                                    "REPLACEMENT CANDIDATE at once (routine-rebuild), unscheduled "
+                                    "and without its grants, plus ONE swap decision for the user"},
         "label": {"type": "string",
                   "description": "spawn/subtask/detach: short name shown in the run tree"},
         "turns": {"type": "integer", "minimum": 1,

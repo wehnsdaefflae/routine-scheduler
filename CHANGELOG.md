@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.429.0] — 2026-10-17
+
+### Changed
+- **A routine is born with its outcome contract.** `create_routine` takes `produces` — who the
+  results are for (`principal: <who>`) and one `<id> · count|level · higher|lower — <what it
+  counts>` line per measure, in the person's words (`engine/outcome_words.py`) — and creates or
+  queues nothing without it: the creation conversation asks it as a fourth question beside
+  Done-when, the finish line and Never, a scheduled run's proposal is refused without it, and
+  the Decisions page refuses to materialize a record that lacks it. Scaffold writes the contract
+  into the new routine.yaml as declared (the confirmed draft is the accept); the recipe
+  generator is told the measures and refused until `## Done when` names them; the routine's
+  first run writes `scripts/outcome.py` from the records its stages keep. A queued creation's
+  card shows what the routine exists to produce before its instruction.
+
 ## [0.428.1] — 2026-10-17
 
 ### Fixed

@@ -20,6 +20,7 @@ from pathlib import Path
 
 import frontmatter
 
+from ..config.outcome import OutcomeConfig
 from .library import head_commit, read_workflow
 from .pipeline import _pipeline
 
@@ -64,7 +65,8 @@ log = logging.getLogger("rsched.adapt")
 
 
 def decompose(server, slug: str, instruction: str, *,
-              done_when: list[str] | None = None, never: list[str] | None = None) -> dict:
+              done_when: list[str] | None = None, never: list[str] | None = None,
+              outcome: OutcomeConfig | None = None) -> dict:
     """Generator LLM: apply a single-file workflow to `instruction` and split it into the
     routine's main.md body + stage/state modules. Returns {'main': <body>,
     'stages': {name: body}, 'degraded': bool}.
@@ -77,8 +79,10 @@ def decompose(server, slug: str, instruction: str, *,
 
     `done_when` is what the user said a finished run delivers, in their words: the generator
     merges it with the pattern's DONE_WHEN into the recipe's `## Done when`. `never` is what
-    they said a run must never do: it becomes the recipe's `## Never`, verbatim. The fallback
-    keeps both — the person's words are never lost to a degraded build.
+    they said a run must never do: it becomes the recipe's `## Never`, verbatim. `outcome` is
+    the routine's contract: the recipe gains the Done-when line naming its measures and keeps
+    the records they are counted from. The fallback keeps all three — the person's words are
+    never lost to a degraded build.
     """
     meta, raw = read_workflow(server.libraries_home, slug)
     # A pattern may PIN deliverable paths (META["pin"]: str | list) that MUST survive
@@ -94,13 +98,16 @@ def decompose(server, slug: str, instruction: str, *,
 
         return _pipeline(EndpointRegistry(server).for_system, raw, instruction,
                          pins=pins, done_when=list(done_when or []), never=list(never or []),
-                         slug=slug)
+                         slug=slug, outcome=outcome)
     except Exception as exc:
         # a stageless recipe is a real quality drop — the fallback must never be silent
         log.warning("decompose(%s) pipeline failed — materializing the whole pattern as "
                     "main.md", slug, exc_info=exc)
+        from ..engine.outcome_words import done_when_line
         from .pyworkflow import render_markdown
-        return {"main": render_markdown(raw, meta, done_when=list(done_when or []),
+
+        kept = [*(done_when or []), *([done_when_line(outcome)] if outcome else [])]
+        return {"main": render_markdown(raw, meta, done_when=kept,
                                         never=list(never or [])),
                 "stages": {},
                 "degraded": True, "reason": f"{type(exc).__name__}: {exc}"}

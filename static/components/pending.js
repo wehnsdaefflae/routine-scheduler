@@ -117,7 +117,12 @@ function details(rec, openDrift = true) {
       el("summary", { style: "cursor:pointer;color:var(--ink-2)" }, "the evidence"), body);
   }
   if (rec.kind === "create_routine") {
+    // what it exists to PRODUCE (its outcome contract, engine/outcome_words.py) before the
+    // instruction: the first thing to judge about a routine is what it is for
     body.append(el("div", { class: "faint" }, `name: ${f.name || "(none)"}`),
+      el("div", { class: "mt", "data-produces": "" },
+        el("div", { class: "faint" }, "exists to produce:"),
+        ...(f.produces || []).map((line) => el("div", {}, line))),
       el("pre", { class: "doc mt" }, f.instruction || "(no instruction)"));
   } else {
     const rows = Object.entries(f).filter(([k]) => k !== "verb");
