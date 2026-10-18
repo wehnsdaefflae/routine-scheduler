@@ -189,6 +189,7 @@ def test_call_problems_refuse_undeclared_and_unknown_utils(tmp_path):
     from rsched.engine.executor import do_script
 
     class _Ctx:
+        depth = 0           # a top-level run
         class routine:  # noqa: N801 — mirrors ctx.routine attribute shape
             dir = d
 
@@ -217,6 +218,7 @@ def test_misdeclared_engine_keys_in_pep723_block(tmp_path):
     from rsched.engine.executor import do_script
 
     class _Ctx:
+        depth = 0           # a top-level run
         class routine:  # noqa: N801 — mirrors ctx.routine attribute shape
             dir = d
     obs = do_script({"kind": "script", "name": "publish"}, _Ctx)
@@ -339,11 +341,8 @@ def test_script_action_end_to_end(make_routine, scripted, monkeypatch):
                         lambda rd, name, args, **kw:
                         (calls.append((rd, name, list(args), kw.get("env_secrets")))
                          or (0, "ran", "")))
-    scripted([
-        {"say": "poll deterministically", "kind": "script", "name": "probe",
-         "args": ["--json"]},
-        finish(),
-    ])
+    scripted([{"say": "poll deterministically", "kind": "script", "name": "probe",
+               "args": ["--json"]}, finish()])
     server = ServerConfig()
     server.routines_home = d.parent
     server.libraries_home = d.parent.parent / "test-library"

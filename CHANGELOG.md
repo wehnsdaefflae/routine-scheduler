@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.432.0] — 2026-10-18
+
+### A child run can run its routine's scripts
+
+A `script` action looked in the run's own dir (and an open job's workspace) only, and a child
+run's own dir is its workspace under `runs/<ts>/sub/<n>/`, which has no `scripts/`. A child
+holds no capability, so no `shell` either: a child briefed to build and test one item of a
+parallel batch could edit files and run nothing, not even the routine's own test gate. Script
+lookup now ends at the ROUTINE's `scripts/` (`executor._script_homes`, after the child's own
+workspace), and the script runs from the routine's dir as it does for a top-level run. It is
+reach, not authority: the script runs in the child's own jail, whose roots already extend to the
+routine's dir, with the secrets the child already inherits.
+
+`fileops`' routine-dir chain moved to `engine/reach.py` (`routine_dirs`, `routine_root`), which
+both the file seals and the script lookup read.
+
 ## [0.431.0] — 2026-10-18
 
 ### The Messages page says whom its backlog is waiting on

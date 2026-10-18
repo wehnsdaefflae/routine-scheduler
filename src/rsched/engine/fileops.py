@@ -6,7 +6,7 @@ read_file of a PDF or Office document pages through in docread.py, and the name-
 stores (`.memory/`, the rule library) in memops.py.
 
 Every gate compares RESOLVED paths. `resolve_rel` hands back a fully resolved path, so the
-dirs a seal is anchored on are resolved too (`_routine_dirs`) — and they are every routine
+dirs a seal is anchored on are resolved too (`reach.routine_dirs`) — and they are every routine
 dir the run can REACH, not only its own: a child's own dir is a workspace under
 `runs/<ts>/sub/<n>/`, but its roots extend the parent's tree (F185), so a seal anchored on
 the workspace alone sealed nothing the child could actually write.
@@ -28,6 +28,7 @@ from . import docread, fileformat, obligations
 from .finishline import FILE as FINISH_LINE
 from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
+from .reach import routine_dirs
 from .run_context import RunContext, resolve_action_path
 
 if TYPE_CHECKING:
@@ -44,28 +45,6 @@ READ_WINDOW_MAX_LINES = 500          # the schema's `max_lines` maximum, mirrore
 READ_MAX_BYTES = 8 * 1024 * 1024
 BINARY_SNIFF_BYTES = 8 * 1024        # a NUL byte in the first 8 KiB marks a file binary
 UTIL_DEFAULT_TIMEOUT_S = 300
-
-
-def _is_workspace(d: Path) -> bool:
-    """Is `d` a child run's workspace (`…/sub/<n>`)? The test `RunContext.root_run_dir` walks by."""
-    return d.name.isdigit() and d.parent.name == "sub"
-
-
-def _routine_dirs(ctx: RunContext) -> list[Path]:
-    """Every routine dir this run's file actions can reach, RESOLVED, own dir first: for a
-    top-level run its own dir alone; for a CHILD its workspace, each ancestor child's
-    workspace (the roots chain down to grandchildren, F185), and last the ROUTINE's own dir.
-    Each holds engine- and operator-owned paths a run must leave alone.
-    """
-    own = ctx.routine.dir.resolve()
-    if ctx.depth == 0:
-        return [own]
-    dirs = [own]
-    d = ctx.run_dir.resolve()
-    while _is_workspace(d):
-        d = d.parent.parent                  # the parent's run dir: a workspace, or the root's
-        dirs.append(d if _is_workspace(d) else d.parent.parent)
-    return dirs
 
 
 def _own_dir(ctx: RunContext) -> Path:
@@ -93,7 +72,7 @@ def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
     g = ctx.grants
     if g is None:
         return None
-    runs_dir = (_routine_dirs(ctx)[-1] / "runs").resolve()
+    runs_dir = (routine_dirs(ctx)[-1] / "runs").resolve()
     try:
         rel = resolved.relative_to(runs_dir)
     except ValueError:
@@ -344,7 +323,7 @@ def _memory_gate(ctx: RunContext, resolved) -> str | None:
     100-line note cap went with them — and a child, whose roots reach the routine's tree,
     walked into the ROUTINE's `.memory/` the same way.
     """
-    for d in _routine_dirs(ctx):
+    for d in routine_dirs(ctx):
         if _within(resolved, d / ".memory"):
             return MEMORY_REFUSAL
         # …and a JOB's notebook (rsched/jobs.py): an open job's memory actions resolve in
@@ -366,7 +345,7 @@ def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
     document that decided their own end).
     """
     if any(resolved in (d / FINISH_LINE, (d / FINISH_LINE).resolve())
-           for d in _routine_dirs(ctx)):
+           for d in routine_dirs(ctx)):
         return FINISH_LINE_REFUSAL
     return None
 
@@ -379,7 +358,7 @@ _STORES: dict[str, str] = {JOBS_FILE: JOBS_REFUSAL, str(obligations.FILE): oblig
 
 
 def _jobs_gate(ctx: RunContext, resolved) -> str | None:
-    for d in _routine_dirs(ctx):
+    for d in routine_dirs(ctx):
         for rel, why in _STORES.items():
             if resolved in (d / rel, (d / rel).resolve()):
                 return why
@@ -394,7 +373,7 @@ def _removal_gate(ctx: RunContext, resolved: Path) -> str | None:
     the run can reach is never removed whole, and neither is a directory holding its finish
     line.
     """
-    for d in _routine_dirs(ctx):
+    for d in routine_dirs(ctx):
         if d.is_relative_to(resolved):
             return ("this would remove a routine's own directory, and its config, recipe, "
                     "memory and run history with it — remove what is inside it instead")
@@ -424,7 +403,7 @@ def _engine_owned(ctx: RunContext, resolved) -> str | None:
     a child that could write control.json could adopt a `config_change` (grants, budgets)
     into the very run that spawned it.
     """
-    dirs = _routine_dirs(ctx)
+    dirs = routine_dirs(ctx)
     workspace = dirs[-2] if len(dirs) > 1 else None     # the top-most child workspace
     for d in dirs:
         if _within(resolved, d / "runs") and not (
@@ -444,7 +423,7 @@ def _engine_owned(ctx: RunContext, resolved) -> str | None:
 def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | None:
     """Backstop for engine-owned and permission-gated writes (GrantPolicy.deny handles the
     relative-path form; this catches absolute paths and traversals into every routine dir
-    the run can reach — `_routine_dirs`).
+    the run can reach — `routine_dirs`).
 
     `creates` is False for a path the action only REMOVES (delete, a move's source): a note
     left in a shared store for a routine that does not share it is refused when it is written;
@@ -480,7 +459,7 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
         from ..grantpolicy import is_recipe_path
 
         if any(resolved.is_relative_to(d) and is_recipe_path(str(resolved.relative_to(d)))
-               for d in _routine_dirs(ctx)):
+               for d in routine_dirs(ctx)):
             return ("editing this routine's own recipe (main.md / stages/ / tuning.yaml) "
                     "needs the recipe-authoring permission, which this routine does not "
                     "hold — its instructions are the user's. File a deferred ask_user (or a "

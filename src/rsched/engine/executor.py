@@ -33,14 +33,14 @@ from .mediaops import do_view_image
 from .memops import do_memory_read, do_memory_write, do_read_rule
 from .observations import truncate
 from .output_compression import command_output
+from .reach import routine_root
 from .run_context import RunContext, work_dir
 
 
 def script_home(ctx: RunContext, name: str) -> Path | None:
-    """The directory whose `scripts/<name>.py` a `script` action runs, or None when there is
-    none: the OPEN task's workspace first (its own scripts, run from where its own relative
-    paths resolve), then the routine's. A script always runs from the home it was found in —
-    its working directory, its venv, the place its `Path(__file__).parent.parent` names.
+    """The dir whose `scripts/<name>.py` a `script` action runs (or None): the OPEN task's
+    workspace, the run's own dir, then a CHILD's routine. A script runs from the home it was
+    found in — its working directory, its venv, what `Path(__file__).parent.parent` names.
     """
     from .. import scripts
 
@@ -51,8 +51,8 @@ def script_home(ctx: RunContext, name: str) -> Path | None:
 
 
 def _script_homes(ctx: RunContext) -> list[Path]:
-    # the open task's workspace first; `work_dir` is the routine's own when none is open
-    return list(dict.fromkeys((work_dir(ctx), ctx.routine.dir)))
+    # a child's own dir is a workspace with no scripts/, and it holds no `shell` to test with
+    return list(dict.fromkeys((work_dir(ctx), ctx.routine.dir, routine_root(ctx))))
 
 
 def available_scripts(ctx: RunContext) -> list[str]:

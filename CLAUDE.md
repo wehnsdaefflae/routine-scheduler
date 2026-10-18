@@ -320,8 +320,11 @@ one you are about to touch, not all of them.
   renders and the hand-back path, so the kind copy, the observations and the docs cannot drift
   apart (that drift once had the prompt claim children share the parent's working directory).
   A child's seals are the ROUTINE's, not its workspace's: the write gates cover every routine dir
-  a run can reach, compared resolved (`fileops._routine_dirs`) — anchored on `ctx.routine.dir`,
+  a run can reach, compared resolved (`reach.routine_dirs`) — anchored on `ctx.routine.dir`,
   a child could rewrite the recipe, `.memory/`, the finish line and the parent's control.json.
+  Its TOOLING is the routine's too: a `script` a child calls is looked up in its own workspace,
+  then in the routine's `scripts/` (`executor._script_homes`) — a child holds no `shell`, so
+  without that it could not run the test gate of a parallel build it was briefed to test.
   Every mode obeys the same contract: isolation, a budget sliced from the parent's remainder, and
   a HAND-BACK — summary always, FILES by the child writing into its own `artifacts/`, which the
   engine copies to the parent's `artifacts/` and NAMES the landed PATHS in the one

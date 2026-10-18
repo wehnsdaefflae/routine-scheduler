@@ -106,13 +106,22 @@ already forbids them `LEDGER.md` / `state/phase.json`.
 
 Reaching the tree is not owning it. Every file-action seal holds on each routine dir a child
 can reach — its workspace, each ancestor child's, and the routine's — not on its workspace
-alone (`fileops._routine_dirs`): the routine's recipe, its `.memory/`, its finish line, its
+alone (`reach.routine_dirs`): the routine's recipe, its `.memory/`, its finish line, its
 `.util_outputs/`, its `.doc_cache/` and its `runs/` stay closed to a child exactly as they are to the routine's
 own runs. The one opening is the child's own workspace tree under `runs/<ts>/sub/<n>/`,
 where it works. Before this the seals were anchored on the workspace, so a sub-workflow
 could rewrite the routine's recipe and memory index, write the run's `control.json` (whose
 `config_change` the parent adopts live — grants, budgets) and read earlier runs it has no
 history for.
+
+**Running the routine's scripts.** A `script` action in a child looks in the child's own
+workspace first (a script it wrote for itself), then in the ROUTINE's `scripts/`
+(`reach.routine_root`), and runs from the home it was found in — the routine's dir, its venv. A
+child holds no capability, so no `shell` either; before this its only reachable scripts were the
+ones in its empty workspace, so a child briefed to build and TEST one item of a parallel batch
+could edit files and run nothing — not even its routine's own test gate. It is reach, not
+authority: the script runs in the child's own jail, whose roots already extend to the
+routine's dir, with the secrets the child already inherits.
 
 **Handing a FILE back** (the contract's third part; from R409/R410). Isolation is deliberate — a
 shared writable dir between concurrent children is a race the engine would have to arbitrate —
