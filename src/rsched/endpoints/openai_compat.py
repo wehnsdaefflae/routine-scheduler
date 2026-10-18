@@ -25,25 +25,23 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
 
 import httpx
 
 from ..config import EndpointConfig
 from .base import (
     DEFAULT_TIMEOUT,
-    PDF_MIME,
     Completion,
     EndpointError,
     Message,
     json_or_raise,
     post_json,
     raise_for_status,
-    read_media_b64,
     resolve_api_key,
-    supports_media_type,
     with_retries,
 )
+from .media_types import read_media_b64, supports_media_type
+from .openai_media import render_media
 
 log = logging.getLogger("rsched.endpoints.openai")
 
@@ -60,6 +58,13 @@ _AFFORD_RE = re.compile(r"can only afford\s+(\d+)", re.IGNORECASE)
 _MIN_AFFORDABLE_TOKENS = 600
 
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
+#: What THIS WIRE carries, independent of any model (D192). The chat-completions API has a
+#: published `input_audio` content part, so audio can ride it; it has no video part the
+#: OpenAI-compatible servers agree on, so a video never does however the catalog is set. The
+#: per-model bit is ANDed with these in `supports_media` — model permission AND wire capability.
+WIRE_AUDIO = True
+WIRE_VIDEO = False
 
 #: Aggregator id prefixes whose upstream caches ONLY on an explicit breakpoint. Everything
 #: else served over this wire (OpenAI, DeepSeek, the GLM/Qwen hosts) caches implicitly on a
@@ -84,41 +89,6 @@ def _strip_think(text: str) -> str:
     return _THINK_RE.sub("", text).lstrip()
 
 
-def _openai_content(content: str, media: list[dict]) -> list[dict]:
-    """A message's string content + media list → OpenAI content parts: text first, then each
-    image as a base64 data-URI `image_url` part (the shape the `vision` util already uses).
-    """
-    parts: list[dict] = [{"type": "text", "text": content}] if content else []
-    for item in media:
-        mime = item["media_type"]
-        try:
-            # R1493: prefer bytes the engine captured when it verified the file — see the same
-            # comment in anthropic_messages.content_blocks. Re-reading the path on every send lets a
-            # later overwrite or cleanup invalidate an attachment already promised to the model.
-            b64 = item.get("b64") or read_media_b64(item["path"])
-        except OSError as exc:
-            parts.append({"type": "text", "text":
-                          f"[Attachment unavailable: {item['path']}: {exc}. "
-                          "The earlier observation remains in the conversation.]"})
-            continue
-        if mime == PDF_MIME:  # defensive — supports_media routes PDFs to the vision util
-            parts.append({"type": "file", "file": {"filename": Path(item["path"]).name,
-                                                    "file_data": f"data:{mime};base64,{b64}"}})
-        else:
-            parts.append({"type": "image_url",
-                          "image_url": {"url": f"data:{mime};base64,{b64}"}})
-    return parts
-
-
-def _render_media(messages: list[Message]) -> list[Message]:
-    """Rewrite any message carrying `media` into OpenAI content-array form; text-only
-    messages keep their plain string content. Drops the engine-side `media` key.
-    """
-    return [{"role": m["role"], "content": _openai_content(m.get("content", ""), m["media"])}
-            if m.get("media") else {"role": m["role"], "content": m["content"]}
-            for m in messages]
-
-
 class OpenAICompatEndpoint:
     """Adapter for every OpenAI-compatible chat API — OpenRouter, Featherless, vLLM,
     Ollama, OpenAI itself. `extra_body` merges into each request (aggregator routing);
@@ -140,11 +110,19 @@ class OpenAICompatEndpoint:
         self.native = cfg.schema_mode == "ollama_native"
         self.native_url = self.base_url.removesuffix("/v1") + "/api/chat"
 
-    def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
+    def supports_media(self, media_type: str, *, multimodal: bool, audio: bool,
+                       video: bool) -> bool:
         """OpenAI-compatible vision models take images natively when the resolved model is
         multimodal; PDF support is spotty across providers, so PDFs route to the vision util.
+
+        AUDIO rides this wire (D192): the chat-completions API carries it as an `input_audio`
+        content part, so the gate is the resolved MODEL's `audio` bit — one endpoint serves
+        both a model with ears and one without. VIDEO does not: the chat-completions request
+        has no video part this wire's servers agree on, so it is False here whatever the
+        catalog says, and the file keeps its fallback.
         """
-        return supports_media_type(media_type, multimodal=multimodal, pdf=False)
+        return supports_media_type(media_type, multimodal=multimodal, pdf=False,
+                                   audio=audio and WIRE_AUDIO, video=video and WIRE_VIDEO)
 
     def _resolve_key(self) -> str:
         # required=False: a keyless local backend (Ollama, vLLM) gets the "none" placeholder.
@@ -173,7 +151,7 @@ class OpenAICompatEndpoint:
         if self.native and schema is not None:
             return self._complete_native(messages, model, schema, max_tokens, timeout, temp)
         if any(m.get("media") for m in messages):  # only touched when an image rides a turn
-            messages = _render_media(messages)
+            messages = render_media(messages)
         body: dict = {"model": model, "messages": messages, **self.extra_body}
         if "openrouter" in self.base_url:
             # usage accounting: the response's usage block then carries the real $ cost

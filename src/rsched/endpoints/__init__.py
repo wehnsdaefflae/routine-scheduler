@@ -67,7 +67,8 @@ class EndpointRegistry:
         """A catalog model NAME → its serving endpoint adapter + a fully-resolved ModelRef:
         the provider id verbatim, the `effort` the CALLER chose (a role's setting — the catalog
         entry carries none), and the per-model multimodal/context/temperature with the serving
-        endpoint's kind-default / own values filled in for any left unset.
+        endpoint's kind-default / own values filled in for any left unset. The `audio` and
+        `video` modality bits come across verbatim — they inherit no endpoint default (D192).
         """
         mc = self.server.models.get(name)
         if mc is None:
@@ -94,7 +95,7 @@ class EndpointRegistry:
         # call, so a miss is simply the next tier down.
         found = limits.lookup(self.server.routines_home, mc.endpoint, mc.model) or {}
         ref = ModelRef(endpoint=mc.endpoint, model=mc.model, effort=effort or None,
-                       multimodal=multimodal,
+                       multimodal=multimodal, audio=mc.audio, video=mc.video,
                        context_tokens=(mc.context_tokens
                                       or limits.window_tokens(found)
                                       or ep_cfg.context_tokens),

@@ -2,10 +2,10 @@
 import pytest
 
 from rsched.endpoints.anthropic_messages import content_blocks
-from rsched.endpoints.openai_compat import _openai_content
+from rsched.endpoints.openai_media import content_parts
 
 
-@pytest.mark.parametrize("render", [content_blocks, _openai_content])
+@pytest.mark.parametrize("render", [content_blocks, content_parts])
 def test_deleted_historical_attachment_is_explicit_and_other_media_survives(tmp_path, render):
     """Deleting a viewed scratch file must not crash the next model send."""
     old = tmp_path / "old.png"

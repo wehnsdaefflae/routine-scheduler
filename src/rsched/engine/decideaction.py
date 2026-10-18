@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import re
 
-from ..endpoints.base import IMAGE_MIMES, NATIVE_MEDIA_MAX_BYTES, EndpointError, guess_media_type
+from ..endpoints.base import EndpointError
 from ..endpoints.decisions import (
     ANSWER_TYPES,
     DecisionImage,
@@ -29,6 +29,7 @@ from ..endpoints.decisions import (
     decision_catalog,
     pick_decision_model,
 )
+from ..endpoints.media_types import NATIVE_MEDIA_MAX_BYTES, guess_media_type, modality_of
 from .run_context import RunContext
 
 QUESTIONS_MAX = 16
@@ -156,7 +157,7 @@ def _gather(action: dict, ctx: RunContext
                 return "", [], [], f"{rel}: not a file"
             mime = guess_media_type(path)
             size, binary = _sniff(path)
-            if mime in IMAGE_MIMES:
+            if modality_of(mime) == "image":
                 if size > NATIVE_MEDIA_MAX_BYTES:
                     return "", [], [], (f"{rel}: {size / 1024 / 1024:.1f} MiB is over the "
                                         f"{NATIVE_MEDIA_MAX_BYTES // 1024 // 1024} MiB an image "

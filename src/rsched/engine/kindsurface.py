@@ -192,11 +192,11 @@ listing or a size read counts). move \
 relocates src to dst (both inside the same write-root jail): it refuses to overwrite an \
 existing dst. mkdir creates a directory — parents: true makes intermediates and treats an \
 existing path as success."""),
-    (("view_image",), """- view_image: SEE an image or PDF (png/jpeg/webp/gif/pdf) at `path` \
-(or `paths`) — for \
-attachments and files a util produced. When this run's model is multimodal the file is shown \
-to you DIRECTLY on the next turn; otherwise the `vision` util describes it and you get text \
-back. Set `prompt` (what to look for) so that fallback is useful."""),
+    (("view_image",), """- view_image: SEE an image, PDF, audio or video file at `path` (or \
+`paths`) — for attachments and files a util produced. When this run's model carries that \
+modality the file is shown to you DIRECTLY on the next turn; an image otherwise goes to the \
+`vision` util, which describes it (set `prompt` so that fallback is useful) — audio/video have \
+no fallback and are refused, naming the 7 MiB raw cap (base64 inflates ~33%)."""),
     (("memory_read", "memory_write"), """- memory_read / memory_write: your persistent topic \
 notes under .memory/ — for what was \
 EXPENSIVE to find out (environment quirks, working solutions, constraints nobody wrote \

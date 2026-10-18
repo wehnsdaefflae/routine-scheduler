@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import json
 
-from .base import PDF_MIME, Message, read_media_b64
+from .base import Message
+from .media_types import modality_of, read_media_b64
 
 
 def merge_consecutive(messages: list[Message]) -> list[Message]:
@@ -70,7 +71,8 @@ def content_blocks(content: str, media: list[dict]) -> list[dict]:
                            "The earlier observation remains in the conversation.]"})
             continue
         source = {"type": "base64", "media_type": mime, "data": data}
-        blocks.append({"type": "document" if mime == PDF_MIME else "image", "source": source})
+        blocks.append({"type": "document" if modality_of(mime) == "pdf" else "image",
+                       "source": source})
     return blocks
 
 

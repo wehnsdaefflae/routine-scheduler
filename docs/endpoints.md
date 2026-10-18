@@ -163,7 +163,7 @@ default. Routines and the system model reference a model by its catalog **name**
   *off* for a text-only one. When off, images/PDFs a routine views route to the `vision` util
   instead — vision still works, just indirectly.
   **`multimodal` is not the only gate: a file must also be small enough to send.** One predicate
-  decides it for both `view_image` and conversation auto-attach — `endpoints/base.oversize_reason`
+  decides it for both `view_image` and conversation auto-attach — `media_types.oversize_reason`
   — and it checks two bounds: `NATIVE_MEDIA_MAX_BYTES` (7 MiB raw; base64 inflates ~33% into most
   providers' ~10 MB request limit) and `NATIVE_MEDIA_MAX_PIXELS_PER_SIDE` (2000 px per side,
   F623). The pixel bound exists because bytes do not predict it: a 2 MB 12000x9000 screenshot
@@ -173,7 +173,24 @@ default. Routines and the system model reference a model by its catalog **name**
   run is told the limit and the file's own measured size, so it can downscale and look properly.
   Dimensions are read from the file header (`image_dimensions`, PNG/JPEG/GIF/WEBP, no Pillow); an
   unmeasurable header means "unknown", never "within the limit". A PDF has no pixel size and is
-  judged by bytes alone.
+  judged by bytes alone, and so are audio and video.
+- `audio` / `video` — whether this model takes AUDIO or VIDEO input natively (D192). **No endpoint
+  kind default**: unlike images, there is no kind whose models all have ears — on one
+  OpenAI-compatible endpoint `gpt-4o-audio-preview` takes audio and the `glm` beside it does not —
+  so each is a plain per-model opt-in, off until you turn it on. `multimodal` is still the master
+  gate (a model with `multimodal: false` takes nothing), and **the wire has to carry it too**: the
+  `openai` kind carries audio as an `input_audio` content part and carries no video; the
+  `anthropic` kind (Messages API) carries neither, because it publishes no block for them. So a
+  model bit and an endpoint that cannot carry the modality = not sent natively, by design.
+  There is **no fallback** for these two the way the `vision` util backs up images — that util
+  describes pictures — so a file the run cannot attach comes back as a refusal saying which half
+  is missing, and naming `NATIVE_MEDIA_MAX_BYTES` (7 MiB RAW; base64 inflates it ~33%). Video
+  meets that ceiling within seconds of footage: extract the audio or some frames first (the
+  `video-extract` util) or transcribe it (`deepgram`), then attach that.
+  The allowlist of types itself is one structure — `endpoints/media_types.py`'s
+  `MEDIA_MODALITIES`, mime → `image` / `pdf` / `audio` / `video` — and everything (the engine's
+  pre-flight, each adapter's `supports_media`, the provider block builders) asks it rather than
+  comparing mimes.
 - `context_tokens` — an optional override for this model's full input + output token window.
   Leave blank to use provider discovery, then the endpoint fallback. Compaction compares an
   explicitly estimated input token count against this window and reserves `max_tokens` for

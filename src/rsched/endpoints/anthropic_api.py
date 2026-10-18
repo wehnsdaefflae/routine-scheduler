@@ -93,13 +93,19 @@ from .base import (
     raise_for_status,
     resolve_api_key,
     split_system,
-    supports_media_type,
     with_retries,
 )
+from .media_types import supports_media_type
 
 log = logging.getLogger("rsched.endpoints.anthropic")
 
 API_VERSION = "2023-06-01"
+
+#: What THIS WIRE carries, independent of any model (D192). The Messages API publishes image
+#: and document blocks and nothing for the two time-based modalities, so both are off here and
+#: a catalog model's own `audio`/`video` bit cannot turn them on over this transport.
+WIRE_AUDIO = False
+WIRE_VIDEO = False
 
 #: Optional top-level fields and the words in a 400's body that name each. Current Claude
 #: models REMOVED the sampling parameters and the newest refuse a forced tool_choice; the 400
@@ -194,11 +200,18 @@ class AnthropicEndpoint:
         self.temperature = cfg.temperature
         self.tool_choice = cfg.tool_choice
 
-    def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
+    def supports_media(self, media_type: str, *, multimodal: bool, audio: bool,
+                       video: bool) -> bool:
         """The Messages API takes images AND PDFs (document blocks) natively when the resolved
         model is multimodal.
+
+        It takes NEITHER audio nor video (D192): the Messages API publishes no content block
+        for either, so both are False here however the catalog model is configured — the same
+        split `pdf` has always had, with the two wires reversed. A run's audio file therefore
+        keeps its fallback on this endpoint and rides natively on an OpenAI-compatible one.
         """
-        return supports_media_type(media_type, multimodal=multimodal, pdf=True)
+        return supports_media_type(media_type, multimodal=multimodal, pdf=True,
+                                   audio=audio and WIRE_AUDIO, video=video and WIRE_VIDEO)
 
     def _api_key(self) -> str:
         # A direct provider key or proxy client key is required; a miss raises auth-flagged.

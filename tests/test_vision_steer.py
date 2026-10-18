@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from rsched.endpoints.base import oversize_reason, supports_media_type
+from rsched.endpoints.media_types import oversize_reason, supports_media_type
 from rsched.engine import actionroute, mediaops, visionsteer
 
 
@@ -23,8 +23,9 @@ class _Endpoint:
         self.multimodal = multimodal
         self.pdf = pdf
 
-    def supports_media(self, mime, *, multimodal):
-        return supports_media_type(mime, multimodal=multimodal, pdf=self.pdf)
+    def supports_media(self, mime, *, multimodal, audio=False, video=False):
+        return supports_media_type(mime, multimodal=multimodal, pdf=self.pdf, audio=audio,
+                                   video=video)
 
 
 def _ctx(tmp_path, endpoint):

@@ -150,6 +150,7 @@ def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None,
     found = found or {}
     return {"name": mc.name, "endpoint": mc.endpoint, "model": mc.model,
             "multimodal": mc.multimodal, "temperature": mc.temperature,
+            "audio": mc.audio, "video": mc.video,
             "context_tokens": mc.context_tokens,
             "max_tokens": mc.max_tokens, "fallbacks": list(mc.fallbacks),
             "multimodal_effective": mc.multimodal if mc.multimodal is not None
@@ -281,6 +282,11 @@ class ModelBody(BaseModel):
     endpoint: str
     model: str
     multimodal: bool | None = None    # None = default by the endpoint kind
+    # D192 — the two time-based modalities. Plain opt-ins with no kind default: a catalog
+    # model takes audio/video only if the operator says it does AND its endpoint's wire
+    # carries it (endpoints/media_types.supports_media_type).
+    audio: bool = False
+    video: bool = False
     context_tokens: int | None = None  # None = inherit the endpoint's context_tokens
     temperature: float | None = None  # None = inherit the endpoint's temperature
     max_tokens: int | None = None     # None = inherit the endpoint's max_tokens
@@ -301,9 +307,13 @@ def upsert_model(request: Request, body: ModelBody, name: str | None = None) -> 
             raise HTTPException(400, f"fallback {fb!r} is not a catalog model — add it first")
 
     def mutate(models: dict) -> None:
-        # drop empty/None so an unset attribute means "inherit the endpoint default"
+        # drop empty/None so an unset attribute means "inherit the endpoint default". The
+        # modality opt-ins (D192) are dropped when OFF as well: unlike `multimodal`, whose
+        # False is the operator explicitly overriding a kind default, an off audio/video bit
+        # inherits nothing, so writing `audio: false` into every row would say nothing.
         models[key] = {k: v for k, v in body.model_dump().items()
-                       if k != "name" and v not in ("", None) and v != []}
+                       if k != "name" and v not in ("", None) and v != []
+                       and not (k in ("audio", "video") and v is False)}
 
     return _rewrite_models(request, mutate)
 
