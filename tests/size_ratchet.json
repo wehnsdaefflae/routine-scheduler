@@ -11,7 +11,7 @@
     "src/rsched/endpoints/base.py": 524,
     "src/rsched/endpoints/openai_compat.py": 359,
     "src/rsched/engine/actions.py": 659,
-    "src/rsched/engine/actionschema.py": 768,
+    "src/rsched/engine/actionschema.py": 685,
     "src/rsched/engine/background.py": 478,
     "src/rsched/engine/capabilities.py": 394,
     "src/rsched/engine/compaction.py": 393,
