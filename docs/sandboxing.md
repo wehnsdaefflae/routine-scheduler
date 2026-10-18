@@ -231,6 +231,25 @@ Decisions-page *approve & apply* reaches a live run by design). Treat a routine 
 `shell` or `script` as able to widen its own config by one run's delay; the capability, not
 the jail, is the decision.
 
+### A shell write is an ungated write, and the record says so where an audit reads (D158/R2654)
+
+Every write protection the engine has lives in the FILE-action gate — the `.memory/` seal, the
+engine-ownership of `runs/` and `.util_outputs/`, the `routine.yaml` refusal, the
+recipe-authoring boundary, `_removal_gate`. A `bash -c` redirect calls none of them, and which
+writes a shell line performs is undecidable in general, so nothing tries to refuse one. D158
+traded prevention for ACCOUNTABILITY: `engine/shellwrite.marks_a_write` tests the command's
+SHAPE (conservative in one direction only — "may have written", never "did not") and the
+observation carries `ungated_write`.
+
+R2654 connected that marker to a reader. For two years its only consumer was its own test — no
+read model, no endpoint, no console case — and a compensating control nothing reads is not one.
+The first write-shaped command of a run now also files ONE `ungated_write` health event
+(`.control/health-events.jsonl`, the machine-checked vocabulary in `health_events.py`), naming
+the routine, the run and the turn. One row per run, not per command: a run working in a repo
+makes dozens of such calls, the per-call record is already on every observation the marker
+rode, and what the stream answers is WHICH RUN to open. It is not blocked work — nothing was
+prevented — so it stays out of `health_stream.BLOCKED_EVENTS`.
+
 ### The console serves a routine's granted READ roots (D172)
 
 The two readers of a routine's files are not the same process and not in the same jail: a

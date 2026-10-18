@@ -18,7 +18,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from helpers import run_context, server_config
+from helpers import health_events, run_context, server_config
 from rsched import utils_run
 from rsched.engine.actions import validate_action
 from rsched.engine.actionschema import ACTION_SCHEMA
@@ -299,7 +299,7 @@ def test_the_deadline_is_not_a_signal_and_raises_no_kernel_kill_event(shell_ctx,
     shell_ctx.server.routines_home = tmp_path / "rhome"
     obs = dispatch({"kind": "shell", "command": "sleep 30", "timeout_s": 1}, shell_ctx)
     assert obs["exit"] == utils_run.TIMEOUT_EXIT  # positive, so it is not read as a signal
-    assert not (tmp_path / "rhome" / ".control" / "health-events.jsonl").exists()
+    assert not health_events(tmp_path / "rhome", event="util_killed")   # no KERNEL-KILL event
 
 
 def test_the_runs_abort_is_not_a_signal_either(shell_ctx, tmp_path):
@@ -314,7 +314,7 @@ def test_the_runs_abort_is_not_a_signal_either(shell_ctx, tmp_path):
     assert obs["aborted"] is True
     assert "timed_out" not in obs
     assert "the command was ended by the run's abort after" in obs["stderr"]
-    assert not (tmp_path / "rhome" / ".control" / "health-events.jsonl").exists()
+    assert not health_events(tmp_path / "rhome", event="util_killed")   # no KERNEL-KILL event
 
 
 @pytest.mark.parametrize("name", ["TIMEOUT_EXIT", "ABORT_EXIT"])

@@ -1,0 +1,103 @@
+"""Which shell commands may have WRITTEN, and the record that says one did (D158, R2654).
+
+Every write protection the engine has lives in the FILE-action gate (`engine/fileops._write_gate`):
+the `.memory/` seal, the engine-ownership of `runs/`, `.util_outputs/` and `.doc_cache/`, the
+`routine.yaml` config refusal, the recipe-authoring boundary and `_removal_gate`. A `bash -c`
+redirect calls none of them, so all of them are bypassable by any routine holding `shell` — which
+is the POINT of an escape hatch, and is why the capability is granted sparingly rather than gated
+per path. Deciding WHICH writes a shell line performs is undecidable in general (a command can
+write through a script, a heredoc, an editor, a compiler), so nothing here tries to refuse one.
+
+D158 replaced prevention with ACCOUNTABILITY, and R2654 is the half that was never connected:
+the observation carried an `ungated_write` marker and the whole product had no reader for it — two
+lines in `src/rsched`, both the writer, no read model, no endpoint, no console case. A compensating
+control nothing reads is not one. So a write-shaped command now also files a `ungated_write`
+HEALTH EVENT, which puts the run in the one durable, machine-checked stream an audit reads
+(`.control/health-events.jsonl`) instead of only in the transcript nobody greps.
+
+ONE ROW PER RUN, not per command. A run that works in a repo makes dozens of write-shaped calls,
+and `health_cooldown`'s docstring records what per-occurrence filing did to this stream once: one
+resumed run wrote 26 rows of 1,289 for a condition 80 runs had produced, and an operator reading
+"173 cost events" saw a fleet problem that was not there. What the audit needs from this event is
+WHICH RUN to open — the per-call detail is already in that run's transcript, on every observation
+the marker rode. So the first write-shaped command of a run files the row, naming the turn and the
+command, and the rest of that run's writes are found by reading it.
+
+The marker is deliberately conservative in one direction only: a hit claims "this may have
+written", never "this did not".
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:                                  # pragma: no cover - typing only
+    from .run_context import RunContext
+
+#: Command shapes that may WRITE. Conservative by design (D158): a hit means "this command may
+#: have written, and no file-action gate saw it", never "this command did write". Missing a write
+#: costs an audit trail entry; flagging a read would make the marker noise, so the list stays at
+#: the shapes that write in their ordinary use.
+_WRITE_SHAPES = (
+    r">",                                   # redirect + append (also catches >>)
+    r"\b(?:tee|dd|truncate|install)\b",
+    r"\b(?:cp|mv|rm|rmdir|mkdir|ln|touch|chmod|chown)\b",
+    r"\bsed\b[^|;]*\s-i",                   # in-place sed only; a filtering sed is a read
+    r"\b(?:patch|git)\b[^|;]*\b(?:apply|checkout|reset|commit|add|restore|stash)\b",
+    r"\b(?:python3?|perl|ruby|node)\b[^|;]*\b(?:-c|-e)\b[^|;]*\b(?:open|write|unlink|mkdir)\b",
+)
+_WRITE_RE = re.compile("|".join(_WRITE_SHAPES))
+
+def marks_a_write(command: str) -> bool:
+    """Whether this shell command's SHAPE suggests it wrote something (D158).
+
+    A `2>/dev/null` or `2>&1` is stream plumbing rather than a write to a file the run owns, so
+    those are stripped before the test — otherwise nearly every defensive command would flag and
+    the marker would stop being worth reading.
+    """
+    stripped = re.sub(r"\d?>&\d|\d>\s*/dev/null", " ", command)
+    return bool(_WRITE_RE.search(stripped))
+
+
+def already_filed(routines_home: Path, run_id: str) -> bool:
+    """Whether this RUN already has its `ungated_write` row on the stream.
+
+    The latch is read back out of the stream rather than held in memory — `health_cooldown`'s
+    idiom, and for its reason: a writer inside one turn has no long-lived object to latch on,
+    and a resumed leg is a new process that must not file the row again. The parse is the
+    stream's ONE memoized reader, so a run making dozens of write-shaped calls costs one read.
+
+    Fails OPEN: trouble reading the stream files the event. A suppressor that cannot read its
+    own history must not become the thing that silences the log.
+    """
+    if not run_id:
+        return False
+    try:
+        from ..readmodels.health_stream import health_records
+
+        return any(rec.get("event") == "ungated_write" and rec.get("run_id") == run_id
+                   for rec in reversed(health_records(Path(routines_home))))
+    except Exception:
+        return False
+
+
+def record_ungated_write(ctx: RunContext, command: str) -> None:
+    """File the run's `ungated_write` health event, once per run (R2654).
+
+    Best-effort: `log_health_event` swallows its own I/O errors, so a stream that cannot be
+    written costs an audit row and never a turn.
+    """
+    home = Path(ctx.server.routines_home)
+    run_id = str(getattr(ctx, "run_id", "") or "")
+    if already_filed(home, run_id):
+        return
+    from ..health_events import log_health_event
+
+    log_health_event(
+        home, "ungated_write",
+        routine=getattr(ctx.routine, "slug", "") or "", run_id=run_id,
+        detail=f"turn {getattr(ctx, 'turn', 0)}: shell command whose shape may have written, "
+               f"seen by no file-action gate — {command[:200]}",
+        turn=getattr(ctx, "turn", 0) or None)

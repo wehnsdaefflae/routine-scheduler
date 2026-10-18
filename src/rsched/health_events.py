@@ -11,7 +11,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"fire_paused"|"fire_catchup"|"routine_catchup_declined"
         |"scheduler_tick_error"|"migration_due_soon"|"migration_expired"
         |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route"
-        |"obligation_overdue",
+        |"obligation_overdue"|"ungated_write",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -76,6 +76,16 @@ did everything it asked for — so it is deliberately absent from
 cannot be ended without: who is still calling the old path. Filed on ACCEPTED calls alone,
 past every rejection: a 404 probe or a wrong token is not a caller to migrate, and the hook
 route is unauthenticated, so recording rejections would let anyone fill this stream.
+
+ungated_write: a run holding `shell` ran a command whose SHAPE may have written, and no
+file-action gate saw it (D158's deliberate hole; `engine/shellwrite.py` holds the shapes).
+routine/run_id name the run, `turn` the first such turn, detail the command's first 200 chars.
+ONE row per run, not per command — a run working in a repo makes dozens of write-shaped calls,
+and the per-call record already exists on every observation the marker rode; what this event
+answers is WHICH RUN to open. It is not blocked work, so it is deliberately absent from
+`readmodels.health_stream.BLOCKED_EVENTS`: nothing was prevented, the writes happened. R2654:
+for two years this marker's only consumer was its own test, so the bypass D158 accepted came
+without the accountability it was traded for.
 
 git_lock_cleared: a provably stale `index.lock` was removed before a write (`gitlock` — the
 commit lock was held, no git process worked in the repo, the lock was empty and older than

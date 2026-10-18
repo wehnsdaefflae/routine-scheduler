@@ -15,7 +15,6 @@ observations.format_observation) the next user message.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from .. import sandbox, shellrun, utils_lib, utils_run
@@ -35,6 +34,7 @@ from .observations import truncate
 from .output_compression import command_output
 from .reach import routine_root
 from .run_context import RunContext, work_dir
+from .shellwrite import marks_a_write, record_ungated_write
 
 
 def script_home(ctx: RunContext, name: str) -> Path | None:
@@ -395,32 +395,6 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     return obs
 
 
-#: Command shapes that may WRITE. Conservative by design (D158): a hit means "this command may
-#: have written, and no file-action gate saw it", never "this command did write". Missing a write
-#: costs an audit trail entry; flagging a read would make the marker noise, so the list stays at
-#: the shapes that write in their ordinary use.
-_WRITE_SHAPES = (
-    r">",                                   # redirect + append (also catches >>)
-    r"\b(?:tee|dd|truncate|install)\b",
-    r"\b(?:cp|mv|rm|rmdir|mkdir|ln|touch|chmod|chown)\b",
-    r"\bsed\b[^|;]*\s-i",                   # in-place sed only; a filtering sed is a read
-    r"\b(?:patch|git)\b[^|;]*\b(?:apply|checkout|reset|commit|add|restore|stash)\b",
-    r"\b(?:python3?|perl|ruby|node)\b[^|;]*\b(?:-c|-e)\b[^|;]*\b(?:open|write|unlink|mkdir)\b",
-)
-_WRITE_RE = re.compile("|".join(_WRITE_SHAPES))
-
-
-def marks_a_write(command: str) -> bool:
-    """Whether this shell command's SHAPE suggests it wrote something (D158).
-
-    A `2>/dev/null` or `2>&1` is stream plumbing rather than a write to a file the run owns, so
-    those are stripped before the test — otherwise nearly every defensive command would flag and
-    the marker would stop being worth reading.
-    """
-    stripped = re.sub(r"\d?>&\d|\d>\s*/dev/null", " ", command)
-    return bool(_WRITE_RE.search(stripped))
-
-
 def do_shell(action: dict, ctx: RunContext) -> dict:
     """Run ONE ad-hoc command through `bash -c` inside the run's Landlock jail — the escape
     hatch, gated by the `shell` capability so a routine without it cannot even generate the
@@ -450,6 +424,11 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
     person auditing the run afterwards can find the writes that no gate saw. The flag is
     deliberately conservative in one direction only — it claims "this may have written", never
     "this did not".
+
+    The marker's READER is the health stream (R2654): the first write-shaped command of a run
+    also files one `ungated_write` health event, because for two years the only consumer of
+    this flag was its own test. `engine/shellwrite.py` holds the shapes, the per-run latch and
+    that reasoning.
     """
     command = str(action.get("command") or "")
     cwd = work_dir(ctx)
@@ -468,8 +447,11 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
            **_dead_root_note(policy), **killed}
     obs["truncated"] = obs["truncated"] or result["truncated"]
     if marks_a_write(command):
-        # D158: no gate saw this write, so the record is the only place it exists.
+        # D158: no gate saw this write, so the record is the only place it exists — and R2654
+        # connected that record to a reader: the run also files ONE `ungated_write` health
+        # event, so an audit finds the run instead of having to grep every transcript.
         obs["ungated_write"] = True
+        record_ungated_write(ctx, command)
     if str(cwd) != str(work_dir(ctx)):
         obs["cwd"] = str(cwd)
     if result["timed_out"]:

@@ -41,8 +41,17 @@ const WIDE = "(min-width: 1900px)";
  *   setSwitcher(node)     — an optional control beside the title (shown while open)
  * `page` is the full screen's route (the title's link; the dock hides there, since that page IS
  * the screen), `label` the title, `storageKey` where a wide console remembers open/closed.
+ *
+ * `newTab` sends the dock's links to the full screen into a NEW TAB instead of this one (D194,
+ * the operator's call for the Browser: "clicking the Browser from the right side chip should
+ * open it in a new tab. clicking it in the left sidebar should open it in the current tab").
+ * The dock is read beside something else — a run, a page mid-read — so taking over the tab
+ * costs what he was looking at; the sidebar entry is ordinary navigation and stays in place.
  */
-export function mountScreenDock(slot, { prefix, label, page, storageKey, frameTitle }) {
+export function mountScreenDock(slot, { prefix, label, page, storageKey, frameTitle,
+                                        newTab = false }) {
+  // One place decides it, so the title and the unreachable note's link can never disagree.
+  const away = newTab ? { target: "_blank", rel: "noopener" } : {};
   const wide = window.matchMedia(WIDE);
   // Open at rest only where the dock has a margin of its own to open into; the remembered
   // choice is a WIDE-screen choice, because at narrow widths there is no resting-open state to
@@ -52,8 +61,9 @@ export function mountScreenDock(slot, { prefix, label, page, storageKey, frameTi
   let target = null;       // { key, token } — what the dock should show
   let dialled = null;      // the key of what its body shows now (or is connecting to)
 
-  const title = el("a", { class: "sd-title", href: page,
-    title: "open the full screen — that one takes the keyboard" }, label);
+  const title = el("a", { class: "sd-title", href: page, ...away,
+    title: newTab ? "open the full screen in a new tab — that one takes the keyboard"
+                  : "open the full screen — that one takes the keyboard" }, label);
   const extra = el("span", { class: "sd-extra" });
   const toggle = el("button", { class: "sd-toggle", type: "button" });
   const head = el("div", { class: "sd-head" }, title, extra, toggle);
@@ -86,7 +96,8 @@ export function mountScreenDock(slot, { prefix, label, page, storageKey, frameTi
     body.replaceChildren(el("div", { class: "sd-note faint small" },
       el("div", {}, "screen unreachable"),
       el("div", { class: "row", style: "gap:6px;margin-top:4px" },
-        el("a", { class: "btn small ghost", href: page }, "open the full page"), retry)));
+        el("a", { class: "btn small ghost", href: page, ...away }, "open the full page"),
+        retry)));
   };
 
   const check = async () => {

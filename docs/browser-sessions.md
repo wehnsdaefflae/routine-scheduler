@@ -108,6 +108,13 @@ first "show" — because the screen admits one viewer at a time and a folded pre
 seat on every page load. Once connected it keeps the seat while folded or hidden on
 `#/browser`; whether to release it then is an open decision (docs/designs.md).
 
+**The two ways in open in different tabs** (D194). The dock's own title — the chip beside what
+you are reading — opens `#/browser` in a NEW tab (`target="_blank"`, `rel="noopener"`), because
+the preview is looked at while reading something else and taking over the tab costs that. The
+left sidebar's **Browser** entry is ordinary navigation and opens in the CURRENT tab. The
+difference lives in one place, `mountScreenDock`'s `newTab` option, so the dock's title and its
+"open the full page" retry link can never disagree; the desktop dock does not take it.
+
 Both load through the console's OWN origin — `/browser-view/…`, relayed by
 `web/api_screen_view.py` to the sidecar's websockify — never from the configured address
 directly. That is what makes it work over https: a page served over https may not open an

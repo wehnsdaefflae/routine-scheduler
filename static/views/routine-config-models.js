@@ -15,7 +15,24 @@ import { ladderIntervals } from "/static/components/ladder-settings.js";
 const MODEL_KINDS = [["main", "the orchestrator loop (children inherit it by default)"],
                      ["tool_call", "the llm action"],
                      ["uncensored", "a refused llm call is referred here (opt-in)"],
-                     ["supervisor", "an escalation-ladder rung's overseer (blank = main)"]];
+                     ["supervisor", "an escalation-ladder rung's overseer"]];
+
+// What a BLANK role means, worded as the ENGINE resolves it — and it does not resolve all four
+// the same way, which is the defect this exists to end: every row once read
+// "— system default (<system model>) —", so the supervisor row contradicted its own description
+// ("blank = main") side by side, and the uncensored row promised a fallback that does not exist.
+// One statement of each default, from the code that applies it:
+//   main · tool_call → endpoints.for_model_chain — the server's `system_model`
+//   uncensored       → endpoints.for_uncensored — NO fallback; an unset role means referral off
+//   supervisor       → config.base.supervisor_role — the routine's own `main` role (D164)
+function blankLabel(kind, { sysM, main }) {
+  if (kind === "uncensored") return "— off · a refusal is not referred —";
+  if (kind === "supervisor") {
+    const resolved = main || sysM;        // main unset resolves onward to the system model
+    return resolved ? `— main (${resolved}) —` : "— main —";
+  }
+  return sysM ? `— system default (${sysM}) —` : "— system default —";
+}
 // The decide action's two roles name a DECISION model (Settings → Decision endpoints), not a
 // chat one, so their pickers list the decision catalog — the image role only the models that
 // take images. A blank role falls back to the instance default for that payload.
@@ -38,8 +55,17 @@ export function modelsGroup(ctx) {
     const current = { ...(value.models || {}) };
     const efforts = { ...(value.efforts || {}) };
     const emit = () => set({ models: { ...current }, efforts: { ...efforts } });
+    // The blank option of a role whose default is ANOTHER role (supervisor → main) has to
+    // follow that role live: fieldBlock deliberately does not rebuild a control on its own
+    // edit, so without this the label keeps naming the model main had when the row was drawn.
+    const blanks = new Map();
+    const repaintBlanks = () => {
+      for (const [kind, option] of blanks)
+        option.textContent = blankLabel(kind, { sysM, main: current.main });
+    };
     const commit = (kind, v) => {
       if (v) current[kind] = v; else delete current[kind];
+      if (kind === "main") repaintBlanks();
       emit();
     };
     const effortSelect = (kind) => {
@@ -73,9 +99,11 @@ export function modelsGroup(ctx) {
       return roleRow(kind, desc, sel);
     });
     const rows = MODEL_KINDS.map(([kind, desc]) => {
+      const blank = el("option", { value: "" }, blankLabel(kind, { sysM, main: current.main }));
+      blanks.set(kind, blank);
       const sel = el("select", { "data-model-role": kind, "data-nopersist": true,
         onchange: () => commit(kind, sel.value) },
-        el("option", { value: "" }, sysM ? `— system default (${sysM}) —` : "— system default —"),
+        blank,
         ...catalog.map((n) => el("option", { value: n }, n)),
         // a name the catalog no longer has stays visible, so it can be seen and changed
         ...(current[kind] && !catalog.includes(current[kind])

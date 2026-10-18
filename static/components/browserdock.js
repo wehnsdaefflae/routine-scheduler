@@ -34,7 +34,10 @@ export async function initBrowserDock() {
   try { await grantPass(BROWSER); }
   catch { return; }               // no pass, no preview: better absent than showing an error
 
+  // D194: from HERE the full screen opens in a NEW TAB — the preview is read beside something
+  // else, and taking over the tab costs whatever that was. The left sidebar's own Browser entry
+  // (`#nav-browser`, static/index.html) is ordinary navigation and stays in this tab.
   const dock = mountScreenDock(slot, { prefix: BROWSER, label: "Browser", page: "#/browser",
-    storageKey: "browser-dock-open", frameTitle: "shared browser (read-only)" });
+    storageKey: "browser-dock-open", frameTitle: "shared browser (read-only)", newTab: true });
   dock.show({ key: "browser", token: "" });
 }

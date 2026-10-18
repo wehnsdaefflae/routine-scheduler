@@ -3,7 +3,7 @@
 // the durable series (readmodels/stats.monthly_spend). Split from views/stats.js so neither
 // file grows past the size bar.
 
-import { el, fmtNum, fmtUsd } from "/static/util.js";
+import { el, fmtDur, fmtInt, fmtNum, fmtUsd } from "/static/util.js";
 
 export const NBSP = " ";
 
@@ -90,5 +90,52 @@ export function monthlySection(monthly, kinds) {
   }
   return statSection("Monthly spend by routine",
     "context volume · notional cost per calendar month, from the durable usage stream — unlike the tables above, this survives run retention",
+    head, body);
+}
+
+// What the OUTPUT COMPRESSOR bought, per routine — engine behaviour, not a setting anyone
+// turns: `candidates` counts the successful command outputs it could have looked at,
+// `attempts` the ones the compressor ran on, `applied` the previews that replaced an
+// observation — and `rejected` is the half that has no upside at all: a result the engine's own
+// verification refused, paid for in compressor time and thrown away. Savings are the recorded
+// ESTIMATE (preview chars ÷ 4), never a billing reading.
+export function compressionSection(c) {
+  const rows = c?.rows || [];
+  const t = c?.totals || {};
+  if (!rows.length) {
+    return el("div", { class: "stat-section" },
+      el("h2", {}, "Output compression by routine"),
+      el("div", { class: "sub" }, "no counted run yet — the tally is written to the durable "
+        + "usage stream when a run finishes, so the first finished run fills this in."));
+  }
+  const hit = t.attempts ? ` · ${Math.round((t.applied / t.attempts) * 100)}% of attempts landed` : "";
+  const num = (n) => (n ? fmtInt(n) : "—");
+  const head = el("tr", {},
+    el("th", {}, "routine"),
+    el("th", { class: "num" }, "runs"),
+    el("th", { class: "num", title: "successful command outputs; most are too small or are neither JSON nor logs" }, "candidates"),
+    el("th", { class: "num", title: "candidates the compressor actually ran on" }, "attempts"),
+    el("th", { class: "num", title: "previews that replaced the observation the model read" }, "applied"),
+    el("th", { class: "num", title: "estimated tokens saved by applied previews (preview chars ÷ 4) — an estimate, not billing" }, "~tokens saved"),
+    el("th", { class: "num", title: "the compressor's result failed the engine's own verification (JSON that did not survive it, or an unusable result): the original was kept and the time is gone" }, "rejected"),
+    el("th", { class: "num", title: "compressed fine, but no smaller complete preview than the existing capped one" }, "no gain"),
+    el("th", { class: "num", title: "wall clock spent inside the compressor, whatever the outcome" }, "time"));
+  const body = rows.map((r) => el("tr", {},
+    el("td", {}, el("a", { href: `#/routine/${r.routine}` }, r.routine)),
+    el("td", { class: "num" }, fmtInt(r.runs)),
+    el("td", { class: "num" }, num(r.candidates)),
+    el("td", { class: "num" }, num(r.attempts)),
+    el("td", { class: "num" }, r.attempts
+      ? `${fmtInt(r.applied)} (${Math.round((r.applied / r.attempts) * 100)}%)` : "—"),
+    el("td", { class: "num" }, num(r.tokens_saved)),
+    // more rejected than applied: this routine's outputs cost the compressor more than they bought
+    el("td", { class: r.fallback > r.applied ? "num warn" : "num" }, num(r.fallback)),
+    el("td", { class: "num" }, num(r.unchanged)),
+    el("td", { class: "num" }, r.seconds ? fmtDur(Math.round(r.seconds)) : "—")));
+  return statSection("Output compression by routine",
+    [`${fmtInt(t.applied || 0)} previews applied of ${fmtInt(t.attempts || 0)} attempts${hit}, `,
+     `~${fmtNum(t.tokens_saved || 0)} tokens saved for ${fmtDur(Math.round(t.seconds || 0))} of compressor time, `,
+     `over ${fmtInt(c.records || 0)} counted runs since ${String(c.since || "").slice(0, 10)}. `,
+     "From the durable usage stream; savings are the recorded estimate, not a billing reading."],
     head, body);
 }

@@ -546,11 +546,21 @@ and the capabilities digest's catalog listing):
   blank that reads as zero; clearing it sends `0`, which the endpoint writes as a REMOVAL from
   `tuning.yaml`, because absence is that knob's one spelling of its derived default (the routine
   PATCH dumps with `exclude_none`, under which a null would read as "not sent").
-  **One piece of the design is deliberately NOT built**: a `supervisor` MODEL ROLE beside main /
-  tool_call / uncensored. `ladder.escalate` pins `"model": "main"`, which already satisfies the
-  design's stated intent — an overseer on a weaker model than the worker it reads is the one
-  configuration the role exists to prevent. A fourth role touches every settings pattern, and the
-  operator's 2026-10-02 decision did not authorize one, so it stays a separate decision.
+  **The overseer's model is a ROLE** (D164, shipped 0.430.0): `supervisor`, the fourth of
+  `config.base.MODEL_KINDS`, resolved by the one pure rule `config.base.supervisor_role()` —
+  its own model once someone configures one, else the routine's `main`, so leaving it unset is
+  exactly the behaviour `ladder.escalate` had when it pinned `"model": "main"` in code. The
+  operator accepted what comes with it: an overseer weaker than the worker it reads becomes
+  configurable. It falls back to `main` and NOT to the server's system model, because an
+  overseer resolved to a model nobody chose for this routine judges with less context than the
+  run it judges.
+  **A blank picker says the default its own role resolves to** — the four roles do not share
+  one (`static/views/routine-config-models.js`, `blankLabel`): main and tool_call fall back to
+  the server's system model, `supervisor` to this routine's `main` (following the main picker
+  live, before any accept), and `uncensored` to NOTHING AT ALL — an unset uncensored role means
+  referral is off, there is no system-model fallback behind it (`endpoints.for_uncensored`).
+  One template for all four is how the supervisor row shipped claiming the system model while
+  its own description beside it said "blank = main".
 - `tuning.yaml` — the routine's machine-tunable BEHAVIOR parameters, classed with the RECIPE
   (editable by a routine holding `write_recipe`; config stays sealed — the file boundary IS the
   permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how

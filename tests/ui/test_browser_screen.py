@@ -76,10 +76,17 @@ def test_publishing_a_screen_reveals_the_nav_link_and_the_preview(ui, ui_page):
                    f.remove(); return pe; }""")
     assert inert == "none", f"a dock frame is steerable: pointer-events is {inert}"
 
-    # the preview is a glance; the full screen is where the keyboard goes
-    dock.get_by_role("link", name="Browser").click()
-    expect(ui_page).to_have_url(re.compile(r"#/browser$"))
-    expect(ui_page.locator("iframe.browser-screen")).to_have_count(1)
+    # The preview is a glance; the full screen is where the keyboard goes — and from the dock
+    # it opens in a NEW TAB (D194), because the dock is read beside something else.
+    with ui_page.expect_popup() as popup:
+        dock.get_by_role("link", name="Browser").click()
+    full = popup.value
+    expect(full).to_have_url(re.compile(r"#/browser$"))
+    expect(full.locator("iframe.browser-screen")).to_have_count(1)
+    # the page he was reading is still the page he was reading
+    expect(ui_page).to_have_url(re.compile(r"#/routines$"))
+    full.close()
+    # WHERE each of the two ways in opens is pinned in tests/ui/test_browser_link_targets.py.
 
 
 def test_both_surfaces_load_through_the_console_not_the_raw_upstream(ui, ui_page):

@@ -8,7 +8,9 @@
 import { api } from "/static/api.js";
 import { GROUPS, METRICS, RANGES, chartNode, colorMap, hideTip } from "/static/components/charts.js";
 import { el, emptyState, fmtDur, fmtInt, fmtNum, fmtUsd, skeleton, storage } from "/static/util.js";
-import { NBSP, foldRows, monthlySection, routineHref, statSection } from "/static/views/stats-parts.js";
+import { blockedSection } from "/static/views/stats-blocked.js";
+import { NBSP, compressionSection, foldRows, monthlySection, routineHref, statSection }
+  from "/static/views/stats-parts.js";
 
 const CHARTS_KEY = "rsched.stats.charts";
 const DEFAULT_CHARTS = [
@@ -240,53 +242,6 @@ function utilsSection(u) {
     head, body);
 }
 
-// Output compression by routine (docs/output-compression.md): what the engine's lossless output
-// compression actually bought — a measurement, not a setting. `candidates` is every successful
-// command output, `attempts` the ones the compressor ran on, `applied` the previews that replaced
-// an observation — and `rejected` is the half that has no upside at all: a result the
-// engine's own verification refused, paid for in compressor time and thrown away. Savings
-// are the recorded ESTIMATE (preview chars ÷ 4), never a billing reading.
-function compressionSection(c) {
-  const rows = c?.rows || [];
-  const t = c?.totals || {};
-  if (!rows.length) {
-    return el("div", { class: "stat-section" },
-      el("h2", {}, "Output compression by routine"),
-      el("div", { class: "sub" }, "no counted run yet — the tally is written to the durable "
-        + "usage stream when a run finishes, so the first finished run fills this in."));
-  }
-  const hit = t.attempts ? ` · ${Math.round((t.applied / t.attempts) * 100)}% of attempts landed` : "";
-  const num = (n) => (n ? fmtInt(n) : "—");
-  const head = el("tr", {},
-    el("th", {}, "routine"),
-    el("th", { class: "num" }, "runs"),
-    el("th", { class: "num", title: "successful command outputs; most are too small or are neither JSON nor logs" }, "candidates"),
-    el("th", { class: "num", title: "candidates the compressor actually ran on" }, "attempts"),
-    el("th", { class: "num", title: "previews that replaced the observation the model read" }, "applied"),
-    el("th", { class: "num", title: "estimated tokens saved by applied previews (preview chars ÷ 4) — an estimate, not billing" }, "~tokens saved"),
-    el("th", { class: "num", title: "the compressor's result failed the engine's own verification (JSON that did not survive it, or an unusable result): the original was kept and the time is gone" }, "rejected"),
-    el("th", { class: "num", title: "compressed fine, but no smaller complete preview than the existing capped one" }, "no gain"),
-    el("th", { class: "num", title: "wall clock spent inside the compressor, whatever the outcome" }, "time"));
-  const body = rows.map((r) => el("tr", {},
-    el("td", {}, el("a", { href: `#/routine/${r.routine}` }, r.routine)),
-    el("td", { class: "num" }, fmtInt(r.runs)),
-    el("td", { class: "num" }, num(r.candidates)),
-    el("td", { class: "num" }, num(r.attempts)),
-    el("td", { class: "num" }, r.attempts
-      ? `${fmtInt(r.applied)} (${Math.round((r.applied / r.attempts) * 100)}%)` : "—"),
-    el("td", { class: "num" }, num(r.tokens_saved)),
-    // more rejected than applied: this routine's outputs cost the compressor more than they bought
-    el("td", { class: r.fallback > r.applied ? "num warn" : "num" }, num(r.fallback)),
-    el("td", { class: "num" }, num(r.unchanged)),
-    el("td", { class: "num" }, r.seconds ? fmtDur(Math.round(r.seconds)) : "—")));
-  return statSection("Output compression by routine",
-    [`${fmtInt(t.applied || 0)} previews applied of ${fmtInt(t.attempts || 0)} attempts${hit}, `,
-     `~${fmtNum(t.tokens_saved || 0)} tokens saved for ${fmtDur(Math.round(t.seconds || 0))} of compressor time, `,
-     `over ${fmtInt(c.records || 0)} counted runs since ${String(c.since || "").slice(0, 10)}. `,
-     "From the durable usage stream; savings are the recorded estimate, not a billing reading."],
-    head, body);
-}
-
 export async function render(view) {
   view.classList.add("dev-view");   // the rail's Develop group: an iris kicker and section ticks
   view.append(el("div", { class: "page-head" },
@@ -362,6 +317,12 @@ export async function render(view) {
         el("div", { class: "chip-row" },
           ...states.map(([s, n]) => el("span", { class: `chip chip-${s}` }, `${s}: ${fmtInt(n)}`)))));
     }
+
+    // ---- what the fleet OWED and did not deliver (R2653) --------------------
+    // Its own source (the health stream, not the usage stream) and its own window, so it is
+    // fetched here rather than folded into /api/stats; a failure returns null and the page
+    // keeps every reading it does have.
+    parts.push(await blockedSection());
 
     parts.push(el("div", { class: "stat-foot" },
       `generated ${agg.generated || ""} · source: each run's status.json (no cache)`));

@@ -582,6 +582,16 @@ store, never by reading a prefix), the repo's directory name for a commit that d
 (a routine's slug, or the library's own directory), empty for a scheduler tick. `total: 0`
 is the healthy reading.
 
+**And the console reads it** (R2653, 0.433.0): the Stats page's **Blocked work** section
+(`static/views/stats-blocked.js`) fetches that endpoint on its own window and renders one row per
+folded event — the server's `means` as each row's label, so the panel carries no vocabulary of
+its own. For three years the endpoint had no console consumer at all, while its handler docstring
+explained that it ships `vocabulary` "so the console renders a label it was not compiled with".
+The panel renders **when there is nothing too** — an absent section and a healthy one are
+indistinguishable, and only one of them reassures, which is also why `backup_stale` was added to
+the vocabulary after nineteen unnoticed nights. A lane subject links to the Routines page and
+never to a route built from the opaque id; an empty subject reads as "the instance".
+
 Owed WORK lands here too (`daemon/owed_watch.py`, daily): `obligation_overdue` names a routine
 whose `state/obligations.json` — what a person asked of it or approved, carried from run to run
 until one meets it (engine/obligations.py) — has held an item open longer than a week, with the
