@@ -204,7 +204,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         # With a util name in args, list ONLY that util's entry (usage + tags + secrets):
         # the full catalog is already in CAPABILITIES, so re-listing everything to learn
         # one util's flags re-buys ~3k tokens of known information.
-        target = str(args[0]).lstrip("-") if args else ""
+        target = next((a for a in args if not a.startswith("-")), "")
         if target and target != "all":
             entry = next((u for u in utils_lib.list_utils(home) if u["name"] == target), None)
             if entry is None:

@@ -50,14 +50,28 @@ _WRITE_SHAPES = (
 )
 _WRITE_RE = re.compile("|".join(_WRITE_SHAPES))
 
+#: A quoted span — the one place a `>` is TEXT rather than a redirect. Only the `>` inside it is
+#: blanked, never the span's words: `python -c "open('x','w')"` must still flag on `open`.
+_QUOTED = re.compile(r"'[^'\n]*'|\"[^\"\n]*\"")
+
+
 def marks_a_write(command: str) -> bool:
     """Whether this shell command's SHAPE suggests it wrote something (D158).
 
-    A `2>/dev/null` or `2>&1` is stream plumbing rather than a write to a file the run owns, so
-    those are stripped before the test — otherwise nearly every defensive command would flag and
-    the marker would stop being worth reading.
+    Two things are stream plumbing or text rather than a write to a file the run owns, and both
+    are neutralised before the test — otherwise nearly every defensive command would flag and the
+    marker would stop being worth reading:
+
+    * `2>/dev/null` and `2>&1` — stripped whole.
+    * a `>` INSIDE a quoted string (`grep -n "a > b"`, `echo 'x > y'`) — blanked in place. This
+      is what the first three `ungated_write` health events caught: two of them were read-only
+      commands whose grep pattern or echo text contained a `>`, so the stream's very first signal
+      was 1-in-3 false. A new detector a reader learns to discount is worse than none. Only the
+      `>` is blanked, never the quoted span's words: a redirect outside the quotes still flags
+      (`echo hi > "state/x"`), and `python3 -c "open('x','w')"` still flags on `open`.
     """
     stripped = re.sub(r"\d?>&\d|\d>\s*/dev/null", " ", command)
+    stripped = _QUOTED.sub(lambda m: m.group(0).replace(">", " "), stripped)
     return bool(_WRITE_RE.search(stripped))
 
 

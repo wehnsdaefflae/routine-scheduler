@@ -367,6 +367,6 @@ def test_the_marker_fires_on_the_paths_the_file_gate_would_have_refused(shell_ct
 def test_a_read_only_command_is_not_marked(shell_ctx):
     """The marker has to be worth reading, so it must not fire on every command."""
     for command in ("ls state", "cat state/x 2>/dev/null; true", "grep -c . main.md || true",
-                    "git status --short", "wc -l main.md"):
+                    "git status --short", "wc -l main.md", "echo 'x > y'", 'grep "a > b" m'):
         obs = dispatch({"kind": "shell", "command": command}, shell_ctx)
         assert "ungated_write" not in obs, f"falsely marked: {command!r}"

@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.433.2] — 2026-10-18
+
+### A flag is not a util name: `util list --json` answered with the `json` util (F720)
+
+`engine/executor.py`'s list dispatch took its target as `(args[0] or "").lstrip("-")`, so a
+leading flag became a NAME. `list args=["--json"]` therefore answered with the **`json` util's**
+entry — and `--git` would answer with `git`'s — under the same header the full catalog prints,
+so nothing in the observation said the question had been swapped. The engine's own prose teaches
+appending `--json` for structured output, which is what makes this reachable by following the
+instructions correctly: nine fleet runs opened with a util-CLI usage error in this run's window.
+The target is now the first NON-FLAG argument, so a flag chooses the output shape and `list
+<name> --json` still answers for `<name>`.
+
+### The `ungated_write` health signal was 1-in-3 false on its first day (F718)
+
+`engine/shellwrite.py::marks_a_write()` stripped `2>/dev/null` and `2>&1` before its shape test,
+but not a `>` inside a QUOTED string — so `grep -n "a > b" file` and `echo 'x > y'` were both
+marked as writes. Of the three `ungated_write` events the stream has ever carried (all 2026-10-18,
+the day the signal shipped), two were exactly this: read-only commands whose grep pattern or echo
+text contained a `>`. A brand-new signal a reader learns to discount is worse than no signal, so
+only the `>` inside a quoted span is now blanked — never the span's words, so a redirect outside
+the quotes still flags (`echo hi > "state/x"`) and `python3 -c "open('x','w')"` still flags on
+`open`.
+
+Both fixes are net-zero on the two files already at their size ceilings
+(`tests/test_shell_action.py` 372, `engine/executor.py` 486): the new pins extend the existing
+fixture tuple and `tests/test_executor_utils.py`, which is not capped. Both were seen RED against
+the unfixed source before the commit (`target: 'json'`; `falsely marked: "echo 'x > y'"`).
+
 ## [0.433.1] — 2026-10-18
 
 ### A muted hook could never fire or be un-muted again (F697)

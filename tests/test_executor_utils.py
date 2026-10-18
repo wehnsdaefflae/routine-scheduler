@@ -136,6 +136,27 @@ def test_one_utils_entry_shows_its_whole_usage_block(util_ctx):
     assert listing.splitlines()[-1].strip() == "tags: test"
 
 
+def test_a_flag_only_list_answers_with_the_catalog_not_a_util_named_like_the_flag(util_ctx):
+    """A FLAG is not a util name: `list args=["--json"]` must list the catalog.
+
+    `lstrip("-")` mapped the flag onto a real util's name, so `--json` answered with the
+    `json` util's entry and `--git` with `git`'s — under the SAME header the full catalog
+    uses, so nothing said the question had been swapped. The engine's own prose teaches
+    appending `--json` for structured output, which is what made this reachable by reading
+    the instructions correctly. A flag chooses the OUTPUT SHAPE; the target is the first
+    non-flag arg, so `list <name> --json` still answers for `<name>`.
+    """
+    d = util_ctx.server.libraries_home / "utils" / "json"
+    d.mkdir(parents=True)
+    (d / "main.py").write_text('"""json — one verb-dispatched tool.\n\n'
+                               'usage: gu json get FILE PATH\n"""\n', encoding="utf-8")
+    obs = dispatch({"kind": "util", "name": "list", "args": ["--json"]}, util_ctx)
+    assert obs.get("target") in (None, ""), obs
+    assert "echoer" in obs["listing"] and "crasher" in obs["listing"], obs["listing"]
+    named = dispatch({"kind": "util", "name": "list", "args": ["json", "--json"]}, util_ctx)
+    assert named["target"] == "json" and "gu json get FILE PATH" in named["listing"]
+
+
 def test_util_miss_names_a_matching_routine_local_script(util_ctx):
     # F330/R367: `util name=X` where X is a routine-local script must point at the script
     # action instead of dead-ending on the global catalog — the reporter was told scripts/
