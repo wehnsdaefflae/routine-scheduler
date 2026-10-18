@@ -125,8 +125,22 @@ cannot offer.
 - **Nothing vanishes.** A background call that RAISES delivers an error observation like any other.
   One that lands with no turn left to read it is recorded with `unread: true`. One still running at
   run end is recorded `abandoned: true`, its in-flight model calls closed through
-  `instrument.abandon_open_calls`, and named in the run's own summary — a result the run never read
-  is a loss only a reader of the result can judge.
+  `instrument.abandon_open_calls`.
+- **And nothing the run never read is silent in `result.md`** (F715, authorized by D195). Both
+  losses reach the summary, in two DELIBERATELY different sentences rendered by
+  `engine/background_summary.settle_note` and appended by `loopend.finish_run`: a still-running
+  call's result *is lost — nothing in this run read them, and nothing recorded them*, while one
+  that *LANDED after this run's last turn and was never read* has a result that is **not** lost —
+  it is in the transcript as an `unread` observation, and only the run's own reading of it is
+  missing. Each line names the count and the handles. A run that read everything gets no line at
+  all, which is what keeps the bracket worth reading. Until F715 only the abandoned case spoke, on
+  the argument that a late landing is the ordinary end of a short run — so a run that backgrounded
+  a call, finished before reading it and drew its conclusions anyway said nothing about that on
+  the one surface the operator and the next run read. D195 is why the fix is mechanical: an
+  honesty instruction lifts flaw-flagging where the model CAN see the flaw, and the paper's single
+  non-improving scenario is the hidden pending tool call — a run cannot flag what it was never
+  shown, so the engine says it. Pinned in `tests/test_background_summary.py` (both wordings, and
+  that neither appears when there is nothing to report).
 - **No new transcript event types**: the started record and the real observation are both
   `observation` events carrying `background` and `handle` (plus `started_turn` on the delivery).
 

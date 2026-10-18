@@ -108,13 +108,15 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
     # newline) so result.md / the digest render real line breaks instead of verbatim "\n".
     summary = normalize_escaped_newlines(summary)
     archival.settle(loop)   # an archive already in flight gets a moment to land
-    # …and the same for a BACKGROUNDED ACTION still running (D118 phase 1): a short window to
-    # land, then its outcome recorded either way. Said in the SUMMARY too, not only the
-    # transcript: a run that ends on a call it never read has lost that work, and a reader of
-    # the result is the one person who can tell whether that mattered.
-    if lost := background.settle(loop):
-        summary += (f"\n[Background action(s) still running at run end: {lost}. Their results "
-                    "are lost — nothing in this run read them.]")
+    # …and the same for a BACKGROUNDED ACTION the run never read (D118 phase 1): a short window
+    # to land, then its outcome recorded either way. Said in the SUMMARY too, not only the
+    # transcript — a reader of the result is the one person who can tell whether it mattered,
+    # and the run itself cannot flag evidence it was never shown (F715, authorized by D195).
+    # Two cases, two sentences, both rendered by `engine/background_summary.settle_note`: a call
+    # still RUNNING has lost its result, while one that LANDED after the last turn HAS a result
+    # sitting unread in the transcript. "" when the run read everything.
+    if unread_note := background.settle(loop):
+        summary += "\n" + unread_note
     killed = loop.subruns.kill_all(reason=f"parent run finished ({status})")
     if killed:
         summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"

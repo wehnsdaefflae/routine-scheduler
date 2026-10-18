@@ -57,6 +57,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..endpoints import instrument
+from . import background_summary
 from .run_context import BACKGROUND_THREAD_PREFIX as THREAD_PREFIX
 
 #: The purpose tag an abandoned background call's in-flight model calls are closed under.
@@ -281,7 +282,7 @@ def cancel(loop, handle: str) -> dict:
                 f"no background call `{wanted}` is in flight — it has already landed (its "
                 f"observation was appended at a turn boundary, tagged with its handle) or "
                 f"the handle is not one this run started."
-                + (f" In flight now: {_brief_list(live)}." if live else
+                + (f" In flight now: {background_summary.brief_list(live)}." if live else
                    " This run has nothing in flight.")}
     loop._background = [p for p in live if p is not pending]
     # Ask the WORK to stop, where that is a thing this engine can do. For a util, script or
@@ -363,15 +364,19 @@ def settle(loop) -> str:
 
     Two different losses live here and they are not interchangeable:
 
-    * a call that LANDED with no turn left to read it — its result exists and is recorded, so a
-      person reading the run afterwards has it even though the model never saw it. This is the
-      ordinary end of a short run that backgrounded something, and it is why the record carries
-      the real observation under the SAME payload keys `collect` writes: one shape, one reader.
+    * a call that LANDED with no turn left to read it — its result exists, recorded under the
+      SAME payload keys `collect` writes (one shape, one reader), so a reader of the run has it
+      even though the model never did.
     * a call still RUNNING — its result is gone. The thread is a daemon, so the interpreter
       kills it WITHOUT unwinding its stack: the instrumentation wrapper's `except BaseException`
       never runs and an in-flight model call's `finished`/`failed` record is never written, which
       leaves a permanently-`running` task in the task centre — the leak archival already paid
       for once. We are the party that knows, and we are still alive, so we say so.
+
+    **BOTH are named in the returned line** (F715, authorized by D195): this spoke only for the
+    abandoned set, calling a late landing a short run's ordinary end — the engine's tidiness
+    over a reader told nothing of evidence the run never saw. The two DISTINCT sentences and
+    the reasoning behind them live in `engine/background_summary.py`.
     """
     pendings = _pendings(loop)
     if not pendings:
@@ -380,8 +385,9 @@ def settle(loop) -> str:
     for pending in pendings:
         pending.thread.join(timeout=deadline_each)
     abandoned = [p for p in pendings if not p.done]
+    landed = [p for p in pendings if p.done]
     loop._background = []
-    for pending in [p for p in pendings if p.done]:
+    for pending in landed:
         spent = _book_usage(loop.ctx, pending)
         loop.ctx.transcript.event("observation", {
             **_recordable(dict(pending.result or {})), "background": True,
@@ -389,11 +395,10 @@ def settle(loop) -> str:
             **({"usage_booked": spent} if spent else {}),
             "note": "landed after the run's last turn — recorded here, never read by the run"},
             turn=loop.ctx.turn)
-    if not abandoned:
-        return ""
+    # Abandoned bookkeeping only when there IS one; the SUMMARY renders either way (F715/D195).
     closed = instrument.abandon_open_calls(
         purpose=BACKGROUND_PURPOSE,
-        error="the run ended before the background action finished")
+        error="the run ended before the background action finished") if abandoned else 0
     for pending in abandoned:
         # Its spend books even though its RESULT is lost: the tokens were spent at the provider
         # whether or not this run ever read the answer, and charging only the calls that landed
@@ -407,7 +412,7 @@ def settle(loop) -> str:
             "llm_calls_abandoned": closed,
             "note": "the run ended before this background action finished; its result is lost "
                     "and nothing in the run read it"}, turn=loop.ctx.turn)
-    return _brief_list(abandoned)
+    return background_summary.settle_note(unread=landed, abandoned=abandoned)
 
 
 def _cancellable_ctx(ctx, pending: Pending):
@@ -458,11 +463,6 @@ def _book_usage(ctx, pending: Pending) -> dict:
     if spent:
         ctx.add_usage(spent)
     return spent
-
-
-def _brief_list(pendings: list[Pending]) -> str:
-    """One line per background call — what a run is told it is waiting on, or lost."""
-    return "; ".join(f"`{p.handle}` ({p.kind}: {p.brief})" for p in pendings)
 
 
 def _brief(action: dict) -> str:

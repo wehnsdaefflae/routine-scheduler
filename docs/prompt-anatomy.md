@@ -512,7 +512,14 @@ action — the last message, e.g.:
 }
 ```
 
-Nothing is appended after it. The summary becomes `runs/<ts>/result.md`, the dashboard's
+Nothing is appended to the CONVERSATION after it — but the summary itself can still gain
+engine-authored brackets on its way out (`loopend.finish_run`), each saying something the run
+could not: sub-workflows terminated at run end, a user message that arrived too late to deliver,
+what the jobs layer carried over, and background calls the run never read — one bracket for calls
+still running (their results lost) and a separate one for calls that LANDED after the last turn
+(their results sitting unread in the transcript), rendered by
+`engine/background_summary.settle_note` (F715/D195). A run that read everything gets none of
+them. The summary becomes `runs/<ts>/result.md`, the dashboard's
 last-outcome — and the *next* run's system prompt quotes it in the STATE DIGEST, which
 (with LEDGER and `.memory/`) is the actual end-of-conversation → next-conversation
 handoff. That is why the schema demands a DETAILED 8-20 line summary: it is the only part
