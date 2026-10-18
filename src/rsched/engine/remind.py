@@ -83,7 +83,7 @@ def load(loop) -> list[Reminder]:
     ctx = loop.ctx
     try:
         return store.active(ctx.routine.dir, ctx.server.reminders_home, level_of(ctx.grants),
-                            listed=list(getattr(ctx.routine, "shared_reminders", None) or []))
+                            list(getattr(ctx.routine, "shared_reminders", None) or []), ctx.run_id)
     except OSError:
         return []
 
@@ -345,7 +345,7 @@ def _apply_disposition(loop, target: Reminder, disposition: object) -> str:
     if not target.foreign:
         return (f"; no disposition applied — {target.id} is your own reminder, not one another "
                 "routine set on you: revise or delete it with a `remind` op")
-    applied = store.dispose(loop.ctx.routine.dir, target.id, str(disposition))
+    applied = store.dispose(loop.ctx.routine.dir, target.id, str(disposition), loop.ctx.run_id)
     if not applied:
         return f"; no disposition applied — {target.id} is no longer in your store"
     if applied == "remove":
@@ -614,7 +614,7 @@ def _save_local(loop) -> None:
     MUTED records are the one exception to "memory owns the definitions", and for the reason
     mute exists: it silences a foreign hook for the rest of this run WITHOUT destroying the
     definition its owner can still see, so the live set no longer holds it — and a rewrite from
-    memory alone would then delete it from the file, turning every mute into a removal.
+    memory alone would delete it — though its `muted_run` stamp expires (`remind_mute`, F697).
     """
     on_disk, gstats = store.load_local(loop.ctx.routine.dir)
     tallies = {r.id: r.stats for r in on_disk}

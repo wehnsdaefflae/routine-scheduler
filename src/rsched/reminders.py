@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import remind_mute
 from .paths import atomic_write_json, read_json
 
 LOCAL_FILE = "reminders.json"       # under <routine>/state/
@@ -85,10 +86,8 @@ DEFAULT_KIND = "action"
 #: kind describes something that has already happened, so it can only inform.
 HOLDING_KINDS = ("action",)
 
-#: What the TARGET of a foreign hook may decide about it, met on every fire. `keep` is the
-#: default and means nothing was decided; `mute` silences it for the rest of this run without
-#: destroying the definition its owner can still see; `remove` deletes it AND is remembered, so
-#: the owner cannot simply set it again (see `set_for`).
+#: What the TARGET of a foreign hook may decide, met on every fire: `keep` (nothing decided),
+#: `mute` (run-scoped — `remind_mute`), `remove` (deleted AND remembered, see `set_for`).
 DISPOSITIONS = ("keep", "mute", "remove")
 DEFAULT_DISPOSITION = "keep"
 
@@ -197,6 +196,7 @@ class Reminder:
     owner: str = ""
     #: What the TARGET decided about it, the last time it met one of its fires.
     disposition: str = DEFAULT_DISPOSITION
+    muted_run: str = ""   # the run a `mute` was applied in; "" reads as expired (remind_mute)
 
     def matches(self, canon: str) -> bool:
         """Does this reminder's pattern fire on that match target?
@@ -218,7 +218,7 @@ class Reminder:
         return {"id": self.id, "regex": self.regex, "description": self.description,
                 "scope": self.scope, "created_run": self.created_run, "stats": dict(self.stats),
                 "reach": self.reach, "kind": self.kind, "owner": self.owner,
-                "disposition": self.disposition}
+                "disposition": self.disposition, "muted_run": self.muted_run}
 
     @property
     def holds(self) -> bool:
@@ -299,6 +299,7 @@ def load_local(routine_dir: Path) -> tuple[list[Reminder], dict[str, dict]]:
                             created_run=str(rec.get("created_run") or ""),
                             stats=_stats(rec.get("stats")), kind=read_kind(rec.get("kind")),
                             owner=str(rec.get("owner") or ""),
+                            muted_run=str(rec.get("muted_run") or ""),
                             disposition=read_disposition(rec.get("disposition"))))
     tallies = raw.get("global_stats")
     gstats = {str(k): _stats(v) for k, v in (tallies if isinstance(tallies, dict) else {}).items()
@@ -378,11 +379,12 @@ def set_for(target_dir: Path, *, regex: str, description: str, kind: str, owner:
     return hook
 
 
-def dispose(routine_dir: Path, rid: str, disposition: str) -> str:
+def dispose(routine_dir: Path, rid: str, disposition: str, run_id: str = "") -> str:
     """The TARGET's decision about a hook it holds — returns the disposition actually applied.
 
-    `keep` and `mute` are recorded on the record (mute leaves it in the store, where its owner
-    can still see it, and out of the live set). `remove` deletes it AND remembers the
+    `keep` and `mute` are recorded on the record (a mute leaves it in the store for its owner
+    to see, STAMPED with `run_id` and live only while that run is — `remind_mute`, F697, and it
+    leaves the live set). `remove` deletes it AND remembers the
     (owner, regex, kind) in the `refused` ledger, which is what makes the decision outlast the
     run it was made in.
 
@@ -401,7 +403,7 @@ def dispose(routine_dir: Path, rid: str, disposition: str) -> str:
             refused = [*refused, row]
         save_local(routine_dir, [r for r in live if r.id != rid], gstats, refused)
         return disposition
-    updated = Reminder(**{**target.as_record(), "disposition": disposition})
+    updated = Reminder(**remind_mute.disposed(target.as_record(), disposition, run_id))
     save_local(routine_dir, [updated if r.id == rid else r for r in live], gstats, refused)
     return disposition
 
@@ -498,7 +500,7 @@ def global_rel(rid: str) -> str:
 # --- the union the engine matches against -------------------------------------------------
 
 def active(routine_dir: Path, reminders_home: Path, level: str,
-           listed: list[str] | tuple[str, ...] = ()) -> list[Reminder]:
+           listed: list[str] | tuple[str, ...] = (), run_id: str = "") -> list[Reminder]:
     """The live set for one run: this routine's own reminders plus every curated one that
     reaches it (universal, or named in `listed`), with LOCAL OVERRIDING GLOBAL. Empty when the
     layer is off.
@@ -512,9 +514,7 @@ def active(routine_dir: Path, reminders_home: Path, level: str,
     if LEVEL_RANK.get(level, 0) < LEVEL_RANK["local"]:
         return []
     stored, gstats = load_local(routine_dir)
-    # a hook the holder MUTED is not live — the definition stays in the store, where the routine
-    # that set it can still see it, but it fires nothing (`dispose`)
-    local = [r for r in stored if r.disposition != "mute"]
+    local = remind_mute.live_local(stored, run_id)   # a mute lasts one run (remind_mute, F697)
     seen = {(r.regex, r.kind) for r in local}
     return local + [g for g in load_global(reminders_home, gstats)
                     if (g.regex, g.kind) not in seen

@@ -105,11 +105,56 @@ def test_every_disposition_round_trips_in_the_targets_own_store(tmp_path, dispos
 def test_a_muted_hook_stays_in_the_store_but_leaves_the_live_set(tmp_path):
     """`mute` is the target's "not this run" — the definition survives for its owner to see."""
     store.save_local(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
-    store.dispose(tmp_path, "rem-f", "mute")
+    store.dispose(tmp_path, "rem-f", "mute", run_id="builder:20261018-130004")
     home = tmp_path / "lib" / "reminders"
-    assert [r.id for r in store.active(tmp_path, home, "local")] == []
+    assert [r.id for r in store.active(tmp_path, home, "local",
+                                       run_id="builder:20261018-130004")] == []
     loaded, _ = store.load_local(tmp_path)
     assert loaded[0].disposition == "mute"
+    assert loaded[0].muted_run == "builder:20261018-130004"
+
+
+# --- F697: a mute lasts exactly one run ----------------------------------------------------
+
+def test_a_mute_expires_with_the_run_that_made_it(tmp_path):
+    """The defect F697 names: a mute was documented as run-scoped and stored as permanent.
+
+    `dispose` wrote `disposition="mute"` and `active` filtered every muted record out of EVERY
+    later run's live set, so the hook never fired again — and because a disposition is only
+    ever an answer to a fire, its holder could never take the mute back. A permanent silence is
+    `remove` (which also records the refusal); `mute` is the reversible one.
+    """
+    home = tmp_path / "lib" / "reminders"
+    store.save_local(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
+    muting = "builder:20261018-130004"
+    store.dispose(tmp_path, "rem-f", "mute", run_id=muting)
+    assert [r.id for r in store.active(tmp_path, home, "local", run_id=muting)] == []
+    later = "builder:20261019-030004"
+    assert [r.id for r in store.active(tmp_path, home, "local", run_id=later)] == ["rem-f"]
+
+
+def test_a_mute_with_no_stamp_has_expired(tmp_path):
+    """Records written before the stamp existed are exactly the permanent silences F697 is
+    about, so they read as expired: the hook is live again, which is the documented behaviour.
+    """
+    stale = Reminder(**{**_rem(rid="rem-old", owner="watcher").as_record(),
+                        "disposition": "mute", "muted_run": ""})
+    store.save_local(tmp_path, [stale], {})
+    home = tmp_path / "lib" / "reminders"
+    assert [r.id for r in store.active(tmp_path, home, "local",
+                                       run_id="builder:20261019-030004")] == ["rem-old"]
+
+
+def test_keeping_a_hook_muted_earlier_in_the_same_run_clears_the_stamp(tmp_path):
+    """The holder's last word in the run counts: `keep` after `mute` makes it live again."""
+    store.save_local(tmp_path, [_rem(rid="rem-f", owner="watcher")], {})
+    run = "builder:20261018-130004"
+    store.dispose(tmp_path, "rem-f", "mute", run_id=run)
+    store.dispose(tmp_path, "rem-f", "keep", run_id=run)
+    loaded, _ = store.load_local(tmp_path)
+    assert (loaded[0].disposition, loaded[0].muted_run) == ("keep", "")
+    home = tmp_path / "lib" / "reminders"
+    assert [r.id for r in store.active(tmp_path, home, "local", run_id=run)] == ["rem-f"]
 
 
 def test_the_owner_cannot_overwrite_a_disposition_the_target_made(tmp_path):

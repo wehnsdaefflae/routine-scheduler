@@ -106,7 +106,14 @@ usefulness to the target is observable):
 
 - **keep** — leave it live. The default; omitting a disposition changes nothing.
 - **mute** — silence it for the rest of THIS run. The definition stays in the store, where its
-  owner can still see it; it leaves the live set.
+  owner can still see it; it leaves the live set. The run that muted it is STAMPED on the record
+  (`muted_run`) and the next run's live set finds another id there, so the hook fires again and
+  can be kept, muted or removed afresh — a stamp rather than a reset at run end, so a crashed
+  run cannot leave a hook silenced for good. `keep` clears the stamp, so the holder's last word
+  within the run is the one that counts. Until 0.434.0 the mute was written with no stamp and
+  filtered out of every later run too: a muted hook never fired again, and because a disposition
+  is only ever an answer to a fire, it could never be offered the `keep` that would undo it
+  (F697). A mute with no stamp — every one written before that release — reads as expired.
 - **remove** — delete it, and remember the refusal: the `(owner, regex, kind)` triple goes into
   the store's `refused` ledger, so the owner's next run cannot set that same pattern again. That
   memory is what makes the target's decision outlast the run it was made in.
