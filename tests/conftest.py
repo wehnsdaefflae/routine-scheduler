@@ -244,9 +244,9 @@ class ScriptedEndpoint:
         # per-instance flag is what ScriptedRegistry.resolve puts on the ModelRef it carries.
         self.multimodal = multimodal
 
-    def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
-        from rsched.endpoints.base import supports_media_type
-        return supports_media_type(media_type, multimodal=multimodal, pdf=True)
+    def supports_media(self, media_type, *, multimodal, audio=False, video=False):
+        from rsched.endpoints.media_types import supports_media_type
+        return supports_media_type(media_type, multimodal=multimodal, pdf=True, audio=audio, video=video)
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
                  timeout=600, temperature=None, cacheable=True):

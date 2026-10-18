@@ -56,6 +56,8 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, comp
     return {
       name, endpoint: f.epSel.value, model: f.modelIn.value(),
       multimodal: mmValue(f.mmSel),
+      audio: f.audioIn.checked,
+      video: f.videoIn.checked,
       context_tokens: f.ctxIn.value.trim() ? Number(f.ctxIn.value) : null,
       temperature: f.tempIn.value.trim() ? Number(f.tempIn.value) : null,
       max_tokens: f.mtIn.value.trim() ? Number(f.mtIn.value) : null,
@@ -137,7 +139,16 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, comp
     const mtIn = el("input", { type: "number", value: m.max_tokens ?? "",
       placeholder: `inherit (${(m.max_tokens_effective || 0).toLocaleString()})` });
     const fbIn = fallbackPicker(m.fallbacks || [], models, m.name);
-    return { epSel, modelIn, mmSel, ctxIn, tempIn, mtIn, fbIn };
+    // D192: the two time-based modalities are plain per-model opt-ins — no endpoint-kind
+    // default to inherit, so a checkbox rather than the tri-state `multimodal` select. The
+    // wire still has to carry it (anthropic takes neither; the openai wire takes audio).
+    const audioIn = el("input", { type: "checkbox",
+      title: "this model takes AUDIO input natively (needs an endpoint whose wire carries it)" });
+    audioIn.checked = !!m.audio;
+    const videoIn = el("input", { type: "checkbox",
+      title: "this model takes VIDEO input natively (needs an endpoint whose wire carries it)" });
+    videoIn.checked = !!m.video;
+    return { epSel, modelIn, mmSel, audioIn, videoIn, ctxIn, tempIn, mtIn, fbIn };
   }
 
   function modelFieldRows(f) {
@@ -147,6 +158,8 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, comp
         el("label", { class: "field" }, el("span", {}, "model id"), f.modelIn.node)),
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "multimodal"), f.mmSel),
+        el("label", { class: "field" }, el("span", {}, "audio in"), f.audioIn),
+        el("label", { class: "field" }, el("span", {}, "video in"), f.videoIn),
         el("label", { class: "field" }, el("span", {}, "Context window (tokens)"), f.ctxIn),
         el("label", { class: "field" }, el("span", {}, "temperature"), f.tempIn,
           temperatureHint())),
@@ -188,6 +201,8 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, comp
         el("div", {}, el("strong", {}, m.name), " ",
           el("span", { class: "muted small" }, `${m.endpoint} / ${m.model}`), " ",
           m.multimodal_effective ? el("span", { class: "chip bare", title: "sees images/PDFs natively" }, "👁") : "",
+          m.audio ? el("span", { class: "chip bare", title: "takes audio input natively" }, "🎧") : "",
+          m.video ? el("span", { class: "chip bare", title: "takes video input natively" }, "🎬") : "",
           (m.fallbacks || []).length
             ? el("span", { class: "muted small", title: "failover order on hard provider errors" },
                 ` ⇢ ${m.fallbacks.join(" ⇢ ")}`) : "",
@@ -225,6 +240,7 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, comp
       modelFieldRows(f),
       el("div", { class: "muted small", style: "margin-top:4px" },
         "multimodal = default lets the endpoint kind decide (on for anthropic, off for openai). ",
+        "audio in / video in are per-model opt-ins with no default — they also need an endpoint whose wire carries the modality (the openai wire takes audio; anthropic takes neither). ",
         "Blank context and output limits use provider metadata, then endpoint defaults. ",
         "The context window includes input and output; max_tokens reserves output tokens. ",
         "fallbacks = other catalog models, tried in the order shown when this model's provider fails hard."),

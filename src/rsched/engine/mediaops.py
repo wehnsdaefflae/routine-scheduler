@@ -1,17 +1,32 @@
-"""SEEING a file — images and PDFs, natively or through the vision util.
+"""SEEING (or HEARING) a file — images, PDFs, audio and video, natively or via the vision util.
 
 Split out of `fileops.py` (F393). Reading text is one job; getting a picture in front of a model
 is another, and it has a fallback path that text reads do not: a multimodal model is handed the
 bytes, and everything else gets a described transcription from the vision util. The run's prose
 names the CAPABILITY, never the util, so the fallback can change without the recipe changing.
+
+Which types may be handed over is `endpoints/media_types.py`'s one modality-tagged allowlist,
+and whether THIS run's model takes a given modality is its resolved bits (`model_modalities`)
+ANDed with the adapter's wire. The two time-based modalities (D192) differ from images in one
+way here: there is no fallback for them — the vision util describes pictures — so a model not
+configured for audio or video is told so, with the native size bound, instead of being handed
+a useless description attempt.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from .. import sandbox, utils_lib, utils_run
-from ..endpoints.base import guess_media_type, oversize_reason, read_media_b64
+from ..endpoints.media_types import (
+    NATIVE_MEDIA_LIMIT_NOTE,
+    guess_media_type,
+    modality_of,
+    model_modalities,
+    oversize_reason,
+    read_media_b64,
+)
 from .fileops import UTIL_DEFAULT_TIMEOUT_S, _memory_gate, _runs_read_gate
 from .observations import truncate
 from .run_context import RunContext, resolve_action_path, work_dir
@@ -63,25 +78,66 @@ def _view_via_vision(rel_path: str, abspath: str, prompt: str, ctx: RunContext) 
     text, truncated = truncate(text)
     return {"path": rel_path, "via": "vision-util", "text": text, "truncated": truncated}
 
-def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal: bool) -> dict:
-    """Route one file: native (return a media entry for the endpoint to see) when the main
-    MODEL is multimodal, the endpoint supports the type, and it's within the native size cap,
-    else the vision util.
+def _resolve_for_view(ctx: RunContext, rel_path: str) -> tuple[Path | None, str]:
+    """`(path, "")` for a file this run may view, or `(None, why not)` — the gating half of
+    `_view_one`, separated from the routing half so each reads as one job.
     """
     try:
         path = resolve_action_path(ctx, rel_path)
         if err := _memory_gate(ctx, path) or _runs_read_gate(ctx, path):
-            return {"path": rel_path, "error": err}
+            return None, err
         if not path.is_file():
-            return {"path": rel_path,
-                    "error": "file does not exist — read_file its parent directory (a "
-                             "directory reads as its listing) to see what is actually there"}
+            return None, ("file does not exist — read_file its parent directory (a directory "
+                          "reads as its listing) to see what is actually there")
     except (OSError, PermissionError) as exc:
-        return {"path": rel_path, "error": str(exc)}
+        return None, str(exc)
+    return path, ""
+
+
+def _timebased_refusal(rel_path: str, mime: str, *, carried: bool,
+                       too_big: str | None) -> dict | None:
+    """The observation for an AUDIO or VIDEO file that cannot ride natively — or None (D192).
+
+    These two have no fallback: the vision util describes PICTURES, so routing a sound file to
+    it returns a useless "error:" from the util and tells the run nothing it can act on. The two
+    ways this fails have different fixes, so the refusal names which one happened — the model
+    is not configured for the modality (or its endpoint's wire does not carry it), or the file
+    is over the native cap. Both carry NATIVE_MEDIA_LIMIT_NOTE, because a video meets that cap
+    within seconds of footage and the way around it is the same either way.
+    """
+    modality = modality_of(mime)
+    if modality not in ("audio", "video"):
+        return None
+    if not carried:
+        return {"path": rel_path,
+                "error": f"this run's model is not configured for {modality} input ({mime}) — "
+                         f"turn the modality on for the model in the catalog and use an "
+                         f"endpoint whose wire carries it, or transcribe/extract the file "
+                         f"first (the `deepgram` or `video-extract` util). "
+                         f"{NATIVE_MEDIA_LIMIT_NOTE}"}
+    if too_big:
+        return {"path": rel_path,
+                "error": f"too large to attach natively: {too_big}"}
+    return None
+
+
+def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, bits: dict) -> dict:
+    """Route one file: native (return a media entry for the endpoint to see) when the main
+    MODEL carries that modality, the endpoint supports the type, and it's within the native
+    size cap, else the vision util.
+
+    `bits` is the resolved model's modality permissions as `supports_media` takes them
+    (`media_types.model_modalities`) — `multimodal` plus the per-model `audio`/`video` bits.
+    """
+    path, gate_error = _resolve_for_view(ctx, rel_path)
+    if path is None:
+        return {"path": rel_path, "error": gate_error}
     mime = guess_media_type(path)
     if mime is None:
-        return {"path": rel_path, "error": "not a viewable image/PDF (png/jpeg/webp/gif/pdf) — "
-                                           "read text files with read_file instead"}
+        return {"path": rel_path,
+                "error": "not a media type a model can be shown (png/jpeg/webp/gif/pdf, or "
+                         "audio/video on a model configured for it) — read text files with "
+                         "read_file instead"}
     ctx.seen_paths.add(str(path))   # viewed = seen: grounds a later overwrite of this file
     # F623: the PRE-FLIGHT. `oversize_reason` is the one shared predicate — bytes AND the
     # provider's per-side pixel bound — so a file that would make the provider refuse the whole
@@ -89,9 +145,11 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
     # carried into the observation, because "the model could not see it" without the limit and
     # the file's measured size leaves the run no way to fix it.
     too_big = oversize_reason(path, mime) if endpoint is not None else None
-    native = (endpoint is not None and too_big is None
-              and endpoint.supports_media(mime, multimodal=multimodal))
-    if too_big and endpoint is not None and endpoint.supports_media(mime, multimodal=multimodal):
+    carried = endpoint is not None and endpoint.supports_media(mime, **bits)
+    native = carried and too_big is None
+    if refusal := _timebased_refusal(rel_path, mime, carried=carried, too_big=too_big):
+        return refusal
+    if too_big and carried:
         viewed = _view_via_vision(rel_path, str(path), prompt, ctx)
         return {**viewed, "oversize": too_big}
     if native:
@@ -155,7 +213,7 @@ def natively_viewable(ctx: RunContext, rel: str) -> tuple[str, str] | None:
     mime = guess_media_type(path)
     if not mime or not path.is_file() or oversize_reason(path, mime) is not None:
         return None
-    if not endpoint.supports_media(mime, multimodal=bool(ref.multimodal)):
+    if not endpoint.supports_media(mime, **model_modalities(ref)):
         return None
     return str(path), mime
 
@@ -175,18 +233,20 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
 
 
 def do_view_image(action: dict, ctx: RunContext) -> dict:
-    """Let the orchestrator SEE an image/PDF: natively when the main MODEL is multimodal
-    (the file rides the next message as a `media` block), else via the vision util (text back
-    now). Path resolution and gating mirror read_file.
+    """Let the orchestrator SEE (or HEAR) a file: natively when the main MODEL carries that
+    modality (the file rides the next message as a `media` block), else via the vision util
+    (text back now) for a picture, or a refusal naming the bound for audio/video. Path
+    resolution and gating mirror read_file.
     """
     prompt = str(action.get("prompt") or "")
     try:
         endpoint, ref = ctx.registry.for_model("main", ctx.routine.models, ctx.routine.efforts)
     except Exception:
         endpoint, ref = None, None
-    multimodal = bool(ref.multimodal) if ref else False
+    bits = model_modalities(ref) if ref else {"multimodal": False, "audio": False,
+                                              "video": False}
     raw = action.get("paths") or ([action["path"]] if action.get("path") else [])
-    files = [_view_one(str(p), prompt, endpoint, ctx, multimodal) for p in raw]
+    files = [_view_one(str(p), prompt, endpoint, ctx, bits) for p in raw]
     media = [{"path": f.pop("abspath"), "media_type": f["media_type"],
               "b64": f.pop("b64")}
              for f in files if f.get("native")]

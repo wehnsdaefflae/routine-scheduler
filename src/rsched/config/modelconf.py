@@ -67,7 +67,8 @@ class ModelConfig(_Config):
     EFFORT does not: it is chosen where the model is used (RoutineConfig.efforts, the server's
     `system_effort`), so one catalog entry serves every level.
     A None attribute inherits the serving endpoint's default (multimodal → the endpoint
-    kind's NATIVE_MM_KINDS default; context_tokens/temperature → the endpoint's own).
+    kind's NATIVE_MM_KINDS default; context_tokens/temperature → the endpoint's own). The
+    `audio`/`video` modality bits inherit nothing — they are plain per-model opt-ins (D192).
     Routines/conversations reference a model by its catalog NAME (see RoutineConfig.models).
     """
 
@@ -76,6 +77,14 @@ class ModelConfig(_Config):
     model: str      # the provider's model id (e.g. "openai/gpt-4o")
     # None = inherit the endpoint kind default (anthropic on, openai off).
     multimodal: bool | None = None
+    # D192 — the two TIME-BASED modalities, each a plain opt-in with no kind default. Unlike
+    # images there is no endpoint kind whose models all have ears: on one OpenAI-compatible
+    # endpoint `gpt-4o-audio-preview` takes audio and `glm` beside it does not, so an inherited
+    # default would be wrong for most of the catalog either way it pointed. Off until the
+    # operator says this model takes it; the serving adapter still has to carry the wire
+    # (endpoints/media_types.supports_media_type ANDs the two).
+    audio: bool = False
+    video: bool = False
     # None = discover the provider window, then inherit the endpoint default.
     context_tokens: int | None = None
     # None = inherit the endpoint's temperature default. On a current Claude model it is
@@ -96,14 +105,20 @@ class ModelConfig(_Config):
 class ModelRef:
     """A RESOLVED model handle produced by EndpointRegistry from a catalog entry + its
     endpoint — no longer parsed from yaml. Carries the provider model id and every
-    per-model attribute the run needs: reasoning effort, native multimodality, the
-    context-window budget, sampling temperature, and the catalog name it came from.
+    per-model attribute the run needs: reasoning effort, native multimodality (and the
+    audio/video modality bits), the context-window budget, sampling temperature, and the
+    catalog name it came from.
     """
 
     endpoint: str
     model: str
     effort: str | None = None
     multimodal: bool = False
+    # D192: the per-model audio/video bits, resolved from the catalog entry. `multimodal` is
+    # still the master gate — these two say which of the time-based modalities THIS model takes
+    # on top of it (endpoints/media_types.supports_media_type).
+    audio: bool = False
+    video: bool = False
     context_tokens: int = DEFAULT_CONTEXT_TOKENS
     temperature: float | None = None
     max_tokens: int = DEFAULT_MODEL_MAX_TOKENS

@@ -31,7 +31,6 @@ from .base import (
     json_or_raise,
     post_json,
     raise_for_status,
-    read_media_b64,
     resolve_api_key,
     with_retries,
 )
@@ -42,6 +41,7 @@ from .decisions import (
     DecisionImage,
     DecisionQuestion,
 )
+from .media_types import read_media_b64
 
 _WIRE_TYPE = {"yes_no": "predicate", "choice": "choice", "score": "score"}
 

@@ -335,7 +335,9 @@ prefix from cache while re-writing the conversation every turn, which reads as h
 
 
 The **model catalog** (`config.ModelConfig`, `ServerConfig.models`) binds a provider model id to
-an endpoint and owns the PER-MODEL attributes — `multimodal`, `context_tokens`,
+an endpoint and owns the PER-MODEL attributes — `multimodal`, the `audio` / `video` modality
+opt-ins (D192; plain booleans that inherit NO kind default, because no endpoint kind's models
+all have ears), `context_tokens`,
 `temperature`, `max_tokens` (each None inherits the endpoint kind default / the endpoint's own
 value; `max_tokens` — the model's real OUTPUT limit, sent on every engine call — falls back to
 `DEFAULT_MODEL_MAX_TOKENS` 16_384, and Settings flags unset/implausible values so "set correctly"
@@ -364,9 +366,22 @@ daemon names the trial's models and efforts to the engine per run, exactly as `r
 the 2026-08-22 order retiring the subroutine role. The `list_models` action shows the
 catalog; an unconfigured `uncensored` or an unknown name is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
 `.for_model(kind, routine.models, routine.efforts)` / `.for_system()` produce a RESOLVED `ModelRef`
-(endpoint, model id, the role's effort + the filled-in multimodal/context_tokens/temperature/max_tokens) — the runtime
-handle, no longer parsed from yaml. `supports_media(mime, *, multimodal)` and compaction
+(endpoint, model id, the role's effort + the filled-in multimodal/audio/video/context_tokens/temperature/max_tokens) — the runtime
+handle, no longer parsed from yaml. `supports_media(mime, *, multimodal, audio, video)` and compaction
 (`ref.context_tokens`) take the resolved model's values; `complete()` gains a `temperature` kwarg.
+
+**What media may ride a message at all** is `endpoints/media_types.py` (D192): ONE allowlist
+mapping mime → MODALITY (`image` / `pdf` / `audio` / `video`), the size and pixel bounds, and the
+`supports_media_type(mime, *, multimodal, pdf, audio, video)` core every adapter's
+`supports_media` is built from. Before it there were two constants (a set of image mimes and a
+lone PDF mime), so an audio or video file was refused by `guess_media_type` before any adapter
+or fallback was asked — unreachable however the catalog was set. A file is carried natively only
+where the MODEL's bit and the WIRE both say yes: the anthropic wire takes images + PDFs and
+neither time-based modality; the openai wire takes images and AUDIO (an `input_audio` content
+part, `endpoints/openai_media.py`) and no video. A model not configured for audio/video gets no
+vision-util fallback — that util describes pictures — so the engine refuses with the reason AND
+`NATIVE_MEDIA_MAX_BYTES` (7 MiB raw, ~33% base64 inflation), which a video passes within seconds
+of footage.
 Editing a catalog model updates every routine that names it. **Failover** (`endpoints/failover.py`)
 is two-level: a hard EndpointError anywhere (marked centrally in `InstrumentedEndpoint`) puts that
 (endpoint, model id) in a 5-min process-local COOLDOWN, and every role resolution

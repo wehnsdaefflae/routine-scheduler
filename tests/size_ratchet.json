@@ -1,6 +1,6 @@
 {
   "bar": 350,
-  "note": "MEASURED 2026-10-11 on commit c686aa48 (0.412.0). Every file here is over the 350-line house bar (CLAUDE.md Standards) and its number is a CEILING, not a target: it may only go down. See tests/test_file_size.py for the three rules and why an allowlist was rejected. Tighten with `python tests/test_file_size.py --update` after a split; that command refuses to raise a ceiling or to baseline a new violation.",
+  "note": "MEASURED 2026-10-11 on commit c686aa48 (0.412.0); re-tightened 2026-10-18 after D192 split endpoints/base.py (524 → 383) and brought endpoints/openai_compat.py back under the bar (359 → 337, entry dropped). Every file here is over the 350-line house bar (CLAUDE.md Standards) and its number is a CEILING, not a target: it may only go down. See tests/test_file_size.py for the three rules and why an allowlist was rejected. Tighten with `python tests/test_file_size.py --update` after a split; that command refuses to raise a ceiling or to baseline a new violation.",
   "over_the_bar": {
     "src/rsched/cli.py": 396,
     "src/rsched/config/routine.py": 451,
@@ -8,8 +8,7 @@
     "src/rsched/daemon/runner.py": 473,
     "src/rsched/daemon/runner_reap.py": 368,
     "src/rsched/daemon/scheduler.py": 466,
-    "src/rsched/endpoints/base.py": 524,
-    "src/rsched/endpoints/openai_compat.py": 359,
+    "src/rsched/endpoints/base.py": 383,
     "src/rsched/engine/actions.py": 659,
     "src/rsched/engine/actionschema.py": 768,
     "src/rsched/engine/background.py": 478,

@@ -12,8 +12,8 @@ from types import SimpleNamespace
 
 from helpers import run_context, server_config
 from rsched import utils_run
-from rsched.endpoints import anthropic_messages, openai_compat
-from rsched.endpoints.base import EndpointError, supports_media_type
+from rsched.endpoints import anthropic_messages, media_types, openai_media
+from rsched.endpoints.base import EndpointError
 from rsched.engine import executor, fileops, mediaops, obs_files
 from rsched.engine.actions import KIND_EXAMPLES, validate_action
 from rsched.engine.actionschema import KINDS
@@ -46,8 +46,8 @@ class _Endpoint:
     def __init__(self, multimodal):
         self.multimodal = multimodal
 
-    def supports_media(self, mime, *, multimodal):
-        return supports_media_type(mime, multimodal=multimodal, pdf=True)
+    def supports_media(self, mime, *, multimodal, audio=False, video=False):
+        return media_types.supports_media_type(mime, multimodal=multimodal, pdf=True, audio=audio, video=video)
 
 
 def _ctx(tmp_path, endpoint):
@@ -115,16 +115,16 @@ def test_native_media_carries_bytes_so_a_later_overwrite_cannot_unshow_it(tmp_pa
     shot.write_bytes(b"A DIFFERENT RENDER ENTIRELY")
     blocks = anthropic_messages.content_blocks("look", media)
     assert blocks[1]["source"]["data"] == base64.b64encode(b"ORIGINAL").decode("ascii")
-    parts = openai_compat._openai_content("look", media)
+    parts = openai_media.content_parts("look", media)
     assert base64.b64encode(b"ORIGINAL").decode("ascii") in parts[1]["image_url"]["url"]
     shot.unlink()
     assert anthropic_messages.content_blocks("look", media)[1]["type"] == "image"
     assert "Attachment unavailable" not in json.dumps(
-        openai_compat._openai_content("look", media))
+        openai_media.content_parts("look", media))
     # an entry with NO captured bytes (conversation auto-attach) still reads from disk, and a
     # missing file there still degrades to the honest note rather than crashing the send
     bare = [{"path": str(shot), "media_type": "image/png"}]
-    assert "Attachment unavailable" in json.dumps(openai_compat._openai_content("look", bare))
+    assert "Attachment unavailable" in json.dumps(openai_media.content_parts("look", bare))
 
 
 def test_failed_view_reads_as_a_failure_and_invites_nothing(tmp_path):
@@ -158,7 +158,7 @@ def test_do_view_image_rejects_non_media(tmp_path):
     (tmp_path / "notes.txt").write_text("hi")
     obs = executor.do_view_image({"kind": "view_image", "path": "notes.txt"},
                                  _ctx(tmp_path, _Endpoint(True)))
-    assert "not a viewable" in obs["files"][0]["error"]
+    assert "not a media type a model can be shown" in obs["files"][0]["error"]
 
 
 def test_do_view_image_missing_file(tmp_path):
@@ -170,10 +170,10 @@ def test_do_view_image_missing_file(tmp_path):
 
 
 def test_do_view_image_oversize_uses_vision(tmp_path, monkeypatch):
-    # F623: the byte bound is read by `endpoints.base.oversize_reason`, the ONE predicate both
+    # F623: the byte bound is read by `media_types.oversize_reason`, the ONE predicate both
     # view_image and auto-attach now share, so that is where it must be patched. Patched on
     # `mediaops` it would have no effect and this test would pass having proved nothing.
-    monkeypatch.setattr("rsched.endpoints.base.NATIVE_MEDIA_MAX_BYTES", 4)
+    monkeypatch.setattr("rsched.endpoints.media_types.NATIVE_MEDIA_MAX_BYTES", 4)
     monkeypatch.setattr(mediaops, "vision_describe", lambda *a: "described")
     (tmp_path / "shot.png").write_bytes(b"toolong")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"},
@@ -189,7 +189,7 @@ def test_do_view_image_batched_mixed(tmp_path):
     assert obs["media"] == [{"path": str(tmp_path / "a.png"), "media_type": "image/png",
                              "b64": base64.b64encode(b"IMG").decode("ascii")}]
     assert obs["files"][0]["native"] is True
-    assert "not a viewable" in obs["files"][1]["error"]
+    assert "not a media type a model can be shown" in obs["files"][1]["error"]
 
 
 # --- vision_describe ---------------------------------------------------------
@@ -464,7 +464,7 @@ def _webp_vp8x(path, width, height):
 def test_image_dimensions_reads_every_native_format(tmp_path):
     """All four IMAGE_MIMES formats, because a bound that only works for PNG would pass exactly
     the file that slipped through before (a screenshot) and miss a photo."""
-    from rsched.endpoints.base import image_dimensions
+    from rsched.endpoints.media_types import image_dimensions
 
     assert image_dimensions(_png(tmp_path / "a.png", 1234, 567)) == (1234, 567)
     assert image_dimensions(_gif(tmp_path / "b.gif", 640, 480)) == (640, 480)
@@ -475,7 +475,7 @@ def test_image_dimensions_reads_every_native_format(tmp_path):
 def test_an_unmeasurable_file_reads_as_unknown_and_never_as_within_the_limit(tmp_path):
     """None means "could not measure". If it meant "fine", a header this cannot parse would pass
     a bound it was never checked against — which is the failure mode being fixed, inverted."""
-    from rsched.endpoints.base import image_dimensions
+    from rsched.endpoints.media_types import image_dimensions
 
     broken = tmp_path / "truncated.png"
     broken.write_bytes(b"\x89PNG\r\n\x1a\n")          # header only, no IHDR
@@ -489,7 +489,7 @@ def test_an_unmeasurable_file_reads_as_unknown_and_never_as_within_the_limit(tmp
 def test_the_pixel_limit_is_the_one_the_provider_named():
     """The constant is not a guess. It is the number in the 400 half 1 preserved, and
     test_the_media_fallback_keeps_the_limit_the_provider_named above holds that text."""
-    from rsched.endpoints.base import NATIVE_MEDIA_MAX_PIXELS_PER_SIDE
+    from rsched.endpoints.media_types import NATIVE_MEDIA_MAX_PIXELS_PER_SIDE
 
     assert NATIVE_MEDIA_MAX_PIXELS_PER_SIDE == 2000
 
@@ -497,7 +497,7 @@ def test_the_pixel_limit_is_the_one_the_provider_named():
 def test_oversize_reason_names_the_limit_and_the_files_own_size(tmp_path):
     """The whole point of the pre-flight: a run told only "too big" cannot act, and a run told
     "12000x9000 px exceeds 2000 per side" downscales and looks at it. Both numbers, every time."""
-    from rsched.endpoints.base import oversize_reason
+    from rsched.endpoints.media_types import oversize_reason
 
     ok = _png(tmp_path / "small.png", 1000, 800)
     assert oversize_reason(ok, "image/png") is None
@@ -515,13 +515,13 @@ def test_oversize_reason_names_the_limit_and_the_files_own_size(tmp_path):
 def test_oversize_reason_judges_a_pdf_by_bytes_alone(tmp_path, monkeypatch):
     """A PDF has no pixel dimensions to measure, so the pixel bound must not be applied to one —
     a PDF that reads as unmeasurable must not be refused for being unmeasurable."""
-    from rsched.endpoints import base as base_mod
-    from rsched.endpoints.base import oversize_reason
+    from rsched.endpoints import media_types as mt_mod
+    from rsched.endpoints.media_types import oversize_reason
 
     pdf = tmp_path / "doc.pdf"
     pdf.write_bytes(b"%PDF-1.7\n" + b"x" * 2048)
     assert oversize_reason(pdf, "application/pdf") is None
-    monkeypatch.setattr(base_mod, "NATIVE_MEDIA_MAX_BYTES", 16)
+    monkeypatch.setattr(mt_mod, "NATIVE_MEDIA_MAX_BYTES", 16)
     assert "ceiling" in (oversize_reason(pdf, "application/pdf") or "")
 
 
@@ -530,10 +530,10 @@ def test_an_oversized_image_is_described_instead_of_sent_and_the_run_is_told_why
     this one is simply too large to send, so it routes to the vision util carrying the measured
     reason — and crucially NO media entry is produced, because that entry is what would have made
     the provider refuse the whole message."""
-    from rsched.endpoints.base import NATIVE_MEDIA_MAX_PIXELS_PER_SIDE
+    from rsched.endpoints.media_types import NATIVE_MEDIA_MAX_PIXELS_PER_SIDE
 
     endpoint = SimpleNamespace(multimodal=True,
-                               supports_media=lambda _m, *, multimodal: True)
+                               supports_media=lambda _m, **_bits: True)
     ctx = _ctx(tmp_path, endpoint)
     _png(tmp_path / "huge.png", 6000, NATIVE_MEDIA_MAX_PIXELS_PER_SIDE + 1)
 
@@ -579,7 +579,7 @@ def test_an_oversized_image_is_described_instead_of_sent_and_the_run_is_told_why
 def test_a_within_limit_image_still_rides_the_message_natively(tmp_path):
     """The pre-flight must not cost the ordinary case. A normal screenshot is still attached."""
     endpoint = SimpleNamespace(multimodal=True,
-                               supports_media=lambda _m, *, multimodal: True)
+                               supports_media=lambda _m, **_bits: True)
     ctx = _ctx(tmp_path, endpoint)
     _png(tmp_path / "fine.png", 1600, 900)
     obs = mediaops.do_view_image({"kind": "view_image", "path": "fine.png"}, ctx)
@@ -593,7 +593,7 @@ def test_auto_attach_uses_the_same_pre_flight_as_view_image(tmp_path, monkeypatc
     been missing from the other — which is how a conversation's auto-attached screenshot would
     have 400'd a message `view_image` had learned to protect."""
     endpoint = SimpleNamespace(multimodal=True,
-                               supports_media=lambda _m, *, multimodal: True)
+                               supports_media=lambda _m, **_bits: True)
     ctx = _ctx(tmp_path, endpoint)
     monkeypatch.setattr(ctx.registry, "for_model",
                         lambda _role, _models, _efforts: (endpoint, SimpleNamespace(multimodal=True)),

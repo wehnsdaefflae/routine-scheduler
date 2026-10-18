@@ -11,7 +11,7 @@ declining an exposure is scoped to the WHOLE run, so one needless prompt closes 
 legitimate `vision` call for the rest of that run.
 
 The predicate is deliberately NOT a new one. `mediaops` decides natively-viewable as
-`oversize_reason(path, mime) is None and endpoint.supports_media(mime, multimodal=...)`,
+`oversize_reason(path, mime) is None and endpoint.supports_media(mime, **model_modalities(ref))`,
 and this module asks the same pair through `mediaops.natively_viewable`, so a bound added
 there is never missing here (the lesson F623 left: two predicates for one question drift).
 Everything that is NOT that case falls through untouched -- a text-only run, an endpoint that
