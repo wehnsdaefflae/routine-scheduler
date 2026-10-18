@@ -23,9 +23,8 @@ from .goalops import field_problems as goal_field_problems
 from .remindfields import field_problems as reminder_field_problems
 from .sayfields import problems as say_field_problems
 
-# The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine
-# files rather than an argument to the action: the note channel and the two halves of the
-# consequence-reminder layer.
+# The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine files
+# rather than an argument to the action. One written INSIDE `say` is corrected: engine/sayfields.
 SIDE_FIELDS = ("note", "remind", "remind_feedback")
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
@@ -514,9 +513,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     # kind), so this runs outside the ALWAYS_KINDS exemption above: a `remind` on a `report`
     # must meet the same bar as one on a `util`.
     problems += reminder_field_problems(obj, grants)
-    # A side field written INSIDE `say` as markup (F679): published as prose and never filed,
-    # with nothing telling the run. Corrected here, before it becomes a turn.
-    problems += say_field_problems(obj)
+    problems += say_field_problems(obj)     # a side field written inside `say` as markup (F679)
     # `background` is refused on the kinds that may not defer, with the REASON and the list
     # (D118 phase 1). The stray-field check below would already reject it — but as one name
     # inside "fields [...] do not belong to kind=write_file (allowed: [thirty names])", which
@@ -531,11 +528,9 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     allowed = {"say", "kind", *SIDE_FIELDS, *required, *optional}   # side fields ride ANY kind
     if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
         allowed.add("background")   # the specific refusal above said it; don't say it twice
-    stray = [k for k in obj if k not in allowed]
-    if stray:
+    if stray := [k for k in obj if k not in allowed]:
         problems.append(
-            f"fields {stray} do not belong to kind={kind} (allowed: {sorted(allowed)})"
-        )
+            f"fields {stray} do not belong to kind={kind} (allowed: {sorted(allowed)})")
     return problems
 
 
