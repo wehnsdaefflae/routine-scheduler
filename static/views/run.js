@@ -14,7 +14,7 @@ import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createRunRail } from "/static/components/runrail.js";
 import { createPlanStrip } from "/static/components/planstrip.js";
-import { createStateGraph } from "/static/components/stategraph.js";
+import { createPhaseGraph } from "/static/components/phasegraph.js";
 import { createRunAccounting } from "/static/components/run-accounting.js";
 import { mountRunJob } from "/static/components/runjob.js";
 import { createModelSwitch } from "/static/components/runswitch.js";
@@ -98,11 +98,11 @@ export async function render(view, runId, query = {}) {
 
   // Side rail: what the run produced, where it is, and what it answered for — its sections,
   // their order and the two run-keyed pollers live in components/runrail.js.
-  const { rail, artBody, graphBody, goalBody, subRunTree, fileActivity } =
+  const { rail, artBody, graphBody, goalBody, subRunTree, fileActivity, turnHref } =
     createRunRail(view, { runId, isLive: runLive });
-  // stategraph + artifacts are HOME-scoped (routines vs conversations routes) — created
+  // phasegraph + artifacts are HOME-scoped (routines vs conversations routes) — created
   // at boot once the run detail names its home; tree/files key off the run id (home-free).
-  let stateGraph = null;
+  let phaseGraph = null;
   let artifacts = null;
   let runJob = null;
 
@@ -429,9 +429,9 @@ export async function render(view, runId, query = {}) {
   if (home === "conversation") {
     kickerEl.textContent = `conversation / ${slug}`;
     titleLink.href = `#/conversations/${slug}`;
-    stateGraph = createStateGraph(graphBody, {
-      graphUrl: `/api/conversations/${slug}/stategraph`,
-      statsUrl: `/api/runs/${runId}/phases` });
+    phaseGraph = createPhaseGraph(graphBody, {
+      graphUrl: `/api/conversations/${slug}/phasegraph`,
+      statsUrl: `/api/runs/${runId}/phases`, turnHref });
     artifacts = createArtifacts(artBody, { slug, base: "conversations" });
     rail.toggle("goal", false);
   } else if (home === "background") {
@@ -443,9 +443,9 @@ export async function render(view, runId, query = {}) {
     // a detached task answers to its OWNER; it has no goal of its own
     rail.toggle("goal", false);
   } else {
-    stateGraph = createStateGraph(graphBody, {
-      graphUrl: `/api/routines/${slug}/stategraph`,
-      statsUrl: `/api/runs/${runId}/phases` });
+    phaseGraph = createPhaseGraph(graphBody, {
+      graphUrl: `/api/routines/${slug}/phasegraph`,
+      statsUrl: `/api/runs/${runId}/phases`, turnHref });
     artifacts = createArtifacts(artBody, { slug, base: "routines" });
     accounting = createRunAccounting(goalBody, { slug });
     // F646, operator order: a routine with JOBS shows the one this run is working on, here
@@ -560,7 +560,7 @@ export async function render(view, runId, query = {}) {
     onState: (s) => {
       if (s.updated) lastUpdated = s.updated;
       setState(s.state);
-      stateGraph?.setPhase(s.phase);
+      phaseGraph?.setPhase(s.phase);
       planStrip.refresh();   // the plan is a living doc — track the run's edits as it advances
       if (s.usage) usageSpan.textContent = fmtTokens(s.usage);
       if (s.model) setModel(s.model);

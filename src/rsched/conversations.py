@@ -54,11 +54,12 @@ CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": -1, "max_wall_clock_min"
 # Permissions that only make sense for scheduled routines — the UI greys them out.
 ROUTINE_ONLY_PERMISSIONS = ["scheduling"]
 
-# The conversation "state diagram" the Conversations tab shows. A conversation is a LOOP,
-# not a one-pass workflow, so its meaningful state is the live reply cycle — not the single
+# The conversation PHASE diagram the Conversations tab shows. A conversation is a LOOP,
+# not a one-pass workflow, so its meaningful phase is the live reply cycle — not the single
 # converse workflow phase (which is never written to state/phase.json, so the generic
-# routine state graph never lights a node). These two nodes are lit from the live run state.
-CONVERSATION_STATES = [
+# routine phase graph never lights a node). These two nodes are lit from the live RUN STATE,
+# which is a different thing from a phase and keeps its own name (D193).
+CONVERSATION_PHASES = [
     {"name": "working", "desc": "the agent is composing a reply"},
     {"name": "waiting for you", "desc": "your turn — send a message to continue"},
 ]

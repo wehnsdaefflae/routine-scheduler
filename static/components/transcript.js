@@ -269,7 +269,7 @@ export function createTranscript(container, opts = {}) {
       : a.kind === "read_file" && Array.isArray(a.paths)
       ? a.paths.join(", ").slice(0, 200)
       : String(a[BRIEF_FIELD[a.kind]] ?? "").slice(0, 200);
-    const turn = el("div", { class: "turn" },
+    const turn = el("div", { class: "turn", "data-turn": ev.turn ?? null },   // D193: the rail links here
       el("div", { class: "say" },
         // turn count + timestamp stack vertically (.turnmeta) so the timestamp sits UNDER
         // the turn count rather than beside it — reclaims horizontal space for the say text.

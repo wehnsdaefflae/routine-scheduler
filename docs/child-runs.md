@@ -3,7 +3,7 @@
 A run structures its work two ways, and they are deliberately different:
 
 - **Phases** — the routine's own stage modules (`stages/*.md`); the engine tracks which
-  one the run is in from its stage-module reads (shown in the state-graph rail). Coarse.
+  one the run is in from its stage-module reads (shown in the phase-graph rail). Coarse.
 - **Child runs** — separate runs the parent starts to carry a piece of the work.
 
 ## One concept, three scheduling modes
@@ -205,10 +205,13 @@ summary and re-plans — only the run-level budget hard-stops the whole tree.
 
 ## Visualization
 
-The run and conversation rails carry a **sub-run tree** card (below the state graph): the recursive
+The run and conversation rails carry a **sub-run tree** card (below the phase graph): the recursive
 tree of sequential subtasks (→), parallel subruns (⇉) and oversight rungs (↑), each a node with a state icon, its
 workflow pattern, and a per-node turn-budget meter (amber ≥85%, red over), children nested. It is
-a read-model over the on-disk `sub/` transcripts — live while the run runs. In the transcript,
+a read-model over the on-disk `sub/` transcripts — live while the run runs. A row whose
+`start_turn` is known is a LINK to the parent turn that started that child (D193,
+`components/turnlink.js` — the same mechanism a phase node uses), so the tree answers "where
+did this come from" and not only "what ran". In the transcript,
 each child unfolds in place; `run-once` prints the same tree as `↳ subtask …` / `↰ subtask …`
 lines. The rails' **files** card folds children in too: a path a subtask read or wrote counts
 into the parent run's per-file rows, marked `↳`.

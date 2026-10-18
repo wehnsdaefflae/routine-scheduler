@@ -199,6 +199,22 @@ one you are about to touch, not all of them.
 
 ## Core contracts — extend, never repurpose
 
+- **Phase, stage, state — one word each, and this is the only place that says so** (D193). A
+  **PHASE** is the CONCEPT: where a run is in its own progression. It is what the engine
+  persists (`state/phase.json`'s `phase` key, status.json, every `assistant_action` event's
+  `phase` stamp), what the API serves (`/api/{routines,conversations}/{slug}/phasegraph` →
+  `{phases, current}`, `/api/runs/{id}/phases`) and what the UI says — the rail's **phases**
+  card, `static/components/phasegraph.js`, `.pg-node`. A **STAGE** is only the FILE LAYOUT a
+  phase is derived from: a recipe's `stages/<name>.md` modules, and `stage_phases` /
+  `stage_coverage` / `phases_entered` which read them. `stages/` is NOT renamed — 34 live
+  routines carry it on disk and the layout is a real, separate thing from the concept. **STATE**
+  is reserved for its older, unrelated meanings and never means a phase: a RUN's state
+  (`queued|running|finished|failed|aborted` — `static/states.js`), the routine's `state/`
+  directory, and a read-model's state. That overloading is why the concept is not called state:
+  `state*` outnumbers `phase*` roughly 5:1 in `src/rsched`, so the word cannot carry one more
+  meaning. Writing a new surface: ask whether you mean WHERE THE RUN IS (phase), A FILE
+  (stage), or THE RUN'S LIFECYCLE / A DIRECTORY (state), and use that word in the identifier,
+  the API field, the CSS class and the user-visible label alike.
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, delete,
   move, mkdir, edit_file, memory_read, memory_write, read_rule, write_rule, script, shell, llm, decide,

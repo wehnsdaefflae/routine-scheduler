@@ -1,6 +1,13 @@
-"""The routine's state graph, derived from its stage modules — for the UI's live diagram.
+"""The routine's PHASE graph, derived from its stage modules — for the UI's live diagram.
 
-A routine's stages/ modules ARE its states: decompose already maps the abstract workflow
+NAMING (D193, the one rule — stated in CLAUDE.md "Phase, stage, state"): the CONCEPT is a
+`phase`. That is the key the engine persists (`state/phase.json`, status.json), the field the
+API serves and the word the UI says. `stages/` is the recipe's FILE layout — the modules a
+phase is derived FROM — and `state` keeps its older, unrelated meanings (a run's state, the
+`state/` directory, a read model's state), which is why the concept is not called that. This
+module's filename is one of those older meanings and stays as it is.
+
+A routine's stages/ modules ARE its phases: decompose already maps the abstract workflow
 onto task-specific module names at creation, so there is nothing to infer from prose —
 every routine with stage modules has a diagram, unconditionally. Node order is main.md's
 own routing: modules sort by where main.md first mentions them (its `## Run flow` list
@@ -22,7 +29,7 @@ from .. import paths
 # unreadable and a recipe with more stages is itself the smell (decompose produces 3-8).
 # A capped listing drops the LEAST-mentioned modules (files are pre-ranked by first
 # mention), so the visible graph is always the recipe's spine.
-MAX_STATES = 16
+MAX_PHASES = 16
 STAGES_DIR = "stages"   # THE module dir — every routine on disk follows it (0.49.1)
 
 # main.md's YAML frontmatter carries an ALPHABETICAL module list (scaffold provenance) —
@@ -67,8 +74,8 @@ def _first_heading(path: Path) -> str:
     return ""
 
 
-def stage_states(routine_dir: Path) -> list[dict]:
-    """[{name, desc}] — one node per stage module, in main.md first-mention order."""
+def stage_phases(routine_dir: Path) -> list[dict]:
+    """[{name, desc}] — one phase node per stage module, in main.md first-mention order."""
     d = module_dir(routine_dir)
     if d is None:
         return []
@@ -77,7 +84,7 @@ def stage_states(routine_dir: Path) -> list[dict]:
     except OSError:
         main_md = ""
     files = sorted(d.glob("*.md"), key=lambda p: (module_rank(main_md, p.stem), p.stem))
-    return [{"name": p.stem, "desc": _first_heading(p)} for p in files[:MAX_STATES]]
+    return [{"name": p.stem, "desc": _first_heading(p)} for p in files[:MAX_PHASES]]
 
 
 def stage_coverage(routine_dir: Path, entered: list[str],
@@ -85,7 +92,7 @@ def stage_coverage(routine_dir: Path, entered: list[str],
     """What a run DECLARED against what it actually entered (F521/R1681).
 
     `{"declared": [...], "entered": [...], "skipped": [...]}`, every list in the
-    recipe's own flow order — the order `stage_states` derives from main.md, so a
+    recipe's own flow order — the order `stage_phases` derives from main.md, so a
     reader sees the gap where it falls in the run rather than alphabetically.
 
     A recipe with no stage modules declares nothing and can skip nothing, so it gets
@@ -109,7 +116,7 @@ def stage_coverage(routine_dir: Path, entered: list[str],
     executor-stamped phase: this function answers "was this stage worked", not "where is
     the run now".
     """
-    declared = [s["name"] for s in stage_states(routine_dir)]
+    declared = [s["name"] for s in stage_phases(routine_dir)]
     seen = set(entered) | set(recorded or ())
     visited = [name for name in declared if name in seen]
     return {"declared": declared, "entered": visited,
@@ -135,11 +142,16 @@ def current_phase(routine_dir: Path) -> str:
 
 def phase_stats(run_dir: Path) -> list[dict]:
     """Per-phase instrumentation from ONE run's transcript — turns, tokens (in+out),
-    provider-reported cost, wall-clock seconds — in first-seen order. Each
+    provider-reported cost, wall-clock seconds, and `first_turn` — in first-seen order. Each
     assistant_action event carries the phase that was active while it was produced
     (the engine stamps it); a turn's wall-clock is the gap from the previous event,
     and the tail after the last action (its dispatch) lands on the last phase. The
     empty-string phase collects turns from before any state/phase.json write.
+
+    `first_turn` is WHERE the phase begins — the turn number of its first action, which is
+    what the rail's node links to in the transcript (D193). None when the transcript numbers
+    no action under that phase: a link to turn 0 would land nowhere, so the UI renders a
+    plain node instead.
 
     Memoized on the transcript's stat fingerprint — the rail polls this endpoint every
     few seconds and used to re-parse the whole transcript each tick.
@@ -164,9 +176,12 @@ def _phase_stats(run_dir: Path) -> list[dict]:
         if ev.get("type") == "assistant_action":
             name = str(ev.get("phase") or "")
             cell = stats.setdefault(name, {"phase": name, "turns": 0, "tokens": 0,
-                                           "cost": 0.0, "elapsed_s": 0})
+                                           "cost": 0.0, "elapsed_s": 0, "first_turn": None})
             usage = ev.get("usage") or {}
             cell["turns"] += 1
+            if cell["first_turn"] is None:
+                turn = ev.get("turn")
+                cell["first_turn"] = int(turn) if isinstance(turn, int) else None
             cell["tokens"] += int(usage.get("in") or 0) + int(usage.get("out") or 0)
             cell["cost"] = round(cell["cost"] + float(usage.get("cost") or 0.0), 6)
             if t is not None and prev_ts is not None:
@@ -180,13 +195,13 @@ def _phase_stats(run_dir: Path) -> list[dict]:
     return list(stats.values())
 
 
-def state_graph(routine_dir: Path) -> dict:
-    """{states: [{name, desc}], current: str} for one routine dir — the stage modules +
+def phase_graph(routine_dir: Path) -> dict:
+    """{phases: [{name, desc}], current: str} for one routine dir — the stage modules +
     the live phase. `current` is the RAW recorded phase: the client loosens it to match a
-    state name (`static/components/stategraph.js`), because the loosening is a rendering
+    phase name (`static/components/phasegraph.js`), because the loosening is a rendering
     decision and doing it here would throw away what the run actually recorded.
     """
-    return {"states": stage_states(routine_dir), "current": current_phase(routine_dir)}
+    return {"phases": stage_phases(routine_dir), "current": current_phase(routine_dir)}
 
 
 _HEADING = re.compile(r"^(#{1,4})\s+(.+?)\s*$")

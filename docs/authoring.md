@@ -142,9 +142,9 @@ Rules of the form:
   `kindsurface.effective_kinds` narrows the schema to `tools:`, so a kind the pattern
   imports but the allowlist excludes is prose describing a channel the run cannot
   emit. `workflows/lint.py` fails on the disagreement.
-- **`PHASES`** is a literal naming the cross-run progression (the UI's state graph
+- **`PHASES`** is a literal naming the cross-run progression (the UI's phase graph
   itself comes from the materialized routine's stage modules — the engine tracks the run's
-  live position from its stage-module reads). Record it under the `phase` key of
+  live position from its stage-module reads; CLAUDE.md "Phase, stage, state" holds the rule). Record it under the `phase` key of
   `state/phase.json`: that is what the composer reads; a routine that invents its own key
   writes a file matching nothing.
 - **`DONE_WHEN`** is a literal naming what ONE finished run of this kind leaves behind, one

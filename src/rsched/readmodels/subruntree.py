@@ -34,7 +34,10 @@ def _live_stats(sub_dir: Path) -> tuple[int, dict]:
 def build_tree(run_dir: Path, depth_left: int = MAX_DEPTH) -> list[dict]:
     """The ordered list of a run's direct children, each with its live/final state and its own
     children nested (recursively). Node shape:
-    {n, label, workflow, mode, budget:{turns,tokens}, state, turns, usage, summary, children:[…]}.
+    {n, label, workflow, mode, budget:{turns,tokens}, state, turns, usage, summary, start_turn,
+    children:[…]}. `start_turn` is the PARENT turn whose action started the child — where the
+    rail's row links to in the parent transcript (D193); None when no numbered action preceded
+    it.
     `mode` is the child's kind, verbatim from its `subrun_start` (engine/child.py): "sequential"
     (a subtask), "parallel" (a spawn) or "oversight" (an escalation ladder's rung, which
     supervises the run that started it); `state` is running|ok|partial|failed|aborted.
@@ -52,13 +55,20 @@ def _build_tree(run_dir: Path, depth_left: int) -> list[dict]:
     events, _ = read_events(run_dir / "transcript.jsonl", 0)
     nodes: dict[int, dict] = {}
     order: list[int] = []
+    last_turn: int | None = None
     for ev in events:
         p = ev.get("payload") or {}
         n = p.get("n")
+        if ev.get("type") == "assistant_action" and isinstance(ev.get("turn"), int):
+            last_turn = ev["turn"]
         if ev.get("type") == "subrun_start" and isinstance(n, int):
             nodes[n] = {"n": n, "label": p.get("label"), "workflow": p.get("workflow"),
                         "mode": p.get("mode", "parallel"), "budget": p.get("budget") or {},
-                        "state": "running", "turns": 0, "usage": {}, "summary": "", "children": []}
+                        "state": "running", "turns": 0, "usage": {}, "summary": "",
+                        # where the child begins in the PARENT's transcript (D193): the rail's
+                        # row links there. `subrun_start` carries no turn of its own — it is a
+                        # side effect of the spawning action — so it takes that action's.
+                        "start_turn": last_turn, "children": []}
             order.append(n)
         elif ev.get("type") == "subrun_end" and n in nodes:
             nodes[n].update(state=p.get("status") or "?", turns=p.get("turns") or 0,

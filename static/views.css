@@ -834,7 +834,7 @@ pre.hl-json .tok-const { color: var(--warn); }
 .chip-failed, .chip-aborted { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
 .chip-running { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 38%, transparent); }
 
-/* ---------- state graph (run rail + conversation artifact rail) ---------- */
+/* ---------- phase graph (run rail + conversation artifact rail) ---------- */
 /* F296/R341: every rail cap doubles as its section's collapse toggle. Unscoped from
    .conv-view when the run view started rendering the SAME rail component. */
 .rail-cap {
@@ -859,27 +859,27 @@ pre.hl-json .tok-const { color: var(--warn); }
 /* The conversation rail's live-browser-session styles are gone with the section itself (F561,
    operator 2026-10-01): the permanent read-only dock (#browser-dock, base.css) is the one
    browser preview now. The session API and `gu browser-session` are untouched. */
-.stategraph { display: flex; flex-direction: column; font-family: var(--f-display); }
-.sg-node {
+.phasegraph { display: flex; flex-direction: column; font-family: var(--f-display); }
+.pg-node {
   display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2);
   padding: 2px 4px; border-radius: 6px;
 }
-.sg-node .sg-dot { width: 14px; text-align: center; flex: none; color: var(--ink-3); }
-.sg-node .sg-stats { margin-left: auto; padding-left: 10px; color: var(--ink-2); font-size: var(--t-xs); white-space: nowrap; }
-.sg-foot { margin-top: 6px; color: var(--ink-3); font-size: var(--t-xs); }
-.sg-node.done { color: var(--ink-3); }
-.sg-node.done .sg-dot { color: var(--signal); }
-.sg-node.current {
+.pg-node .pg-dot { width: 14px; text-align: center; flex: none; color: var(--ink-3); }
+.pg-node .pg-stats { margin-left: auto; padding-left: 10px; color: var(--ink-2); font-size: var(--t-xs); white-space: nowrap; }
+.pg-foot { margin-top: 6px; color: var(--ink-3); font-size: var(--t-xs); }
+.pg-node.done { color: var(--ink-3); }
+.pg-node.done .pg-dot { color: var(--signal); }
+.pg-node.current {
   color: var(--ink); background: var(--plate-2); border: 1px solid var(--rule-2);
   font-weight: 600;
 }
-.sg-node.current .sg-dot { color: var(--signal); }
-.sg-node.skipped .sg-dot, .sg-node.skipped .sg-stats { color: var(--ink-3); font-style: italic; }
-.sg-link { width: 1px; height: 10px; background: var(--rule-2); margin-left: 10px; }
-.sg-link.done { background: var(--signal); opacity: 0.5; }
+.pg-node.current .pg-dot { color: var(--signal); }
+.pg-node.skipped .pg-dot, .pg-node.skipped .pg-stats { color: var(--ink-3); font-style: italic; }
+.pg-link { width: 1px; height: 10px; background: var(--rule-2); margin-left: 10px; }
+.pg-link.done { background: var(--signal); opacity: 0.5; }
 
 /* the run page's GOAL rail (components/run-accounting.js): what THIS run reported at its end —
-   one verdict per line it answered for. Deliberately the state graph's language: a met line
+   one verdict per line it answered for. Deliberately the phase graph's language: a met line
    reads like a done phase. A verdict is the run's own report, not a state that waits on anyone,
    so nothing here wears summons. A line still open is plain ink; `distance` — work the
    routine is still doing — is the machine working. The note is the run's own words: prose. */

@@ -1,13 +1,17 @@
-"""statemap: the state graph derived from a routine's stage modules — nothing parsed
-from prose, so every routine with stage modules has a diagram, unconditionally."""
+"""statemap: the PHASE graph derived from a routine's stage modules — nothing parsed
+from prose, so every routine with stage modules has a diagram, unconditionally.
+
+Naming (D193): the concept is a `phase`; `stages/` is the file layout it comes from. The
+module keeps its own older filename — see its docstring and CLAUDE.md "Phase, stage, state".
+"""
 
 import json
 
 from rsched.readmodels import statemap
 
 
-def test_stage_states_ordered_by_main_md_mention(tmp_path):
-    """The stage modules ARE the states; node order follows where main.md first mentions
+def test_stage_phases_ordered_by_main_md_mention(tmp_path):
+    """The stage modules ARE the phases; node order follows where main.md first mentions
     each module (its Run-flow routing), never-mentioned extras append alphabetically; the
     desc is the module's leading heading."""
     d = tmp_path / "r"
@@ -20,16 +24,16 @@ def test_stage_states_ordered_by_main_md_mention(tmp_path):
         "---\nname: R\nmodules:\n- act\n- extra\n- gather\n---\n"
         "## Standing practices come first in prose\n\n## Run flow\n"
         "1. `stages/gather.md` — collect.\n2. `stages/act.md` — apply.\n", encoding="utf-8")
-    states = statemap.stage_states(d)
-    assert [s["name"] for s in states] == ["gather", "act", "extra"]
-    assert states[1]["desc"] == "Step: apply the fixes"
-    assert states[0]["desc"] == ""   # no heading — no description
+    phases = statemap.stage_phases(d)
+    assert [s["name"] for s in phases] == ["gather", "act", "extra"]
+    assert phases[1]["desc"] == "Step: apply the fixes"
+    assert phases[0]["desc"] == ""   # no heading — no description
     # 'act' matched its own mention, not the 'practices' substring (word-ish boundaries)
     assert statemap.module_rank((d / "main.md").read_text(encoding="utf-8"), "act") \
         > statemap.module_rank((d / "main.md").read_text(encoding="utf-8"), "gather")
 
 
-def test_stage_states_file_reference_outranks_name_drop(tmp_path):
+def test_stage_phases_file_reference_outranks_name_drop(tmp_path):
     """Intro prose that name-drops a module ("… until record finishes the run") must not
     steal its flow position — the module's `<stem>.md` FILE reference is the order signal."""
     d = tmp_path / "r"
@@ -40,10 +44,10 @@ def test_stage_states_file_reference_outranks_name_drop(tmp_path):
         "Work until `record` finishes the run.\n\n## Run flow\n"
         "1. `stages/orient.md` — look around.\n2. `stages/record.md` — close.\n",
         encoding="utf-8")
-    assert [s["name"] for s in statemap.stage_states(d)] == ["orient", "record"]
+    assert [s["name"] for s in statemap.stage_phases(d)] == ["orient", "record"]
 
 
-def test_state_graph_current_from_latest_run_status(tmp_path):
+def test_phase_graph_current_from_latest_run_status(tmp_path):
     """`current` is the LATEST run's recorded phase (status.json — the stage module the
     run last read, stamped by the executor); state/phase.json is recipe-private and does
     not drive the diagram."""
@@ -59,13 +63,13 @@ def test_state_graph_current_from_latest_run_status(tmp_path):
     for run, phase in ((old, "a-one"), (new, "b-two")):
         run.mkdir(parents=True)
         (run / "status.json").write_text(json.dumps({"phase": phase}), encoding="utf-8")
-    g = statemap.state_graph(d)
-    assert [s["name"] for s in g["states"]] == ["a-one", "b-two"]   # alphabetical: unmentioned
+    g = statemap.phase_graph(d)
+    assert [s["name"] for s in g["phases"]] == ["a-one", "b-two"]   # alphabetical: unmentioned
     assert g["current"] == "b-two"
     # missing/broken pieces degrade to empty, never raise
-    assert statemap.state_graph(tmp_path / "absent") == {"states": [], "current": ""}
+    assert statemap.phase_graph(tmp_path / "absent") == {"phases": [], "current": ""}
     (new / "status.json").write_text("not json", encoding="utf-8")
-    assert statemap.state_graph(d)["current"] == ""
+    assert statemap.phase_graph(d)["current"] == ""
 
 
 def test_outline_extracts_headings_skipping_fences():
@@ -116,9 +120,13 @@ def test_phase_stats_aggregates_turns_tokens_time(tmp_path):
     ]
     (tmp_path / "transcript.jsonl").write_text(
         "".join(json.dumps(ln) + "\n" for ln in lines), encoding="utf-8")
+    # `first_turn` is None throughout: these fixture actions carry no turn number (the
+    # D193 datum has its own tests in tests/test_phase_first_turn.py)
     assert phase_stats(tmp_path) == [
-        {"phase": "", "turns": 1, "tokens": 110, "cost": 0.0, "elapsed_s": 15},
-        {"phase": "gather", "turns": 2, "tokens": 275, "cost": 0.5, "elapsed_s": 50},
+        {"phase": "", "turns": 1, "tokens": 110, "cost": 0.0, "elapsed_s": 15,
+         "first_turn": None},
+        {"phase": "gather", "turns": 2, "tokens": 275, "cost": 0.5, "elapsed_s": 50,
+         "first_turn": None},
     ]
 
 
@@ -139,7 +147,7 @@ def test_stage_coverage_counts_a_stage_the_run_only_declared_via_phase_json(tmp_
     with llmsectest-weekday reporting 0 of 7 entered on three runs of 404-423 turns.
 
     So a phase the run RECORDED for itself is coverage evidence too. This does not make
-    phase.json drive the diagram's `current` (test_state_graph_current_from_latest_run_status
+    phase.json drive the diagram's `current` (test_phase_graph_current_from_latest_run_status
     still owns that boundary) — it only stops a worked stage being reported as skipped.
     """
     d = tmp_path / "r"

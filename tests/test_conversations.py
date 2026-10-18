@@ -700,19 +700,19 @@ def test_conversation_phase_mapping():
         assert conv_mod.conversation_phase(s) == "waiting for you"
 
 
-def test_conversation_stategraph_reflects_run_state(client):
+def test_conversation_phasegraph_reflects_run_state(client):
     c, server = client
     slug = c.post("/api/conversations", data={"text": "do a thing"}).json()["slug"]
     conv_dir = server.conversations_home / slug
     ts = "20260712-120000"
     # fake_fire wrote status.json state=running → the diagram lights "working"
-    g = c.get(f"/api/conversations/{slug}/stategraph").json()
-    assert [s["name"] for s in g["states"]] == ["working", "waiting for you"]
+    g = c.get(f"/api/conversations/{slug}/phasegraph").json()
+    assert [s["name"] for s in g["phases"]] == ["working", "waiting for you"]
     assert g["current"] == "working"
     # a finished reply → it is the user's turn again ("waiting for you")
     atomic_write_json(conv_dir / "runs" / ts / "status.json",
                       {"run_id": f"{slug}:{ts}", "state": "finished", "turn": 2})
-    assert c.get(f"/api/conversations/{slug}/stategraph").json()["current"] == "waiting for you"
+    assert c.get(f"/api/conversations/{slug}/phasegraph").json()["current"] == "waiting for you"
 
 
 def test_patch_and_permissions(client):
