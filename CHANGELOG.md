@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.433.1] — 2026-10-18
+
+### A muted hook could never fire or be un-muted again (F697)
+
+`mute` is documented in six places as silencing a foreign hook "for the rest of THIS run", and
+was stored as permanent: `dispose` wrote `disposition="mute"` and `reminders.active` filtered
+every muted record out of EVERY later run's live set. The hook therefore never fired again — and
+because a disposition is only ever an answer to a fire, its holder could never be offered the
+`keep` that would undo it. A permanent silence already has a name (`remove`, which also records
+the refusal so the owner cannot re-set the pattern); `mute` is the reversible one and had become
+the irreversible one.
+
+- **New pure `src/rsched/remind_mute.py`** holds the one rule. `dispose` STAMPS the muting run on
+  the record (`muted_run`); `active` reads a stamp from any other run as expired. A stamp rather
+  than a reset at run end, so a crashed or killed run cannot leave a hook silenced for good.
+- **`keep` clears the stamp**, so a hook muted and then kept within one run is live again: the
+  holder's last word in the run is the one that counts.
+- **An unstamped mute reads as EXPIRED** — every record written before this release. Those are
+  exactly the permanent silences the finding is about, so they come back as live hooks, which is
+  the behaviour the documentation always promised.
+- `reminders.py` (574) and `engine/remind.py` (633) are both over the 350-line bar, so both end
+  at exactly their ceilings: the new logic is all in `remind_mute.py` and the wiring was paid for
+  by compressing prose that module now states in full.
+
 ## [0.433.0] — 2026-10-18
 
 ### Audio and video reach a model natively (D192)
