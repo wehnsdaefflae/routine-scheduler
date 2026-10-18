@@ -29,11 +29,14 @@ def test_the_routine_page_offers_each_role_an_effort_beside_its_model(ui, ui_pag
     assert _levels(main) == ["", "low", "medium", "high", "xhigh", "max"]
     expect(main.locator("option").first).to_have_text("effort: provider default")
     # `supervisor` (D164) is the fourth chat role: it has a model picker and an effort picker
-    # like the others, and the page says what an unset one falls back to.
+    # like the others, and the page says what an unset one falls back to — in the model
+    # picker's own blank option since D164-tail, which is where the other roles say it too
+    # (tests/ui/test_role_blank_defaults.py pins every role's wording).
     for role in ("tool_call", "uncensored", "supervisor"):
         expect(ui_page.locator(f'select[data-effort-role="{role}"]')).to_be_visible()
-    expect(ui_page.get_by_text("an escalation-ladder rung's overseer (blank = main)")
-           ).to_be_visible()
+    expect(ui_page.get_by_text("an escalation-ladder rung's overseer")).to_be_visible()
+    expect(ui_page.locator('select[data-model-role="supervisor"] option[value=""]')
+           ).to_have_text("— main (m) —")
 
 
 def test_an_effort_is_accepted_into_efforts_and_leaves_the_models_alone(ui, ui_page):
