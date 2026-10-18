@@ -38,7 +38,7 @@ the engine's own finish ever touches.
 | file | owner | contributes |
 | --- | --- | --- |
 | `<self-audit>/audit/report.json` | the self-audit routine | findings + decisions, and their CURRENT status |
-| `<self-audit>/audit/changelog.jsonl` | the self-audit routine | the archive: which commit addressed which item, when |
+| `<self-audit>/audit/changelog.jsonl` | the self-audit routine | the archive: which commit addressed which item, when (`commit` empty for a builder completion without a release, whose items self-audit settles) |
 | `<self-audit>/audit/decisions-answered.json` | the web layer (`api_audit`) | durable "the user answered this decision" markers |
 | `<routines>/.control/reports.jsonl` | the engine (`rsched/reports.py`) | every report a run filed, and how far an addressed one got |
 
@@ -98,6 +98,11 @@ arbitrary payload keys). Nothing reads them.
 - **`archive_only`** — true when no source holds the item's own record any more and it
   survives solely through the changelog / answered markers.
 - **`priority`** — present (`true`) only on an item the user flagged ⚑ (see below).
+- **`owner`** (findings and decisions) — who must act next, verbatim from the row self-audit
+  wrote: a routine slug, or `operator` for an item only the operator can move. `""` when the
+  row names none, which the counts show as `unassigned` — never inferred from the status or the
+  prose. A REPORT's owner is its `to`, or self-audit's triage when it has none, so it carries no
+  field of its own (`item_counts.owner_of` is the one reader of both).
 - Type extras: **`severity`** (findings), **`options[]`** + **`resolution`** (decisions),
   **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`settles[]`** + **`closes`** +
   **`answered_by`** + **`superseded{ts,by,to}`** + **`supersedes[]`**
@@ -366,15 +371,23 @@ items[]              the matching items, newest origin first (`total` = matches 
                      whose card lists it), and counting it would put this page 14 apart from
                      self-audit's own vitals line over the same ledger. Hidden from BROWSING,
                      never from LOOKING SOMETHING UP — a `?focus=` reflink turns it on.
-counts{type,status,  totals across the UNFILTERED set, for the filter chips. `active` cross-
-       active}       tabulates the other two into `worklist` (non-summary, non-folded items
-                     open or in_progress) + `unread` (summaries still open) + `folded` (rows
-                     another report took over), because the page's
-                     headline number is the one place summing them LIES: a worklist and a
-                     feed in one figure can never fall to zero by working the backlog, so a
-                     steady backlog reads as a growing one (2026-09-15: "53 open" was 37
-                     items and 16 unread). Neither `type` nor `status` can answer it alone —
-                     neither is conditioned on the other, and the type totals are lifetime.
+counts{type,status,  totals across the UNFILTERED set, for the filter chips
+       active}       (`readmodels/item_counts.py`). `active` cross-tabulates the other two
+                     into four parts that never overlap: `worklist` (non-summary, non-folded
+                     items open or in_progress, minus those in transit) + `unread`
+                     (summaries still open) + `folded` (rows another report took over) +
+                     `in_transit` (addressed reports still `open`, aimed at a routine that
+                     will run — its next scheduled run drains them, and nobody can act on
+                     them before; one aimed at a routine that starts no run stays on the
+                     worklist, where it reads as stuck). The page's headline number is the
+                     one place summing them LIES: a worklist and a feed in one figure can
+                     never fall to zero by working the backlog, so a steady backlog reads as
+                     a growing one (2026-09-15: "53 open" was 37 items and 16 unread).
+                     Neither `type` nor `status` can answer it alone — neither is
+                     conditioned on the other, and the type totals are lifetime.
+                     `by_owner` splits the worklist by WHO MUST ACT NEXT (see `owner`
+                     above), largest first: on 2026-10-18 it read 100 with one item the
+                     operator could move, and nothing said so.
 report{…}            the current report's meta: run_id, generated, since{commit,window}, summary
 changelog[]          the 60 newest changelog rows, including ones that name no item
 last_run{…}          the self-audit routine's most recent run
@@ -390,7 +403,8 @@ item would otherwise be unreachable.
 
 Filters (all optional, combinable): `type`, `status`, `routine` (matches `origin.routine`),
 `target` (who a report was addressed TO — the other end of `routine`, and what a routine
-reconciling its own inbox asks with), `search` (substring over id, title, detail, and the
+reconciling its own inbox asks with), `owner` (who must act next — the same key `by_owner`
+counts, so a chip and its filter agree; a summary has none), `search` (substring over id, title, detail, and the
 addressed summaries), `folded` (include rows another report has TAKEN OVER; hidden from
 browsing by default because a folded row cannot be answered and settles with its carrier,
 never hidden from a `search` that names one), `limit`.

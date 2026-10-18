@@ -18,6 +18,7 @@
 import { api } from "/static/api.js";
 import { clampedBody, md, summaryLine } from "/static/md.js";
 import { setQuery } from "/static/router.js";
+import { ACTIVE, backlogChips } from "/static/components/backlog-chips.js";
 import { itemCard } from "/static/components/itemcard.js";
 import { focusRef, linkifyRefs, refHref } from "/static/components/reflinks.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, toastError, when } from "/static/util.js";
@@ -45,7 +46,8 @@ export async function render(view, query = {}) {
   const filters = { type: query.type ? (query.type === "all" ? "" : query.type) : defaultType,
                     status: query.status ? (query.status === "all" ? "" : query.status)
                                          : defaultStatus,
-                    routine: query.routine || "", search: query.search || "",
+                    routine: query.routine || "", owner: query.owner || "",
+                    search: query.search || "",
                     folded: query.focus ? "1" : (query.folded === "1" ? "1" : "") };
   // An emptied filter must survive reload as a CHOICE, not fall back to the
   // default — so "" (show everything) is written to the URL as the explicit "all".
@@ -267,21 +269,14 @@ export async function render(view, query = {}) {
       filterBar.append(tagChip(`${label} ${counts.type[value] || 0}`,
         { active: filters.type === value, onClick: () => pick("type", value) }));
     filterBar.append(el("span", { class: "lbl", style: "margin-left:10px" }, "status"));
-    const ACTIVE = "open,in_progress";
-    // The headline number, decomposed. open+in_progress spans a WORKLIST (items someone must
-    // act on) and a FEED (unread summaries, which come back every time any routine finishes),
-    // and as ONE figure it can never reach zero by working the backlog — so a steady worklist
-    // reads as a growing one. Still one chip and one filter: only the label says what it holds.
-    const act = counts.active || {};
-    const label = act.unread ? `active ${act.worklist || 0} · unread ${act.unread}`
-      : `active ${act.worklist || 0}`;
-    filterBar.append(tagChip(label,
-      { active: filters.status === ACTIVE, onClick: () => pick("status", ACTIVE) }));
-    // Folded rows are off the list, so the ONLY way to know they exist is to say so. The
-    // count is their own — never added to `active`, or the chip would be lying again.
-    if (act.folded)
-      filterBar.append(tagChip(`folded ${act.folded}`,
-        { active: filters.folded === "1", onClick: () => pick("folded", "1") }));
+    // An owner chip shows that owner's LIVE items of every type: the page's default type is
+    // summaries, which have no owner, so leaving it on would show nothing.
+    const pickOwner = (owner) => {
+      Object.assign(filters, filters.owner === owner ? { owner: "" }
+        : { owner, status: ACTIVE, type: "" });
+      syncURL(); load();
+    };
+    filterBar.append(...backlogChips(counts.active || {}, filters, { pick, pickOwner }));
     // The six per-status counts are an ARCHIVE view — settled 1458, addressed 282 — and the
     // twelve chips they made with the four type chips read as a wall over what is, today, one
     // choice. They fold behind one disclosure, opened when a status filter from inside it is
@@ -297,9 +292,9 @@ export async function render(view, query = {}) {
       ...routines.map((r) => el("option", { value: r }, r)));
     routineSel.value = filters.routine;
     filterBar.append(routineSel, searchIn);
-    if (filters.type || filters.status || filters.routine || filters.search)
+    if (filters.type || filters.status || filters.routine || filters.owner || filters.search)
       filterBar.append(el("button", { class: "btn ghost small", onclick: () => {
-        Object.assign(filters, { type: "", status: "", routine: "", search: "" });
+        Object.assign(filters, { type: "", status: "", routine: "", owner: "", search: "" });
         searchIn.value = ""; syncURL(); load();
       } }, "clear"));
     if (moreFilters) filterBar.append(moreFilters);   // last: it takes a row of its own

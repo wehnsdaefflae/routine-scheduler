@@ -37,6 +37,7 @@ from ..paths import read_json
 from ..priorities import SELF_AUDIT_SLUG, priorities_path, read_priorities
 from ..reports import read_reports, reports_path
 from . import memo
+from .item_counts import owner_of
 from .item_reports import event_stamp, refs, report_row_item, resolved_carriers
 
 #: The status vocabulary. `unknown` is the absence of a recorded status, not a state an
@@ -153,7 +154,7 @@ def _report_item(kind: str, entry: dict, report: dict,
                    "ts": str(report.get("generated") or ""),
                    "commit": str((since or {}).get("commit") or "")},
         "addressed": addressed, "evidence": [], "refs": refs(item_id, title, detail),
-        "archive_only": False,
+        "archive_only": False, "owner": str(entry.get("owner") or "").strip(),
     }
     if kind == "finding":
         item["severity"] = str(entry.get("severity") or "")
@@ -202,7 +203,9 @@ def _sort_key(item: dict) -> tuple:
 
 
 def build(routine_dir: Path, routines_home: Path) -> dict:
-    """The merged index: `{"items": [...], "counts": {...}}`, newest origin first."""
+    """The merged index: `{"items": [...]}`, newest origin first. Its counts are
+    `item_counts.counts`, taken by the caller over whatever it merges in (the summaries).
+    """
     return memo.memoized(f"items:{routine_dir}", source_paths(routine_dir, routines_home),
                          lambda: _build(routine_dir, routines_home))
 
@@ -273,45 +276,11 @@ def _build(routine_dir: Path, routines_home: Path) -> dict:
     # A ⚑ outranks recency: the user's explicit "work this first" floats above the feed
     # (stable sort — flagged and unflagged each keep newest-origin-first inside their band).
     ordered.sort(key=lambda i: not i.get("priority"))
-    return {"items": ordered, "counts": counts(ordered)}
-
-
-def counts(items: list[dict]) -> dict:
-    """Totals by type and by status — the filter chips' numbers, always over the
-    UNFILTERED set so a chip never counts only what the current filter already shows.
-
-    `active` cross-tabulates the two, because the page's headline number is the one place
-    where summing them lies. `open`+`in_progress` mixes a WORKLIST (maintenance items someone
-    has to act on) with a FEED (unread run summaries, which are `open` until read and reappear
-    every time any routine finishes). Reported as one figure it can never fall to zero by
-    working the backlog, so a steady worklist reads as a growing one — which is exactly how
-    2026-09-15's "53 open, why does it only ever grow" started: 37 items and 16 unread.
-    `type`/`status` cannot answer it on their own — neither is conditioned on the other, and
-    the type totals are lifetime rather than active.
-    """
-    by_type: dict[str, int] = defaultdict(int)
-    by_status: dict[str, int] = defaultdict(int)
-    worklist = unread = folded = 0
-    for item in items:
-        by_type[item["type"]] += 1
-        by_status[item["status"]] += 1
-        if item["type"] == "summary":
-            unread += item["status"] == "open"
-        elif item.get("superseded"):
-            # A FOLDED row is counted apart, never into the worklist: it cannot be answered,
-            # and it settles when the report that took it over does. Folding it in would make
-            # ten defects carried in one hand-off read as ten open threads — the inflation the
-            # fold exists to remove, and it would put this page 14 apart from self-audit's own
-            # vitals line over the same ledger.
-            folded += item["status"] in ("open", "in_progress")
-        else:
-            worklist += item["status"] in ("open", "in_progress")
-    return {"type": dict(by_type), "status": dict(by_status),
-            "active": {"worklist": worklist, "unread": unread, "folded": folded}}
+    return {"items": ordered}
 
 
 def filter_items(items: list[dict], *, type_: str = "", status: str = "",
-                 routine: str = "", target: str = "", search: str = "",
+                 routine: str = "", target: str = "", owner: str = "", search: str = "",
                  folded: bool = False) -> list[dict]:
     """Apply the API's filters. `search` is a case-insensitive substring over the id, the
     prose, and the addressed summaries — an archive-only item has no prose of its own, so
@@ -322,7 +291,9 @@ def filter_items(items: list[dict], *, type_: str = "", status: str = "",
     the origin end existed until 0.326.0, so a routine asking for the work addressed to it had
     no filter that expressed the question and got the whole store back instead — a 1 MB body
     that truncates into invalid JSON for the caller (R1404). An item with no target (a finding,
-    a decision, an untriaged report) matches no `target` query.
+    a decision, an untriaged report) matches no `target` query. `owner` is who must act next
+    (`item_counts.owner_of`), the split the page's headline number is broken into; a summary
+    has none.
     """
     needle = search.strip().lower()
     # A FOLDED row is hidden from BROWSING and never from LOOKING SOMETHING UP: it belongs to
@@ -343,6 +314,8 @@ def filter_items(items: list[dict], *, type_: str = "", status: str = "",
         if routine and item["origin"]["routine"] != routine:
             continue
         if target and str(item.get("to") or "") != target:
+            continue
+        if owner and (item["type"] == "summary" or owner_of(item) != owner):
             continue
         if needle:
             hay: list[Any] = [item["id"], item["title"], item["detail"]]

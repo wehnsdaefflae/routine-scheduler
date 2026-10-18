@@ -124,7 +124,8 @@ one you are about to touch, not all of them.
   decision row), and every report whose title begins `DECIDED:` — carrying anything larger than
   one run as a campaign in a `.audit-wt/` worktree, deleting the entry in the commit that ships
   it and handing each release back through its `state/shipped.jsonl`, which self-audit turns into
-  changelog rows. An entry there is an ORDER, not a note
+  changelog rows — and an item finished WITHOUT a release (config, a recipe edit) as a
+  `"commit": null` row there, or nothing ever closes it. An entry there is an ORDER, not a note
 - `docs/admin.md`, `docs/run-gates.md`, `docs/revise-recipe.md`, `docs/output-compression.md`,
   `docs/claude-proxy-cutover.md` — the admin conversation tier, the pre-engine admission gate,
   in-place recipe revision, stdout compression (LOSSLESS stdlib encodings only — grep headings,

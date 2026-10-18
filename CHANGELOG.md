@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.431.0] — 2026-10-18
+
+### The Messages page says whom its backlog is waiting on
+
+The active chip read 100 and one of those items was the operator's to act on; the rest
+could only fall when another routine acted, and some could not be acted on at all yet. The
+headline number is now decomposed further (`readmodels/item_counts.py`, split out of
+`items.py`):
+
+- **`in_transit`** — addressed reports still `open`, aimed at a routine that will run. Its
+  next scheduled run drains them, and until then nobody can act on them, so they no longer
+  count as worklist. One aimed at a routine that starts no run stays on the worklist under
+  that owner, where it reads as the stuck row it is.
+- **`by_owner`** — the worklist split by who must act next: a report's `to` (or `triage`
+  when unaddressed), a finding's or decision's new `owner` field, which self-audit writes into
+  report.json (`operator` for an item only the operator can move). A row naming none is shown
+  as `unassigned`, never guessed from its status or prose.
+
+The page shows the split as "waiting on" chips (the operator's share as "you"), each a
+filter: `GET /api/items?owner=<owner>` lists that owner's items, and clicking a chip shows
+its live items of every type. `items.build` no longer returns counts; the API takes them over
+the merged set, with the fleet's runnable routines as the in-transit readers.
+
 ## [0.430.0] — 2026-10-18
 
 ### Verb-scoped secrets: a credential may belong to ONE verb (R2622)

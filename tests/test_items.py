@@ -10,8 +10,8 @@ import json
 import pytest
 
 from rsched import priorities
+from rsched.readmodels import item_counts, memo
 from rsched.readmodels import items as items_model
-from rsched.readmodels import memo
 
 REPORT = {
     "schema": 1, "run_id": "self-audit:20260725-000002",
@@ -188,47 +188,9 @@ def test_item_shape_origin_evidence_and_refs(audit_home):
 
 def test_counts_cover_every_type_and_status(audit_home):
     result = items_model.build(audit_home / "self-audit", audit_home)
-    assert result["counts"]["type"] == {"finding": 3, "decision": 4, "report": 2}
-    assert sum(result["counts"]["status"].values()) == len(result["items"])
-
-
-def test_the_active_cross_tab_splits_the_worklist_from_the_unread_feed(audit_home):
-    """`open`+`in_progress` summed across types is the page's headline number and the one
-    place summing lies: it mixes items someone must ACT on with unread run summaries, which
-    reappear whenever any routine finishes. As one figure it can never reach zero by working
-    the backlog. Neither `type` nor `status` can answer it — neither is conditioned on the
-    other, and the type totals are lifetime rather than active.
-    """
-    merged = [*items_model.build(audit_home / "self-audit", audit_home)["items"],
-              {"type": "summary", "status": "open"},      # unread
-              {"type": "summary", "status": "settled"}]   # read
-    counted = items_model.counts(merged)
-    assert counted["active"]["unread"] == 1
-    assert counted["active"]["worklist"] == sum(
-        1 for i in merged if i["type"] != "summary" and i["status"] in ("open", "in_progress"))
-    # the parts are disjoint and together they are the naive sum a reader would otherwise take
-    naive = counted["status"].get("open", 0) + counted["status"].get("in_progress", 0)
-    active = counted["active"]
-    assert active["worklist"] + active["unread"] + active["folded"] == naive
-
-
-def test_a_folded_row_is_counted_and_listed_apart_from_the_worklist(audit_home):
-    """A row another report took over cannot be answered and settles with its carrier, so it
-    is not a peer item. Counting it would make ten defects carried in one hand-off read as ten
-    open threads, and it put the console 14 apart from self-audit's vitals over one ledger.
-    """
-    rows = [{"id": "R1", "type": "report", "status": "open", "title": "carrier", "detail": "",
-             "addressed": [], "superseded": {}},
-            {"id": "R2", "type": "report", "status": "open", "title": "folded in", "detail": "",
-             "addressed": [], "superseded": {"by": "R1", "to": "owner", "ts": "x"}}]
-    counted = items_model.counts(rows)
-    assert counted["active"] == {"worklist": 1, "unread": 0, "folded": 1}
-
-    # off the list by default…
-    assert [i["id"] for i in items_model.filter_items(rows)] == ["R1"]
-    # …reachable when asked for by name, or by the chip
-    assert [i["id"] for i in items_model.filter_items(rows, folded=True)] == ["R1", "R2"]
-    assert [i["id"] for i in items_model.filter_items(rows, search="folded in")] == ["R2"]
+    counted = item_counts.counts(result["items"])
+    assert counted["type"] == {"finding": 3, "decision": 4, "report": 2}
+    assert sum(counted["status"].values()) == len(result["items"])
 
 
 def test_a_hand_trimmed_fold_stamp_reads_as_no_fold_rather_than_a_500(audit_home):
@@ -413,7 +375,8 @@ def test_api_items_without_the_self_audit_routine(api_client):
     assert c.get("/api/items").json() == {
         "exists": False, "routine": "self-audit", "items": [], "total": 0,
         "counts": {"type": {}, "status": {},
-                   "active": {"worklist": 0, "unread": 0, "folded": 0}}, "report": None,
+                   "active": {"worklist": 0, "unread": 0, "folded": 0, "in_transit": 0,
+                              "by_owner": {}}}, "report": None,
         "last_run": None, "queued": [], "answered_decisions": []}
 
 

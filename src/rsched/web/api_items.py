@@ -20,8 +20,8 @@ from pydantic import BaseModel, ConfigDict
 
 from .. import priorities, registry
 from ..paths import read_json
+from ..readmodels import item_counts, memo, summaries
 from ..readmodels import items as items_model
-from ..readmodels import memo, summaries
 from ..readmodels.items import SELF_AUDIT_SLUG
 from .api_audit import _routine_dir, answered_decisions, queued_messages
 
@@ -79,8 +79,8 @@ def discard_orphan(request: Request, report_id: str) -> dict:
 @router.get("/items")
 def items(request: Request,
           type_: Annotated[str, Query(alias="type")] = "",
-          status: str = "", routine: str = "", target: str = "", search: str = "",
-          folded: bool = False, limit: int = 500) -> dict:
+          status: str = "", routine: str = "", target: str = "", owner: str = "",
+          search: str = "", folded: bool = False, limit: int = 500) -> dict:
     """The merged item index, newest origin first. `counts` is always over the UNFILTERED
     set so the filter chips show what is there, not what is left after filtering.
 
@@ -94,6 +94,9 @@ def items(request: Request,
     carrier, whose card lists it), and counting it would put this page 14 apart from
     self-audit's own vitals line over the same ledger. Hidden from BROWSING, never from
     LOOKING SOMETHING UP.
+
+    `owner` filters to who must act next (`item_counts.owner_of`) — the parts `counts.active`
+    splits the worklist into, so a chip and its filter always agree.
     """
     server = request.app.state.server
     routine_dir = _routine_dir(request)
@@ -105,11 +108,11 @@ def items(request: Request,
     summary_rows = summaries.build(server)
     if not exists:
         only = items_model.filter_items(summary_rows, type_=type_, status=status,
-                                        routine=routine, target=target, search=search,
-                                        folded=folded)
+                                        routine=routine, target=target, owner=owner,
+                                        search=search, folded=folded)
         return {"exists": False, "routine": SELF_AUDIT_SLUG,
                 "items": only[:max(1, limit)], "total": len(only),
-                "counts": items_model.counts(summary_rows), "report": None, "last_run": None,
+                "counts": item_counts.counts(summary_rows), "report": None, "last_run": None,
                 "queued": [], "answered_decisions": []}
 
     merged = items_model.build(routine_dir, server.routines_home)
@@ -119,8 +122,8 @@ def items(request: Request,
     rest = [i for i in merged["items"] if not i.get("priority")]
     all_items = flagged + summary_rows + rest
     shown = items_model.filter_items(all_items, type_=type_, status=status,
-                                     routine=routine, target=target, search=search,
-                                     folded=folded)
+                                     routine=routine, target=target, owner=owner,
+                                     search=search, folded=folded)
     report = _report_header(routine_dir)
     runs = registry.run_index(routine_dir, SELF_AUDIT_SLUG)
     last_run = None
@@ -136,12 +139,20 @@ def items(request: Request,
     return {"exists": True, "routine": SELF_AUDIT_SLUG,
             "items": shown[:max(1, limit)], "total": len(shown),
             # recomputed over the MERGED set: `counts` is documented as always being over the
-            # unfiltered whole, so it has to include the summaries the page can now filter to
-            "counts": items_model.counts(all_items),
+            # unfiltered whole, so it has to include the summaries the page can now filter to.
+            # `readers` are the routines that will run: only a report addressed to one of them
+            # is IN TRANSIT rather than stuck.
+            "counts": item_counts.counts(all_items, readers=_readers(request)),
             "changelog": list(reversed(changelog))[:60],
             "report": report, "last_run": last_run,
             "queued": queued_messages(routine_dir),
             "answered_decisions": answered_decisions(routine_dir, report)}
+
+
+def _readers(request: Request) -> set[str]:
+    """Every routine the daemon may start a run of — the ones a delivery will reach."""
+    return {slug for slug, info in registry.scan(request.app.state.server).items()
+            if info.fireable}
 
 
 class ReadBody(BaseModel):
