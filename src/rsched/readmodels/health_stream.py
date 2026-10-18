@@ -64,6 +64,10 @@ BLOCKED_EVENTS: dict[str, str] = {
     "lane_chain_stopped": "a lane chain ended early, so its remaining members never ran",
     "lane_chain_member_skipped": "a chain named a member that is not a routine in any home",
     "scheduler_tick_error": "a scheduler tick raised — whatever that tick owed is late",
+    # F678: the run finished on its own authored summary, but the CHECKS that should have
+    # judged that ending did not run — so nothing verified what the run claimed.
+    "finish_gate_failed": "a run's finish GATE raised instead of judging: the run finished on "
+                          "its own authored status and summary, unchecked",
     "trigger_capped": "a trigger hit its daily cap: the routine is dark until the cap resets",
     "commit_failed": "a commit into a versioned repo did not land — the files are on disk and "
                      "out of its history until a later commit takes them",

@@ -387,6 +387,14 @@ silently afterwards:
 - the caution must say what the consequence IS, at most `MAX_DESCRIPTION_CHARS` (400);
 - a curated `add` names its reach; a local op carries none.
 
+**Both caps are stated in the schema the run is sent** (F680): `engine/schema_remind.py` builds
+the `remind` / `remind_feedback` field definitions and interpolates `MAX_REGEX_CHARS` and
+`MAX_DESCRIPTION_CHARS` into their own descriptions, so the number a run reads is the number that
+refuses it. Until 0.433.0 neither appeared there and the only way to learn a limit was to be
+refused by it: three routines hit the description cap in one window, each curating correctly and
+each losing a turn, and the run that shipped this paid it a fourth time on its own first
+reminder. The refusal still shows the overflowing tail — that part was never the gap.
+
 `reminder_checks.py` holds these; the library linter applies the same ones to what is
 already in the curated store — an approval is not a syntax check. The Library tab lists every
 record there, a record the engine skips included, so a bad one can always be taken out.

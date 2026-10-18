@@ -27,6 +27,12 @@ those are the engine being stopped on purpose, not a guard failing.
 `finish_gate_failed` is an INCIDENT, not a standing condition, so it is deliberately absent from
 `health_events.REPEAT_COOLDOWN_HOURS`: two broken finishes are two facts, and the second must
 never be suppressed as a repeat of the first.
+
+WHERE IT IS READ (F678): it is in `readmodels/health_stream.BLOCKED_EVENTS`, so the console's
+blocked-work surface renders it. It belongs there for a reason the other events make obvious by
+contrast — a refused fire leaves no run to look at, and this leaves a run that reads as finished
+on every surface, because it DID finish. What did not happen is the judging, which no run page
+can show.
 """
 
 from __future__ import annotations

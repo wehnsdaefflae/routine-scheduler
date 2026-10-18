@@ -562,12 +562,15 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. Eight health events record the opposite —
+Everything above measures runs that HAPPENED. Nine health events record the opposite —
 `fire_refused`, `lane_fire_refused`, `lane_fire_paused`, `lane_chain_stopped`,
-`lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped` and `commit_failed`
+`lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped`, `commit_failed` and
+`finish_gate_failed`
 — and no run page, Items row or Stats slice can carry any of them: the first seven produce
 no run at all; a commit that did not land happens after a run's finish is written, or
-outside any run (a web edit, a boot seed sync, a migration). They had fourteen writers and
+outside any run (a web edit, a boot seed sync, a migration); and a finish gate that RAISED
+(F678) leaves a run that reads as finished on every surface, because it did finish — on its own
+authored status and summary, with the checks that should have judged that ending never run. They had fourteen writers and
 no reader inside the product: the nightly audit opened `.control/health-events.jsonl` over
 ssh and the console showed none of it, which is how F316's week of missed lane fires
 passed with zero signal.

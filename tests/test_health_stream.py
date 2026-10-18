@@ -45,6 +45,21 @@ def test_every_blocked_event_is_in_the_writers_vocabulary():
         assert f'"{name}"' in documented, name
 
 
+def test_a_finish_gate_that_did_not_run_reaches_the_blocked_fold(tmp_path):
+    """F678. A finish gate that RAISED did not judge the ending the run authored, so nothing
+    verified what that run claimed — work that was due and did not happen. Before this it was
+    visible only in the raw stream: the run page shows a finished run, because it finished."""
+    server = tmp_server(tmp_path, create=False)
+    _write(server, [{"event": "finish_gate_failed", "routine": "uir",
+                     "run_id": "uir:20261016-120000", "ts": _ago(1),
+                     "detail": "AttributeError in a guard"}])
+    out = blocked_fleet(server)
+    assert out["total"] == 1
+    assert out["rows"][0]["event"] == "finish_gate_failed"
+    assert out["rows"][0]["subject"] == "uir"
+    assert "unchecked" in out["rows"][0]["means"]
+
+
 def test_missing_stream_is_empty_not_an_error(tmp_path):
     server = tmp_server(tmp_path, create=False)
     assert health_records(server.routines_home) == []
