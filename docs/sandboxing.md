@@ -268,7 +268,14 @@ already authorizes everything; the routine bearer reads no wider than its own sa
 
 `_child_env` injects from the stores ONLY the vars the util (or a `calls:`
 sibling, transitively) declares on `secrets:`; every other store key is scrubbed even
-when the daemon's own environment carries it. `STRIP_VARS` (the LLM billing keys, and the
+when the daemon's own environment carries it. A declared name may narrow further to ONE
+VERB — `secrets: DEEPL_API@credentials` (R2622, `utils_verbs`) — and is then injected only
+while that verb runs; the verb vocabulary is the util's own `usage:` block, the running verb
+is argv's first token, and a call that names no verb (a default path, `--selftest`) gets none
+of the bound names. That withholding is always reported to the run
+(`withheld_verb_scoped`), because from inside the util it is indistinguishable from a
+credential nobody provisioned. A `calls:` edge cannot walk around a scope: the binding is
+resolved over the whole call tree against the ROOT call's verb. `STRIP_VARS` (the LLM billing keys, and the
 SSH-agent vars `SSH_AUTH_SOCK` / `SSH_AGENT_PID` — so a forwarded agent can't route around
 the per-routine machine binding) never pass, declared or not. The engine also injects a few
 per-run secrets through this SAME gate — the routine's OWN scoped secrets (D103), its OAuth

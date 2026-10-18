@@ -292,8 +292,8 @@ def escalate(loop, reason: str, settings: dict) -> None:
     ctx.transcript.event("oversight_dispatch",
                          {"rung": rung, "reason": reason, "turn": ctx.turn,
                           "since_turn": since, "oversight_turns": turns})
-    action = {"prompt": _supervisor_prompt(dispatch, rung=rung),
-              "workflow": SUPERVISOR_WORKFLOW, "model": "main", "label": f"rung-{rung}"}
+    action = {"prompt": _supervisor_prompt(dispatch, rung=rung),   # `supervisor`: MAIN till set
+              "workflow": SUPERVISOR_WORKFLOW, "model": "supervisor", "label": f"rung-{rung}"}
     sub = loop.subruns._start_child(action, mode=child.OVERSIGHT, prefix="rung",
                                     overrides={"turns": turns})
     if isinstance(sub, str):

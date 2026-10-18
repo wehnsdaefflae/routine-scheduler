@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from . import obs_floor, obs_hold, outputs, thenscript
+from . import obs_floor, obs_hold, obs_secrets, outputs, thenscript
 from .obs_admin import dialog_reply
 from .replyactions import unexecuted_note
 
@@ -297,18 +297,9 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
         body = _run_body(obs)
         if obs.get("usage"):
             body += f"\n[usage] {obs['usage']}"
-        if wo := obs.get("withheld_optional"):
-            # F290: the call RAN, but optional secrets it declares were not injected.
-            # Undecided names are requestable; denied ones stay a count (R17).
-            bits = []
-            if wo.get("undecided"):
-                bits.append(f"{', '.join(wo['undecided'])} (not yet granted — if this call "
-                            "actually needed it, request exposure via ask_user with "
-                            f"request 'secret:{wo['undecided'][0]}')")
-            if wo.get("denied"):
-                bits.append(f"{wo['denied']} declined by the user")
-            body += ("\n[note] optional secret(s) withheld from this call: "
-                     + "; ".join(bits))
+        # Both narrowings of the declared-only rule, said out loud (obs_secrets): F290's
+        # consent axis and R2622's verb axis.
+        body += obs_secrets.withheld_notes(obs)
         if obs.get("hint"):
             body += f"\n[hint] {obs['hint']}"
         body += _killed_note(obs)

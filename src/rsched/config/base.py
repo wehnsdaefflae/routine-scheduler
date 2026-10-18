@@ -77,12 +77,28 @@ DEFAULT_RULES = ["evidence-discipline", "ask-policy", "fix-the-cause", "problem-
 # children run the routine's MAIN model by default, and a call may override per child —
 # the action's `model` field takes a role OR a catalog model name (`list_models` shows
 # them). The loader tolerates a leftover models.subroutine key as an advisory problem.
-MODEL_KINDS = ("main", "tool_call", "uncensored")
+# The SUPERVISOR role (D164) is the escalation ladder's overseer — the model a rung's
+# supervisory child runs on. It defaults to `main`, so leaving it unset preserves exactly the
+# behaviour the ladder had when it pinned `main` in code, and setting it lets the overseer be
+# a different model from the worker it judges. The operator accepted the trade that comes with
+# it: a weaker-than-worker overseer becomes configurable. It falls back to MAIN rather than to
+# the server's system model, because an overseer resolved to a model nobody chose for this
+# routine judges with less context than the run it is judging.
+MODEL_KINDS = ("main", "tool_call", "uncensored", "supervisor")
 # The two roles that name a DECISION model (config/decisionconf.py) instead of a chat one: the
 # routine's default for a `decide` call, and its default for a call that carries images. Kept
 # apart from MODEL_KINDS because every chat-role reader resolves through the chat catalog, and
 # a decision model there would be a name it cannot find. Both sit in the same `models:` map.
 DECISION_ROLES = ("decision", "decision_media")
+
+
+def supervisor_role(models: dict[str, str] | None) -> str:
+    """Which role a SUPERVISORY child actually resolves through (D164): its own, once someone
+    has configured one, else the routine's MAIN. A pure function of the `models:` map so every
+    reader — the child builder, the discovery surface — applies one rule, and so an unset role
+    takes a path that already exists instead of a second resolution route.
+    """
+    return "supervisor" if (models or {}).get("supervisor") else "main"
 ROUTINE_MODEL_ROLES = MODEL_KINDS + DECISION_ROLES
 # REASONING EFFORT is a setting of its own, beside the model it applies to — never a second
 # catalog entry per level (the catalog once carried "Opus high", "Opus xhigh", … as five rows

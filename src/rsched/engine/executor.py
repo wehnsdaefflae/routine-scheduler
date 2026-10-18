@@ -284,7 +284,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     # child env instead of blocking the call with an exposure ask — a public call runs
     # prompt-free; the observation names the withheld undecided ones so an auth-needing
     # call learns to request exposure explicitly (denied ones stay unenumerated, R17).
-    from .secretgate import withheld_optional_secrets
+    from .secretgate import withheld_optional_secrets, withheld_verb_scoped
     withheld = withheld_optional_secrets(ctx, name)
     # One policy object, used twice: for the jail itself and for the dead-root note (R2260) —
     # so what the run is told about its roots is what the jail actually decided about them.
@@ -304,7 +304,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
            **command_output(ctx, name, out, err, code), **_withheld_note(ctx, withheld),
-           **_dead_root_note(policy), **killed}
+           **withheld_verb_scoped(ctx, name, args), **_dead_root_note(policy), **killed}
     if ended is not None:
         # Not a failure, so no repair route: a resumed run replays this observation, and
         # "the util itself may be broken — fix it" would send it after a util that is fine.

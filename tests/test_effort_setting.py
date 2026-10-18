@@ -140,7 +140,7 @@ def web(tmp_path, make_routine):
 def test_the_routine_patch_sets_replaces_and_clears_efforts(web):
     c, d, _ = web
     assert c.get("/api/routines/webr").json()["efforts"] == {
-        "main": None, "tool_call": None, "uncensored": None}
+        "main": None, "tool_call": None, "uncensored": None, "supervisor": None}
     r = c.patch("/api/routines/webr", json={"efforts": {"main": "xhigh", "tool_call": "low"}})
     assert r.status_code == 200, r.text
     assert yaml.safe_load((d / "routine.yaml").read_text())["efforts"] == {

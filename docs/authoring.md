@@ -59,6 +59,16 @@ Line by line:
   path reaching that sibling is taken (a scorer rightly requires its own key; a util that
   scores only under `--score` marks it optional and runs prompt-free otherwise). Between
   two siblings the strict rule stands: one required declaration makes the name required.
+  An `@verb` suffix binds a name to ONE VERB (`secrets: RSCHED_MACHINES,
+  DEEPL_API@credentials`): it is injected only while that verb runs, so a verb-dispatched
+  util's credential surface stops being the union of all its verbs' needs — without it,
+  folding a credentialed sibling in would hand its key to every caller of every other verb.
+  Repeat the name to bind two verbs (`K@a, K@b`); combine with `?` either way round. The verb
+  vocabulary is **your own `usage:` block** — the engine reads the invocation table you wrote
+  rather than your dispatcher, so a binding to a verb the block does not list is rejected when
+  you save the util. The running verb is argv's FIRST token and nothing else, so a util whose
+  default call leads with a URL or a pattern names no verb: every bound name is then withheld,
+  and the observation says which, so a withholding never reads as a missing credential.
 - **`tags:`** — required; the catalog groups and filters on them.
 - **`net:`** — required: `outbound` (opens network connections) or `none`. Utils run in a
   filesystem/network sandbox (see [sandboxing](sandboxing.md)); a `none` (or undeclared)

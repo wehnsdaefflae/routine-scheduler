@@ -271,11 +271,11 @@ def test_the_dispatch_carries_the_goal_verbatim_and_the_workers_own_words(tmp_pa
     assert "worker_says" in prompt
 
 
-def test_a_rung_runs_as_an_oversight_child_on_the_main_model_with_a_pinned_budget(tmp_path):
+def test_a_rung_runs_as_an_oversight_child_on_the_supervisor_role_with_a_pinned_budget(tmp_path):
     """Child budgets are a share of the parent's remainder by default, which would cause the
-    stalling the ladder was hired to prevent: turns are PINNED. And the verdict runs on `main`
-    — judging drift is the hardest inference in the design, and the cheap tier buys a saving
-    and loses the capability."""
+    stalling the ladder was hired to prevent: turns are PINNED. And the verdict runs on the
+    SUPERVISOR role (D164), resolving through `main` while unset — so the default is still the
+    model pinned here: judging drift is the hardest inference, and the cheap tier loses it."""
     ctx = _Ctx(tmp_path)
     subs = _Subs(_Sub(summary=json.dumps(_directive())))
     settings = {"enabled": True, "height": 12, "max_depth": 3, "oversight_turns": 12}
@@ -283,7 +283,7 @@ def test_a_rung_runs_as_an_oversight_child_on_the_main_model_with_a_pinned_budge
     call = subs.calls[0]
     assert call["mode"] == "oversight"
     assert call["overrides"] == {"turns": 12}
-    assert call["action"]["model"] == "main"
+    assert call["action"]["model"] == "supervisor"
     assert call["action"]["workflow"] == ladder.SUPERVISOR_WORKFLOW
 
 

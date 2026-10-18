@@ -4,7 +4,7 @@ Split out of `utils_lib.py` (F393): holding a library (paths, catalog, git) and 
 it are different jobs, and this is the one with the blast radius. Every util subprocess runs
 inside a Landlock jail scoped to the run's permissions (docs/sandboxing.md) and carries ONLY
 the secrets its header declares — `scoped_env` is the declared-only injection gate, and it is
-the reason an undeclared secret is unreachable rather than merely undocumented.
+the reason an undeclared secret is unreachable (a VERB-bound one narrows that: `utils_verbs`).
 
 `run_jailed` is the ONE process runner all three callable kinds use — a util here, a routine's
 own `scripts/<name>.py` (scripts.py) and the `shell` action (shellrun.py). The jail
@@ -21,12 +21,12 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
-from . import procgroup, sandbox, utils_lib
+from . import procgroup, sandbox, utils_lib, utils_verbs
 from .captured_output import CapturedOutput, read_capped
 from .ids import is_slug
 from .utils_header import parse_header
@@ -179,11 +179,11 @@ def injected_secrets(env: Mapping[str, str],
 
 
 def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = None,
-               withhold: set[str] | None = None) -> dict:
-    """A util subprocess's environment: `scoped_env` over the util's transitive
-    declarations (`calls:` siblings included — one jail, one env).
+               withhold: set[str] | None = None, args: Sequence[str] = ()) -> dict:
+    """A util subprocess's environment: the util's transitive declarations (`calls:` siblings
+    included — one jail, one env) MINUS the verb-bound names this argv may not see (R2622).
     """
-    return scoped_env(util_needs(home, name).secrets, extra_secrets, withhold)
+    return utils_verbs.child_env(home, name, args, extra_secrets, withhold)
 
 
 @dataclass(frozen=True, slots=True)
@@ -440,7 +440,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,  # n
         return 2, "", f"no util named {name!r} (available: {[u['name'] for u in list_utils(home)]})"
     if not shutil.which("uv"):
         return 2, "", "uv is required to run utils but is not on PATH"
-    env = _child_env(home, name, extra_secrets, withhold_secrets)
+    env = _child_env(home, name, extra_secrets, withhold_secrets, args)
     env["PATH"] = f"{home}:{env.get('PATH', '')}"
     # Point the `gu` dispatcher (on PATH, for sibling calls) at THIS library, so a util that
     # shells out to `gu <sibling>` always resolves siblings here.

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 
+from ..config.base import supervisor_role
 from ..endpoints.base import EndpointError
 from . import refusal
 from .observations import truncate
@@ -122,6 +123,13 @@ def do_list_models(ctx: RunContext) -> dict:
                                 "model": unc[1].model} if unc else None)
     except EndpointError as exc:
         roles["uncensored"] = {"error": str(exc)}
+    try:    # D164: the ladder's overseer role, which resolves through MAIN while it is unset
+        role = supervisor_role(ctx.routine.models)
+        _, sup = ctx.registry.for_model(role, ctx.routine.models, ctx.routine.efforts)
+        roles["supervisor"] = {"catalog": sup.name, "endpoint": sup.endpoint,
+                               "model": sup.model, "configured": role == "supervisor"}
+    except EndpointError as exc:
+        roles["supervisor"] = {"error": str(exc)}
     models = []
     for name in sorted(ctx.server.models):
         try:
@@ -133,8 +141,8 @@ def do_list_models(ctx: RunContext) -> dict:
             models.append({"name": name, "error": str(exc)})
     out: dict = {"kind": "list_models", "roles": roles, "models": models,
                  "note": ("a spawn/subtask/llm action's `model` field takes one of these "
-                          "catalog names, or a role (main/tool_call/uncensored); children "
-                          "default to main, llm to tool_call")}
+                          "catalog names, or a role (main/tool_call/uncensored/supervisor); "
+                          "children default to main, llm to tool_call")}
     if ctx.server.decision_models:
         # The DECISION catalog is a different contract (endpoints/decisions.py) — listed apart
         # so a name from it is never passed to llm/spawn, nor a chat model's to decide.

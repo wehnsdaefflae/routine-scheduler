@@ -98,6 +98,44 @@ def parse_fs(value: str) -> tuple[bool, list[tuple[str, str]], list[str]]:
     return roots, paths, problems
 
 
+def parse_secret_entries(entries: list[str]) -> tuple[list[str], list[str], dict[str, set[str]]]:
+    """One `secrets:` line's entries → `(names, optional names, {name: {verbs}})`.
+
+    The entry grammar, and the ONLY place it is read:
+      `NAME`            required, every call sees it
+      `NAME?`           OPTIONAL (D51) — withheld silently when not granted
+      `NAME@verb`       VERB-SCOPED (R2622) — injected only while that verb runs
+      `NAME@verb?`      both; `NAME?@verb` is accepted too, authors write either
+    A name may be bound to several verbs by repeating it (`K@a, K@b`), which is how one
+    credential serves two verbs without reaching a third.
+
+    `names` carries BARE names in every case, so injection (`utils_run.scoped_env`) and the
+    undeclared-read gate (`undeclared_secrets`) are untouched by either marker — a scope
+    narrows WHEN a declared secret is injected, never whether it was declared.
+    """
+    names: list[str] = []
+    optional: list[str] = []
+    verbs: dict[str, set[str]] = {}
+    for raw in entries:
+        entry = raw.strip()
+        is_optional = entry.endswith("?")
+        if is_optional:
+            entry = entry[:-1].strip()
+        name, _, verb = entry.partition("@")
+        name, verb = name.strip(), verb.strip()
+        if name.endswith("?"):          # `NAME?@verb` — the marker on the name side
+            name, is_optional = name[:-1].strip(), True
+        if not name:
+            continue
+        if name not in names:
+            names.append(name)
+        if is_optional and name not in optional:
+            optional.append(name)
+        if verb:
+            verbs.setdefault(name, set()).add(verb)
+    return names, optional, verbs
+
+
 def parse_header(src: str) -> dict:
     """The docstring header — the util's ONLY machine-read surface: summary, the usage BLOCK
     (`usage_block`: every invocation form the author listed, not just the first line), tags,
@@ -108,9 +146,13 @@ def parse_header(src: str) -> dict:
 
     A `secrets:` entry may carry a trailing `?` (e.g. `secrets: FOO_KEY, BAR_TOKEN?`) to mark
     an OPTIONAL secret (D51): injected when the store has it, but the Settings page does not
-    prompt for it and its absence is not a "missing credential". The stripped name still
-    appears in `secrets` (so injection and the undeclared-read gate are unchanged); the marked
-    names are also collected in `optional_secrets`.
+    prompt for it and its absence is not a "missing credential". It may also bind a name to a
+    VERB with `@` (`secrets: DEEPL_API@credentials`, R2622): injected only while that verb
+    runs, so a verb-dispatched util's credentials stop being the union of all its verbs' needs.
+    Both markers are part of the DECLARATION, never of the variable name: the stripped name
+    still appears in `secrets` (so injection and the undeclared-read gate are unchanged), while
+    `optional_secrets` and `verb_secrets` carry what each marker said. `parse_secret_entries`
+    is the one reader of that grammar.
     """
     m = _SUMMARY_RE.search(src)
     doc = m.group(1).strip() if m else ""
@@ -126,9 +168,10 @@ def parse_header(src: str) -> dict:
     # A trailing '?' marks an OPTIONAL secret (D51): the sandbox injects it when the store has it
     # but the Settings page never prompts for it and its absence is not a missing credential. The
     # name (marker stripped) still appears in `secrets`, so injection and the undeclared-read gate
-    # are unchanged — optionality is purely about consent/prompting, not access.
-    secrets = [s[:-1].strip() if s.endswith("?") else s for s in sec_raw]
-    optional_secrets = [s[:-1].strip() for s in sec_raw if s.endswith("?")]
+    # are unchanged — optionality is purely about consent/prompting, not access. `@verb` (R2622)
+    # reads the same way: the bare name stays in `secrets`, and `verb_secrets` carries which
+    # verbs may see it (utils_verbs).
+    secrets, optional_secrets, verb_secrets = parse_secret_entries(sec_raw)
     calls_line = next((ln for ln in lines if ln.lower().startswith("calls:")), "")
     calls = [c.strip() for c in calls_line[len("calls:"):].split(",")
              if c.strip() and c.strip().lower() not in ("(none)", "none")
@@ -139,7 +182,8 @@ def parse_header(src: str) -> dict:
     fs = fs_line[len("fs:"):].strip() if fs_line else ""
     fs_roots, fs_paths, _ = parse_fs(fs) if fs else (False, [], [])
     return {"summary": summary, "usage": usage, "tags": tags, "secrets": secrets,
-            "optional_secrets": optional_secrets, "calls": calls, "net": net,
+            "optional_secrets": optional_secrets, "verb_secrets": verb_secrets,
+            "calls": calls, "net": net,
             "fs": fs, "fs_roots": fs_roots, "fs_paths": fs_paths, "doc": doc}
 
 
@@ -151,6 +195,17 @@ def widening(old_src: str, new_src: str) -> list[str]:
     """
     old, new = parse_header(old_src), parse_header(new_src)
     out = [f"the secret {s}" for s in new["secrets"] if s not in old["secrets"]]
+    # R2622: unbinding a verb-scoped secret hands it to every verb's callers — the widening
+    # R2620 caught by hand, when three service credentials would have reached ~3,900 `gu
+    # remote exec` calls to serve one verb. Reported per secret whose scope got wider.
+    for secret, verbs in old["verb_secrets"].items():
+        if secret not in new["secrets"]:
+            continue
+        now = new["verb_secrets"].get(secret, set())
+        if not now:
+            out.append(f"the secret {secret} on every verb (was only {', '.join(sorted(verbs))})")
+        elif now - verbs:
+            out.append(f"the secret {secret} on the verb {', '.join(sorted(now - verbs))}")
     if new["net"] == "outbound" and old["net"] != "outbound":
         out.append("the network")
     out += [f"the util {c}" for c in new["calls"] if c not in old["calls"]]
@@ -248,6 +303,20 @@ def header_problems(content: str) -> list[str]:
                         "only ever narrows what the run already granted")
     else:
         problems += parse_fs(h["fs"])[2]
+    # A `NAME@verb` scope (R2622) is only enforceable against the verb vocabulary the util's
+    # own `usage:` block declares — that block IS the dispatch table the engine reads, so a
+    # binding to an unlisted verb would withhold the secret on every call and look exactly
+    # like a credential nobody provisioned. Caught here, at save time, for one edit.
+    from .utils_verbs import declared_verbs
+
+    vocabulary = set(declared_verbs(content))
+    unknown = sorted({f"{s}@{v}" for s, verbs in h["verb_secrets"].items()
+                      for v in verbs if v not in vocabulary})
+    if unknown:
+        problems.append("the 'secrets:' line binds a secret to a verb the 'usage:' block does "
+                        f"not list: {', '.join(unknown)} — the sandbox reads that block as the "
+                        "verb vocabulary, so a secret bound to an unlisted verb is withheld on "
+                        f"every call. Known verbs: {', '.join(sorted(vocabulary)) or '(none)'}")
     undeclared = undeclared_secrets(content)
     if undeclared:
         problems.append("code reads credential env var(s) not declared in the docstring's "

@@ -152,22 +152,22 @@ built-in checks, data on stdout / diagnostics on stderr / exit 0 on success; on 
 missing arguments it MUST print its own usage line to stderr and exit 2 — an error that
 doesn't teach the correct call wastes every future caller's turn). The engine runs
 `--selftest` and only commits if it passes. To REVISE an existing util surgically, pass
-`anchor`/`replacement` INSTEAD of content — a verbatim in-place patch like edit_file, so a \
-small fix never re-emits the whole script (read the current source first: `util name=show \
-args=["<name>", "--full"]`). A util may call sibling utils via `gu <name>` — \
-declare those on a `calls: <name>, …` header line. If it \
-needs a secret (token, password, API key), read it env-first — `os.environ["NAME"]` — never \
-hardcode or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the \
-UI tells the user what to set (they set it once in the Secrets store; the engine injects it — \
-ONLY declared secrets reach the util). Declare network use with a `net: outbound` (or \
-`net: none`) header line: utils run in a filesystem/network sandbox and an undeclared \
-network need fails. Declare filesystem use the same way, on an `fs:` header line — \
-`fs: roots` when the util opens paths its CALLER passes it (the common case), `fs: none` when \
-it touches no file outside its own temp space, or `fs: rw <path>` / `fs: ro <path>` for a \
-private store the util reaches on its own (a session directory, a state file). A declared \
-path is mounted only when the routine was already granted it, so declaring one asks for \
-nothing — it narrows what this util sees, and keeps a store like that out of every OTHER \
-util's jail.{util_confirm}"""),
+`anchor`/`replacement` INSTEAD of content — a verbatim in-place patch like edit_file, so a small \
+fix never re-emits the whole script (read the current source first: `util name=show \
+args=["<name>", "--full"]`). A util may call sibling utils via `gu <name>` — declare those on a \
+`calls: <name>, …` header line. If it needs a secret (token, password, API key), read it \
+env-first — `os.environ["NAME"]` — never hardcode or prompt for it, AND declare the names in a \
+header `secrets: NAME1, NAME2` line so the UI tells the user what to set (they set it once in the \
+Secrets store; the engine injects it — ONLY declared secrets reach the util). A credential ONE \
+VERB needs binds to it — `secrets: DEEPL_API@credentials`, a verb your `usage:` block lists — and \
+reaches that verb's calls alone. Declare network use with a `net: outbound` (or `net: none`) \
+header line: utils run in a filesystem/network sandbox and an undeclared network need fails. \
+Declare filesystem use the same way, on an `fs:` header line — `fs: roots` when the util opens \
+paths its CALLER passes it (the common case), `fs: none` when it touches no file outside its own \
+temp space, or `fs: rw <path>` / `fs: ro <path>` for a private store the util reaches on its own \
+(a session directory, a state file). A declared path is mounted only when the routine was already \
+granted it, so declaring one asks for nothing — it narrows what this util sees, and keeps a store \
+like that out of every OTHER util's jail.{util_confirm}"""),
     (("remove_util",), """- remove_util: delete a global util the library no longer needs — \
 name (kebab-case). The \
 curation counterpart to write_util, gated by the util-removal permission (and, unless \
@@ -350,7 +350,7 @@ goal — "yes, do it", "you fix all of that" answering work you proposed: set it
 answer. Every open goal is answered at your finish; one a routine run leaves open is CARRIED to \
 its next run until a run meets it."""),
     (("list_models",), """- list_models: the model catalog + this run's resolved role \
-bindings (main / tool_call / uncensored), read-only — consult it BEFORE setting a `model` \
+bindings (main / tool_call / uncensored / supervisor), read-only — consult it BEFORE a `model` \
 override on llm/spawn/subtask so the name you pass is one the catalog actually carries."""),
     (("subruns",), """- subruns: a status table of your child runs, whatever mode each was \
 started in (state, turns, elapsed)."""),

@@ -121,9 +121,9 @@ class RoutineConfig(_Config):
     hub_tab: BlankableStr = ""
     # What this dir IS when not an ordinary routine: "conversation" (under conversations_home).
     kind: BlankableStr = ""
-    # Role → catalog model NAME (main/tool_call/uncensored). A role left unset
-    # falls back to the server system_model. Resolved live via EndpointRegistry, so editing
-    # a catalog model updates every routine that names it.
+    # Role → catalog model NAME (main/tool_call/uncensored/supervisor — the last resolving
+    # through MAIN while unset, D164). Another unset role takes the server system_model.
+    # Resolved live via EndpointRegistry, so editing a catalog model updates every namer.
     models: dict[str, str] = Field(default_factory=dict)
     # Role → reasoning effort (EFFORT_LEVELS) for the CHAT roles (main/tool_call/uncensored): a
     # setting of its own beside `models:`, so one catalog model serves every level instead of a

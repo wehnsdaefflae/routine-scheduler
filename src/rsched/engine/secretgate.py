@@ -85,6 +85,26 @@ def withheld_optional(ctx, optional: set[str]) -> list[str]:
                   if secret_state(ctx, s) != "granted")
 
 
+def withheld_verb_scoped(ctx, name: str, args: list) -> dict:
+    """R2622: what a VERB-SCOPED declaration withheld from THIS call, as the observation
+    field — `{"verb": <the verb that ran, or None>, "secrets": [names]}`, empty when the
+    call tree binds no secret to a verb.
+
+    It is reported rather than merely decided because the two are indistinguishable from
+    inside the util: a verb-bound secret the engine withheld arrives exactly as a secret
+    nobody provisioned, and the next move on that reading is provisioning a credential that
+    is already provisioned (R2621). A call that names NO verb — the util's default path, or
+    `--selftest` — withholds every bound name, so this is also how a default-path call learns
+    that a credential exists for a verb it did not invoke.
+    """
+    from ..utils_verbs import withheld_for_verb
+    home = ctx.server.libraries_home
+    if not utils_lib.exists(home, name):
+        return {}
+    withheld, verb = withheld_for_verb(home, name, [str(a) for a in (args or [])])
+    return {"withheld_verb_scoped": {"verb": verb, "secrets": withheld}} if withheld else {}
+
+
 def withheld_optional_secrets(ctx, name: str) -> list[str]:
     """`withheld_optional` over a UTIL's transitive declarations."""
     home = ctx.server.libraries_home

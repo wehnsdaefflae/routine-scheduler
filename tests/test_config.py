@@ -455,4 +455,4 @@ def test_routine_decision_roles_load_beside_the_chat_roles(tmp_path):
     assert cfg.models == {"main": "m", "decision": "jev", "decision_media": "vl8b"}
     assert [p for p in problems if "models." in p] == [
         ("models.oracle: unknown model kind (expected one of ('main', 'tool_call', 'uncensored', "
-         "'decision', 'decision_media'))")]
+         "'supervisor', 'decision', 'decision_media'))")]

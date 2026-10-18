@@ -502,7 +502,8 @@ and the capabilities digest's catalog listing):
   a `tz` left out is the server's zone, `config.default_tz` — the zone the console edits in; a
   fixed time the clock repeats when daylight saving ends fires once, `rsched/firetimes.py`),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
-  main / tool_call / uncensored), `trial:` (a MODEL TRIAL — `{id, models, runs, reason}`: the
+  main / tool_call / uncensored / supervisor — the last one the escalation ladder's overseer,
+  falling back to `main` when unset, D164), `trial:` (a MODEL TRIAL — `{id, models, runs, reason}`: the
   next `runs` fires run on these catalog models instead, counted from the usage stream and
   stopping by itself; the field stays as history until the next accepted change — see
   docs/run-analytics.md "Model trials", `rsched/trials.py`), `connections:` (provider → account label — OAuth

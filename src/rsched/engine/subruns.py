@@ -92,8 +92,8 @@ class SubrunManager:
         """
         ctx = self.parent.ctx
         sel = str(action.get("model") or "")
-        if not sel or sel in ("main", "tool_call"):
-            return None
+        if not sel or sel in ("main", "tool_call", "supervisor"):
+            return None      # `supervisor` (D164) resolves through MAIN while unset
         if sel == "uncensored":
             if ctx.registry.for_uncensored(ctx.routine.models, ctx.routine.efforts) is None:
                 return ("model role 'uncensored' is not configured for this routine — "

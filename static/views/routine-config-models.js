@@ -10,11 +10,12 @@ import { describe } from "/static/components/settings-digest.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { ladderIntervals } from "/static/components/ladder-settings.js";
 
-// per routine: main / tool_call / uncensored; children run main by default, a spawn/subtask
-// call may override per child
+// per routine: main / tool_call / uncensored / supervisor; children run main by default, a
+// spawn/subtask call may override per child
 const MODEL_KINDS = [["main", "the orchestrator loop (children inherit it by default)"],
                      ["tool_call", "the llm action"],
-                     ["uncensored", "a refused llm call is referred here (opt-in)"]];
+                     ["uncensored", "a refused llm call is referred here (opt-in)"],
+                     ["supervisor", "an escalation-ladder rung's overseer (blank = main)"]];
 // The decide action's two roles name a DECISION model (Settings → Decision endpoints), not a
 // chat one, so their pickers list the decision catalog — the image role only the models that
 // take images. A blank role falls back to the instance default for that payload.

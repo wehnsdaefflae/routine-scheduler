@@ -15,6 +15,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.430.0] — 2026-10-18
+
+### Verb-scoped secrets: a credential may belong to ONE verb (R2622)
+
+A `secrets:` entry may bind a name to a verb — `secrets: RSCHED_MACHINES,
+DEEPL_API@credentials` — and that credential is then injected only while that verb runs.
+Before this, a verb-dispatched util's credential surface was the UNION of all its verbs'
+needs: folding `remote-service-credentials` into `remote` would have handed three service
+credentials to every one of ~3,900 `gu remote exec` calls to serve one verb almost nobody
+calls, which is why that fold was reverted by hand and a credentialed sibling was
+permanently unfoldable. Reservation already followed a verb (`<util>:<verb>` in a
+permission's `requires:`); secrets now do too.
+
+Unsuffixed names keep today's meaning exactly, so the grammar is purely additive — no util,
+caller or routine config moves, and a util's own code still just reads `os.environ`.
+
+- The verb VOCABULARY is the util's own `usage:` block (`utils_verbs.declared_verbs`), so the
+  engine never reimplements a dispatcher. Measured against all 54 live utils: `web-request`
+  yields `sweep publish` and `code-search` yields `sym lint-recipe map` — neither mistakes its
+  default call's URL or regex for a verb.
+- The RUNNING verb is argv's FIRST token and nothing else, so a flag VALUE spelling a verb
+  (`gu remote exec m --cwd credentials`) can never widen the scope.
+- FAIL CLOSED AND SAY SO: a call that names no verb gets none of the bound names, and the
+  observation reports what was withheld plus the verb that ran (`withheld_verb_scoped`,
+  rendered in `engine/obs_secrets.py` beside F290's consent withholding). From inside a util a
+  withheld secret is indistinguishable from an unprovisioned one.
+- Binding to a verb the `usage:` block does not list is a HEADER PROBLEM at save time; and
+  dropping a `@verb` scope now reads as a WIDENING, so the approval dial sees it.
+- A `calls:` edge cannot walk around a scope: the binding resolves over the whole call tree
+  against the root call's verb.
+
+### A fourth model role: `supervisor` (D164)
+
+The escalation ladder pinned `main` in code for its overseer. `models.supervisor` now names
+it, and `config.base.supervisor_role()` is the one rule every reader applies: the routine's
+own `supervisor` once set, else its MAIN — never the server's system model, so an unset role
+behaves exactly as the code pin did and an overseer is never resolved to a model nobody chose
+for the routine. `list_models` reports the resolved binding with `configured`, the routine
+page's Models group offers the role a model and an effort picker, and the operator's accepted
+trade stands: a weaker-than-worker overseer is now configurable.
+
 ## [0.429.0] — 2026-10-17
 
 ### Changed
