@@ -167,8 +167,9 @@ async def run_events(ws: WebSocket, run_id: str, offset: Offset = 0) -> None:
 
 @router.get("/runs/{run_id}/phases")
 def run_phases(request: Request, run_id: str) -> dict:
-    """Per-phase instrumentation (turns / tokens / cost / wall-clock) derived from the
-    run's transcript — the state-graph rail's numbers.
+    """Per-phase instrumentation (turns / tokens / cost / wall-clock, plus the phase's
+    `first_turn`) derived from the run's transcript — the phase-graph rail's numbers, and
+    the turn each of its nodes links to.
     """
     from ..readmodels.statemap import phase_stats
 

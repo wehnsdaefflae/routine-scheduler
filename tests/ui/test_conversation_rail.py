@@ -64,7 +64,7 @@ def test_the_rail_grows_no_browser_section_even_with_a_live_session(ui, ui_page)
         for gone in (".browser-sess", ".browser-line", ".browser-shot"):
             expect(ui_page.locator(gone)).to_have_count(0)
         # the sections people do use are still there, so this removed one thing and not the rail
-        expect(ui_page.locator(".conv-view .rail-cap", has_text="state").first).to_be_visible()
+        expect(ui_page.locator(".conv-view .rail-cap", has_text="phases").first).to_be_visible()
         expect(ui_page.locator(".conv-view .rail-cap", has_text="artifacts")).to_be_visible()
     finally:
         srv.close()
@@ -92,20 +92,20 @@ def test_rail_sections_collapse_and_persist(ui, ui_page):
     key is `rail:<name>` (not `convrail:`) because the run view renders the SAME component
     — a fold meant in one view is meant in the other."""
     start_conversation(ui, ui_page, ASK)
-    cap = ui_page.locator(".conv-view .rail-cap", has_text="state").first
-    graph = ui_page.locator(".stategraph")
+    cap = ui_page.locator(".conv-view .rail-cap", has_text="phases").first
+    graph = ui_page.locator(".phasegraph")
     expect(graph).to_be_visible()
 
     cap.click()
     expect(graph).to_be_hidden()
-    assert ui_page.evaluate("localStorage.getItem('rail:state')") == "closed"
+    assert ui_page.evaluate("localStorage.getItem('rail:phases')") == "closed"
 
     ui_page.reload()
-    expect(ui_page.locator(".stategraph")).to_be_hidden()
+    expect(ui_page.locator(".phasegraph")).to_be_hidden()
 
-    ui_page.locator(".conv-view .rail-cap", has_text="state").first.click()
-    expect(ui_page.locator(".stategraph")).to_be_visible()
-    assert ui_page.evaluate("localStorage.getItem('rail:state')") == "open"
+    ui_page.locator(".conv-view .rail-cap", has_text="phases").first.click()
+    expect(ui_page.locator(".phasegraph")).to_be_visible()
+    assert ui_page.evaluate("localStorage.getItem('rail:phases')") == "open"
 
 
 def test_a_conversation_has_no_goal_panel_and_no_compression_dial(ui, ui_page):
@@ -113,7 +113,7 @@ def test_a_conversation_has_no_goal_panel_and_no_compression_dial(ui, ui_page):
     its rail carries no goal section; and lossless output compression is engine behaviour, not
     a dial on its header."""
     start_conversation(ui, ui_page, ASK)
-    expect(ui_page.locator(".conv-view .rail-cap", has_text="state").first).to_be_visible()
+    expect(ui_page.locator(".conv-view .rail-cap", has_text="phases").first).to_be_visible()
     expect(ui_page.locator('.conv-view .rail-cap[data-rail="goal"]')).to_have_count(0)
     expect(ui_page.get_by_label("Output compression", exact=True)).to_have_count(0)
 

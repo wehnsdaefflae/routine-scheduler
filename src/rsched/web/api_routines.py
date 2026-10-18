@@ -1,5 +1,5 @@
 """The routine READ surfaces: dashboard cards, the detail payload, the setup surface, the
-recommendations, recipe health and its revert, the state graph, and a routine's own local
+recommendations, recipe health and its revert, the phase graph, and a routine's own local
 reminders.
 
 The write half is `api_routine_edit` (rules, permissions, run-now, archive) and
@@ -328,16 +328,16 @@ def revert_recipe(request: Request, slug: str, body: RevertBody) -> dict:
     return queue_or_apply(request, info, "recipe_revert", {"commit": body.commit}, _apply)
 
 
-@router.get("/routines/{slug}/stategraph")
-def stategraph(request: Request, slug: str) -> dict:
-    """The routine's state graph (its stage modules, in main.md mention order) + the
-    current phase (the stage module the latest run last read) — the UI's live diagram;
-    phase transitions arrive over the run tail's `state` events.
+@router.get("/routines/{slug}/phasegraph")
+def phasegraph(request: Request, slug: str) -> dict:
+    """The routine's PHASE graph (its stage modules, in main.md mention order) + the current
+    phase (the stage module the latest run last read) — the UI's live diagram; transitions
+    arrive over the run tail's `state` events. Naming: CLAUDE.md "Phase, stage, state".
     """
     from ..readmodels import statemap
 
     info = _info(request, slug)
-    return statemap.state_graph(info.cfg.dir)
+    return statemap.phase_graph(info.cfg.dir)
 
 
 @router.get("/routines/{slug}/recipe")

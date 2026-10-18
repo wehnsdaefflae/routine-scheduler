@@ -1,7 +1,7 @@
 // Conversations tab, chat-first, in the RUN-PAGE layout: the conversation owns the full
 // main column; everything else lives in margin rails (the run view's .run-rail pattern).
 // Left rail: a dense one-line-per-conversation list (state dot, title, time — details in a
-// hover card, tags collapse into one filter select). Right rail: state graph, sub-run tree,
+// hover card, tags collapse into one filter select). Right rail: phase graph, sub-run tree,
 // and the artifact panel. On wide screens the rails park FIXED in the viewport margins
 // beside the 1180px column; otherwise they are ordinary collapsible blocks above the chat.
 // A conversation is one continuous run: sending into a live reply injects; sending into a
@@ -22,7 +22,7 @@ import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createRail } from "/static/components/rail.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
-import { createStateGraph } from "/static/components/stategraph.js";
+import { createPhaseGraph } from "/static/components/phasegraph.js";
 import { createSubRunTree } from "/static/components/subruntree.js";
 import { adminToggle } from "/static/components/admintoggle.js";
 import { busy, chip, el, emptyState, relTime, toast, toastError } from "/static/util.js";
@@ -52,7 +52,7 @@ export async function render(view, slug, _query = {}) {
   const sideRail = el("details", { class: "run-rail left", open: true },
     el("summary", { class: "small" }, "conversations"), sideBody);
   const artRail = el("details", { class: "run-rail", open: true },
-    el("summary", { class: "small" }, "state & artifacts"), artBody);
+    el("summary", { class: "small" }, "phases & artifacts"), artBody);
   artRail.hidden = !slug;
   view.append(sideRail, main, artRail);
   wireRunRail(sideRail, "left");
@@ -250,9 +250,9 @@ export async function render(view, slug, _query = {}) {
     // R341: the SHARED rail component (components/rail.js) — the run view renders the same
     // one, so per-section collapse (F296, R262 pt1) is one implementation, not two.
     const rail = createRail(artBody);
-    // the state graph rides at the top of the artifact rail: current phase lit up,
+    // the phase graph rides at the top of the artifact rail: current phase lit up,
     // re-highlighted live on the live-stream state events below
-    const graphBody = rail.add("state", el("div", {}));
+    const graphBody = rail.add("phases", el("div", {}));
     const treeBody = detail.run_id ? rail.add("sub-runs", el("div", {})) : el("div", {});
     const filesBody = detail.run_id ? rail.add("files", el("div", {})) : el("div", {});
     // NO browser section here (F561, operator 2026-10-01: "we wanna remove the browser preview
@@ -268,8 +268,8 @@ export async function render(view, slug, _query = {}) {
     const bgBody = rail.add("background", el("div", { class: "bg-tasks" }));
     rail.toggle("background", false);
     const artsBody = rail.add("artifacts", el("div", {}));
-    const stateGraph = createStateGraph(graphBody, {
-      graphUrl: `/api/conversations/${slug}/stategraph`,
+    const phaseGraph = createPhaseGraph(graphBody, {
+      graphUrl: `/api/conversations/${slug}/phasegraph`,
       ...(detail.run_id ? { statsUrl: `/api/runs/${detail.run_id}/phases` } : {}) });
     const subRunTree = detail.run_id ? createSubRunTree(treeBody, {
       treeUrl: `/api/runs/${detail.run_id}/tree`, isLive: () => !TERMINAL.has(curState) }) : null;
@@ -365,9 +365,9 @@ export async function render(view, slug, _query = {}) {
       stateChip.className = `chip ${s}`;
       waiting.replaceChildren();
       if (WORKING.has(s)) waiting.append(busy(s === "queued" ? "queued for a slot…" : "working…"));
-      // the conversation state diagram lights the reply-cycle node from the live run state
+      // the conversation phase diagram lights the reply-cycle node from the live run state
       // (a conversation loops — it has no single workflow phase to highlight)
-      stateGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
+      phaseGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
       if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); subRunTree?.refresh();
                              fileActivity?.refresh(); }

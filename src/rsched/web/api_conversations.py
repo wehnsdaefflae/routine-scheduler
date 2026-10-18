@@ -1,5 +1,5 @@
 """Conversations API: living with one — the list, a message and its queued edits, delete,
-the state graph, and artifact + attachment serving.
+the phase graph, and artifact + attachment serving.
 
 A conversation is a routine-shaped dir under conversations_home (see conversations.py);
 its ONE run is continued in place — a message to a live run is an ordinary injection, a
@@ -202,17 +202,17 @@ async def delete_conversation(request: Request, slug: str) -> dict:
     await asyncio.to_thread(shutil.rmtree, info.cfg.dir)
     return {"ok": True}
 
-@router.get("/conversations/{slug}/stategraph")
-def stategraph(request: Request, slug: str) -> dict:
+@router.get("/conversations/{slug}/phasegraph")
+def phasegraph(request: Request, slug: str) -> dict:
     """The conversation's lifecycle graph (working ⇄ waiting for you) with the CURRENT node
     lit from the live run state — same shape as the routines endpoint so the artifact rail
-    renders it. A conversation is a loop, so its state IS its reply cycle, not the single
+    renders it. A conversation is a loop, so its phases ARE its reply cycle, not the single
     converse workflow phase (which is never written to phase.json, so the generic routine
-    state graph would never highlight a node).
+    phase graph would never highlight a node).
     """
     info = conversation_info(request, slug)
     last = info.last_run
-    return {"states": [dict(s) for s in conv_mod.CONVERSATION_STATES],
+    return {"phases": [dict(s) for s in conv_mod.CONVERSATION_PHASES],
             "current": conv_mod.conversation_phase(last.state if last else None)}
 
 

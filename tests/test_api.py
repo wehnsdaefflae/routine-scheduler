@@ -376,10 +376,10 @@ def test_file_read_guarded(client):
                  params={"path": "../../../etc/passwd"}).status_code == 404
 
 
-def test_stategraph_endpoint(client):
-    """The routine's stage modules ARE its state graph — nodes in main.md mention order,
+def test_phasegraph_endpoint(client):
+    """The routine's stage modules ARE its phase graph — nodes in main.md mention order,
     the current phase from the latest run's status.json (the stage module the run last
-    read; the executor stamps it)."""
+    read; the executor stamps it). Naming: CLAUDE.md "Phase, stage, state" (D193)."""
     c, tmp = client
     d = tmp / "routines" / "apir"
     (d / "stages").mkdir(exist_ok=True)
@@ -391,9 +391,9 @@ def test_stategraph_endpoint(client):
     run = d / "runs" / "20991231-070000"          # lexically latest, whatever else exists
     run.mkdir(parents=True, exist_ok=True)
     (run / "status.json").write_text('{"phase": "gather"}', encoding="utf-8")
-    g = c.get("/api/routines/apir/stategraph").json()
-    assert [s["name"] for s in g["states"]] == ["gather", "write"]
-    assert g["states"][1]["desc"] == "Step: emit"
+    g = c.get("/api/routines/apir/phasegraph").json()
+    assert [s["name"] for s in g["phases"]] == ["gather", "write"]
+    assert g["phases"][1]["desc"] == "Step: emit"
     assert g["current"] == "gather"
 
 

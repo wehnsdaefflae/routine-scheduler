@@ -160,8 +160,8 @@ def test_decisions_arrow_keys_survive_a_repaint_during_an_answer(ui, ui_page):
     assert ui_page.evaluate("document.activeElement.dataset.persist") == "answer-q-b"
 
 
-def test_state_graph_shows_phase_instrumentation(ui, ui_page):
-    """The run view's state-graph rail shows per-phase turns/tokens/time from the
+def test_phase_graph_shows_phase_instrumentation(ui, ui_page):
+    """The run view's phase-graph rail shows per-phase turns/tokens/time from the
     transcript — the instrument panel, not just a highlighted chain. The current phase
     is the run's recorded one (status.json), appended as its own node when the routine
     has no matching stage module."""
@@ -179,9 +179,9 @@ def test_state_graph_shows_phase_instrumentation(ui, ui_page):
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-130000")
-    node = ui_page.locator(".sg-node", has_text="only")
-    expect(node.locator(".sg-stats")).to_contain_text("2 turns")
-    expect(node.locator(".sg-stats")).to_contain_text("1.6k tok")
+    node = ui_page.locator(".pg-node", has_text="only")
+    expect(node.locator(".pg-stats")).to_contain_text("2 turns")
+    expect(node.locator(".pg-stats")).to_contain_text("1.6k tok")
     # AUDIT note: the turn count and timestamp stack VERTICALLY (.turnmeta) — the timestamp
     # sits under the turn count, not beside it, reclaiming horizontal space for the say text.
     meta = ui_page.locator(".turn .say .turnmeta").first
@@ -189,7 +189,7 @@ def test_state_graph_shows_phase_instrumentation(ui, ui_page):
     expect(meta.locator(".ts")).to_be_visible()
 
 
-def test_state_graph_marks_skipped_phases(ui, ui_page):
+def test_phase_graph_marks_skipped_phases(ui, ui_page):
     """A stage the run jumped over (no turn ever ran under its module) reads 'skipped',
     not checked-off — the diagram never claims work that didn't happen. Nodes come from
     the routine's stage modules, in main.md mention order."""
@@ -211,10 +211,10 @@ def test_state_graph_marks_skipped_phases(ui, ui_page):
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-133000")
-    expect(ui_page.locator(".sg-node", has_text="gather")).to_have_class("sg-node done")
-    skipped = ui_page.locator(".sg-node", has_text="analyse")
-    expect(skipped).to_have_class("sg-node done skipped")
-    expect(skipped.locator(".sg-stats")).to_have_text("skipped")
+    expect(ui_page.locator(".pg-node", has_text="gather")).to_have_class("pg-node done")
+    skipped = ui_page.locator(".pg-node", has_text="analyse")
+    expect(skipped).to_have_class("pg-node done skipped")
+    expect(skipped.locator(".pg-stats")).to_have_text("skipped")
 
 
 def test_run_rail_lists_file_activity(ui, ui_page):

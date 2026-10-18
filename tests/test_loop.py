@@ -1951,7 +1951,7 @@ def test_write_overwrite_grounding_survives_resume(make_routine, scripted, tmp_p
 def test_assistant_actions_carry_the_active_phase(make_routine, scripted):
     """Each assistant_action event is stamped with the phase that was active while it was
     produced — reading a stage module IS the transition (the executor stamps it; no
-    recipe bookkeeping) — the state-graph rail's per-phase instrumentation derives from
+    recipe bookkeeping) — the phase-graph rail's per-phase instrumentation derives from
     these stamps."""
     d = make_routine(slug="phased")
     (d / "stages").mkdir()
@@ -2752,7 +2752,7 @@ def test_schema_retry_debris_dropped_after_recovery(make_routine, scripted):
 
 def test_stage_read_tracked_live_in_status(make_routine, scripted):
     """Reading a stage module IS the run's state transition: ctx.phase follows it and
-    status.json (written every turn) carries the live phase — the state-graph diagram's
+    status.json (written every turn) carries the live phase — the phase-graph diagram's
     data path. A phase.json write is recipe-private state and moves nothing."""
     d = make_routine(slug="statusd")
     (d / "stages").mkdir()

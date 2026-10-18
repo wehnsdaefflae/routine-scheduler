@@ -1,28 +1,36 @@
-// A routine's state graph as a simple highlighted chain: one node per stage module
-// (server-side, /stategraph — the modules ARE the states, nothing parsed from prose),
-// the CURRENT phase lit up, states before it dimmed as done. setPhase() re-highlights
+// A routine's PHASE graph as a simple highlighted chain: one node per stage module
+// (server-side, /phasegraph — the modules ARE the phases, nothing parsed from prose),
+// the CURRENT phase lit up, phases before it dimmed as done. setPhase() re-highlights
 // live — the run tail's `state` events carry phase transitions (the engine stamps the
 // stage module each read_file enters into status.json).
+// NAMING (D193): the concept is a PHASE everywhere — the engine's persisted key, the API
+// field, this component. `stages/` is the recipe's FILE layout the nodes come from, and
+// `state` keeps its unrelated meanings (run state, the `state/` dir). CLAUDE.md holds the
+// one rule under "Phase, stage, state".
 // A recorded phase that matches no stage module is appended as its own node: the diagram
 // never lies about where the run says it is. With a `statsUrl` (/api/runs/…/phases) each
 // visited node also shows its instrumentation — turns · tokens · wall-clock · cost —
-// refreshed on every phase transition: the rail is the run's instrument panel. A state
+// refreshed on every phase transition: the rail is the run's instrument panel. A phase
 // BEFORE the current one that no turn ever ran under (the run never read its module)
 // is marked "skipped" rather than checked off — passed, not done.
+// A node whose phase HAS turns is a LINK to where that phase begins in the transcript
+// (statemap's `first_turn`): `turnHref(n)` from the host view builds the address, and the
+// run view lands and flashes the turn box. A phase with no recorded turn has nowhere to
+// go, so it stays a plain node rather than a link that dead-ends.
 
 import { api } from "/static/api.js";
 import { el, fmtCost, fmtDur, fmtNum } from "/static/util.js";
 
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
-export function createStateGraph(container, { graphUrl, statsUrl }) {
-  const box = el("div", { class: "stategraph" });
+export function createPhaseGraph(container, { graphUrl, statsUrl, turnHref }) {
+  const box = el("div", { class: "phasegraph" });
   container.append(box);
-  let states = [];
+  let phases = [];
   let phase = "";
   let loadError = "";    // graph fetch failure — distinct from "genuinely no stages"
-  let stats = {};        // norm(phase) → {turns, tokens, cost, elapsed_s}
-  let statsLoaded = false;  // only a LOADED stats map can prove a state was skipped
+  let stats = {};        // norm(phase) → {turns, tokens, cost, elapsed_s, first_turn}
+  let statsLoaded = false;  // only a LOADED stats map can prove a phase was skipped
   let unphased = null;   // turns from before the run entered any stage
 
   function statsLine(st) {
@@ -34,17 +42,28 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
     return parts.join(" · ");
   }
 
+  // The node itself: an <a> when there is a turn to land on, a <div> otherwise. Same class
+  // and same children either way, so the stylesheet and the browser suite see one node.
+  function nodeEl(attrs, ...kids) {
+    const turn = attrs.firstTurn;
+    const href = turn != null && turnHref ? turnHref(turn) : null;
+    delete attrs.firstTurn;
+    if (!href) return el("div", attrs, ...kids);
+    return el("a", { ...attrs, href, "data-turn-link": String(turn),
+      title: `${attrs.title || ""} — go to turn ${turn}, where this phase begins`.trim() }, ...kids);
+  }
+
   function renderInto() {
     box.replaceChildren();
-    if (!states.length && !phase) {
+    if (!phases.length && !phase) {
       box.append(el("div", { class: "faint small" }, loadError
-        ? `state graph unavailable — ${loadError}`
-        : "no state graph — this routine has no stage modules"));
+        ? `phase graph unavailable — ${loadError}`
+        : "no phase graph — this routine has no stage modules"));
       return;
     }
     const cur = norm(phase);
-    let idx = states.findIndex((s) => norm(s.name) === cur);
-    const rows = [...states];
+    let idx = phases.findIndex((s) => norm(s.name) === cur);
+    const rows = [...phases];
     if (phase && idx < 0) {          // a phase outside the parsed flow — show it anyway
       rows.push({ name: phase, desc: "(recorded phase — not one of the stage modules)" });
       idx = rows.length - 1;
@@ -59,18 +78,18 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
       const skipped = anyPhased && phase && i < idx && !st;
       const cls = !phase ? "todo" : skipped ? "done skipped"
         : i < idx ? "done" : i === idx ? "current" : "todo";
-      box.append(el("div", { class: `sg-node ${cls}`,
+      box.append(nodeEl({ class: `pg-node ${cls}`, firstTurn: st ? st.first_turn : null,
         title: skipped ? "skipped — the run recorded no turns in this phase" : s.desc || s.name },
-        el("span", { class: "sg-dot" }, i === idx && phase ? "●"
+        el("span", { class: "pg-dot" }, i === idx && phase ? "●"
           : skipped ? "»" : i < idx && phase ? "✓" : "○"),
-        el("span", { class: "sg-name" }, s.name),
-        st ? el("span", { class: "sg-stats", title: "this phase so far: turns · tokens · wall-clock · cost" },
+        el("span", { class: "pg-name" }, s.name),
+        st ? el("span", { class: "pg-stats", title: "this phase so far: turns · tokens · wall-clock · cost" },
           statsLine(st))
-           : skipped ? el("span", { class: "sg-stats" }, "skipped") : null));
-      if (i < rows.length - 1) box.append(el("div", { class: `sg-link ${i < idx ? "done" : ""}` }));
+           : skipped ? el("span", { class: "pg-stats" }, "skipped") : null));
+      if (i < rows.length - 1) box.append(el("div", { class: `pg-link ${i < idx ? "done" : ""}` }));
     });
     if (unphased?.turns) {
-      box.append(el("div", { class: "sg-foot" }, `before any phase: ${statsLine(unphased)}`));
+      box.append(el("div", { class: "pg-foot" }, `before any phase: ${statsLine(unphased)}`));
     }
   }
 
@@ -92,10 +111,10 @@ export function createStateGraph(container, { graphUrl, statsUrl }) {
   async function refresh() {
     try {
       const g = await api(graphUrl);
-      states = g.states || [];
+      phases = g.phases || [];
       phase = g.current || "";
       loadError = "";
-    } catch (err) { states = []; loadError = err.message || "fetch failed"; }
+    } catch (err) { phases = []; loadError = err.message || "fetch failed"; }
     renderInto();
     refreshStats();
   }

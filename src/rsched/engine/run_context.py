@@ -509,7 +509,7 @@ class RunContext:
         ones it actually entered (F521/R1681). Empty lists for a single-file recipe.
 
         Memoized on the stages ACTUALLY ENTERED, because that is the only input that moves
-        within a run: `stage_states` re-reads main.md, globs `stages/` and opens every module
+        within a run: `stage_phases` re-reads main.md, globs `stages/` and opens every module
         for its first heading, and `write_status` asks at least twice a turn — a 7-stage
         recipe paid ~16 file reads per turn for a list that changes when the run enters a new
         module, which on a 60-turn run is 7 derivations instead of 120.

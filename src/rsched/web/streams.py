@@ -69,7 +69,7 @@ async def run_stream(run_dir: Path, start_offset: int = 0) -> AsyncGenerator[dic
         # A changed pending question must ride its own state event even when state+phase are
         # unchanged (F93: the run-page question form only re-renders on a `state` event, so a
         # question that changes without a state/phase transition would never reach an open run
-        # page). phase transitions ride the same event — the state-graph diagram updates on them.
+        # page). phase transitions ride the same event — the phase-graph diagram updates on them.
         qid = question.get("qid") if isinstance(question, dict) else None
         if state and (state, phase, qid) != last_state:
             last_state = (state, phase, qid)

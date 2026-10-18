@@ -165,7 +165,7 @@ Two things follow from this that are worth knowing:
   message leads with a quoted `> re …` line the agent reads naturally, and the sent bubble shows the
   reference as a compact quote chip (✕ on the chip drops it before sending). A reply's corner also
   carries ⧉ copy, ⑂ branch from here, ⟲ rewind to here and ⚑ flag as refusal (below).
-- **Right — artifacts + state.** The deliverables the agent produces, a live state-graph card, and
+- **Right — artifacts + phases.** The deliverables the agent produces, a live phase-graph card, and
   a **files** card — which files the run read / wrote / edited, per-path counts straight from the
   transcript (subtasks and your slash commands included). Also folds to a rail so the chat gets the
   width.

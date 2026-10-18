@@ -17,6 +17,41 @@
  * views.css and base.css where the conversation rail shares it.
  */
 
+/* ---------- navigable rail nodes (D193): a phase node / sub-run row that LANDS somewhere ----
+ *
+ * A phase node (components/phasegraph.js) and a sub-run row (components/subruntree.js) are
+ * <a> elements whenever the read-model knows which turn they begin at — they navigate into the
+ * transcript (components/turnlink.js). The base `a` rule in base.css paints every link in the
+ * signal colour and underlines it on hover, which on a rail card would repaint the whole
+ * diagram: the node's OWN state colouring (done / current / skipped) is the information, and
+ * a blue chain says nothing a reader can use.
+ *
+ * So a navigable node inherits its colour from its state class and shows it is navigable the
+ * way the rest of the console does on hover — a plate behind the row — rather than by colour.
+ * Nodes that are NOT links are <div>s and never match any of this, which is exactly the
+ * difference a reader needs to see.
+ */
+.phasegraph a.pg-node,
+.subruntree a.sr-row {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.phasegraph a.pg-node:hover,
+.subruntree a.sr-row:hover {
+  background: var(--plate-2);
+  text-decoration: none;
+}
+
+/* Keyboard reach is the same reach: an <a href> is tabbable already, so it only needs to show
+ * where the focus is — with the console's own focus ring rather than the browser's default. */
+.phasegraph a.pg-node:focus-visible,
+.subruntree a.sr-row:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
 /* ---------- the jobs card (components/runjob.js): which job this run is working on ---------- */
 
 .runjob {

@@ -221,14 +221,18 @@ the limits (single-writer status.json preserved).
   `anticipated: <stage>` and `economics: {saving_tokens, cost, per_turn, breakeven_turns,
   horizon_turns, compact}` in its `compaction` transcript event, so a boundary pass is
   distinguishable from a forced one and the constants can be tuned from what the test did.
-- **Phase is derived, never bookkept**: the stage modules ARE the states — `statemap.py` builds the
-  UI's state-graph diagram from the routine's own `stages/*.md`,
+- **Phase is derived, never bookkept**: the stage modules ARE the phases — `statemap.py` builds the
+  UI's phase-graph diagram from the routine's own `stages/*.md`,
   in main.md first-mention order (nothing parsed from prose, so every routine has a diagram), and
   the engine tracks the run's live position from its stage-module READS: a `read_file` of
   `stages/<name>.md` stamps `ctx.phase` (executor) → status.json (every turn) → the run tail's `state`
-  event, which also fires on phase change (`/stategraph` endpoints,
-  `static/components/stategraph.js` — rendered in the run view's rail and the conversation artifact
-  rail, current phase highlighted live). The transcript renderer chapters the say stream with
+  event, which also fires on phase change (`/phasegraph` endpoints,
+  `static/components/phasegraph.js` — rendered in the run view's rail and the conversation artifact
+  rail, current phase highlighted live). Each node is a LINK into the transcript at the turn the
+  phase begins (`phase_stats.first_turn`), as each sub-run row links to the parent turn that
+  started the child (`subruntree.start_turn`) — one mechanism, `components/turnlink.js`: a turn box
+  carries `data-turn`, the address is `#/run/<id>?turn=N`, and landing opens the folds on the way
+  and flashes the box (`static/landing.js`). The transcript renderer chapters the say stream with
   labeled phase dividers from the same per-event `phase` stamp, so a run reads as a story. `state/phase.json` stays recipe-private state (the digest
   shows it); it does NOT drive the diagram. Every `assistant_action` transcript event is stamped
   with the ACTIVE phase, so the rail is also an instrument panel: `statemap.phase_stats` (served at
@@ -968,7 +972,7 @@ meet. A conversation's spine is its own **working plan**
   a run that committed a verified `reports/*.pdf`, with no way to register it) — are listed/served
   here and rendered in the chat's side panel (html sandboxed, md/img/pdf/csv/json
   inline); routines get the SAME panel on the run view (`api_routine_files` `/artifacts` + `/artifact`,
-  `components/artifacts.js` with `base: "routines"`), with the state-graph card on top.
+  `components/artifacts.js` with `base: "routines"`), with the phase-graph card on top.
   A file fetched for the panel or the files card is a blob URL, and a blob URL carries the
   console's ORIGIN — so a new tab opens one as itself only when its type cannot carry script
   (raster image, audio, video, PDF, plain text, an untyped download) and frames everything else
@@ -977,7 +981,7 @@ meet. A conversation's spine is its own **working plan**
   The RAIL those cards sit in is one component too (`components/rail.js`, R341): the run view
   and the conversation view render the same collapsible sections, remembered per browser —
   they were divergent copies, and only the conversation one could collapse (F296/R340).
-  WHICH sections the run rail has is `components/runrail.js` — artifacts, files, state,
+  WHICH sections the run rail has is `components/runrail.js` — artifacts, files, phases,
   sub-runs, goal, plus two added LAZILY only for a run that has one: `oversight`
   (`components/ladderstrip.js`) and `jobs` (`components/runjob.js`, F646 — which of the
   routine's jobs this run is working on, is owed, or checkpointed; docs/jobs.md).

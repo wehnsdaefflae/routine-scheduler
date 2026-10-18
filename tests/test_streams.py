@@ -70,7 +70,7 @@ async def test_run_stream_tails_appends_then_ends(tmp_path, monkeypatch):
 
 async def test_run_stream_emits_state_event_on_phase_change(tmp_path, monkeypatch):
     """A phase transition (same run state) fires its own state event carrying `phase` —
-    the UI's state-graph diagram updates on it."""
+    the UI's phase-graph diagram updates on it."""
     monkeypatch.setattr(streams, "POLL_S", 0.01)
     run_dir = _mk_run(tmp_path, "apir", TS, "running")
     atomic_write_json(run_dir / "status.json",

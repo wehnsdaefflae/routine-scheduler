@@ -122,7 +122,7 @@ function gripFor(place, cls, title, opts) {
   return handle;
 }
 
-/** The run/conversation side rails: `side` is "left" (conversation index) or "right" (state &
+/** The run/conversation side rails: `side` is "left" (conversation index) or "right" (phases &
  *  artifacts). The grip is the rail's SIBLING, never its child — a rail is its own scroll
  *  container and clips anything sitting on its border. Outside it, the grip is positioned by
  *  the rail's own width property, so it holds its place when the rail is hidden and is what

@@ -2,7 +2,8 @@
 // node with a state icon, its workflow pattern, and a per-node turn-budget meter (amber ≥85%,
 // red over). Fed by the read-model at /api/runs/<id>/tree (a walk of the on-disk sub/ tree).
 // Refreshes on demand (the run view calls refresh() on live-stream state events) and polls itself while
-// the run is live — the sibling of the state-graph rail card, but for within-run decomposition.
+// the run is live — the sibling of the phase-graph rail card, but for within-run decomposition.
+// Each row links to the parent turn that started the child (components/turnlink.js, D193).
 
 import { api } from "/static/api.js";
 import { el } from "/static/util.js";
@@ -14,10 +15,22 @@ const STATE_ICON = { running: "◐", ok: "●", partial: "◑", failed: "✕", a
 // nobody could name.
 const MODE_ICON = { sequential: "→", parallel: "⇉", oversight: "↑" };
 
-export function createSubRunTree(container, { treeUrl, isLive }) {
+export function createSubRunTree(container, { treeUrl, isLive, turnHref }) {
   const box = el("div", { class: "subruntree" });
   container.append(box);
   let timer = null;
+
+  // The row is a LINK to where the child begins in the PARENT's transcript (D193):
+  // read-model `start_turn`, addressed through components/turnlink.js. A node with no
+  // recorded start turn (a nested child, a resumed run's re-attached one) stays a plain
+  // row — a link that lands nowhere is worse than none.
+  function rowEl(n, attrs, ...kids) {
+    const href = n.start_turn != null && turnHref ? turnHref(n.start_turn) : null;
+    if (!href) return el("div", attrs, ...kids);
+    return el("a", { ...attrs, href, "data-turn-link": String(n.start_turn),
+      title: `${attrs.title || ""}\ngo to turn ${n.start_turn}, where this child was started`
+        .trim() }, ...kids);
+  }
 
   function node(n) {
     const st = n.state || "running";
@@ -38,7 +51,7 @@ export function createSubRunTree(container, { treeUrl, isLive }) {
     } else {
       kids.push(el("span", { class: "sr-turns faint small" }, `${used}t`));
     }
-    const row = el("div", { class: `sr-row sr-s-${st}`, title: n.summary || "" }, ...kids);
+    const row = rowEl(n, { class: `sr-row sr-s-${st}`, title: n.summary || "" }, ...kids);
     const wrap = el("div", { class: "sr-node" }, row);
     if (n.children && n.children.length) {
       const sub = el("div", { class: "sr-children" });

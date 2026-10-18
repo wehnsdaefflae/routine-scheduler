@@ -1,6 +1,6 @@
 """Routine config editing: general rules, the two permission layers, run-now and archive —
 the write half of the old api_routines, which keeps the read surfaces (cards, detail,
-health, the state graph). The generic validated `PATCH /routines/{slug}` lives in
+health, the phase graph). The generic validated `PATCH /routines/{slug}` lives in
 api_routine_patch.py and routes its two authority keys back through
 `write_permission_layers` here; a routine's artifacts and recipe files are
 api_routine_files.py.
