@@ -473,6 +473,13 @@ one you are about to touch, not all of them.
   `RunContext.add_usage` parks a reading made on a background thread and `background.collect` books
   it at the turn boundary, because folding into `ctx.usage` from the thread both races the loop's
   own fold and makes a turn's budget check depend on thread timing.
+  **A background result the run NEVER READ is said in `result.md`, both ways** (F715/D195):
+  `background.settle` returns the line `loopend.finish_run` appends, and
+  `engine/background_summary.settle_note` renders TWO distinct sentences — a call still running
+  has lost its result, one that landed after the last turn has a result nobody read, sitting in
+  the transcript as an `unread` observation. Keep them distinct (the reader's next move differs:
+  re-run versus read) and keep the silent case silent. The landed case used to say nothing at
+  all, which is exactly the flaw a run cannot flag for itself, having never been shown it.
   **Util output too large for its observation is SAVED, not lost** — `engine/outputs.py` spills the
   full captured text to `.util_outputs/<run-ts>/t<turn>-<util>.out` and the observation that lost the
   middle carries the path (so the store needs no index). ONLY truncated output is kept: an

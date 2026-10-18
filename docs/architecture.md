@@ -778,8 +778,11 @@ and the capabilities digest's catalog listing):
   real observation is appended at a later turn boundary by `background.collect`, beside
   `archival.collect` and `announce_finished_subruns`; `loopend` calls `background.settle`, which
   records a result that landed too late (`unread`) or a call still running (`abandoned`, its
-  in-flight model calls closed via `instrument.abandon_open_calls`) and names the loss in the run's
-  summary. A run that no longer wants a result CANCELS it — `kill handle=bg1` (D176 option (a):
+  in-flight model calls closed via `instrument.abandon_open_calls`) and names BOTH losses in the
+  run's summary — in two deliberately different sentences, because the abandoned call's result is
+  gone while the landed one's sits unread in the transcript and need only be read
+  (`engine/background_summary.settle_note`; F715/D195, the hidden-pending-call case a run cannot
+  flag for itself because it was never shown it). A run that read everything gets no line. A run that no longer wants a result CANCELS it — `kill handle=bg1` (D176 option (a):
   `n` stays the sub-workflow namespace, `handle` addresses a background call) routes to
   `background.cancel`, which drops the Pending from the live list AT ONCE, so `collect` cannot
   deliver it and the cap slot frees immediately. **What it stops depends on the kind.** For
