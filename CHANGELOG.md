@@ -15,6 +15,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.433.0] — 2026-10-18
+
+### Audio and video reach a model natively (D192)
+
+Audio and video could not reach a model at all: `endpoints/base.IMAGE_MIMES` plus `PDF_MIME` was
+the one media allowlist, and `guess_media_type` returned nothing for any other mime — so an audio
+file was refused before any fallback, not even the vision util. The operator's answer was "both
+audio and video natively", so both are built.
+
+- **One modality-tagged allowlist**, new pure `endpoints/media_types.py`: `MEDIA_MODALITIES` maps
+  mime → `image` / `pdf` / `audio` / `video`, and the size/pixel bounds, header readers and
+  `oversize_reason` moved with it (`base.py` had zero headroom and is now 383 lines).
+- **`supports_media_type` gained `audio` and `video` exactly as it has `pdf`**, with per-model
+  catalog bits carried through `ModelConfig` → `ModelRef` → `EndpointRegistry.resolve()` to two
+  checkboxes in Settings → Models, written only when true.
+- **`engine/mediaops.py` stops refusing** a mime the resolved model carries.
+- **The wire**: `endpoints/openai_media.py` carries OpenAI's `input_audio` part (`data` +
+  `format`, with the `audio/mpeg → mp3` mapping); `anthropic_api` reports false for both — the
+  `pdf` split, reversed. `WIRE_VIDEO` is false on both adapters: no provider publishes a video
+  part its servers agree on, so video is complete in everything that is this project's own
+  contract and is one constant away from live when one does.
+- **`NATIVE_MEDIA_MAX_BYTES` is documented AT the refusal** (7 MiB raw, ~33% base64 inflation,
+  and the `video-extract` / `deepgram` route instead). A video meets that bound almost at once,
+  which is a reason to say so plainly rather than to skip the modality.
+
+### The sidebar's phases and sub-runs link to their turn, and one name for the concept (D193)
+
+The run rail listed a routine's phases and its sub-runs and neither was clickable. Both now
+navigate to where that phase or sub-run BEGINS in the transcript: `readmodels/statemap` emits
+`first_turn` per phase from the fold it already ran, `readmodels/subruntree` emits `start_turn`,
+and new `static/components/turnlink.js` is the one mechanism (a turn box carries `data-turn`, the
+address is `#/run/<id>?turn=N`, one delegated listener lands in-page and flashes, and a `?turn=`
+deep link lands at mount). A node that knows no turn stays a plain div rather than a dead link.
+
+And the concept had three names — the engine persists `phase`, recipes keep `stages/`, the UI
+said "states" in a component called `stategraph.js`. Standardised on **`phase`** (the persisted
+key, the API field, and by far the least overloaded: `state*` has 1053 identifier hits in `src/`
+against `phase*`'s 211): `stategraph.js` → `phasegraph.js`, `/stategraph` → `/phasegraph`
+returning `{"phases": …}`, the rail section `state` → `phases`. `stages/` stays the recipe FILE
+layout — renaming recipe directories would touch every live routine for no behaviour gain.
+
+### A background call that landed unread now says so in `result.md` (F715, authorized by D195)
+
+`background.settle()` already distinguished two losses — a call still RUNNING, whose result is
+gone, and one that LANDED after the last turn, whose result exists unread in the transcript — and
+returned a summary line for only the first. A run that backgrounded a fetch, finished before
+reading it and drew its conclusions without it said nothing about that on the one surface anyone
+reads. Both cases now render, in deliberately different wording (`engine/background_summary.py`):
+one lost its answer, the other has an answer nobody read. Empty stays empty — a bracket on every
+run's summary is a bracket every reader learns to skip.
+
+### What the fleet owed and did not deliver is on a page (R2653)
+
+`GET /api/health/blocked` and its read model shipped long ago; no console ever read them, while
+the endpoint's own docstring explained that it ships a `vocabulary` payload "so the console
+renders a label it was not compiled with". The Stats page now has a **Blocked work** section
+(`static/views/stats-blocked.js`) rendering that fold — the server's label per row, the count,
+the window, the newest detail. It renders when there is NOTHING too: an absent panel and a
+healthy one are indistinguishable, and only one of them reassures.
+
+- **A finish gate that did not run is blocked work** (F678): `finish_gate_failed` joins
+  `health_stream.BLOCKED_EVENTS`. It leaves a run that reads as finished everywhere, because it
+  did finish — what did not happen is the judging, which no run page can show.
+- **An ungated write has a reader** (R2654): D158 traded a seal for a marker, and for two years
+  that marker's only consumer was its own test. The first write-shaped `shell` command of a run
+  now files one `ungated_write` health event naming the routine, run and turn. One row per run:
+  the per-call record is already on every observation the marker rode, and what the stream
+  answers is which run to open. `engine/shellwrite.py` holds the shapes and that reasoning.
+
+### A blank model role says the default its own role resolves to (D164-tail)
+
+0.430.0 added the `supervisor` row to the routine page's Models form, and every role's blank
+option was built from one template — `— system default (<model>) —` — so the supervisor row
+claimed the system model while its own description beside it said "blank = main". The label is
+now per role, from the code that resolves it: main and tool_call fall back to the server's system
+model, `supervisor` to this routine's `main` (following the main picker live, before any accept),
+and `uncensored` to nothing at all — an unset uncensored role means referral is off.
+
+### Smaller corrections
+
+- **The Browser chip and the sidebar entry open in different tabs** (D194): the dock's title
+  opens the full screen in a new tab — the preview is read beside something else — while the
+  sidebar's Browser entry is ordinary navigation and stays in this tab. One option on
+  `mountScreenDock`, so the title and the unreachable note's link can never disagree.
+- **A reminder field states its own cap** (F680): `remind.regex` (200) and `remind.description`
+  (400) were enforced on the write path and named in no field description, so the only way to
+  learn a limit was to lose a turn to it. `engine/schema_remind.py` interpolates both from the
+  constants that enforce them.
+- **A side field written inside `say` is corrected, not lost** (F679): `<note>…</note>` in `say`
+  was published as prose while the note was never filed, and nothing told the run.
+  `engine/sayfields.py` catches a whole element inside the schema-retry cycle, so the run
+  re-emits with the text in the field that keeps it. A bare `<note>` mention in prose is not the
+  mistake — these docs name the tag.
+
 ## [0.432.0] — 2026-10-18
 
 ### A child run can run its routine's scripts
