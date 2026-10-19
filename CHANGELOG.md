@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.434.1] — 2026-10-19
+
+### A release landing mid-run no longer kills the finish gate (F677)
+
+Three `finish_gate_failed` events on 2026-10-12 between 07:34 and 08:26 — the instance's first
+ever, in `scheduler-builder`, `llmsectest-weekday` and `global-utils-review` — all
+`AttributeError: 'GrantPolicy' object has no attribute 'jobs_on'` at `engine/jobops.py:43`.
+0.416.0 landed at 07:23 and renamed `taskops.py` → `jobops.py` with `tasks_on` → `jobs_on` while
+those runs already held a `GrantPolicy` built by their boot build. It failed OPEN (all three runs
+completed), so the cost was a jobs gate that silently did not run.
+
+The mechanism is sharper than the finding states. `finishgate` already imports eagerly (F658);
+what remained is `finishstands`' ONE deliberate lazy `from . import finishgate` — and since
+nothing imports `finishgate` at boot, that single import pulls the gate **and its whole subtree,
+`jobops` included, fresh from disk at the finish turn**. On a long run that moment is hours after
+boot; on a run that ships releases it is after its own release.
+
+Two halves, no contract change. `finishstands.pin()` resolves the finish path at run START
+(called from `loopsetup.configure`, while the build on disk is still the one this process booted
+with), idempotent and safe to skip. And the new `engine/buildskew.py` names a held-object/build
+mismatch in actionable words instead of leaving a bare AttributeError: the skew sentence rides
+both the transcript `error` event and the `finish_gate_failed` detail (plus a `build_skew`
+field), and `jobops`' raising line reads a capability SETTING through `buildskew.setting_on`,
+keeping its `grants is None → False` contract verbatim. `_one_line` gained a `limit` so the
+500-character cap cannot cut the cause away.
+
+Tested red first (`ImportError: cannot import name 'buildskew'` before any source change) with a
+stand-in policy that genuinely lacks `jobs_on` and carries `tasks_on`, held as `ctx.grants`
+against the current lazily-imported `jobops` — including that a routine with a due job is STILL
+HELD to it under the mismatch, so the fix cannot have weakened the gate into a no-op.
+
 ## [0.434.0] — 2026-10-19
 
 ### Hooks: one mechanism behind reports, consequence reminders and run injections (D152)
