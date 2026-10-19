@@ -159,10 +159,10 @@ assert not set(TUNING_FIELDS) - set(RoutinePatch.model_fields), (  # noqa: S101
 def _validate_tuning(tuning: dict) -> None:
     """Judge every tuning field BEFORE anything is written (the all-or-nothing contract).
 
-    The ladder's two knobs are counted in TURNS, so the floors are the engine's own
-    (`engine/ladder.MIN_OVERSIGHT_TURNS`, `config.base.DEFAULT_RUNG_HEIGHT`): a rung height
-    below the floor cannot judge an interval, and a rung with fewer turns than that finishes
-    with nothing — which reads as `continue` and is the one failure mode that is invisible.
+    Both ladder knobs are counted in TURNS and the ONE floor applied here is the engine's own
+    `engine/ladder.MIN_OVERSIGHT_TURNS` (`DEFAULT_RUNG_HEIGHT` is a default, not a floor, and
+    is neither applied nor imported — F725): under it a rung height cannot judge an interval,
+    and a rung with fewer turns finishes with nothing, which reads as `continue` — invisibly.
     """
     level = tuning.get("deliberation")
     if level is not None and level not in DELIBERATION_LEVELS:

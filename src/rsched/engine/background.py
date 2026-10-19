@@ -251,7 +251,7 @@ def cancel(loop, handle: str) -> dict:
       `read_rule` — the work runs inside the interpreter, where Python offers no interruption
       point. There the honest statement stands: the delivery stops, the work does not.
 
-    Both ways, two things always hold:
+    Both ways, three things always hold:
 
     * the observation will NOT reach the run — no boundary message, no `collect` append;
     * the cap slot frees AT ONCE, so the next flagged action is not refused (D166);
