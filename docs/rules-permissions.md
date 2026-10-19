@@ -463,7 +463,7 @@ capabilities:
   remind_confirm: always        # curated-reminder approval: always | creations | never
   runs: last                    # previous-run read depth: none | last | all
   reminders: local              # consequence reminders: none | local | global
-  tasks: off                    # the job layer: off | on (docs/jobs.md)
+  jobs: off                     # the job layer: off | on (docs/jobs.md)
 ```
 
 A new routine's default is its settings pattern's; with no pattern at all it is
@@ -471,14 +471,15 @@ A new routine's default is its settings pattern's; with no pattern at all it is
 reserved utils, the last run readable, and `reminders: local`. `read_rule`, the `util` action,
 memory and the routine's own scripts are not listed because they are not gated.
 
-`runs`, `reminders`, `tasks` and the three approval dials are SETTINGS: yours per routine, never switched
+`runs`, `reminders`, `jobs` and the three approval dials are SETTINGS: yours per routine, never switched
 on by a permission and kept by the floor with none behind them. `reminders: local` is the
 default because a caution a run leaves itself about its own actions is ordinary conduct; at
 `local` a run writes its own reminders and applies them beside every curated one that reaches
 it; `global` also lets it write the curated store — the curator's setting, every write approved
-under `remind_confirm`. See [reminders](reminders.md). `tasks: on` makes the routine keep its
-standing work as TASKS it creates and manages with the `job` action, processing every task due
-in a run before that run may end — see [tasks](jobs.md). A settings pattern written before a
+under `remind_confirm`. See [reminders](reminders.md). `jobs: on` makes the routine keep its
+standing work as JOBS it creates and manages with the `job` action, processing every job due
+in a run before that run may end — see [jobs](jobs.md). (`tasks:` is the deprecated spelling,
+still read as an alias — `jobs_compat.SETTING_ALIAS` — and not what a new routine writes.) A settings pattern written before a
 setting existed compares as holding its all-off value (`patterns.fields.canonical`), so adding
 one never marks every follower as departing from its pattern.
 
@@ -559,6 +560,7 @@ routine shares, a reach outside the routine's own world.
 | `outbound-mail` | `gmail:send`, `fau-mail:send` — send email from the user's own mailboxes | opt-in |
 | `steward-publishing` | nothing; expects READ access to the shared kit — publish this routine's page on the Steward hub (see [status pages](status-pages.md)) | opt-in |
 | `browser-sessions` | `browser-session` — drive the shared browser that is already signed in (see [browser sessions](browser-sessions.md)) | opt-in |
+| `desktop-sessions` | `desktop` — drive this routine's OWN desktop VM the way a person would, its granted folders mounted inside (see [desktop sessions](desktop-sessions.md)) | opt-in |
 | `darknet` | `darknet` — read Tor hidden services (see [darknet](darknet.md)) | opt-in |
 | `usenet` | `usenet:post` — post articles over NNTP (see [usenet](usenet.md)) | opt-in |
 | `notifications` | `ntfy` — push a notice to the user's own devices | opt-in |
