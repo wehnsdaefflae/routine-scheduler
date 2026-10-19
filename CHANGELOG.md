@@ -15,6 +15,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.434.0] — 2026-10-19
+
+### Hooks: one mechanism behind reports, consequence reminders and run injections (D152)
+
+The operator's order, 2026-10-18: *"implement hooks first as a single mechanism unifying a), b)
+and c) and make sure f695 is a special case of that as well"* — a) reports/messages, b)
+consequence reminders, c) run injections. This is step 2 of that campaign: the mechanism BEHIND
+the existing surfaces, with **no behaviour change and nothing visible to any routine**.
+
+A hook is **five fields** — trigger, addressee, payload, delivery, disposition — and each of the
+three mechanisms is ONE configuration of them. No mechanism adds a field or a vocabulary value,
+which is the test that this is one mechanism and not three stores sharing a name. Two rules fall
+out and bound what a hook can do: **the run tree is the only addressing scheme**, and
+**`hold_before_action` is the only delivery moment that can change what runs** — everything else
+rides an observation or a prompt section, which is why the reminder half is the risky one.
+
+New `src/rsched/hooks/`: the `Hook` record and the vocabularies (`TRIGGERS`, `TURN_MOMENTS`,
+`TRIGGER_KINDS`, `HOLDING_KINDS`, `ADDRESSEE_KINDS`, `DELIVERIES`, `DISPOSITIONS`, `SOURCES`)
+plus `addressee()`, the one spelling another run has to parse; and `store.py`, the append-only
+`.control/hooks.jsonl` with `record_report` / `record_reminder` / `record_injection`. It holds no
+lock and mints no id of its own: a row's identity is the originating mechanism's (`R<n>`,
+`rem-…`, `inj-<run_id>-t<turn>`), so there is no read-modify-write to serialize and a replayed
+leg cannot double-count an injection. `engine/hookmirror.py` is the seam that gives those pure
+stores a run's context, and the three live paths — `reports.file_report`,
+`engine/remind_write.persist` / `remind._set_for_other`, `engine/control.inject_user_message` —
+mirror through it AFTER their real write, so a row records a delivery and not an intent, and a
+failing mirror can never fail the thing it records (asserted, not promised in prose).
+
+**Two writers are deliberate for now.** `reports.jsonl` and the reminders store have readers
+OUTSIDE this engine — the console's Decisions page, self-audit's folds, the per-routine fire
+tallies whose history is the evidence that tunes a pattern — so a hard cutover would invalidate
+the operator's own backlog counts on the day it shipped. The duplication ends in the campaign's
+last step, once the surfaces ride the one mechanism. What the store adds today is the one place
+where *"what hooks exist in this instance"* is answerable at all.
+
+Paid for under the size ratchet by an extraction the code already implied: the reminder WRITE
+path left `engine/remind.py` (633 → 605) for the new `engine/remind_write.py`, and
+`reports.message_text` moved to `report_detail.py`, where the delivered PROSE now sits beside the
+delivered BOUND.
+
+### A closure with nothing to close is refused, not dropped (D196)
+
+The operator, 2026-10-18: *"Refuse it loudly — a report carrying closes with supersedes but no
+answers/settles is rejected with a message naming what closes needs, which changes behaviour for
+existing callers."* The break is intended, not a regression to soften.
+
+`closes` used to be NORMALIZED to False when neither `answers` nor `settles` was present: the
+filing was accepted, nothing recorded the closure, and the sender believed a thread was closed
+that was not. The action layer already refused that shape for a run; the other entrance — an
+out-of-band caller building its own `Disposal`, which is how the web layer and batch scripts file
+— dropped it in silence. `supersedes` is not one of the faces a closure can have, and the
+refusal says so: folding rows makes this report their thread, which is the opposite of ending it.
+`Disposal` moves to `src/rsched/report_disposal.py` (a pure value with rules, beside
+`report_detail`'s pure formatting; `reports.py` 393 → 358) and is re-exported under its old name.
+
+### The console says a background call was cancelled, and a kill names its handle (F723)
+
+`kill handle=bg1` rendered as **"sub-workflow #undefined terminated"**: the confirmation read a
+sub-workflow NUMBER from an action carrying a background HANDLE, so the one confirmation a
+cancelling run gets named nothing. The terminal had the same error (`kill: #None`). And a
+cancelled call's own observation matched none of the three background branches, falling through to
+the util branch as `result — undefined → exit undefined` with no state at all. It now says it was
+cancelled, which handle it was, and whether the WORK stopped or only its delivery.
+
+New `static/components/obs-background.js` owns all four endings a background call can have
+(started, cancelled, unread, abandoned), their states and their wording, so the state and the
+sentence cannot disagree — and that extraction is what pays for the feature in
+`static/components/transcript.js`, frozen at its ceiling (772 → 764). The cancelled state is
+styled in a new `static/obs.css` (views.css is at its own ceiling; the bar is per file) and is
+SOLID, not dashed: dashed means "no verdict yet", and a cancel is the one ending whose reason is
+known. `tests/test_stylesheet_tokens.py` now gates every `static/*.css` by glob — the new sheet
+was unguarded, the same shape as the defect it was added for.
+
+### A run stamp is UTC, so the run-start bound is too (F727)
+
+`engine/assist_predicates._run_started()` parsed the UTC `run_ts` with `.astimezone()`, attaching
+the host zone, so every "since the run began" window was off by the host's offset — 2 h here in
+summer. `ledger.st_mtime >= _run_started(ctx)` therefore counted a ledger written up to two hours
+BEFORE the run as written during it, and the missing-reasoning assist silently never fired. Now
+read as UTC like every other reader of the stamp (`registry.parse_run_ts`, `runevidence`,
+`daemon/gate_prepare`). The test fixture `_age_ledger` repeated the same error and cancelled it
+out on a positive-offset host; fixed in the same change. Pinned by OFFSET ARITHMETIC in
+`tests/test_assist_run_started.py`, never against a named zone: every `/usr/share/zoneinfo` file
+on this host is byte-identical to `Europe/Berlin` and `tzdata` is not installed, so a named-zone
+test would pass for the wrong reason.
+
 ## [0.433.2] — 2026-10-18
 
 ### A flag is not a util name: `util list --json` answered with the `json` util (F720)
