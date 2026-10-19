@@ -26,6 +26,8 @@ import { answerForm } from "/static/components/answerform.js";
 import { newTabHref } from "/static/components/blobtab.js";
 import { highlightJson } from "/static/components/code.js";
 import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
+import { backgroundState, backgroundText, killBrief, killText }
+  from "/static/components/obs-background.js";
 import { el, fmtTime, fmtTokens, fullOutput, compressionInfo, toast } from "/static/util.js";
 
 // Mirror of engine/actionschema.py BRIEF_FIELD (the source of truth; static/ is no-build and
@@ -268,7 +270,11 @@ export function createTranscript(container, opts = {}) {
       ? `${a.name ?? ""}${Array.isArray(a.args) && a.args.length ? " " + a.args.join(" ") : "  (no args)"}`.slice(0, 200)
       : a.kind === "read_file" && Array.isArray(a.paths)
       ? a.paths.join(", ").slice(0, 200)
-      : String(a[BRIEF_FIELD[a.kind]] ?? "").slice(0, 200);
+      // A kill carrying a background HANDLE: `BRIEF_FIELD.kill` is `n` and stays so (the map is
+      // held in lockstep with engine/actionschema.py by tests/test_actions.py), so the brief
+      // would be blank for the whole handle namespace — obs-background.js names it instead.
+      : killBrief(a)
+      ?? String(a[BRIEF_FIELD[a.kind]] ?? "").slice(0, 200);
     const turn = el("div", { class: "turn", "data-turn": ev.turn ?? null },   // D193: the rail links here
       el("div", { class: "say" },
         // turn count + timestamp stack vertically (.turnmeta) so the timestamp sits UNDER
@@ -356,15 +362,11 @@ export function createTranscript(container, opts = {}) {
 
   function obsState(o) {
     if (!o) return "";
-    //   running — D118: the call was handed to a background thread and the turn came back at
-    //             once. Nothing is known about its outcome yet, which is a different thing
-    //             from success and from failure; the REAL observation arrives as its own row
-    //             at a later turn and carries the ordinary state.
-    if (o.background && o.started) return "running";
-    //   lost    — a background call the run never read: it landed after the last turn
-    //             (`unread`) or was still running when the run ended (`abandoned`). The result
-    //             may be right there in the row, and still nothing acted on it.
-    if (o.background && (o.unread || o.abandoned)) return "lost";
+    //   running / lost / cancelled — the three states only a BACKGROUND call can be in, worded
+    //   and decided by components/obs-background.js beside the rows themselves (D118/D176), so
+    //   the state and the sentence can never disagree about what the row is.
+    const bg = backgroundState(o);
+    if (bg) return bg;
     if (o.kind === "reminder_hold" || o.kind === "assist_hold") return "held";
     if (o.missing || o.declined || o.rejected || o.callers) return "refused";
     // A write or edit that carried a script (engine/thenscript.py) LANDED — so what the row
@@ -411,28 +413,15 @@ export function createTranscript(container, opts = {}) {
   function addObservation(ev) {
     const o = ev.payload;
     let text;
-    if (o.background && o.started) {
-      // D118: the call is RUNNING. It has no exit code and no output yet, so it must be
-      // rendered here, above the per-kind branches — the util branch below would print
-      // "exit undefined", which is exactly the misrender the secret-gate branch exists to
-      // prevent for the other callable-with-no-exit case.
-      text = `⏳ ${o.kind} running in the background as ${o.handle}`
-        + ` — ${o.brief || ""}\nits result arrives as its own row at a later turn`;
-    } else if (o.background && o.abandoned) {
-      text = `${o.kind} ${o.handle} was still running when the run ended — its result is lost`
-        + (o.llm_calls_abandoned ? ` (${o.llm_calls_abandoned} model call(s) closed)` : "");
-    } else if (o.background && o.unread) {
-      // A result that LANDED after the run's last turn. Seen in the render (2026-10-04) and
-      // fixed there: with only a border colour to go on, this row's summary read
-      // `result — websearch → exit 0 …`, character for character the ordinary success above
-      // it, and its body `42 hits` said nothing about nobody having read them. A reader
-      // scanning summaries — which is how a transcript is read — saw a clean result and had
-      // no way to know the run never acted on it. The class assertion in the browser test
-      // passed throughout, because the class was never what was wrong.
-      text = `NEVER READ BY THE RUN — ${o.kind} ${o.handle} finished after the last turn, so `
-        + "nothing acted on this result:\n"
-        + (o.name ? `${o.name} → exit ${o.exit}\n` : "")
-        + (o.stdout || "") + (o.stderr ? `\n[stderr] ${o.stderr}` : "");
+    // Every ending a BACKGROUND call can have — started, cancelled, unread, abandoned — is
+    // worded by components/obs-background.js, which owns that vocabulary (D118/D176). It must
+    // come before the per-kind branches: none of those rows has an exit code, and the util
+    // branch below would print "exit undefined" — the misrender the secret-gate branch exists
+    // to prevent for the other callable-with-no-exit case. A LANDED background result returns
+    // null and falls through, rendered exactly as a synchronous call of its kind would be.
+    const bgText = backgroundText(o);
+    if (bgText !== null) {
+      text = bgText;
     } else if ((o.kind === "util" || o.kind === "script") && (o.pending_secrets || o.declined_secrets)) {
       // The secret gate stopped the call before it ran — no exit code exists, and rendering one
       // read as "exit undefined". Names only for a PENDING request (the run's own ask); a
@@ -484,7 +473,10 @@ export function createTranscript(container, opts = {}) {
         `#${r.n} "${r.label}" [${r.workflow}] ${r.state} · ${r.turns} turns · ${r.elapsed_s}s`)
         .join("\n") || "no sub-workflows";
     } else if (o.kind === "kill") {
-      text = o.error || `sub-workflow #${o.n} ${o.already_finished ? "had already finished" : "terminated"}`;
+      // Two namespaces, one action (D176 option (a)): `n` a sub-workflow, `handle` a background
+      // call. Reading the number from both is what made `kill handle=bg1` render
+      // "sub-workflow #undefined terminated" — see components/obs-background.js killText.
+      text = killText(o);
     } else if (o.kind === "wait") {
       text = o.error || ((o.finished || []).map((f) =>
         `#${f.n} "${f.label}" finished (${f.status}, ${f.turns} turns):\n${f.summary}`)

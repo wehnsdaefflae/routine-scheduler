@@ -819,7 +819,11 @@ and the capabilities digest's catalog listing):
   because that is the only documentation a run meets at the moment it decides. A cancelled call is recorded with
   `cancelled: true` rather than `abandoned`, so a reader can tell a deliberate drop from a run
   that ran out of turns. All these records are `observation` events carrying
-  `background`/`handle`/`started_turn` — payload EXTENSIONS, no new event types. Built on the ARCHIVAL shape, deliberately not on
+  `background`/`handle`/`started_turn` — payload EXTENSIONS, no new event types. The console
+  turns all four endings into sentences in ONE module, `static/components/obs-background.js`
+  (plus the `cancelled` row state in `static/obs.css`), which is also where the `kill`
+  confirmation chooses its namespace: `handle` when the action carried one, `n` otherwise — F723
+  was that choice missing, rendering "sub-workflow #undefined terminated" for every cancel. Built on the ARCHIVAL shape, deliberately not on
   `DetachedManager`: a daemon-ticked multi-process unit would not start until the next tick, by
   which time the reply's process is gone. A MUTATION may not carry the flag (a later synchronous
   action could read state the deferred one has not written yet — that needs a dependency/barrier

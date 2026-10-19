@@ -43,6 +43,20 @@ def test_render_assistant_action_carries_turn_say_and_kind_brief():
     assert "finish" in fin_line and "partial" in fin_line
 
 
+def test_render_a_kill_names_whichever_namespace_it_addressed():
+    """One kill action, TWO namespaces (D176 option (a)): `n` a sub-workflow, `handle` a
+    background call. Reading `n` for both printed "#None" for every handle-addressed kill — the
+    terminal half of F723, whose console half rendered "sub-workflow #undefined terminated"."""
+    handle = _render_event({"type": "assistant_action", "turn": 5,
+                            "payload": {"kind": "kill", "say": "s", "handle": "bg1"}})
+    assert "bg1" in handle, handle
+    assert "None" not in handle, handle
+
+    number = _render_event({"type": "assistant_action", "turn": 6,
+                            "payload": {"kind": "kill", "say": "s", "n": 2}})
+    assert "#2" in number, number
+
+
 def test_render_observation_variants():
     assert "exit 0" in _render_event({"type": "observation", "payload": {
         "kind": "util", "name": "websearch", "exit": 0}})

@@ -143,6 +143,21 @@ cannot offer.
   that neither appears when there is nothing to report).
 - **No new transcript event types**: the started record and the real observation are both
   `observation` events carrying `background` and `handle` (plus `started_turn` on the delivery).
+- **The console renders those payloads in ONE place** — `static/components/obs-background.js`,
+  which owns every ending a backgrounded call can have (`started`, `cancelled`, `unread`,
+  `abandoned`) and the `kill` confirmation that ends one. Its own module because a background
+  call has four endings where every other kind has one, and because `components/transcript.js`
+  sits at its ratchet ceiling. Each ending has its own row state, and the states are the ones the
+  payload distinguishes rather than a tidier shorter list: `running` (dashed — no verdict exists
+  yet), `lost` (a result nobody read) and `cancelled` (solid — the one ending whose reason is
+  known; `static/obs.css`). F723 is what that costs when it is missing: a cancelled call matched
+  no branch, fell through to the ordinary util branch, and rendered `undefined → exit undefined`
+  with no state at all, while `kill handle=bg1` read **"sub-workflow #undefined terminated"** —
+  the renderer took a sub-workflow NUMBER from an action carrying a HANDLE, so the one
+  confirmation a cancelling run gets named nothing, in the vocabulary of the other namespace.
+  Both are pinned by `tests/ui/test_cancelled_background_row.py`, which asserts the rendered
+  TEXT: the class was never what was wrong. The terminal renderer had the same bug in its action
+  brief (`cli_render.py`, `tests/test_cli.py`).
 
 ### Phase 4 — the cap, the budget, and who may use it
 
