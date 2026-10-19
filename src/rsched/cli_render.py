@@ -31,7 +31,12 @@ def _render_event(obj: dict) -> str:  # noqa: PLR0911 — one return per event t
                  "llm": (p.get("prompt") or "")[:60],
                  "spawn": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
                  "subtask": f"{p.get('label') or ''} [{p.get('workflow') or 'general-task'}]",
-                 "kill": f"#{p.get('n')}", "wait": "all" if p.get("all") else
+                 # one kill, two namespaces (D176 option (a)): a sub-workflow NUMBER or a
+                 # background call's string HANDLE. Reading `n` for both printed "#None" for
+                 # every handle-addressed kill — the terminal half of F723.
+                 "kill": (f"handle={p['handle']}" if p.get("handle")
+                          else f"#{p.get('n')}"),
+                 "wait": "all" if p.get("all") else
                  (f"#{p.get('n')}" if p.get("n") else "any"),
                  "ask_user": (p.get("question") or "")[:60],
                  "finish": f"{p.get('status')}" }.get(

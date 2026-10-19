@@ -1,0 +1,25 @@
+/* Observation-row states that arrived after views.css was frozen.
+
+   Its own file for rail.css's reason, stated in index.html: views.css is over the repo's
+   350-line house bar and held at its ratchet ceiling, so an addition belongs in a new
+   stylesheet exactly as it belongs in a new module (CLAUDE.md Standards,
+   tests/test_file_size.py). Loaded after views.css, so a rule here wins a specificity tie.
+
+   Everything else about an action row's outcome — the vocabulary, the palette, and why an
+   ordinary nonzero exit is deliberately NOT styled — lives at `.obs-collapse` in views.css.
+   Colour here is a token and nothing else; the console's own rule.
+
+   CANCELLED (F723) — the run called `kill handle=…` and `engine/background.py` recorded the
+   call rather than dropping it. SIGNAL, because this is the machine at work and nothing waits
+   on a person, and the same palette `.ev.cancelled` already uses for a stopped call.
+   SOLID, which is the whole distinction from `.obs-running` and `.obs-lost`: this system draws
+   a dashed edge for "nothing is known about this work", and a cancel is the opposite — the one
+   ending whose reason is known. Quiet weight, not `.obs-held`'s full weight and marker: the row
+   is history, and nothing is waiting on a decision. */
+.obs-cancelled > summary {
+  border-left: 3px solid var(--signal);
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal-dim) 55%, var(--deck));
+}
+.obs-cancelled > summary::before { content: "✕ "; color: var(--signal); }
+.obs-cancelled[open] > summary::before { content: "✕ "; }

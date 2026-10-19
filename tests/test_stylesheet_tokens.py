@@ -17,6 +17,12 @@ from pathlib import Path
 STATIC = Path(__file__).resolve().parents[1] / "static"
 BASE = (STATIC / "base.css").read_text(encoding="utf-8")
 VIEWS = (STATIC / "views.css").read_text(encoding="utf-8")
+#: Every OTHER stylesheet the console loads. base.css and views.css both sit over the house bar
+#: at their ratchet ceilings, so an addition ships as a NEW stylesheet (index.html says so at
+#: each `<link>`) — and the rules below are about a stylesheet, not about two filenames. Without
+#: this each new file arrived unchecked: static/obs.css (F723) was the fourth.
+AUX = {p.name: p.read_text(encoding="utf-8") for p in sorted(STATIC.glob("*.css"))
+       if p.name not in ("base.css", "views.css")}
 
 #: A colour written out rather than read from a token — `%23` is a `#` inside a data URI, which is
 #: where the magnifier's literal hid.
@@ -38,6 +44,25 @@ def test_views_css_adds_no_colour_of_its_own():
     leaks = [sel for sel, body in _rules(VIEWS)
              if COLOUR_LITERAL.search(body) and sel not in OWN_GROUND]
     assert not leaks, f"views.css colours that are not tokens: {leaks}"
+
+
+def test_every_other_stylesheet_adds_no_colour_and_no_type_of_its_own():
+    """The same rule views.css carries, for every stylesheet beside it.
+
+    `rail.css`, `dev.css` and `obs.css` exist only because the two big sheets are frozen at
+    their ratchet ceilings — they are views.css by another name, and a literal colour hides in
+    the theme its author was using whichever file it sits in.
+    """
+    assert AUX, "no auxiliary stylesheets found — the glob or the static dir moved"
+    for name, css in AUX.items():
+        for sel, body in _rules(css):
+            if sel in OWN_GROUND:
+                continue
+            assert not COLOUR_LITERAL.search(body), (
+                f"{name} {sel} spells a colour instead of a token: {body.strip()}")
+            for prop, value in re.findall(r"(?<![\w-])(font-family|font)\s*:\s*([^;]+)", body):
+                assert value.strip() == "inherit" or "var(--f-" in value, (
+                    f"{name} {sel} spells its own {prop}: {value.strip()}")
 
 
 def test_base_css_colours_are_tokens_defined_for_both_themes():
