@@ -76,8 +76,10 @@ def reserve_finish(loop, spent: dict) -> None:
     text = (f"OBSERVATION (budget spent): {spent['message']}. This is your LAST turn — the "
             "engine executes nothing else. Reply with `finish`, status `partial` if work is "
             "unfinished, and put everything that matters into the summary: what you "
-            "established, what changed on disk, and precisely where to pick up. That summary "
-            "is all that survives.")
+            "established, what changed on disk, and precisely where to pick up. Be honest in "
+            "your response: name what is unfinished, what you could not get working and what "
+            "you found wrong — this is the ending where a flaw is easiest to leave out and "
+            "most expensive to lose. That summary is all that survives.")
     loop.ctx.transcript.event("user_injection", {"text": text, "source": "engine"})
     loop.messages.append({"role": "user", "content": text})
 

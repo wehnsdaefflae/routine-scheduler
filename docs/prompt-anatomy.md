@@ -525,12 +525,32 @@ last-outcome — and the *next* run's system prompt quotes it in the STATE DIGES
 handoff. That is why the schema demands a DETAILED 8-20 line summary: it is the only part
 of the conversation that survives.
 
+**What the summary owes about its own flaws** (D195, `harness_contract`). Two opposite failures
+are stated in one paragraph of the contract, because a reader of either needs the other. The
+first is a CLAIM that outruns the evidence — *"Finishing with claims of unperformed work is the
+single worst failure this system knows"* — and the engine has said it for a long time. The second
+is the OMISSION of a flaw the run knows about, and it arrived with
+[arXiv 2609.36139](https://arxiv.org/pdf/2609.36139), *"Language Models Are 'Insecure'
+Reporters"*: handed logs with a planted negative result, GPT-5.5 flagged it in **2 of 200**
+reports, and a short honesty prompt appended to the instruction asking for the report took that
+to **190 of 200** (abstract p. 1; §3 p. 5). That intervention is quoted VERBATIM — *"Be honest in
+your response."* — since the paper's own alternatives ("Be critical", "Be thorough", "Be
+skeptical") measured worse (Figures 6 and 7), so a rewrite would be an untested prompt. The
+contract then names what to surface (the defect noticed, the test that would not go green, the
+half not built, the measurement that undercuts the reported result) and closes with *an honest
+`partial` beats an overclaimed `ok`*. It sits in the harness contract rather than in the `summary`
+field's description for three reasons: message 0 is the one body `window.clamp_to_cap` never
+evicts, so it is still in context on the turn the summary is written; it is unconditional, where a
+schema field description is projected per run; and `engine/actionschema.py` is over the 350-line
+bar and may only shrink. `tests/test_finish_honesty.py` pins all of it, and F715 (0.433.0) is its
+mechanism half — an instruction cannot surface a flaw the surface itself drops.
+
 **The reserved finish turn.** A budget violation does NOT end the run behind the model's
 back. The first violation spends a one-time reserve: the action schema narrows to `finish`
 and one more turn is granted, carrying
 
 ```
-OBSERVATION (budget spent): <violation>. This is your LAST turn — the engine executes nothing else. Reply with `finish`, status `partial` if work is unfinished, and put everything that matters into the summary: what you established, what changed on disk, and precisely where to pick up. That summary is all that survives.
+OBSERVATION (budget spent): <violation>. This is your LAST turn — the engine executes nothing else. Reply with `finish`, status `partial` if work is unfinished, and put everything that matters into the summary: what you established, what changed on disk, and precisely where to pick up. Be honest in your response: name what is unfinished, what you could not get working and what you found wrong — this is the ending where a flaw is easiest to leave out and most expensive to lose. That summary is all that survives.
 ```
 
 so the summary is always the model's own. A run can therefore overrun a budget by exactly
@@ -581,7 +601,7 @@ that the schema does not define is drift, and `tests/test_prompt_anatomy.py` fai
 ```
 You are the orchestrator of the routine "Job radar" (job-radar), run job-radar:20260712-070000 (schedule: 0 7 * * *). This conversation IS the run: every turn you reply with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The "say" field is your narration: lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences when you decide between options, change direction, or hit a surprise. Any action may also carry an optional "note" — the engine files it to state/notes.md with a turn stamp at NO turn cost, and the next run's digest carries it forward; before finishing, fold what still matters into your report or memory. (What belongs in a note: the schema's `note` description below.)
 
-The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this conversation, one per turn, each answered by an observation before your next reply. Emit exactly ONE action per reply — as the action call OR as one JSON object, never both and never a second after it: the engine runs only the FIRST action a reply carries and hands every later one back NOT EXECUTED, because it was written before the first one's observation existed. A platform hint may suggest batching independent tool calls; it does NOT apply here — batch related file reads through a single action's `paths` list instead. Never state or summarize results that no observation here has shown — in a `say` as much as in a finish: a change you planned or drafted while thinking has not happened until an observation shows it. Finishing with claims of unperformed work is the single worst failure this system knows. The engine rejects a top-level finish(ok) before any action ran.
+The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this conversation, one per turn, each answered by an observation before your next reply. Emit exactly ONE action per reply — as the action call OR as one JSON object, never both and never a second after it: the engine runs only the FIRST action a reply carries and hands every later one back NOT EXECUTED, because it was written before the first one's observation existed. A platform hint may suggest batching independent tool calls; it does NOT apply here — batch related file reads through a single action's `paths` list instead. Never state or summarize results that no observation here has shown — in a `say` as much as in a finish: a change you planned or drafted while thinking has not happened until an observation shows it. Finishing with claims of unperformed work is the single worst failure this system knows. The engine rejects a top-level finish(ok) before any action ran. The opposite failure is OMITTING from your own account a flaw you know about — the defect you noticed, the test you could not get green, the half you did not build, the measurement that undercuts the result you are reporting. No warning about unsupported claims covers it: a flaw that was weighed and left out reads exactly like one that never existed, so the account passes as a clean success either way. Be honest in your response. Name the flaw that would change what a reader concludes — in the `say` and in the finish summary, where it is read — and an honest `partial` beats an overclaimed `ok`.
 
 The workflow below is your single entry point. Detailed, stage-specific instructions may live in separate `stages/<name>.md` files (the state digest lists them) — read the one for the stage you are on with read_file, ON DEMAND, instead of loading them all up front. Keep your context lean.
 

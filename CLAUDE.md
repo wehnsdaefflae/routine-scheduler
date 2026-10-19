@@ -509,6 +509,15 @@ one you are about to touch, not all of them.
   the transcript as an `unread` observation. Keep them distinct (the reader's next move differs:
   re-run versus read) and keep the silent case silent. The landed case used to say nothing at
   all, which is exactly the flaw a run cannot flag for itself, having never been shown it.
+  Its INSTRUCTION half is the other side of D195: the harness contract (`engine/harness.py`)
+  states two opposite failures in ONE paragraph — a claim that outruns the evidence, and the
+  OMISSION of a flaw the run does know about. The second is the measured intervention of
+  [arXiv 2609.36139](https://arxiv.org/pdf/2609.36139) (*"Language Models Are 'Insecure'
+  Reporters"*; a planted negative result was flagged in 2 of 200 reports, 190 of 200 with the
+  prompt), quoted VERBATIM as *"Be honest in your response."* — the paper's own alternatives
+  ("Be critical", "Be thorough", "Be skeptical") measured worse, so do NOT reword it, and do not
+  move it behind a capability, a kind projection or a per-run schema field: a summary is written
+  by every run. `tests/test_finish_honesty.py` pins the wording, the paragraph and the doc.
   **Util output too large for its observation is SAVED, not lost** — `engine/outputs.py` spills the
   full captured text to `.util_outputs/<run-ts>/t<turn>-<util>.out` and the observation that lost the
   middle carries the path (so the store needs no index). ONLY truncated output is kept: an
