@@ -39,6 +39,37 @@ def test_each_surface_vocabulary_is_exactly_its_patch_model():
     assert set(ConversationPatch.model_fields) == configflow.CONVERSATION_PATCH_FIELDS
 
 
+def test_the_server_vocabulary_is_exactly_its_patch_model():
+    """The THIRD surface (the instance's own config.yaml, 2026-10-19). Same pin as the two
+    above: `engine/config_bridge.server_shape` refuses a stray key at filing time against
+    `configflow.SERVER_PATCH_FIELDS`, and `PATCH /api/settings/server` accepts
+    `ServerPatch` — a drift between them is either a refusal of a field that works or a
+    decision card wearing a button that 422s."""
+    from rsched.web.settings.serverpatch import ServerPatch
+
+    assert set(ServerPatch.model_fields) == configflow.SERVER_PATCH_FIELDS
+
+
+def test_every_server_patch_field_is_a_real_server_config_field():
+    """A patchable field that `ServerConfig` does not have would be written to config.yaml and
+    then reported as an unknown key by the loader — saved, ignored, and nobody told."""
+    from rsched.config import ServerConfig
+
+    stray = sorted(configflow.SERVER_PATCH_FIELDS - set(ServerConfig.model_fields))
+    assert not stray, f"not ServerConfig fields: {stray}"
+
+
+def test_the_server_surface_seals_the_authority_fields_by_omission():
+    """The allow-list is FAIL-CLOSED, and this is the claim that makes it a boundary: the auth
+    tokens, the bind address, the homes and the credential-carrying CATALOGS are patchable only
+    if someone adds them here deliberately. A `ServerConfig` field added tomorrow is sealed on
+    the day it lands, because the set names fields rather than excluding them."""
+    for sealed in ("token", "routine_token", "bind", "port", "routines_home", "libraries_home",
+                   "source_repo", "endpoints", "models", "machines", "decision_endpoints",
+                   "decision_models"):
+        assert sealed not in configflow.SERVER_PATCH_FIELDS, sealed
+
+
 def test_every_classification_names_a_half_and_a_reason():
     for field, (half, why) in configflow.CLASSIFICATION.items():
         assert half in (configflow.LIVE, configflow.NEXT_RUN), field

@@ -85,7 +85,9 @@ def patch_shape(patch: dict | None, target: str = "", *, conversation: bool = Fa
     """
     if not patch:
         return ""
-    from ..configflow import CONVERSATION_PATCH_FIELDS, ROUTINE_PATCH_FIELDS
+    from ..configflow import CONVERSATION_PATCH_FIELDS, ROUTINE_PATCH_FIELDS, SERVER_KEY
+    if SERVER_KEY in patch:
+        return server_shape(patch, target)
     # `patch_target` has already run and POPPED the routing key, so the surface is read from
     # the target it resolved, never from the body — which no longer says
     if conversation and not target:
@@ -151,6 +153,58 @@ def patch_nested(patch: dict | None) -> str:
             if level not in ("", None) and level not in EFFORT_LEVELS)):
         return (f"config_patch efforts: {', '.join(bad)} — a reasoning effort is one of "
                 f"{', '.join(EFFORT_LEVELS)}, or null for the provider's own default.")
+    return ""
+
+
+def server_shape(patch: dict, target: str = "") -> str:
+    """Refuse a `{"server": {...}}` patch the apply route would reject — the INSTANCE surface
+    (operator, 2026-10-19), judged here like the other two so a server proposal never reaches
+    the Decisions page wearing a button that cannot work.
+
+    Three refusals, each a state the apply could not land:
+
+    - a body mixing `server` with routine keys. One patch, one surface, one PATCH route: a
+      mixed body would need two applies, and the half that landed would settle the record as
+      handled while the other half silently did not.
+    - a `server` value that is not a mapping, or is empty. `{"server": {}}` reads as a change
+      and applies nothing.
+    - a key outside `SERVER_PATCH_FIELDS`. That set is an ALLOW-LIST of fields with a
+      validated runtime writer behind them, so the auth tokens, the bind address, the homes
+      and the endpoint/model/machine/decision CATALOGS are refused by not being in it — the
+      catalogs because an entry carries credentials and has its own CRUD routes, not because
+      editing them is unthinkable.
+
+    The allow-list is enforced AGAIN in the apply route, which is the half that matters:
+    R2702's caution is from the routine that once held a capability it had merely inherited,
+    and a check living only in the caller's restraint is not a boundary. This check exists so
+    the refusal arrives on the turn that files the ask, with the vocabulary named.
+    """
+    from ..configflow import SERVER_KEY, SERVER_PATCH_FIELDS
+
+    if target:
+        return (f"config_patch names routine {target!r} AND the {SERVER_KEY!r} surface: the "
+                f"instance config is nobody's routine. Drop `routine` to propose a server "
+                f"change, or drop `{SERVER_KEY}` to propose a routine change.")
+    if elsewhere := sorted(k for k in patch if k != SERVER_KEY):
+        return (f"config_patch mixes the {SERVER_KEY!r} surface with "
+                f"{', '.join(repr(k) for k in elsewhere)}: one patch is applied by ONE route, "
+                f"so a mixed body would half-land. File the server change and the routine "
+                f"change as two decisions.")
+    body = patch[SERVER_KEY]
+    if not isinstance(body, dict):
+        return (f"config_patch {SERVER_KEY!r} must be an object of instance config fields, "
+                f'e.g. {{"{SERVER_KEY}": {{"decision_model": "jev"}}}}.')
+    if not body:
+        return (f"config_patch {SERVER_KEY!r} is empty: it names no field to apply. "
+                f"Patchable here: {', '.join(sorted(SERVER_PATCH_FIELDS))}.")
+    if stray := sorted(k for k in body if k not in SERVER_PATCH_FIELDS):
+        return (f"config_patch {SERVER_KEY} key(s) {', '.join(repr(k) for k in stray)} are not "
+                f"patchable instance config — the apply would refuse them and the user would "
+                f"be left with a decision he can read and not take. The catalogs "
+                f"(`endpoints`, `models`, `machines`, `decision_endpoints`, `decision_models`) "
+                f"have their own settings routes, and the auth tokens, bind address and homes "
+                f"are install-time. Patchable here: "
+                f"{', '.join(sorted(SERVER_PATCH_FIELDS))}.")
     return ""
 
 

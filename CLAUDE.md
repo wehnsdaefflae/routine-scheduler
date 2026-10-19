@@ -871,7 +871,11 @@ by a test, by the engine, or by a past incident.
   `tests/test_configflow.py` fails on an undeclared field. The same file pins
   `ROUTINE_PATCH_FIELDS`/`CONVERSATION_PATCH_FIELDS` to the two models one-to-one — the
   vocabulary a filed `config_patch` is checked in, per the surface its apply will PATCH — so a
-  new PATCH field is two declarations, not one. Both PATCH handlers signal a live run
+  new PATCH field is two declarations, not one. The INSTANCE is the third surface
+  (`{"server": {...}}` → `PATCH /api/settings/server`), and its `SERVER_PATCH_FIELDS` is an
+  ALLOW-LIST, not a model's field set: a new `ServerConfig` field is sealed until someone adds
+  it there deliberately, and the auth tokens, bind address, homes and credential catalogs are
+  sealed by omission. Both PATCH handlers signal a live run
   through `control.json` and the engine appends ONE ENGINE NOTE naming EVERY changed field and
   which half it is in — a change that silently does or does not reach a run is the bug.
 

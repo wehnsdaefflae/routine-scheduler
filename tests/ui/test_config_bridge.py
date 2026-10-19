@@ -126,6 +126,31 @@ def test_answering_keeps_the_card_and_its_apply_button(ui, ui_page):
           .get("budgets", {}).get("max_turns") == 95, what="the patch applied after answering")
 
 
+def test_a_server_patch_applies_to_the_instance_config(ui, ui_page):
+    """The THIRD surface (operator, 2026-10-19): a patch naming `{"server": {...}}` PATCHes
+    /api/settings/server and lands in the instance's own config.yaml — not in any routine's.
+
+    Loads what the person sees, because the whole defect R2702 records is a decision card whose
+    button cannot work: before this surface existed, an approved instance-wide change had no
+    route at all and sat 10 days. The copy must say INSTANCE, so the operator is not told a
+    routine was changed.
+    """
+    ui.seed_question("uir", "q-20261019-150000-1",
+                     "Point the system model at the catalog entry m?",
+                     extra={"config_patch": {"server": {"compaction_model": "m"}}})
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator(".question-item", has_text="Point the system model").first
+    expect(card).to_be_visible()
+    expect(card).to_contain_text("proposed instance config change")
+    card.get_by_role("button", name="approve & apply").click()
+    expect(card).to_contain_text("applied")
+    expect(card).to_contain_text("the instance")
+    until(lambda: read_yaml(ui.tmp / "config.yaml").get("compaction_model") == "m",
+          what="the instance patch")
+    # and nothing was written to the asking routine
+    assert "compaction_model" not in read_yaml(ui.routines / "uir" / "routine.yaml")
+
+
 def test_answering_an_ordinary_question_still_clears_it(ui, ui_page):
     """The control case, and the reason the keep-the-card change is scoped to patch-carrying
     cards: a question with NO proposal must still disappear on answering, exactly as before.

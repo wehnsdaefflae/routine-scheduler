@@ -52,8 +52,8 @@ def test_allowed_fields_widens_from_nothing_to_everything_unsealed():
 def test_always_is_the_default_and_applies_nothing():
     assert not configdial.may_apply({"budgets": {"max_turns": 50}}, "always")
     assert configdial.refusals({"budgets": {"max_turns": 50}}, "always") == [
-        "config_confirm is 'always' for this routine: every config change it proposes is the "
-        "operator's decision."]
+        ("config_confirm is 'always' for this routine: every config change it proposes is the "
+         "operator's decision.")]
 
 
 def test_own_fields_applies_an_in_list_self_patch():

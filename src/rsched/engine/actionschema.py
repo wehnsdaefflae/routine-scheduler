@@ -489,16 +489,16 @@ ACTION_SCHEMA: dict = {
         },
         "config_patch": {
             "type": "object",
-            "description": "ask_user: OPTIONAL — a proposed routine.yaml CONFIG change the user "
-                           "can one-click apply from the Decisions page (a run can never edit its "
-                           "own config). Shape = the PATCH /routines body, e.g. "
-                           '{"budgets": {"max_turns": 100}} or {"schedule": {"friendly": '
-                           '{"frequency": "hourly", "minute": 0}}}. Use it when a revise-recipe '
-                           "run is asked for a schedule / budget / model / permission / fs-roots "
-                           "change it cannot make itself. To propose the change for ANOTHER "
-                           'routine, name it: {"routine": "suedlink-wlf", "budgets": '
-                           '{"max_turns": 120}} — the apply patches that routine, not you. A '
-                           "slug naming no installed routine is refused on this turn.",
+            "description": "ask_user: OPTIONAL — a proposed CONFIG change the user can one-click "
+                           "apply from the Decisions page (a run can never edit its own "
+                           'config): {"budgets": {"max_turns": 100}} or {"schedule": '
+                           '{"friendly": {"frequency": "hourly", "minute": 0}}} — the PATCH '
+                           "/routines body, for a schedule / budget / model / permission / "
+                           "fs-roots change the run cannot make itself. For ANOTHER routine: "
+                           '{"routine": "suedlink-wlf", "budgets": {"max_turns": 120}} — the '
+                           "apply patches that routine, not you, and an uninstalled slug is "
+                           'refused this turn. For the INSTANCE: {"server": {"decision_model": '
+                           '"jev"}} — its own field list; the catalogs and auth fields are not.',
         },
         "request": {
             "type": "string",

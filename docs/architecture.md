@@ -1562,6 +1562,20 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   test file); `engine/config_bridge.patch_shape` refuses, on the turn the ask is filed,
   any key outside the surface the apply will PATCH — a conversation's own proposal (the record
   lands in a conversation) against `ConversationPatch`, everything else against `RoutinePatch`.
+  **A THIRD surface is the INSTANCE's own config** (operator, 2026-10-19), named by the patch
+  as `{"server": {...}}` and applied by `PATCH /api/settings/server`
+  (`web/settings/serverpatch.py`). Its vocabulary, `configflow.SERVER_PATCH_FIELDS`, is an
+  ALLOW-LIST rather than a model's field set: it names only fields with a validated runtime
+  writer behind them (the sandbox mode and the other runtime knobs, and the single-name
+  POINTERS into the catalogs), so the auth tokens, the bind address, the homes and the
+  credential-carrying catalogs are sealed by omission — and a field added to `ServerConfig`
+  tomorrow is sealed on the day it lands. `config_bridge.server_shape` refuses a stray key, an
+  empty body, and a body MIXING `server` with routine fields (one patch, one apply route: a
+  mixed body would half-land and settle the decision as handled). The allow-list is enforced
+  again IN the apply route, which is the half that makes it a boundary rather than a caller's
+  restraint. Before this surface existed a run holding the operator's explicit approval for an
+  instance-wide change had no mechanism to land it at all, and two approved changes sat 10 and
+  3 days unapplied (R2702).
   One VALUE is judged there too: a `trial` (`config_bridge.trial_value` — its shape and its
   models' catalog membership), because a model trial is proposed for routines the proposer does
   not run, and its refusal teaches the shape. `"trial": null` clears one: `patch_routine` keeps

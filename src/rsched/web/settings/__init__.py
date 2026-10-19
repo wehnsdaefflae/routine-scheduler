@@ -19,11 +19,12 @@ from . import (
     restart,
     secrets,
     server,
+    serverpatch,
     source,
     system_models,
 )
 
 router = APIRouter(tags=["settings"])
 for _mod in (endpoints, endpoint_probe, decisions, source, github, oauth, machines, secrets,
-             server, restart, pause, system_models):
+             server, serverpatch, restart, pause, system_models):
     router.include_router(_mod.router)

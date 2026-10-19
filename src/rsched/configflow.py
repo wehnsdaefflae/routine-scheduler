@@ -116,6 +116,36 @@ CONVERSATION_PATCH_FIELDS = frozenset({
     "deliberation", "fs_read_roots", "fs_write_roots",
 })
 
+#: The THIRD surface: the instance's own `config.yaml`, named by a patch as
+#: `{"server": {...}}` (operator, 2026-10-19). Until it existed, a run holding the operator's
+#: explicit approval for an instance-wide change had no mechanism at all to land it — two
+#: approved changes sat 10 and 3 days in config-optimizer's ledger (R2702), because every
+#: `config_patch` was judged against the two ROUTINE-shaped vocabularies above and a server key
+#: was refused at filing.
+#:
+#: FAIL-CLOSED, and that is the whole safety property: this set is an ALLOW-LIST naming only
+#: fields that already have a validated runtime writer behind them, so every other
+#: `ServerConfig` field — the auth tokens, the bind address, the homes, the source repo, and the
+#: endpoint / model / machine / decision CATALOGS — is sealed by not being here, and a field
+#: added to `ServerConfig` tomorrow is sealed on the day it lands rather than quietly becoming
+#: patchable. `tests/test_configflow.py` pins the set to `ServerPatch` one-to-one and asserts
+#: every member is a real `ServerConfig` field, so neither half can drift from the other.
+SERVER_PATCH_FIELDS = frozenset({
+    # the runtime knobs (`PUT /api/settings/server`)
+    "sandbox", "max_concurrent_runs", "registry_rescan_s", "github_client_id",
+    "browser_view_url", "desktop_broker_url", "desktop_view_url",
+    # the single-name pointers INTO the catalogs — the pointer is patchable, the catalog is not
+    # (`PUT /api/settings/system-model`, `/compaction-model`, `/decision-defaults`)
+    "system_model", "system_effort", "compaction_model", "compaction_effort",
+    "decision_model", "decision_media_model",
+})
+
+#: The routing key that names the server surface inside a `config_patch`. A patch carries this
+#: key OR routine fields, never both: one patch, one surface, one apply route — a mixed body
+#: would need two PATCHes to land, and a half-applied config change is the state the Decisions
+#: page must never be in.
+SERVER_KEY = "server"
+
 
 def classify(fields: list[str]) -> tuple[list[str], list[str], list[str]]:
     """Split the PATCH's fields into (live, next_run, unknown), preserving order.

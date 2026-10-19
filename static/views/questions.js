@@ -11,6 +11,7 @@ import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
 import { pendingBand } from "/static/components/pending.js";
 import { answerForm } from "/static/components/answerform.js";
 import { linkifyRefs } from "/static/components/reflinks.js";
+import { configProposal } from "/static/components/configproposal.js";
 import { md, summaryLine } from "/static/md.js";
 import { act, chip, el, emptyState, groupHead, skeleton, toast, toastError, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
@@ -194,85 +195,16 @@ export async function render(view, query = {}) {
     renderList({ focus });
   }
 
-  // Config bridge, as ONE factory both card shapes call (R2189). A revise run can't edit
-  // routine.yaml, so it proposes the change as a config_patch on the decision; approving it
-  // here PATCHes the owning config and resolves the ask. Each home has its own PATCH surface
-  // (R102: a conversation's decision must hit /api/conversations — PATCHing /api/routines with
-  // a conversation slug 404s, so the patch silently never landed); a detached task / clarify
-  // workspace has none — its proposal renders read-only rather than pretending a button would
-  // work.
-  //
-  // Why a factory and not one node moved between panels: an ANSWERED card renders through the
-  // settled-receipt branch of `item`, a different element tree with no proposal body in it, so
-  // the open card's node is not reachable from there. `append` RELOCATES a mounted node, so
-  // reusing one instance carried the live apply button into whatever had just been wiped.
-  // Each panel therefore mounts its OWN proposal with its own handler; `host` is the element
-  // that panel wants the applied-receipt written into, and `clearWarn` drops its blocking tint.
-  function configProposal(q, { host, clearWarn }) {
-    if (!q.config_patch || q.meta || q.config_patch_applied) return null;
-    // The engine resolved and validated the target at ask time (engine/interact.py) against
-    // the ROUTINES home whoever asked, so a named target is always a routine; without one the
-    // proposal is the asker's own and patches the asker's own surface.
-    const home = q.config_target ? "routines"
-      : q.conversation ? "conversations" : q.background ? "" : "routines";
-    // what the button patches is named by the surface it posts to, never by who asked: a
-    // conversation's proposal for a routine patches a ROUTINE
-    const noun = home === "conversations" ? "conversation" : "routine";
-    // D123/F458: a config_patch may be FOR another routine (config-optimizer's whole job), so
-    // the patch goes to the TARGET, not to whoever asked — the old hardwiring to q.routine
-    // silently rewrote the asker's own config and reported success (R1343). That holds for
-    // a conversation too: forcing q.routine here posted the patch to /api/routines/<the
-    // conversation>.
-    const target = q.config_target || q.routine;
-    const elsewhere = target !== q.routine;
-    const btn = home ? el("button", { class: "btn small primary" }, "approve & apply") : null;
-    if (btn) btn.onclick = async () => {
-      btn.disabled = true;
-      try {
-        const res = await api(`/api/${home}/${target}`,
-          { method: "PATCH", body: q.config_patch });
-        // Honesty gate (R102): a field the endpoint doesn't support is silently dropped
-        // server-side — verify every patch key was actually applied before telling the
-        // routine (and the user) it was. `updated` is the endpoint's applied-field list.
-        const missing = Object.keys(q.config_patch)
-          .filter((k) => !(res.updated || []).includes(k));
-        if (missing.length) {
-          throw new Error(`${missing.join(", ")}: not applicable to a ${noun} — `
-            + "the proposal needs a different route; answer in text instead");
-        }
-        // An ALREADY-ANSWERED card must not be answered again: the answer route is what files
-        // a decision, and re-filing one that is settled would resurrect it as open. Applying
-        // the patch is the whole act there; the answer already exists.
-        if (!q.answered) {
-          await api(`/api/questions/${q.qid}/answer`,
-            { method: "POST", body: { text: "approved & applied the proposed config change" } });
-        }
-        q.config_patch_applied = true;
-        toast(elsewhere ? `config change applied to ${target}`
-                        : `config change applied to the ${noun}`);
-        clearWarn();
-        host.replaceChildren(el("div", { class: "flow-note" },
-          chip("applied", "ok"),
-          el("span", {}, elsewhere ? `the config change was applied to ${target}`
-                                   : `the config change was applied to the ${noun}`)));
-        state.items = state.items.filter((x) => x.qid !== q.qid);
-        syncToolbar();
-      } catch (err) { toastError(err, 5000); btn.disabled = false; }
-    };
-    return el("div", { class: "flow-note mt" },
-      el("div", { class: "small", style: "margin-bottom:4px" },
-        home ? (elsewhere
-               ? `proposed config change for ${target} — ${q.routine} asked for it on that `
-                 + `${noun}'s behalf; approving it patches `
-                 + `${target}, not ${q.routine}:`
-               : "proposed config change — a run can't edit routine.yaml, so approve it here:")
-             : "proposed config change — this decision's home has no config to patch "
-               + "(a detached task / setup workspace is one-shot); answer in text, and make "
-               + "any lasting change on the owning conversation or routine:"),
-      el("pre", { class: "doc", style: "margin:0 0 6px;white-space:pre-wrap" },
-        JSON.stringify(q.config_patch, null, 2)),
-      btn);
-  }
+  // The config bridge — the factory both card shapes call — lives in
+  // components/configproposal.js: three PATCH surfaces (a routine, a conversation, the
+  // INSTANCE) and the honesty gate that verifies every key actually landed.
+  const proposal = (q, opts) => configProposal(q, {
+    ...opts,
+    onApplied: () => {
+      state.items = state.items.filter((x) => x.qid !== q.qid);
+      syncToolbar();
+    },
+  });
 
   function item(q, index) {
     // Already answered (the inbox file exists; the routine consumes it on its next turn/run):
@@ -322,7 +254,7 @@ export async function render(view, query = {}) {
       say(q.answer, settledNote());
       // The unapplied proposal, kept alive on the receipt (see the comment at the return).
       // `host` is this card's own body, so applying it writes its receipt where the answer is.
-      const settledBar = configProposal(q, { host: body, clearWarn: () => {} });
+      const settledBar = proposal(q, { host: body, clearWarn: () => {} });
       const settledConfig = settledBar
         ? el("div", { class: "mt" },
             el("div", { class: "small faint" },
@@ -501,7 +433,7 @@ export async function render(view, query = {}) {
     // `panel` exists, so `clearWarn` reaches the panel through the slot rather than closing
     // over a name still in its temporal dead zone.
     const configSlot = el("div", {});
-    const configBar = configProposal(q, {
+    const configBar = proposal(q, {
       host: controls, clearWarn: () => configSlot.closest(".question-item")?.classList.remove("warn"),
     });
     if (configBar) configSlot.append(configBar);

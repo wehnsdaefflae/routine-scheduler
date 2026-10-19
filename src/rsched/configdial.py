@@ -129,20 +129,20 @@ def refusals(patch: dict, level: str, *, cross_routine: bool = False) -> list[st
     if not patch:
         return ["the config_patch names no field to apply."]
     if sealed := _sealed_keys(patch):
-        return [f"config_patch key(s) {', '.join(repr(k) for k in sealed)} are SEALED: no "
-                f"{DIAL} value lets a run change its own authority surface, role bindings or "
-                f"sandbox roots autonomously. This stays the operator's decision."]
+        return [(f"config_patch key(s) {', '.join(repr(k) for k in sealed)} are SEALED: no "
+                 f"{DIAL} value lets a run change its own authority surface, role bindings or "
+                 f"sandbox roots autonomously. This stays the operator's decision.")]
     if cross_routine:
-        return [f"the config_patch names another routine: a change to someone else's config "
-                f"is always the operator's decision, whatever this routine's {DIAL} says."]
+        return [(f"the config_patch names another routine: a change to someone else's config "
+                 f"is always the operator's decision, whatever this routine's {DIAL} says.")]
     if level not in ("own_fields", "never"):
-        return [f"{DIAL} is 'always' for this routine: every config change it proposes is the "
-                f"operator's decision."]
+        return [(f"{DIAL} is 'always' for this routine: every config change it proposes is the "
+                 f"operator's decision.")]
     allowed = allowed_fields(level)
     if stray := sorted(k for k in patch if k not in allowed):
-        return [f"{DIAL} is {level!r} and config_patch key(s) "
-                f"{', '.join(repr(k) for k in stray)} are not autonomous at that level. "
-                f"Autonomous here: {', '.join(sorted(allowed)) or 'nothing'}."]
+        return [(f"{DIAL} is {level!r} and config_patch key(s) "
+                 f"{', '.join(repr(k) for k in stray)} are not autonomous at that level. "
+                 f"Autonomous here: {', '.join(sorted(allowed)) or 'nothing'}.")]
     return []
 
 
