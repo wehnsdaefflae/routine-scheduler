@@ -9,6 +9,12 @@ chain leaves no member run, a capped trigger leaves a dark routine, a commit tha
 leaves files no history holds. A failure has a run page; a fire that never happened has
 nothing at all, which is how F316's week of missed lane fires passed with zero signal.
 
+The unit of due work is not always a FIRE. `wrong_turn_detected` (R2652) is a TURN that came
+back well-formed and wrong — paid for at full prompt price, its work re-driven or lost — and it
+belongs here for the reason `finish_gate_failed` does: the run reads as ordinary on every other
+surface, because a rejected turn recovers and the run finishes `ok`, so what did not happen is
+invisible to any run page.
+
 `blocked_fleet` is that fold: one row per (event, subject) with a count and the newest
 detail, so "what is the fleet not doing" is answered by a fetch instead of by ssh.
 `budget_endings` is the per-routine one — which of a routine's partial finishes a BUDGET
@@ -81,6 +87,16 @@ BLOCKED_EVENTS: dict[str, str] = {
     "obligation_overdue": "something a person asked of this routine, or approved, has stayed "
                           "unfinished for over a week — every run answers for it and none has "
                           "met it (engine/obligations.py)",
+    # R2652. The unit of due work here is the TURN: a turn that came back well-formed and
+    # WRONG was paid for at full prompt price and produced nothing, and the engine re-drove
+    # it. `attempts_exhausted` is the extreme — the turn produced nothing at all and the run
+    # ended. It belongs on this fold for the reason `finish_gate_failed` does: the run reads as
+    # ordinary on every other surface (a rejection recovers, so the run finishes `ok`), and
+    # what did not happen is invisible to any run page. It is also the ONLY in-product reader
+    # of the stream, so an event left off it is read by the nightly ssh recipe or by nobody.
+    "wrong_turn_detected": "a turn came back well-formed and WRONG — rejected, repeated, or "
+                           "out of schema attempts — so the turn was paid for and the work it "
+                           "owed was re-driven or lost (engine/wrongturn.py)",
 }
 
 #: Partial finishes, split by whether a budget forced them (health_events.py's own

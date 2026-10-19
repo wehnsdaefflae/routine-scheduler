@@ -562,15 +562,17 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. Nine health events record the opposite —
+Everything above measures runs that HAPPENED. Ten health events record the opposite —
 `fire_refused`, `lane_fire_refused`, `lane_fire_paused`, `lane_chain_stopped`,
-`lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped`, `commit_failed` and
-`finish_gate_failed`
+`lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped`, `commit_failed`,
+`finish_gate_failed` and `wrong_turn_detected`
 — and no run page, Items row or Stats slice can carry any of them: the first seven produce
 no run at all; a commit that did not land happens after a run's finish is written, or
-outside any run (a web edit, a boot seed sync, a migration); and a finish gate that RAISED
+outside any run (a web edit, a boot seed sync, a migration); a finish gate that RAISED
 (F678) leaves a run that reads as finished on every surface, because it did finish — on its own
-authored status and summary, with the checks that should have judged that ending never run. They had fourteen writers and
+authored status and summary, with the checks that should have judged that ending never run; and a
+turn that came back WRONG (below) is a turn paid for at full prompt price whose work was
+re-driven, which a run finishing `ok` shows nowhere. They had fourteen writers and
 no reader inside the product: the nightly audit opened `.control/health-events.jsonl` over
 ssh and the console showed none of it, which is how F316's week of missed lane fires
 passed with zero signal.
@@ -602,6 +604,33 @@ item and what the last run left unmet. Its sibling never reaches this stream: a 
 owns for a week (addressed to nobody, or to a routine that starts no run) becomes an
 `unowned-report` decision on the Decisions page instead — route it to a routine or close it —
 because a homeless report needs an owner chosen, not a count raised.
+
+A WRONG TURN lands here too (`engine/wrongturn.py`, R2652): `wrong_turn_detected` is a turn that
+came back WELL-FORMED AND WRONG, filed with `reason`, `turn`, `model` and `effort` as structured
+fields. The seam it closes is a documented one — `engine/degrade.py` is headed *"when a turn comes
+back WRONG"* and carries four ordered nets (two window shrinks, a media fallback, a chain advance),
+and **all four fire on a turn that failed to ARRIVE**. A reply that arrives whole and is wrong is,
+to that ladder, a success: the engine rejects it, corrects the model, re-drives the same turn, and
+the run finishes `ok`. The only trace was a transcript `error` event plus two per-run counters
+(`schema_retries`, `schema_forcefails`) that reach status.json and the usage record — so the
+FLEET rate, and what turn of a run it happens at, were readable nowhere.
+
+Four reasons, each a failure the engine already detects, none of them a new judgement about a
+turn: `schema_rejected` (an invalid action — unparseable, schema-invalid, or refused by a
+per-kind/capability/grant check), `repeat_invalid` (the IDENTICAL invalid reply again after being
+corrected — a correction that taught nothing), `attempts_exhausted` (every schema attempt spent,
+no action accepted, the run ends), and `action_repeat` (a schema-VALID action landing for the
+third time in a row — `loop.REPEAT_WARN`, where each action is individually well-formed and the
+run has stopped moving). ONE row per (reason, turn): a turn rejected three times is one wrong
+turn, and the per-attempt record is already in that run's transcript.
+
+It is a **MEASUREMENT and nothing else** — no effort is changed, no model is swapped, no retry is
+added. That is deliberate and is the first increment of R2652: the rate it accumulates, read off
+this fold, is what a later effort ladder would have to be justified by, and the rows double as
+the `(turn, effort-that-sufficed)` corpus the token-lab experiments say this instance lacks. Read
+it by `reason` and by `turn`, never as a bare count: a single `schema_rejected` that recovered on
+the next attempt costs one extra attempt, while a run of `attempts_exhausted` or `action_repeat`
+on one routine is a model that cannot hold the schema for the work that routine does.
 
 What both folds read — the parsed stream, each event's stamp already read as an instant — is
 memoized on the stream's stat fingerprint with single-flight misses: this rides a bus-event

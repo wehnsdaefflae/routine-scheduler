@@ -11,7 +11,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"fire_paused"|"fire_catchup"|"routine_catchup_declined"
         |"scheduler_tick_error"|"migration_due_soon"|"migration_expired"
         |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route"
-        |"obligation_overdue"|"ungated_write",
+        |"obligation_overdue"|"ungated_write"|"wrong_turn_detected",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -86,6 +86,21 @@ answers is WHICH RUN to open. It is not blocked work, so it is deliberately abse
 `readmodels.health_stream.BLOCKED_EVENTS`: nothing was prevented, the writes happened. R2654:
 for two years this marker's only consumer was its own test, so the bypass D158 accepted came
 without the accountability it was traded for.
+
+wrong_turn_detected: a turn came back WELL-FORMED AND WRONG, and the engine saw it
+(`engine/wrongturn.py`, R2652). Carries `reason` (schema_rejected · repeat_invalid ·
+attempts_exhausted · action_repeat), `turn`, `model` and `effort` as structured fields, plus
+`streak` on a repeat. It exists because `engine/degrade.py` — literally documented as "when a
+turn comes back WRONG" — carries four ordered nets that ALL fire on a turn which failed to
+ARRIVE; a reply that arrives whole and is wrong is, to that ladder, a success, recovered on the
+next attempt. The only trace was a transcript `error` event and two per-run counters
+(`schema_retries`, `schema_forcefails`), so the FLEET rate — how often, at which turn, under
+which model and effort — was readable nowhere. ONE row per (reason, turn): a turn rejected three
+times is one wrong turn, and the per-attempt record is already on the transcript. It is a
+MEASUREMENT and changes no effort, no model and no attempt budget; the rows are also the
+`(turn, effort-that-sufficed)` corpus the later effort-ladder increment must be justified by.
+Deliberately NOT in `health_cooldown.REPEAT_COOLDOWN_HOURS`: a rate suppressed by the hour is
+not a rate, and nothing the blocked-fleet fold COUNTS may be cooled down.
 
 git_lock_cleared: a provably stale `index.lock` was removed before a write (`gitlock` — the
 commit lock was held, no git process worked in the repo, the lock was empty and older than
