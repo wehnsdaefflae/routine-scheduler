@@ -66,10 +66,9 @@ message the user writes to the target's inbox in their own voice (docs/messages.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
-from . import report_detail
+from . import report_detail, report_disposal
 from .engine import inbox
 from .hooks import store as hookstore
 from .ids import now_iso
@@ -110,38 +109,11 @@ def next_id(path: Path) -> str:
     return f"R{highest + 1}"
 
 
-@dataclass(frozen=True)
-class Disposal:
-    """What a report DISPOSES OF: the one exchange it answers, the rows it settles, and whether
-    it is itself terminal.
-
-    The three travel together because they are one decision with three faces, and keeping them
-    apart is what let them drift: `closes` was a property of `answers` alone, so a reply that
-    settled several rows could only close one, and a report that asked nothing back could close
-    nothing at all (F497 — measured on this ledger as rows aging at 11 and 12 days a day after
-    being genuinely answered, and seven fold-carriers born open, four of them literally saying
-    "no reply needed").
-
-    - `answers` — the ONE report id this reply belongs to, the exchange record. Unchanged.
-    - `settles` — every id this reply terminally disposes of (D134, operator-selected option C).
-    - `closes` — this reply is itself born settled. Valid beside EITHER disposal.
-    """
-
-    answers: str = ""
-    closes: bool = False
-    settles: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        # Normalize once, here, so every reader downstream compares like with like: the ledger
-        # stores ids upper-cased and a caller passing "r123" must not mint a row nothing matches.
-        # Both faces: an `answers: "r123"` settled R123 only because each reader re-upper-cased
-        # it, while the case-sensitive ones — the card's reference links, `refs` — missed it.
-        object.__setattr__(self, "answers", str(self.answers or "").strip().upper())
-        object.__setattr__(self, "settles",
-                           tuple(str(i).strip().upper() for i in self.settles if str(i).strip()))
-        # `closes` is a property OF a disposal: with neither face there is nothing to complete.
-        object.__setattr__(self, "closes",
-                           bool(self.closes and (self.answers or self.settles)))
+#: WHAT A REPORT DISPOSES OF — the value object lives in `report_disposal` (a pure value with
+#: rules and no I/O, beside `report_detail`'s pure formatting), re-exported because
+#: `reports.Disposal` is the name every caller already knows. Its one refusal is D196: a
+#: `closes` with neither `answers` nor `settles` is rejected, not quietly dropped.
+Disposal = report_disposal.Disposal
 
 
 def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, detail: str = "",

@@ -505,13 +505,9 @@ def test_a_closure_is_born_settled_and_ends_the_exchange(tmp_path):
     assert _items(home, audit)["R2"]["status"] == "settled"
 
 
-def test_file_report_refuses_closes_without_any_disposal(tmp_path):
-    """Out-of-band callers (batch scripts) get the same pairing rule the action layer
-    enforces: a bare closes — no `answers`, no `settles` — is dropped, never recorded."""
-    from rsched.reports import Disposal, file_report
-    _, home = _loop(tmp_path)
-    file_report(home, routine="x", run_id="x:1", title="t", disposal=Disposal(closes=True))
-    assert "closes" not in _rows(home)[0]
+# A bare `closes` out of band is now REFUSED rather than dropped (D196) — see
+# tests/test_report_closes_refusal.py, which owns that rule and the fold shape it was
+# raised about.
 
 
 def test_a_reply_settles_every_row_it_names_not_just_one(tmp_path):

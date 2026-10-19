@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 
 from conftest import finish
-from helpers import reminder, server_for, set_capabilities
+from helpers import server_for, set_capabilities
 from rsched import hooks, reports
 from rsched import reminders as remstore
 from rsched.engine.runtime import run_routine
