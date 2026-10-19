@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 from .. import jobs
 from ..ids import now_iso
 from ..paths import read_json
-from . import accounting, donewhen
+from . import accounting, buildskew, donewhen
 from .jobbrief import digest_section, job_line, open_briefing, recipe_text
 from .run_context import RunContext
 from .runkind import is_conversation
@@ -39,8 +39,16 @@ from .runkind import is_conversation
 def enabled(ctx: RunContext) -> bool:
     """Does this run keep jobs? The setting, at the top level only: a child works on its
     parent's brief and never sees the job kind (its capabilities are off).
+
+    Read through `engine/buildskew.py` rather than straight off the held policy: this line
+    raised `AttributeError: 'GrantPolicy' object has no attribute 'jobs_on'` in three runs on
+    2026-10-12 — 0.416.0 renamed the property while they were already holding a policy object
+    from the build they booted with, and this module is loaded LAZILY at the finish gate, so
+    the new code met the old object there (F677). A setting is CONFIG: when the held object
+    cannot answer, the routine's own capabilities can, and the gate keeps its real verdict
+    instead of failing open. A run with no policy at all still keeps no jobs.
     """
-    return ctx.depth == 0 and ctx.grants is not None and ctx.grants.jobs_on
+    return ctx.depth == 0 and ctx.grants is not None and buildskew.setting_on(ctx, "jobs")
 
 
 def _clock(ctx: RunContext) -> tuple[date, datetime]:

@@ -183,6 +183,13 @@ is what this event exists to stop, after one on 2026-10-09 cost a run that had a
 gated releases its summary, its status and its result.md. `detail` carries the exception and the
 innermost frame; `status` is the status the finish claimed and kept. A row here means the guards
 did NOT run, so nothing about that finish was checked.
+  The OPTIONAL `build_skew` field names the cause where it is knowable: a held object from the
+build the run booted with meeting code loaded from a newer one on disk — a release that landed
+mid-run, not an engine bug (F677, `engine/buildskew.py`). The instance's first three rows of this
+event (2026-10-12, 07:34-08:26) were all that case and said only
+`AttributeError: 'GrantPolicy' object has no attribute 'jobs_on'`, which sent nobody to the
+release 11 minutes earlier that caused them; the sentence now rides `detail` as well, so a reader
+of the stream alone sees it.
 
 observation_render_failed: a renderer RAISED on a live turn and the run read the raw result rather
 than ending (engine/obs_floor.py) — an engine defect; detail names kind, exception and frame.

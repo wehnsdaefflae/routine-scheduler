@@ -67,8 +67,11 @@ def test_the_guard_keeps_its_one_lazy_import_and_says_why():
     """finishstands -> finishgate STAYS lazy (at module scope it cycles through assist). It is
     safe where the gate's own were not — a pass-through naming no symbol of the gate's — and
     the module must keep saying so, or a later reader will "fix" it the wrong way.
+
+    It now lives in `pin()`, which the run's construction calls so the import happens at run
+    START rather than at the finish turn (F677) — still exactly one, still in this module.
     """
-    assert _lazy_imports("finishstands.py") == ["check_finish_or_stand -> finishgate"]
+    assert _lazy_imports("finishstands.py") == ["pin -> finishgate"]
     assert "cycle" in (SRC / "finishstands.py").read_text(encoding="utf-8")
 
 
