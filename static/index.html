@@ -106,6 +106,10 @@
   <!-- First-launch notice: the seeded self-improvement routines ship disabled (no hidden costs);
        populated by app.js from /api/status.meta_routines, dismissible via localStorage. -->
   <div id="meta-banner" class="notice-banner" hidden></div>
+  <!-- F696: the checkout moved under this process, so /static is newer than the Python
+       serving it. Not dismissible: a reload is the fix, and a dismissed warning about a
+       console that silently discards new form fields is the defect again. -->
+  <div id="skew-banner" class="notice-banner" hidden></div>
   <!-- Where you are inside the section the rail has highlighted, plus instance-wide full-text
        search (searchbox.js): "/" or Ctrl-K focuses it from anywhere. -->
   <div class="workbar">

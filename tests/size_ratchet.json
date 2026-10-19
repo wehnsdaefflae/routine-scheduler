@@ -37,7 +37,6 @@
     "src/rsched/web/api_routine_patch.py": 468,
     "src/rsched/web/api_routines.py": 384,
     "src/rsched/web/api_workflows.py": 384,
-    "src/rsched/web/app.py": 353,
     "src/rsched/workflows/lint.py": 353,
     "static/app.js": 398,
     "static/base.css": 1203,

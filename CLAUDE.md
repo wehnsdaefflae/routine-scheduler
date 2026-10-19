@@ -932,6 +932,14 @@ by a test, by the engine, or by a past incident.
 `src/rsched/__init__.py` `__version__` is the single source (pyproject reads it via hatch's
 version hook) — bump the minor on every user-facing revision. `/api/status` pairs it with the
 running checkout's git commit stamp; the header's brand shows `v<version>` (tooltip = commit).
+It also carries `disk_build` + `build_skew` (`web/assetskew.py`, F696): `/static` is served LIVE
+from the checkout while every Python object stays at the build the process booted with, so a
+release landing mid-day puts NEW javascript in front of an OLD server. The server is the only
+party holding both stamps, so it compares them and the console raises a non-dismissible reload
+banner (`static/components/skewbanner.js`). The other half of that defect is pydantic's SILENT
+drop of an unknown form field: every multipart intake model declares `extra="forbid"`, so a
+field the running build does not know is a 422 naming it rather than work the operator loses
+(R2546). The mid-RUN sibling, against held Python objects, is `engine/buildskew.py` (F677).
 A bump MUST land with a matching `## [x.y.z]` CHANGELOG.md header in the same commit —
 `tests/test_policy.py` (also a pre-commit hook) fails on a mismatch.
 
