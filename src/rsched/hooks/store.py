@@ -83,24 +83,11 @@ def read_hooks(routines_home: Path) -> list[Hook]:
     return [from_record(row) for row in read_jsonl(hooks_path(routines_home))]
 
 
-def record_report(routines_home: Path, *, report_id: str, routine: str, run_id: str,
-                  title: str, detail: str = "", target: str = "",
-                  options: tuple[str, ...] = (), disposition: str = "open") -> str:
-    """Mirror a filed report as a hook: `trigger: send`, delivery `next_prompt`.
-
-    A report carrying `options` is TWO deliveries of one hook (the target's next prompt and the
-    operator's Decisions page) and the table in `hooks/__init__` says so; the row records the
-    additional one in `payload.options`, which is what makes it visible as a decision without
-    inventing a second addressee. An unaddressed report is `triage` — the routine that has not
-    been named yet, not the absence of an addressee.
-    """
-    who = addressee("routine", target) if target else addressee("triage")
-    return append(routines_home, Hook(
-        id=str(report_id), source="report", trigger={"kind": "send"}, addressee=who,
-        payload={"title": title, "detail": detail,
-                 **({"options": list(options)} if options else {})},
-        delivery="next_prompt", disposition=disposition,
-        origin={"routine": routine, "run_id": run_id}, ts=now_iso()))
+#: A REPORT has no `record_*` function here any more, and that absence is the campaign's step 4
+#: (D152): the report hook is not mirrored from a ledger row, it is BUILT first and the row is
+#: derived from it — `hooks/reportproj.py` owns that construction, and both halves must come
+#: from one place or they can disagree again. The three below are the paths whose own store is
+#: still the truth.
 
 
 def record_reminder(routines_home: Path, *, record: dict, routine: str, run_id: str,
