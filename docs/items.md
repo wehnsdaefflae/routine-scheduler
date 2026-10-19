@@ -196,8 +196,13 @@ characters, and R2436's cut-off tail WAS the question it was asking, which left 
 unclosable). Those 273 rows stay as they are — the text is gone from before this change and a
 re-cut would only make it look recoverable.
 
-**The terminal acknowledgment.** A reply row may set `closes: true` beside `answers` (the
-action layer rejects a bare `closes`): it settles its target as any answer does AND is itself
+**The terminal acknowledgment.** A reply row may set `closes: true` beside `answers` (a bare
+`closes` is rejected at BOTH entrances — the action layer for a run, and `reports.Disposal`
+for an out-of-band caller, whose refusal names what a closure needs; D196, the operator
+2026-10-18, who accepted the break for existing callers explicitly. `supersedes` is NOT one of
+those faces: folding rows makes this report their thread, which is the opposite of ending it,
+and normalizing such a closure to False used to accept the filing while its sender believed a
+thread was closed that was not): it settles its target as any answer does AND is itself
 born settled — it asks nothing back, so the exchange ENDS there instead of ratcheting (every
 answer otherwise being a new open report waiting for one more reply). A closure is still
 delivered when addressed, with the message marked "no reply needed"; answering a closure

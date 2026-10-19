@@ -240,11 +240,11 @@ ACTION_SCHEMA: dict = {
                            "addressed elsewhere is theirs, one unrouted needs an owner first. "
                            "With `settles` a reply needs no `answers` to carry `closes`"},
         "closes": {"type": "boolean",
-                   "description": "report: with `answers` or `settles` — this reply COMPLETES "
-                                  "the exchange: it settles its target(s) AND is itself born "
-                                  "settled, asking nothing back. Set it whenever your answer "
-                                  "needs no reply; a closure is reopened only by a NEW report "
-                                  "that names it"},
+                   "description": "report: with `answers` or `settles` (NOT `supersedes` — a "
+                                  "fold is not a closure, and that pairing is REFUSED) — this "
+                                  "reply COMPLETES the exchange: it settles its target(s) AND "
+                                  "is itself born settled, asking nothing back. Set it when "
+                                  "your answer needs no reply; only a NEW report reopens it"},
         "supersedes": {
             "type": "array", "items": {"type": "string"}, "maxItems": SUPERSEDES_MAX,
             "description": "report: OPTIONAL — existing report ids (R<n>) this one TAKES OVER. "
