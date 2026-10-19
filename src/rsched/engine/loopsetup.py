@@ -63,6 +63,14 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     unrepresentable in the grammar the model generates against.
     """
     loop.ctx = ctx
+    # F677: resolve the FINISH PATH now, while the build on disk is still the one this process
+    # booted with. `finishstands` reaches the gate through a deliberately lazy import, so left
+    # alone it loads `finishgate` — and everything the gate imports — at the finish turn, which
+    # on a run that ships releases is after its own release. Three runs on 2026-10-12 met a
+    # 0.416.0 `jobops` there holding a `GrantPolicy` from their boot build, and all three finish
+    # gates died with AttributeError. Pinning here costs one import at boot.
+    from . import finishstands
+    finishstands.pin()
     loop.workflow_body = workflow_body
     loop.instruction = instruction
     loop.resume = resume     # rehydrate the prior transcript instead of a clean start
