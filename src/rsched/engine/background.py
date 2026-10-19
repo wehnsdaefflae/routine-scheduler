@@ -57,7 +57,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..endpoints import instrument
-from . import background_summary
+from . import background_booking, background_summary
 from .run_context import BACKGROUND_THREAD_PREFIX as THREAD_PREFIX
 
 #: The purpose tag an abandoned background call's in-flight model calls are closed under.
@@ -292,8 +292,16 @@ def cancel(loop, handle: str) -> dict:
     # BEFORE the Pending leaves anything else, so the subprocess starts dying while we record.
     pending.stop.set()
     ctx = loop.ctx
-    spent = _book_usage(ctx, pending)
+    spent = background_booking.book(ctx, pending.handle)
     landed = pending.done
+    # A call that had NOT landed has parked nothing yet: an `llm` or `decide` parks its reading
+    # only once the provider answers, and that answer is still on its way. So the handle goes on
+    # the ledger `background_booking.sweep` reads at every boundary — without it the reading
+    # arrives in a parking slot whose Pending has already left the live list, and `collect` and
+    # `settle` both iterate that list, so nobody ever pops it (F722: silent under-accounting,
+    # against this module's own promise and the `handle` field's schema description).
+    if not landed:
+        background_booking.owe(loop, pending.handle, pending.kind)
     # Did this cancel stop the WORK, or only its delivery? True only for a call that was still
     # running AND whose kind runs as a subprocess `run_jailed` can terminate — a call that had
     # already finished has no work left to stop, whatever its kind.
@@ -335,6 +343,10 @@ def collect(loop) -> None:
     """
     from .observations import live_observation
 
+    # A cancelled call's reading may have arrived since the last boundary (F722). Swept FIRST
+    # and regardless of whether anything landed: a boundary with no landing is the common case
+    # for a run that cancelled one slow call and carried on.
+    background_booking.record_sweep(loop, background_booking.sweep(loop))
     landed = [p for p in _pendings(loop) if p.done]
     if not landed:
         return
@@ -342,7 +354,7 @@ def collect(loop) -> None:
     ctx = loop.ctx
     for pending in landed:
         pending.thread.join(timeout=0)
-        spent = _book_usage(ctx, pending)
+        spent = background_booking.book(ctx, pending.handle)
         obs: dict[str, Any] = dict(pending.result or {})
         # `ctx.turn + 1`, not `ctx.turn`: a boundary runs BEFORE the turn it opens is counted,
         # so stamping the current value records the result as arriving on the turn that STARTED
@@ -378,6 +390,12 @@ def settle(loop) -> str:
     over a reader told nothing of evidence the run never saw. The two DISTINCT sentences and
     the reasoning behind them live in `engine/background_summary.py`.
     """
+    # The last chance to book a cancelled call's late reading (F722) — before the early return,
+    # because a run that cancelled its one slow call and then finished has NO pendings left and
+    # would otherwise never sweep. What is still owed after this is given up on: a thread killed
+    # with the interpreter parked nothing, so there is no reading to lose.
+    background_booking.record_sweep(loop, background_booking.sweep(loop))
+    background_booking.drop_all(loop)
     pendings = _pendings(loop)
     if not pendings:
         return ""
@@ -388,7 +406,7 @@ def settle(loop) -> str:
     landed = [p for p in pendings if p.done]
     loop._background = []
     for pending in landed:
-        spent = _book_usage(loop.ctx, pending)
+        spent = background_booking.book(loop.ctx, pending.handle)
         loop.ctx.transcript.event("observation", {
             **_recordable(dict(pending.result or {})), "background": True,
             "handle": pending.handle, "started_turn": pending.turn, "unread": True,
@@ -404,7 +422,7 @@ def settle(loop) -> str:
         # whether or not this run ever read the answer, and charging only the calls that landed
         # would make "background it and finish" the cheapest way to spend money the budget
         # never sees. A thread killed mid-call has parked nothing yet, so this is often empty.
-        spent = _book_usage(loop.ctx, pending)
+        spent = background_booking.book(loop.ctx, pending.handle)
         loop.ctx.transcript.event("observation", {
             "kind": pending.kind, "background": True, "handle": pending.handle,
             "started_turn": pending.turn, "abandoned": True,
@@ -441,28 +459,6 @@ def _cancellable_ctx(ctx, pending: Pending):
             setattr(ctx, name, value)
 
     return _BackgroundCtx()
-
-
-def _book_usage(ctx, pending: Pending) -> dict:
-    """Book what this background call PARKED, at the moment its result is collected (D167).
-
-    The decision's words are "book tokens on collection", and the reason is that a background
-    thread folding into `ctx.usage` mid-turn makes the run's own budget check depend on thread
-    timing: the number a turn is judged against would differ by milliseconds. Parking moves the
-    booking to the boundary, where the result lands anyway — so the spend and the observation
-    that caused it arrive together, and a reader of the transcript can tell which call cost what.
-
-    Booked for an ABANDONED call too (`settle`), and that is not an oversight: the tokens were
-    spent at the provider whether or not this run ever read the answer. Charging only the calls
-    that landed would make a run that backgrounds and finishes the cheapest way to spend money
-    the budget never sees.
-
-    Returns the reading it booked, so the caller can record it beside the call.
-    """
-    spent = ctx.take_deferred_usage(f"{THREAD_PREFIX}{pending.handle}")
-    if spent:
-        ctx.add_usage(spent)
-    return spent
 
 
 def _brief(action: dict) -> str:

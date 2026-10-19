@@ -90,7 +90,13 @@ arbitrary payload keys). Nothing reads them.
   that filed it. An archive-only item takes its origin from the EARLIEST changelog row
   linked to it — that is the first trace of it, not necessarily the moment it was raised.
 - **`addressed[]`** — every changelog row linked to this item, newest first: `ts`, `commit`,
-  `run_id`, `summary`, `title`, and `link`. This is the "when was it addressed" history.
+  `run_id`, `summary`, `title`, and `link`. This is the "when was it addressed" history, and it
+  carries the FULL prose: a reader looking an item up wants the whole entry.
+- The answer's own **`changelog`** key — the whole-archive section, newest 60 rows — carries each
+  row's FIRST LINE instead (`CHANGELOG_SUMMARY_CHARS`, with `…` where prose continues). That
+  section renders exactly one line per row, and shipping the rest was 85,931 of the key's 95,641
+  bytes, measured 2026-10-19 (F560): every reader of this endpoint had to spill the answer to a
+  file and fold it with a script first. `addressed[]` above is where the full text stayed.
 - **`evidence[]`** — the finding's own evidence list (findings only, else empty).
 - **`refs[]`** — other item ids (`F`/`D`/`R`) named in this item's own prose, so the graph is
   navigable. This scan includes `R` — unlike the changelog fallback below, the prose is

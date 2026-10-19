@@ -143,10 +143,41 @@ def items(request: Request,
             # `readers` are the routines that will run: only a report addressed to one of them
             # is IN TRANSIT rather than stuck.
             "counts": item_counts.counts(all_items, readers=_readers(request)),
-            "changelog": list(reversed(changelog))[:60],
+            "changelog": _light_changelog(list(reversed(changelog))[:60]),
             "report": report, "last_run": last_run,
             "queued": queued_messages(routine_dir),
             "answered_decisions": answered_decisions(routine_dir, report)}
+
+
+#: What the page renders of a changelog row's summary: `summaryLine` in static/md.js takes the
+#: FIRST non-blank line and nothing else. Everything after it was shipped and dropped.
+CHANGELOG_SUMMARY_CHARS = 400
+
+
+def _light_changelog(rows: list[dict]) -> list[dict]:
+    """The changelog as the page uses it (F560).
+
+    A release summary is 8-20 lines of markdown, and 60 of them carried 85,931 of this
+    answer's 95,641 changelog bytes — measured on the live instance 2026-10-19. The
+    page's changelog section renders `summaryLine(c.summary)`, the first line; an item's OWN
+    history is already on its card, built server-side from the same file (`addressed`), with
+    the full prose. So the whole-archive section carries the line it shows.
+
+    Clipped rather than dropped: the section exists because rows that name no item would
+    otherwise be unreachable once the Audit page is gone, and a reader looking one up needs
+    the row, not its every word. The marker says the prose continues, so nobody reads a
+    truncation as the whole entry.
+    """
+    light: list[dict] = []
+    for row in rows:
+        summary = str(row.get("summary") or "")
+        head = next((line for line in summary.splitlines() if line.strip()), "")
+        if len(head) > CHANGELOG_SUMMARY_CHARS:
+            head = head[:CHANGELOG_SUMMARY_CHARS].rstrip() + "…"
+        elif len(summary) > len(head):
+            head = head + " …"
+        light.append({**row, "summary": head})
+    return light
 
 
 def _readers(request: Request) -> set[str]:

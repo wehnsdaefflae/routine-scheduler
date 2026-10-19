@@ -126,6 +126,19 @@ cannot offer.
   One that lands with no turn left to read it is recorded with `unread: true`. One still running at
   run end is recorded `abandoned: true`, its in-flight model calls closed through
   `instrument.abandon_open_calls`.
+- **And no spend vanishes either — including a CANCELLED call's** (F722).
+  `engine/background_booking.py` is the one place that books what a background call parked, and
+  it also keeps the ledger a cancel needs: a model call parks its reading only once the provider
+  ANSWERS, so a call cancelled while still running had parked nothing at `cancel` time, and the
+  reading that arrived afterwards sat in a parking slot whose `Pending` had already left the live
+  list — which `collect` and `settle` both iterate. Nobody popped it: silent under-accounting,
+  repeatable every turn, against this very promise. Every boundary now sweeps that ledger and
+  records each late booking as an `observation` with `late_booking: true` beside `cancelled`,
+  so the spend and a note of what it was for arrive together. A handle leaves the ledger as soon
+  as it pays (`take_deferred_usage` pops), so a run with five later boundaries still books once;
+  one still owing at run end is given up on, because a thread killed with the interpreter parked
+  nothing. Booking at request time was the alternative and was rejected: it would charge an
+  estimate the provider never confirmed.
 - **And nothing the run never read is silent in `result.md`** (F715, authorized by D195). Both
   losses reach the summary, in two DELIBERATELY different sentences rendered by
   `engine/background_summary.settle_note` and appended by `loopend.finish_run`: a still-running
