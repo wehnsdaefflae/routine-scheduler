@@ -792,7 +792,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "closes": {
    "type": "boolean",
-   "description": "report: with `answers` or `settles` \u2014 this reply COMPLETES the exchange: it settles its target(s) AND is itself born settled, asking nothing back. Set it whenever your answer needs no reply; a closure is reopened only by a NEW report that names it"
+   "description": "report: with `answers` or `settles` (NOT `supersedes` \u2014 a fold is not a closure, and that pairing is REFUSED) \u2014 this reply COMPLETES the exchange: it settles its target(s) AND is itself born settled, asking nothing back. Set it when your answer needs no reply; only a NEW report reopens it"
   },
   "supersedes": {
    "type": "array",
