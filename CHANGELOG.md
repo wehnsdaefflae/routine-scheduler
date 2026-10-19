@@ -15,6 +15,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.434.3] — 2026-10-19
+
+### A cancelled call's spend books (F722)
+
+The promise is stated in three places — `background.py`'s docstring, `cancel`'s own observation
+note, and the `handle` field's schema description every run reads before it cancels: *"what it
+spent still books against your budget"*. It was not true for the calls worth cancelling.
+
+A model call parks its reading only once the provider ANSWERS (`llmaction` → `ctx.add_usage` →
+the parking area, keyed by the thread's name). `cancel` drops the Pending from the live list and
+books immediately — so for a call still running it booked `{}`, and the reading that arrived
+afterwards landed in a parking slot whose Pending had already left the list that `collect` and
+`settle` both iterate. Nobody popped it. Silent under-accounting, repeatable every turn, and
+"background it, cancel it, read the free result" would have been the cheapest spend a budget
+never sees.
+
+New `engine/background_booking.py` owns both halves: the booking itself (the four call sites in
+`background.py` now go through it, and `_book_usage` is gone rather than left as a second place
+to state D167) and the ledger a cancel leaves behind. Every turn boundary sweeps it — before the
+landed check, because a boundary with nothing landing is the common case for a run that cancelled
+one slow call and carried on — and `settle` sweeps before its own early return, since a run that
+cancelled its only call has no pendings left. Each late booking is recorded as an `observation`
+with `late_booking: true` beside `cancelled`, so the spend and a note of what it paid for arrive
+together.
+
+It cannot double-book (`take_deferred_usage` pops, and the handle leaves the ledger as soon as it
+pays — asserted over a run with four later boundaries) and it cannot leak: a handle still owing at
+run end is given up on, because a thread killed with the interpreter parked nothing. Booking at
+request time was the alternative and was rejected — it would charge an estimate the provider never
+confirmed, and the budget would be judged against a number nobody can reconcile.
+
+`test_background_actions.py` asserted the `handle` description SAYS the spend books. That test
+stays, and `tests/test_background_cancel_booking.py` now asserts the behaviour the hand-off
+specified: a backgrounded `llm` whose fake provider sleeps and then books, cancelled mid-flight,
+and the reading must reach `status.json`'s `usage`. Red-first proven — with the two sweep call
+sites removed, exactly those three fail and the negative case (a cancelled `util`, which parks
+nothing) still passes.
+
+### `/api/items` stops shipping 80 KB nobody reads (F560)
+
+Measured on the live instance: of the `changelog` key's 95,641 bytes, **85,931 were release
+summaries** — 8-20 lines of markdown each — and the page renders `summaryLine(c.summary)`, the
+first line. Every reader of this endpoint (this routine's own queue script, self-audit's folds)
+spilled the answer to a file and folded it with a helper before it could be read.
+
+The whole-archive section now carries the line it shows (`CHANGELOG_SUMMARY_CHARS`, with `…`
+where prose continues): **95,641 → 33,090 bytes, 65% smaller**, the first line byte-identical.
+An item's own history keeps its full prose server-side in `addressed[]`, which is where a reader
+of one item looks — so nothing a human reads got shorter.
+
+**One half of the finding was wrong and is recorded as wrong**: `limit` is NOT ignored.
+`shown[:max(1, limit)]` applies it on both branches, and `?status=open` was large because 51 rows
+of item prose plus this changelog are large, not because the cap was dropped.
+
 ## [0.434.2] — 2026-10-19
 
 ### A run tree can talk to itself — F695 as a case of the one hook mechanism (D152 step 3)
