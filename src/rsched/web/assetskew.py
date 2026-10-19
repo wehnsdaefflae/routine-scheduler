@@ -44,8 +44,10 @@ from pathlib import Path
 #: (a human noticing a banner) and makes the stamp at most one read per status burst.
 STAMP_TTL_S = 10.0
 
-#: (read at, stamp) of the last live read — the TTL cache `disk_stamp` keeps.
-_cached: tuple[float, str] | None = None
+#: (read at, stamp) of the last live read — the TTL cache `disk_stamp` keeps. A one-slot LIST
+#: rather than a rebound module global: the value is mutated in place, so no function needs a
+#: `global` statement (ruff PLW0603) and there is exactly one cache for the process.
+_cached: list[tuple[float, str]] = []
 
 
 def read_stamp(repo: Path | None) -> str:
@@ -67,22 +69,21 @@ def read_stamp(repo: Path | None) -> str:
 
 def disk_stamp(repo: Path | None) -> str:
     """`read_stamp` for the LIVE checkout, at most once per `STAMP_TTL_S`."""
-    global _cached
-
     now = time.monotonic()
-    if _cached is not None and now - _cached[0] < STAMP_TTL_S:
-        return _cached[1]
+    if _cached and now - _cached[0][0] < STAMP_TTL_S:
+        return _cached[0][1]
     stamp = read_stamp(repo)
-    _cached = (now, stamp)
+    _cached[:] = [(now, stamp)]
     return stamp
 
 
 def forget_disk_stamp() -> None:
-    """Drop the cached live stamp — the next read goes to disk. For tests, and for any caller
-    that wants the current truth rather than a reading up to `STAMP_TTL_S` old."""
-    global _cached
+    """Drop the cached live stamp — the next read goes to disk.
 
-    _cached = None
+    For tests, and for any caller that wants the current truth rather than a reading up to
+    `STAMP_TTL_S` old.
+    """
+    _cached.clear()
 
 
 def stamps_skewed(booted: str, disk: str) -> bool:

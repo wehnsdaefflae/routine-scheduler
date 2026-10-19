@@ -1,6 +1,6 @@
-// Entry: hash router (path + query), location indicators (active nav + breadcrumb), the
-// in-flight setup banner, the first-launch self-improvement notice, the rail's clock and theme
-// control, the watch ribbon, and the global live stream (badges + daemon lamp).
+// Entry: hash router (path + query), location indicators (active nav + breadcrumb), the setup +
+// self-improvement + build-skew banners, the rail's clock and theme, the watch ribbon, and the
+// global live stream (badges + daemon lamp).
 
 import { api, liveStream } from "/static/api.js";
 import { parseHash } from "/static/router.js";
@@ -15,6 +15,7 @@ import { initDesktopDock } from "/static/components/desktopdock.js";
 import { initSearchBox } from "/static/components/searchbox.js";
 import { mountToc } from "/static/components/toc.js";
 import { mountRibbon } from "/static/components/ribbon.js";
+import { renderSkewBanner } from "/static/components/skewbanner.js";
 import { wireSidebar } from "/static/resizable.js";
 
 installTracing();
@@ -173,8 +174,8 @@ function renderCrumbs(path) {
 }
 
 // ---- first-launch notice: self-improvement routines are off ---------------------------------
-// A meta routine is created disabled (no hidden costs). Until at least one is enabled the
-// system never improves itself — surface that once, dismissible, with one-click enables.
+// A meta routine is created disabled (no hidden costs), so until one is enabled the system never
+// improves itself — surfaced once, dismissible, with one-click enables.
 const META_DISMISS_KEY = "rsched_meta_notice_dismissed";
 
 function renderMetaBanner(metaRoutines) {
@@ -208,9 +209,7 @@ function renderMetaBanner(metaRoutines) {
   banner.hidden = false;
 }
 
-// The tiny build tag next to the brand: release version, with the running checkout's
-// commit stamp in the tooltip — enough to identify a deploy at a glance.
-function renderVersion(s) {
+function renderVersion(s) {    // the build tag by the brand; the commit stamp in its tooltip
   const node = document.getElementById("app-version");
   if (!node || !s.version) return;
   node.textContent = `v${s.version}`;
@@ -232,6 +231,7 @@ async function refreshStatus() {
   try {
     const s = await api("/api/status");
     renderMetaBanner(s.meta_routines);
+    renderSkewBanner(s);
     renderVersion(s);
     if (clock && s.server_tz) clock.title = `server tz: ${s.server_tz}`;
     dot.classList.add("on");

@@ -22,7 +22,7 @@ import shutil
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .. import conversations as conv_mod
 from ..config import DEFAULT_DELIBERATION, DELIBERATION_LEVELS, load_routine
@@ -177,7 +177,17 @@ class ComposerForm(BaseModel):
     PRE-START choice (D70/F339): reply #1 boots with whatever lands in routine.yaml here. A
     blank field keeps the conversation default; the structured ones arrive as JSON strings
     and are parsed above, each into the 400 that names it.
+
+    `extra="forbid"` is load-bearing, not hygiene (F696). Pydantic's default DROPS an unknown
+    field in silence — no 422, no log — so when `/static` is served from a checkout newer than
+    this process, the composer's new fields were accepted-and-discarded and the operator had to
+    enter everything twice (R2546: "most of the settings were gone"). Forbidding them turns the
+    skew into a 422 naming the field, which the composer shows; the banner the server's skew
+    verdict raises (`web/assetskew`, `static/app.js`) is the other half, telling him to reload
+    BEFORE he types. Ten sibling models in this package already declare it.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     text: str = ""              # the first message — blank only when a playbook seeds it
     playbook: str = ""          # a library playbook that seeds instruction.md

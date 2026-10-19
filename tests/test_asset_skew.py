@@ -107,3 +107,35 @@ def test_the_live_stamp_is_read_once_per_ttl_not_once_per_request(tmp_path, monk
 def test_read_stamp_answers_empty_without_a_repo():
     """The one shape every caller must survive: no source repo configured at all."""
     assert assetskew.read_stamp(None) == ""
+
+
+# --- half B: the field the running process does not know ------------------------------------
+
+
+def test_a_field_this_build_does_not_know_is_a_422_not_a_silent_discard(tmp_path):
+    """The other half of F696, and the one that actually lost the operator's work. Pydantic's
+    default DROPS an unknown multipart field without a 422 or a log, so a composer newer than
+    its server had its new fields accepted-and-discarded. `extra="forbid"` turns that into an
+    error naming the field, which the composer shows (`toastError`).
+    """
+    with authed_client(make_test_server(tmp_path)) as c:
+        r = c.post("/api/conversations",
+                   data={"text": "hello", "a_field_from_a_newer_build": "x"})
+
+    assert r.status_code == 422, r.text
+    assert "a_field_from_a_newer_build" in r.text
+
+
+def test_every_field_the_composer_sends_is_still_accepted(tmp_path):
+    """The guard must refuse only what this build does not know. Every field
+    `static/views/conversations-new.js` appends is named here, so forbidding extras can never
+    start rejecting the console's own form — which would be a worse failure than the one fixed.
+    """
+    from rsched.web.api_conversation_create import ComposerForm
+
+    sent = {"text", "playbook", "model", "models", "efforts", "workdir", "fs_read_roots",
+            "fs_write_roots", "max_turns", "max_total_turns", "max_wall_clock_min",
+            "max_total_tokens", "deliberation", "permissions", "rules", "connections", "files"}
+
+    assert sent <= set(ComposerForm.model_fields), sent - set(ComposerForm.model_fields)
+    assert ComposerForm.model_config.get("extra") == "forbid"
