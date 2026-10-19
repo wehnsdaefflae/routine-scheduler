@@ -5,7 +5,11 @@ and saying so is another, and all three of these are prompt surface rather than 
 
 `build_util_reminder` is the ONE-SHOT pointer to the util catalog and the route for a missing
 util, appended to the first user message only (the kickoff, or a resume's engine note).
-`repeat_streak` counts identical consecutive actions, which is how a loop-in-a-loop shows up.
+`repeat_streak` counts identical consecutive actions, which is how a loop-in-a-loop shows up —
+and at the streak the loop warns on it files one `wrong_turn_detected` health event (R2652,
+`engine/wrongturn.py`), so the FLEET rate of runs that stop moving is readable instead of
+visible only in one run's prompt. A measurement: nothing about the warning, the schema shedding
+or `REPEAT_FAIL` changes.
 `reserve_finish` is the important one: the FIRST budget violation spends a one-time reserved
 turn with the schema narrowed to `finish`, so the run authors its own summary. The engine never
 ends a run the model could have ended itself — a run overruns a budget by at most one turn, and
@@ -16,6 +20,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+
+from . import wrongturn
 
 REPEAT_FAIL = 5
 
@@ -77,6 +83,16 @@ def reserve_finish(loop, spent: dict) -> None:
 
 
 def repeat_streak(loop, action: dict) -> int:
+    """How many times this exact action (narration aside) has now landed in a row.
+
+    At `wrongturn.WARN_STREAK` — the streak the loop already warns the run about — the run also
+    files ONE `wrong_turn_detected` health event (R2652). An identical repeated action is the
+    OTHER half of "a turn that came back wrong in a way the engine can already see": every
+    action is individually schema-valid and the run has stopped moving, which is the chained-
+    state blind spot the later effort increment is aimed at. Filed at the onset of a streak
+    only, and a MEASUREMENT: the warning tail, the schema shedding and `REPEAT_FAIL` all behave
+    exactly as before.
+    """
     key = {k: v for k, v in action.items() if k != "say"}
     digest = hashlib.sha1(json.dumps(key, sort_keys=True).encode("utf-8"),
                           usedforsecurity=False).hexdigest()
@@ -86,4 +102,8 @@ def repeat_streak(loop, action: dict) -> int:
         if h != digest:
             break
         streak += 1
+    if streak == wrongturn.WARN_STREAK:
+        wrongturn.record(loop.ctx, "action_repeat", turn=loop.ctx.turn, streak=streak,
+                         detail=f"the same {action.get('kind')} action landed {streak} times "
+                                "in a row — every one schema-valid, the run not moving")
     return streak

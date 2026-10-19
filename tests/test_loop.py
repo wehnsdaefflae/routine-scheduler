@@ -2506,7 +2506,7 @@ def test_authored_partial_is_run_partial_not_budget_exhausted(make_routine, scri
 
 
 def test_health_event_on_run_failure(make_routine, scripted, tmp_path):
-    """A failed run (schema force-fail) writes a run_failed event to health-events.jsonl."""
+    """A failed run (schema force-fail) files run_failed — read as JSONL: R2652 adds a row."""
     d = make_routine(slug="healthfail")
     s = _server(d)
     s.routines_home = tmp_path / "routines"
@@ -2515,8 +2515,8 @@ def test_health_event_on_run_failure(make_routine, scripted, tmp_path):
     assert status == "failed"
     health_path = tmp_path / "routines" / ".control" / "health-events.jsonl"
     assert health_path.exists()
-    entry = json.loads(health_path.read_text(encoding="utf-8").strip())
-    assert entry["event"] == "run_failed"
+    rows = [json.loads(x) for x in health_path.read_text(encoding="utf-8").strip().split("\n")]
+    [entry] = [r for r in rows if r["event"] == "run_failed"]
     assert entry["routine"] == "healthfail"
 
 

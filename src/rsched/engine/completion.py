@@ -4,6 +4,12 @@ empty-reply streaks, AND classifier refusals — the last never retried same-mod
 repeat-streak schema shedding, refusal referral to the `uncensored` model,
 image→vision-util fallback, the prompt-size compaction gate, and usage folding. Every
 function takes the live EngineLoop; the turn ORDER stays in loop.run().
+
+A turn REJECTED here also files a `wrong_turn_detected` health event (R2652,
+`engine/wrongturn.py`): every net this module walks answers a turn that failed to ARRIVE, while
+a reply that arrives whole and is WRONG recovers silently on the next attempt. The event is a
+MEASUREMENT — it changes no effort, no model and no attempt budget — and the rate it accumulates
+is what the later effort-ladder increment has to be justified by.
 """
 
 from __future__ import annotations
@@ -14,7 +20,7 @@ import time
 from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.base import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import overflow, turndebris, turntakeover
+from . import overflow, turndebris, turntakeover, wrongturn
 from .actions import (
     KIND_EXAMPLES,
     field_shift_diagnosis,
@@ -97,6 +103,21 @@ def _adopt_model(loop, pair) -> tuple:
     return endpoint, ref
 
 
+def _turn_schema(loop) -> dict | None:
+    """The schema THIS turn posts — the loop's action schema, or none at all.
+
+    Two things shed it, both decided elsewhere: `_schema_off` (repeat-streak shedding rescued
+    the run twice, so the provider grammar stays off for the rest of it) and
+    `_shed_schema_turns` (the next reply alone runs schema-free). The per-turn counter is spent
+    HERE, whichever of the two ends up shedding — so a turn that was already schema-free still
+    consumes its allowance, exactly as before this was a function.
+    """
+    shed = loop._shed_schema_turns > 0
+    if shed:
+        loop._shed_schema_turns -= 1
+    return None if (loop._schema_off or shed) else loop.action_schema
+
+
 def next_action(loop) -> tuple[dict | None, dict]:
     ctx = loop.ctx
     # The uncensored TAKEOVER window (engine/refusal.py, operator 2026-10-16): while
@@ -106,10 +127,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
     # refusal.takeover_turn itself.
     chain, endpoint, ref, on_takeover = turntakeover.serve_turn_head(loop)
     usage_sum: dict = {"in": 0, "out": 0}   # + "model"/"provider" attribution (str) on success
-    schema = None if loop._schema_off else loop.action_schema
-    if loop._shed_schema_turns > 0:
-        loop._shed_schema_turns -= 1
-        schema = None
+    schema = _turn_schema(loop)
     prev_raw: str | None = None
     # Shared across attempts: one refusal-clarification pass per turn (free-text OR
     # classifier-refusal path), and the consecutive-empty streak from the CURRENT model.
@@ -204,6 +222,12 @@ def next_action(loop) -> tuple[dict | None, dict]:
                                            **({"provider": completion.provider}
                                               if completion.provider else {})})
             ctx.note_schema_retry()
+            # …and the same fact as a HEALTH EVENT (R2652): the counter above is per run and
+            # reaches no fleet surface, so how often a turn comes back WELL-FORMED AND WRONG
+            # was measurable nowhere. A measurement only — nothing about this turn's effort,
+            # model or attempt budget changes (engine/wrongturn.py).
+            wrongturn.record(ctx, "repeat_invalid" if repeated else "schema_rejected",
+                             turn=ctx.turn + 1, detail=str(exc)[:200])
             # Refusal takeover (engine/refusal.py, operator 2026-10-16): a free-text
             # reply the classification judges a content REFUSAL arms the back-off
             # episode and hands the refused TURN to the routine's uncensored model
@@ -231,6 +255,11 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 # the final attempt free-form JSON; the contract still demands one object.
                 schema = None
     ctx.note_schema_forcefail()
+    # The hard end of the same seam (R2652): every attempt spent and no action accepted, so the
+    # turn that was due produced nothing. Filed for the rate, not acted on — the run ends on
+    # `loopend.no_action_verdict` exactly as before.
+    wrongturn.record(ctx, "attempts_exhausted", turn=ctx.turn + 1,
+                     detail=f"no action accepted in {MAX_SCHEMA_ATTEMPTS} schema attempts")
     return None, usage_sum
 
 

@@ -21,7 +21,11 @@ one place, each step's body a method named for it; `engine/runtime.py` is the en
 (kickoff or resume rehydration — the once-only guards included, in the scope
 `engine/guardscope.py` defines), `engine/completion.py` the get-one-valid-action side (schema
 retries, model failover incl. classifier refusals, refusal clarification, media fallback, the
-compaction gate), `engine/control.py` the
+compaction gate), with `engine/wrongturn.py` the MEASUREMENT beside it — a turn that comes back
+well-formed and WRONG files `wrong_turn_detected` (every net in `engine/degrade.py` answers a
+turn that failed to ARRIVE; a wrong one is, to that ladder, a success), changing no effort, no
+model and no retry: R2652's first increment is the trigger alone, so the rate can justify the
+ladder rather than the other way round. `engine/control.py` is the
 between-turns control plane (abort, pause gate, injection drain, subrun announcements) and
 `engine/switches.py` its `control.json` switches (model, deliberation, rule bindings, a live
 config change), `engine/loopend.py` how a run ENDS (the engine-authored verdicts and the one

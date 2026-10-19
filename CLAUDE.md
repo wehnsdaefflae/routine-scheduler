@@ -267,7 +267,13 @@ one you are about to touch, not all of them.
   provider with no constrained decoding. The violation is recorded as a transcript event and as
   `resource`/`limit` fields on the `budget_exhausted` health event and in status.json's
   `budgets.spent`, so which budget ended a run is answerable by a filter rather than by
-  reconstruction. A finish emitted while an undrained user message waits is deferred so the message
+  reconstruction. **A turn that comes back WELL-FORMED AND WRONG is itself a health event**
+  (`wrong_turn_detected`, `engine/wrongturn.py`, R2652): every net in `engine/degrade.py` — the
+  module headed "when a turn comes back WRONG" — fires on a turn that failed to ARRIVE, so a
+  rejected, repeated or attempt-exhausted turn was visible only as a transcript `error` and two
+  per-run counters. It carries `reason`/`turn`/`model`/`effort`, is read on the blocked-work
+  surface, and is a MEASUREMENT: it changes no effort, no model and no retry — the effort ladder
+  behind it is a later increment that this rate has to justify, so do not wire one here. A finish emitted while an undrained user message waits is deferred so the message
   becomes the next turn (a finish that must stand — the spent reserved turn, an abort — names the
   still-queued message in the summary instead). Budgets are a runaway BACKSTOP, never a pace; do not reintroduce prose that has a run
   ration its work against the turn counter. The 85% warning is an EVENT, not a state: it is said
