@@ -192,11 +192,11 @@ def _hold_rule(routine_dir, slugs: list[str]) -> None:
 
 def _age_ledger(routine_dir) -> None:
     """Date the fixture's LEDGER.md before the run's start. The ledger predicate compares the
-    file's mtime with the run's stamp; the fixture writes it at test time — after TS."""
+    file's mtime with the run's stamp — ALWAYS UTC (`ids.run_ts`), so read as UTC here too."""
     import datetime as dt
     import os
 
-    before = dt.datetime.strptime(TS, "%Y%m%d-%H%M%S").astimezone().timestamp() - 3600
+    before = dt.datetime.strptime(TS, "%Y%m%d-%H%M%S").replace(tzinfo=dt.UTC).timestamp() - 3600
     os.utime(routine_dir / "LEDGER.md", (before, before))
 
 

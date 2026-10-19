@@ -156,12 +156,20 @@ def _ledger_untouched(s: Situation) -> bool:
 
 
 def _run_started(ctx) -> float:
-    """The run's start as an epoch — `run_ts` is its local wall-clock stamp and survives a
-    resume, where the engine's own monotonic clock restarts.
+    """The run's start as an epoch. `run_ts` is a bare `YYYYMMDD-HHMMSS` stamp ALWAYS in UTC
+    (`ids.run_ts`), so it is read as UTC — like every other reader of it (registry.parse_run_ts,
+    runevidence, daemon/gate_prepare). It survives a resume, where the engine's own monotonic
+    clock restarts.
+
+    Reading it as LOCAL time skewed this bound by the host's whole UTC offset (2 h here in
+    summer), so `ledger.st_mtime >= _run_started(ctx)` counted a ledger written hours BEFORE
+    the run as written during it and the missing-reasoning assist silently never fired. It is
+    pinned by offset arithmetic in tests/test_assist_run_started.py, never against a named
+    zone: this host's zoneinfo files are not the zones their names promise.
     """
     import datetime as dt
 
-    stamp = dt.datetime.strptime(str(ctx.run_ts), "%Y%m%d-%H%M%S").astimezone()
+    stamp = dt.datetime.strptime(str(ctx.run_ts), "%Y%m%d-%H%M%S").replace(tzinfo=dt.UTC)
     return stamp.timestamp()
 
 
