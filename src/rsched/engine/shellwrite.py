@@ -46,13 +46,24 @@ _WRITE_SHAPES = (
     r"\b(?:cp|mv|rm|rmdir|mkdir|ln|touch|chmod|chown)\b",
     r"\bsed\b[^|;]*\s-i",                   # in-place sed only; a filtering sed is a read
     r"\b(?:patch|git)\b[^|;]*\b(?:apply|checkout|reset|commit|add|restore|stash)\b",
-    r"\b(?:python3?|perl|ruby|node)\b[^|;]*\b(?:-c|-e)\b[^|;]*\b(?:open|write|unlink|mkdir)\b",
+    # An interpreter running an INLINE program that writes. The program arrives three ways —
+    # `-c`/`-e`, stdin (`python3 -`) or a heredoc — and a routine's state edits use all three,
+    # so all three are matched; the needle is then a WRITE verb, not merely `open`, because
+    # `json.load(open(p))` is how every routine READS its own state.
+    (r"\b(?:python3?|perl|ruby|node)\b[^|;]*?(?:(?<![\w-])-[ce]\b|(?<![\w-])-\s|<<).*?"
+     r"(?:\b(?:write\w*|unlink|rmtree|makedirs|mkdir|rename|replace|dump)\b"
+     r"|open\([^),]*,\s*['\"][^'\"]*[wax])"),
 )
-_WRITE_RE = re.compile("|".join(_WRITE_SHAPES))
+_WRITE_RE = re.compile("|".join(_WRITE_SHAPES), re.DOTALL)
 
 #: A quoted span — the one place a `>` is TEXT rather than a redirect. Only the `>` inside it is
 #: blanked, never the span's words: `python -c "open('x','w')"` must still flag on `open`.
 _QUOTED = re.compile(r"'[^'\n]*'|\"[^\"\n]*\"")
+
+#: `>=`, `->` and `=>` are COMPARISONS and arrows, never redirects. Inline Python is how a routine
+#: edits its own state, and `if ts >= '2026-10-19'` is its commonest line — blanked before the
+#: shape test so a date filter does not read as a write (F730).
+_COMPARISON = re.compile(r"->|=>|>=")
 
 
 def marks_a_write(command: str) -> bool:
@@ -62,15 +73,25 @@ def marks_a_write(command: str) -> bool:
     are neutralised before the test — otherwise nearly every defensive command would flag and the
     marker would stop being worth reading:
 
-    * `2>/dev/null` and `2>&1` — stripped whole.
+    * `>/dev/null`, `2>/dev/null` and `2>&1` — stripped whole. The fd is optional: discarding
+      STDOUT (`ls "$d" >/dev/null && echo ok`) is a probe idiom, not a write.
+    * `>=`, `->` and `=>` — blanked. Inline Python is how a routine edits its own state and
+      `if ts >= '2026-10-19'` is its commonest line; read as a redirect it made the marker fire
+      on pure reads.
     * a `>` INSIDE a quoted string (`grep -n "a > b"`, `echo 'x > y'`) — blanked in place. This
       is what the first three `ungated_write` health events caught: two of them were read-only
       commands whose grep pattern or echo text contained a `>`, so the stream's very first signal
       was 1-in-3 false. A new detector a reader learns to discount is worse than none. Only the
       `>` is blanked, never the quoted span's words: a redirect outside the quotes still flags
-      (`echo hi > "state/x"`), and `python3 -c "open('x','w')"` still flags on `open`.
+      (`echo hi > "state/x"`), and `python3 -c "open('x','w')"` flags on the write-mode open.
+
+    What is NOT neutralised, deliberately: a bare `>` used as "greater than" OUTSIDE a quoted
+    span — a multi-line `-c` program comparing with `>` rather than `>=` still flags. Widening
+    the strip that far would need to parse the shell line, and the marker's one promise is to be
+    conservative in the FLAGGING direction.
     """
-    stripped = re.sub(r"\d?>&\d|\d>\s*/dev/null", " ", command)
+    stripped = re.sub(r"\d?>&\d|\d?>\s*/dev/null", " ", command)
+    stripped = _COMPARISON.sub(" ", stripped)
     stripped = _QUOTED.sub(lambda m: m.group(0).replace(">", " "), stripped)
     return bool(_WRITE_RE.search(stripped))
 

@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.436.1] — 2026-10-19
+
+### `ungated_write` stops guessing: the shape test sees comparisons, and its interpreter shape was dead (F730)
+
+The `ungated_write` health signal shipped 2026-10-18 (0.433.2) and was measured again the next
+day over every shell command the fleet ran. Two defects, in opposite directions:
+
+- **False positives.** `marks_a_write()` blanked a `>` inside quotes but still read two shapes
+  as redirects: a `>=` comparison in inline Python (`if ts >= '2026-10-19'`, the commonest line
+  a routine writes when filtering its own state) and a bare `>/dev/null`, because the stderr
+  strip required a leading digit (`\d>\s*/dev/null`). `->` and `=>` had the same problem.
+- **A dead shape, i.e. false negatives.** The interpreter shape anchored the flag as `\b-c\b`,
+  and `\b` cannot match between a space and a `-`: the whole shape never fired, so
+  `python3 -c "open('x','w')"` — a real write — returned `False`. The docstring claimed the
+  opposite.
+
+`->`, `=>` and `>=` are now blanked before the shape test; the `/dev/null` strip no longer
+requires a digit; the interpreter shape matches the three ways an inline program actually
+arrives (`-c`/`-e`, stdin `-`, a heredoc `<<`) and needles a WRITE verb rather than a bare
+`open(`, because `json.load(open(p))` is how every routine READS its own state.
+
+Measured over 40 fleet runs before the change: 38 of the 40 flagged commands keep their flag,
+3 commands gain one that genuinely write, and 50 heredoc commands that really do write would
+have LOST their flag had the interpreter shape been repaired without extending it.
+
+New `tests/test_shellwrite_shapes.py` pins the shapes at the unit the stream uses
+(`tests/test_shell_action.py` is at its size ceiling and may only shrink).
+
 ## [0.436.0] — 2026-10-19
 
 ### The finish seam asks a run for the flaw it knows about (D195)
