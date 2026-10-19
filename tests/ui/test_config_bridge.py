@@ -143,8 +143,12 @@ def test_a_server_patch_applies_to_the_instance_config(ui, ui_page):
     expect(card).to_be_visible()
     expect(card).to_contain_text("proposed instance config change")
     card.get_by_role("button", name="approve & apply").click()
-    expect(card).to_contain_text("applied")
-    expect(card).to_contain_text("the instance")
+    # The FILE is the claim, not the card's receipt: answering re-renders the card through the
+    # settled branch, which rebuilds the proposal from the server record — where
+    # `config_patch_applied` is always False (api_questions.py:233, since the answer route never
+    # applies a patch). So the transient "applied to the instance" note is gone by then, exactly
+    # as it is for the routine surface above. What proves the apply is config.yaml itself.
+    expect(card).to_contain_text("approved & applied the proposed config change")
     until(lambda: read_yaml(ui.tmp / "config.yaml").get("compaction_model") == "m",
           what="the instance patch")
     # and nothing was written to the asking routine
