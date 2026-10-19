@@ -15,6 +15,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.434.2] — 2026-10-19
+
+### A run tree can talk to itself — F695 as a case of the one hook mechanism (D152 step 3)
+
+0.434.0 put the five-field hook record and the `.control/hooks.jsonl` store *behind* the three
+mechanisms that already existed. This is the first NEW case of it, and it adds **no action kind
+and no store**: a run-tree hook is the `report` action with a run-tree `target`.
+
+Two of F695's three measured seams open:
+
+- **CHILD → PARENT, mid-flight** — `target: "parent"`. Before this a child could speak only by
+  EXITING (its finish summary and `artifacts/from-sub-<n>/`), so a child that learned at turn 5
+  that its brief named a file which does not exist had to spend its whole budget before saying so.
+- **PARENT → CHILD, after the spawn** — `target: "child:<label>"`. Before this, the `prompt` at
+  spawn time was the parent's one and only word to a child.
+
+**SIBLING → SIBLING stays closed on purpose**, and that refusal is rule 1 of the design: *the run
+tree is the only addressing scheme*. A child says `parent`; the parent — the only run that holds
+the labels — re-addresses downward. No run can reach a run it does not own, and nothing has to
+resolve a name outside its own subtree. The refusal says so by name and lists the children still
+running.
+
+The gate this lifted is the finding's own line: `control.drain_injections` returned at once for
+every `ctx.depth > 0`, so a child drained **nothing**. It now calls `runtree.drain_child`, which
+consumes the `hook` channel and nothing else — the operator's channels stay the ROOT run's,
+because a child's inbox is its own `sub/<n>/` dir and a child widened to the live set could only
+eat freight addressed to the routine (D92/D93 from the other side).
+
+The finding's constraints hold by construction: delivery rides a turn boundary the addressee was
+going to take anyway, so nothing blocks or polls, a messaged child stays killable, and being
+reachable buys it no extra turn. The inbox filename *is* the hook id (run + turn), so a retry
+replaces its own delivery instead of queuing a second (F697's bug class). A hook to a child that
+has already exited is refused rather than filed — that run will take no further boundary.
+
+A run-tree hook gets **no `R<n>`**: an item is owed an answer by a ROUTINE, and both of these runs
+are gone in minutes, so the row would sit open forever — the exact backlog pathology the item
+ledger exists to make visible. It gets a `hooks.jsonl` row instead (source `runtree`).
+
+New `engine/runtree.py` and `engine/channels.py` — the delivery channels and their policy, lifted
+out of `inbox.py`, which is back under the 350-line bar from a 398 ceiling. `channels.injected_lead`
+makes the prompt label a hook a **HOOK**, not "USER MESSAGE (injected mid-run)", live and in the
+replay renderer alike: a run that cannot tell a machine from its operator answers the wrong party,
+and a replayed prefix differing by one label is re-written to the provider instead of re-read from
+its cache.
+
 ## [0.434.1] — 2026-10-19
 
 ### A release landing mid-run no longer kills the finish gate (F677)
