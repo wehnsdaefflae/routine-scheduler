@@ -21,6 +21,7 @@ from ..daemon.runner import Runner
 from ..daemon.scheduler import Scheduler
 from ..ids import now_iso
 from ..llm_tasks import TaskCenter
+from . import assetskew
 from .appwiring import _include_api_routers, _make_lifespan
 from .screen_proxy import screen_for_path
 
@@ -33,22 +34,6 @@ SLOW_REQUEST_S = 2.0
 SLOW_KEEP = 50
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
-
-
-def build_stamp(repo: Path | None) -> str:
-    """Short commit + date of the running checkout ('46e48e3 2026-07-13'), '' if unknown.
-
-    Computed once at boot: the build RUNNING, not the on-disk checkout (8 h apart 2026-10-14).
-    """
-    if not repo:
-        return ""
-    try:
-        from ..libgit import git
-
-        out = git(repo, "log", "-1", "--format=%h %cs")
-        return out.stdout.strip() if out.returncode == 0 else ""
-    except Exception:
-        return ""
 
 
 # R94 (operator decision 2026-08-05: ENFORCE — this supersedes decision D68's 2026-08-03
@@ -218,7 +203,10 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     def _setup_marker():
         return (server.source.parent / ".setup-complete") if server.source else None
 
-    build = build_stamp(server.source_repo)
+    # The build this PROCESS is, read once at boot. /static is served live from the checkout,
+    # which can move under us — `assetskew` compares the two and /api/status carries the verdict
+    # so the console can say so (F696).
+    build = assetskew.read_stamp(server.source_repo)
 
     @app.get("/api/status", dependencies=deps)
     def status() -> dict:
@@ -238,6 +226,10 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
                          for info in registry.scan(server).values()
                          if "meta" in info.cfg.tags]
         return {"version": __version__, "build": build, "server_tz": server_tz(),
+                # F696: `build` is the process; `disk_build` is the checkout /static is served
+                # from NOW, and `build_skew` says they disagree — the console then tells the
+                # operator to reload instead of posting new fields at an old process.
+                **assetskew.status_fields(server.source_repo, build),
                 "needs_setup": needs_setup, "llm_ready": llm_ready,
                 # Where the shared browser can be WATCHED (empty = this deployment never
                 # published a screen). The console shows the Browser section only when it
