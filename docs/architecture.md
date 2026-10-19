@@ -886,7 +886,13 @@ and the capabilities digest's catalog listing):
   mechanisms still own their own stores and readers; each MIRRORS its write here
   (`reports.file_report`, `engine/remind_write.persist`, `engine/control.inject_user_message`
   through `engine/hookmirror`), best-effort, so this stream is where "what hooks exist in this
-  instance" is answerable at all — the question none of the three stores can answer. Two
+  instance" is answerable at all — the question none of the three stores can answer.
+  The FOURTH source is the one the store was built for: a RUN-TREE hook (`engine/runtree.py`,
+  F695), which is the `report` action with `target: "parent"` or `"child:<label>"` and has no
+  store of its own — delivered on the `hook` channel at the addressee's next turn boundary, with
+  no `R<n>` because both runs are gone in minutes and an item nobody can close is exactly the
+  backlog pathology the ledger exists to show. It is what the lifted `ctx.depth > 0` return in
+  `control.drain_injections` opened: a child drains its own hooks, and nothing else. Two
   writers are deliberate for now: the report ledger and the reminders store have readers
   outside this engine (the Decisions page, self-audit's folds, the per-routine fire tallies),
   and the duplication ends when the surfaces ride the one mechanism. Every finished

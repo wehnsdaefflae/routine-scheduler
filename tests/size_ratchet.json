@@ -18,7 +18,6 @@
     "src/rsched/engine/degrade.py": 354,
     "src/rsched/engine/executor.py": 486,
     "src/rsched/engine/fileops.py": 628,
-    "src/rsched/engine/inbox.py": 398,
     "src/rsched/engine/kindsurface.py": 416,
     "src/rsched/engine/ladder.py": 383,
     "src/rsched/engine/loop.py": 453,

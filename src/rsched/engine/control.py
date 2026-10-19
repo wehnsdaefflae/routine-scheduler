@@ -21,7 +21,7 @@ from collections.abc import Callable
 from .. import reports
 from ..paths import read_json
 from ..schema_guard import validate
-from . import child, hookmirror, inbox, mediaops, refusal
+from . import channels, child, hookmirror, inbox, mediaops, refusal, runtree
 from .actions import util_rejection_outcome, validate_action
 from .actionschema import ACTION_SCHEMA
 from .commands import CommandError, parse_command
@@ -169,7 +169,8 @@ def inject_user_message(loop, m: dict) -> None:
         # branch hand-back are machines delivering; the CHANNEL is what says so (inbox.VIAS).
         ctx.user_replies += 1
     msg: dict = {"role": "user",
-                 "content": injected_message(m["text"], report=bool(m.get("report")))}
+                 "content": injected_message(m["text"], report=bool(m.get("report")),
+                                             via=str(m.get("via") or ""))}
     if m.get("attachments") and (media := mediaops.media_from_paths(ctx, m["attachments"])):
         msg["media"] = media
     loop.messages.append(msg)
@@ -179,16 +180,9 @@ def inject_user_message(loop, m: dict) -> None:
     hookmirror.injection_delivered(loop, m)
 
 
-def injected_message(text: str, *, report: bool = False) -> str:
-    """One rendering for a mid-run injected message — live and replayed prompts must read
-    identically, or a resumed leg's prefix differs from the leg that wrote it and the whole
-    conversation is re-written to the provider instead of re-read from its cache.
-
-    A delivered report already carries its own "REPORT <id> from routine <slug>" heading
-    (reports.message_text) — labelling it a USER MESSAGE would name the wrong sender.
-    """
-    lead = "REPORT (injected mid-run)" if report else "USER MESSAGE (injected mid-run)"
-    return f"{lead}:\n{text}"
+#: The injected-message rendering lives with the channel table it reads (`channels.py`), and
+#: is re-exported here because `history.replay_messages` and every test know it by this name.
+injected_message = channels.injected_message
 
 
 def command_message(text: str, obs: dict, ctx=None) -> str:
@@ -264,9 +258,12 @@ def run_user_command(loop, m: dict) -> None:
 
 
 def drain_injections(loop) -> None:
-    """Feed mid-run user messages from the inbox into the conversation (root runs only)."""
+    """Feed mid-run messages from the inbox in. A CHILD drains only its run-tree hooks
+    (`runtree.drain_child`); the operator's channels are the root run's, by design.
+    """
     ctx = loop.ctx
     if ctx.depth > 0:
+        runtree.drain_child(loop)
         return
     # F195: an answer to a DEFERRED question this run filed must reach the run while it
     # is still alive — before this, it sat in the inbox for the NEXT run's digest while

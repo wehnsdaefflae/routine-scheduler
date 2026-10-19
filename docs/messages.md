@@ -65,6 +65,14 @@ decision answer, a sibling's report delivery, a routine-page queued message) is 
 the routine's NEXT FRESH run, and a follow-up leg draining it wholesale silently ate answers
 meant for that night's run (D92/D93).
 
+A CHILD run drains one channel and one only: `hook`, a RUN-TREE message from its parent
+(`engine/runtree.drain_child`, D152 step 3 / F695). Before that, `control.drain_injections`
+returned at once for every `ctx.depth > 0`, so a child drained nothing — which is what made a
+parent's spawn `prompt` its only word down and a child's finish summary its only word up. The
+narrowing is the same D92/D93 rule from the other side: a child's inbox is its `sub/<n>/` dir,
+the operator's channels belong to the ROOT run, and a child widened to the live set could only
+ever eat freight addressed to the routine.
+
 That exclusion stays. What such a leg now gets is a NAME for it: `inbox.queued_freight`
 lists the waiting files — via, timestamp, report id, first line — and the composer renders
 them as one digest section, consuming nothing. The run is told to go and read the file, never

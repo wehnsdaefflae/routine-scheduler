@@ -100,7 +100,8 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
                                  "content": enginenote.message(str(p.get("text", "")))})
                 continue
             messages.append({"role": "user", "content": injected_message(
-                str(p.get("text", "")), report=bool(p.get("report")))})
+                str(p.get("text", "")), report=bool(p.get("report")),
+                via=str(p.get("via") or ""))})
         elif kind_ev == "subrun_end":
             n = p.get("n")
             if isinstance(n, int):

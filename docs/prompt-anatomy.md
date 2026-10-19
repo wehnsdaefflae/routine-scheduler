@@ -776,7 +776,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "target": {
    "type": "string",
-   "description": "report: OPTIONAL \u2014 the slug of the routine that OWNS this problem. With it, the report is delivered to that routine and read on its next scheduled run; without it, the report goes to triage. Omit it rather than guess"
+   "description": "report: OPTIONAL \u2014 the slug of the routine that OWNS this problem. With it, the report is delivered to that routine and read on its next scheduled run; without it, the report goes to triage. Omit it rather than guess. Or a RUN-TREE address \u2014 `parent`, or `child:<label>` for one of your own: a MESSAGE to that live run, read at its next turn boundary, with no R id. A sibling is not addressable \u2014 say `parent`"
   },
   "answers": {
    "type": "string",

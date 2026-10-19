@@ -104,7 +104,7 @@ DEFAULT_DISPOSITION = "keep"
 #: Which of today's mechanisms wrote the row. Kept on the record because the campaign's later
 #: steps retire these paths one at a time: a row has to say which path it came from for
 #: "is anything still writing the old way" to be answerable at all.
-SOURCES = ("report", "reminder", "injection")
+SOURCES = ("report", "reminder", "injection", "runtree")
 
 
 def addressee(kind: str, name: str = "") -> str:

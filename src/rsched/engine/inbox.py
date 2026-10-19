@@ -43,79 +43,21 @@ from pathlib import Path
 from ..ids import now_iso
 from ..paths import atomic_write_json, file_lock, read_json
 
+# The delivery channels and their policy live in `channels.py` (lifted there when this module
+# hit its size ceiling): `via` is the policy switch three subsystems read, not part of the
+# `msg-*` file shape this module owns. Re-exported so every `inbox.VIAS` caller still resolves.
+from .channels import (
+    LIVE_MESSAGE_VIAS,
+    MACHINE_VIAS,
+    USER_MESSAGE_VIAS,
+    VIAS,
+    user_authored,
+)
+
 log = logging.getLogger("rsched.inbox")
 
 #: The lock the drain and `rewrite_message` share. A dotfile, so no `msg-*` scan sees it.
 LOCK_NAME = ".lock"
-
-#: The injection channels that mean "the user is talking to THIS run": the conversation
-#: composer and the run page. The daemon's post-finish sweep re-opens a finished run only
-#: for these (R108/F268) — a machine delivery waits for the run's next leg instead of
-#: buying one.
-USER_MESSAGE_VIAS = ("conversation", "web", "web-converse")
-
-#: What a LIVE run may consume at a mid-run turn boundary, and what a RESUMED leg's boot
-#: drains (F359, generalized by the user order of 2026-08-20): the user talking to THIS run
-#: (USER_MESSAGE_VIAS) plus the results of work this run itself started — a detached
-#: background task's delivery (the daemon's delivery contract counts on the live owner
-#: draining it at the next boundary, daemon/detached_delivery.wake), a branch's hand-back
-#: (branches.hand_back: the parent's next reply reads it) and a one-shot's fire text. A
-#: one-shot's text is filed only by the fire it starts (daemon/schedule_once._fire), and a
-#: CONVERSATION's one-shot — the "remind me in 3 days" it armed for itself — fires by RESUMING
-#: it: with the text off this set that leg drained nothing, ran without the reminder, and the
-#: message sat in the inbox forever, since a conversation never boots fresh. A routine's
-#: one-shot fires a fresh run, which drains everything anyway. Everything else — reports,
-#: audit feedback, routine-page queued messages, trigger texts, answers to other runs'
-#: questions — is addressed to the routine's NEXT FRESH run and is consumed only by that
-#: run's boot, never mid-flight: a follow-up leg draining it wholesale silently ate decision
-#: answers meant for that night's run (D92/D93). Mid-run injection into a running run is the
-#: live run view's channel, by design.
-#: `oversight` is here for the reason the whole ladder exists: a directive that only reached
-#: the routine's NEXT FRESH run would arrive after the drift it was written to correct. It is
-#: the one MACHINE channel that must reach a run mid-flight, and it may do so only at a turn
-#: boundary — never as a prefix rewrite, because the message list is a prompt-caching
-#: contract with exactly three sanctioned rewriters and a supervisor must not become a fourth.
-LIVE_MESSAGE_VIAS = (*USER_MESSAGE_VIAS, "background", "branch", "schedule_once",
-                     "oversight")
-
-#: The CLOSED set of delivery channels. `via` is not a label: it is the switch that decides
-#: when a message is consumed (the two tuples above), whether the reap counts it as a user
-#: talking to a finished run (daemon/runner_state), and whether the conversation surface
-#: offers it as the user's own editable text (web/api_conversations). It was chosen freehand
-#: at every writer, which is how a branch hand-back came to be filed on the USER channel and
-#: was read by the parent as the operator speaking. A writer now names a channel this set
-#: knows, or `file_message` refuses the write.
-#:
-#: "" is a channel too — the routine page's queued message, which is the operator typing with
-#: no surface of its own to name.
-VIAS = frozenset({
-    "",               # web/api_messages — the routine page's queued message
-    "conversation",   # web/api_conversations — the composer
-    "web",            # web/api_run_control, engine/interact — the live run view
-    "web-converse",   # web/api_run_control — the run view's converse box
-    "web-audit",      # web/api_audit — self-audit feedback and decisions
-    "report",         # reports.file_report — a sibling routine's addressed report
-    "background",     # daemon/detached_delivery — a detached task's result; also
-                      # daemon/runner_reap's D99 recovery note, which a resumed leg must drain
-    "branch",         # branches.hand_back — a forked conversation's result
-    "trigger",        # daemon/triggers — a configured event's text
-    "schedule_once",  # daemon/schedule_once — a one-shot fire's provenance
-    "pending",        # pending.notify_proposer — the outcome of a queued proposal
-    "oversight",      # engine/control — an escalation rung's directive, binding the run below
-})
-
-#: The channels whose freight a MACHINE authored. `ctx.user_replies` — read by the
-#: create_routine confirm gate (has the user spoken since the draft?) and by the `user-spoke`
-#: assist predicate — counts the user talking, so a report, a background result or a branch
-#: hand-back must not advance it. Everything else on VIAS is a person at a console.
-MACHINE_VIAS = frozenset({"report", "background", "branch", "trigger", "schedule_once",
-                          "pending", "oversight"})
-
-
-def user_authored(via: str) -> bool:
-    """Is freight on this channel the USER talking? The one answer, for every consumer."""
-    return via not in MACHINE_VIAS
-
 
 def _consume(path: Path, consumed_dir: Path) -> None:
     consumed_dir.mkdir(parents=True, exist_ok=True)

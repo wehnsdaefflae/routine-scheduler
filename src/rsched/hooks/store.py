@@ -115,6 +115,24 @@ def record_reminder(routines_home: Path, *, reminder_id: str, routine: str, run_
         disposition=disposition, origin={"routine": routine, "run_id": run_id}, ts=now_iso()))
 
 
+def record_runtree(routines_home: Path, *, hook_id: str, routine: str, run_id: str,
+                   turn: int, addressee: str, title: str, delivered: bool) -> str:
+    """Mirror a RUN-TREE hook as a hook row: `trigger: send`, addressee `parent` or
+    `child:<label>`, delivery `turn_boundary` (F695 as a case of D152, `engine/runtree.py`).
+
+    `disposition` is `settled` when the freight was filed and `open` when the write failed —
+    the one thing a reader cannot reconstruct from the two runs' transcripts, since a run-tree
+    hook deliberately gets no `R<n>` row to carry it (a parent and a child are both gone in
+    minutes, and an item nobody can close is the backlog pathology the ledger exists to show).
+    """
+    return append(routines_home, Hook(
+        id=str(hook_id), source="runtree",
+        trigger={"kind": "send"}, addressee=str(addressee),
+        payload={"title": title}, delivery="turn_boundary",
+        disposition="settled" if delivered else "open",
+        origin={"routine": routine, "run_id": run_id, "turn": turn}, ts=now_iso()))
+
+
 def record_injection(routines_home: Path, *, run_id: str, turn: int, via: str,
                      text: str, routine: str = "") -> str:
     """Mirror a mid-run injection as a hook: `trigger: send`, addressee `run:<run_id>`,

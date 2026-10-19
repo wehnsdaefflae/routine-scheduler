@@ -15,6 +15,7 @@ import difflib
 from pathlib import Path
 
 from .. import recipients, registry, report_threads, reports, schedule_once
+from . import runtree
 
 
 def _unknown_target(kind: str, target: str, home: Path,
@@ -152,6 +153,12 @@ def handle_report(loop, action: dict) -> dict:
     target = str(action.get("target") or "").strip()
     home = ctx.server.routines_home
     target_dir = None
+    # A RUN-TREE address (`parent`, `child:<label>`) is a hook to another run of this same run
+    # tree, not an item for a routine: it is delivered at that run's next turn boundary and
+    # gets no `R<n>`, because an item is owed an answer by a routine and both of these runs are
+    # gone in minutes (F695 as a case of D152 — engine/runtree.py says why).
+    if runtree.is_runtree(target):
+        return runtree.send(loop, target=target, title=title, detail=detail)
     if target:
         if target == ctx.routine.slug:
             return {"kind": "report", "target": target, "self_target": True}

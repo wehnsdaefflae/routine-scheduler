@@ -144,6 +144,31 @@ wording. Every one of them tells the parent the landed PATHS: the branch and the
 delivery used to report a count, so a parent that was handed three files had to list a
 directory to find out what they were.
 
+**Speaking mid-flight, in both directions** (D152 step 3, F695 as a case of hooks —
+`engine/runtree.py`). The hand-back above is a child's word at its EXIT; until 0.434.2 it was
+its only one, so a child that learned at turn 5 that its brief named a file which does not
+exist had to spend its whole budget before saying so, and a parent's `prompt` at spawn time was
+its only word down. Both are now the ordinary `report` action with a RUN-TREE target:
+
+- a child writes `target: "parent"`, and the parent reads it at its next turn boundary;
+- a parent writes `target: "child:<label>"` — the label it passed to `spawn`/`subtask`.
+
+A SIBLING is not addressable, and that refusal is the design's first rule: *the run tree is the
+only addressing scheme*. A child says `parent`, and the parent — the only run that holds the
+labels — re-addresses downward. So no run can reach a run it does not own, and nothing has to
+resolve a name outside its own subtree.
+
+Three properties follow from delivery riding a boundary the addressee was going to take anyway
+(`control.drain_injections`, whose `ctx.depth > 0` early return this lifted): nothing blocks or
+polls, a messaged child stays killable, and being reachable buys it no extra turn. A hook to a
+child that has already exited is REFUSED rather than filed, because that run will take no
+further boundary. The freight arrives on the `hook` channel (`engine/channels.VIAS`), labelled
+`HOOK (injected mid-run)` and never as the operator — a run that cannot tell a machine from the
+person answers the wrong party. It gets no `R<n>`: an item is owed an answer by a ROUTINE, and
+both of these runs are gone in minutes, so the row would sit open forever. What it does get is
+a row in `.control/hooks.jsonl` like every other hook, with `addressee` = `parent` or
+`child:<label>`.
+
 **Asking the user.** A child never blocks a run on a person (`interact.handle_ask` forces
 `mode: deferred` at depth > 0 — a child has no speaking turn with the user), so its question
 becomes a durable DECISION RECORD like any other. That record is filed into the ROUTINE's own

@@ -218,14 +218,14 @@ ACTION_SCHEMA: dict = {
         # schedule_run — arm/cancel a one-shot time trigger on a routine (gated: scheduling)
         "target": {"type": "string",
                    "description": "schedule_run: the routine slug to arm/cancel a one-shot on "
-                                  "(this routine or another) · "
-                                  "create_routine: the NEW routine's kebab-case slug · "
-                                  "manage_lane: the lane id to update/delete/run — take it "
-                                  "from a `list`; ids are opaque handles · "
-                                  "report: OPTIONAL — the slug of the routine that OWNS this "
-                                  "problem. With it, the report is delivered to that routine "
-                                  "and read on its next scheduled run; without it, the report "
-                                  "goes to triage. Omit it rather than guess"},
+                   "(this routine or another) · create_routine: the NEW routine's kebab-case "
+                   "slug · manage_lane: the lane id to update/delete/run — take it from a "
+                   "`list`; ids are opaque handles · report: OPTIONAL — the slug of the routine "
+                   "that OWNS this problem. With it, the report is delivered to that routine and "
+                   "read on its next scheduled run; without it, the report goes to triage. Omit "
+                   "it rather than guess. Or a RUN-TREE address — `parent`, or `child:<label>` "
+                   "for one of your own: a MESSAGE to that live run, read at its next turn "
+                   "boundary, with no R id. A sibling is not addressable — say `parent`"},
         "answers": {"type": "string",
                     "description": "report: OPTIONAL — the id (R<n>) of a report DELIVERED TO "
                                    "YOU that this one answers: what you did about it, or why "
