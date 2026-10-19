@@ -101,6 +101,31 @@ out on a positive-offset host; fixed in the same change. Pinned by OFFSET ARITHM
 on this host is byte-identical to `Europe/Berlin` and `tzdata` is not installed, so a named-zone
 test would pass for the wrong reason.
 
+### Six statements a run reads before acting, each one wrong (F724, F725)
+
+All six confirmed against the source by the deep sweep and handed over as prose-only work. The
+class costs a reader a wrong assumption rather than an error, so nothing contradicts it.
+
+- `docs/designs.md` listed **"the concurrency cap"** among D118's built phases. There is no cap:
+  0.392.0 shipped one (`MAX_CONCURRENT` = 3) built from a decision row recording the option the
+  operator did not choose, and 0.408.1 removed it (F650) after D166 answered (c), unbounded.
+- The `background` field said it is "NOT available on anything that **writes**" while listing
+  `shell` and `util` among the kinds that accept it — and a shell command writes, which is the
+  whole reason `engine/shellwrite.marks_a_write` exists. It now says a WRITING KIND (the four
+  action kinds) and names the two that can write anyway, where ordering is the run's own to keep.
+- `docs/rules-permissions.md` said "19 docs" and tabulated **18**: `desktop-sessions` was missing.
+- The same doc taught `tasks: off` as the config key three times. The key is `jobs:`
+  (`jobs_compat.SETTING_KEY`); `tasks:` is the deprecated alias, and the doc now says which is which.
+- `_validate_tuning`'s docstring named `DEFAULT_RUNG_HEIGHT` as a floor. The function neither
+  applies nor imports it — the only floor is `engine/ladder.MIN_OVERSIGHT_TURNS` — so a reader
+  trusted a guarantee the code does not make.
+- `engine/background.py`'s cancel docstring said "two things always hold" above THREE bullets.
+
+`docs/prompt-anatomy.md` §5.1 is re-rendered twice over: it quotes the projected action schema
+byte for byte, and both the `closes` and the `background` descriptions changed in this release.
+The `background` literal was repacked to the same 16 source lines (`actionschema.py` is at its
+ceiling), with the emitted string asserted against the intended text before the write.
+
 ## [0.433.2] — 2026-10-18
 
 ### A flag is not a util name: `util list --json` answered with the `json` util (F720)
