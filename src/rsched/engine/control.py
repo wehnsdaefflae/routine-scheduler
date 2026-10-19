@@ -21,7 +21,7 @@ from collections.abc import Callable
 from .. import reports
 from ..paths import read_json
 from ..schema_guard import validate
-from . import child, inbox, mediaops, refusal
+from . import child, hookmirror, inbox, mediaops, refusal
 from .actions import util_rejection_outcome, validate_action
 from .actionschema import ACTION_SCHEMA
 from .commands import CommandError, parse_command
@@ -173,6 +173,10 @@ def inject_user_message(loop, m: dict) -> None:
     if m.get("attachments") and (media := mediaops.media_from_paths(ctx, m["attachments"])):
         msg["media"] = media
     loop.messages.append(msg)
+    # An injection is ONE CONFIGURATION OF A HOOK (D152): trigger `send`, addressee
+    # `run:<run_id>`, delivery `turn_boundary`, consumed once. Mirrored AFTER the message is
+    # really in the conversation, so the row records a delivery and not an intent.
+    hookmirror.injection_delivered(loop, m)
 
 
 def injected_message(text: str, *, report: bool = False) -> str:

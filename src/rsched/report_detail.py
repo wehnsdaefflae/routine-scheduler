@@ -20,6 +20,32 @@ change (a prompt-budget decision, revisited whenever model context changes).
 
 from __future__ import annotations
 
+from typing import Protocol
+
+
+class Disposed(Protocol):
+    """What the delivered PROSE needs to know about a report's disposal — and no more.
+
+    A structural type rather than an import of `reports.Disposal`: the lifecycle (what a
+    disposal MEANS, how it is normalized, which combinations are valid) is the ledger's, and
+    this module only reads the three fields to say so in the message head. Typed this way the
+    dependency points one way, which is what lets the delivery wording live beside the
+    delivery bound instead of inside the ledger.
+    """
+
+    #: Read-only members, so a FROZEN record satisfies this: a disposal is the run's utterance
+    #: about what it disposed of, and a reader that could assign to it is how two surfaces come
+    #: to disagree about what a report settled.
+    @property
+    def answers(self) -> str: ...
+
+    @property
+    def closes(self) -> bool: ...
+
+    @property
+    def settles(self) -> tuple[str, ...]: ...
+
+
 #: The cap on a DELIVERED detail. A prompt-budget decision, unchanged by D177 — what changed is
 #: that it no longer governs the stored row.
 DETAIL_MAX = 4000
@@ -66,3 +92,33 @@ def clip_detail(detail: str, item_id: str = "") -> tuple[str, int]:
     dropped = len(text) - kept
     return (text[:kept] + TRUNCATION_NOTE.format(dropped=dropped, cap=DETAIL_MAX,
                                                  item_id=shown), dropped)
+
+
+def message_text(item_id: str, sender: str, title: str, detail: str,
+                 disposal: Disposed | None = None) -> str:
+    """The prose a delivered report becomes in the target's prompt — one wording, used by the
+    boot drain and the mid-run injection alike so a resumed prompt reads like a live one.
+
+    Settled rows are NAMED in the head rather than left to the ledger: the recipient's own rows
+    are what got disposed of, and a reader who cannot see which ones has to go and look them up.
+
+    Beside `clip_detail` because both answer the same question — what a delivered report reads
+    like in another run's prompt — and because the ledger module is at its size ceiling, where
+    a shared narrative no longer fits beside the lifecycle it is not about.
+    """
+    answers = str(getattr(disposal, "answers", "") or "")
+    closes = bool(getattr(disposal, "closes", False))
+    settles = tuple(getattr(disposal, "settles", ()) or ())
+    head = f"REPORT {item_id} from routine `{sender}`"
+    if answers and closes:
+        head += f" (answering {answers} — closes the exchange, no reply needed)"
+    elif answers:
+        head += f" (answering {answers})"
+    if settles:
+        rows = ", ".join(settles)
+        head += (f" (settles {rows} — no reply needed)" if closes and not answers
+                 else f" (settles {rows})")
+    body = [head, "", title]
+    if detail:
+        body += ["", detail]
+    return "\n".join(body)

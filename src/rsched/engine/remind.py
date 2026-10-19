@@ -24,7 +24,13 @@ reply of a conversation — and this layer's own ledgers follow the hold ledger 
 (`remind_ledger`): a hold from before a restart is still owed its one label after it.
 
 The turn cost is paid on the INPUT side — selective creation, a precise regex, and the four-way
-tally that shows which reminders earn their turns. There is deliberately no cheaper passive tier.
+tally that shows which reminders earn their turns; no cheaper passive tier exists.
+
+A reminder is ONE CONFIGURATION OF A HOOK (D152): trigger `match` over an action, a result,
+the turn's prose or a turn moment; addressee this routine's own future runs or another
+routine; delivery `hold_before_action` for the holding kind and `turn_boundary` for the rest.
+Each write is mirrored into the one hook store (`engine/hookmirror`, `rsched/hooks`), which
+owns that vocabulary; this layer stays the mechanism.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ from pathlib import Path
 from .. import reminders as store
 from ..reminders import LABEL_HELP, Reminder
 from . import hold as hold_seam
+from . import hookmirror, remind_write
 
 #: This layer's name in the shared hold ledger. Each source gets its own
 #: one-hold-per-action budget: keyed on the bare action string, a reminder hold would
@@ -472,6 +479,7 @@ def _set_for_other(loop, op: dict, target: str) -> str:
                              run_ts=ctx.run_ts)
     except store.ReminderWriteError as exc:
         return str(exc)
+    hookmirror.reminder_written(loop, hook, target=target)
     return (f"set {hook.id} on {target} ({hook.kind}) — /{hook.regex}/ fires in ITS runs from "
             f"its next one on, and {target} decides on each fire whether to keep, mute or "
             "remove it; you cannot revise or delete it")
@@ -588,46 +596,10 @@ def _remove(loop, target: Reminder) -> None:
         _save_local(loop)
 
 
-def _persist(loop, reminder: Reminder, message: str) -> None:
-    """Write ONE reminder to the store its scope names — the local file (rewritten whole, it is
-    small and single-writer) or its own file in the library, committed like any library write.
-    """
-    if reminder.scope == "global":
-        home = loop.ctx.server.reminders_home
-        home.mkdir(parents=True, exist_ok=True)
-        store.write_global(home, reminder)
-        _commit(loop, message, reminder)
-    else:
-        _save_local(loop)
-
-
-def _save_local(loop) -> None:
-    """Rewrite the local store: DEFINITIONS from memory, TALLIES from disk.
-
-    The split is load-bearing. `store.record` is the only writer of a tally and does its own
-    read-modify-write, so DISK is authoritative for stats; this run's ops are what changed the
-    definitions, so MEMORY is authoritative for those. Taking both halves from memory rolled
-    every `fires` this run recorded back to its boot-time value, because a frozen in-memory
-    `Reminder` never saw the increment — the global tallies were already merged this way, and
-    the local half needed the same treatment.
-
-    MUTED records are the one exception to "memory owns the definitions", and for the reason
-    mute exists: it silences a foreign hook for the rest of this run WITHOUT destroying the
-    definition its owner can still see, so the live set no longer holds it — and a rewrite from
-    memory alone would delete it — though its `muted_run` stamp expires (`remind_mute`, F697).
-    """
-    on_disk, gstats = store.load_local(loop.ctx.routine.dir)
-    tallies = {r.id: r.stats for r in on_disk}
-    live_ids = {r.id for r in loop.reminders}
-    merged = [Reminder(**{**r.as_record(), "stats": tallies[r.id]}) if r.id in tallies else r
-              for r in loop.reminders]
-    merged += [r for r in on_disk if r.disposition == "mute" and r.id not in live_ids]
-    store.save_local(loop.ctx.routine.dir, merged, gstats)
-
-
-def _commit(loop, message: str, reminder: Reminder) -> None:
-    from .. import libgit
-
-    libgit.commit(loop.ctx.server.libraries_home, message,
-                  routines_home=loop.ctx.server.routines_home,
-                  paths=[store.global_rel(reminder.id)])
+#: The write path lives in `remind_write` — `persist` (which store a definition goes to, plus
+#: the hook mirror), `save_local` (the definitions-from-memory / tallies-from-disk rewrite) and
+#: `commit` (the library write). Aliased under the names this module's ops already call, so the
+#: extraction moved code and nothing else.
+_persist = remind_write.persist
+_save_local = remind_write.save_local
+_commit = remind_write.commit

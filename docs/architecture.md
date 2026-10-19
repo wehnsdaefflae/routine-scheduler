@@ -871,7 +871,21 @@ and the capabilities digest's catalog listing):
   Unaddressed rows are self-audit's triage queue; addressed
   ones are also delivered into the target's inbox for its next scheduled run — no run is
   started. The Messages page reads it, so a hand-off that carried is distinguishable from one that
-  silently never arrived (docs/items.md). Every finished
+  silently never arrived (docs/items.md).
+  `~/routines/.control/hooks.jsonl` is the one HOOK store (`rsched/hooks`, D152): a report, a
+  consequence reminder and a mid-run injection are three configurations of one five-field
+  record — trigger (`send` · `match` · `moment` · `schedule`), addressee (`routine:<slug>` ·
+  `run:<id>` · `child:<label>` · `parent` · `operator` · `triage` · `self`), payload, delivery
+  (`next_prompt` · `turn_boundary` · `hold_before_action` · `decisions_page`) and disposition.
+  Two rules fall out and bound what a hook can do: the run tree is the only addressing scheme,
+  and `hold_before_action` is the only delivery moment that can change what runs. The three
+  mechanisms still own their own stores and readers; each MIRRORS its write here
+  (`reports.file_report`, `engine/remind_write.persist`, `engine/control.inject_user_message`
+  through `engine/hookmirror`), best-effort, so this stream is where "what hooks exist in this
+  instance" is answerable at all — the question none of the three stores can answer. Two
+  writers are deliberate for now: the report ledger and the reminders store have readers
+  outside this engine (the Decisions page, self-audit's folds, the per-routine fire tallies),
+  and the duplication ends when the surfaces ride the one mechanism. Every finished
   (sub)run appends to
   `~/routines/.control/workflow-usage.jsonl` — the routine-improver routine's evidence stream
   for the shared library it owns — its `library-pass` stage reads this stream each sweep —

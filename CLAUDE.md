@@ -287,7 +287,12 @@ one you are about to touch, not all of them.
   blast radius (the routine's `state/reminders.json`, autonomous; the library's `reminders/`,
   approval-gated by `remind_confirm`), one hold per action string per run so re-emitting the held
   action IS the confirmation, and the tally is per-routine even for a library reminder
-  (docs/reminders.md). `read_file` batches
+  (docs/reminders.md). A reminder is ONE CONFIGURATION OF A HOOK (`rsched/hooks`, D152): five
+  fields — trigger, addressee, payload, delivery, disposition — of which a report, a
+  consequence reminder and a mid-run injection are three settings, mirrored into the one store
+  `.control/hooks.jsonl` through `engine/hookmirror`. Two rules bound the mechanism: the run
+  tree is the only addressing scheme, and `hold_before_action` is the only delivery moment that
+  can change what runs. `read_file` batches
   related reads via `paths` (one turn, one
   observation section per file); `write_file`/`edit_file` may carry `then_script` —
   `["<script>", …args]`, run the moment the change lands, both results in ONE observation

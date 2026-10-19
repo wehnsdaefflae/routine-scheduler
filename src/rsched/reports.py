@@ -38,14 +38,18 @@ learns the outcome — but the message says no reply is needed. Only a NEW repor
 the closure reopens the thread.
 
 A report may also SUPERSEDE existing rows (`supersedes`): "these are now this thread." That is
-the one operation routing and consolidation both needed and neither had (F492/D110). Handing a
-triage row to its owner used to leave the original untargeted, so the next triage pass found it
-again and routed it a second time — R1491/R1496/R1516/R1517/R1519/R1520 were each routed twice
-in two days, once in R1525 and again in R1558. And the `problem-routing` rule's "add your
-evidence to the OLDEST open one rather than opening another" named an operation that did not
+the one operation routing and consolidation both needed and neither had (F492/D110): handing a
+triage row to its owner used to leave the original untargeted, so the next pass routed it a
+second time (R1491/R1496/R1516/R1517/R1519/R1520 each twice in two days), and
+`problem-routing`'s "add your evidence to the OLDEST open one" named an operation that did not
 exist. A `superseded` event row closes both: the original folds into the carrier and takes the
 carrier's status from then on (docs/items.md), so it leaves triage once and settles when the
 thread it joined settles.
+
+A report is also ONE CONFIGURATION OF A HOOK (D152): trigger `send`, addressee the target
+routine or `triage`, delivery `next_prompt`, disposition open → settled. `file_report` mirrors
+each filing into `.control/hooks.jsonl` (`rsched/hooks`), which owns that vocabulary; this
+ledger and its delivery remain the report, and the mirror is best-effort.
 
 That is also what makes the OPEN-THREAD CAP fair. A run may not open more than
 `OPEN_THREAD_CAP` parallel threads to one owner (D110, operator 2026-08-31); the refusal names
@@ -67,6 +71,7 @@ from pathlib import Path
 
 from . import report_detail
 from .engine import inbox
+from .hooks import store as hookstore
 from .ids import now_iso
 from .paths import append_jsonl, file_lock, read_jsonl
 from .report_threads import OPEN_THREAD_CAP, ThreadCapError, open_threads, supersedable
@@ -82,6 +87,10 @@ TITLE_MAX = 300
 DETAIL_MAX = report_detail.DETAIL_MAX
 TRUNCATION_NOTE = report_detail.TRUNCATION_NOTE
 clip_detail = report_detail.clip_detail
+#: The delivered PROSE moved beside the delivered BOUND (both answer "what does this read like
+#: in another run's prompt"); re-exported because `reports.message_text` is the name the boot
+#: drain, the mid-run injection and the tests already call.
+message_text = report_detail.message_text
 
 
 def reports_path(routines_home: Path) -> Path:
@@ -133,31 +142,6 @@ class Disposal:
         # `closes` is a property OF a disposal: with neither face there is nothing to complete.
         object.__setattr__(self, "closes",
                            bool(self.closes and (self.answers or self.settles)))
-
-
-def message_text(item_id: str, sender: str, title: str, detail: str,
-                 disposal: Disposal | None = None) -> str:
-    """The prose a delivered report becomes in the target's prompt — one wording, used by the
-    boot drain and the mid-run injection alike so a resumed prompt reads like a live one.
-
-    Settled rows are NAMED in the head rather than left to the ledger: the recipient's own rows
-    are what got disposed of, and a reader who cannot see which ones has to go and look them up.
-    """
-    disposal = disposal or Disposal()
-    answers, closes = disposal.answers, disposal.closes
-    head = f"REPORT {item_id} from routine `{sender}`"
-    if answers and closes:
-        head += f" (answering {answers} — closes the exchange, no reply needed)"
-    elif answers:
-        head += f" (answering {answers})"
-    if disposal.settles:
-        rows = ", ".join(disposal.settles)
-        head += (f" (settles {rows} — no reply needed)" if closes and not answers
-                 else f" (settles {rows})")
-    body = [head, "", title]
-    if detail:
-        body += ["", detail]
-    return "\n".join(body)
 
 
 def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, detail: str = "",
@@ -236,6 +220,15 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
             for old in folded:
                 append_jsonl(path, {"id": old, "event": "superseded", "ts": now_iso(),
                                     "by": item_id, **({"to": target} if target else {})})
+        # THE HOOK MIRROR (D152 campaign step 2): a report IS a hook — trigger `send`,
+        # addressee the target routine (or `triage`), delivery `next_prompt`. Recorded in
+        # `.control/hooks.jsonl` so one store can answer "what hooks exist in this instance",
+        # which none of the three mechanisms' own stores can. Best-effort by design: this
+        # ledger row and its delivery are the report, and a mirror must never be able to fail
+        # a filing (rsched/hooks/store.py says why the duplication is deliberate for now).
+        hookstore.record_report(routines_home, report_id=item_id, routine=routine,
+                                run_id=run_id, title=title[:TITLE_MAX], detail=full_detail,
+                                target=target)
         if target and target_dir is not None:
             # Through the ONE writer of the msg-* shape (engine/inbox), with the
             # DETERMINISTIC `rep-<id>` stem: the sender reads its own delivery back by name

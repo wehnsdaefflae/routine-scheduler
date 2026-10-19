@@ -9,6 +9,16 @@ A routine writes reminders for ITSELF, and may also set one on ANOTHER routine (
 the hook then fires in that routine's runs, and that routine — not the one that set it — decides
 on each fire whether it stays.
 
+A reminder is ONE CONFIGURATION OF A HOOK (D152). A hook is five fields — trigger, addressee,
+payload, delivery, disposition — and a report, a consequence reminder and a mid-run injection
+are three settings of them: a reminder's trigger is `match` (over an action, a result, the
+turn's own prose, or a turn moment), its addressee is this routine's own future runs or
+another routine, and its delivery is `hold_before_action` at the `action` kind and
+`turn_boundary` at every other. That is also why only the `action` kind can hold: holding is
+the one delivery moment that can change what runs. Every write is recorded in the one hook
+store, `.control/hooks.jsonl` (`rsched/hooks`, docs/architecture.md); this layer remains the
+mechanism that intercepts and tallies.
+
 The layer exists because the framework's other "learn from surprise" surfaces are all
 *just-in-case*. `.memory/` puts its INDEX in the boot digest and asks the model to recall the right
 note at the right moment out of a large, always-present context. `note` files a line to
