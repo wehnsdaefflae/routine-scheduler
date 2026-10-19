@@ -15,6 +15,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.435.0] — 2026-10-19
+
+### Hooks: one mechanism, and the duplicated writers retired (D152, campaign step 4 of 4)
+
+The operator's order was *"implement hooks first as a single mechanism unifying a), b) and c)"* —
+reports/messages, consequence reminders, run injections — *"and make sure f695 is a special case
+of that as well"*. Step 2 (0.434.0) built the record and the store with all three paths
+MIRRORING into it; step 3 (0.434.2) made run-tree communication the first new case of it. This
+is the last step: the duplication goes.
+
+**A report's row is now a PROJECTION of its hook.** `reports.file_report` writes the hook first
+and appends the `reports.jsonl` row computed from it in the new `hooks/reportproj.py` — the
+filing and every lifecycle fact alike (`delivered`, `retracted`, `superseded`). The payload
+carries the whole `Disposal` (`answers`, `closes`, `settles`, `supersedes`), which step 2's
+mirror dropped; that omission is exactly why the stream could not be the source, because a
+store that cannot reproduce what it replaced is a mirror whatever it is called.
+`reportproj.rebuild()` derives the entire ledger from the stream and a test compares it to the
+real one **row for row** over the live write paths. `reports.fold_rows` is public so the rebuild
+uses the ledger's own fold rather than a second implementation of it.
+
+A hook that cannot be written now **refuses the filing** (`hookstore.write` raises; `append`
+stays best-effort for the paths whose truth is elsewhere). While the stream was a copy,
+best-effort was right; the moment it is the source, a filing that kept only its projection would
+leave one store silently ahead of the other.
+
+`reports.jsonl` keeps its exact bytes, deliberately: it has readers outside the engine — the
+operator's backlog counts, self-audit's folds — and a migration that invalidated those on the
+day it shipped would be a worse failure than two writers for one campaign. Every in-engine
+reader already goes through `reports.read_reports`, so no reader call-site moved.
+
+**Reminders are derived, not cut over.** `record_reminder` takes the reminder's own record
+whole, so `reach` and `created_run` reach the stream too, and the TARGET's disposition of a
+foreign hook (`keep` · `mute` · `remove`) is recorded as a later row about the same id — which
+step 2 never saw at all, so the one store could not say what happened to a hook. The new
+`hooks/reminderproj.py` derives the definitions and its `drift()` names any hook written outside
+the write path; it is empty after a real run. The TALLIES stay the store's own on purpose: they
+are per-routine evidence with their own writer, and mirroring a counter would give one number
+two writers — the defect this campaign removes, not one to spread.
+
+**What is still not unified, named rather than implied**: a report's `options` — the
+`decisions_page` delivery — are filed by `api_questions` AFTER the ledger row, so the stream
+cannot answer which hooks became decision cards. One configuration of the design's table remains
+outside the store.
+
+### A health event for the turn that came back WELL-FORMED AND WRONG (R2652)
+
+`engine/degrade.py` is documented as *"When a turn comes back WRONG"* and carries four ordered
+nets — but all four fire on a turn that failed to ARRIVE. A well-formed but wrong turn is, to
+`degrade.py`, a success. The missing piece was the trigger, not the machinery, so this adds the
+trigger and **nothing else**: the measurement-only first increment the deciding routine
+specified, to be read for weeks before any cascade is built.
+
+The event is `wrong_turn_detected`, not `effort_escalated`: all 37 existing health events are
+named for the FACT recorded, never the remedy, and an `effort_escalated` that escalates no
+effort would be a lie in a machine-checked vocabulary people build filters from. Four triggers,
+each a failure the engine already detects — `schema_rejected`, `repeat_invalid`,
+`attempts_exhausted` (all `engine/completion.py`) and `action_repeat`, the third identical
+schema-VALID action (`engine/loopnudge.py`), which is the *"chained state, not disguise"* blind
+spot the finding named. One row per (reason, turn), and no cooldown: a rate suppressed by the
+hour is not a rate. `degrade.py` is untouched; the logic lives in the new
+`engine/wrongturn.py`, and a test asserts nothing about effort or model resolution changed.
+
+### A page newer than its server says so, and an unknown form field is a 422 (F696)
+
+`/static` is served LIVE from the checkout while every Python object stays at the build the
+process booted with, so a release landing mid-day puts new javascript in front of an old server
+— and pydantic drops an unknown multipart field SILENTLY. That is the operator's R2546: he set
+up everything on the conversation-creation page and *"most of the settings were gone"*.
+
+The server is the only party holding both stamps (nothing in an asset says which build it came
+from, and the process never restarted during the F696 window, so a console watching `build` for
+changes would have seen nothing all day). `web/assetskew.py` compares them, `/api/status` carries
+`disk_build` + `build_skew`, and the console raises a **non-dismissible** reload banner naming
+both builds (`static/components/skewbanner.js`) — dismissible would be the same defect again.
+`ComposerForm` now declares `extra="forbid"` like ten sibling models in `web/`, so a field the
+running build does not know is a 422 naming it instead of work the operator loses.
+
 ## [0.434.3] — 2026-10-19
 
 ### A cancelled call's spend books (F722)
