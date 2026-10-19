@@ -23,12 +23,12 @@ demand):
       #   `revise_util` is a capability TOKEN here, never an action kind: the model emits
       #   write_util for both, and the engine picks create-vs-revise from whether the
       #   target name already exists in the library.
-      utils: [discord, gmail:send]     # reserved utils switched on for this routine —
-      #   a bare name grants every verb, `name:verb` grants that ONE subcommand (the
-      #   call's first positional argument)
+      utils: [discord, gmail:send]     # reserved utils switched on for this routine — a bare
+      #   name grants every verb, `name:verb` grants that ONE subcommand (the call's 1st arg)
       confirm: always | creations | never       # write_util approval level
       rule_confirm: always | creations | never  # write_rule approval level
       remind_confirm: always | creations | never  # GLOBAL consequence-reminder approval
+      config_confirm: always | own_fields | never  # its OWN config-patch autonomy (D191)
       runs: last | all                 # previous-run read depth — a SETTING, no doc needed
       reminders: none | local | global # consequence-reminder stores — a SETTING too
       jobs: off | on                  # the routine keeps JOBS (rsched/jobs.py) — a SETTING
@@ -58,15 +58,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import jobs_compat
+from . import configdial, jobs_compat
 from .engine.actionschema import KINDS
 from .ids import is_slug
 from .jobs import LEVELS as JOB_LEVELS
 from .reminders import LEVELS as REMINDER_LEVELS
 
-# `read_rule` is deliberately NOT gated: a routine must be able to read the general rules
-# it holds, and reading library prose has no side effect worth a decision. The catalog
-# (`name: "list"`) is open for the same reason.
+# `read_rule` is deliberately NOT gated: a routine must read the general rules it holds, and
+# library prose has no side effect worth a decision. The catalog (`name: "list"`) is open too.
 # `memory_read`/`memory_write` and `script` are BASE kinds: every routine held them (35 of 35
 # and 30 of 35) and none could act without them, so a switch nobody turns off was ceremony —
 # and a script's blast radius is the routine's own jail, the same as a util's. `detach` stays
@@ -95,17 +94,17 @@ _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "revise_util": "util-aut
                         "write_recipe": "recipe-authoring", "remove_util": "util-removal",
                         "write_rule": "rule-authoring", "schedule_run": "scheduling",
                         "shell": "shell", "rebuild_routine": "routine-rebuild"}
-# write_util approval policy, least → most permissive: "always" (user approves create AND
-# revise), "creations" (revisions are autonomous once the selftest passes; NEW utils ask),
-# "never".
-# Shared by ALL THREE approval dials: `confirm` (write_util), `rule_confirm` (write_rule)
-# and `remind_confirm` (a GLOBAL consequence reminder). Same ladder, separate dials on purpose —
-# a rule is held by many routines, so a revision lands in every one of them at their next run,
-# and a global reminder starts HOLDING actions in routines that never asked for it. Each blast
-# radius is a different decision from "may this routine author utils", and collapsing them would
-# make a never-confirm util policy silently authorize the other two.
+# The approval ladders, least → most permissive. `confirm` (write_util), `rule_confirm`
+# (write_rule) and `remind_confirm` (a GLOBAL consequence reminder) share one: "always" (user
+# approves create AND revise), "creations" (revisions autonomous once the selftest passes; NEW
+# ones ask), "never". Separate dials on purpose — a rule revision lands in every holder at its
+# next run and a global reminder starts HOLDING actions in routines that never asked for it, so
+# collapsing them would make a never-confirm util policy silently authorize the others.
 CONFIRM_LEVELS = ("always", "creations", "never")
-APPROVAL_DIALS = ("confirm", "rule_confirm", "remind_confirm")
+# Dial → the ladder IT accepts. `config_confirm` (D191, `configdial`) is the fourth, with its
+# OWN ladder: `own_fields` is a declared field allow-list, not a create-vs-revise rung.
+APPROVAL_DIALS = {"confirm": CONFIRM_LEVELS, "rule_confirm": CONFIRM_LEVELS,
+                  "remind_confirm": CONFIRM_LEVELS, configdial.DIAL: configdial.LEVELS}
 # runs: access to previous runs. `last` is every routine's floor (D96); `all` is the setting a
 # longitudinal routine (self-audit, rules-review) is given. `none` exists for CHILD runs only,
 # which read their brief rather than the archive (loopsetup).
@@ -116,7 +115,7 @@ RUN_HISTORY_LEVELS = ("none", "last", "all")
 # behind it. ONE vocabulary, read by the validator, the cascade and the floor alike. `jobs` is
 # a setting rather than a permission for the reason `reminders` is: it changes how a routine
 # ORGANISES its own work, not what it may reach — every act a task leads to still passes the
-# same capabilities and gates as before.
+# same capabilities and gates as before. Every dial's all-off value is `always`.
 SETTING_DEFAULTS = {**dict.fromkeys(APPROVAL_DIALS, "always"), "runs": "none",
                     "reminders": "none", "jobs": "off"}
 
@@ -252,12 +251,13 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
         out[key] = [v for v in vals if valid(v)]
     if requires:
         return out, problems
-    for dial in APPROVAL_DIALS:
+    for dial, ladder in APPROVAL_DIALS.items():
         if dial in raw:
-            if raw[dial] in CONFIRM_LEVELS:
+            if raw[dial] in ladder:
                 out[dial] = raw[dial]
             else:
-                problems.append(f"{label}.{dial} must be always, creations or never")
+                problems.append(f"{label}.{dial} must be {', '.join(ladder[:-1])} "
+                                f"or {ladder[-1]}")
     if "runs" in raw:
         if raw["runs"] in RUN_HISTORY_LEVELS:
             out["runs"] = raw["runs"]
