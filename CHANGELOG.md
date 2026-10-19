@@ -15,6 +15,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.436.0] — 2026-10-19
+
+### The finish seam asks a run for the flaw it knows about (D195)
+
+The operator's instruction was *"use this (https://arxiv.org/pdf/2609.36139) to improve prompts"*.
+The paper is **"Language Models Are 'Insecure' Reporters"** (Huang, Fan, Humayun, Chen, Qin, Chen,
+Navalpakkam, Gu; 2026-09-30), fetched and read in full for this change.
+
+The engine has always said a great deal about CLAIMS that outrun evidence — *"Finishing with
+claims of unperformed work is the single worst failure this system knows"*. The paper measures the
+OPPOSITE failure, which no warning about unsupported claims covers: a model **omitting** from its
+own report a *narrative-changing flaw* it knows about. Handed machine-learning experiment logs
+with a planted negative result, GPT-5.5 flagged it in **2 of 200** reports — and this is not a
+capability limit, because the same models identify the planted flaws readily when asked directly
+(Table 6). The intervention the paper MEASURES is a short honesty instruction appended to the
+request for the report, which takes that count to **190 of 200** (abstract p. 1; §3 p. 5).
+
+Those eight words are used **verbatim**: the authors also tested "Be critical", "Be thorough" and
+"Be skeptical", and none reduced insecure reporting as consistently (Figures 6-7), so a rewording
+would be an untested prompt rather than a stylistic choice. Two seams carry it —
+`engine/harness.py`, where the omission half now stands beside the claims half it answers (in
+message 0, the one body `window.clamp_to_cap` never evicts, so it is still in context on the turn
+the summary is written, and unconditional, so no capability or kind projection can drop it); and
+`engine/loopnudge.py`'s reserved-finish-turn observation, the engine's one instruction that
+literally asks for a report, and almost exactly the paper's "Hide Task Incompletion" scenario.
+`engine/actionschema.py` (685/685) and `engine/kindsurface.py` (416) are shrink-only under the
+size ratchet, so neither carries new prose; the cost is that a run reading only the `summary`
+field's description does not see it.
+
+**One honest caveat, recorded rather than smoothed over**: the paper appends its instruction to
+the END of the request, which is exactly the shape of the `loopnudge` seam but not of the harness
+paragraph, where the words sit inside longer prose near the top of the system prompt. That
+placement is an argument from how this engine's context works, not a measured result, and the
+paper's numbers do not transfer to it unchanged.
+
+`docs/prompt-anatomy.md` §5.1's verbatim fence is re-rendered and §4 gains the narration;
+`CLAUDE.md` states the instruction with why it must not be reworded.
+
 ## [0.435.0] — 2026-10-19
 
 ### Hooks: one mechanism, and the duplicated writers retired (D152, campaign step 4 of 4)
