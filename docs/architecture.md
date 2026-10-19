@@ -882,11 +882,16 @@ and the capabilities digest's catalog listing):
   `run:<id>` · `child:<label>` · `parent` · `operator` · `triage` · `self`), payload, delivery
   (`next_prompt` · `turn_boundary` · `hold_before_action` · `decisions_page`) and disposition.
   Two rules fall out and bound what a hook can do: the run tree is the only addressing scheme,
-  and `hold_before_action` is the only delivery moment that can change what runs. The three
-  mechanisms still own their own stores and readers; each MIRRORS its write here
-  (`reports.file_report`, `engine/remind_write.persist`, `engine/control.inject_user_message`
-  through `engine/hookmirror`), best-effort, so this stream is where "what hooks exist in this
-  instance" is answerable at all — the question none of the three stores can answer.
+  and `hold_before_action` is the only delivery moment that can change what runs. For a REPORT
+  this stream is now the SOURCE, not a copy: `reports.file_report` writes the hook first and
+  appends the `reports.jsonl` row as its PROJECTION (`rsched/hooks/reportproj`), lifecycle
+  events included, so the two cannot drift and the ledger is rebuildable from the stream
+  (`reportproj.rebuild`); a hook that cannot be written refuses the filing. `reports.jsonl`
+  stays because it has readers outside the engine (the operator's backlog counts,
+  self-audit's folds) and its bytes are unchanged. The reminder layer and the injection path
+  still own their stores and MIRROR their writes here (`engine/remind_write`,
+  `engine/control.inject_user_message` through `engine/hookmirror`), best-effort — including
+  the target's disposition of a foreign hook, which is a later row about the same id.
   The FOURTH source is the one the store was built for: a RUN-TREE hook (`engine/runtree.py`,
   F695), which is the `report` action with `target: "parent"` or `"child:<label>"` and has no
   store of its own — delivered on the `hook` channel at the addressee's next turn boundary, with

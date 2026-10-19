@@ -51,12 +51,26 @@ def append(routines_home: Path, hook: Hook) -> str:
     stream has no such counter.
     """
     try:
-        row = hook.as_record()
-        if not row.get("ts"):
-            row["ts"] = now_iso()
-        append_jsonl(hooks_path(routines_home), row)
+        return write(routines_home, hook)
     except OSError:
         return ""
+
+
+def write(routines_home: Path, hook: Hook) -> str:
+    """Append ONE hook and let an I/O failure RAISE — the writer a SOURCE needs.
+
+    `append` swallows `OSError` because it was built when this stream was a mirror beside the
+    store that mattered: bookkeeping that could fail the real write would have been a defect
+    dressed as a feature. Step 4 reverses that for the mechanisms whose row is now DERIVED from
+    the hook (`hooks/reportproj`): there the hook is the write, and a filing that silently kept
+    only its projection would leave the two stores disagreeing — the exact failure the
+    unification exists to end. Both exist on purpose; a caller picks by whether its truth is
+    here.
+    """
+    row = hook.as_record()
+    if not row.get("ts"):
+        row["ts"] = now_iso()
+    append_jsonl(hooks_path(routines_home), row)
     return hook.id
 
 
@@ -89,9 +103,8 @@ def record_report(routines_home: Path, *, report_id: str, routine: str, run_id: 
         origin={"routine": routine, "run_id": run_id}, ts=now_iso()))
 
 
-def record_reminder(routines_home: Path, *, reminder_id: str, routine: str, run_id: str,
-                    regex: str, description: str, kind: str, scope: str,
-                    target: str = "", disposition: str = "keep") -> str:
+def record_reminder(routines_home: Path, *, record: dict, routine: str, run_id: str,
+                    target: str = "", disposition: str = "") -> str:
     """Mirror a written consequence reminder as a hook: `trigger: match`.
 
     The delivery is the hook's own question, not a field the reminder store keeps: an `action`
@@ -102,17 +115,32 @@ def record_reminder(routines_home: Path, *, reminder_id: str, routine: str, run_
     `target` empty means the routine set it on ITSELF — addressed `self`, because "my own
     future runs" is a real addressee and spelling it as the routine's own slug would make a
     self-hook indistinguishable from one a sibling set on it.
+
+    `record` is the reminder's OWN record (`Reminder.as_record()`), not its fields splatted
+    into keywords: a reminder IS that value, and taking it whole means the WHOLE definition
+    reaches the stream (D152 step 4). Step 2 passed four fields and dropped `reach` — which
+    decides whether a curated hook reaches a routine at all — and `created_run`, the only
+    record of when a definition entered; a reader could not reconstruct the store from such a
+    row, which is what kept this stream a mirror. The TALLIES are deliberately left out: they
+    are per-routine evidence with their own writer (`reminders.record`), and mirroring a
+    counter would give one number two writers — the defect this campaign removes.
     """
     from . import DEFAULT_TRIGGER_KIND, HOLDING_KINDS
 
-    kind = str(kind or DEFAULT_TRIGGER_KIND)
+    kind = str(record.get("kind") or DEFAULT_TRIGGER_KIND)
     who = addressee("routine", target) if target else addressee("self")
+    payload = {"description": str(record.get("description") or ""),
+               "scope": str(record.get("scope") or "")}
+    for field_name in ("reach", "created_run"):
+        if value := str(record.get(field_name) or ""):
+            payload[field_name] = value
     return append(routines_home, Hook(
-        id=str(reminder_id), source="reminder",
-        trigger={"kind": "match", "match": kind, "regex": regex},
-        addressee=who, payload={"description": description, "scope": scope},
+        id=str(record.get("id") or ""), source="reminder",
+        trigger={"kind": "match", "match": kind, "regex": str(record.get("regex") or "")},
+        addressee=who, payload=payload,
         delivery="hold_before_action" if kind in HOLDING_KINDS else "turn_boundary",
-        disposition=disposition, origin={"routine": routine, "run_id": run_id}, ts=now_iso()))
+        disposition=str(disposition or record.get("disposition") or "keep"),
+        origin={"routine": routine, "run_id": run_id}, ts=now_iso()))
 
 
 def record_runtree(routines_home: Path, *, hook_id: str, routine: str, run_id: str,

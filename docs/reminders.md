@@ -16,8 +16,10 @@ turn's own prose, or a turn moment), its addressee is this routine's own future 
 another routine, and its delivery is `hold_before_action` at the `action` kind and
 `turn_boundary` at every other. That is also why only the `action` kind can hold: holding is
 the one delivery moment that can change what runs. Every write is recorded in the one hook
-store, `.control/hooks.jsonl` (`rsched/hooks`, docs/architecture.md); this layer remains the
-mechanism that intercepts and tallies.
+store, `.control/hooks.jsonl` (`rsched/hooks`, docs/architecture.md) — and so is the target's
+DISPOSITION of a foreign hook (`keep` · `mute` · `remove`), as a later row about the same id,
+which is what keeps "when was this muted, and by whose run" answerable after a mute stamp
+expires. This layer remains the mechanism that intercepts and tallies.
 
 The layer exists because the framework's other "learn from surprise" surfaces are all
 *just-in-case*. `.memory/` puts its INDEX in the boot digest and asks the model to recall the right

@@ -121,6 +121,19 @@ def addressee(kind: str, name: str = "") -> str:
     return f"{kind}:{name}" if name else kind
 
 
+def split_addressee(address: str) -> tuple[str, str]:
+    """The inverse of `addressee()` — `("routine", "self-audit")`, `("parent", "")`.
+
+    Minted and parsed in one module for the same reason rule 1 exists: the addressee is the
+    only part of a hook another run has to READ, and a second place that splits it is where an
+    addressing scheme grows a special case. An unknown kind reads as `("", address)` rather
+    than raising — a projection must survive a row written by a newer build.
+    """
+    address = str(address or "").strip()
+    kind, _, name = address.partition(":")
+    return (kind, name) if kind in ADDRESSEE_KINDS else ("", address)
+
+
 @dataclass(frozen=True)
 class Hook:
     """One hook, as the store holds it: the five fields, plus who made it and when.

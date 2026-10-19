@@ -352,7 +352,7 @@ def _apply_disposition(loop, target: Reminder, disposition: object) -> str:
     if not target.foreign:
         return (f"; no disposition applied — {target.id} is your own reminder, not one another "
                 "routine set on you: revise or delete it with a `remind` op")
-    applied = store.dispose(loop.ctx.routine.dir, target.id, str(disposition), loop.ctx.run_id)
+    applied = remind_write.dispose(loop, target, str(disposition))
     if not applied:
         return f"; no disposition applied — {target.id} is no longer in your store"
     if applied == "remove":

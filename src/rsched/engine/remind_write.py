@@ -35,6 +35,23 @@ def persist(loop, reminder: Reminder, message: str) -> None:
     hookmirror.reminder_written(loop, reminder)
 
 
+def dispose(loop, target: Reminder, disposition: str) -> str:
+    """Write the TARGET's disposition of a foreign hook — `keep`, `mute` or `remove` — and
+    record it on the hook stream. Returns what was actually applied, or "" when the record is
+    no longer in the store.
+
+    Here rather than in `remind.py` because this is a WRITE, which is this module's whole
+    subject: the store write and the hook row are one act, and a caller that could do the first
+    without the second is how the two came to disagree in the first place (D152 step 4 — step 2
+    recorded a reminder's definition and never what the target decided about it).
+    """
+    applied = store.dispose(loop.ctx.routine.dir, target.id, str(disposition),
+                            loop.ctx.run_id)
+    if applied:
+        hookmirror.reminder_disposed(loop, target, applied)
+    return applied
+
+
 def save_local(loop) -> None:
     """Rewrite the local store: DEFINITIONS from memory, TALLIES from disk.
 

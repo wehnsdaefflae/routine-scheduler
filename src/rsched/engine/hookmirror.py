@@ -31,10 +31,29 @@ def reminder_written(loop, reminder, target: str = "") -> None:
     ctx = loop.ctx
     try:
         hookstore.record_reminder(
-            ctx.server.routines_home, reminder_id=reminder.id, routine=ctx.routine.slug,
-            run_id=ctx.run_id, regex=reminder.regex, description=reminder.description,
-            kind=reminder.kind, scope=reminder.scope, target=target,
-            disposition=getattr(reminder, "disposition", "keep") or "keep")
+            ctx.server.routines_home, record=reminder.as_record(),
+            routine=ctx.routine.slug, run_id=ctx.run_id, target=target)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return
+
+
+def reminder_disposed(loop, reminder, disposition: str) -> None:
+    """Record the TARGET's say over a foreign hook as a later row about the same id (D152 step
+    4): `keep`, `mute` or `remove`.
+
+    Step 2 mirrored a reminder's WRITE and nothing else, so the one store could not answer what
+    happened to a hook — the question a store that owns the mechanism has to answer, and the
+    half of the record (`disposition`) the design named from the start. The row is the same
+    reminder hook with its disposition moved: append-only, so a later row IS the later fact,
+    which is also the only way "when was this muted, and by whose run" stays answerable at all
+    once a `mute` stamp expires.
+    """
+    ctx = loop.ctx
+    try:
+        hookstore.record_reminder(
+            ctx.server.routines_home, record=reminder.as_record(),
+            routine=ctx.routine.slug, run_id=ctx.run_id, target=ctx.routine.slug,
+            disposition=str(disposition or "keep"))
     except (AttributeError, OSError, TypeError, ValueError):
         return
 

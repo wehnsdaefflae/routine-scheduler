@@ -40,7 +40,7 @@ the engine's own finish ever touches.
 | `<self-audit>/audit/report.json` | the self-audit routine | findings + decisions, and their CURRENT status |
 | `<self-audit>/audit/changelog.jsonl` | the self-audit routine | the archive: which commit addressed which item, when (`commit` empty for a builder completion without a release, whose items self-audit settles) |
 | `<self-audit>/audit/decisions-answered.json` | the web layer (`api_audit`) | durable "the user answered this decision" markers |
-| `<routines>/.control/reports.jsonl` | the engine (`rsched/reports.py`) | every report a run filed, and how far an addressed one got |
+| `<routines>/.control/reports.jsonl` | the engine (`rsched/reports.py`), as a PROJECTION of `.control/hooks.jsonl` (`rsched/hooks/reportproj`, D152) | every report a run filed, and how far an addressed one got |
 
 `report.json` carries only the CURRENT window (schema 1: `run_id`, `generated`,
 `since{commit,window}`, `summary`, `findings[]`, `decisions[]`) — a report lists the items

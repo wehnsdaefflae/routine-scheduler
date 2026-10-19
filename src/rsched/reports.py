@@ -47,9 +47,10 @@ carrier's status from then on (docs/items.md), so it leaves triage once and sett
 thread it joined settles.
 
 A report is also ONE CONFIGURATION OF A HOOK (D152): trigger `send`, addressee the target
-routine or `triage`, delivery `next_prompt`, disposition open → settled. `file_report` mirrors
-each filing into `.control/hooks.jsonl` (`rsched/hooks`), which owns that vocabulary; this
-ledger and its delivery remain the report, and the mirror is best-effort.
+routine or `triage`, delivery `next_prompt`, disposition open → settled. Since campaign step 4
+the HOOK IS THE SOURCE: every row below is written to `.control/hooks.jsonl` first and appended
+here as its PROJECTION (`hooks/reportproj`, which says why this file's bytes stay), so the two
+cannot drift; a hook that cannot be written REFUSES the filing.
 
 That is also what makes the OPEN-THREAD CAP fair. A run may not open more than
 `OPEN_THREAD_CAP` parallel threads to one owner (D110, operator 2026-08-31); the refusal names
@@ -70,7 +71,7 @@ from pathlib import Path
 
 from . import report_detail, report_disposal
 from .engine import inbox
-from .hooks import store as hookstore
+from .hooks import reportproj
 from .ids import now_iso
 from .paths import append_jsonl, file_lock, read_jsonl
 from .report_threads import OPEN_THREAD_CAP, ThreadCapError, open_threads, supersedable
@@ -180,27 +181,17 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
             # row as where the rest still is. The 273 rows cut before this stay as they are.
             full_detail = str(detail or "")
             kept_detail = clip_detail(full_detail, item_id)[0]
-            append_jsonl(path, {"id": item_id, "ts": now_iso(), "routine": routine,
-                                "run_id": run_id,
-                                "title": title[:TITLE_MAX], "detail": full_detail,
-                                **({"target": target} if target else {}),
-                                **({"answers": answers} if answers else {}),
-                                **({"closes": True} if closes else {}),
-                                **({"supersedes": folded} if folded else {}),
-                                **({"settles": list(disposal.settles)}
-                                   if disposal.settles else {})})
+            # THE HOOK IS THE SOURCE (D152 step 4): steps 2-3 built this row here and mirrored
+            # it afterwards, best-effort. Now the hook is written first and this row is its
+            # projection — one construction, and `reportproj.rebuild` can derive the whole
+            # ledger from the stream rather than paraphrase it.
+            append_jsonl(path, reportproj.filed(
+                routines_home, report_id=item_id, routine=routine, run_id=run_id,
+                title=title[:TITLE_MAX], detail=full_detail, target=target,
+                disposal=disposal, supersedes=tuple(folded)))
             for old in folded:
-                append_jsonl(path, {"id": old, "event": "superseded", "ts": now_iso(),
-                                    "by": item_id, **({"to": target} if target else {})})
-        # THE HOOK MIRROR (D152 campaign step 2): a report IS a hook — trigger `send`,
-        # addressee the target routine (or `triage`), delivery `next_prompt`. Recorded in
-        # `.control/hooks.jsonl` so one store can answer "what hooks exist in this instance",
-        # which none of the three mechanisms' own stores can. Best-effort by design: this
-        # ledger row and its delivery are the report, and a mirror must never be able to fail
-        # a filing (rsched/hooks/store.py says why the duplication is deliberate for now).
-        hookstore.record_report(routines_home, report_id=item_id, routine=routine,
-                                run_id=run_id, title=title[:TITLE_MAX], detail=full_detail,
-                                target=target)
+                append_jsonl(path, reportproj.event(
+                    routines_home, report_id=old, event="superseded", by=item_id, to=target))
         if target and target_dir is not None:
             # Through the ONE writer of the msg-* shape (engine/inbox), with the
             # DETERMINISTIC `rep-<id>` stem: the sender reads its own delivery back by name
@@ -240,8 +231,8 @@ def stamp_delivered(routines_home: Path, msgs: list[dict], *, run_id: str) -> li
     try:
         with file_lock(path.with_suffix(".lock")):
             for item_id in ids:
-                append_jsonl(path, {"id": item_id, "event": "delivered", "ts": ts,
-                                    "run_id": run_id})
+                append_jsonl(path, reportproj.event(
+                    routines_home, report_id=item_id, event="delivered", ts=ts, run_id=run_id))
     except OSError:
         return owed
     return owed
@@ -279,7 +270,8 @@ def retract_report(routines_home: Path, report_id: str) -> dict:
             if inbox_dir.is_dir():
                 raise ValueError(f"{report_id} was already picked up by the target — a "
                                  "consumed message cannot be retracted") from None
-        append_jsonl(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
+        append_jsonl(path, reportproj.event(routines_home, report_id=report_id,
+                                            event="retracted"))
     return row
 
 
@@ -312,7 +304,8 @@ def discard_undelivered_report(routines_home: Path, report_id: str) -> dict:
         if (inbox_dir / f"msg-rep-{report_id}.json").exists():
             raise ValueError(f"{report_id} has a delivery still waiting in {row['target']}'s "
                              "inbox — retract it instead of discarding")
-        append_jsonl(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
+        append_jsonl(path, reportproj.event(routines_home, report_id=report_id,
+                                            event="retracted"))
     return row
 
 
@@ -331,12 +324,17 @@ def read_reports(path: Path) -> list[dict]:
     """
     from .readmodels import memo
 
-    return memo.memoized_shared(f"reports:{path}", [path], lambda: _fold_reports(path))
+    return memo.memoized_shared(f"reports:{path}", [path],
+                                lambda: fold_rows(read_jsonl(path)))
 
 
-def _fold_reports(path: Path) -> list[dict]:
+def fold_rows(rows: list[dict]) -> list[dict]:
+    """The fold itself, over ROWS rather than a path — so the hook stream can be folded by this
+    exact function (`hooks/reportproj.rebuild`) instead of a second implementation of it, which
+    is how two readings of one stream come to disagree.
+    """
     reports: dict[str, dict] = {}
-    for row in read_jsonl(path):
+    for row in rows:
         if not (item_id := str(row.get("id") or "")):
             continue
         if row.get("event") == "delivered":

@@ -30,7 +30,7 @@
     "src/rsched/lanes.py": 404,
     "src/rsched/registry.py": 362,
     "src/rsched/reminders.py": 574,
-    "src/rsched/reports.py": 358,
+    "src/rsched/reports.py": 356,
     "src/rsched/sandbox.py": 414,
     "src/rsched/utils_run.py": 541,
     "src/rsched/web/api_questions.py": 415,

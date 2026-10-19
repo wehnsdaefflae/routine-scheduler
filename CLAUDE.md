@@ -289,8 +289,10 @@ one you are about to touch, not all of them.
   action IS the confirmation, and the tally is per-routine even for a library reminder
   (docs/reminders.md). A reminder is ONE CONFIGURATION OF A HOOK (`rsched/hooks`, D152): five
   fields — trigger, addressee, payload, delivery, disposition — of which a report, a
-  consequence reminder and a mid-run injection are three settings, mirrored into the one store
-  `.control/hooks.jsonl` through `engine/hookmirror`. Two rules bound the mechanism: the run
+  consequence reminder and a mid-run injection are three settings, in the one store
+  `.control/hooks.jsonl`. A REPORT is written there FIRST and its `reports.jsonl` row is the
+  projection (`rsched/hooks/reportproj`); the reminder and injection paths still mirror theirs
+  through `engine/hookmirror`. Two rules bound the mechanism: the run
   tree is the only addressing scheme, and `hold_before_action` is the only delivery moment that
   can change what runs. `read_file` batches
   related reads via `paths` (one turn, one
