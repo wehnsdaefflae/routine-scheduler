@@ -15,6 +15,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.436.2] — 2026-10-21
+
+### A `config_patch`'s inner keys are judged where the record is written (F737)
+
+F537 closed the dead apply button for a patch's own keys: a `config_patch` whose top-level key
+the apply route would refuse is refused at the turn that files the ask, so no decision reaches
+the operator wearing a button that 422s. The hole was one level down — `patch_shape` judges
+`{"budgets": …}` as a valid key and never looks inside the mapping.
+
+Measured 2026-10-20: `llmsectest-weekday` proposed `{"budgets": {"max_turns": 600,
+"max_minutes": 900}}`. `max_minutes` is a budget name this repo has never had; the run invented
+it. The apply answered `budgets: Value error, unknown budget max_minutes`, and the trace file
+records the rest — `approve & apply` pressed **four times** between 04:39:18 and 04:39:39, then
+the operator typing the toast text back to the run by hand because nothing else carried it.
+
+`engine/config_bridge.patch_nested()` now judges the inner keys of the three mapping fields whose
+vocabulary is closed and engine-visible: budget names against `DEFAULT_BUDGETS` (the same list
+`web/config_fields._check_budgets` reads), `models` roles against `ROUTINE_MODEL_ROLES`,
+`efforts` roles against `MODEL_KINDS` and its levels against `EFFORT_LEVELS`. The refusal names
+the stray key *and* the vocabulary, so the next filing gets it right. Values that need server
+state — a catalog model name, a window fit — stay with the click, as `trial_value` already
+documents: the engine may not import the web layer, and a filing check stricter than the apply
+would refuse a proposal that works.
+
+`tests/test_config_patch_nested.py` (39 cases) pins the measured patch, each vocabulary, the
+non-mapping values this check must not crash on, and the wiring into `resolve()` — without the
+wiring every other case still passes, so that one test is the load-bearing one. Its anti-drift
+pin parametrizes over `DEFAULT_BUDGETS` itself, so a budget added to the loader is proposable the
+same day.
+
 ## [0.436.1] — 2026-10-19
 
 ### `ungated_write` stops guessing: the shape test sees comparisons, and its interpreter shape was dead (F730)

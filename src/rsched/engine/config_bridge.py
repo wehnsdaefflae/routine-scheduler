@@ -27,7 +27,7 @@ def resolve(ctx, cpatch: dict | None) -> tuple[str, str]:
     conversation = runkind.lands_in_conversation(ctx)
     target, error = patch_target(ctx, cpatch, conversation=conversation)
     return target, (error or patch_shape(cpatch, target, conversation=conversation)
-                    or trial_value(ctx.server, cpatch))
+                    or patch_nested(cpatch) or trial_value(ctx.server, cpatch))
 
 
 #: What a model trial looks like, said in the refusal so the next filing gets it right.
@@ -101,6 +101,57 @@ def patch_shape(patch: dict | None, target: str = "", *, conversation: bool = Fa
             f"and not take. The body IS the PATCH body, so filesystem roots are "
             f"`fs_read_roots` and `fs_write_roots` (flat lists of paths), not a nested object. "
             f"Valid keys here: {', '.join(sorted(known))}.")
+
+
+def patch_nested(patch: dict | None) -> str:
+    """Refuse a mapping field whose INNER keys the apply would reject — the same dead button
+    one level down.
+
+    `patch_shape` judges the patch's own keys, so `{"budgets": {...}}` passed it whatever the
+    mapping held. Measured 2026-10-20: `llmsectest-weekday` filed
+    `{"budgets": {"max_turns": 600, "max_minutes": 900}}`, the apply answered
+    `budgets: Value error, unknown budget max_minutes`, and the operator pressed
+    `approve & apply` FOUR times before typing the toast text back to the run by hand
+    (`.ui-traces/20261020.jsonl`, 04:39:18-04:39:39). `max_minutes` is not a key the repo has
+    ever had — the run invented it, and nothing between the invention and his click said so.
+
+    Judged against the closed vocabularies in `config/base.py`: the budget names the loader
+    keeps (`DEFAULT_BUDGETS`, the same list `web/config_fields._check_budgets` reads), the model
+    roles (`ROUTINE_MODEL_ROLES`), the chat roles `efforts` takes (`MODEL_KINDS`) and its levels
+    (`EFFORT_LEVELS`). Both patch surfaces spell these three fields the same way, so there is
+    one answer for a routine and a conversation alike. A VALUE needing server state — a catalog
+    model name, a window fit — stays with the click, as `trial_value` says for the trial: the
+    engine may not import the web layer, and a filing check stricter than the apply would refuse
+    a proposal that works.
+    """
+    if not patch:
+        return ""
+    from ..config.base import (
+        DEFAULT_BUDGETS,
+        EFFORT_LEVELS,
+        MODEL_KINDS,
+        ROUTINE_MODEL_ROLES,
+    )
+
+    for field, known in (("budgets", tuple(DEFAULT_BUDGETS)),
+                         ("models", ROUTINE_MODEL_ROLES),
+                         ("efforts", MODEL_KINDS)):
+        value = patch.get(field)
+        if not isinstance(value, dict):
+            continue
+        if stray := sorted(k for k in value if k not in known):
+            return (f"config_patch {field}: {', '.join(repr(k) for k in stray)} "
+                    f"{'is' if len(stray) == 1 else 'are'} not a {field[:-1]} this instance has "
+                    f"— expected one of {', '.join(known)}. The apply would refuse the whole "
+                    f"patch and the user would be left with a decision he can read and not "
+                    f"take.")
+    levels = patch.get("efforts")
+    if isinstance(levels, dict) and (bad := sorted(
+            f"{role}={level!r}" for role, level in levels.items()
+            if level not in ("", None) and level not in EFFORT_LEVELS)):
+        return (f"config_patch efforts: {', '.join(bad)} — a reasoning effort is one of "
+                f"{', '.join(EFFORT_LEVELS)}, or null for the provider's own default.")
+    return ""
 
 
 def patch_target(ctx, cpatch: dict | None, *, conversation: bool = False) -> tuple[str, str]:
