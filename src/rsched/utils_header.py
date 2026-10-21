@@ -1,9 +1,9 @@
 """The util HEADER contract — what a util must declare about itself, and what it may read.
 
-Split out of `utils_lib.py` (F393). This is the authoring contract, not the store: the
-docstring header every util carries (summary, usage, calls, tags, secrets, net, fs) and the checks
-that make a header honest. `header_problems` is what gates `write_util`, so an over-tolerant
-reading here silently admits a util nobody can audit.
+Split out of `utils_lib.py` (F393). This is the authoring contract, not the store: the docstring
+header every util carries (summary, usage, calls, tags, secrets, net, fs, informational-exits)
+and the checks that make a header honest. `header_problems` is what gates `write_util`, so an
+over-tolerant reading here silently admits a util nobody can audit.
 
 `usage:` is a BLOCK, not a line: a verb-dispatched util lists one invocation per verb, and the
 block is every non-blank line under the `usage:` line up to the next header key. Reading only
@@ -42,7 +42,8 @@ _FS_ENTRY_RE = re.compile(r"^(ro|rw)\s+(\S.*)$")
 
 # Where the `usage:` block ends: the next header key, or a blank line. Anything between is an
 # invocation form the caller needs (a verb line, its one-line gloss, a wrapped flag list).
-_HEADER_KEY_RE = re.compile(r"^(tags|calls|secrets|net|fs)\s*:", re.IGNORECASE)
+_HEADER_KEY_RE = re.compile(r"^(tags|calls|secrets|net|fs|informational-exits)\s*:",
+                            re.IGNORECASE)
 
 
 def usage_block(doc: str) -> str:

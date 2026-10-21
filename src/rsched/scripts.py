@@ -32,7 +32,10 @@ permission doc, no approval dial — a script's blast radius is a subset of the 
 permissions, and the sandbox enforces those regardless of the code.
 Header contract: first line `<name> — <summary>`, optional `usage:`, `net: outbound|none`
 (undeclared = none → no TCP at exec; the dependency install is a net-open build step,
-R40), `secrets:` for the exposure gate above, `calls:` for the utils it shells out to.
+R40), `secrets:` for the exposure gate above, `calls:` for the utils it shells out to, and
+`informational-exits: 2` for a documented non-zero exit that is an ANSWER rather than a
+failure — a status poll of a detached gate, say (F711, `engine/exitgate.py`): the declared
+codes stop counting toward the repeat-failure detector, every other non-zero still counts.
 """
 
 from __future__ import annotations
@@ -188,7 +191,8 @@ def call_problems(routine_dir: Path, name: str, libraries_home: Path) -> list[st
 
 
 _PEP723_BLOCK = re.compile(r"^# /// script\s*$(.*?)^# ///\s*$", re.MULTILINE | re.DOTALL)
-_ENGINE_KEYS_IN_BLOCK = re.compile(r"^#\s*(secrets|optional_secrets|net|calls)\s*=", re.MULTILINE)
+_ENGINE_KEYS_IN_BLOCK = re.compile(
+    r"^#\s*(secrets|optional_secrets|net|calls|informational-exits)\s*=", re.MULTILINE)
 
 
 def misdeclared(routine_dir: Path, name: str) -> list[str]:

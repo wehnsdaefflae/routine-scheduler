@@ -1313,7 +1313,11 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   `bootstrap.sync_seed_library_docs` (subfolder-aware). See docs/playbooks.md.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`,
   `calls:` (sibling utils exec'd via `gu` — drives transitive secret/net resolution), `tags:`,
-  `secrets: NAME,…`, `net: outbound|none`, `fs: roots|none|rw <path>|ro <path>` — the docstring is the ONLY machine-read surface;
+  `secrets: NAME,…`, `net: outbound|none`, `fs: roots|none|rw <path>|ro <path>`,
+  `informational-exits: 2` (optional — a documented non-zero exit that is an ANSWER, not a failure:
+  the declared codes stop counting toward the repeat-failure detector that fires `fix-the-cause`,
+  every other non-zero still counts. `engine/exitgate.py`, F711; a routine's own `scripts/` helper
+  declares it the same way) — the docstring is the ONLY machine-read surface;
   comment-form declarations above it are invisible), and a `--selftest` the engine runs before
   saving. `write_util` is gated twice: `utils_header.header_problems` rejects a missing `tags:`/`net:`
   line or a credential env var the code reads but `secrets:` doesn't declare (the Settings page can

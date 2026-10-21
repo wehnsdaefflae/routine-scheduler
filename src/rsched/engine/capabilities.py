@@ -335,16 +335,16 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             else:
                 cap_bits.append(
                     "script — run this routine's own Python helpers from scripts/<name>.py "
-                    "(none exist yet; author one with write_file: a PEP 723 script, "
-                    "docstring header '<name> — <summary>' + 'net:' + 'secrets:' + "
-                    "'calls:' for any utils it shells out to, then call it with the "
-                    "script action). When you notice a repeating "
-                    "deterministic sub-step (fetch, parse, compute, render), write a "
-                    "PERSISTENT script for it instead of redoing it by hand — it runs in "
-                    "your venv inside your sandbox, survives this run, and future runs "
-                    "call it for free. Placement test: a script is for THIS routine only "
-                    "— capability another routine could plausibly reuse belongs in the "
-                    "shared library as a util instead. " + _THEN_SCRIPT)
+                    "(none exist yet; author one with write_file: a PEP 723 script, docstring "
+                    "header '<name> — <summary>' + 'net:' + 'secrets:' + 'calls:' for utils it "
+                    "shells out to + 'informational-exits: 2' for a documented non-zero exit "
+                    "that is an ANSWER not a failure, then call it with the script action). "
+                    "When you notice a repeating deterministic sub-step (fetch, parse, "
+                    "compute, render), write a PERSISTENT script for it instead of redoing "
+                    "it by hand — it runs in your venv inside your sandbox, survives this "
+                    "run, and future runs call it for free. Placement test: a script is for "
+                    "THIS routine only — capability another routine could plausibly reuse "
+                    "belongs in the shared library as a util instead. " + _THEN_SCRIPT)
         if "create_routine" in kinds:
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
                             "routine — the only way a routine is created)")

@@ -62,14 +62,17 @@ def _repeated_failure(s: Situation) -> bool:
     SECOND of the same call is where a run either changes route or starts engineering around
     a wall — and it was the moment the old first-failure reminder missed: it fired 472 times
     for an identical retry that happened after 0.3% of failures. `loop.failures` is tallied
-    by the loop from the same `is_failure` classifier, so this asks only whether the count
-    for this call has just reached two.
+    through the same `exitgate.failure_tally_key` seam this asks, so the tally and the
+    predicate can never disagree about whether a call failed: a DECLARED informational exit
+    (F711) is not a failure on either side, and this asks only whether the count for this
+    call has just reached two.
     """
-    from .observations import is_failure
+    from .exitgate import failure_tally_key
 
-    if s.obs is None or s.action is None or not is_failure(s.obs):
+    if s.obs is None or s.action is None:
         return False
-    return int((getattr(s.loop, "failures", None) or {}).get(failure_key(s.action), 0)) == 2
+    key = failure_tally_key(s.ctx, s.action, s.obs)
+    return bool(key) and int((getattr(s.loop, "failures", None) or {}).get(key, 0)) == 2
 
 
 def _capability_denied(s: Situation) -> bool:
