@@ -767,6 +767,14 @@ by a test, by the engine, or by a past incident.
   now. The report trigger stays an explicit opt-in for a routine whose job IS its inbox. The
   health stream files a `partial` as `budget_exhausted` ONLY when a budget violation forced it;
   a partial the model chose is `run_partial`.
+  **The GLOBAL PAUSE is the complement of that sentence, so every self-starting path owes it a
+  check** — and `daemon/pause.py`'s docstring is the contract listing them. A path added outside
+  it fails SILENT by construction: a pause only ever shows what it stopped, never what it did
+  not. `detached.tick` started runs through a paused instance for as long as the feature existed
+  (intake's `fire`, the wake's `resume_terminal`, and every undelivered task at boot, since
+  `_boot` reconciles before `boot_catchup`) with no event and no log line — F721. The gate
+  belongs where the run STARTS, not at the tick's call site, which is why the detached hold lives
+  per phase in the manager; what starts nothing (a finished task's delivery) is not held.
 - **A run gate may answer "no work" only when it KNOWS there is none.** Every check
   (`rsched/gatekit/`) reads what it cannot establish — a refused login, a timeout, a file that
   does not parse, no earlier ok run to compare against — as WORK; a fire is skipped only when

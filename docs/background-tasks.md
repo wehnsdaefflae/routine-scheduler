@@ -75,6 +75,48 @@ tasks use **deferred asks only** (coerced in `handle_ask`), so one can never par
 hold a restart with no deadline. What survives a restart regardless is the WORK ALREADY DONE — delivery
 is idempotent and driven from disk, so a task that finished just before the exit is delivered after it.
 
+## What the global pause holds
+
+The operator's global pause (D34, `daemon/pause.py`) promises that **the scheduler starts nothing
+on its own**. This lifecycle starts runs at exactly two points, and the pause is enforced
+per-phase inside `DetachedManager.tick` — not by its caller:
+
+| phase | paused | why |
+| --- | --- | --- |
+| **intake** (`runner.fire`) | **HELD** | it starts a run. The intent file stays in `.requests/` unconsumed, so the task fires on the first tick after the resume — the promise one-shot intake already makes ("never consumed unfired"). |
+| **deliver** (artifacts + inbox message) | **proceeds** | it starts nothing: a copy and a durable message in the owner's `inbox/`, which the owner reads whenever it next runs. |
+| **wake** (`runner.resume_terminal`) | **HELD** | a resumed leg IS a run. `wake` is state-driven (a `delivered.json` marker plus a pending message), so the first tick after the resume wakes the owner — nothing is lost by waiting. |
+| **digest** (`state/background.json`) | **proceeds** | a pure derivation of what is on disk. |
+| **gc** | **proceeds** | it only removes task dirs the owner has already drained. |
+
+**Why delivery is not held, and the wake is.** The two look like one step in prose — "hand the
+result back" — and they differ on the only axis the pause cares about. A delivery's work is
+already paid for: the task ran, it finished, and copying its artifacts next to a message changes
+nothing about what is RUNNING. Holding it would also lose something real, because `gc` removes a
+task dir a grace window after delivery: a pause lifted days later would hand back a message
+whose artifacts had meanwhile been collected. The wake is the opposite — `resume_terminal` starts
+a run leg, and such a leg is **not** caught by the engine's own pause gate
+(`engine/control.pause_gate`), which holds only runs MARKED at the pause click
+(`web/settings/pause.py` stamps `scheduling_pause` into each then-active run's `control.json`).
+A freshly resumed leg carries no mark and would run to completion under a pause the operator
+believes stopped everything. So the pause holds it, and the delivery waits in the inbox — which
+is exactly where an undelivered result waits anyway while its owner is busy.
+
+**Why the gate is in the manager and not in the scheduler's `if not is_paused:` block.** `_boot`
+calls `detached.reconcile()` (`daemon/scheduler.py`) BEFORE the pause-checking `boot_catchup`, so
+a guard at the tick's call site would still have let a restart under a pause fire every
+undelivered task — which is what F721 found. `reconcile()` is a `tick()`, so one gate covers both.
+
+**Neither hold files a health event**, deliberately. `health_stream.BLOCKED_EVENTS` means WORK
+THAT WAS DUE DID NOT HAPPEN; these are deferrals with their own durable record on disk (the
+request file, the delivered marker + the pending message), exactly like trigger and one-shot
+intake, which file nothing either. They log at DEBUG: the tick runs every 5 s, so an INFO line
+per held tick would be hours of noise for one standing fact the dashboard's `paused` banner
+already shows. A dropped fire is different and does file one — `fire_paused` / `lane_fire_paused`
+(`daemon/pause_skip.py`), because a dropped fire leaves nothing else behind.
+
+Pinned by `tests/test_global_pause.py` (intake, boot `reconcile`, and the delivery-vs-wake split).
+
 ## Monitor + cancel
 
 - The conversation rail (`static/views/conversations.js`) shows a **background** card: each task's label,

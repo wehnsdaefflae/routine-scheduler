@@ -1,10 +1,16 @@
-"""Global scheduling pause holds active routine turns without clearing manual pauses."""
+"""What the GLOBAL PAUSE (D34) holds: active routine turns, and the run-STARTING halves of the
+detached background-task lifecycle (F721) — without clearing a manual pause, and without
+holding back the delivery of work that already finished.
+"""
+from pathlib import Path
 from types import SimpleNamespace
 
 from rsched.config import ServerConfig
 from rsched.daemon import pause
+from rsched.daemon.detached import DetachedManager
 from rsched.engine.control import pause_gate
 from rsched.paths import atomic_write_json, read_json
+from test_detached import DetachedFakeRunner, _owner, _request, _server, _task
 
 
 def test_global_pause_gate_preserves_manual_pause(tmp_path, monkeypatch):
@@ -56,3 +62,80 @@ def test_global_pause_gate_holds_marked_run_until_resume(tmp_path, monkeypatch):
     statuses.clear()
     pause_gate(loop, poll_s=0)
     assert statuses == []
+
+
+# -- detached background tasks (F721) -------------------------------------------------------
+# The pause's promise is that the scheduler starts NOTHING on its own. `detached.tick` ran
+# outside the scheduler's pause guard and starts two kinds of run: an intake `runner.fire` and
+# a wake's `resume_terminal`. A woken leg is not held by `pause_gate` either — that gate holds
+# only runs MARKED at the pause click, and a fresh resume carries no mark.
+
+DOC = Path(__file__).resolve().parents[1] / "docs" / "background-tasks.md"
+
+
+async def test_pause_holds_detached_intake(tmp_path):
+    """A paused instance fires NO detached task — and consumes no request doing it."""
+    server = _server(tmp_path)
+    owner = _owner(server)
+    fr = DetachedFakeRunner()
+    mgr = DetachedManager(server, fr)
+    _request(server, "bg-1", owner)
+    pause.set_paused(server, True)
+    await mgr.tick()
+    assert fr.fired == []
+    assert (server.background_home / ".requests" / "bg-1.json").exists()  # never consumed unfired
+    assert not (server.background_home / "bg-1").exists()                 # nothing materialized
+    pause.set_paused(server, False)
+    await mgr.tick()
+    assert ("bg-1", "detached") in fr.fired                               # deferred, not dropped
+    assert not (server.background_home / ".requests" / "bg-1.json").exists()
+
+
+async def test_boot_reconcile_under_a_pause_starts_nothing(tmp_path):
+    """`_boot` reconciles BEFORE the pause-checking `boot_catchup`, so a restart under a pause
+    fired every undelivered task. The hold lives in the manager, so boot inherits it."""
+    server = _server(tmp_path)
+    owner = _owner(server)
+    _task(server, "bg-1", owner, summary="done post-restart")
+    _request(server, "bg-2", owner)
+    fr = DetachedFakeRunner()
+    pause.set_paused(server, True)
+    await DetachedManager(server, fr).reconcile()
+    assert fr.fired == [] and fr.resumed == []
+    assert list((owner / "inbox").glob("msg-bg-*.json"))   # the finished task is still handed back
+
+
+async def test_pause_delivers_the_finished_task_but_holds_the_wake(tmp_path):
+    """The decision F721 left open: DELIVERY proceeds (it starts nothing and the message is
+    durable), the WAKE does not (it starts a run leg). Nothing is lost — `wake` is
+    state-driven, so the first tick after the resume wakes the owner."""
+    server = _server(tmp_path)
+    owner = _owner(server)
+    task = _task(server, "bg-1", owner, summary="found 42 rows", artifact=True)
+    fr = DetachedFakeRunner()
+    mgr = DetachedManager(server, fr)
+    pause.set_paused(server, True)
+    await mgr.tick()
+    msgs = list((owner / "inbox").glob("msg-bg-*.json"))
+    assert len(msgs) == 1 and read_json(msgs[0])["via"] == "background"
+    assert (owner / "artifacts" / "from-bg-bg-1" / "report.md").exists()
+    assert (task / "delivered.json").exists()
+    assert read_json(owner / "state" / "background.json")[0]["delivered"] is True
+    assert fr.resumed == []                                # a resume is a run leg: held
+    pause.set_paused(server, False)
+    await mgr.tick()
+    assert fr.resumed and fr.resumed[0][0] == "c-1" and fr.resumed[0][2] == "detached"
+
+
+def test_pause_scope_is_documented_where_both_readers_look():
+    """`daemon/pause.py` ENUMERATES what the pause holds, so it has to stay true; and
+    docs/background-tasks.md is the page a reader of this feature reaches. F721 was silent on
+    both — the doc contained no 'paus' at all."""
+    assert "detached" in (pause.__doc__ or "").lower()
+    assert "paus" in (DetachedManager.tick.__doc__ or "").lower()
+    doc = DOC.read_text(encoding="utf-8")
+    head = "## What the global pause holds"
+    assert head in doc, f"docs/background-tasks.md must state the pause contract ({head})"
+    section = doc.split(head, 1)[1].split("\n## ", 1)[0]
+    for phase in ("intake", "wake", "deliver"):
+        assert phase in section, f"the pause section does not say what happens to {phase}"

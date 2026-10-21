@@ -15,8 +15,19 @@ While the sentinel exists the scheduler fires NOTHING on its own:
     the next fire, and the decline is itself an event;
   * trigger and one-shot intake is DEFERRED (their ticks don't run) — spooled webhook
     events and armed one-shots fire after resume; a one-shot is never consumed unfired;
+  * a DETACHED background task is neither fired nor delivered-by-waking: the two phases of
+    `daemon/detached.py` that START a run — intake's `runner.fire` and the wake's
+    `resume_terminal` — are held, boot `reconcile()` included, while DELIVERY of a task that
+    already finished proceeds (it copies artifacts and writes a durable inbox message, which
+    starts nothing). Held, not dropped: the request file survives unconsumed and the wake is
+    state-driven, so the first tick after the resume makes both good (F721);
   * manual "run now" BYPASSES the pause on purpose: it is the operator's explicit
     override (option A of decision D34).
+
+This list is the CONTRACT, so a new thing the daemon does on its own belongs in it or in the
+exemption above. F721 is what the omission costs: `detached.tick` sat outside the scheduler's
+pause guard for as long as the feature existed, and a paused instance went on starting runs with
+no event, no log line and nothing on the Decisions page to read it from.
 
 The flag survives daemon restarts (a file, exactly like the restart sentinel, in the
 same dot-dir the registry scan ignores) and is reported in /api/status as `paused`.

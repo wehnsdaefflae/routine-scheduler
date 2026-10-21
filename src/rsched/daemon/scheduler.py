@@ -306,7 +306,7 @@ class Scheduler:
                                  len(rec.get("members") or []))
                 self._refresh_limits()
                 self._refresh_machine_queues()
-                # detached background tasks: intake requests, deliver results, wake owners
+                # detached tasks — pause held per phase in the manager, not the guard below (F721)
                 await self.detached.tick(now)
                 if not is_paused:
                     # event triggers: spooled webhook events → coalesced fires
