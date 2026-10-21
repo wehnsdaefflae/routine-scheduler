@@ -38,7 +38,9 @@ def _write(tmp_path, monkeypatch, confirm, content):
     monkeypatch.setattr(authoring, "handle_ask",
                         lambda _loop, ask, _poll, **_: asked.append(ask["question"]) or
                         {"answered": False, "qid": "q-1"})
-    monkeypatch.setattr(authoring.utils_run, "selftest", lambda *a, **k: (True, "ok"))
+    # The selftest runs inside the staged transaction now (utils_stage, F584): the candidate
+    # is tested under a throwaway slug and installed only on green.
+    monkeypatch.setattr(authoring.utils_stage.utils_run, "selftest", lambda *a, **k: (True, "ok"))
     monkeypatch.setattr(authoring.sandbox, "base_policy", lambda _server: None)
     monkeypatch.setattr(authoring.utils_lib, "git_commit", lambda *a, **k: True)
     monkeypatch.setattr(authoring, "_impact_note", lambda *a: "")

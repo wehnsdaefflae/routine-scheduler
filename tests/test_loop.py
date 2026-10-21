@@ -2988,32 +2988,32 @@ def test_revise_marker_unlocks_recipe_for_the_leg(make_routine):
         {"kind": "write_file", "path": "routine.yaml", "content": "x"}) is not None  # config sealed
 
 
-def test_write_util_selftest_failure_rolls_back_creation(make_routine, scripted, monkeypatch):
-    """A failed selftest must not leave the broken script live in the library: a NEW util's
-    write is undone (removed), so concurrent `gu` callers never see it."""
+def test_write_util_failure_never_installs_creation(make_routine, scripted, monkeypatch):
+    """F584/D161: a failed selftest never installs the script at all — only the STAGED name is
+    written, so `utils/bad` never exists for a concurrent `gu` caller, not even mid-selftest."""
     import rsched.utils_lib as ul
     import rsched.utils_run as ur
 
-    calls = []
+    written, removed = [], []
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
     monkeypatch.setattr(ul, "exists", lambda home, name: False)
-    monkeypatch.setattr(ul, "write_util_file",
-                        lambda home, name, content: calls.append(("write", name)))
-    monkeypatch.setattr(ul, "remove_util_file", lambda home, name: calls.append(("remove", name)))
+    monkeypatch.setattr(ul, "write_util_file", lambda home, name, c: written.append(name))
+    monkeypatch.setattr(ul, "remove_util_file", lambda home, name: removed.append(name))
     monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (False, "boom"))
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "Create it.", "kind": "write_util", "name": "bad", "content": util_src("bad")},
         finish(status="partial", summary="util did not pass selftest"),
     ], slug="wuroll")
     assert status == "partial"
-    assert calls == [("write", "bad"), ("remove", "bad")]
+    assert written == removed and written[0].startswith(ul.STAGING_PREFIX)  # never `utils/bad`
     wu = next(e for e in events if e["type"] == "observation"
               and e["payload"]["kind"] == "write_util")
     assert wu["payload"]["reverted"] is True
 
 
-def test_write_util_selftest_failure_restores_revision(make_routine, scripted, monkeypatch):
-    """Revising an existing util: a failed selftest restores the PREVIOUS working text."""
+def test_write_util_failure_leaves_revision_uninstalled(make_routine, scripted, monkeypatch):
+    """Revising an existing util: a failed selftest leaves the PREVIOUS working text in place
+    — since F584/D161 without a restore, because `utils/adder` was never written."""
     import rsched.utils_lib as ul
     import rsched.utils_run as ur
 
@@ -3022,8 +3022,7 @@ def test_write_util_selftest_failure_restores_revision(make_routine, scripted, m
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
     monkeypatch.setattr(ul, "exists", lambda home, name: True)
     monkeypatch.setattr(ul, "read_util", lambda home, name: old_source)
-    monkeypatch.setattr(ul, "write_util_file",
-                        lambda home, name, content: writes.append(content))
+    monkeypatch.setattr(ul, "write_util_file", lambda home, name, c: writes.append(name))
     monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (False, "boom"))
     d = make_routine(slug="wurest")
     scripted([
@@ -3032,7 +3031,8 @@ def test_write_util_selftest_failure_restores_revision(make_routine, scripted, m
     ])
     status, _run_dir = run_routine(d, _server(d, util_authoring="creations"), run_ts=TS)
     assert status == "partial"
-    assert len(writes) == 2 and writes[1] == old_source
+    assert len(writes) == 1 and writes[0].startswith(ul.STAGING_PREFIX)
+    assert "adder" not in writes                 # the live util was never touched
 
 
 def test_write_util_path_name_rejected_in_schema_cycle(make_routine, scripted):

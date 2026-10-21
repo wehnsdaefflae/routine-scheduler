@@ -25,6 +25,12 @@ jailed) plus **scoped secrets injection**. Three cooperating layers:
   and lacks the ABI-4 network rules; evaluated 2026-07-17.)
 - `rsched/sandbox.py` — the policy layer: derives the visible filesystem from the run,
   decides strict/permissive/off, assembles the spec, wraps the command.
+- `rsched/utils_stage.py` — WHERE a util candidate is when its selftest runs (F584/D161):
+  staged in the library under a throwaway `staging--<name>-<pid>-<token>` slug and installed
+  at `utils/<name>` only on green, so no routine's `gu <name>` reaches an untested script.
+  Staged inside the library on purpose — the jail mounts `libraries_home`, `gu` resolves
+  siblings from it, and the candidate's own header is what `util_needs` reads there, so the
+  selftest gets the real siblings, secrets, `net:`/`fs:` terms and verb scope.
 - `rsched/utils_run.py` — the dispatch seam: every `run_util` call (the `util` action,
   the vision fallback, `write_util` selftests, the web Library editor's selftest, the
   machine-queue reader and the Settings → Machines probe) takes a `SandboxPolicy` and

@@ -1303,12 +1303,19 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   saving. `write_util` is gated twice: `utils_header.header_problems` rejects a missing `tags:`/`net:`
   line or a credential env var the code reads but `secrets:` doesn't declare (the Settings page can
   only prompt for declared secrets), then the selftest; approval rides the routine's write_util
-  `confirm:` capability level. A header rejection is reported AS one — its own observation head
+  `confirm:` capability level. The selftest runs on the candidate OUT of the live path
+  (`utils_stage.write_selftested`, F584/D161 — the one transaction both authors share): the
+  script is staged in the library under a throwaway `staging--<name>-<pid>-<token>` slug and
+  `utils/<name>` is written only on green, so no routine's `gu <name>` can reach an untested
+  script while the selftest runs, and no failure path needs a rollback. Staged INSIDE the
+  library because a selftest may call `gu` siblings and its declared secrets/net/fs/verb scope
+  are read from its own header at that library; hidden from `list_utils` and `gu list`, and
+  the prefix is refused as a util name. A header rejection is reported AS one — its own observation head
   naming each violated line — never as a selftest failure (R93), and a failed selftest surfaces
   exit code + both streams head+tail so the traceback's end survives. EDIT MODE (`anchor`/
   `replacement` instead of `content`) patches an existing util's source engine-side — a surgical
   fix never re-emits the whole script (`util name=show --full` returns the complete source) — and
-  rides the same approval + selftest + rollback gates. The selftest runner prewarms a net:outbound
+  rides the same approval + staged-selftest gates. The selftest runner prewarms a net:outbound
   util's PEP 723 deps before the timed run (`run_util` prewarms net:none/undeclared ones itself,
   R40/R20), so a heavy dependency tree never spends the selftest timeout on toolchain install.
   A slug with a DELETION in the library's git history is a user

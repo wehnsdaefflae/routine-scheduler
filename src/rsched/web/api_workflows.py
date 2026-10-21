@@ -8,8 +8,6 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import utils_header, utils_run
-from ..ids import is_slug
 from ..paths import atomic_write
 from ..readmodels import library_reads
 from ..workflows import library
@@ -18,6 +16,7 @@ from ..workflows.lint import (
     lint_rule_text,
     lint_workflow_py,
 )
+from . import api_library_utils
 
 router = APIRouter(tags=["workflows"])
 
@@ -86,7 +85,7 @@ def library_doc_detail(request: Request, kind: str, slug: str) -> dict:
     from .. import library_docs
 
     if kind == "utils":
-        return util_detail(request, slug)
+        return api_library_utils.util_detail(request, slug)
     home = _docs_home(request, kind)
     content = library_docs.read_doc(home, slug)
     if content is None:
@@ -180,8 +179,11 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
     from .. import library_docs
 
     if kind == "utils":
-        return put_util(request, slug, UtilBody(content=body.content,
-                                                impact_digest=body.impact_digest))
+        return api_library_utils.put_util(
+            request, slug,
+            api_library_utils.UtilBody(content=body.content,
+                                       impact_digest=body.impact_digest),
+            _require_digest)
     home = _docs_home(request, kind)
     content = body.content
     if kind == "permissions" and body.requires is not None:
@@ -221,7 +223,7 @@ def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
     from .. import library_docs
 
     if kind == "utils":
-        return delete_util(request, slug)
+        return api_library_utils.delete_util(request, slug)
     if kind == "reminders":
         return delete_global_reminder(request, slug)
     if kind == "permissions":
@@ -259,66 +261,6 @@ def delete_global_reminder(request: Request, rid: str) -> dict:
     reminders.delete_global(server.reminders_home, rid)
     libgit.commit(server.libraries_home, f"delete curated reminder {rid} via web",
                   routines_home=server.routines_home, paths=[reminders.global_rel(rid)])
-    return {"ok": True}
-
-
-def delete_util(request: Request, name: str) -> dict:
-    """Delete a global util — its whole <name>/ dir, committed, so it is recoverable from
-    git history. Routines discover utils live; the catalog shrinks at their next run.
-    """
-    from .. import utils_lib
-
-    server = request.app.state.server
-    if not utils_lib.exists(server.libraries_home, name):
-        raise HTTPException(404, f"no util {name!r}")
-    utils_lib.remove_util_file(server.libraries_home, name)   # atomic rename-aside + delete
-    utils_lib.git_commit(server.libraries_home, f"delete util {name} via web",
-                         routines_home=server.routines_home, paths=[f"utils/{name}"])
-    return {"ok": True}
-
-
-def util_detail(request: Request, name: str) -> dict:
-    # reached via /library/{kind}/{slug} with kind="utils" (library_doc_detail dispatches
-    # here) — a direct route registration would be shadowed by that pattern anyway
-    from .. import utils_lib
-
-    server = request.app.state.server
-    content = utils_lib.read_util(server.libraries_home, name)
-    if content is None:
-        raise HTTPException(404, f"no util {name!r}")
-    return {"name": name, "content": content}
-
-
-class UtilBody(BaseModel):
-    content: str
-    impact_digest: str | None = None
-
-
-def put_util(request: Request, name: str, body: UtilBody) -> dict:
-    """Create or edit a global util (selftest-gated, committed) — the web twin of the
-    write_util engine action, and like it the selftest gates the LIBRARY, not just the reply:
-    a text that fails it is rolled back (a new util removed, a revision restored) so a broken
-    script is never left live for the `gu` callers of every routine. Without that the 422
-    said "not committed" while the broken text stayed on disk.
-    """
-    from .. import sandbox, utils_lib
-    from ..engine.observations import truncate
-
-    server = request.app.state.server
-    if not is_slug(name):   # write_util_file's backstop would raise it as a 500
-        raise HTTPException(400, f"invalid util name {name!r} — lowercase a-z, 0-9 and -")
-    problems = utils_header.header_problems(body.content)
-    if problems:
-        raise HTTPException(422, "header problems (not saved): " + "; ".join(problems))
-    _require_digest(request, "utils", name, body.content, body.impact_digest)
-    utils_lib.ensure_library(server.libraries_home, remote=server.libraries_remote)
-    ok, output = utils_run.write_selftested(
-        server.libraries_home, name, body.content, policy=sandbox.base_policy(server),
-        message=f"revise {name} via web", routines_home=server.routines_home)
-    if not ok:
-        # head+tail, as the engine reports it (R93): a traceback's END is the repair material
-        raise HTTPException(422, "selftest failed (rolled back, not committed):\n"
-                                 + truncate(output, cap=2000)[0])
     return {"ok": True}
 
 

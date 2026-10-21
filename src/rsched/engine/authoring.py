@@ -15,7 +15,7 @@ nothing to catch it, so a run reports it and the user deletes it.
 
 from __future__ import annotations
 
-from .. import sandbox, utils_header, utils_lib, utils_run
+from .. import sandbox, utils_header, utils_lib, utils_stage
 from ..ids import is_slug
 from ..paths import resolve_rel
 from .askback import still_pending
@@ -88,6 +88,13 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     if ctx.depth > 0:
         return {"kind": "write_util", "name": name, "declined": True,
                 "reason": "sub-workflows cannot create/revise utils — use existing ones"}
+    if name.startswith(utils_lib.STAGING_PREFIX):
+        # The prefix a candidate is selftested under (utils_stage) is HIDDEN from the catalog
+        # and the `gu` listing, so a util actually named that way would be a util no caller
+        # can discover — and the next authoring attempt's stale sweep would delete it.
+        return {"kind": "write_util", "name": name, "declined": True,
+                "reason": f"{utils_lib.STAGING_PREFIX!r} is reserved for utils being "
+                          "selftested before install — pick a name without that prefix"}
     home = ctx.server.libraries_home
     utils_lib.ensure_library(home, remote=ctx.server.libraries_remote)
     src_path = str(action.get("path") or "")
@@ -166,9 +173,11 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
                     "answer": str(ask["answer"])[:200]}
         if str(ask["answer"]).strip().lower() == "approve this kind for the rest of this run":
             ctx.granted_now.add("approval:write_util")
-    # Selftest gates the LIBRARY, not just the observation: a failing text is rolled back
-    # (utils_run.write_selftested), so a broken script is never left live for `gu` callers.
-    ok, output = utils_run.write_selftested(
+    # Selftest gates the LIBRARY BEFORE it holds the text (utils_stage.write_selftested,
+    # F584/D161): the candidate is tested under a throwaway slug and `utils/<name>` is written
+    # only on green, so there is no window in which another routine's `gu <name>` can reach an
+    # untested script — not the 120s selftest, not a dependency prewarm ahead of it.
+    ok, output = utils_stage.write_selftested(
         home, name, content, policy=sandbox.base_policy(ctx.server),
         message=f"{'create' if creating else 'revise'} {name}",
         routines_home=ctx.server.routines_home, aborted=ctx.aborted)

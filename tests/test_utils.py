@@ -816,24 +816,24 @@ def test_run_util_exports_the_callers_deadline(tmp_path):
     assert code == 0 and out.strip() == "90"
 
 
-def test_write_selftested_commits_a_pass_and_rolls_back_a_failure(tmp_path):
-    """The one write → selftest → commit-or-rollback transaction both util authors (the
-    engine's write_util and the web editor's PUT) go through: a passing text is committed, a
-    failing REVISION restores the working text, a failing NEW util leaves nothing behind —
-    and neither failure is committed."""
-    from rsched import libgit
+def test_write_selftested_commits_a_pass_and_never_installs_a_failure(tmp_path):
+    """The one write → selftest → commit transaction both util authors (write_util and the
+    web PUT) go through, since F584 in `utils_stage`: a passing text is installed and
+    committed, a failing REVISION leaves the working text, a failing NEW util leaves nothing.
+    The WINDOW property is tests/test_util_staging.py's; this is the end state."""
+    from rsched import libgit, utils_stage
 
     home = tmp_path / "utils-home"
     utils_lib.ensure_library(home)
     kw = {"policy": OFF, "routines_home": tmp_path / "routines"}
-    ok, _ = utils_run.write_selftested(home, "adder", ADDER, message="create adder", **kw)
+    ok, _ = utils_stage.write_selftested(home, "adder", ADDER, message="create adder", **kw)
     assert ok and utils_lib.read_util(home, "adder") == ADDER
     assert libgit.git(home, "log", "-1", "--format=%s").stdout.strip() == "create adder"
     head = libgit.git(home, "rev-parse", "HEAD").stdout
 
-    ok, out = utils_run.write_selftested(home, "adder", FAILING_UTIL, message="revise", **kw)
+    ok, out = utils_stage.write_selftested(home, "adder", FAILING_UTIL, message="revise", **kw)
     assert not ok and "exit 3" in out
-    assert utils_lib.read_util(home, "adder") == ADDER          # the working text is back
-    ok, _ = utils_run.write_selftested(home, "boomer", FAILING_UTIL, message="create", **kw)
+    assert utils_lib.read_util(home, "adder") == ADDER          # never replaced at all
+    ok, _ = utils_stage.write_selftested(home, "boomer", FAILING_UTIL, message="create", **kw)
     assert not ok and not utils_lib.util_dir(home, "boomer").exists()
     assert libgit.git(home, "rev-parse", "HEAD").stdout == head  # nothing committed
