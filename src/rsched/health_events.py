@@ -162,6 +162,17 @@ revision lands on every holder at once (error-recovery on 30 routines 2026-09-16
 recipe change of any kind while nothing on the instance said a word. Emitted per finished run while
 the comparison holds, so a run of them on one routine is the regression and their end is the new
 normal.
+  WHOSE regression it is, is decided before the row is written (`readmodels/trend_attribution`,
+F568): the same window is read across the fleet, and `scope` carries the verdict — `host` (≥3
+comparable routines ran it and a strict majority degraded together), `routine` (comparable
+routines ran it and did not), `unattributable` (fewer than 3 comparable routines, so neither
+verdict is available). It rides with `peers_compared`, `peers_degraded` and `fleet_share`. A
+`host` row carries NO `routine` — `backup_stale`'s idiom for an instance fact — and names where
+it was read in `detected_on`; that empty key is also what makes one condition of the box file
+ONE finding, since the cooldown keys on (event, routine). A host-wide outage on 2026-09-27/28
+filed three rows naming three routines for one problem with the host (F574), which is what an
+operator read as three accusations. The degradation is reported under all three verdicts: what
+attribution changes is who is named and what the sentence claims.
 
 model_failover: one rung of a role's fallback chain failed hard mid-turn and the next one served
 the turn (engine/degrade.py). The run finishes `ok` — the chain absorbed it — so nothing else

@@ -92,7 +92,8 @@ def _log_cache_health(ctx: RunContext, slug: str) -> None:
 
 def _log_cost_trend(ctx: RunContext, slug: str) -> None:
     """Emit `cost_trend_degraded` when this routine's last runs are clearly worse than the
-    ones before them — same thresholds as the routine page's flag, keyed on TIME.
+    ones before them — same thresholds as the routine page's flag, keyed on TIME — and only
+    after the fleet has said WHOSE regression it is.
 
     The version-keyed flag beside it can only move when THIS routine's recipe moves, and the
     most expensive regressions move no recipe at all: a library RULE revision reaches every
@@ -102,28 +103,31 @@ def _log_cost_trend(ctx: RunContext, slug: str) -> None:
     the read model had the reading, the routine page had to be OPENED to see it. This is the
     push half: it lands in the stream the nightly audit already reads.
 
+    The reading alone names nobody, and this emitter used to assert attribution anyway: a
+    host-wide condition on 2026-09-27/28 degraded everything that ran and filed three findings
+    naming three routines for one problem with the box (F568, F574). So the same window is read
+    across the fleet first (`readmodels/trend_attribution`) and the verdict decides both the
+    row's `routine` and its wording — a host condition carries no routine and says what it is
+    about; an isolated regression is still named, which is the half a fix here must not lose.
+
     Called after this run's own usage record is written, so the flag includes it.
     """
     from ..health_events import log_health_event
-    from ..readmodels.incarnations import live_runs
+    from ..readmodels.incarnations import live_runs, resolver
     from ..readmodels.run_health import recent_trend
+    from ..readmodels.trend_attribution import attribute, event_payload
     from ..readmodels.usage_stream import usage_records
 
     home = ctx.server.routines_home
-    records = live_runs(home, [rec for rec in usage_records(home) if not rec.get("depth")], slug)
+    fleet = [rec for rec in usage_records(home) if not rec.get("depth")]
+    records = live_runs(home, fleet, slug)
     trend = recent_trend(records)
     if not trend.get("flagged"):
         return
-    before, after = trend["before"], trend["after"]
-    log_health_event(
-        ctx.server.routines_home, "cost_trend_degraded", routine=slug, run_id=ctx.run_id,
-        detail=(f"the last {trend['window']} runs against the {trend['window']} before them: "
-                + "; ".join(trend["reasons"])),
-        window=trend["window"],
-        turns_median_before=before["turns_median"], turns_median_after=after["turns_median"],
-        volume_median_before=before["volume_median"],
-        volume_median_after=after["volume_median"],
-        fail_rate_before=before["fail_rate"], fail_rate_after=after["fail_rate"])
+    att = attribute(fleet, records, slug, name_of=resolver(home), window=trend["window"])
+    routine, detail, fields = event_payload(slug, trend, att)
+    log_health_event(home, "cost_trend_degraded", routine=routine, run_id=ctx.run_id,
+                     detail=detail, **fields)
 
 
 def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:

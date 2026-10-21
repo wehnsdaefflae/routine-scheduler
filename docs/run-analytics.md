@@ -162,6 +162,42 @@ own record has landed, and emits `cost_trend_degraded` while it is flagged
 as structured fields). A payload nobody opens is a reading nobody has — the nightly audit reads
 the health stream, so that is where a regression this size has to appear.
 
+#### Whose regression is it — attribution before the finding names anyone
+
+The reading above says a routine's window got worse. It does NOT say why, and the alarm
+asserted an answer anyway: every flagged window was filed as THAT ROUTINE's regression. On
+2026-09-27/28 a host-wide condition degraded everything that ran, and the stream carried three
+findings naming three routines for one problem with the box
+(`llmsectest-weekday:20260927-060004`, `library-sync:20260928-000003`, F574, F568).
+
+So before the finding names anyone, the same window is read across the fleet
+(`readmodels/trend_attribution.attribute`): every OTHER routine with at least `MIN_RUNS` runs
+inside the subject's calendar span and `MIN_RUNS` before it is judged by `regression_flag`
+against its own baseline — one heuristic, the same thresholds, two subjects. Three verdicts,
+carried on the row as `scope`:
+
+| `scope` | when | what the row says, and who it names |
+|---|---|---|
+| `host` | ≥ `HOST_MIN_PEERS` (3) comparable routines **and** a strict majority (> `HOST_SHARE` = 0.5) degraded with it | leads `host-wide: … a condition of the host, not one routine's regression`; carries **no** `routine`, and `detected_on` names where it was read |
+| `routine` | ≥ 3 comparable routines and no majority | the reading, then `…so this degradation is this routine's own` — the routine is named, as before |
+| `unattributable` | fewer than 3 comparable routines ran the window | the reading, then `cannot attribute: only N other routines had comparable runs …` — filed under the routine, with no claim about its cause |
+
+`HOST_SHARE` is a **strict** majority because it was measured, not guessed: over this
+instance's own stream (2026-10-21 — 1,738 folded depth-0 runs, 217 actors, 134 moments where
+the trend flagged) the share of comparable routines degrading alongside a flagged one ran
+median 0.11, p90 0.36, p95 0.40, **max 0.50**. Exactly half has happened once; more than half
+never has, so the rule reclassifies none of this instance's real history as a host condition.
+7 of those 134 moments (5.2%) had fewer than three comparable routines — the unattributable
+case, and the 2026-09-27/28 firings are themselves in it: exactly one other routine had
+comparable runs those nights, so an honest "cannot attribute, 1 other routine in the window"
+is what the row now says.
+
+An empty `routine` on a host row is `backup_stale`'s idiom for an instance fact — and it is
+also what collapses the three rows into one, since the 12-hour cooldown below keys on
+(event, routine) and every host row shares that empty key whichever routine's run detected it.
+A degradation is reported under all three verdicts: what attribution changes is who is named
+and what the sentence claims, never whether the reading appears.
+
 It is pushed at most ONCE PER (event, routine) PER 12 HOURS, because a run END is not a run:
 a resumed run finishes once per resume, so one `llmsectest-weekday` run filed 26 of these over
 5h36m and the next day's filed 22 — 173 of the live stream's 1,289 rows for a condition only 80
