@@ -15,6 +15,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.437.0] — 2026-10-21
+
+### A routine's own config changes can apply without a click — `config_confirm` (D191)
+
+A run can never write `routine.yaml`: it proposes the change on an `ask_user` carrying a
+`config_patch`, and the Decisions page applies it with one click. Measured 2026-10-17 across
+176 question records since 2026-10-01, **39 were that one shape** — config-optimizer 13,
+routine-improver 8, self-audit 7: the three routines whose whole job is proposing
+configuration. Every one cost the operator a read and a click for a change he had already
+decided in principle, which is the friction he named on 2026-10-16 ("they ask for permission
+to do their job, every fucking time").
+
+His answer, decided 2026-10-18/19, ships here in three parts.
+
+**The dial.** `config_confirm` is the fourth approval dial beside `confirm` (write_util),
+`rule_confirm` and `remind_confirm`, with a ladder of its own (`rsched/configdial.py`):
+`always` — today's behaviour and every routine's default, so **installing this changes nothing
+until a dial is turned**; `own_fields` — a patch the routine proposes FOR ITSELF naming only
+the declared allow-list (`budgets`, `efforts`, `deliberation`, `keep_runs` and the ladder's two
+numbers) applies with no card; `never` — every patch field outside the SEALED set, which also
+reaches `schedule`, `run_gate`, `rules` and `outcome`, so it is a deliberate per-routine
+choice. **The sealed set is absolute at every level**: `permissions`, `capabilities`, the
+filesystem roots, `models`, a `trial`, `grants`, `connections`, `machines` — no dial value lets
+a run widen its own authority surface. The dial has a console control on the settings card
+(`static/components/abilities-data.js`, `abilities-settings.js`) and is named in the digest
+only once it departs from `always`.
+
+**The instance surface.** A `config_patch` may now name `{"server": {...}}`, applied by
+`PATCH /api/settings/server` (`web/settings/serverpatch.py`). Its vocabulary
+(`configflow.SERVER_PATCH_FIELDS`) is an ALLOW-LIST, not a model's field set: only fields with
+a validated runtime writer behind them, so the auth tokens, the bind address, the homes and
+the credential-carrying catalogs are sealed BY OMISSION — and a field added to `ServerConfig`
+tomorrow is sealed on the day it lands. `config_bridge.server_shape` refuses a stray key, an
+empty body and a body MIXING `server` with routine fields (one patch, one apply route: a mixed
+body would half-land and settle the decision as handled). Before this, a run holding the
+operator's explicit approval for an instance-wide change had no mechanism to land it at all,
+and two approved changes sat 10 and 3 days unapplied (R2702).
+
+**The autonomous apply.** A patch the dial permits is applied with no card. The engine still
+writes no config: the ask seam queues the request (`rsched/autoapply.py`, the spool idiom of
+`pending.py`/`pending_edits.py`) and tells the run on that turn, so it never waits for an
+answer that is not coming; the web layer drains the spool in a background loop of its own
+lifespan (`web/autoapply_drain.py`) and applies through `api_routine_patch.apply_updates`, the
+ONE validated writer — so `daemon/` still imports nothing from `web/`. **The dial is judged
+again at the apply**, from the routine's current config: a request queued while the dial
+permitted it does not apply once the dial is down (R2702's caution — a check living only in
+the caller's restraint is not a boundary). Never autonomous whatever the dial says: the sealed
+set, another routine's config, the `server` surface (a per-routine dial cannot speak for the
+instance), and an ask that also needs an ANSWER (options, blocking, or an access request). A
+refusal at the boundary, a failed apply and a full spool all fall back to the ordinary card,
+because a config change that neither applied nor asked is the one state a decision surface
+must never reach.
+
+### UI traces carry the time the event happened, not the time its batch was flushed (F577)
+
+`static/trace.js` queued an event with no timestamp, `TraceEvent` had no `ts` field to carry
+one, and `_append()` computed `now` ONCE per batch — so every recorded time was a FLUSH time,
+quantised onto the 5 s flush boundary (or a whole session's tail for the `pagehide` flush).
+The dot-file is not the product: the friction INFERENCE is, and three consumers make it from
+inter-event timing, which was the one quantity the store did not preserve. A real case:
+`dismiss all 2` looked like three rage-clicks, and the file actually held THIRTEEN clicks at
+exactly two timestamps five seconds apart — co-occurrence manufactured by a shared flush.
+
+Each event is now stamped in `trace()` when it happens, at millisecond resolution; the batch's
+arrival is kept separately as `received`; and `ts_src` (`client` | `server` | `skew`) names
+which clock `ts` came from, with a refused stamp kept under `ts_claimed`. The credibility
+window is deliberately asymmetric — a client stamp may LAG by up to an hour (flush timers,
+throttled background tabs, the `pagehide` tail) but LEAD by at most a minute, because an event
+cannot happen after the POST that carries it. A fallback is read, not inferred, so a skewed
+client clock stays measurable. Rows written before this carry `ts` alone, so a reader treats a
+row without `ts_src` as batch-stamped.
+
+### A util candidate is selftested OUT of the live library and installed only on green (F584 / D161)
+
+`write_util` wrote `utils/<name>`, THEN ran its `--selftest`, and restored the previous text on
+failure. The rollback was prompt and correct; the EXPOSURE WINDOW was the defect — for the
+whole selftest (a 120 s timeout, plus a dependency prewarm for a `net: outbound` script) the
+LIVE shared library held untested code, and any routine whose `gu <name>` landed in that
+window ran it. The library is the one artefact all 35 routines share and library-sync mirrors
+it nightly, so the window was open on every util revision the fleet ever made.
+
+The candidate is now staged as a real util under a throwaway slug inside the live library
+(`staging--<name>-<pid>-<token>`, `rsched/utils_stage.py`) and `utils/<name>` is written only
+on green. A candidate NAME rather than a temporary library home, because a selftest is
+entitled to the real thing and everything it is entitled to is keyed on (home, name): sibling
+`gu` calls, its declared secrets/`net:`/`fs:`/verb scope (read from the source under that
+name) and the jail's private-store subtraction. The staged slug is hidden from every discovery
+surface, so no caller meets a candidate in the catalog, and the install is an atomic
+tmp+rename. **On every failure path the library is untouched by construction** — there is no
+`previous` text to restore, because nothing was ever written to `utils/<name>`: a failing
+assertion, a timeout, an aborted run and an exception all end the same way. The staged slug
+carries the pid and a random token so two concurrent authors can never see each other's
+candidate, and a stale dir left by a killed process is swept by the next transaction.
+
+### Library drift is keyed on the GAP, and names what actually opened it (F604)
+
+`library_watch` re-asked a settled decision on the next unrelated library change and named
+that change as the cause. One root for both halves: the question was keyed on the library's
+latest motion rather than on the gap. The operator's only answer to a drift card is `dismiss`,
+which DROPS the record — so his answer existed nowhere on disk, the next commit found no open
+record, and the identical question was queued again, stamped `After library change <head>`.
+
+A gap now has a FINGERPRINT (`rsched/library_drift.py`: routine + node id + state + stated
+reason, deliberately not the head or the subject) and settled answers are stored durably, so a
+question he answered stays answered while a gap that genuinely changed is still asked. The
+record names what OPENED the gap — the commits in the missed range that touched the gap's own
+library files — or says plainly that the cause is not known, instead of implying one the
+history cannot support.
+
 ## [0.436.2] — 2026-10-21
 
 ### A `config_patch`'s inner keys are judged where the record is written (F737)
