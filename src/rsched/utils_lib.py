@@ -64,9 +64,11 @@ def _summary(name):
 def main():
     args = sys.argv[1:]
     if not args or args[0] in ("list", "-h", "--help"):
-        # only real utils: skips __pycache__, removal residue, stray files
+        # only real utils: skips __pycache__, removal residue, stray files, and a candidate
+        # being selftested out of the live path (`staging--`, rsched.utils_lib.STAGING_PREFIX)
         names = sorted(d for d in os.listdir(UTILS)
-                       if os.path.isfile(os.path.join(UTILS, d, "main.py"))) \\
+                       if os.path.isfile(os.path.join(UTILS, d, "main.py"))
+                       and not d.startswith("staging--")) \\
             if os.path.isdir(UTILS) else []
         for n in names:
             print(f"{n} — {_summary(n)}")
@@ -91,6 +93,16 @@ if __name__ == "__main__":
 
 
 GITIGNORE = "__pycache__/\n*.pyc\n"
+
+#: Dir-name prefix RESERVED for a util candidate being selftested out of the live path
+#: (utils_stage). A staged candidate is a real util under a throwaway slug so its siblings,
+#: declarations and jail are the real ones — and it is hidden from every discovery surface
+#: (`list_utils` here, the `gu` dispatcher above) so no caller can meet it in the catalog, and
+#: so a candidate's `fs:` declaration cannot subtract a private store from the utils of a
+#: concurrently running routine (sandbox.private_store_paths reads `list_utils`). Reserved
+#: means reserved: `write_util` refuses the prefix as a util NAME (engine/authoring.py, the
+#: web PUT), or an author could hide a util from the catalog by naming it one.
+STAGING_PREFIX = "staging--"
 
 
 def ensure_library(home: Path, *, remote: str = "") -> None:
@@ -163,7 +175,8 @@ def list_utils(home: Path) -> list[dict]:
     if not root.is_dir():
         return []
     out = []
-    for d in sorted(p for p in root.iterdir() if p.is_dir()):
+    for d in sorted(p for p in root.iterdir()
+                    if p.is_dir() and not p.name.startswith(STAGING_PREFIX)):
         main_py = d / "main.py"
         if not main_py.is_file():
             continue

@@ -316,8 +316,10 @@ one you are about to touch, not all of them.
   turn it is made rather than by the next reader (`.jsonl` is excluded — a partial line is legal
   there — and repairing an already-broken file is never refused; a binary, over-cap or non-UTF-8 file
   is refused before any decode rather than ending the run); `write_util` mirrors it — `anchor`/`replacement` instead of `content` patches an
-  existing util in place under the same approval + selftest + rollback gate (`util show <name>
-  --full` returns the complete source). `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir
+  existing util in place under the same approval + staged-selftest gate (`util show <name>
+  --full` returns the complete source; the candidate is selftested under a throwaway
+  `staging--` slug and installed at `utils/<name>` only on green — `rsched/utils_stage.py`,
+  F584/D161 — so no routine's `gu <name>` ever reaches an untested script). `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir
   is rejected unless this run has seen it (`ctx.seen_paths` — read/viewed/written this run, rebuilt
   from the transcript on resume); the own dir is exempt (state/report rewrites are the normal mode),
   append and new files pass, and `edit_file` needs no gate — its verbatim anchor is self-grounding.

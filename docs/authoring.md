@@ -91,6 +91,19 @@ Two gates run before a util reaches the library:
 2. `--selftest` — every util must implement a **fully offline** selftest; the engine runs
    it before saving. A util that can't prove itself in a sandbox doesn't land.
 
+The selftest runs on the candidate **out of the live path** (F584/D161, `rsched/utils_stage.py`):
+the script is staged inside the library under a throwaway `staging--<name>-<pid>-<token>` slug,
+selftested there, and written to `utils/<name>` only if it passes. So no routine's `gu <name>`
+can ever reach an untested script — not during the 120 s selftest, not during the dependency
+prewarm ahead of it — and a failure needs no rollback, because the library was never changed: a
+revision keeps serving its working script, a creation never appears. A staged candidate is
+hidden from `gu list` and the catalog, and the `staging--` prefix is refused as a util name.
+Staging happens INSIDE the library on purpose: a selftest may call siblings via `gu`, and its
+secrets, `net:`, `fs:` and verb scope come from its own header read at that library — in a
+library of its own a good util would fail for want of a sibling. The one cost is that uv builds
+the candidate's PEP 723 environment afresh per attempt (in the prewarm phase, outside the
+selftest's timed window).
+
 Whether a routine may write utils at all is its `write_util` capability; the approval
 level (`always` / `creations` / `never`) decides when you're asked first. A run proposes,
 you approve on the Decisions page, the selftest passes, the util is committed — and is

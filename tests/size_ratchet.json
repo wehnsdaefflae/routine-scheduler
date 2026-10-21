@@ -1,6 +1,6 @@
 {
   "bar": 350,
-  "note": "MEASURED 2026-10-11 on commit c686aa48 (0.412.0); re-tightened 2026-10-18 after D192 split endpoints/base.py (524 \u2192 383) and brought endpoints/openai_compat.py back under the bar (359 \u2192 337, entry dropped); re-tightened 2026-10-19 after F723 moved the background-row branches out of static/components/transcript.js into static/components/obs-background.js (772 \u2192 764). Every file here is over the 350-line house bar (CLAUDE.md Standards) and its number is a CEILING, not a target: it may only go down. See tests/test_file_size.py for the three rules and why an allowlist was rejected. Tighten with `python tests/test_file_size.py --update` after a split; that command refuses to raise a ceiling or to baseline a new violation.",
+  "note": "MEASURED 2026-10-11 on commit c686aa48 (0.412.0); re-tightened 2026-10-18 after D192 split endpoints/base.py (524 \u2192 383) and brought endpoints/openai_compat.py back under the bar (359 \u2192 337, entry dropped); re-tightened 2026-10-19 after F723 moved the background-row branches out of static/components/transcript.js into static/components/obs-background.js (772 \u2192 764); re-tightened 2026-10-21 after F584 moved the util write/selftest/commit transaction out of src/rsched/utils_run.py into src/rsched/utils_stage.py (541 \u2192 520) and the Library tab's util endpoints out of src/rsched/web/api_workflows.py into src/rsched/web/api_library_utils.py (384 \u2192 328, back under the bar, entry dropped). Every file here is over the 350-line house bar (CLAUDE.md Standards) and its number is a CEILING, not a target: it may only go down. See tests/test_file_size.py for the three rules and why an allowlist was rejected. Tighten with `python tests/test_file_size.py --update` after a split; that command refuses to raise a ceiling or to baseline a new violation.",
   "over_the_bar": {
     "src/rsched/cli.py": 396,
     "src/rsched/config/routine.py": 451,
@@ -32,11 +32,10 @@
     "src/rsched/reminders.py": 574,
     "src/rsched/reports.py": 356,
     "src/rsched/sandbox.py": 414,
-    "src/rsched/utils_run.py": 541,
+    "src/rsched/utils_run.py": 520,
     "src/rsched/web/api_questions.py": 415,
     "src/rsched/web/api_routine_patch.py": 468,
     "src/rsched/web/api_routines.py": 384,
-    "src/rsched/web/api_workflows.py": 384,
     "src/rsched/workflows/lint.py": 353,
     "static/app.js": 398,
     "static/base.css": 1203,

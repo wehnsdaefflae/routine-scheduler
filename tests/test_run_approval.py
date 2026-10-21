@@ -41,7 +41,9 @@ def test_approval_scope_and_fresh_run(tmp_path, monkeypatch, answer, expected):
         prompts.append(args[1])
         return {"answered": True, "answer": answer}
 
-    monkeypatch.setattr(authoring.utils_run, "selftest", selftest)
+    # F584: the selftest runs inside the staged transaction (utils_stage) — the candidate is
+    # tested under a throwaway slug and installed only on green.
+    monkeypatch.setattr(authoring.utils_stage.utils_run, "selftest", selftest)
     monkeypatch.setattr(authoring, "handle_ask", ask)
     action = {"kind": "write_util", "name": "sample", "content": BODY}
     assert authoring.handle_write_util(loop, action, 0.01)["selftest_ok"]
