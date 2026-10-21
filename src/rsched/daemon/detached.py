@@ -20,6 +20,28 @@ cron-fire loop, it:
 
 ALL state lives on disk, so the manager is stateless across ticks and restart-safe: a `tick()`
 and the boot `reconcile()` are the same idempotent pass.
+
+**The GLOBAL PAUSE (D34) is enforced HERE, per phase, not by the caller** (F721). The pause's
+whole promise is that the scheduler starts NOTHING on its own, and this lifecycle starts runs at
+exactly two points: intake's `runner.fire` and wake's `resume_terminal`. Those two are HELD while
+the sentinel exists; **deliver, digest and gc proceed**, because a finished task's hand-back
+starts nothing — it copies artifacts and writes a durable inbox message, and the owner reads it
+whenever it next runs. Holding delivery too would buy nothing and lose something: the result is
+already paid for, and a pause lifted days later would hand back artifacts the gc had meanwhile
+removed.
+
+The split is per-PHASE and not per-tick because "delivery" is not uniformly free of starting
+things: the wake is part of hand-back in prose but `resume_terminal` is a run leg, and a leg
+resumed under a pause is not held by `engine/control.pause_gate` either — that gate holds only
+runs MARKED at the pause click (`web/settings/pause.py`), and a fresh resume carries no mark. So
+the wake waits. Nothing is lost by waiting: `wake` is state-driven (a delivered marker plus a
+pending message), so the first tick after the resume wakes the owner, and intake's request file
+is never consumed unfired — the same promise the one-shot intake makes.
+
+The gate lives in this module rather than in the scheduler's `if not is_paused:` block so that
+the boot path inherits it: `_boot` calls `reconcile()` BEFORE the pause-checking `boot_catchup`,
+so a restart under a pause fired every undelivered task, and a guard at the single call site in
+the tick loop would not have covered it.
 """
 
 from __future__ import annotations
@@ -34,7 +56,7 @@ from .. import registry
 from ..config import DEFAULT_BUDGETS, RoutineConfig, ServerConfig, load_routine
 from ..paths import atomic_write_json, atomic_write_yaml, read_json, read_yaml
 from ..schedule import server_tz
-from . import detached_delivery
+from . import detached_delivery, pause
 from .detached_delivery import _has_pending_bg_message
 from .runner import Runner
 
@@ -67,12 +89,31 @@ class DetachedManager:
     async def tick(self, _now: datetime | None = None) -> None:
         """One lifecycle pass: intake → deliver → wake → digest → gc. Never raises into the
         scheduler loop (a per-task failure is logged and skipped).
+
+        A global PAUSE (D34) holds the two phases that START a run — intake's `runner.fire` and
+        the wake's `resume_terminal` — and lets deliver, digest and gc proceed (F721). The
+        module docstring says why the line is drawn there, and why this gate is here rather
+        than at the scheduler's call site.
+
+        Neither hold files a health event: nothing is DROPPED, so neither is "work that was due
+        did not happen" (`readmodels.health_stream.BLOCKED_EVENTS`) — it is deferred exactly as
+        trigger and one-shot intake are, and each deferral has its own durable record on disk
+        (a held fire keeps its `.requests/<taskid>.json`, a held wake its `delivered.json` plus
+        the owner's pending inbox message). They log at DEBUG and not INFO because this tick
+        runs every 5 s: a line per held tick would be hours of noise for one standing fact.
         """
         try:
-            await self._intake()
+            held = pause.paused(self.server)
+            if not held:
+                await self._intake()
+            elif waiting := sorted(p.stem for p in self.requests_dir.glob("*.json")):
+                log.debug("scheduling paused — detached intake held: %s", ", ".join(waiting))
             catalog = registry.scan(self.server, self.home)
             await detached_delivery.deliver(self, catalog)
-            await detached_delivery.wake(self, catalog)
+            if not held:
+                await detached_delivery.wake(self, catalog)
+            else:
+                log.debug("scheduling paused — owner wake held; deliveries still hand back")
             self._rebuild_digests(catalog)
             await self._gc(catalog)
         except Exception:
@@ -81,7 +122,9 @@ class DetachedManager:
     async def reconcile(self) -> None:
         """Boot pass: re-attempt any undelivered terminal task (run after the scheduler's
         recover_orphans(background_home) has closed out dead-pid mid-run tasks). Same work as
-        a tick — the design is deliberately idempotent.
+        a tick — the design is deliberately idempotent, pause hold included: `_boot` calls this
+        BEFORE the pause-checking `boot_catchup`, so a restart under a pause once fired every
+        undelivered task (F721). It still DELIVERS them; it starts nothing.
         """
         await self.tick()
 

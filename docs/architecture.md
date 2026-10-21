@@ -785,7 +785,14 @@ and the capabilities digest's catalog listing):
   (idempotent via `delivered.json` + a deterministic msg filename): copy `artifacts/` → owner, write a
   durable `<owner>/inbox/` message, then WAKE (`runner.resume` if idle, else the live reply drains it)
   → rebuild `<owner>/state/background.json` → gc past a grace
-  window. A detached run HOLDS the restart's quiet gap like any other active run: `start_new_session`
+  window. The **global pause (D34) is enforced PER PHASE inside `tick`**, which is also the boot
+  path's gate (`_boot` reconciles BEFORE the pause-checking `boot_catchup`): the two phases that
+  START a run — intake's `fire` and the wake's `resume_terminal` — are HELD, while deliver/digest/gc
+  proceed because a finished task's hand-back starts nothing. Neither hold drops anything (the
+  request file stays unconsumed; the wake is state-driven), so neither files a health event. F721:
+  the tick sat OUTSIDE the `if not is_paused:` guard, so a paused instance kept starting runs —
+  silently, and worse at boot.
+  A detached run HOLDS the restart's quiet gap like any other active run: `start_new_session`
   changes the session, not the container and not the cgroup, so it survives the daemon's exit on
   neither deployment (Docker ends tini and the kernel SIGKILLs the PID namespace; the systemd
   unit's default `KillMode=control-group` kills the cgroup). The wait it costs is bounded by the
