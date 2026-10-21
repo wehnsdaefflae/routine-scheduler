@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.438.1] — 2026-10-21
+
+### Fixed
+- **The two approval dials on the settings card now say WHICH approval each one is**
+  (`reminder approval` / `config approval`). Whenever a routine's reminders are `global`,
+  the shared-reminder dial is revealed beside the config dial 0.437.0 added, and both rows
+  read `approval`: a reader scanning the kind column met the same word twice, with only
+  help text inside a truncated `<select>` to tell them apart. Found by looking at the
+  rendered card — the whole browser suite passed on it, because every other test there
+  reaches a dial through `data-setting`, which is distinct by construction. The new test
+  asserts the text a reader actually scans and was proven red against the previous
+  component first.
+
 ## [0.438.0] — 2026-10-21
 
 ### Changed
