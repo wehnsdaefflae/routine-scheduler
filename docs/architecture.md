@@ -1579,6 +1579,21 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   restraint. Before this surface existed a run holding the operator's explicit approval for an
   instance-wide change had no mechanism to land it at all, and two approved changes sat 10 and
   3 days unapplied (R2702).
+  **A patch the routine's OWN `config_confirm` dial permits is APPLIED without a click**
+  (D191's third step). The engine still writes no config: the ask seam
+  (`engine/autoask.taken`) judges the dial, QUEUES the request
+  (`rsched/autoapply.py`, the spool idiom of `pending.py`/`pending_edits.py`) and tells the
+  asking run on that turn, so it never waits for an answer that is not coming; the WEB layer
+  drains the spool in a background loop of its own lifespan (`web/autoapply_drain.maintain`)
+  and applies through `api_routine_patch.apply_updates`, the one validated writer — so
+  `daemon/` still imports nothing from `web/`. The dial is read AGAIN at that boundary from
+  the routine's current config: a request queued while the dial permitted it does not apply
+  once the dial is down. Four things are never autonomous whatever the dial says: the SEALED
+  set, a patch naming another routine, the `{"server": …}` surface (a per-routine dial cannot
+  speak for the instance), and an ask that also needs an ANSWER (options, blocking, or a typed
+  access request) — each keeps its decision card. A refusal at the boundary, a failed apply
+  and a full spool all fall back to the ordinary card, because a config change that neither
+  applied nor asked is the one state this surface must never reach.
   One VALUE is judged there too: a `trial` (`config_bridge.trial_value` — its shape and its
   models' catalog membership), because a model trial is proposed for routines the proposer does
   not run, and its refusal teaches the shape. `"trial": null` clears one: `patch_routine` keeps

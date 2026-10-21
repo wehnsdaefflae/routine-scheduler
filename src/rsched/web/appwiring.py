@@ -97,11 +97,19 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
 
         search_task = asyncio.create_task(api_search.maintain(app.state.search))
         _observe(search_task, "search maintainer")
+        # D191 step 3: apply the config patches a routine's own `config_confirm` dial permits.
+        # A run cannot write config, so it queues the request (rsched/autoapply.py) and THIS
+        # layer — the one that holds the validated writer — performs it. Here rather than on
+        # the scheduler's tick so `daemon/` keeps importing nothing from `web/`.
+        from . import autoapply_drain
+
+        apply_task = asyncio.create_task(autoapply_drain.maintain(app))
+        _observe(apply_task, "config auto-apply drain")
         yield
         set_sink(None)
         await _stop(search_task)
         app.state.search.shutdown()
-        for running in (docs_task, push_task, task):
+        for running in (docs_task, push_task, apply_task, task):
             await _stop(running)
 
     return lifespan
