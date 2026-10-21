@@ -116,10 +116,15 @@ def test_a_library_drift_record_gets_its_own_band_and_no_create_button(ui, ui_pa
     atomic_write_json(d / "pc-20260828-040000-bbbbbb.json", {
         "id": "pc-20260828-040000-bbbbbb", "kind": "library-drift", "routine": "uir",
         "run_id": "", "created_at": "2026-08-28T04:00:00+02:00",
-        "summary": "uir: secret:ZULIP_API_KEY — needed by zulip. After library change abc12345",
+        "summary": "uir: secret:ZULIP_API_KEY — needed by zulip. Opened by 9f31ab77 "
+                   "(zulip: require a key), which changed the zulip util",
         "fields": {"entity": "uir:secret:ZULIP_API_KEY", "head": "abc12345deadbeef",
-                   "node": {"id": "secret:ZULIP_API_KEY", "severity": "blocks",
-                            "why": "needed by zulip",
+                   "gap": "uir|secret:ZULIP_API_KEY|absent|needed by zulip",
+                   "trigger": "Opened by 9f31ab77 (zulip: require a key), which changed "
+                              "the zulip util",
+                   "node": {"id": "secret:ZULIP_API_KEY", "state": "absent",
+                            "severity": "blocks", "why": "needed by zulip",
+                            "source": {"utils": ["zulip"]},
                             "effect": "not in the secrets store — the call runs without it"}}})
     ui_page.goto(f"{ui.url}/#/questions")
 
@@ -135,11 +140,21 @@ def test_a_library_drift_record_gets_its_own_band_and_no_create_button(ui, ui_pa
         "href", "#/routine/uir")
     expect(ui_page.get_by_role("button", name="create it")).to_have_count(0)
 
+    # F604: the card names the commit that OPENED the gap, never merely the newest one — the
+    # operator read "after <head>" as the cause and was wrong about which commit broke him
+    expect(card).to_contain_text("Opened by 9f31ab77")
+    expect(card).to_contain_text("which changed the zulip util")
+    expect(card).not_to_contain_text("after abc12345")
+
     card.get_by_role("button", name="dismiss").click()
     expect(ui_page.locator("[data-drift]")).to_have_count(0)
     assert list(d.glob("pc-*.json")) == []
     # nothing was messaged: `uir` is the routine the drift BROKE, not a proposer
     assert list((ui.routine_dir("uir") / "inbox").glob("msg-pending-*.json")) == []
+    # …and the answer is WRITTEN DOWN, so the next library commit does not ask it again
+    settled = json.loads((ui.routines / ".control" / "library-drift-settled.json")
+                         .read_text(encoding="utf-8"))["settled"]
+    assert list(settled) == ["uir|secret:ZULIP_API_KEY|absent|needed by zulip"]
 
 
 def test_two_gaps_from_one_commit_are_one_card(ui, ui_page):

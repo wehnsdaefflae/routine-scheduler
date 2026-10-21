@@ -28,7 +28,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import lanes, pending, schedule
+from .. import lanes, library_drift, pending, schedule
 from ..engine import finishline
 from ..paths import read_yaml
 
@@ -287,12 +287,22 @@ def materialize(request: Request, pid: str, body: Choice | None = None) -> dict:
 def discard(request: Request, pid: str, body: Discard) -> dict:
     """Throw the proposal away. The proposing routine is told, so its next run stops waiting on
     something that is never coming.
+
+    For a `library-drift` card this is not a discard but the only ANSWER it has — the card is a
+    notice with nothing to materialize — so it also records the gap as settled, and the watcher
+    stops asking about that gap until the gap itself changes (`library_drift`, F604).
     """
     server = request.app.state.server
     rec = pending.load(server.routines_home, pid)
     if rec is None:
         raise HTTPException(404, f"no pending creation {pid!r}")
     reopened: list[str] = []
+    settled = ""
+    if rec.get("kind") == "library-drift":
+        # A drift card has nothing to materialize, so `dismiss` IS its answer — and dropping
+        # the record was all it did, which left the answer nowhere (F604). The gap is written
+        # down as settled, so the next library commit does not re-ask a question he answered.
+        settled = library_drift.settle(server.routines_home, rec, body.reason.strip())
     if rec.get("kind") == "replace-routine":
         _discard_replace(request, rec)
     if rec.get("kind") == "goal-reached":
@@ -315,5 +325,5 @@ def discard(request: Request, pid: str, body: Discard) -> dict:
     if reopened:
         outcome = (f"declined — the finish line is not reached, so {', '.join(reopened)} "
                    "were reopened and the routine is scheduled again")
-    return {"ok": True, "id": pid, "reopened": reopened,
+    return {"ok": True, "id": pid, "reopened": reopened, "settled": settled,
             "notified": pending.notify_proposer(server, rec, outcome)}

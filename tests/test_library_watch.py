@@ -25,8 +25,14 @@ def _git(repo: Path, *args: str) -> None:
                         "PATH": "/usr/bin:/bin", "HOME": str(repo)})
 
 
-@pytest.fixture
-def world(tmp_path, monkeypatch):
+
+def build_world(tmp_path, monkeypatch):
+    """A library repo with one holder routine — the world both drift suites resolve against.
+
+    A plain function rather than the fixture itself, because `tests/test_library_drift.py`
+    needs the same world and IMPORTING a fixture makes every test that takes it read as a
+    redefinition (ruff F811). One builder, a thin fixture per file.
+    """
     monkeypatch.setattr("rsched.secrets.load_secrets", dict)
     lib, routines = tmp_path / "lib", tmp_path / "routines"
     for sub in ("utils", "permissions", "rules"):
@@ -44,6 +50,11 @@ def world(tmp_path, monkeypatch):
     server = SimpleNamespace(libraries_home=lib, permissions_home=lib / "permissions",
                              rules_home=lib / "rules", routines_home=routines, machines={})
     return server, lib, routines
+
+
+@pytest.fixture
+def world(tmp_path, monkeypatch):
+    return build_world(tmp_path, monkeypatch)
 
 
 def test_first_boot_records_head_without_reporting(world):

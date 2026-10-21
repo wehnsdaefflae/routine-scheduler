@@ -23,6 +23,19 @@ A record lives exactly as long as its gap. Every re-resolve withdraws the record
 closed — on a library change, at a process's first check, and every SWEEP_EVERY_S while any is
 open — because a gap closes without the library moving too: a secret added to the store, a
 settings accept on the routine page, a routine archived.
+
+Two things this watcher says are deliberately keyed on the GAP rather than on the library's
+latest motion (F604), because keying them on the commit that happened to arrive is what asked
+the operator twice and blamed the wrong change for it:
+
+- a question he ANSWERED stays answered. His only answer to a drift card is `dismiss`, which
+  drops the record — so until the answer itself was written down (`library_drift`), the next
+  commit found no open record and queued the identical question. A gap that genuinely changes
+  (a different node, a different stated reason) is a new question and is still asked;
+- the record names what OPENED the gap, not what arrived with it. This compares HEADs, so the
+  commit it noticed a gap at is merely the newer of the two; the commits in the missed range
+  that touched the gap's own library files are what the claim rests on, and where that identifies
+  nothing the record says so instead of implying a cause.
 """
 
 from __future__ import annotations
@@ -112,54 +125,102 @@ class LibraryWatch:
         if head == self._seen:
             self._sweep()
             return
-        first_boot = not self._seen
+        prev, first_boot = self._seen, not self._seen
         self._seen = head
         atomic_write_json(marker, {"head": head, "subject": _subject(repo, head)})
         if first_boot:
             return          # nothing to compare against; record and stay quiet
-        self._report(head)
+        # `prev` is the range this check MISSED, which is where the commit that opened a gap
+        # has to be looked for — the HEAD it was noticed at is only the newer end of it.
+        self._report(head, str(prev))
 
-    def _report(self, head: str) -> None:
+    def _report(self, head: str, prev: str) -> None:
         """Re-resolve every routine: withdraw the records whose gap closed, and queue a decision
         for each routine that is now broken.
 
         Only BLOCKING rows queue. An interrupt already asks the user at the moment it matters,
         and queueing those too would turn a genuine signal into a list nobody reads.
+
+        A gap the operator has ALREADY ANSWERED is not asked again (`library_drift`): his only
+        answer to a drift card is `dismiss`, which drops the record, so before F604 the next
+        library commit — about anything — found no open record and re-queued the identical
+        question. Both the open records and the settled answers are matched on the gap's
+        FINGERPRINT rather than on its entity alone, so a gap that genuinely changed (a
+        different node, a different stated reason) is still a new question.
         """
-        from .. import pending
+        from .. import library_drift, pending
 
         home = self.server.routines_home
         if not home.is_dir():
             return
         gaps, resolved = self._resolve()
         self._withdraw_closed(gaps, resolved)
-        already = {rec.get("fields", {}).get("entity")
+        settled = library_drift.load(home)
+        already = {library_drift.of_record(rec)
                    for rec in pending.load_all(home) if rec.get("kind") == "library-drift"}
-        subject = _subject(self.server.libraries_home, head)
         for key, (slug, node) in gaps.items():
-            if key in already:
-                continue                            # one record per gap, not one per commit
+            gap = library_drift.fingerprint(slug, node)
+            if gap in already or gap in settled:
+                continue              # one record per gap, and an answered gap stays answered
+            # `pending.identity` still dedupes on the ENTITY, so a gap whose reason widens
+            # while its card is still OPEN updates nothing and keeps the one card — the card
+            # the operator has not read yet already points at this entity.
+            trigger = library_drift.trigger(head, node, self._opened_by(prev, head, node))
             pending.queue(
                 home, kind="library-drift", routine=slug, run_id="",
-                fields={"entity": key, "node": node, "head": head},
-                summary=(f"{slug}: {node['id']} — {node['why']}. "
-                         f"After library change {head[:8]} ({subject})"))
-            log.info("library drift: %s broke %s", head[:8], key)
+                fields={"entity": key, "gap": gap, "node": node, "head": head,
+                        "trigger": trigger},
+                summary=f"{slug}: {node['id']} — {node['why']}. {trigger}")
+            log.info("library drift: %s — %s", key, trigger)
+
+    def _opened_by(self, prev: str, head: str, node: dict) -> list[tuple[str, str]]:
+        """The commits in this change that touched THIS gap's own library files, newest first.
+
+        The honest half of F604: the watcher compares HEADs, so the commit it noticed the gap at
+        is merely the newer of the two and naming it as the cause was never a claim this module
+        could support. What it CAN support is the history over the range it actually missed,
+        narrowed to the files the gap is about (`library_drift.source_paths`). A `prev` the repo
+        no longer holds (a restored bundle, a rewritten history) makes the range unreadable,
+        which `_read` turns into no commits — and `library_drift.trigger` then says what is
+        known instead of implying a cause.
+        """
+        from .. import library_drift
+
+        paths = library_drift.source_paths(node)
+        if not (prev and paths):
+            return []
+        out = _read(self.server.libraries_home, "log", "--format=%H %s",
+                    f"{prev}..{head}", "--", *paths)
+        commits = []
+        for line in out.splitlines():
+            sha, _, subject = line.partition(" ")
+            if sha:
+                commits.append((sha, subject))
+        return commits
 
     def _sweep(self) -> None:
         """Re-check the open drift records while the library stands still: at a process's first
         check (a record the previous process left may be closed by now), then every
         SWEEP_EVERY_S. Queueing stays with a library change.
+
+        The guard skips the resolve — every routine, every library read — when there is nothing
+        it could retire. That is BOTH kinds of state `_withdraw_closed` maintains: the open
+        records, and the operator's settled answers, which live exactly as long as their gaps
+        (`library_drift`). Asking only about the records left a settlement alive after its gap
+        closed, because answering a card is what REMOVES the record — so the one thing that
+        made a sweep necessary was the one thing that switched it off.
         """
-        from .. import pending
+        from .. import library_drift, pending
 
         now = time.monotonic()
         if self._last_sweep is not None and now - self._last_sweep < SWEEP_EVERY_S:
             return
         self._last_sweep = now
         home = self.server.routines_home
-        if not home.is_dir() or not any(r.get("kind") == "library-drift"
-                                        for r in pending.load_all(home)):
+        if not home.is_dir():
+            return
+        open_records = any(r.get("kind") == "library-drift" for r in pending.load_all(home))
+        if not open_records and not library_drift.load(home):
             return
         self._withdraw_closed(*self._resolve())
 
@@ -194,8 +255,12 @@ class LibraryWatch:
         """Drop every drift record whose gap is closed — the secret was added, the rule unbound,
         a library change retired what the record named. A routine that no longer exists takes
         its records with it; one that did not resolve keeps them.
+
+        The operator's SETTLED answers go the same way, on the same rule: a settlement lives
+        exactly as long as the gap it answers, so a gap that closes and opens again later is a
+        new question rather than a silence nobody chose (`library_drift`).
         """
-        from .. import pending
+        from .. import library_drift, pending
 
         home = self.server.routines_home
         for rec in pending.load_all(home):
@@ -207,3 +272,9 @@ class LibraryWatch:
             if gone or (slug in resolved and entity not in gaps):
                 pending.drop(home, str(rec["id"]))
                 log.info("library drift closed: %s", entity)
+        live = {library_drift.fingerprint(slug, node) for slug, node in gaps.values()}
+        stale = [key for key, was in library_drift.load(home).items()
+                 if not (home / str(was.get("routine") or "") / "routine.yaml").is_file()
+                 or (str(was.get("routine") or "") in resolved and key not in live)]
+        for key in library_drift.forget(home, stale):
+            log.info("library drift settlement retired, its gap is closed: %s", key)

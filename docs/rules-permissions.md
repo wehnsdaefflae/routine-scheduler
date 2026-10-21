@@ -274,6 +274,20 @@ Three writers, and each gets what it can carry:
   withdraws the records whose gap has closed — on a library change, at a daemon process's first
   check, and every ten minutes while any is open — since a secret added to the store or a
   settings accept closes a gap without the library moving.
+  A drift card has nothing to materialize, so **dismissing it IS the answer**, and the answer is
+  written down (`library_drift.py`, `.control/library-drift-settled.json`) against the GAP's own
+  identity — the routine, the entity, its state and the stated reason. An answered gap is never
+  re-asked while it stays that gap; one that genuinely changes (a different entity, a wider
+  reason) is a new question and is asked. A settlement lives exactly as long as its gap, like
+  the records: once the gap closes the answer is forgotten, so the same gap opening again later
+  is a new question rather than a silence nobody chose.
+  The record names **what opened the gap**, not what arrived with it: the watcher compares
+  HEADs, so the commit a gap is noticed at is merely the newer of the two. It reads the commits
+  in the range it missed that touched the gap's own library files (the util directory, the doc)
+  and names that one; where several did, it says how many and the latest; where none did — the
+  gap opened on the routine's side — it says what library state it was found at and that the
+  cause is not known. Before this it read `After library change <head8> (<subject>)` over
+  whatever commit happened to arrive, which the operator read as the cause (F604).
 
 #### The gap it also closes: a capability no held doc asks for
 
