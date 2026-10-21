@@ -163,11 +163,10 @@ def retry_sigkilled(runner, run: ActiveRun, cfg: RoutineConfig, hwm: int | None)
 
 
 def resume_for_stranded(runner, cfg: RoutineConfig) -> None:
-    """Fire-and-forget the terminal resume for a post-finish stranded message (the
-    reap itself is sync inside the supervisor's event loop). A refusal — draining,
-    raced by another wake — is logged, and the message stays durable in the inbox
-    for whatever run comes next.
-    """
+    """Resume for a stranded post-finish message; every refusal leaves it durable in the inbox."""
+    from . import pause
+    if pause.holds_automatic_leg(runner.server, "post-finish inbox wake", cfg.slug):
+        return
     async def _wake() -> None:
         rid = await runner.resume_terminal(cfg, reason="converse")
         if not rid:

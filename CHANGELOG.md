@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.438.2] — 2026-10-22
+
+### Fixed
+- **The global pause now holds the reap's post-finish inbox wake** — the last self-starting
+  path 0.438.0 did not reach. `daemon/runner_reap.resume_for_stranded` resumes a run whose
+  user message landed after its final inbox check; it is neither an operator click nor a
+  schedule, `runner.fire_blocker` does not test the pause, and `engine/control.pause_gate`
+  holds only runs MARKED at the pause click, which a freshly resumed leg cannot carry. So a
+  paused instance still started engine processes. New `pause.holds_automatic_leg()` carries the
+  check and the reasoning, `pause.py`'s docstring — the contract both readers consult — now
+  lists the case, and `tests/test_global_pause.py` pins all three directions (unpaused spawns,
+  paused spawns nothing, resumed spawns again). Held, never dropped: the message stays durable,
+  so the first wake after the resume makes it good. The sigkill retry beside it is deliberately
+  NOT held — that leg fires once, when the process dies, so holding it would consume the single
+  automatic recovery a kernel-killed run is owed.
+- **A MOVING deliverable is judged by watching it**: `interface-craft`'s rendered-output
+  reminder listed only still surfaces (`.html`, `.svg`, `.pdf`, …), so a run whose deliverable
+  was an `.mp4`, `.gif`, `.webm`, `.mov`, `.apng` or animated `.webp` was never reminded to look
+  at it — the class that assist exists for, and what two routines on this instance ship.
+  `engine/assist_predicates._RENDERED` gains the time-based extensions and `_LOOK_UTILS` gains
+  `video-extract`, which is how a run gets frames of its own video in front of a model. New
+  `tests/test_moving_deliverable.py` (its own file: `test_assists.py` is at its size ratchet)
+  pins the positives, both look paths, and that writing the render script is not a look.
+
 ## [0.438.1] — 2026-10-21
 
 ### Fixed

@@ -302,11 +302,13 @@ def _rendered_output_unseen(s: Situation) -> bool:
 #: rule is about the FIRST reflex to defer rather than about a specific count.
 _ASK_PILEUP = 3
 
-#: The files a person judges by LOOKING at them rendered.
-_RENDERED = (".html", ".htm", ".css", ".js", ".svg", ".pdf", ".tex")
+#: The files a person judges by LOOKING at them rendered. The time-based ones (an animation, a
+#: screen recording) are judged by WATCHING, which is the same obligation: see tests/test_assists.
+_RENDERED = (".html", ".htm", ".css", ".js", ".svg", ".pdf", ".tex",
+             ".mp4", ".webm", ".mov", ".gif", ".apng", ".webp")
 
-#: The utils through which a run sees a rendered page or image.
-_LOOK_UTILS = frozenset({"browser-session", "vision"})
+#: The utils through which a run sees a rendered page or image — or watches a moving one.
+_LOOK_UTILS = frozenset({"browser-session", "vision", "video-extract"})
 
 
 #: name -> Predicate. The linter validates a rule's `predicate:` against these keys, so a

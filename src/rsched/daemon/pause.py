@@ -21,6 +21,13 @@ While the sentinel exists the scheduler fires NOTHING on its own:
     already finished proceeds (it copies artifacts and writes a durable inbox message, which
     starts nothing). Held, not dropped: the request file survives unconsumed and the wake is
     state-driven, so the first tick after the resume makes both good (F721);
+  * the REAP's two automatic legs are held — the single sigkill retry (D99) and the
+    post-finish wake for a stranded message (`daemon/runner_reap.py`). Neither is a click nor
+    a schedule, and both start an engine process: `runner.fire_blocker` does not test the
+    pause, and `engine/control.pause_gate` holds only runs MARKED at the pause click
+    (`web/settings/pause.py`), which a freshly resumed leg has no way to carry. Held, not
+    dropped, on the same ground as the detached phases: the retry's marker and recovery note
+    and the stranded message are all durable, so the leg happens after the resume;
   * manual "run now" BYPASSES the pause on purpose: it is the operator's explicit
     override (option A of decision D34).
 
@@ -35,6 +42,7 @@ same dot-dir the registry scan ignores) and is reported in /api/status as `pause
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from ..config import ServerConfig
@@ -47,6 +55,21 @@ def sentinel_path(server: ServerConfig) -> Path:
 
 def paused(server: ServerConfig) -> bool:
     return sentinel_path(server).exists()
+
+
+def holds_automatic_leg(server: ServerConfig, what: str, who: str) -> bool:
+    """True when a pause holds an AUTOMATIC run leg — and it logs why, once per attempt.
+
+    The two callers are the reap's own (`runner_reap.retry_sigkilled`,
+    `resume_for_stranded`). No health event is filed because nothing is DROPPED — the same
+    argument `daemon/detached.py` makes for its two held phases — and DEBUG because the reap
+    runs often enough that one standing fact would otherwise be hours of noise.
+    """
+    if not paused(server):
+        return False
+    logging.getLogger("rsched.daemon.pause").debug(
+        "scheduling paused — %s held for %s; its state stays durable", what, who)
+    return True
 
 
 def generation(server: ServerConfig) -> str:

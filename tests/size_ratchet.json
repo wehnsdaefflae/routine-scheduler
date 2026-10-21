@@ -6,7 +6,7 @@
     "src/rsched/config/routine.py": 451,
     "src/rsched/daemon/gate_prepare.py": 384,
     "src/rsched/daemon/runner.py": 473,
-    "src/rsched/daemon/runner_reap.py": 368,
+    "src/rsched/daemon/runner_reap.py": 367,
     "src/rsched/daemon/scheduler.py": 466,
     "src/rsched/endpoints/base.py": 383,
     "src/rsched/engine/actions.py": 658,
