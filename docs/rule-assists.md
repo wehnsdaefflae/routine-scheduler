@@ -212,7 +212,7 @@ live copy is still byte-identical to the seed it supersedes.
 | rule | moment | predicate | why this moment |
 |---|---|---|---|
 | `git-checkpoint` | pre-action | `uncheckpointed-repo-write` | the first edit into a git repo the ENGINE does not version — it commits its own working directory at run end, a granted project repo has no undo point unless the run makes one |
-| `fix-the-cause` | observation | `repeated-failure` | the same step has now failed twice; a third attempt at the same route would be tuning rather than diagnosing |
+| `fix-the-cause` | observation | `repeated-failure` | the same step has now failed twice; a third attempt at the same route would be tuning rather than diagnosing. A util or script may DECLARE a documented non-zero exit as informational (`informational-exits: 2` on its docstring header, read from source without running it) and those codes never count — a status poll of a detached gate returning its documented "not finished yet" is the tool working as designed, and a rule that fires on healthy behaviour trains a run to dismiss it (F711, `engine/exitgate.py`). Only the exact declared codes stop counting, and only when the exit is the ONLY thing wrong with the observation |
 | `fix-the-cause` | boundary | `user-corrected` | a correction has just landed; "what standing preference does this imply" is answerable now and stale later |
 | `ask-policy` | observation | `capability-denied` | a call was just refused for a missing grant; the access request is the next step — never a reason to finish partial |
 | `ask-policy` | boundary | `asks-piling-up` | several decisions are waiting on the user, which is the shape the rule is about |

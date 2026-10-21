@@ -40,7 +40,6 @@ from . import (
 )
 from .actions import ALWAYS_KINDS
 from .actionschema import brief_value
-from .assist_predicates import failure_key
 from .boot import boot
 from .compaction import turn_record
 from .completion import MAX_SCHEMA_ATTEMPTS, next_action
@@ -51,11 +50,12 @@ from .control import (
     drain_injections,
     pause_gate,
 )
+from .exitgate import failure_tally_key
 from .ladder import at_boundary as _ladder_at_boundary
 from .loopconst import POLL_S
 from .loopend import SCHEMA_STORM_TURNS
 from .loopnudge import REPEAT_FAIL
-from .observations import is_failure, live_observation
+from .observations import live_observation
 from .replyactions import unexecuted_note, unexecuted_row
 from .run_context import RunContext
 from .switches import (
@@ -351,8 +351,8 @@ class EngineLoop:
         held = hold.is_hold(obs)
         if not held:
             self.executed_actions += 1   # a HELD action executed nothing
-            if is_failure(obs):
-                key = failure_key(action)
+            # F711: a DECLARED informational exit never counts (engine/exitgate.py)
+            if key := failure_tally_key(ctx, action, obs):
                 self.failures[key] = self.failures.get(key, 0) + 1
         fired = assist.at_observation(self, action, obs)
         ctx.transcript.event("observation",
