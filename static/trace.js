@@ -1,6 +1,8 @@
 // UI interaction traces — friction evidence for the self-audit's improve-ui lens.
 // Batched fire-and-forget: navigations, control clicks (by visible label), error toasts,
 // stream reconnects, and uncaught JS errors. No free-text input values are ever recorded.
+// Each event carries the time it HAPPENED (`ts`, stamped in trace() below) — batching decides
+// when a record is SENT, never when it occurred.
 // Flushes every 5s / 20 events via fetch; on pagehide via fetch keepalive (sendBeacon
 // cannot carry the Authorization header).
 
@@ -15,8 +17,15 @@ function currentView() {
   return (location.hash || "#/").slice(2).split(/[/?]/)[0] || "conversations";
 }
 
+// F577: the time of the EVENT, taken here — not at flush. A batch is flushed every 5s/20
+// events (and a `pagehide` flush can carry a whole session's tail), so the server's receive
+// stamp quantises every interval inside a flush window to zero — and interval is the one
+// quantity the friction readers (improve-ui, the self-audit's evidence pass) measure. The
+// server keeps its own `received` stamp beside this one and only trusts this value inside a
+// sane skew window, so a wrong client clock is visible rather than silently believed.
 export function trace(kind, target = "", detail = "") {
-  queue.push({ kind, view: currentView(), target: String(target).slice(0, 200),
+  queue.push({ kind, view: currentView(), ts: new Date().toISOString(),
+               target: String(target).slice(0, 200),
                detail: String(detail).slice(0, 200) });
   if (queue.length >= FLUSH_AT) flush();
   else if (!timer) timer = setTimeout(flush, FLUSH_MS);
