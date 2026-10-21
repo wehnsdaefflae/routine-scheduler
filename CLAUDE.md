@@ -875,7 +875,12 @@ by a test, by the engine, or by a past incident.
   (`{"server": {...}}` → `PATCH /api/settings/server`), and its `SERVER_PATCH_FIELDS` is an
   ALLOW-LIST, not a model's field set: a new `ServerConfig` field is sealed until someone adds
   it there deliberately, and the auth tokens, bind address, homes and credential catalogs are
-  sealed by omission. Both PATCH handlers signal a live run
+  sealed by omission. A patch a routine's own `config_confirm` dial permits for ITSELF applies
+  with no click (D191): the engine queues the request (`rsched/autoapply.py` — it still writes
+  no config) and the web layer's drain applies it through the same validated writer
+  (`web/autoapply_drain.py`), re-judging the dial at that boundary. The sealed set, another
+  routine's config, the `server` surface and any ask that also needs an ANSWER are never
+  autonomous. Both PATCH handlers signal a live run
   through `control.json` and the engine appends ONE ENGINE NOTE naming EVERY changed field and
   which half it is in — a change that silently does or does not reach a run is the bug.
 

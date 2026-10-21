@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..ids import question_id
-from . import askback, availability, config_bridge, inbox, requests, runkind
+from . import askback, autoask, availability, config_bridge, inbox, requests, runkind
 from .control import RunAborted
 
 # Natural affirmatives count: approval answers arrive as free text, and "Do it. The mail
@@ -223,13 +223,10 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
     # config bridge: a proposed routine.yaml change the run can't make itself — rides the
     # decision record for the Decisions page's one-click apply (see engine/revise.py).
     cpatch = action.get("config_patch") if isinstance(action.get("config_patch"), dict) else None
-    # D123/F458: the patch may name ANOTHER routine as its target. Until 0.326.0 the apply
-    # button always PATCHed the ASKING routine, so a config-optimizer proposal for suedlink-wlf
-    # silently rewrote config-optimizer's own budgets and reported success (R1343, R1407). The
-    # target — and the body's keys — are checked HERE, at the seam that writes the durable
+    # The target AND the body's keys are checked HERE, at the seam that writes the durable
     # record, so a patch the apply would refuse can never reach the Decisions page wearing an
-    # apply button. An unresolvable target is refused loudly rather than falling back to the
-    # asker — a silent fallback is precisely the defect.
+    # apply button (D123/F458 and the three surfaces' vocabularies — `config_bridge` tells
+    # that story where the checks are).
     ctarget, cterr = config_bridge.resolve(ctx, cpatch)
     if cterr:
         return {"kind": "ask_user", "error": cterr}
@@ -267,10 +264,18 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
             ctx.asks_deferred += 1
 
     if mode == "deferred":
+        # D191 step 3: a `config_patch` the routine's OWN `config_confirm` dial permits is
+        # APPLIED rather than filed as a card — the engine still writes no config, it queues
+        # the request the web layer's one validated writer performs (engine/autoask.py).
+        taken, why = autoask.taken(ctx, cpatch, qid=qid, question=question, mode=mode,
+                                   options=options, request_ids=req_ids, config_target=ctarget)
+        if taken:
+            return {"kind": "ask_user", "qid": qid, "mode": mode, **taken}
         leave_open()
         askback.supersede(loop, qdir, (qtype, subject))
         return {"kind": "ask_user", "qid": qid, "mode": mode,
-                **({"request": req_ids} if req_ids else {})}
+                **({"request": req_ids} if req_ids else {}),
+                **({"config_not_applied": why} if why else {})}
 
     timeout_min = ctx.budgets.ask_timeout_min
     expires = ((datetime.now().astimezone() + timedelta(minutes=timeout_min))
