@@ -1,7 +1,9 @@
-"""The three capability SETTINGS no conduct doc switches on get dials of their own
+"""The capability SETTINGS no conduct doc switches on get dials of their own
 (components/abilities.js): how far back a run reads earlier runs (`runs`), the
-consequence-reminder layer (`reminders`) and who approves a reminder written to the library
-(`remind_confirm`, which only matters at `reminders: global` and is revealed there).
+consequence-reminder layer (`reminders`), who approves a reminder written to the library
+(`remind_confirm`, which only matters at `reminders: global` and is revealed there), who
+approves a config change the routine proposes for ITSELF (`config_confirm`, D191 — every
+routine may file a `config_patch`, so no permission switches this one on) and the job layer.
 
 The panel carried all three in its state and saved them on every save, but showed a control
 for none of them — so a value could only be changed by hand in routine.yaml, and a panel save
@@ -22,6 +24,7 @@ import re
 import yaml
 from playwright.sync_api import expect
 
+from rsched.configdial import LEVELS as CONFIG_DIAL_LEVELS
 from rsched.grants import CONFIRM_LEVELS, RUN_HISTORY_LEVELS, SETTING_DEFAULTS
 from rsched.reminders import LEVELS as REMINDER_LEVELS
 
@@ -140,6 +143,37 @@ def test_the_reminder_approval_is_revealed_only_at_global(ui, ui_page):
     expect(remind).to_have_value("creations")
 
 
+def test_the_config_approval_dial_shows_and_saves_what_it_governs(ui, ui_page):
+    """`config_confirm` (D191) decides whether a config change the routine proposes for ITSELF
+    needs the operator's click. It is the one approval dial no conduct doc switches on — every
+    routine may file a `config_patch` — so it sits on the settings card, and it is here because
+    a server setting with no dial is a value a save writes back unseen: the panel sends the
+    whole mapping. Turning it up must reach routine.yaml through the page's one accept."""
+    path = ui.routine_dir("uir") / "routine.yaml"
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    _open_abilities(ui_page)
+    dial = _routine_dial(ui_page, "config_confirm")
+    expect(dial).to_be_visible()
+    expect(dial).to_have_value("always")                      # the default, for every routine
+    # it says what it decides to a reader who cannot see the row it sits in
+    expect(ui_page.get_by_role(
+        "combobox", name="who approves a config change it proposes for itself")).to_be_visible()
+    dial.select_option("own_fields")
+    ui_page.locator(".accept-bar [data-accept]").click()
+    until(lambda: (_stored(path).get("capabilities") or {}).get("config_confirm") == "own_fields",
+          what="the accepted config dial")
+    # the panel is rebuilt from the accepted read and says what was saved
+    expect(_routine_dial(ui_page, "config_confirm")).to_have_value("own_fields")
+    # and the digest names it only once it departs from `always`
+    lines = ui_page.evaluate("""async () => {
+      const { describe } = await import('/static/components/settings-digest.js');
+      const caps = (v) => ({ actions: [], utils: [], config_confirm: v });
+      return [describe('capabilities', caps('own_fields')), describe('capabilities', caps('always'))];
+    }""")
+    assert "own config: own_fields" in lines[0], lines[0]
+    assert "own config" not in lines[1], lines[1]
+
+
 def test_changing_a_dial_back_leaves_nothing_to_accept(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _open_abilities(ui_page)
@@ -222,12 +256,16 @@ def test_the_dials_offer_exactly_the_values_the_server_accepts(ui, ui_page):
       const values = (opts) => opts.map(([v]) => v);
       return { confirm: values(m.CONFIRM_OPTIONS), rule_confirm: values(m.RULE_CONFIRM_OPTIONS),
                remind_confirm: values(m.REMIND_CONFIRM_OPTIONS), runs: values(m.RUNS_OPTIONS),
+               config_confirm: values(m.CONFIG_CONFIRM_OPTIONS),
                reminders: values(m.REMINDER_OPTIONS), defaults: m.SETTING_DEFAULTS };
     }""")
     for dial in ("confirm", "rule_confirm", "remind_confirm"):
         assert data[dial] == list(CONFIRM_LEVELS), (dial, data[dial])
     assert data["runs"] == list(RUN_HISTORY_LEVELS)
     assert data["reminders"] == list(REMINDER_LEVELS)
+    # `config_confirm` has its OWN ladder, not CONFIRM_LEVELS: `own_fields` is a declared field
+    # allow-list, not a create-vs-revise rung (rsched/configdial.py).
+    assert data["config_confirm"] == list(CONFIG_DIAL_LEVELS), data["config_confirm"]
     assert data["defaults"] == SETTING_DEFAULTS
 
 

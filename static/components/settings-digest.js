@@ -84,6 +84,10 @@ export function describe(key, v) {
         c.reminders ? `reminders: ${c.reminders}` : "",
         // named where its dial is shown: only `global` writes a reminder anyone approves
         c.reminders === "global" && c.remind_confirm ? `reminder approval: ${c.remind_confirm}` : "",
+        // named only when turned UP: `always` is every routine's default and changes nothing,
+        // so saying it would add a line to every digest that reports no policy at all
+        c.config_confirm && c.config_confirm !== "always"
+          ? `own config: ${c.config_confirm}` : "",
         // named only when on: a routine without the job layer has nothing to say about it
         c.jobs === "on" ? "keeps jobs" : "",
       ].filter(Boolean).join(" · ") || "none";

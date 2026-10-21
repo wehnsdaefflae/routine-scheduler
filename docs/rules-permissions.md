@@ -461,6 +461,7 @@ capabilities:
   confirm: creations            # write_util approval: always | creations | never
   rule_confirm: always          # write_rule approval: always | creations | never
   remind_confirm: always        # curated-reminder approval: always | creations | never
+  config_confirm: always        # its OWN config-patch autonomy: always | own_fields | never
   runs: last                    # previous-run read depth: none | last | all
   reminders: local              # consequence reminders: none | local | global
   jobs: off                     # the job layer: off | on (docs/jobs.md)
@@ -471,8 +472,17 @@ A new routine's default is its settings pattern's; with no pattern at all it is
 reserved utils, the last run readable, and `reminders: local`. `read_rule`, the `util` action,
 memory and the routine's own scripts are not listed because they are not gated.
 
-`runs`, `reminders`, `jobs` and the three approval dials are SETTINGS: yours per routine, never switched
-on by a permission and kept by the floor with none behind them. `reminders: local` is the
+`runs`, `reminders`, `jobs` and the four approval dials are SETTINGS: yours per routine, never switched
+on by a permission and kept by the floor with none behind them. `config_confirm` is the fourth
+(`rsched/configdial.py`, D191): a run can never write `routine.yaml`, so it proposes the change
+on an `ask_user` carrying a `config_patch` and the Decisions page applies it with a click. At
+`own_fields` a patch the routine files FOR ITSELF naming only the declared allow-list — its
+`budgets`, `efforts`, `deliberation`, `keep_runs` and the ladder's two numbers — is applied with
+no card; at `never` that widens to every patch field outside the sealed set, which also reaches
+`schedule`, `run_gate`, `rules` and `outcome`, so it is a deliberate per-routine choice. The
+sealed set is absolute at every level — `permissions`, `capabilities`, the filesystem roots, the
+`models`, a `trial`, `grants`, `connections`, `machines`: no dial value lets a routine widen its
+own authority, and the refusal is enforced in the apply, never in the asking run's restraint. `reminders: local` is the
 default because a caution a run leaves itself about its own actions is ordinary conduct; at
 `local` a run writes its own reminders and applies them beside every curated one that reaches
 it; `global` also lets it write the curated store — the curator's setting, every write approved
