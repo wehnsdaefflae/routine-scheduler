@@ -45,6 +45,20 @@ mistake it for its own. A process killed between the write and the remove leaves
 behind; the next transaction sweeps the ones older than `STALE_AFTER_S`, a cutoff far longer
 than a live transaction can hold one.
 
+TWO CONSEQUENCES OF THE CANDIDATE NAME, named because they are real and a reader will meet them:
+
+* a selftest that calls ITSELF (`gu <its own name>`) reaches the INSTALLED version, not the
+  candidate — the staged script answers to the staged slug. All 57 utils of the live library
+  were checked when this shipped and none declares itself on its `calls:` line (a self-call is
+  a strange shape anyway: `--selftest` is the entry point under test). If one ever does, it is
+  testing the old code and the header check is the place to catch it.
+* the catalog hiding here covers `utils_lib.list_utils` (the engine's catalog, the library
+  impact report, `sandbox.private_store_paths`) and the `gu` dispatcher THIS module installs.
+  A library root carrying its OWN richer `gu` keeps it (`utils_lib._install_dispatcher` never
+  overwrites one), so on such an instance a `gu list` made from inside another util can still
+  see a `staging--…` entry for the seconds its selftest runs. Nothing calls that name, and
+  `utils/<name>` — the thing F584 is about — is untouched throughout.
+
 THE COST, named because it is real: the candidate's script path is new on every attempt, so uv
 builds the PEP 723 environment instead of reusing the installed script's. That install happens
 in the PREWARM phase, outside the selftest's timed window (R20/R40), so a heavy dependency tree
