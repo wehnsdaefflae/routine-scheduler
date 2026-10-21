@@ -174,6 +174,26 @@ def test_the_config_approval_dial_shows_and_saves_what_it_governs(ui, ui_page):
     assert "own config" not in lines[1], lines[1]
 
 
+def test_the_two_approval_rows_say_which_approval_each_one_is(ui, ui_page):
+    """At `global` the card shows two approval dials at once — the shared-reminder one and the
+    config one — and a reader scans the kind column, not the help text inside a select that the
+    card truncates. So the two rows must not both read `approval`.
+
+    This is the assertion the rest of this file was missing: every other test here reaches a
+    dial through `data-setting`, which is distinct by construction, so two rows labelled
+    identically passed the whole suite. It took looking at the rendered card to see it.
+    """
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    _open_abilities(ui_page)
+    _routine_dial(ui_page, "reminders").select_option("global")   # reveals the reminder dial
+    expect(_routine_dial(ui_page, "remind_confirm")).to_be_visible()
+    kinds = ui_page.evaluate("""() => [...document.querySelectorAll(
+        '[data-ability-settings] .ab-row')].filter(li => !li.hidden)
+        .map(li => li.querySelector('.kind').textContent.trim())""")
+    assert len(kinds) == len(set(kinds)), f"two rows read the same: {kinds}"
+    assert "reminder approval" in kinds and "config approval" in kinds, kinds
+
+
 def test_changing_a_dial_back_leaves_nothing_to_accept(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _open_abilities(ui_page)

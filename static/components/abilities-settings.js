@@ -43,7 +43,13 @@ export function settingsCard({ caps, stackRow, changed }) {
   const row = (kind, key, label, options, after = changed) => stackRow({
     state: "ok", kind, entity: key,
     control: selectDial(options, caps[key], (v) => { caps[key] = v; }, { key, label, after }) });
-  const approval = row("approval", "remind_confirm", "who approves a shared reminder",
+  // Each approval row NAMES which approval it is. Two rows both reading "approval" sit
+  // adjacent whenever reminders are `global` (the reminder one is revealed there), and the
+  // only thing telling them apart was help text inside a select that truncates at the card's
+  // width — so a reader scanning the kind column met the same word twice. Seen in a render,
+  // never by the browser suite: both tests assert behaviour through `data-setting`, which is
+  // distinct, so the collision was invisible to them.
+  const approval = row("reminder approval", "remind_confirm", "who approves a shared reminder",
                        REMIND_CONFIRM_OPTIONS);
   const reveal = () => { approval.hidden = caps.reminders !== "global"; };
   reveal();
@@ -60,7 +66,7 @@ export function settingsCard({ caps, stackRow, changed }) {
       row("reminders", "reminders", "the consequence-reminder layer", REMINDER_OPTIONS,
           () => { reveal(); changed(); }),
       approval,
-      row("approval", "config_confirm", "who approves a config change it proposes for itself",
-          CONFIG_CONFIRM_OPTIONS),
+      row("config approval", "config_confirm",
+          "who approves a config change it proposes for itself", CONFIG_CONFIRM_OPTIONS),
       row("jobs", "jobs", "the job layer — standing work kept as jobs", JOB_OPTIONS)));
 }
