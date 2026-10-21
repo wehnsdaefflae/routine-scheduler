@@ -81,10 +81,16 @@ function details(rec, openDrift = true) {
     const node = f.node || {};
     // .filter(Boolean): append STRINGIFIES a null argument into the text "null" (el() drops
     // null children; append does not).
+    // The TRIGGER, not the newest commit (F604). `after library commit <head>` named whatever
+    // commit happened to arrive when the gap was noticed, and the reader took that as the cause
+    // — the operator's complaint. The watcher now works out which commit touched the files this
+    // gap is about and says so, or says plainly that the cause is not known. A record filed
+    // before that carries no trigger, so it keeps the weaker line it was written with.
     body.append(...[
       el("div", {}, node.why || rec.summary || ""),
       node.effect ? el("div", { class: "faint mt" }, node.effect) : null,
-      el("div", { class: "faint mt" }, `after library commit ${String(f.head || "").slice(0, 8)}`),
+      el("div", { class: "faint mt" }, f.trigger
+        || `found at library commit ${String(f.head || "").slice(0, 8)}`),
     ].filter(Boolean));
     return el("details", { class: "small mt", open: openDrift || null },
       el("summary", { style: "cursor:pointer;color:var(--ink-2)" },
@@ -277,7 +283,10 @@ export function pendingBand({ onChanged } = {}) {
       el("div", { class: "row", style: "gap:10px;align-items:center" },
         el("span", {}, el("strong", {}, first.routine || "?"),
           ` lost ${lost.length} `, lost.length === 1 ? "permission" : "permissions",
-          head ? ` after ${head}` : ""),
+          // "after <head>" read as "<head> did this" — the whole F604 complaint. The header
+          // says WHERE the gaps were found; each gap's own trigger is in its details, because
+          // one card can group gaps that different commits opened.
+          head ? ` · found at library ${head}` : ""),
         el("span", { style: "margin-left:auto" }),
         el("a", { class: "btn small primary", href: `#/routine/${first.routine}` }, "open the routine"),
         seen),
