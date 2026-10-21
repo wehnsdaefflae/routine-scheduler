@@ -711,7 +711,12 @@ and the capabilities digest's catalog listing):
   moves no recipe commit anywhere); and `endings`, how this routine's partial finishes actually
   ended — `budget_exhausted` versus `run_partial`, a split the usage stream cannot make because
   both land there as `partial`. Deterministic thresholds, each constant justified in the module —
-  see docs/run-analytics.md;
+  see docs/run-analytics.md. `trend` is also PUSHED at run end as the `cost_trend_degraded`
+  health event, and WHOSE regression it is, is decided before that row names anyone
+  (`readmodels/trend_attribution.py`, F568): the same window is read across the fleet, and
+  `scope` carries host · routine · unattributable — a host-wide condition degraded everything
+  that ran on 2026-09-27/28 and filed three findings naming three routines for one problem with
+  the box, so a `host` row now carries no `routine` at all and says what it is about;
   `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
   routine.yaml or state; queued while a run is active and applied when it ends, D78-A).
   Flag-first: the improver never auto-reverts.
