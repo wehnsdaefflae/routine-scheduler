@@ -42,6 +42,7 @@ because the complaint F568 records was a misleading SENTENCE as much as a wrong 
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 
 from .run_health import MIN_RUNS, REGRESSION_WINDOW, regression_flag
 from .stamps import instant
@@ -64,7 +65,7 @@ ROUTINE = "routine"
 UNATTRIBUTABLE = "unattributable"
 
 
-def _span(runs: list[dict], window: int) -> tuple[object, object]:
+def _span(runs: list[dict], window: int) -> tuple[datetime | None, datetime | None]:
     """The calendar span of the subject's flagged window — the first and last stamp of its
     last `window` runs, read as INSTANTS (`ids.now_iso` writes local time with an offset, so
     string compares move the edge by that offset). A window whose rows carry no readable
@@ -93,7 +94,7 @@ def attribute(fleet: list[dict], own: list[dict], slug: str, *,
     """
     own_runs = fold_legs(own)
     start, end = _span(own_runs, window)
-    if start is None:
+    if start is None or end is None:           # _span gives both or neither
         return _verdict(UNATTRIBUTABLE, [], [], slug,
                         "the window carries no readable stamp, so no comparable window "
                         "could be cut for the other routines")
@@ -101,7 +102,8 @@ def attribute(fleet: list[dict], own: list[dict], slug: str, *,
     compared: list[str] = []
     degraded: list[str] = []
     for peer, runs in _by_routine(fleet, slug, name_of).items():
-        inside, before = [], []
+        inside: list[dict] = []
+        before: list[dict] = []
         for rec in runs:
             when = instant(rec.get("ts"))
             if when is None:

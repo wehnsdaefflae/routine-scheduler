@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.438.0] — 2026-10-21
+
+### Changed
+- **A cost-trend finding names the host when the fleet degrades together (F568).** Before
+  `cost_trend_degraded` names a routine, the same window is read across the fleet: every other
+  routine with comparable runs inside the subject's span is judged by the same
+  `regression_flag` against its own baseline. The row carries a `scope` — `host` (a strict
+  majority of ≥3 comparable peers degraded too; no `routine` named), `routine` (isolated), or
+  `unattributable` (fewer than 3 comparable peers ran the window, so the cases cannot be told
+  apart). The thresholds are measured, not guessed: over this instance's own stream (1,738
+  folded depth-0 runs, 134 flagging moments) the peer-degradation share ran median 0.11 / p95
+  0.40 / max 0.50, so a strict majority reclassifies none of the real history. New
+  `readmodels/trend_attribution.py`; no threshold of the alarm itself changed.
+- **The global pause holds detached fires and owner wakes, not deliveries (F721).** The pause
+  is now enforced inside `daemon/detached.py` per phase: intake's `runner.fire` and the wake's
+  `resume_terminal` — the only two phases that START a run — are held while the sentinel
+  exists, while deliver, digest and gc proceed (a hand-back starts nothing, and holding it
+  would let gc remove artifacts a late resume would then hand back empty). The gate lives in
+  the manager rather than at the scheduler's call site because `_boot` calls `reconcile()`
+  before the pause-checking `boot_catchup`, so a restart under a pause previously fired every
+  undelivered task. Nothing is dropped: a held fire keeps its request file, a held wake its
+  delivered marker and the owner's pending message.
+- **A util or script may declare informational exit codes (F711).** A new
+  `informational-exits: <codes>` header line (read from the source, never by running anything)
+  tells the engine which non-zero exits are ANSWERS rather than failures, so a healthy polling
+  call stops feeding the repeat-failure tally that fired `fix-the-cause` on
+  `candidate_gate status` polls. The suppression is narrow: it applies only when the declared
+  code is the single thing wrong with the observation — an error, a refusal or a failed riding
+  script still counts — and every undeclared callee behaves exactly as before. New
+  `engine/exitgate.py` is the one seam both the tally and the predicate ask.
+
 ## [0.437.0] — 2026-10-21
 
 ### A routine's own config changes can apply without a click — `config_confirm` (D191)

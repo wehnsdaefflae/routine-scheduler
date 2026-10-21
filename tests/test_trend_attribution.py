@@ -265,8 +265,8 @@ def test_two_routines_own_regressions_still_file_two_rows(tmp_path):
 def _trend_verdict() -> dict:
     """What `run_health.recent_trend` hands the emitter for the subject above."""
     return {"evaluated": True, "flagged": True, "window": REGRESSION_WINDOW,
-            "reasons": [f"median volume ballooned {CHEAP:,.0f} → {DEAR:,.0f} "
-                        "(≥2.7× and +2,000,000)"],
+            "reasons": [(f"median volume ballooned {CHEAP:,.0f} → {DEAR:,.0f} "
+                         "(≥2.7× and +2,000,000)")],
             "before": {"runs": 5, "fail_rate": 0.0, "turns_median": 10,
                        "volume_median": CHEAP},
             "after": {"runs": 5, "fail_rate": 0.0, "turns_median": 10,
