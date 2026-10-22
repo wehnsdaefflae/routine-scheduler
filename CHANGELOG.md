@@ -15,6 +15,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.441.0] — 2026-10-22
+
+### Added
+- **`rsched drain` — quiesce the instance before a deploy restarts it** (F746; operator,
+  2026-10-22: *"Drain in-flight runs before any restart, and resume rather than abort"*). It
+  drops the pause sentinel, waits for every in-flight run across all three homes, and exits
+  non-zero naming what is still running, so `rsched drain && docker compose up -d` stops rather
+  than eating a run. The pause is left in place for the deploy — the replacement process reads
+  the same sentinel, so no fire slips into the seconds before it is replaced — and
+  `rsched drain --resume` lifts it. `deploy/DOCKER.md`'s rebuild recipe now runs it. It cannot
+  be a signal handler: uvicorn bounds its graceful shutdown to 10 s and systemd/compose give the
+  process 20 s, while a run lasts hours, so by the time SIGTERM arrives the deploy has decided.
+- **An EXTERNAL restart now leaves the deliberate-shutdown breadcrumb, and the run it killed is
+  RE-OPENED at the next boot** (F746). `restart.mark_deliberate_shutdown` had exactly one caller
+  — `trigger_shutdown`, the daemon's own self-update path — so every `systemctl restart`, every
+  `docker compose up -d` replacing the container and every deploy reaped its live runs as
+  `cause: unknown`. Measured over the whole health stream: **82 `orphaned_run` events across ~50
+  boots on 23 days**, and of the 20 carrying a cause at all (the field exists since 2026-09-25)
+  **15 `unknown`, 5 `engine_crash`, ZERO `daemon_restart`** — so `unknown` had stopped
+  discriminating, which is the F480 defect rebuilt from the other side. On 2026-10-22 alone four
+  boots orphaned 7 runs, `self-audit:20261021-223212` losing 240 turns and 5125 s of work, and
+  `llmsectest-weekday` the same sequential child twice in 49 minutes. Now
+  `restart.mark_graceful_exit` writes the mark from the app lifespan's shutdown half — the one
+  seam ANY graceful SIGTERM reaches — standing down when `trigger_shutdown` already named the
+  exit more specifically; and `daemon/reap_resume.py` re-opens a run the mark attributes to a
+  restart, capped at `RESTART_RESUMES` (3: two boots 49 minutes apart orphaned the same runs, so
+  one is too few, while a boot loop must not storm), held by a global pause, never for a run
+  parked on a human (its question is durable) and never for a crash or an OOM — `unknown` means
+  nothing was established, and nothing is restarted on it. The resumed leg gets a recovery note
+  saying the daemon went down and that any child run it had in flight did not survive. An
+  UNGRACEFUL kill still writes nothing and still reads `unknown`: that is the honest case.
+
+### Changed
+- **The ladder's knobs say what they mean** (D189; operator: *"Rename the turn-interval knob and
+  let 'rung height' mean the recursion limit, default 3, with the interval defaulting to 50"*).
+  `tuning.yaml`'s `ladder_rung_height` — which was a TURN INTERVAL — becomes
+  **`ladder_turn_interval`, default 50** (was 20); `routine.yaml`'s `ladder.max_depth` — the real
+  recursion limit — becomes **`ladder.rung_height`, default 3**. One vocabulary throughout:
+  `config.base.DEFAULT_TURN_INTERVAL`, `engine.ladder.DEFAULT_RUNG_HEIGHT`,
+  `oversight_turns_for(interval)`, the settings keys `turn_interval`/`rung_height`, the DOM hooks
+  `data-ladder-interval`/`data-ladder-rung-height`, and the seed workflow's `TURN_INTERVAL`
+  parameter. Console labels follow the meanings: the rung-count row reads *rung height* (was "max
+  rungs"), the turn row reads *turn interval* (was "rung height"), and both digests' stale
+  `?? 20` defaults are now 50. **No alias and no shim** (house rule): the old spellings are
+  unknown keys, reported and dropped at load or refused by the routine PATCH. 14 library-seed
+  patterns carry the new names.
+- **F564's run-spanning cap reaches the routines it was built for.** It shipped INERT on 28 of 33
+  configs: the scaffold had written an explicit `max_total_turns: -1` and an explicit value
+  always wins, so the runs whose unbounded resumes motivated the whole feature stayed unbounded.
+  The operator chose the migration (R2782 → R2790): a one-shot boot migration
+  (`migrate_total_turns.py`, MIGRATION(expires=2026-12-31)) rewrites a **scaffold-written** `-1`
+  to `0`, which derives 3× the window. The load-bearing word is *scaffold* — `-1` is also a
+  legitimate deliberate uncapping that `turnwindow` honours, and once rewritten that intent is
+  unrecoverable from the file — so the migration reads each routine's own git history and takes
+  only a line with exactly ONE commit touching it (`git log -G`, not `-S`, which counts
+  occurrences and would miss a later change of the value). Measured across all 28 live configs:
+  every one has exactly one such commit. A second touch on that line, an unreadable history, or
+  a `max_turns: -1` window leaves the file alone and is recorded in
+  `.control/migrations/total-turns.json`.
+
+### Fixed
+- `tests/ui/conftest.py` sorted `import browsersource` as third-party, leaving `ruff check` RED on
+  main. A warm ruff cache reported "All checks passed" — only `--no-cache` or a fresh worktree
+  saw it, which is how it passed 0.440.1's own gate.
+
 ## [0.440.1] — 2026-10-22
 
 ### Changed
