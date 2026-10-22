@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from rsched.daemon import gate_prepare, run_gate, runner_reap, runner_state
+from rsched.grants import CONFIG_FILE
 from rsched.paths import read_json
 from test_run_gate import script, skip_body
 
@@ -107,7 +108,14 @@ def test_filesystem_declarations_intersect_grants(setup_gate, monkeypatch, decla
     assert (str(first) in spec["rw"]) == (declaration == "roots")
     assert (str(second) in spec["rw"]) == (declaration == "roots")
     assert str(forbidden) not in spec["ro"] + spec["rw"]
-    assert str(cfg.dir) in spec["rw"]
+    # The routine dir is always VISIBLE — a gate check runs with it as its working directory —
+    # and since D179 it is no longer writable WHOLESALE: it is mounted read-only and its
+    # UNSEALED children read-write, so the kernel refuses exactly what the engine's file gate
+    # refuses. The run gate is a second door into the same jail, so the seal is pinned here
+    # too rather than only in tests/test_own_dir_seal.py.
+    assert str(cfg.dir) in spec["ro"]
+    assert str(cfg.dir / "scripts") in spec["rw"]
+    assert str(cfg.dir / CONFIG_FILE) not in spec["rw"]
 
 
 @pytest.mark.parametrize("declaration", ["", "garbage", "ro relative", "none, roots", "none\nfs: roots"])
