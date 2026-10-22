@@ -45,7 +45,23 @@ def serve_turn_head(loop):
     return chain, endpoint, ref, False
 
 
-def engage_turn_takeover(loop, ref, completion) -> tuple | None:
+def note_takeover(refstate: dict, on_takeover: bool, served: bool) -> bool:
+    """Record that the uncensored model is serving this turn, and return the turn's
+    takeover flag — one call where next_action had a bare `on_takeover = …` assignment.
+
+    The two facts are NOT the same and D188 is where that stopped being harmless. A turn is
+    flagged `on_takeover` whenever a refusal was handled, INCLUDING the case where no
+    uncensored model could serve it and the refused turn is re-driven on the regular chain:
+    attributing that turn to `uncensored` would print a role beside a `usage["model"]` naming
+    the main model. So `served` — did a takeover target actually take the turn — is what moves
+    the role, and the flag keeps its own meaning (never reset the back-off episode).
+    """
+    if served:
+        refstate["role"] = "uncensored"
+    return on_takeover or served
+
+
+def engage_turn_takeover(loop, ref, completion, refstate: dict | None = None) -> tuple | None:
     """The free-text refusal seam inside next_action's schema-retry loop: judge the
     prose reply, engage the back-off episode, and re-drive the refused TURN whole on
     the uncensored model when one can serve it. Returns the ADOPTED (endpoint, ref)
@@ -65,6 +81,8 @@ def engage_turn_takeover(loop, ref, completion) -> tuple | None:
         return None
     # The refused TURN is re-driven whole on the uncensored model - its output IS this
     # turn's action (operator, 2026-10-16; the honeypot essence-excision is retired).
+    if refstate is not None:
+        refstate["role"] = "uncensored"   # D188: the turn is attributed to what serves it
     return _adopt_model(loop, target)
 
 

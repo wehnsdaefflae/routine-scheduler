@@ -126,12 +126,18 @@ def next_action(loop) -> tuple[dict | None, dict]:
     # hand-back). A window that cannot resolve its target here is closed by
     # refusal.takeover_turn itself.
     chain, endpoint, ref, on_takeover = turntakeover.serve_turn_head(loop)
-    usage_sum: dict = {"in": 0, "out": 0}   # + "model"/"provider" attribution (str) on success
+    usage_sum: dict = {"in": 0, "out": 0}   # + "model"/"role"/"provider" attribution on success
     schema = _turn_schema(loop)
     prev_raw: str | None = None
     # Shared across attempts: one refusal-clarification pass per turn (free-text OR
     # classifier-refusal path), and the consecutive-empty streak from the CURRENT model.
-    refstate = {"takeover_tried": False, "empty": 0}
+    # …and (D188) the ROLE serving this turn, so the accepted action can be stamped with the
+    # slot the run asked for as well as the concrete model that answered. Seeded from the
+    # resolution head and moved to "uncensored" by whichever seam actually hands the turn over
+    # — never from `on_takeover` alone, which is also raised when a refusal-shaped finish is
+    # re-driven on the REGULAR chain (that turn is a main-model turn and must read as one).
+    refstate = {"takeover_tried": False, "empty": 0,
+                "role": "uncensored" if on_takeover else "main"}
     overflow.new_turn(loop)         # the oversize-shrink allowance is per TURN, like these
     turndebris.new_turn(loop)       # what elicits only this turn's action, dropped on success
     attempt = 0
@@ -169,7 +175,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
             # (engine/refusal.py), then advance the fallback chain (_handle_refusal
             # raises when the chain is exhausted).
             switched, tk = _handle_refusal(loop, completion, chain, ref, attempt, refstate)
-            on_takeover = on_takeover or tk   # a takeover-served turn never resets
+            on_takeover = turntakeover.note_takeover(refstate, on_takeover, tk)
         elif completion.parsed is None and not completion.text.strip():
             switched = _handle_empty(loop, completion, chain, ref, attempt, refstate)
             if switched is None:
@@ -202,11 +208,13 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 if intercepted:
                     if target is not None:
                         endpoint, ref = _adopt_model(loop, target)
-                    on_takeover = True   # takeover-served, never resets
+                    on_takeover = turntakeover.note_takeover(
+                        refstate, True, target is not None)
                     attempt -= 1   # the re-driven turn is not a schema violation
                     continue
             turndebris.drop(loop)
             usage_sum["model"] = f"{ref.endpoint}/{ref.model}"   # per-turn attribution
+            usage_sum["role"] = refstate["role"]   # …and the ROLE that resolved to it (D188)
             if not on_takeover:
                 # A turn the REGULAR chain completed cleanly RESETS the back-off
                 # episode (engine/refusal.py): the hand-back proved the regular
@@ -234,7 +242,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
             # whole - its output IS this turn's action (the honeypot
             # essence-excision is retired with its premise).
             if not refstate["takeover_tried"]:
-                adopted = turntakeover.engage_turn_takeover(loop, ref, completion)
+                adopted = turntakeover.engage_turn_takeover(loop, ref, completion, refstate)
                 if adopted is not None:
                     refstate["takeover_tried"] = True
                     endpoint, ref = adopted

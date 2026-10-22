@@ -28,6 +28,7 @@ import { highlightJson } from "/static/components/code.js";
 import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
 import { backgroundState, backgroundText, killBrief, killText }
   from "/static/components/obs-background.js";
+import { turnUsage } from "/static/components/turn-model.js";
 import { el, fmtTime, fmtTokens, fullOutput, compressionInfo, toast } from "/static/util.js";
 
 // Mirror of engine/actionschema.py BRIEF_FIELD (the source of truth; static/ is no-build and
@@ -313,9 +314,7 @@ export function createTranscript(container, opts = {}) {
           : (a.kind === "read_rule" || a.kind === "write_rule") && a.name && a.name !== "list"
           ? el("span", { class: "muted" }, ruleLink(a.name))
           : el("span", { class: "muted" }, brief),
-        ev.usage ? el("span", { class: "muted", style: "margin-left:auto",
-                              title: ev.usage.provider ? `served by ${ev.usage.provider}` : "" },
-                    fmtTokens(ev.usage)) : null),
+        turnUsage(ev)),    // D188: which model served this turn, then what it cost
       // Syntax-highlighted, because this fold is where a reader goes to reproduce a call and
       // an unlit blob of 40 lines hides the one field they came for (operator, 2026-09-30:
       // "i want the action JSON in a message element to be syntax highlighted"). Display only
