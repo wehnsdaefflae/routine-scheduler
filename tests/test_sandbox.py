@@ -221,7 +221,7 @@ def test_fs_roots_takes_the_granted_roots(tmp_path, monkeypatch):
                                    fs_roots=True, fs_paths=())[2])
     assert str(tmp_path / "r") in spec["ro"]
     assert str(tmp_path / "w") in spec["rw"]
-    assert str(tmp_path / "own") in spec["rw"]        # own dir is not a grant to narrow
+    assert str(tmp_path / "own") in spec["ro"]   # D179: sealed; test_own_dir_seal.py pins it
 
 
 def test_fs_none_sees_neither_root_but_keeps_its_own_dir(tmp_path, monkeypatch):
@@ -233,7 +233,7 @@ def test_fs_none_sees_neither_root_but_keeps_its_own_dir(tmp_path, monkeypatch):
                                    fs_roots=False, fs_paths=())[2])
     assert str(tmp_path / "r") not in spec["ro"]
     assert str(tmp_path / "w") not in spec["rw"]
-    assert str(tmp_path / "own") in spec["rw"]
+    assert str(tmp_path / "own") in spec["ro"]   # survives `fs: none`, sealed since D179
 
 
 def test_declared_private_store_mounts_only_for_its_declarer(tmp_path, monkeypatch):
@@ -498,7 +498,7 @@ def test_an_unreadable_read_root_does_not_break_a_util_that_never_touches_it(tmp
                        fs_roots=True, fs_paths=())
     assert cmd[-len(CMD):] == CMD                    # the util still runs
     spec = json.loads(cmd[2])
-    assert str(tmp_path / "own") in spec["rw"]       # and keeps its own dir
+    assert str(tmp_path / "own") in spec["ro"]       # and keeps its own dir (sealed, D179)
 
 
 def test_an_unreadable_write_root_refuses_the_call_naming_that_root(tmp_path, monkeypatch):

@@ -3,9 +3,13 @@
 Every write protection the engine has lives in the FILE-action gate (`engine/fileops._write_gate`):
 the `.memory/` seal, the engine-ownership of `runs/`, `.util_outputs/` and `.doc_cache/`, the
 `routine.yaml` config refusal, the recipe-authoring boundary and `_removal_gate`. A `bash -c`
-redirect calls none of them, so all of them are bypassable by any routine holding `shell` — which
-is the POINT of an escape hatch, and is why the capability is granted sparingly rather than gated
-per path. Deciding WHICH writes a shell line performs is undecidable in general (a command can
+redirect calls none of them. Inside the routine's OWN dir the KERNEL refuses those writes anyway
+since D179 (`ownseal` withholds exactly those paths from the jail), so what remains ungated is
+every path outside it — which is the POINT of an escape hatch, and is why the capability is
+granted sparingly rather than gated per path. Where the jail cannot engage (`sandbox: off`, or a
+kernel without Landlock) the marker below is again the whole mechanism.
+
+Deciding WHICH writes a shell line performs is undecidable in general (a command can
 write through a script, a heredoc, an editor, a compiler), so nothing here tries to refuse one.
 
 D158 replaced prevention with ACCOUNTABILITY, and R2654 is the half that was never connected:

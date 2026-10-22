@@ -242,10 +242,23 @@ the jail, is the decision.
 Every write protection the engine has lives in the FILE-action gate — the `.memory/` seal, the
 engine-ownership of `runs/` and `.util_outputs/`, the `routine.yaml` refusal, the
 recipe-authoring boundary, `_removal_gate`. A `bash -c` redirect calls none of them, and which
-writes a shell line performs is undecidable in general, so nothing tries to refuse one. D158
-traded prevention for ACCOUNTABILITY: `engine/shellwrite.marks_a_write` tests the command's
-SHAPE (conservative in one direction only — "may have written", never "did not") and the
-observation carries `ungated_write`.
+writes a shell line performs is undecidable in general, so nothing tries to refuse one by
+inspecting the command. D158 traded prevention for ACCOUNTABILITY:
+`engine/shellwrite.marks_a_write` tests the command's SHAPE (conservative in one direction
+only — "may have written", never "did not") and the observation carries `ungated_write`.
+
+**Inside the routine's own directory the KERNEL now refuses them anyway (D179).** The seals
+above are path predicates, so `ownseal` subtracts those paths from the jail: the own dir is
+mounted read-only and its UNSEALED children read-write, which means `.memory/`, `runs/`,
+`.util_outputs/`, `.doc_cache/`, `routine.yaml` and — without the recipe-authoring permission —
+`main.md`/`stages/`/`tuning.yaml` are unwritable by any subprocess, however it writes. Landlock
+has no deny rule (a ruleset is an allow-list of hierarchies and a nested rule can only ADD
+rights), so that split mount is the only shape this can take. Two accepted costs, the
+operator's own words when he decided it: a command creating a NEW top-level entry inside the
+routine dir fails with a bare kernel error rather than a readable refusal, and the protection
+exists only where the jail engages — under `sandbox: off`, or on a kernel without Landlock,
+`ungated_write` is again the whole mechanism. Paths OUTSIDE the routine dir are unaffected: a
+granted write root is a grant, and the accountability marker remains the record there.
 
 R2654 connected that marker to a reader. For two years its only consumer was its own test — no
 read model, no endpoint, no console case — and a compensating control nothing reads is not one.
