@@ -129,7 +129,7 @@ KIND_EXAMPLES: dict[str, dict] = {
     "do_nothing": {"say": "<what you checked, and why nothing is due>",
                    "kind": "do_nothing"},
     "finish": {"say": "<what was achieved>", "kind": "finish", "status": "ok",
-               "summary": "<detailed 8-20 line result summary>"},
+               "summary": "<short 3-6 line result summary>"},
 }
 
 # The kinds a run may mark `background: true` (D118 phase 1). Every member is a READ or a

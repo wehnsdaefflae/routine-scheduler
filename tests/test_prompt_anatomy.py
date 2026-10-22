@@ -291,5 +291,7 @@ def test_doc_names_every_action_kind_and_the_finish_example_matches():
     for kind in KINDS:
         assert kind in DOC, f"action kind {kind!r} missing from docs/prompt-anatomy.md"
     # the finish guidance shown in the doc must track the example's altitude
-    assert KIND_EXAMPLES["finish"]["summary"].strip("<>") == "detailed 8-20 line result summary"
-    assert "8-20 line" in DOC
+    # D187 (operator, 2026-10-16: "condense them considerably"): the demand is 3-6 lines in a
+    # conversational register, not a DETAILED 8-20. The doc and the example must agree on it.
+    assert KIND_EXAMPLES["finish"]["summary"].strip("<>") == "short 3-6 line result summary"
+    assert "3-6 line" in DOC

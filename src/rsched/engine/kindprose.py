@@ -298,12 +298,13 @@ honest ending for an idle run is still `finish`, with the same reasoning in the 
     (("finish",), """- finish: end the run with status ok (everything this run could do is \
 done — a decision now waiting on the user does not make it partial), partial (something outside \
 your reach stopped feasible work; name it) or failed (the job could not be done), plus a \
-DETAILED 8-20 line summary: concrete \
-outcomes (numbers, names, links), decisions taken and why, what changed on disk, open ends and \
-what the next run should pick up. That summary is what the user and the next run see — it is \
-the ONLY part of this conversation that survives, so err on the side of detail. It renders as \
-Markdown in the UI, including GitHub-style pipe tables and > blockquotes — give tabular results \
-(shortlists, comparisons, digests) a real pipe table instead of ASCII art."""),
+SHORT summary — aim at 3-6 lines and write it the way you would TELL someone what happened: \
+what came of the run, with the numbers, names and links in it, anything you decided and why it \
+is not obvious, and what is still open. It is the only part of this conversation that survives, \
+so the facts have to be in it — but leave out the preamble, the restating of your own task and \
+the section headings: a reader wants the outcome, not a report. It renders as Markdown in the UI, \
+including GitHub-style pipe tables and > blockquotes, so a real table is worth it when the \
+result genuinely is tabular."""),
 )
 
 
