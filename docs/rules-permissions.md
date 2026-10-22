@@ -734,6 +734,22 @@ always outrank an old grant. Secret exposure (D39) rides this same flow: the fir
 call declaring an undecided store secret files one blocking request covering every
 undecided name.
 
+A request for a RESERVED UTIL carries that exposure WITH it (F562). An access request for
+`util:<name>` is widened where the decision record is written (`engine/grantsecrets.widen`, at
+`interact.handle_ask`) to also name `secret:<NAME>` for every secret that util declares — so
+ONE decision makes the granted util usable, instead of the routine's first call running
+straight into a second blocking request for the same capability
+(`bkm-foerder-steward:20260925-062318` filed exactly that; R2106 is the same shape from the
+permissions side). Three bounds keep it a grant rather than a back door: it is VERB-BOUNDED
+(R2622 — a `NAME@verb` secret rides only with a grant reaching that verb, so `util:signal:read`
+carries nothing bound to `send`), it covers only what an exposure decision is ever about
+(`secretgate._exposable`: REQUIRED names present in the central store and not shadowed by the
+routine's own, never an OPTIONAL `?` one), and it carries only UNDECIDED names — an allow on a
+util never re-opens a tombstone. The widened ids are named in the question text, because the
+Decisions card renders the prose: a click that exposes a credential says so. The REQUEST is
+what widens, never the interpretation — `secret_state` keeps answering about `grants:` rows
+that exist, so a util grant can never silently carry a credential.
+
 A request settles on one of those typed decisions only; free text is held as a delayed message
 while the run waits (D38). The run view's **ask back** — the reply that decides nothing, offered
 on every blocking decision, approvals included — instead ends the wait at once and reaches the

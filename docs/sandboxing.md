@@ -322,7 +322,11 @@ connection tokens (`<PROVIDER>_ACCESS_TOKEN`) and its bound remote machines
 the var. This layer needs no kernel support and applies even with `sandbox: off`. WHICH
 CENTRAL store secrets a routine's calls may receive at all is the user's per-routine decision
 (the four-state grant rows `secret:<NAME>` in routine.yaml `grants:` — an undecided REQUIRED
-name files a blocking access request on first use; docs/rules-permissions.md). A
+name files a blocking access request on first use; docs/rules-permissions.md). A request for a
+RESERVED UTIL carries those rows with it (F562): an access request for `util:<name>` also names
+`secret:<NAME>` for each secret that util declares, so one decision makes the granted util
+usable instead of the call running straight into a second blocking request — verb-bounded, so a
+`NAME@verb` secret rides only with a grant reaching that verb (`engine/grantsecrets.py`). A
 ROUTINE-SCOPED secret (`secrets.d/<slug>.env`, the routine page's *Own secrets* section) has
 no such decision: it is the routine's own, implicitly exposed to its runs and to no other
 routine, and it SHADOWS a central value of the same name — so those engine extras winning

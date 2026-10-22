@@ -9,6 +9,13 @@ through the same decision record every other ask uses.
 
 An OPTIONAL secret a util declares with `?` is never worth blocking a run for: it is withheld
 silently and the run is told what it lost, so a degraded call beats a stalled one.
+
+`secret_state` answers about ROWS and nothing else — never about an adjacent `util:` grant that
+happens to declare the name. That is deliberate (F562): a granted util used to leave its own
+declared secrets undecided, so the first call filed a SECOND blocking request for the same
+capability, and the fix widened the REQUEST rather than this interpretation
+(`engine/grantsecrets.py`, called where the decision record is written). Inferring exposure here
+would be fewer lines and would make a util grant silently carry credentials.
 """
 
 from __future__ import annotations
