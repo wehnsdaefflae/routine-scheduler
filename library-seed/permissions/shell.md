@@ -9,7 +9,11 @@ requires:
 ---
 # permission: shell — run ad-hoc host commands
 
-A shell write or delete passes none of the file actions' gates: the `.memory/` seal, `runs/`,
-`routine.yaml`, your recipe. Touch those only through the actions that own them, or not at all.
+Inside your own directory the jail refuses what the file actions refuse — the memory seal, the
+engine-owned record directories, `routine.yaml` and your recipe — so a redirect at one of them
+fails with a kernel error, not a readable refusal. Touch those through the actions that own them.
+Creating a NEW top-level entry in your own directory fails the same way: make it with
+`write_file` or `mkdir`, then shell may write inside it. Elsewhere a write passes no gate at
+all, and the record only says it may have happened.
 A command you run every run (a disk check, a repo status) repeats even when no single run
 repeats it: make it a script.

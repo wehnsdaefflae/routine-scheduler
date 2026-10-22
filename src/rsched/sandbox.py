@@ -38,7 +38,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
-from . import entities, landlock
+from . import entities, landlock, ownseal
 from .paths import expand, within
 
 log = logging.getLogger("rsched.sandbox")
@@ -73,16 +73,16 @@ class SandboxPolicy:
     Per-util facts (declared net, declared secrets, declared fs) are resolved inside
     utils_lib at dispatch — this carries only what the run/permission layer knows.
 
-    `own_dir` is held apart from `write_roots` because it is not a grant to be narrowed: a
-    util always needs the routine's own directory (it is the working directory relative paths
-    resolve against). Everything in `read_roots`/`write_roots` IS a grant, and a util sees it
-    only when its `fs:` line declares it.
+    `own_dir` is not a grant but is still NARROWED — `ownseal` withholds the children the
+    engine's write gate refuses (D179), which is what `recipe_unlocked` is for. Everything in
+    `read_roots`/`write_roots` IS a grant, seen only when a util's `fs:` line declares it.
     """
 
     mode: str = "permissive"
     read_roots: tuple[Path, ...] = ()
     write_roots: tuple[Path, ...] = ()
     own_dir: Path | None = None
+    recipe_unlocked: bool = False
 
 
 # Read-only asset dirs the util sandbox may see on EVERY run regardless of the calling
@@ -113,7 +113,8 @@ def policy_for_ctx(ctx) -> SandboxPolicy:
     return SandboxPolicy(mode=ctx.server.sandbox,
                          read_roots=(*ctx.read_roots(), *_shared_read_roots(ctx.server)),
                          write_roots=tuple(ctx.write_roots()),
-                         own_dir=ctx.routine.dir)
+                         own_dir=ctx.routine.dir,
+                         recipe_unlocked=ownseal.recipe_unlocked_for(ctx))
 
 
 def base_policy(server) -> SandboxPolicy:
@@ -383,8 +384,7 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
         net = True
     ro, rw = _toolchain()
     ro.append(str(libraries_home))
-    if policy.own_dir is not None:
-        rw.append(str(policy.own_dir))       # never narrowed: the working dir, not a grant
+    ownseal.mount_own_dir(policy, ro, rw)      # D179: visible, writable only where the gate is
     if fs_roots:
         # The run's granted roots wholesale — MINUS every path some util claims as a private
         # store. Without that subtraction the narrowing would be worthless for the case it
