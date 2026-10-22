@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.443.0] — 2026-10-22
+
+### Added
+- **A routine's desktop can run with no screen at all** (F649, the operator's order of
+  2026-10-16: *"give the desktop a headless mode a routine can select, so a desktop-driving
+  run needs no VNC-backed display when nobody is watching"*). The premise needed one
+  correction, recorded here because it changes what was built: the guest session already ran
+  `Xvnc` — an X server that IS a VNC server — so the desktop was already headless in the
+  hardware sense. What was missing is a mode with **no RFB port at all**: `Xvfb` gives the
+  same `DISPLAY=:1`, the same XFCE, the same accessibility tree and the same screenshots (the
+  agent grabs from the display, not from the VNC stream), with nothing listening on 5900.
+  `DESKTOP_HEADLESS=1` in a routine's environment → the `desktop` util sends
+  `X-Desktop-Headless: 1` → the broker passes it into `fleet.ensure` → `cmdline()` appends
+  `rsched.headless=1` → `desktop-boot.sh` leaves the `/etc/desktop-headless` marker (and
+  **removes** it when the flag is absent, since one root image backs every VM and a stale
+  marker would silently take the screen off a watched desktop) → the session starts Xvfb.
+  A headless desktop is **absent from the websockify token file** and carries **no `vnc`
+  token in the operator's fleet view**, because a token pointing at a closed port makes noVNC
+  hang on a blank canvas instead of saying there is no screen; every `status` row now carries
+  `headless`, so "no screen" is distinguishable from "the screen is broken". Watched stays the
+  default and the mode is fixed at boot — a routine asking for headless while its watched
+  desktop is already up keeps the one it has rather than having a live session killed under
+  it. **Not provable by test, and the remaining risk:** that a real Cloud Hypervisor guest
+  comes up on Xvfb needs a booted VM with KVM, which the gate cannot run; the session script
+  was verified by reading, and the first real headless boot is the proof.
+
 ## [0.442.0] — 2026-10-22
 
 Two operator decisions about how the system talks: what a run owes at its finish, and when
