@@ -153,7 +153,7 @@ def test_a_shared_fields_clauses_each_carry_their_own_lead():
 def test_every_kind_but_script_has_one_prose_bullet():
     """The harness contract glosses each kind a run can use; `script`'s gloss lives in
     CAPABILITIES beside the scripts themselves — the one documented exception."""
-    from rsched.engine.kindsurface import KIND_PROSE
+    from rsched.engine.kindprose import KIND_PROSE
 
     covered = [k for covers, _prose in KIND_PROSE for k in covers]
     assert len(covered) == len(set(covered))

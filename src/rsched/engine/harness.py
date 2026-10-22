@@ -13,7 +13,8 @@ change there fails `tests/test_prompt_anatomy.py`, deliberately.
 from __future__ import annotations
 
 from . import deliberation
-from .kindsurface import effective_kinds, kind_bullets
+from .kindprose import kind_bullets
+from .kindsurface import effective_kinds
 from .run_context import RunContext
 from .runkind import is_conversation
 

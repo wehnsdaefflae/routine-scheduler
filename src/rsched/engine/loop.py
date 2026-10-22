@@ -27,6 +27,7 @@ from . import (
     archival,
     assist,
     background,
+    donothing,
     finishstands,
     hold,
     loopend,
@@ -341,16 +342,15 @@ class EngineLoop:
         tail, in its place.
         """
         ctx = self.ctx
-        obs = (hold.before_dispatch(self, action)
-               or actionroute.dispatch_action(self, action, ctx))
+        obs = hold.before_dispatch(self, action) or actionroute.dispatch_action(self, action, ctx)
         if self.unexecuted:
             # The reply carried more actions than this one; they did not run, and the run is
             # told so by name in THIS observation — stored on it, so a resumed leg replays the
             # same words (engine/replyactions.py). Their own side fields never ran either.
             obs = {**obs, "not_executed": [unexecuted_row(a) for a in self.unexecuted]}
         held = hold.is_hold(obs)
-        if not held:
-            self.executed_actions += 1   # a HELD action executed nothing
+        if donothing.grounds_a_finish(obs):
+            self.executed_actions += 1   # a HELD or do_nothing action established nothing
             # F711: a DECLARED informational exit never counts (engine/exitgate.py)
             if key := failure_tally_key(ctx, action, obs):
                 self.failures[key] = self.failures.get(key, 0) + 1

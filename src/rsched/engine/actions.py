@@ -12,7 +12,6 @@ prose-outside-JSON failures.
 from __future__ import annotations
 
 import re
-from datetime import date
 
 from ..ids import is_slug
 from ..reports import REPORT_ID_RE
@@ -20,6 +19,7 @@ from . import thenscript
 from .actionschema import KINDS, PSEUDO_UTILS
 from .decideaction import field_problems as decide_field_problems
 from .goalops import field_problems as goal_field_problems
+from .jobfields import field_problems as job_field_problems
 from .remindfields import field_problems as reminder_field_problems
 from .sayfields import problems as say_field_problems
 
@@ -126,6 +126,8 @@ KIND_EXAMPLES: dict[str, dict] = {
                "title": "<one-line summary>",
                "detail": "<the artefact, what is wrong, the evidence, what done looks like>",
                "target": "<the routine that owns it, or omit for triage>"},
+    "do_nothing": {"say": "<what you checked, and why nothing is due>",
+                   "kind": "do_nothing"},
     "finish": {"say": "<what was achieved>", "kind": "finish", "status": "ok",
                "summary": "<detailed 8-20 line result summary>"},
 }
@@ -196,6 +198,10 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     # ask_user's pick-list, for the same reason: a longer list is a question to rephrase.
     "report": (("title",), ("detail", "target", "answers", "closes", "supersedes", "settles",
                             "options")),
+    # D186: no fields of its own — the reasoning IS `say`, which rides every kind already and
+    # which every surface (transcript, console, compaction) renders without a new event type.
+    # Its non-emptiness is checked below, where this kind's whole content depends on it.
+    "do_nothing": ((), ()),
     "finish": (("status", "summary"), ("accounting", "reply_to", "final")),
 }
 
@@ -361,6 +367,15 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
         problems += job_field_problems(obj)
     if kind == "goal":
         problems += goal_field_problems(obj)
+    # D186: `do_nothing` IS its reasoning, and `say` is where that reasoning rides — so this
+    # is the one kind that checks `say` is non-empty. Nothing else does: ACTION_SCHEMA sets no
+    # minLength on it and no kind lists it among its required fields, so a blank narration is
+    # merely unhelpful elsewhere and is the whole action missing here. Refused inside the
+    # schema-retry cycle, so the run re-emits with the reason and spends no turn.
+    if kind == "do_nothing" and not str(obj.get("say") or "").strip():
+        problems.append("kind=do_nothing requires a non-empty 'say' — it IS the action: what "
+                        "you checked, and why nothing is due. A do_nothing with no reasoning "
+                        "records that the run skipped a turn and nothing about why")
     if kind == "finish" and "final" in obj and not isinstance(obj["final"], bool):
         problems.append("kind=finish: 'final' is true or false — is this reply final?")
     if kind == "kill":
@@ -532,47 +547,6 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
         problems.append(
             f"fields {stray} do not belong to kind={kind} (allowed: {sorted(allowed)})")
     return problems
-
-
-#: The `job` action's verbs (engine/jobops.py) — the shared `verb` property's enum carries
-#: manage_lane's too, so the per-kind check is what holds a task turn to its own.
-JOB_VERBS = ("list", "create", "update", "open", "checkpoint", "delete")
-
-
-def job_field_problems(obj: dict) -> list[str]:
-    """The shape a `job` action must have. Whether the task EXISTS, is open or is due is the
-    handler's to judge against the store (engine/jobops.py) — this is only the grammar, so a
-    malformed call is corrected inside the schema-retry cycle and never costs a turn.
-    """
-    verb = str(obj.get("verb") or "")
-    if verb not in JOB_VERBS:
-        return [f"kind=job requires 'verb' to be one of {list(JOB_VERBS)}"]
-    out = []
-    tid = str(obj.get("id") or "")
-    if verb in ("create", "update", "checkpoint", "delete") and not tid:
-        out.append(f"kind=job verb={verb} requires 'id' (the task's kebab-case id)")
-    elif tid and not is_slug(tid):
-        out.append(f"kind=job: 'id' must be a kebab-case task id, got {tid!r}")
-    if verb == "create":
-        out += [f"kind=job verb=create requires a non-empty {f!r}"
-                for f in ("title", "brief") if not str(obj.get(f) or "").strip()]
-    if verb == "checkpoint":
-        if not obj.get("outcome"):
-            out.append("kind=job verb=checkpoint requires 'outcome' (advanced, no-work, "
-                       "blocked or deferred)")
-        if not str(obj.get("summary") or "").strip():
-            out.append("kind=job verb=checkpoint requires 'summary' — what this run did for "
-                       "the task and what the next run picks up")
-    if (wake := obj.get("wake")) not in (None, ""):
-        try:
-            date.fromisoformat(str(wake))
-        except ValueError:
-            out.append(f"kind=job: 'wake' is a date YYYY-MM-DD (or \"\" to clear it), got "
-                       f"{wake!r}")
-    stray = {"outcome", "summary", "accounting"} & set(obj) if verb != "checkpoint" else set()
-    if stray:
-        out.append(f"kind=job: {sorted(stray)} belong to verb=checkpoint only")
-    return out
 
 
 #: A name that could BE a util: the library's kebab-case rule, narrowed by the one thing

@@ -241,6 +241,13 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
                 f"`{obs.get('handle')}`): {obs.get('note') or ''}").rstrip()
     if (failed := obs_floor.failed(obs, str(kind or ""))) is not None:
         return failed   # an error result, for a kind whose own renderer words none
+    if kind == "do_nothing":
+        # D186. The reasoning is echoed back so the run reads what it recorded, and the
+        # wording says the one thing the run must not mistake: this turn established nothing,
+        # so an `ok` finish still needs an action behind it (engine/donothing.py).
+        return (f"OBSERVATION (do_nothing — recorded, nothing was done): "
+                f"{obs.get('reasoning') or ''}\nThis statement grounds no claim: a top-level "
+                f"finish(ok) still needs an action that actually established something.")
     if kind == "shell":
         # No advisory tail: a non-zero exit here is usually the answer, not a mistake (do_shell).
         where = f", in {obs['cwd']}" if obs.get("cwd") else ""

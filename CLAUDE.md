@@ -219,7 +219,10 @@ one you are about to touch, not all of them.
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, delete,
   move, mkdir, edit_file, memory_read, memory_write, read_rule, write_rule, script, shell, llm, decide,
   spawn, subtask, detach, schedule_run, create_routine, manage_lane, task, goal, list_models,
-  subruns, kill, wait, ask_user, report, finish` (33, `actionschema.KINDS`). **A reply runs ONE
+  subruns, kill, wait, ask_user, report, do_nothing, finish` (34, `actionschema.KINDS`).
+  `do_nothing` (D186) is how a scheduled run states that nothing was due and WHY — no fields,
+  the reasoning is `say` (non-empty, checked for this kind alone), and it grounds no `ok`
+  finish (`engine/donothing.grounds_a_finish`, read by the loop and the resume rebuild alike). **A reply runs ONE
   action — the FIRST it wrote** (`engine/replyactions.py`): a thinking model chains actions in one
   reply (JSON text, then the call, the second narrating the first as done), and every later one is
   named back NOT EXECUTED in the first one's observation. An adapter that kept only the call is how
