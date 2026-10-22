@@ -15,6 +15,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.439.0] — 2026-10-22
+
+### Added
+- **A util grant carries the util's own declared secrets** (F562), so one operator decision
+  makes a granted util usable. Granting `util:<name>` left every secret that util declares
+  `undecided`, so the routine's first call hit the exposure gate and filed a SECOND blocking
+  request for the same capability (`bkm-foerder-steward:20260925-062318`, and R2106 from the
+  permissions side). The REQUEST is widened, never the interpretation: the access request also
+  carries `secret:<NAME>` for each declared secret, so every exposure stays an explicit grant
+  row and `secretgate.secret_state` keeps answering only about rows that exist. New
+  `engine/grantsecrets.py`; the one seam is `interact.handle_ask`, where the durable decision
+  record is written, so all four appliers inherit it. Verb-bounded (R2622), judged by
+  `secretgate._exposable` so it cannot drift from the gate it feeds, and undecided-only — an
+  allow never re-opens a tombstoned secret. The widened question NAMES the carried secrets,
+  because the card renders the question prose and a silent carry is what this design rejects.
+- **A settings accept refused mid-run is held, says when it lands, and lands** (D178, F668).
+  The refusal stays — config under a running run is unsafe — but the 409 now names the active
+  run's expected end and the attempt survives the click as a visible pending accept that
+  applies when the run ends. One fixed-name record per routine, so three clicks in one second
+  overwrite one path instead of queueing three applies; replay goes through the one validated
+  config writer. New `pending_accepts.py`, `web/held_accepts.py`,
+  `static/components/held-accept.js`. *Correction to the finding:* the refusal was never
+  unanswered — the toast existed and was itself what emitted the four UI-trace errors of
+  2026-10-11; what was missing was the WHEN and the persistence. *Open end:* the drain is a
+  20-second background pass, so "applies when the run ends" means within ~20 s of the reap.
+- **The run is told whether its `config_patch` landed** (R2778, from Mark's decision of
+  2026-10-21: *"an affirmative prose answer either applies the patch or tells the run it did
+  not"*). This is the TELLING clause; auto-applying on prose reverses his own R2189 ruling and
+  goes back to him as its own decision. A routine read a prose approval as applied and planned
+  a 600-turn budget against a live 400-turn ceiling (`budget_exhausted` 2026-10-19 and
+  2026-10-20, both limit=400). New `patchreceipt.py` owns both wordings for four readers: the
+  answer pair, the durable archive, the state digest and the mid-run injection, plus
+  `/api/questions` rows. `_unapplied_patch_note()` is deleted rather than shimmed — it stamped
+  `applied: False` on every path INCLUDING the button's working one, so reading that flag would
+  have libelled the one path that works. The reverse direction (answer first, then click apply,
+  where the button posts no answer) is corrected by one narrow route,
+  `POST /api/questions/{qid}/patch-applied`. *Known flaw:* the receipt trusts the apply
+  control's claim; the server does not re-read the target config to confirm it.
+
+### Changed
+- **`max_turns` now says which window it bounds, and a resume chain is bounded** (F564, D155
+  option C — the operator chose both halves). `max_turns` metered a resume WINDOW while
+  `turn` counted the run, so four measured runs read 348/276/423/416 turns against ceilings of
+  200/200/400/400 while reporting 179/175/338/382 "turns left", and nothing said the two
+  numbers measured different things. `status.json`'s budget block now carries `base_turn`,
+  `window_turns`, `total_turns`, `max_turns` and `max_total_turns` beside `turns_left` (so it
+  reconciles on its face), and the runs table reads `348 (window 179/200, resumed at 169)`.
+  `max_total_turns` defaults to `0` = DERIVE → 3 × `max_turns`, resolved in one place; an
+  explicit value still wins, **including `-1` = deliberately unlimited**, which is why the
+  sentinel is 0. The exhaustion refusal now names which cap was crossed. New
+  `engine/turnwindow.py`; run retention moved out of the derived catalog into `retention.py`.
+  *The limit, measured:* 28 live routine configs carry an explicit `max_total_turns: -1`
+  written by the scaffold, so the derived cap reaches only routines that omit the key — the
+  four runaway routines above stay as unbounded as before until that is decided separately.
+  The 15 seed patterns now carry the derived default, so new routines get it.
+- **The shell jail withholds what the file gate refuses, inside the routine's own dir**
+  (D179, F571). Every write protection the engine had lived in the file-ACTION gate, so a
+  `bash -c` redirect bypassed all five: that is how one run rewrote twelve `routine.yaml`
+  files (authorized — an unauthorized one would have been equally unblocked), and a routine
+  without recipe-authoring could rewrite its own `main.md`. Landlock has no deny rule, so the
+  seal is a split mount: the own dir read-ONLY (a command still cds, lists and reads) and its
+  UNSEALED children read-write. `CONFIG_FILE` and `RECIPE_PREFIXES` are imported from
+  `grants`, the same two the file gate reads, so the two enforcers cannot drift;
+  recipe-authoring lifts the recipe half exactly as `_write_gate` does. Proven at the kernel
+  with real redirects, not in the spec dict. New `ownseal.py`. *Accepted costs, the operator's
+  own when he decided it:* creating a NEW top-level entry inside the routine dir now fails
+  with a bare kernel error, and where the jail cannot engage (`sandbox: off`, no Landlock)
+  `ungated_write` remains the whole mechanism.
+
+### Fixed
+- **The memory-note cap refusal names the submitted replacement and the cut** (R2774, from
+  R2753 + R2773 — two unrelated routines paid for it on the same day). The message named the
+  allowance and never the SUBMISSION, so a run could not compute its own overrun:
+  `funscript-trainer:20261021-023002` was refused six times in a row on one 98-line note. It
+  now states the replacement's own size and the exact cut. And the remedy order is fixed,
+  because the wrong remedy was the tempting one: `moltbook-heartbeat:20261021-164943` sat
+  permanently AT the cap while trying to CORRECT an assertion its own measurement had refuted,
+  and "condense what is already there" pushes a run to spend established evidence on a
+  correction. The refusal now names SPLITTING the topic into a new note with a pointer block
+  left behind, and says not to condense.
+
 ## [0.438.2] — 2026-10-22
 
 ### Fixed
