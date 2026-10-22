@@ -18,6 +18,10 @@ usage: gu desktop status | stop
        gu desktop put LOCAL REMOTE | get REMOTE LOCAL
        gu desktop mount FOLDER [--rw] [--name NAME] | unmount NAME | mounts
        gu desktop --selftest
+       DESKTOP_HEADLESS=1 in the environment boots this routine's desktop with NO screen
+         (Xvfb instead of Xvnc): same XFCE, same accessibility tree, same screenshots, but
+         nothing to connect noVNC to. Set it before the FIRST command of a run — the display
+         server is chosen when the desktop boots, and `status` reports the mode it is in.
 calls: (none)
 tags: desktop, gui, vm, computer-use, screenshot, accessibility
 secrets: DESKTOP_VM_TOKEN
@@ -137,6 +141,13 @@ def call(op: str, payload: dict | None = None, *, folder_proof: Path | None = No
         made.append(proof_path)
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}",
                    "X-Desktop-Workdir": str(workdir), "X-Desktop-Proof": proof}
+        # F649: a desktop nobody watches needs no VNC server. DESKTOP_HEADLESS=1 makes the
+        # guest's session run Xvfb instead of Xvnc — same XFCE, same accessibility tree, same
+        # screenshots, no screen to connect to. It is an ENV choice rather than a flag because
+        # the display server is chosen once, when the desktop BOOTS: a per-command flag would
+        # imply it could be switched mid-session, and `status` reports the real mode.
+        if os.environ.get("DESKTOP_HEADLESS", "").strip() in ("1", "true", "yes"):
+            headers["X-Desktop-Headless"] = "1"
         if folder_proof is not None:
             try:
                 folder_path, folder = _write_proof(folder_proof)

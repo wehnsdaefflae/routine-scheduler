@@ -41,6 +41,22 @@ and device hot-plug. The desktop needs **no display device**: Xvnc renders into 
 guest and serves the picture as VNC, so the VMM only provides disks, a network link and a serial
 line.
 
+**Headless: no screen at all** (F649, the operator's order of 2026-10-16). Xvnc renders into
+memory *and* serves it on 5900; a run that nobody is watching needs only the first half. With
+`DESKTOP_HEADLESS=1` in a routine's environment, the util sets `X-Desktop-Headless: 1`, the
+broker puts `rsched.headless=1` on that VM's kernel command line, `desktop-boot.sh` leaves the
+`/etc/desktop-headless` marker, and the guest's session starts **Xvfb** instead of Xvnc — the
+same `DISPLAY=:1`, the same XFCE, the same accessibility tree, the same screenshots (the agent
+grabs from the display, not from the RFB stream), and no port for anyone to connect to. Two
+things follow and are enforced: a headless desktop is **absent from the websockify token file**
+and carries **no `vnc` token in the operator's fleet view**, because a token pointing at a
+closed port makes noVNC hang on a blank canvas instead of saying there is no screen; and every
+`status` row carries `headless`, so "no screen" is distinguishable from "the screen is broken".
+The mode is fixed at BOOT and watched is the default — a desktop whose screen the operator
+cannot open is one he cannot supervise, so a routine asking for headless while its watched
+desktop is already up keeps the one it has rather than having a live session killed under it.
+The marker is REMOVED when the flag is absent: one root image backs every VM.
+
 **X11, not GNOME on Wayland.** Programmatic access decides it. On X11 every input a person makes
 is an XTEST event (`xdotool`): a click is a click to every application, a drag between two windows
 is a real drag-and-drop, a chord is the chord. Window management is EWMH (`wmctrl`). And the
@@ -129,6 +145,7 @@ console relay ───(Bearer DESKTOP_OPERATOR_TOKEN)────────�
                          │ vmtap<i> (one /30 per slot), NAT, firewall, dnsmasq
                          ▼
           guest 192.168.249.(4i+2) (KVM): Xvnc :1 (5900) ── XFCE ── desktop agent (8790)
+                                          (or Xvfb :1, no 5900, when headless — F649)
 ```
 
 - **`deploy/Dockerfile.desktop`** builds the guest OS (bookworm) as an ordinary image stage,

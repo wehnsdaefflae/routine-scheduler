@@ -190,8 +190,11 @@ def door(tmp_path, monkeypatch):
     vm = vms.VM(name="", slot=0, dir=tmp_path)
     stops: list = []
 
-    def ensure(name):
+    def ensure(name, *, headless=False):
+        # F649: the real signature takes the mode, and recording it here is what proves the
+        # X-Desktop-Headless header reaches the boot rather than being read and dropped.
         vm.name = name
+        vm.headless = headless
         return vm
 
     monkeypatch.setattr(fleet, "ensure", ensure)

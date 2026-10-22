@@ -99,6 +99,16 @@ class Handler(BaseHTTPRequestHandler):
             vms.log_line(f"/{op} failed: {type(exc).__name__}: {exc}")
             self._reply(500, {"error": f"{type(exc).__name__}: {exc}"})
 
+    def wants_headless(self) -> bool:
+        """Whether this caller asked for a desktop with NO screen (F649).
+
+        `X-Desktop-Headless: 1` on any forwarded call. It only takes effect when the call
+        BOOTS the desktop — the guest's session picks its display server once, at boot — so a
+        routine that already has a watched desktop up keeps it, and `status` reports the mode
+        the running one is actually in rather than what was last asked for.
+        """
+        return self.headers.get("X-Desktop-Headless", "").strip() in ("1", "true", "yes")
+
     def route(self, op: str, name: str, raw: bytes) -> tuple[int, dict | bytes]:
         fleet = self.fleet
         if op == "vm_status":
@@ -109,7 +119,7 @@ class Handler(BaseHTTPRequestHandler):
         if op == "vm_stop":
             return 200, {"stopped": fleet.stop(name, "asked by its routine")}
         if op in FORWARD:
-            vm = fleet.ensure(name)
+            vm = fleet.ensure(name, headless=self.wants_headless())
             with vm.lock:
                 vm.last_used = time.time()
                 result = vms.agent_call(vm, op, raw, timeout=170)

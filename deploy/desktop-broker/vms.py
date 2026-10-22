@@ -64,21 +64,32 @@ def slot_net(slot: int) -> tuple[str, str]:
     return f"192.168.249.{4 * slot + 2}", f"192.168.249.{4 * slot + 1}"
 
 
-def cmdline(name: str, slot: int, tz: str) -> str:
+def cmdline(name: str, slot: int, tz: str, *, headless: bool = False) -> str:
     guest, gw = slot_net(slot)
     parts = ["console=ttyS0", "root=/dev/vda", "rw", "net.ifnames=0", "quiet",
              f"rsched.ip={guest}/30", f"rsched.gw={gw}", f"rsched.name={name}"]
     if tz:
         parts.append(f"rsched.tz={tz}")
+    # F649 (the operator's order of 2026-10-16): a desktop nobody is watching needs no VNC
+    # server. `rsched.headless=1` makes the guest's session run Xvfb instead of Xvnc — the same
+    # XFCE, the same agent, the same accessibility bus, no screen to connect to. Off by default:
+    # a desktop whose screen the operator cannot open is a desktop he cannot supervise, so
+    # headless is a per-routine choice and never the fleet's default.
+    if headless:
+        parts.append("rsched.headless=1")
     return " ".join(parts)
 
 
 def vnc_tokens(vms: dict[str, VM]) -> str:
     """Websockify's token file: each desktop's screen is reached by its own RANDOM token, never
     its name — a name is guessable, and the screen is a keyboard on that routine's desktop.
+
+    A HEADLESS desktop (F649) is absent by construction: it runs Xvfb, nothing listens on 5900,
+    and a token pointing at a closed port makes noVNC hang on a blank canvas instead of saying
+    there is no screen.
     """
     return "".join(f"{vm.vnc}: {slot_net(vm.slot)[0]}:5900\n"
-                   for _, vm in sorted(vms.items()))
+                   for _, vm in sorted(vms.items()) if not vm.headless)
 
 
 @dataclass
@@ -92,6 +103,9 @@ class VM:
     ready: threading.Event = field(default_factory=threading.Event)
     failed: str = ""
     stopping: bool = False
+    #: F649: this desktop runs Xvfb and has NO screen. Fixed at boot (the guest's session
+    #: chooses its display server once), so it is what `status` reports, not a request.
+    headless: bool = False
     vnc: str = field(default_factory=lambda: secrets.token_hex(16))
     lock: threading.Lock = field(default_factory=threading.Lock)
     shares: dict = field(default_factory=dict)
@@ -137,8 +151,14 @@ class Fleet:
                 shutil.rmtree(stale, ignore_errors=True)
 
     # -- lifecycle ---------------------------------------------------------------------------
-    def ensure(self, name: str) -> VM:
-        """The routine's running VM, booting it first if needed (the call waits for it)."""
+    def ensure(self, name: str, *, headless: bool = False) -> VM:
+        """The routine's running VM, booting it first if needed (the call waits for it).
+
+        `headless` (F649) is honoured only when this call BOOTS the VM: the display server is
+        chosen in the guest's session at boot, so a routine that asks for a headless desktop
+        while its own watched one is already up keeps the one it has — switching would mean
+        killing a live desktop mid-work. `status` reports which mode the running VM is in.
+        """
         with self.lock:
             vm = self.vms.get(name)
             if vm is not None and vm.stopping:
@@ -150,7 +170,8 @@ class Fleet:
                 self._release(vm)
                 vm = None
             if vm is None:
-                vm = VM(name=name, slot=self._free_slot(), dir=self.s.state / "run" / name)
+                vm = VM(name=name, slot=self._free_slot(), dir=self.s.state / "run" / name,
+                        headless=headless)
                 self.vms[name] = vm
                 threading.Thread(target=self._boot, args=(vm,), daemon=True).start()
             vm.last_used = time.time()
@@ -193,7 +214,7 @@ class Fleet:
             vm.proc = subprocess.Popen([
                 "cloud-hypervisor", "--api-socket", f"path={vm.api}",
                 "--kernel", str(IMAGES / "vmlinuz"), "--initramfs", str(IMAGES / "initrd.img"),
-                "--cmdline", cmdline(vm.name, vm.slot, self.s.tz),
+                "--cmdline", cmdline(vm.name, vm.slot, self.s.tz, headless=vm.headless),
                 "--disk", f"path={root},image_type=qcow2,backing_files=on",
                 f"path={home},image_type=raw",
                 "--cpus", f"boot={self.s.cpus}",
@@ -299,9 +320,15 @@ class Fleet:
                 row = {"name": vm.name, "slot": vm.slot,
                        "ready": vm.ready.is_set() and not vm.failed and not vm.stopping,
                        "stopping": vm.stopping, "up_s": int(now - vm.started),
-                       "idle_s": int(now - vm.last_used), "shares": sorted(vm.shares)}
+                       "idle_s": int(now - vm.last_used), "shares": sorted(vm.shares),
+                       # F649: every caller is told which mode this desktop booted in, because
+                       # "no screen" is otherwise indistinguishable from "the screen is broken".
+                       "headless": vm.headless}
                 if operator:
-                    row["vnc"] = vm.vnc
+                    # No token for a headless desktop: it runs Xvfb, so nothing listens on 5900
+                    # and a token would offer the operator a screen that cannot connect.
+                    if not vm.headless:
+                        row["vnc"] = vm.vnc
                     row["folders"] = [s.describe() for s in vm.shares.values()]
                 rows.append(row)
             return rows
