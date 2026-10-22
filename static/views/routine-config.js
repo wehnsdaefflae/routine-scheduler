@@ -28,6 +28,7 @@
 import { api } from "/static/api.js";
 import { el } from "/static/util.js";
 import { acceptBar } from "/static/components/accept-bar.js";
+import { heldAccept } from "/static/components/held-accept.js";
 import { draftBanner, patternBar } from "/static/components/pattern-bar.js";
 import { createSettingsForm, loadSettings } from "/static/components/settings-form.js";
 import { reveal } from "/static/components/settings-field.js";
@@ -116,6 +117,9 @@ export function renderSettings(view, d, settings, { slug, titleH1, chipHost, run
       + "foot of the page. A value that departs from the routine's pattern is marked as an "
       + "override, with the pattern's own value beside it."),
     draftBanner(form),
+    // D178: an accept refused mid-run is held and says when it lands — above the controls,
+    // because it is the answer to the button at the foot of the page.
+    heldAccept(form),
     patternBar(form),
     el("div", { class: "rgroups", "data-settings-groups": "" },
       scheduleGroup(ctx), goal.node, abilitiesGroup(ctx), accessGroup(ctx), limitsGroup(ctx),
@@ -128,6 +132,9 @@ export function renderSettings(view, d, settings, { slug, titleH1, chipHost, run
         goal.reload();
         refreshSurface();
       },
+      // A refused accept was HELD (D178): re-read the settings document so the banner above
+      // says so at once. `reloadSettings` rebases — the person's edits stay exactly as they are.
+      onRefused: reloadSettings,
     }));
 
   return {

@@ -13,7 +13,12 @@ edit lands at once and applies from the next run (D35), the live run TOLD what c
 (F337 — rule bind/unbind reaches it the same way, as `add_rules`/`drop_rules`); a recipe
 file, recipe revert or trigger edit is held in the pending-edit spool and replayed at run
 end (D78-A, `routines_common.queue_or_apply`); and what a live run would overwrite or
-cannot survive — archive, a local reminder's delete, the settings page's multi-field
-accept — is a 409 (`routines_common.guard_not_active`). Web-side routine-dir commits take
+cannot survive — archive, a local reminder's delete — is a 409
+(`routines_common.guard_not_active`). The settings page's multi-field accept is refused the
+same way, but the attempt is HELD rather than dropped: the 409 names the active run's
+expected end, the accept is persisted with the stored values it was computed against
+(`pending_accepts.py`) and the routine's settings page renders it as waiting; when the run
+ends it is replayed through the accept endpoint itself, or EXPIRES if one of its fields was
+decided elsewhere meanwhile (D178/F668, `held_accepts.py`). Web-side routine-dir commits take
 the same per-repo lock the engine's autocommit does.
 """

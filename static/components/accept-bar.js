@@ -10,8 +10,10 @@ import { confirmDialog } from "/static/components/dialog.js";
 import { reveal } from "/static/components/settings-field.js";
 import { el, toast, toastError } from "/static/util.js";
 
-/** acceptBar(form, { onAccepted(next), describeSwitch() }) → node */
-export function acceptBar(form, { onAccepted, describeSwitch } = {}) {
+/** acceptBar(form, { onAccepted(next), onRefused(err), describeSwitch() }) → node
+ *  `onRefused` runs after a 409: the accept was HELD (D178) and the page re-reads so the
+ *  waiting accept is on screen before the toast is gone. */
+export function acceptBar(form, { onAccepted, onRefused, describeSwitch } = {}) {
   const count = el("span", { class: "ab-count", "data-accept-count": "" });
   const what = el("span", { class: "ab-what" });
   const show = el("button", { type: "button", class: "btn small ghost",
@@ -48,6 +50,9 @@ export function acceptBar(form, { onAccepted, describeSwitch } = {}) {
       // a live run keeps the settings it booted with (409), an invalid value is named (422):
       // either way the draft stays exactly as it was, ready to accept again
       toastError(err, 6000);
+      // D178: a 409 HELD the accept — re-read the document so the page shows it waiting now,
+      // rather than at the next visit. A toast that scrolls away was the whole of F668.
+      if (err?.status === 409) await onRefused?.(err);
     } finally {
       for (const b of [accept, discard]) b.disabled = false;
       accept.textContent = "accept changes";

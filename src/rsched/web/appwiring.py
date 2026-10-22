@@ -105,11 +105,18 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
 
         apply_task = asyncio.create_task(autoapply_drain.maintain(app))
         _observe(apply_task, "config auto-apply drain")
+        # D178: a settings accept pressed while a run was active was REFUSED and held with that
+        # run's expected end. Once the run ends it applies — through the accept endpoint
+        # itself, which only this layer can call — or expires because the value moved under it.
+        from . import held_accepts
+
+        held_task = asyncio.create_task(held_accepts.maintain(app))
+        _observe(held_task, "held settings-accept drain")
         yield
         set_sink(None)
         await _stop(search_task)
         app.state.search.shutdown()
-        for running in (docs_task, push_task, apply_task, task):
+        for running in (docs_task, push_task, apply_task, held_task, task):
             await _stop(running)
 
     return lifespan
