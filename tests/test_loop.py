@@ -2314,12 +2314,12 @@ def test_conversation_total_turn_budget_caps_the_whole_conversation():
                           max_total_turns=40)
     ctx.turn, ctx.budget_base_turn = 40, 38
     v = ctx.budget_spent()
-    assert v is not None and "conversation turn budget exhausted" in v["message"]
+    # the refusal NAMES the cap and that it spans windows (F564/D155)
+    assert v is not None and "max_total_turns exhausted" in v["message"]
+    assert "across all resume windows" in v["message"]
     assert v["resource"] == "total_turns" and v["limit"] == 40
-
-    # 85% cumulative → a wind-down warning even while the per-reply window is fresh
-    ctx.turn, ctx.budget_base_turn = 34, 34
-    assert "turns left in this conversation" in (ctx.budget_warning() or "")
+    ctx.turn, ctx.budget_base_turn = 34, 34   # 85% cumulative → a wind-down warning
+    assert "turns left of max_total_turns" in (ctx.budget_warning() or "")
 
     # a subrun does NOT inherit the conversation-total cap
     ctx.turn, ctx.budget_base_turn = 5, 0

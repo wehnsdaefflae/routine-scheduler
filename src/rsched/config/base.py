@@ -15,11 +15,14 @@ from ..paths import expand
 
 DEFAULT_BUDGETS = {
     "max_turns": 60,
-    # -1 = unlimited (default): a cumulative turn ceiling across ALL of a run's resume
-    # windows (a conversation's whole life is the sum of its replies). max_turns bounds ONE
-    # window (one reply); max_total_turns bounds the whole conversation. Scheduled routines
-    # run a single window, so this is inert for them unless explicitly set.
-    "max_total_turns": -1,
+    # 0 = DERIVE (the default): a cumulative turn ceiling across ALL of a run's resume
+    # windows, 3x max_turns (engine/turnwindow.TOTAL_TURN_MULTIPLE). max_turns bounds ONE
+    # window — a resume re-bases it (engine/boot.py), so a run that keeps resuming was
+    # bounded by NOTHING while this was -1: four audited runs reached turn 348/276/423/416
+    # against a max_turns of 200/200/400, each reporting ~180-380 "turns left" from its own
+    # fresh window, and nothing said the two numbers measured different things (F564/D155).
+    # An explicit value still wins, INCLUDING -1 = deliberately unlimited.
+    "max_total_turns": 0,
     "max_wall_clock_min": 45,
     # -1 = unlimited: for max_total_tokens this is the default (every finite cap we tried,
     # 500k then 1.5M, eventually cut off legitimate work). max_wall_clock_min and max_cost

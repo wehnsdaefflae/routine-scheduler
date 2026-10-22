@@ -54,10 +54,14 @@ def test_warning_wording_per_resource():
     assert led.warnings({"turns": 55}) == [("turns@0.85", "~5 turns left")]   # 55 >= 0.85*60
     assert led.warnings({"wall_clock": 40}) == [("wall_clock@0.85", "~5 minutes left")]
     assert led.warnings({"cost": 4.5}) == [("cost@0.85", "~$0.5 of budget left")]
-    # total_turns has its own phrasing (shows turns LEFT: 40 - 34 = 6)
-    led2 = BudgetLedger([Budget("total_turns", 40)])
+    # total_turns has its own phrasing (shows turns LEFT: 40 - 34 = 6) and NAMES the cap:
+    # it is the run-spanning one, not this window's max_turns — after a resume those are
+    # different numbers and "turns left" alone said nothing about which (F564/D155).
+    led2 = BudgetLedger([Budget("turns", 10), Budget("total_turns", 40)])
     assert led2.warnings({"total_turns": 34}) == [
-        ("total_turns@0.85", "~6 turns left in this conversation")]
+        ("total_turns@0.85",
+         ("~6 turns left of max_total_turns (40 across all resume windows; "
+          "this window's max_turns is 10)"))]
 
 
 def test_each_warning_line_is_its_own_identity():

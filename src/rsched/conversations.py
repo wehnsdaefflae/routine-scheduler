@@ -50,7 +50,13 @@ CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS]
 # them open. A person can still set any ceiling per conversation; max_subruns and the subrun
 # depth stay structural.
 CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": -1, "max_wall_clock_min": -1,
-                        "max_total_tokens": -1, "max_cost": -1}
+                        "max_total_tokens": -1, "max_cost": -1,
+                        # explicitly, not inherited: a scheduled routine's max_total_turns
+                        # DERIVES from max_turns (3x, engine/turnwindow) so an unattended
+                        # resume chain is bounded, but "no ceilings by default" is the
+                        # operator's decision for a conversation and -1 is how a config says
+                        # deliberately unlimited.
+                        "max_total_turns": -1}
 # Permissions that only make sense for scheduled routines — the UI greys them out.
 ROUTINE_ONLY_PERMISSIONS = ["scheduling"]
 

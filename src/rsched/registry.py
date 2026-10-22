@@ -10,8 +10,6 @@ every lookup, so the memo can never serve state the disk no longer holds.
 from __future__ import annotations
 
 import copy
-import gzip
-import shutil
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -22,8 +20,6 @@ from .firetimes import last_due_fire
 from .ids import is_slug
 from .paths import read_json
 from .readmodels.memo import fingerprint
-
-GZIP_AFTER_RUNS = 5  # transcripts older than the N most recent runs get gzipped
 
 # THE run-state vocabulary (status.json `state`) — every consumer (live tail, clarify flow, detached
 # manager, retention) imports these rather than inlining its own tuple.
@@ -51,6 +47,21 @@ class RunInfo:
     updated: str = ""
     model: str = ""              # the engine's resolved "<endpoint>/<model>" for this run
     elapsed_s: int | None = None   # active wall-clock (final write = the run's duration)
+    # status.json's `budgets` block as written (engine/turnwindow.status_budgets): what makes
+    # `turn` legible — the resume base turn and the window's ceiling it is counted against.
+    budgets: dict = field(default_factory=dict)
+
+    @property
+    def base_turn(self) -> int:
+        """The turn a resume re-based this run's budget window at; 0 = never resumed."""
+        return int(self.budgets.get("base_turn") or 0)
+
+    @property
+    def max_turns(self) -> int:
+        """This run's per-WINDOW turn ceiling as the run itself recorded it; 0 = unrecorded
+        (a run finished before the field existed), which reads as "no window to show".
+        """
+        return int(self.budgets.get("max_turns") or 0)
 
 
 @dataclass
@@ -136,7 +147,8 @@ def read_run(run_dir: Path, slug: str) -> RunInfo:
 
 
 def _copy_run(info: RunInfo) -> RunInfo:
-    return replace(info, usage=dict(info.usage), question=copy.deepcopy(info.question))
+    return replace(info, usage=dict(info.usage), question=copy.deepcopy(info.question),
+                   budgets=dict(info.budgets))
 
 
 def _read_run_fresh(run_dir: Path, slug: str) -> RunInfo:
@@ -151,6 +163,8 @@ def _read_run_fresh(run_dir: Path, slug: str) -> RunInfo:
         info.usage = st.get("usage") or {}
         info.question = st.get("question")
         info.updated = st.get("updated", "")
+        b = st.get("budgets")
+        info.budgets = b if isinstance(b, dict) else {}
         if st.get("elapsed_s") is not None:
             info.elapsed_s = int(st["elapsed_s"])
     result = run_dir / "result.md"
@@ -328,35 +342,4 @@ def missed_fire(cfg: RoutineConfig, runs: list[RunInfo], now: datetime) -> datet
     return None
 
 
-def _gzip_in_place(plain: Path) -> None:
-    """Compress <name> → <name>.gz and remove the plain file; best-effort (kept files are
-    still read via read_events' _open_maybe_gz).
-    """
-    if not plain.exists():
-        return
-    gz = plain.with_suffix(plain.suffix + ".gz")
-    try:
-        with plain.open("rb") as src, gzip.open(gz, "wb") as dst:
-            shutil.copyfileobj(src, dst)
-        plain.unlink()
-    except OSError:
-        gz.unlink(missing_ok=True)
 
-
-def apply_retention(routine_dir: Path, slug: str, keep_runs: int) -> None:
-    """Delete run dirs beyond keep_runs (oldest first) and gzip the transcript + LLM-task
-    sidecar of runs older than the GZIP_AFTER_RUNS most recent. Never touches a live run.
-    """
-    runs = run_index(routine_dir, slug)  # newest first
-    alive = {r.ts for r in runs if r.state in ACTIVE_STATES}
-    for r in runs[keep_runs:]:
-        if r.ts in alive:
-            continue
-        shutil.rmtree(r.dir, ignore_errors=True)
-    for r in runs[GZIP_AFTER_RUNS:keep_runs]:
-        if r.ts in alive:
-            continue
-        _gzip_in_place(r.dir / "transcript.jsonl")
-        _gzip_in_place(r.dir / "llm-tasks.jsonl")
-        for sub in (r.dir / "sub").rglob("transcript.jsonl"):
-            _gzip_in_place(sub)   # rglob: nested child trees (sub/N/sub/M/…) compress too

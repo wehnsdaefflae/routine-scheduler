@@ -20,6 +20,7 @@ from ..endpoints.base import fold_usage
 from ..ids import now_iso
 from ..ids import run_id as make_run_id
 from ..paths import atomic_write_json, read_json, resolve_rel
+from . import turnwindow
 from .budgets_config import Budgets, _vm_hwm_kb
 from .transcript import Transcript
 
@@ -581,13 +582,12 @@ class RunContext:
             # peak resident memory of the engine process (kB) — the rc=-9 post-mortem's
             # key datum (F348); the daemon reads the last write's value at close-out
             "vm_hwm_kb": _vm_hwm_kb(),
-            "budgets": {
-                "turns_left": None if turns_left is None else int(turns_left),
-                "wall_clock_left_s": None if wall_left_min is None else int(wall_left_min * 60),
-                # WHICH budget stopped the run, in fields: turns and wall clock were the
-                # only two reconstructable from this block, so a token or cost cap — the
-                # majority — was unknowable after the fact. The same snapshot as the two
-                # counts above, so the block never disagrees with itself.
-                "spent": ledger.spent(meter),
-            },
+            # turns_left is THIS WINDOW's remainder, `turn` above is cumulative: after a resume
+            # they differ by budget_base_turn, which the block carries (turnwindow, F564/D155).
+            "budgets": turnwindow.status_budgets(
+                turn=self.turn, base_turn=self.budget_base_turn,
+                max_turns=self.budgets.max_turns,
+                max_total_turns=self.budgets.max_total_turns,
+                turns_left=turns_left, wall_left_min=wall_left_min,
+                spent=ledger.spent(meter)),
         })

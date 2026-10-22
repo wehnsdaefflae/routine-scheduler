@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from conftest import mk_run
 from helpers import tmp_server
-from rsched import firetimes, registry
+from rsched import firetimes, registry, retention
 from rsched.config import load_routine
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json
@@ -112,7 +112,7 @@ def test_apply_retention(make_routine):
     d = make_routine(slug="retain")
     for i in range(1, 9):  # 8 runs, oldest first
         _mk_run(d, f"2026070{i}-070000", "finished", f"run {i}")
-    registry.apply_retention(d, "retain", keep_runs=6)
+    retention.apply_retention(d, "retain", keep_runs=6)
     left = sorted(p.name for p in (d / "runs").iterdir())
     assert len(left) == 6 and left[0] == "20260703-070000"  # two oldest deleted
     # newest 5 keep plain transcripts; the 6th-newest is gzipped but still readable
@@ -129,7 +129,7 @@ def test_retention_spares_alive_runs(make_routine):
     for i in range(1, 4):
         _mk_run(d, f"2026070{i}-070000", "finished")
     _mk_run(d, "20260630-070000", "running")  # oldest but alive
-    registry.apply_retention(d, "alive", keep_runs=2)
+    retention.apply_retention(d, "alive", keep_runs=2)
     assert (d / "runs" / "20260630-070000").exists()
 
 

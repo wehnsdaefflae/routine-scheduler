@@ -20,6 +20,7 @@ from ..config import ROUTINE_MODEL_ROLES
 from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
 from ..endpoints.prices import USAGE_KEYS
 from ..engine.ladder import oversight_turns_for
+from ..engine.turnwindow import run_row
 from ..readmodels.stats import monthly_spend
 from .api_jobs import layer_on
 from .config_fields import decision_picker, effort_picker
@@ -272,10 +273,9 @@ def routine_detail(request: Request, slug: str) -> dict:
         "ledger_tail": ledger_tail,
         "files": files,
         "questions": info.open_questions,
-        "runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state,
-                  "summary": r.summary[:200], "turn": r.turn, "usage": r.usage,
-                  "elapsed_s": r.elapsed_s}
-                 for r in info.runs[:50]],
+        # each row carries the WINDOW its turn count belongs to, or null when the run never
+        # resumed (engine/turnwindow.run_row, F564/D155)
+        "runs": [run_row(r) for r in info.runs[:50]],
         "budgets": info.cfg.budgets,
         "keep_runs": info.cfg.keep_runs,
         # fs roots resolve to absolute server paths on load; the editor shows + saves those.
