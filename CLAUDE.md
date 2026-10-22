@@ -1048,6 +1048,21 @@ background task COUNTS as active: `start_new_session` does not survive the daemo
 either deployment, so excluding it had the drain SIGKILLing the one class of run it exists to
 protect. Read `/api/status` (`restart_requested`, `active_runs`) to see what it is
 waiting on; `restart_action` in `daemon/restart.py` is the whole state machine.
+**An EXTERNAL restart gets none of that** (F746): a deploy, `systemctl restart` or a container
+replacement delivers SIGTERM from outside, so no quiet gap is waited for and no state machine
+runs — and uvicorn bounds its graceful shutdown to 10s against runs that last hours, so the exit
+itself can never wait. Three things cover it instead. **`rsched drain`** is the one to type
+BEFORE a deploy: it pauses scheduling, waits for the in-flight runs and exits non-zero naming
+what is still running, so `rsched drain && docker compose up -d` stops rather than eating a run
+(`--resume` lifts the pause afterwards; the drain deliberately leaves it in place so no fire
+slips into the seconds before the process is replaced). When a restart lands anyway, the app
+lifespan's shutdown half writes the deliberate-shutdown mark on ANY graceful SIGTERM
+(`restart.mark_graceful_exit`) — without it the next boot reaped every live run as
+`cause: unknown`, 79 runs over 50 boots and not one ever attributed to a restart — and the boot
+RE-OPENS what the restart killed instead of closing it `aborted` (`daemon/reap_resume.py`,
+capped at `RESTART_RESUMES` so a boot loop cannot storm; a parked run keeps its durable
+question, and a crash or an OOM is never resumed here). An in-flight CHILD run does not survive
+either way, and the resumed leg's recovery note says so.
 **A relaunch is not guaranteed either.** Docker's restart manager gives up after ONE failed
 start, so anything that makes the container fail to start leaves it down with nothing retrying
 and nothing said — a vanished bind source is the one that has happened, and the tor and chrome

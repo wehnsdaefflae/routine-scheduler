@@ -6,11 +6,10 @@ import contextlib
 import yaml
 
 from conftest import make_test_server, mk_run
-from rsched.daemon import restart
+from rsched.daemon import reap_resume, restart
 from rsched.daemon.events import EventBus
 from rsched.daemon.runner import Runner
 from rsched.daemon.scheduler import Scheduler
-from rsched.paths import read_json
 
 
 async def test_one_boot_attributes_orphans_in_all_three_homes(tmp_path, monkeypatch):
@@ -27,6 +26,13 @@ async def test_one_boot_attributes_orphans_in_all_three_homes(tmp_path, monkeypa
         directories.append(directory)
     restart.mark_deliberate_shutdown(server, "test restart")
     scheduler = Scheduler(server, Runner(server, EventBus()), EventBus())
+    # F746 RE-OPENS what a restart killed, so the close-out state is no longer where the boot
+    # leaves these runs — the re-open is pinned in tests/test_restart_orphans.py. This test is
+    # about ATTRIBUTION across three homes with one slug, so the wake is stubbed out: left live
+    # it spawns three real engine processes and the production guard refuses them.
+    reopened: list = []
+    monkeypatch.setattr(reap_resume, "resume_all",
+                        lambda runner, rows: reopened.extend(r[1].run_id for r in rows))
     recovered = asyncio.Event()
 
     async def stop_after_recovery():
@@ -39,8 +45,9 @@ async def test_one_boot_attributes_orphans_in_all_three_homes(tmp_path, monkeypa
         await asyncio.wait_for(recovered.wait(), timeout=5)
         for directory in directories:
             run_dir = directory / "runs" / "20260701-070000"
-            assert read_json(run_dir / "status.json")["state"] == "aborted"
             assert "daemon restart" in (run_dir / "result.md").read_text()
+        # one mark, read once, attributed to all three — and every one handed to the re-open
+        assert len(reopened) == 3
         assert not restart.shutdown_mark_path(server).exists()
     finally:
         task.cancel()

@@ -22,7 +22,7 @@ from .. import lane_runs as lane_runs_store
 from ..config import ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
-from . import pause, pause_skip, restart, runner_reap
+from . import pause, pause_skip, reap_resume, restart, runner_reap
 from .backup_watch import BackupWatch
 from .detached import DetachedManager
 from .events import EventBus
@@ -185,11 +185,11 @@ class Scheduler:
         except Exception:   # the guard itself must never take the loop down
             pass
 
-    def _recover_orphans(self) -> int:
+    def _recover_orphans(self, resumable: list | None = None) -> int:
         """Close out every run the previous process left claiming to be alive. Routines,
         conversations and background tasks go through ONE reap pass so all three read the same
         shutdown evidence (restart.read_shutdown_mark); home-qualified keys keep a slug that
-        exists in two homes apart.
+        exists in two homes apart. `resumable` collects what a RESTART killed, to re-open (F746).
         """
         catalog = {
             **{f"routines:{slug}": info for slug, info in self.catalog.items()},
@@ -198,7 +198,7 @@ class Scheduler:
             **{f"background:{slug}": info for slug, info in
                registry.scan(self.server, self.server.background_home).items()},
         }
-        return runner_reap.recover_orphans(self.runner, catalog)
+        return runner_reap.recover_orphans(self.runner, catalog, resumable)
 
     async def _boot(self) -> None:
         """Everything that happens once, before the first tick: the catalog, the orphans the
@@ -209,13 +209,13 @@ class Scheduler:
             self.rescan()
         except Exception as exc:
             self._log_loop_failure("boot rescan", exc)
-        fixed = 0
+        fixed, resumable = 0, list[tuple]()
         try:
-            fixed = self._recover_orphans()
+            fixed = self._recover_orphans(resumable)
         except Exception as exc:     # a full disk at boot is exactly when orphans exist
             self._log_loop_failure("boot orphan recovery", exc)
-        # Expire unused evidence too: a mark describes exactly one exit.
-        restart.clear_shutdown_mark(self.server.routines_home)
+        reap_resume.resume_all(self.runner, resumable)    # F746: a restart is not an abort
+        restart.clear_shutdown_mark(self.server.routines_home)   # a mark is ONE exit's evidence
         await self.detached.reconcile()
         # crashed runs leave sshfs key dirs behind (clean exits remove their own)
         from ..machine_mounts import sweep_stale_mount_keys

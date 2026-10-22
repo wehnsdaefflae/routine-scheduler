@@ -16,24 +16,13 @@ from pathlib import Path
 from .cli_daemon import LOG_FORMAT, cmd_daemon
 from .cli_overrides import parse_effort_overrides, parse_model_overrides
 from .cli_render import _render_event
+from .cli_runctl import cmd_abort, cmd_drain
 from .config import EFFORT_LEVELS, MODEL_KINDS, ROUTINE_MODEL_ROLES, load_server_config
 from .paths import expand
 
 #: A finished run's status → the process exit code (`run-once` and the daemon's `engine-run`).
 #: A partial run did its job as far as it went — 0; an abort is the shell's SIGINT 130.
 RUN_EXIT_CODES = {"ok": 0, "partial": 0, "failed": 1, "aborted": 130}
-
-
-def _dir_across_homes(server, slug: str):
-    """Resolve a slug across routines, conversations, and background homes — `rsched
-    abort` applies to any of them (conversations and detached tasks are runs too).
-    """
-    from . import registry
-
-    for home in registry.all_homes(server):
-        if (home / slug / "routine.yaml").is_file():
-            return home / slug
-    return server.routines_home / slug   # let downstream produce the not-found error
 
 
 def _routine_dir(server, slug_or_path: str) -> Path:
@@ -222,45 +211,6 @@ def _instance_problems(server) -> list[str]:
     return empty + phantom
 
 
-def cmd_abort(args) -> int:
-    """Abort `<slug>` (its newest active run) or `<slug>:<ts>` (that run).
-
-    Only an ACTIVE run is signalled, in both forms. A finished run's status.json keeps the
-    pid it ran under, and the OS hands pids out again, so signalling a named finished run
-    reached whatever process group holds that pid NOW.
-    """
-    import asyncio
-
-    from . import registry
-    from .daemon.runner_state import abort_process
-    from .ids import parse_run_id
-
-    server, _ = load_server_config()
-    target = args.run_id
-    ts = ""
-    if ":" in target:
-        try:
-            slug, ts = parse_run_id(target)
-        except ValueError as exc:
-            print(f"error: {exc} — expected <slug> or <slug>:<YYYYMMDD-HHMMSS>",
-                  file=sys.stderr)
-            return 2
-    else:
-        slug = target
-    runs = [r for r in registry.run_index(_dir_across_homes(server, slug), slug)
-            if not ts or r.ts == ts]
-    alive = [r for r in runs if r.state in registry.ACTIVE_STATES]
-    if not alive:
-        print(f"run {target} is not active ({runs[0].state})" if ts and runs
-              else f"no active run for {target}", file=sys.stderr)
-        return 1
-    run = alive[0]
-    ok = asyncio.run(abort_process(run.pid))
-    print(f"abort {'sent' if ok else 'failed — process not found'} for {run.run_id}",
-          file=sys.stderr)
-    return 0 if ok else 1
-
-
 def cmd_lint(args) -> int:
     from .workflows.lint import lint_all
 
@@ -361,6 +311,16 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("abort", help="abort a run: rsched abort <slug>[:<ts>]")
     a.add_argument("run_id")
     a.set_defaults(fn=cmd_abort)
+
+    dr = sub.add_parser("drain", help="pause scheduling and wait for in-flight runs, so a "
+                                      "deploy restart interrupts nothing (F746)")
+    dr.add_argument("--timeout", type=int, default=1800,
+                    help="seconds to wait before giving up (default 1800); exit 1 names what "
+                         "is still running, so `rsched drain && docker compose up -d` stops")
+    dr.add_argument("--poll", type=int, default=15, help="seconds between checks (default 15)")
+    dr.add_argument("--resume", action="store_true",
+                    help="lift the pause this command left in place, after the deploy")
+    dr.set_defaults(fn=cmd_drain)
 
     li = sub.add_parser("lint", help="lint the workflow library + materialized workflows")
     li.add_argument("target", nargs="?", help="limit to entries containing this string")

@@ -19,13 +19,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import browsersource
 import pytest
 import uvicorn
 import yaml
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import expect
 
+import browsersource
 from helpers import declare_outcome
 from rsched.bootstrap import seed_libraries
 from rsched.config import load_server_config

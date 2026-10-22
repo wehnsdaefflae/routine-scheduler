@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from rsched.daemon import gate_prepare, run_gate, runner_reap, runner_state
+from rsched.daemon import gate_prepare, reap_resume, run_gate, runner_reap, runner_state
 from rsched.paths import atomic_write_json, read_json
 from test_run_gate import finish, script, skip_body
 
@@ -133,7 +133,8 @@ async def test_skipped_reap_never_stranded_resumes(setup_gate, monkeypatch):
     cfg, _, runner = setup_gate
     script(cfg, skip_body())
     monkeypatch.setattr(runner_reap, "_stranded_user_messages", lambda *_: True)
-    monkeypatch.setattr(runner_reap, "resume_for_stranded", lambda *_: pytest.fail("skip resumed"))
+    monkeypatch.setattr(reap_resume, "resume_for_stranded",
+                        lambda *_: pytest.fail("skip resumed"))
     _, _, st = await finish(runner, cfg)
     assert st["outcome"] == "skipped"
 

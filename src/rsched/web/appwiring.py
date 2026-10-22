@@ -113,6 +113,15 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         held_task = asyncio.create_task(held_accepts.maintain(app))
         _observe(held_task, "held settings-accept drain")
         yield
+        # F746: the breadcrumb for THIS exit, written on the way out. uvicorn runs the lifespan's
+        # shutdown half on ANY graceful SIGTERM — a deploy, `systemctl restart`, a container
+        # replacement — whereas `restart.trigger_shutdown` (which writes a more specific reason
+        # and is left alone here) only ever runs on the daemon's own self-update path. Without it
+        # the next boot reaps every live run as `cause: unknown`: 79 orphans over 50 boots, and
+        # not one ever attributed to a restart (R2793/R2800). An UNGRACEFUL kill reaches no
+        # Python and still leaves nothing, which is the honest case.
+        from ..daemon import restart as restart_ctl
+        restart_ctl.mark_graceful_exit(server)
         set_sink(None)
         await _stop(search_task)
         app.state.search.shutdown()

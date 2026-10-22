@@ -6,8 +6,9 @@ happens once one stops.
 
 That is the half where the awkward cases live. A run killed by the OOM killer (rc=-9) is
 auto-resumed ONCE from a marker, because a kernel kill is not the run's fault and a silent
-retry loop would be worse than either (D99/F348). A run that finished while a user message was
-still queued gets resumed rather than leaving the message stranded. Config edits refused while
+retry loop would be worse than either (D99/F348). The reap's OTHER automatic resumes — the
+post-finish wake for a stranded message, and F746's boot re-open of a run a daemon restart
+killed — live in `reap_resume.py`, which this file drives. Config edits refused while
 the run was active are applied here, at the only moment the two-writer race is impossible. And
 `recover_orphans` handles the boot case: a run whose pid is gone but whose status still claims
 it is alive. It used to call that "the daemon restart" and write the same sentence into every
@@ -26,6 +27,7 @@ from ..config import RoutineConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import append_jsonl, atomic_write, atomic_write_json, read_json
+from . import reap_resume
 from .runner_state import (
     ActiveRun,
     _last_vm_hwm_kb,
@@ -91,7 +93,7 @@ def reap(runner, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
     if (info.state == "finished" and info.outcome != "skipped"
             and _stranded_user_messages(cfg.dir)):
         log.info("post-finish inbox sweep: user message stranded — resuming %s", run.slug)
-        resume_for_stranded(runner, cfg)
+        reap_resume.resume_for_stranded(runner, cfg)
     # D78-A: a web routine edit made WHILE this run was active was held in the durable
     # pending-edit spool (the git index was contended). The reap is the one seam that
     # always follows a run, and the run is now out of `runner.active`, so no writer
@@ -159,19 +161,6 @@ def retry_sigkilled(runner, run: ActiveRun, cfg: RoutineConfig, hwm: int | None)
         else:
             log.warning("sigkill auto-resume refused for %s (active/draining/gone) — "
                         "the recovery note stays durable in the inbox", run.run_id)
-    runner.spawn(_wake())
-
-
-def resume_for_stranded(runner, cfg: RoutineConfig) -> None:
-    """Resume for a stranded post-finish message; every refusal leaves it durable in the inbox."""
-    from . import pause
-    if pause.holds_automatic_leg(runner.server, "post-finish inbox wake", cfg.slug):
-        return
-    async def _wake() -> None:
-        rid = await runner.resume_terminal(cfg, reason="converse")
-        if not rid:
-            log.warning("post-finish inbox sweep could not resume %s — the message "
-                        "stays durable for the next run", cfg.slug)
     runner.spawn(_wake())
 
 
@@ -305,7 +294,8 @@ def close_out(runner, run_dir: Path, run_id: str, message: str, *,
                      cause=cause if cause is not None else classify_cause(rc))
 
 
-def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo]) -> int:
+def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo],
+                    resumable: list | None = None) -> int:
     """At boot: any run dir claiming to be alive whose pid is dead gets closed out.
 
     The boot reap knows ONE fact — the pid is gone — and until F480 it reported a second one
@@ -364,4 +354,13 @@ def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo]) -> int:
                     continue
                 fixed += 1
                 log.warning("orphan closed: %s (cause=%s)", r.run_id, cause)
+                # F746: a run the daemon's own restart killed is RESUMED, not left aborted
+                # (operator, 2026-10-22: "resume rather than abort"). COLLECTED here and
+                # resumed by the caller: this function is called synchronously — by four
+                # scheduler tests and by the boot pass itself — and starting a task needs a
+                # running loop, so the reap stays pure and the async boot drives the wakes.
+                # Only `daemon_restart`: a crash or an unexplained death is exactly where the
+                # daemon knows too little to start anything again.
+                if resumable is not None and cause == "daemon_restart":
+                    resumable.append((info.cfg, r, why))
     return fixed

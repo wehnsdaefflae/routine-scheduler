@@ -483,7 +483,9 @@ Debian (`bookworm` → `trixie`) in every Dockerfile that names it.
 cd ~/git-repos/routine-scheduler
 deploy/nat64.sh status                      # the selection both commands read; what runs now
 docker compose build                        # all three images: rsched, chrome, tor
+docker compose exec rsched rsched drain     # pause scheduling, wait for in-flight runs (F746)
 docker compose up -d                        # recreates each container whose image or config changed
+docker compose exec rsched rsched drain --resume   # lift the pause the drain left in place
 ```
 
 Both run bare, from the checkout's root: they read this host's files and profiles from `.env`
@@ -492,8 +494,12 @@ the override's memory ceilings, the NAT64 resolvers while they are on, and `clip
 flag or a profile flag here would replace that selection for the one command.
 
 For a NEW IMAGE, `up -d` replaces the running `rsched` process — unlike a code change, which it
-never reloads (CLAUDE.md, "Deploy") — and any routine running at that moment goes with it. Check
-`active_runs` on `/api/status` first, or rebuild in a quiet hour. The browser's profile and tor's
+never reloads (CLAUDE.md, "Deploy") — and any routine running at that moment goes with it. That
+is what `rsched drain` above is for: it pauses scheduling and waits for the in-flight runs, so
+the recreate interrupts nothing, and it exits non-zero naming what is still running (chain it
+with `&&` and the deploy stops instead of eating a run). Restarting WITHOUT draining is survivable
+but not free: the run is re-opened at the next boot (F746) and any child run it had in flight is
+lost. 79 runs over 50 boots were orphaned this way before the drain existed. The browser's profile and tor's
 state survive the recreate (a bind mount and a named volume). Then:
 
 ```bash

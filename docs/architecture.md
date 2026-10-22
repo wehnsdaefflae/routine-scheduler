@@ -1832,7 +1832,20 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   new code at the first tick after boot. Under systemd `Restart=always` relaunches on the
   committed code (`uv run` re-syncs deps); under Docker `restart: unless-stopped` does, and its
   restart manager gives up after ONE failed start — so verify every bind source exists before
-  dropping the sentinel. Orphaned runs claiming to be alive are closed out at boot.
+  dropping the sentinel.
+- **An EXTERNAL restart** (a deploy, `systemctl restart`, a container replacement) runs none of
+  that state machine: SIGTERM arrives from outside and uvicorn bounds the graceful shutdown to
+  10 s, so the exit cannot wait for runs that last hours (F746). `rsched drain`
+  (`cli_runctl.py`) is the before-half the deployer runs — it pauses scheduling, waits for the
+  in-flight runs and exits non-zero naming what is still running, so `&&` stops a deploy instead
+  of eating a run. The after-half is two things: the app lifespan's shutdown half writes the
+  deliberate-shutdown mark on ANY graceful SIGTERM (`restart.mark_graceful_exit`, leaving a more
+  specific self-update reason alone), and the boot RE-OPENS a run that mark attributes to a
+  restart (`daemon/reap_resume.py`) rather than closing it `aborted`. Capped at
+  `RESTART_RESUMES`, held by a global pause, never applied to a parked run (its question is
+  durable) nor to a crash or an OOM — `cause: unknown` means nothing was established, and
+  nothing is restarted on it. Orphaned runs claiming to be alive are still closed out at boot;
+  what changed is that a restart-caused one does not stay closed.
 - **Aborting a run** (`runner.abort` → `runner_state.abort_process`, behind the run page's abort,
   a conversation's stop, a background task's cancel and `rsched abort`): SIGTERM to the engine's
   process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. A pid read from a

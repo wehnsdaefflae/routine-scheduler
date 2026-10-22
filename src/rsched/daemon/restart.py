@@ -13,6 +13,13 @@ Two invariants make this safe:
   * a restart never kills an active run — it fires only once `runner.active` is empty AND has
     stayed empty for the idle window, so a run in flight is never interrupted.
 
+Both invariants hold only for the restart THIS module asks for. An EXTERNAL shutdown (a deploy,
+`systemctl restart`, a container replacement) delivers SIGTERM from outside and no drain can
+hold it: uvicorn bounds its graceful shutdown to 10 s and a run lasts hours. So that exit gets
+the other two halves of F746 instead — `mark_graceful_exit` leaves the breadcrumb on the way out
+(the next boot then knows a restart, not a crash, killed the run) and `daemon/reap_resume.py`
+re-opens the run at the next boot rather than closing it `aborted`.
+
 `restart_action` is a pure decision function so the state machine is unit-tested without
 touching processes or signals. The sentinel lives under a dot-dir the registry scan ignores.
 """
@@ -107,6 +114,33 @@ def mark_deliberate_shutdown(server: ServerConfig, reason: str) -> None:
     except OSError as exc:
         # Never block the shutdown this is describing — see the docstring.
         log.warning("could not write shutdown mark (%s): %s", path, exc)
+
+
+def mark_graceful_exit(server: ServerConfig) -> None:
+    """Record ANY graceful exit, not just the one this module asks for (F746).
+
+    `mark_deliberate_shutdown` had exactly ONE caller — `trigger_shutdown`, the daemon's own
+    self-update path — so the breadcrumb was written only when the daemon decided to restart
+    ITSELF. Every other graceful exit (a `systemctl restart`, a `docker compose up -d`
+    replacing the container, an operator stopping the service, a deploy) delivers SIGTERM from
+    OUTSIDE, so no mark was written and the next boot reaped every live run as `unknown`.
+    Measured 2026-10-22 (F746/R2793/R2800): 79 orphans over 50 boots, 15 of the 20 that carry a
+    cause at all read `unknown` and NOT ONE ever read `daemon_restart` — while the restarts
+    plainly happened. `unknown` is meant to be the honest residue of "nobody established the
+    cause"; as the commonest exit's label it stops discriminating at all, which is the
+    misattribution F480 exists to end, rebuilt from the other side.
+
+    Called from the ONE seam every graceful exit reaches — the app lifespan's shutdown half,
+    which uvicorn runs on any SIGTERM it handles. An UNGRACEFUL kill (SIGKILL, OOM, power) runs
+    no Python at all and still leaves no mark: that is the honest case and it keeps working.
+
+    A mark already on disk is left alone: `trigger_shutdown` writes its more specific
+    "self-update restart" three lines before signalling itself, and this seam runs afterwards
+    in the same exit. Last writer would otherwise win and the specific reason would be lost.
+    """
+    if shutdown_mark_path(server).exists():
+        return
+    mark_deliberate_shutdown(server, "external shutdown (SIGTERM)")
 
 
 def read_shutdown_mark(routines_home: Path) -> dict | None:

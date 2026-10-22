@@ -133,8 +133,9 @@ def test_pause_holds_the_reaps_post_finish_wake(tmp_path, monkeypatch):
     F721 gave the pause the two detached phases that start a run, and verified the general
     fact behind it: `runner.fire_blocker` does not test the pause, and
     `engine/control.pause_gate` holds only runs MARKED at the pause click — a freshly resumed
-    leg carries no mark. `runner_reap.resume_for_stranded` is the same shape and was missed:
-    neither a click nor a schedule, and it spawns an engine process.
+    leg carries no mark. `reap_resume.resume_for_stranded` is the same shape and was missed:
+    neither a click nor a schedule, and it spawns an engine process. (F746 moved it out of
+    `runner_reap` into `reap_resume`, beside the restart re-open that obeys the same hold.)
 
     It is HELD, not dropped: the message stays durable in the owner's inbox, so the first wake
     after the resume makes it good. The sigkill retry beside it is deliberately NOT held — that
@@ -143,7 +144,7 @@ def test_pause_holds_the_reaps_post_finish_wake(tmp_path, monkeypatch):
     """
     from types import SimpleNamespace
 
-    from rsched.daemon import pause, runner_reap
+    from rsched.daemon import pause, reap_resume
 
     server = SimpleNamespace(routines_home=tmp_path)
     spawned: list[object] = []
@@ -151,7 +152,7 @@ def test_pause_holds_the_reaps_post_finish_wake(tmp_path, monkeypatch):
                              resume_terminal=lambda *a, **k: None)
     cfg = SimpleNamespace(slug="uir", dir=tmp_path / "uir")
 
-    runner_reap.resume_for_stranded(runner, cfg)
+    reap_resume.resume_for_stranded(runner, cfg)
     assert len(spawned) == 1, "unpaused: the wake is spawned"
     for coro in spawned:
         coro.close()                       # never awaited in this test
@@ -159,11 +160,11 @@ def test_pause_holds_the_reaps_post_finish_wake(tmp_path, monkeypatch):
     spawned.clear()
     pause.set_paused(server, True)
     assert pause.paused(server)
-    runner_reap.resume_for_stranded(runner, cfg)
+    reap_resume.resume_for_stranded(runner, cfg)
     assert spawned == [], "paused: no run leg may be started"
 
     pause.set_paused(server, False)
-    runner_reap.resume_for_stranded(runner, cfg)
+    reap_resume.resume_for_stranded(runner, cfg)
     assert len(spawned) == 1, "resumed: the wake happens after the pause lifts"
     for coro in spawned:
         coro.close()
