@@ -40,7 +40,10 @@ re-renders every stored observation, so a raise there was a run no resume could 
 that can answer any of them) with `engine/config_bridge.py` the filing check of the
 `config_patch` an ask may carry,
 `engine/admin_handlers.py` the two handlers that answer about the instance rather than to the
-user (`schedule_run`, `report`) beside their renderer `obs_admin`, and `engine/overflow.py` the
+user (`schedule_run`, `report`) beside their renderer `obs_admin`,
+`engine/donothing.py` the `do_nothing` action (D186) — a run's first-class statement that
+nothing was due and why, whose `grounds_a_finish` predicate is also the one both the live loop
+and `boot`'s resume rebuild ask before counting an observation towards the fabrication guard, and `engine/overflow.py` the
 provider-overflow vocabulary and the two request-fault nets (`_shrink_window_to_provider`,
 `_recover_oversize_prompt`) that sit under the compaction gate in `engine/window.py`. Each turn:
 check budgets → pause gate → drain injected user messages (`inbox.py`) → announce finished subruns →

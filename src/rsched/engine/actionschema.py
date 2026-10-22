@@ -41,7 +41,7 @@ KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_
          "llm", "decide", "spawn", "subtask", "detach",
          "schedule_run", "create_routine", "manage_lane",
          "job", "goal",
-         "list_models", "subruns", "kill", "wait", "ask_user", "report", "finish")
+         "list_models", "subruns", "kill", "wait", "ask_user", "report", "do_nothing", "finish")
 
 ACTION_SCHEMA: dict = {
     "type": "object",

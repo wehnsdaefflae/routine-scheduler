@@ -4,7 +4,7 @@ The section quotes a whole composed system prompt, and the Help tab renders it a
 orchestrator actually sees. Nothing compared it to the composer. By 2026-10-15 it had drifted
 in three ways at once, none of them visible to the checks that existed:
 
-1. **Nine of fifteen kind bullets** were an older wording than `kindsurface.KIND_PROSE`
+1. **Nine of fifteen kind bullets** were an older wording than `kindprose.KIND_PROSE`
    (`llm`, `spawn`, `subtask`, `detach`, `list_models`, `subruns`, `kill`, `ask_user`,
    `report`). One divergence reached a run's behaviour rather than its reading: the `subtask`
    bullet offered `workflow: "generate"` "to DRAFT one when none fits" — `generate` is real for
@@ -34,7 +34,8 @@ import json
 import re
 from pathlib import Path
 
-from rsched.engine.kindsurface import KIND_PROSE, schema_for_kinds
+from rsched.engine.kindprose import KIND_PROSE
+from rsched.engine.kindsurface import schema_for_kinds
 
 DOC = Path(__file__).resolve().parents[1] / "docs" / "prompt-anatomy.md"
 TEXT = DOC.read_text(encoding="utf-8")
@@ -101,7 +102,7 @@ def test_the_quoted_bullets_are_the_composer_s_own_prose():
         assert _contains_around_placeholders(fence, prose), (
             f"docs/prompt-anatomy.md §5.1 quotes the {covers[0]!r} bullet in wording the "
             f"composer no longer emits. Re-render the block from "
-            f"kindsurface.kind_bullets() rather than editing it by hand:\n\n{prose}")
+            f"kindprose.kind_bullets() rather than editing it by hand:\n\n{prose}")
     assert checked >= 10, f"only {checked} bullets were checked — has §5.1's kind set shrunk?"
 
 

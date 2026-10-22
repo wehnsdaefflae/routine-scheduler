@@ -1,6 +1,6 @@
 {
   "bar": 350,
-  "note": "MEASURED 2026-10-11 on commit c686aa48 (0.412.0); re-tightened 2026-10-18 after D192 split endpoints/base.py (524 \u2192 383) and brought endpoints/openai_compat.py back under the bar (359 \u2192 337, entry dropped); re-tightened 2026-10-19 after F723 moved the background-row branches out of static/components/transcript.js into static/components/obs-background.js (772 \u2192 764); re-tightened 2026-10-21 after F584 moved the util write/selftest/commit transaction out of src/rsched/utils_run.py into src/rsched/utils_stage.py (541 \u2192 520) and the Library tab's util endpoints out of src/rsched/web/api_workflows.py into src/rsched/web/api_library_utils.py (384 \u2192 328, back under the bar, entry dropped); re-tightened 2026-10-22 after R2778 moved the unapplied-patch receipt out of src/rsched/web/api_questions.py into src/rsched/patchreceipt.py and the patch-applied route into src/rsched/web/api_patch_applied.py (415 \u2192 394); re-tightened 2026-10-22 after F564 moved run RETENTION out of src/rsched/registry.py into src/rsched/retention.py (362 \u2192 345, back under the bar, entry dropped); re-tightened 2026-10-22 after F746 moved the reap's automatic resumes out of src/rsched/daemon/runner_reap.py into src/rsched/daemon/reap_resume.py (367 \u2192 366) and `rsched abort`+`rsched drain` out of src/rsched/cli.py into src/rsched/cli_runctl.py (396 \u2192 356). Every file here is over the 350-line house bar (CLAUDE.md Standards) and its number is a CEILING, not a target: it may only go down. See tests/test_file_size.py for the three rules and why an allowlist was rejected. Tighten with `python tests/test_file_size.py --update` after a split; that command refuses to raise a ceiling or to baseline a new violation.",
+  "note": "MEASURED 2026-10-11 on commit c686aa48 (0.412.0); re-tightened 2026-10-18 after D192 split endpoints/base.py (524 \u2192 383) and brought endpoints/openai_compat.py back under the bar (359 \u2192 337, entry dropped); re-tightened 2026-10-19 after F723 moved the background-row branches out of static/components/transcript.js into static/components/obs-background.js (772 \u2192 764); re-tightened 2026-10-21 after F584 moved the util write/selftest/commit transaction out of src/rsched/utils_run.py into src/rsched/utils_stage.py (541 \u2192 520) and the Library tab's util endpoints out of src/rsched/web/api_workflows.py into src/rsched/web/api_library_utils.py (384 \u2192 328, back under the bar, entry dropped); re-tightened 2026-10-22 after R2778 moved the unapplied-patch receipt out of src/rsched/web/api_questions.py into src/rsched/patchreceipt.py and the patch-applied route into src/rsched/web/api_patch_applied.py (415 \u2192 394); re-tightened 2026-10-22 after F564 moved run RETENTION out of src/rsched/registry.py into src/rsched/retention.py (362 \u2192 345, back under the bar, entry dropped); re-tightened 2026-10-22 after F746 moved the reap's automatic resumes out of src/rsched/daemon/runner_reap.py into src/rsched/daemon/reap_resume.py (367 \u2192 366) and `rsched abort`+`rsched drain` out of src/rsched/cli.py into src/rsched/cli_runctl.py (396 \u2192 356). re-tightened 2026-10-22 after D186 (the do_nothing action) moved the `job` action's grammar out of src/rsched/engine/actions.py into src/rsched/engine/jobfields.py (658 \u2192 632) and the harness's per-kind BULLETS out of src/rsched/engine/kindsurface.py into src/rsched/engine/kindprose.py (416 \u2192 117, back under the bar, entry dropped). Every file here is over the 350-line house bar (CLAUDE.md Standards) and its number is a CEILING, not a target: it may only go down. See tests/test_file_size.py for the three rules and why an allowlist was rejected. Tighten with `python tests/test_file_size.py --update` after a split; that command refuses to raise a ceiling or to baseline a new violation.",
   "over_the_bar": {
     "src/rsched/cli.py": 356,
     "src/rsched/config/routine.py": 451,
@@ -9,7 +9,7 @@
     "src/rsched/daemon/runner_reap.py": 366,
     "src/rsched/daemon/scheduler.py": 466,
     "src/rsched/endpoints/base.py": 383,
-    "src/rsched/engine/actions.py": 658,
+    "src/rsched/engine/actions.py": 632,
     "src/rsched/engine/actionschema.py": 685,
     "src/rsched/engine/background.py": 474,
     "src/rsched/engine/capabilities.py": 394,
@@ -18,7 +18,6 @@
     "src/rsched/engine/degrade.py": 354,
     "src/rsched/engine/executor.py": 486,
     "src/rsched/engine/fileops.py": 628,
-    "src/rsched/engine/kindsurface.py": 416,
     "src/rsched/engine/ladder.py": 383,
     "src/rsched/engine/loop.py": 453,
     "src/rsched/engine/remind.py": 605,

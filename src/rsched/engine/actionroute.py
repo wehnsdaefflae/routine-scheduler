@@ -10,6 +10,7 @@ from . import (
     background,
     create_routine,
     detach,
+    donothing,
     executor,
     goalops,
     interact,
@@ -110,9 +111,14 @@ def _gate_for_background(loop, action: dict) -> dict | None:
     return gate(loop, action, poll_s=POLL_S) if gate else None
 
 
-def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->handler table; one branch per action
-                                    # kind is the clearest possible form, and collapsing
-                                    # it would only hide which handler owns which kind.
+def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911, C901 — a flat kind->handler table; one branch
+                                    # per action kind is the clearest possible form, and
+                                    # collapsing it would only hide which handler owns which
+                                    # kind. C901 joined PLR0911 here when `do_nothing` (D186)
+                                    # made the table one branch longer than the repo-wide
+                                    # mccabe ratchet: the same exemption, for the same reason,
+                                    # that `actions.validate_action` carries as the action
+                                    # contract's single flat per-kind checker.
     if action["kind"] == "ask_user":
         return interact.handle_ask(loop, action, poll_s=POLL_S)
     if action["kind"] == "write_util":
@@ -161,6 +167,10 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->h
         return jobops.handle_job(loop, action)
     if action["kind"] == "goal":
         return goalops.handle_goal(loop, action)
+    if action["kind"] == "do_nothing":
+        # D186: the run states that nothing was due. It dispatches like any kind — and
+        # grounds no finish (engine/donothing.py says why).
+        return donothing.handle(action)
     if action["kind"] == "subruns":
         return loop.subruns.status_table()
     if action["kind"] == "kill":

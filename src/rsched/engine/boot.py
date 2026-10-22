@@ -123,17 +123,18 @@ def boot(loop) -> None:
         ctx.usage_base = prior_usage(events)
         # replayed observations ground the fabrication guard — a continued conversation
         # may legitimately answer and re-finish as its very first action
-        # A HELD action executed nothing, so it must not ground a finish here either —
-        # the live loop excludes it from the same counter, and a resumed leg that
-        # re-added it would hand the fabrication guard exactly the evidence it exists
-        # to refuse. Asked as a PREDICATE (engine/hold.is_hold): this is the negative
-        # test a second hold kind would otherwise have walked straight past.
-        from .hold import is_hold
+        # A HELD action executed nothing, and a `do_nothing` established nothing (D186), so
+        # neither may ground a finish here either — the live loop excludes both from the same
+        # counter, and a resumed leg that re-added one would hand the fabrication guard
+        # exactly the evidence it exists to refuse. Asked as the one PREDICATE both legs ask
+        # (engine/donothing.grounds_a_finish): this is the negative test a second
+        # non-grounding kind would otherwise have walked straight past.
+        from .donothing import grounds_a_finish
 
         loop.executed_actions = sum(
             1 for e in events if e.get("type") == "observation"
             and not (payload := e.get("payload") or {}).get("rejected")
-            and not is_hold(payload))
+            and grounds_a_finish(payload))
         # …and the once-only guards: a hold the run already confirmed, a rule assist that
         # already fired, a line the verifier already challenged stay spent for the rest of
         # the run — of the reply, in a conversation, whose next reply starts them fresh
