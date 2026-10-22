@@ -444,7 +444,10 @@ one you are about to touch, not all of them.
   `.control/candidates.json` says which routine is a candidate for which.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
   and an optional `request` ("<class>:<name>" entity id, entities.py): a typed ACCESS REQUEST the
-  Decisions page settles with one of four decisions (allow/deny × now/forever). Forever-decisions
+  Decisions page settles with one of four decisions (allow/deny × now/forever). A `util:` request
+  is WIDENED where the record is written (`engine/grantsecrets.widen`) to also carry
+  `secret:<NAME>` for each secret that util declares — verb-bounded, undecided-only, named in the
+  question — so one decision makes a granted util usable (F562). Forever-decisions
   are written to routine.yaml by the WEB at click time (`grants:` rows = deny tombstones + secret
   exposure; the engine NEVER writes config); now-decisions live in-memory on the run and reach all
   three enforcers (validate_action, the util sandbox's roots, declared-only env injection).

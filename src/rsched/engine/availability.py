@@ -7,6 +7,12 @@ The distinction this draws is the useful one: a request for something that does 
 that the routine already holds, or that the user has permanently declined, should never reach
 the Decisions page at all. Each of those gets its own teaching refusal instead, so the model
 learns why rather than waiting on a question nobody can answer.
+
+What a coherent request then CARRIES is decided one seam later, where the durable record is
+written: `engine/grantsecrets.widen` adds the secrets a requested util declares, so a util grant
+is usable on one decision (F562). Validation stays here and widening stays there — an id the
+user must decide about should be checked before it is offered, and only the record's ids are
+what the appliers (`web/grants_apply`, `engine/requests._seed`) ever act on.
 """
 
 from __future__ import annotations

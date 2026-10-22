@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..ids import question_id
-from . import askback, autoask, availability, config_bridge, inbox, requests, runkind
+from . import askback, autoask, availability, config_bridge, grantsecrets, inbox, requests, runkind
 from .control import RunAborted
 
 # Natural affirmatives count: approval answers arrive as free text, and "Do it. The mail
@@ -230,15 +230,15 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
     ctarget, cterr = config_bridge.resolve(ctx, cpatch)
     if cterr:
         return {"kind": "ask_user", "error": cterr}
-    # A typed access request (entities.py) rides the same record; the Decisions page
-    # renders the allow/deny × now/forever buttons for it (plus allow-once for
-    # turn-action classes, D65), and the answer's `decision` is what settles it (free
-    # text is held, D38). Validation already ran in the schema-retry cycle
-    # (availability.request_denial), so the ids here are requestable.
-    req_ids = availability.request_ids(action)
+    # A typed access request (entities.py) rides the same record; the Decisions page renders the
+    # allow/deny × now/forever buttons (allow-once for turn-action classes, D65) and the answer's
+    # `decision` settles it (free text is held, D38). Ids are validated in the schema-retry cycle
+    # (availability) and then WIDENED: a util grant carries its util's declared secrets (F562).
+    req_ids, question = grantsecrets.widen(ctx, availability.request_ids(action),
+                                           str(action["question"]))
     if req_ids:
         qtype, subject = "request", " ".join(sorted(req_ids))
-    question, default = _normalize_plain(qtype, str(action["question"]), default)
+    question, default = _normalize_plain(qtype, question, default)
     if ctx.depth > 0:
         # The record lands in the ROUTINE's pending dir, where a person reads it — so it has
         # to say who is asking. A child has no page of its own and its label is the only
