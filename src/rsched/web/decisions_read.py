@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 
-from .. import registry
+from .. import patchreceipt, registry
 from ..engine import inbox
 from ..paths import read_json
 from ..readmodels import memo
@@ -126,6 +126,13 @@ def _mark_answered(routine_dir, item: dict) -> dict:
         item["answered"] = True
         item["answer"] = ans["text"]
         item["answer_source"] = ans.get("source", "web")
+        # R2778: and WHETHER the patch it carried was applied. Without this the row said
+        # nothing at all about a patch-carrying decision, so no reader — the page's own
+        # settled branch, or `config-optimizer`, which reads this API rather than the prompt
+        # — could tell an applied patch from an answered-but-unapplied one without going to
+        # the target's config file.
+        if patchreceipt.APPLIED in ans:
+            item[patchreceipt.APPLIED] = bool(ans[patchreceipt.APPLIED])
     return item
 
 def _record_dir(server, match: dict):

@@ -8,6 +8,8 @@ record without one is a proposal for the asking routine itself.
 
 from __future__ import annotations
 
+import json
+
 from playwright.sync_api import expect
 
 from rsched.paths import atomic_write_json, read_yaml
@@ -153,6 +155,46 @@ def test_a_server_patch_applies_to_the_instance_config(ui, ui_page):
           what="the instance patch")
     # and nothing was written to the asking routine
     assert "compaction_model" not in read_yaml(ui.routines / "uir" / "routine.yaml")
+
+
+def test_applying_after_answering_tells_the_run_the_patch_is_live(ui, ui_page):
+    """R2778. The run that ASKED reads the answer record, so that record must say which of the
+    two controls happened — and R2189 made *answer, then click apply* the designed order, where
+    the button posts no answer at all. The record said `config_patch_applied: false` while the
+    patch was live, and a run told "NOT APPLIED" about an applied change is worse off than the
+    run that was told nothing.
+
+    Loads what the person sees and asserts on the TEXT a reader scans: before the click the card
+    says NOT applied, after it the card says applied and the contradicting warning is GONE (with
+    the receipt mounted beside the warning instead of replacing it, one card carried both labels
+    at once). Then the answer file — what the run actually reads — must agree with the card.
+    """
+    ui.seed_question("uir", "q-20261022-010003-1", "Raise the turn budget to 600?",
+                     extra={"config_patch": {"budgets": {"max_turns": 600}}})
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator(".question-item", has_text="Raise the turn budget to 600").first
+    expect(card).to_be_visible()
+
+    # the operator answers in prose, the way the reported harm began ("Ok")
+    card.locator("textarea.answer-input").fill("Ok")
+    card.get_by_role("button", name="answer", exact=True).click()
+    expect(card).to_contain_text("NOT applied")
+    answer_file = ui.routines / "uir" / "inbox" / "answer-q-20261022-010003-1.json"
+    until(answer_file.is_file, what="the answer file")
+    assert json.loads(answer_file.read_text())["config_patch_applied"] is False, (
+        "an answer that applied nothing must say so on the record the run reads")
+
+    # …and THEN clicks the button the warning points him at
+    card.get_by_role("button", name="approve & apply").click()
+    expect(card).to_contain_text("the config change was applied")
+    expect(card).not_to_contain_text("NOT applied")
+    until(lambda: read_yaml(ui.routines / "uir" / "routine.yaml")
+          .get("budgets", {}).get("max_turns") == 600, what="the patch applied after answering")
+    until(lambda: json.loads(answer_file.read_text()).get("config_patch_applied") is True,
+          what="the record corrected to APPLIED for the asking run")
+    record = json.loads(answer_file.read_text())
+    assert record["text"] == "Ok", f"the operator's own words must survive: {record}"
+    assert "NOT applied" not in record.get("config_patch_note", ""), record
 
 
 def test_answering_an_ordinary_question_still_clears_it(ui, ui_page):

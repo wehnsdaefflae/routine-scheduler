@@ -183,6 +183,12 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # WAIT is as load-bearing as naming the ones that land
         "IN EFFECT NOW, from this turn on",
         "Saved, but it takes effect at your NEXT RUN",
+        # R2778: whether the `config_patch` a run proposed is LIVE, said under the answer in
+        # the digest (rsched/patchreceipt.py). Both directions are load-bearing prose: a run
+        # told the WRONG one plans against a ceiling that did not move, which is the defect
+        # this wording exists to end.
+        "config_patch NOT APPLIED — read the live value before planning on it",
+        "config_patch APPLIED — the proposed change is live",
         # A util, script or shell call the run's abort ended (utils_run.run_jailed): a resumed
         # run replays this observation — the only place it learns the call has no result
         # because the run stopped, not because the command failed

@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from .. import registry
+from .. import patchreceipt, registry
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json, read_yaml
 from .decisions_read import (
@@ -53,6 +53,12 @@ class Answer(BaseModel):
     run_now: bool = False
     # …optionally with the one job that run is for (engine/brief.py)
     brief: str = Field(default="", max_length=300)
+    # R2778: the `approve & apply` button PATCHes the target and THEN posts an ordinary
+    # answer, so the answer filed for a patch that really did apply used to say
+    # `config_patch_applied: False` like every other. The button now says which it is, and
+    # the record states the truth in both directions (rsched/patchreceipt.py). An ordinary
+    # answer leaves it false: answering never applies a patch.
+    config_patch_applied: bool = False
 
 
 @router.post("/questions/{qid}/answer")
@@ -122,10 +128,11 @@ def _file_answer(request: Request, qid: str, body: Answer) -> tuple[dict, Path, 
                      "ts": now_iso()}
     if body.decision:
         payload.update(_decide_request(request, match, routine_dir, body.decision))
-    # R2189: a `config_patch` on the record is NOT applied by answering (operator's ruling,
-    # 2026-10-05: only the button applies). Say so, on the record and in the response — a
-    # silent non-application is indistinguishable from an applied one.
-    payload.update(_unapplied_patch_note(match))
+    # R2189 + R2778: a `config_patch` on the record is NOT applied by answering (operator's
+    # ruling, 2026-10-05: only the button applies) — unless the apply BUTTON is what posted
+    # this answer, which says so explicitly. Either way the record states which happened, for
+    # the person who clicked AND for the run that asked (rsched/patchreceipt.py).
+    payload.update(patchreceipt.receipt(match, applied=body.config_patch_applied))
     atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
     _relay_report_answer(server, match, body)
     _announce_answer(request, qid, match["routine"])
@@ -207,34 +214,6 @@ def _tell_live_run(request: Request, routine_dir: Path, before: object) -> None:
     info = registry.info(request.app.state.server, routine_dir.parent, routine_dir.name)
     if info is not None and fields:
         signal_config_change(info, fields, {k: after.get(k) for k in fields if k in ADOPTABLE})
-
-
-def _unapplied_patch_note(match: dict) -> dict:
-    """What an ANSWER must say about a `config_patch` the answer did not apply, or {}.
-
-    A patch-carrying card has TWO independent controls: the Decisions page's explicit
-    `approve & apply` button (which PATCHes the target and verifies the applied-field list),
-    and the ordinary answer — which lands the text and never looks at `config_patch`. Both are
-    deliberate, and the operator ruled on which applies (2026-10-05, option 3): *only the
-    button; answering warns and keeps the patch available*. So an answer NEVER applies a patch —
-    there is no interpretation of what an answer "means" — and the one thing that was missing is
-    that it never SAID so. R2189 was reported twice, the second time with an option reading
-    literally "Ja — Patch übernehmen": the answer settled the card, the button disappeared with
-    it, and the proposed config change evaporated with no trace on any surface.
-
-    Said in the RESPONSE rather than only in the record, because the client is what renders the
-    outcome to the person who just clicked, and a silent non-application is indistinguishable
-    from an applied one.
-    """
-    patch = match.get("config_patch")
-    if not isinstance(patch, dict) or not patch:
-        return {}
-    target = str(patch.get("routine") or match.get("routine") or "")
-    return {"config_patch_applied": False,
-            "config_patch_target": target,
-            "config_patch_note": "the answer was recorded; the proposed config change was NOT "
-                                 "applied. Answering never applies a patch — use the card's "
-                                 "`approve & apply` button, which is still available."}
 
 
 def _decide_request(request: Request, match: dict, routine_dir,

@@ -896,6 +896,17 @@ by a test, by the engine, or by a past incident.
   autonomous. Both PATCH handlers signal a live run
   through `control.json` and the engine appends ONE ENGINE NOTE naming EVERY changed field and
   which half it is in — a change that silently does or does not reach a run is the bug.
+  **And the ASKING RUN is told whether its proposal landed.** An answer to a question carrying a
+  `config_patch` states the verdict on the record, in the HTTP response, on the `/api/questions`
+  row and as a line of the asking run's state digest — one owner for the field names and both
+  wordings (`rsched/patchreceipt.py`). Answering never applies a patch (R2189, operator
+  2026-10-05: only the button), so the verdict is the APPLY CONTROL's to declare:
+  `config_patch_applied` on the answer POST the button sends, or
+  `POST /api/questions/{qid}/patch-applied` when it applies a patch on an already-answered card.
+  A flag that is only ever `false` is worse than silence — a run was told "Ok" to its own
+  budget-raise proposal, recorded the raise as applied and planned 600 turns against a live
+  400-turn ceiling (R2778), and a run told "NOT APPLIED" about a patch that IS live would plan
+  the same way round.
 
 ## Standards
 
