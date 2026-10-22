@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.441.0] — 2026-10-22
 
 ### Added
+- **A `do_nothing` action, so a run can say nothing was due and why** (D186; operator: *"Add a
+  `do_nothing` action carrying a short reasoning"*). A scheduled run that finds nothing due had
+  to either finish or invent an action; now it states the fact as a first-class action, with
+  `say` carrying the reasoning — no new schema field and no new transcript event type. It
+  deliberately does **not** ground an `ok` finish: counting it would let any run satisfy the
+  fabrication guard by writing one word, so `executed_actions` is gated by one predicate
+  (`donothing.grounds_a_finish`) asked by both the live loop and `boot`'s resume rebuild.
+  Adding a kind required two extractions first, because all five files it touches sat at exactly
+  their ratchet ceilings: the `job` action's grammar moved out of `engine/actions.py`
+  (658 → 632) into `engine/jobfields.py`, and the harness's per-kind bullets out of
+  `engine/kindsurface.py` (416 → **117**, back under the bar) into `engine/kindprose.py` — the
+  latter by RENAMING the file, so ~290 lines of byte-pinned prose were never retyped.
 - **`rsched drain` — quiesce the instance before a deploy restarts it** (F746; operator,
   2026-10-22: *"Drain in-flight runs before any restart, and resume rather than abort"*). It
   drops the pause sentinel, waits for every in-flight run across all three homes, and exits
