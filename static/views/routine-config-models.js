@@ -126,20 +126,20 @@ export function modelsGroup(ctx) {
   // The escalation ladder's TUNING half — how often a rung fires and how many turns it gets.
   // It belongs beside Deliberation because both are tuning.yaml keys (recipe-classed, so a
   // meta-routine may re-level them on measured evidence), unlike the ladder's on/off switch and
-  // depth ceiling, which are config and live in Limits & reach → Oversight.
+  // its rung height, which are config and live in Limits & reach → Oversight.
   // One control edits BOTH keys, which is what fieldBlock's list form is for: `value` arrives as
   // {key: value} and `set` takes the same shape, so the two land as one decision.
-  const intervals = fieldBlock(form, ["ladder_rung_height", "oversight_turns"], (value, set) =>
-    ladderIntervals({ height: value.ladder_rung_height, turns: value.oversight_turns },
+  const intervals = fieldBlock(form, ["ladder_turn_interval", "oversight_turns"], (value, set) =>
+    ladderIntervals({ interval: value.ladder_turn_interval, turns: value.oversight_turns },
                     { onCommit: set }).node,
-    { labels: { ladder_rung_height: "rung height", oversight_turns: "rung budget" } });
+    { labels: { ladder_turn_interval: "turn interval", oversight_turns: "rung budget" } });
 
   return settingsGroup({
     form, title: "Models", hint: "which model runs each role, and how hard it reasons",
-    keys: ["models", "efforts", "deliberation", "ladder_rung_height", "oversight_turns"],
-    moreKeys: ["deliberation", "ladder_rung_height", "oversight_turns"],
+    keys: ["models", "efforts", "deliberation", "ladder_turn_interval", "oversight_turns"],
+    moreKeys: ["deliberation", "ladder_turn_interval", "oversight_turns"],
     digest: () => `deliberation ${describe("deliberation", form.get("deliberation"))}`
-      + ` · rung every ${form.get("ladder_rung_height") ?? 20} turns`,
+      + ` · rung every ${form.get("ladder_turn_interval") ?? 50} turns`,
     sections: [
       ...settingsSection({ title: "Models", id: "models" },
         catalog.length

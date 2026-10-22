@@ -34,7 +34,7 @@ from routine.params import (
                      #        answers under `worker_says` (kept separate, never merged in)
     RUNG,            # int  — which rung this is (1 reads the worker, 2 reads rung 1's verdicts,
                      #        3 reads the trend across rung 2's)
-    RUNG_HEIGHT,     # int  — `n`, the ceiling on `next_rung_in`: a rung may shorten its own next
+    TURN_INTERVAL,   # int  — `n`, the ceiling on `next_rung_in`: a rung may shorten its own next
                      #        interval, never lengthen it past this
 )
 

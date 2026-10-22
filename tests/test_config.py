@@ -199,7 +199,7 @@ def test_default_ask_timeout_is_deployment_norm(tmp_path):
 
 
 def test_the_escalation_ladder_ships_off_and_is_the_users_to_switch_on(tmp_path):
-    """`ladder.enabled` / `ladder.max_depth` are in routine.yaml rather than tuning precisely
+    """`ladder.enabled` / `ladder.rung_height` are in routine.yaml rather than tuning precisely
     because authority over being supervised is not machine-tunable — and the release changes
     no live routine's behaviour, so a routine that says nothing is OFF.
     """
@@ -207,27 +207,27 @@ def test_the_escalation_ladder_ships_off_and_is_the_users_to_switch_on(tmp_path)
                     slug="ladder-off")
     cfg, problems = load_routine(d)
     assert problems == []
-    assert cfg.ladder == {"enabled": False, "max_depth": 3}
+    assert cfg.ladder == {"enabled": False, "rung_height": 3}
 
     d = _mk_routine(tmp_path, {"slug": "ladder-on", "description": "Opted in.",
-                               "ladder": {"enabled": True, "max_depth": 2}},
+                               "ladder": {"enabled": True, "rung_height": 2}},
                     slug="ladder-on")
     cfg, problems = load_routine(d)
     assert problems == []
-    assert cfg.ladder == {"enabled": True, "max_depth": 2}
+    assert cfg.ladder == {"enabled": True, "rung_height": 2}
 
 
 def test_a_half_written_ladder_block_keeps_the_other_default(tmp_path):
     d = _mk_routine(tmp_path, {"slug": "ladder-half", "description": "Half.",
                                "ladder": {"enabled": True}}, slug="ladder-half")
     cfg, problems = load_routine(d)
-    assert problems == [] and cfg.ladder == {"enabled": True, "max_depth": 3}
+    assert problems == [] and cfg.ladder == {"enabled": True, "rung_height": 3}
 
 
 @pytest.mark.parametrize(("slug", "block", "needle"), [
     ("lad-a", {"enabled": "yes"}, "ladder.enabled"),
-    ("lad-b", {"max_depth": 0}, "ladder.max_depth"),
-    ("lad-c", {"max_depth": "three"}, "ladder.max_depth"),
+    ("lad-b", {"rung_height": 0}, "ladder.rung_height"),
+    ("lad-c", {"rung_height": "three"}, "ladder.rung_height"),
     ("lad-d", {"mystery": 1}, "unknown ladder key"),
 ])
 def test_a_bad_ladder_knob_is_reported_and_leaves_the_ladder_off(tmp_path, slug, block, needle):
@@ -238,14 +238,14 @@ def test_a_bad_ladder_knob_is_reported_and_leaves_the_ladder_off(tmp_path, slug,
     cfg, problems = load_routine(d)
     assert any(needle in p for p in problems), problems
     assert cfg.ladder["enabled"] is False or "enabled" in block
-    assert isinstance(cfg.ladder["max_depth"], int) and cfg.ladder["max_depth"] > 0
+    assert isinstance(cfg.ladder["rung_height"], int) and cfg.ladder["rung_height"] > 0
 
 
 def test_a_bare_ladder_key_reads_as_the_defaults(tmp_path):
     d = _mk_routine(tmp_path, {"slug": "ladder-bare", "description": "Bare.", "ladder": None},
                     slug="ladder-bare")
     cfg, _ = load_routine(d)
-    assert cfg.ladder == {"enabled": False, "max_depth": 3}
+    assert cfg.ladder == {"enabled": False, "rung_height": 3}
 
 
 def test_routine_bad_values_reported_and_defaulted(tmp_path):

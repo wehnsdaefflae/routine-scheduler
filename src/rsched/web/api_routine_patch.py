@@ -122,9 +122,9 @@ class RoutinePatch(BaseModel):
     #                                          reads (ids) — REPLACE wholesale
     deliberation: str | None = None         # DELIBERATION_LEVELS — how much thinking lands on paper
     ladder: dict | None = None              # the ESCALATION LADDER's user half:
-    #                                          {enabled, max_depth} — CONFIG, since authority
+    #                                          {enabled, rung_height} — CONFIG, since authority
     #                                          over being watched is the user's; merged partial
-    ladder_rung_height: int | None = None   # TUNING (`n`): turns between escalations, a ceiling
+    ladder_turn_interval: int | None = None  # TUNING (`n`): turns between escalations, a ceiling
     # TUNING: a rung's own turn cap. 0 is the one spelling of "DERIVE it" (`n // 2 + 1`, floored
     # at 4) — `None` cannot carry that meaning here, because `patch_routine` dumps with
     # `exclude_none`, under which a null reads as "not sent" and the knob would keep its old
@@ -160,21 +160,21 @@ def _validate_tuning(tuning: dict) -> None:
     """Judge every tuning field BEFORE anything is written (the all-or-nothing contract).
 
     Both ladder knobs are counted in TURNS and the ONE floor applied here is the engine's own
-    `engine/ladder.MIN_OVERSIGHT_TURNS` (`DEFAULT_RUNG_HEIGHT` is a default, not a floor, and
-    is neither applied nor imported — F725): under it a rung height cannot judge an interval,
+    `engine/ladder.MIN_OVERSIGHT_TURNS` (`DEFAULT_TURN_INTERVAL` is a default, not a floor, and
+    is neither applied nor imported — F725): under it an interval is too short to be judged,
     and a rung with fewer turns finishes with nothing, which reads as `continue` — invisibly.
     """
     level = tuning.get("deliberation")
     if level is not None and level not in DELIBERATION_LEVELS:
         raise HTTPException(400, f"deliberation: unknown level {level!r} "
                                  f"(expected one of {DELIBERATION_LEVELS})")
-    for key in ("ladder_rung_height", "oversight_turns"):
+    for key in ("ladder_turn_interval", "oversight_turns"):
         val = tuning.get(key)
         if val is None:
             continue
         # `oversight_turns: 0` is the one spelling of "derive it again" and is written as a
-        # REMOVAL below, so it is sound here; a rung height of 0 is not — there is no interval
-        # to derive from.
+        # REMOVAL below, so it is sound here; a turn interval of 0 is not — there is no
+        # interval to derive from.
         if key == "oversight_turns" and val == 0:
             continue
         if isinstance(val, bool) or not isinstance(val, int) or val < MIN_OVERSIGHT_TURNS:
@@ -182,7 +182,7 @@ def _validate_tuning(tuning: dict) -> None:
                                      f"{MIN_OVERSIGHT_TURNS} (got {val!r}) — a shorter interval "
                                      "cannot be judged, and a rung given fewer turns than that "
                                      "hands back nothing, which reads as `continue`"
-                                     + (" (0 = derive it from the rung height)"
+                                     + (" (0 = derive it from the turn interval)"
                                         if key == "oversight_turns" else ""))
 
 
@@ -195,23 +195,23 @@ def _apply_ladder(raw: dict, updates: dict) -> None:
 
     Every bad value is REFUSED here rather than left to `load_routine`, which degrades an
     unreadable block toward OFF — the safe direction at load time, and the wrong one for a save:
-    a user who typed `max_depth: 0` and was told "saved" would get a silently disabled ladder.
+    a user who typed `rung_height: 0` and was told "saved" would get a silently disabled ladder.
     """
     block = raw.get("ladder")
     merged = dict(block) if isinstance(block, dict) else dict(DEFAULT_LADDER)
     patch = updates.pop("ladder") or {}
     if not isinstance(patch, dict):
-        raise HTTPException(400, "ladder: expected a mapping of {enabled, max_depth}")
+        raise HTTPException(400, "ladder: expected a mapping of {enabled, rung_height}")
     if unknown := sorted(set(patch) - LADDER_KEYS):
         raise HTTPException(400, f"ladder: unknown key(s) {unknown} "
                                  f"(expected {sorted(LADDER_KEYS)})")
     merged.update(patch)
     if not isinstance(merged.get("enabled"), bool):
         raise HTTPException(400, "ladder.enabled: expected true or false")
-    depth = merged.get("max_depth")
-    if isinstance(depth, bool) or not isinstance(depth, int) or depth < 1:
-        raise HTTPException(400, f"ladder.max_depth: expected a whole number of rungs of at "
-                                 f"least 1 (got {depth!r}) — it is also floored by "
+    height = merged.get("rung_height")
+    if isinstance(height, bool) or not isinstance(height, int) or height < 1:
+        raise HTTPException(400, f"ladder.rung_height: expected a whole number of rungs of at "
+                                 f"least 1 (got {height!r}) — it is also floored by "
                                  "budgets.max_subrun_depth at run time")
     raw["ladder"] = merged
 

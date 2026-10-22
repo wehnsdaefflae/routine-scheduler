@@ -73,8 +73,8 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "ladder": (NEXT_RUN, ("whether a run is supervised is read from the config composed at its "
                           "boot, so switching it on reaches the NEXT run; a run already going "
                           "keeps the ladder it started with")),
-    "ladder_rung_height": (NEXT_RUN, ("the rung interval is read from the tuning composed at "
-                                      "boot, together with the rung's own turn cap")),
+    "ladder_turn_interval": (NEXT_RUN, ("the turn interval is read from the tuning composed at "
+                                        "boot, together with the rung's own turn cap")),
     "oversight_turns": (NEXT_RUN, ("a rung's turn cap is read from the tuning composed at boot; "
                                    "a rung already dispatched keeps the budget it was given")),
     "improve": (NEXT_RUN, "it is read by the improver, not by the run"),
@@ -109,7 +109,7 @@ ROUTINE_PATCH_FIELDS = frozenset({
     "capabilities", "rules", "shared_reminders", "improve", "deliberation", "keep_runs",
     "fs_read_roots", "fs_write_roots", "outcome",
     # the escalation ladder: its config block, and its two tuning knobs
-    "ladder", "ladder_rung_height", "oversight_turns",
+    "ladder", "ladder_turn_interval", "oversight_turns",
 })
 CONVERSATION_PATCH_FIELDS = frozenset({
     "title", "tags", "workdir", "budgets", "models", "efforts", "machines", "connections",

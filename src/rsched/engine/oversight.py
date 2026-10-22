@@ -7,8 +7,8 @@ tested against a recorded transcript and a dict.
 
 VOCABULARY, fixed by the design so it cannot drift the way F338's three names did: the run doing
 the work is the **worker** (rung 0), each supervisor is one **rung** up, a **dispatch** travels
-up, a **directive** comes down, `n` is the rung height (turns between escalations) and `m` the
-ladder height.
+up, a **directive** comes down, `n` is the turn interval (turns between escalations) and `m` the
+rung height (the ladder's height in rungs — the recursion limit).
 
 WHY A DISPATCH CARRIES RAW `say` LINES. The party under suspicion must not be the only witness.
 A worker that has drifted writes a coherent account *against the drifted goal*, because each step

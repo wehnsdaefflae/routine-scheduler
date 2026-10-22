@@ -84,7 +84,7 @@ OWN_FIELDS: frozenset[str] = frozenset({
     "efforts",              # reasoning effort per role: a fixed vocabulary, a cost/quality knob
     "deliberation",         # the say contract's level
     "keep_runs",            # run retention
-    "ladder_rung_height",   # the escalation ladder's interval …
+    "ladder_turn_interval",  # the escalation ladder's turn interval …
     "oversight_turns",      # … and a rung's turn cap: tuning a meta-routine re-levels on evidence
 })
 

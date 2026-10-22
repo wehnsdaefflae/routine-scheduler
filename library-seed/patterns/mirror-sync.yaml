@@ -68,7 +68,7 @@ settings:
   deliberation: standard
   ladder:
     enabled: false
-    max_depth: 3
-  ladder_rung_height: 20
+    rung_height: 3
+  ladder_turn_interval: 50
   oversight_turns: null
   tags: []

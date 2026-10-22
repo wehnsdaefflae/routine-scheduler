@@ -33,9 +33,10 @@ def _config(ui, slug="uir"):
 
 
 def test_the_ladder_switch_is_in_limits_and_saves_through_the_one_accept(ui, ui_page):
-    """`ladder.enabled` + `max_depth` are CONFIG — authority over being watched is the user's —
+    """`ladder.enabled` + `rung_height` are CONFIG — authority over being watched is the user's —
     so they sit with the per-run ceilings and go through the accept bar like every other config
-    field."""
+    field. D189: the row is labelled `rung height`, which now means the LADDER'S HEIGHT IN RUNGS
+    (the recursion limit) and no longer a turn count."""
     ui_page.goto(f"{ui.url}#/routine/uir")
     unfold(ui_page)
     group = ui_page.locator(".rgroup", has=ui_page.locator(
@@ -44,41 +45,49 @@ def test_the_ladder_switch_is_in_limits_and_saves_through_the_one_accept(ui, ui_
 
     onoff = ui_page.locator("[data-ladder-enabled]")
     expect(onoff).not_to_be_checked()                      # off by default, for every routine
-    expect(ui_page.locator("[data-ladder-depth]")).to_be_disabled()   # nothing to cap while off
+    height = ui_page.locator("[data-ladder-rung-height]")
+    expect(height).to_be_disabled()                        # nothing to cap while off
+    # the LABEL a person reads beside the rung count, not a turn count (D189)
+    expect(ui_page.locator(".ladder-set", has=height)).to_contain_text("rung height")
 
     onoff.check()
-    depth = ui_page.locator("[data-ladder-depth]")
-    expect(depth).to_be_enabled()
-    depth.fill("2")
-    depth.blur()
+    expect(height).to_be_enabled()
+    height.fill("2")
+    height.blur()
     ui_page.locator(".accept-bar [data-accept]").click()
     expect(visible_toast(ui_page)).to_contain_text("accepted")
-    until(lambda: _config(ui).get("ladder") == {"enabled": True, "max_depth": 2},
+    until(lambda: _config(ui).get("ladder") == {"enabled": True, "rung_height": 2},
           what="the ladder config save")
 
     # and it reads back from the server, not from client state
     ui_page.goto(f"{ui.url}#/routine/uir")
     unfold(ui_page)
     expect(ui_page.locator("[data-ladder-enabled]")).to_be_checked()
-    expect(ui_page.locator("[data-ladder-depth]")).to_have_value("2")
+    expect(ui_page.locator("[data-ladder-rung-height]")).to_have_value("2")
 
 
 def test_the_interval_knobs_are_tuning_and_land_in_tuning_yaml(ui, ui_page):
-    """`ladder_rung_height` + `oversight_turns` are RECIPE-classed, so they sit beside
-    Deliberation, the other tuning key — and they must never reach routine.yaml."""
+    """`ladder_turn_interval` + `oversight_turns` are RECIPE-classed, so they sit beside
+    Deliberation, the other tuning key — and they must never reach routine.yaml.
+
+    D189: this knob is a TURN INTERVAL and the label says so. "rung height" must not appear
+    next to it — that name now belongs to the recursion limit, over in Limits & reach."""
     ui_page.goto(f"{ui.url}#/routine/uir")
     unfold(ui_page)
     group = ui_page.locator(".rgroup", has=ui_page.locator(".rgroup-title", has_text="Models"))
     expect(group.locator("h2", has_text="Rung intervals")).to_have_count(1)
 
-    height = ui_page.locator("[data-ladder-height]")
-    expect(height).to_have_value("20")                     # config.base.DEFAULT_RUNG_HEIGHT
-    height.fill("30")
-    height.blur()
+    interval = ui_page.locator("[data-ladder-interval]")
+    expect(interval).to_have_value("50")                   # config.base.DEFAULT_TURN_INTERVAL
+    strip = ui_page.locator(".ladder-set", has=interval)
+    expect(strip).to_contain_text("turn interval")
+    expect(strip).not_to_contain_text("rung height")
+    interval.fill("30")
+    interval.blur()
     ui_page.locator(".accept-bar [data-accept]").click()
     expect(visible_toast(ui_page)).to_contain_text("accepted")
-    until(lambda: _tuning(ui).get("ladder_rung_height") == 30, what="the rung height save")
-    assert "ladder_rung_height" not in _config(ui), "a tuning key must not reach routine.yaml"
+    until(lambda: _tuning(ui).get("ladder_turn_interval") == 30, what="the turn interval save")
+    assert "ladder_turn_interval" not in _config(ui), "a tuning key must not reach routine.yaml"
 
 
 def test_an_empty_rung_budget_says_the_number_the_engine_will_derive(ui, ui_page):
@@ -90,10 +99,10 @@ def test_an_empty_rung_budget_says_the_number_the_engine_will_derive(ui, ui_page
     turns = ui_page.locator("[data-ladder-turns]")
     expect(turns).to_have_value("")
     strip = ui_page.locator(".ladder-set", has=turns)
-    expect(strip).to_contain_text("derived from the interval: 11 turns")   # 20 // 2 + 1
+    expect(strip).to_contain_text("derived from the interval: 26 turns")   # 50 // 2 + 1
 
-    ui_page.locator("[data-ladder-height]").fill("40")
-    ui_page.locator("[data-ladder-height]").blur()
+    ui_page.locator("[data-ladder-interval]").fill("40")
+    ui_page.locator("[data-ladder-interval]").blur()
     expect(strip).to_contain_text("derived from the interval: 21 turns")   # 40 // 2 + 1
 
 
@@ -119,4 +128,4 @@ def test_pinning_then_clearing_the_rung_budget_returns_it_to_derived(ui, ui_page
     expect(visible_toast(ui_page)).to_contain_text("accepted")
     until(lambda: "oversight_turns" not in _tuning(ui),
           what="the rung budget returning to derived")
-    assert _tuning(ui).get("ladder_rung_height") is not None or True   # siblings untouched
+    assert "ladder_rung_height" not in _tuning(ui), "D189: the old key must never be written"

@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config.base import DEFAULT_BUDGETS, DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
+from ..config.base import DEFAULT_BUDGETS, DEFAULT_LADDER, DEFAULT_TURN_INTERVAL
 
 
 @dataclass(frozen=True)
@@ -54,11 +54,11 @@ FIELDS: tuple[Field, ...] = (
     Field("efforts", "models", "Reasoning effort", "map"),
     Field("deliberation", "models", "Deliberation", "scalar"),
     # The escalation ladder, split by authority class (docs/architecture.md): `ladder` is CONFIG
-    # (whether runs of this routine are supervised at all, and the ceiling on ladder height),
-    # the two interval knobs are TUNING. A pattern may carry all three — a family of routines
-    # that should be supervised is exactly the kind of thing a pattern says.
+    # (whether runs of this routine are supervised at all, and the ladder's height in rungs —
+    # the recursion limit), the two TURN knobs are TUNING. A pattern may carry all three — a
+    # family of routines that should be supervised is exactly the kind of thing a pattern says.
     Field("ladder", "limits", "Oversight", "map"),
-    Field("ladder_rung_height", "models", "Rung height", "scalar"),
+    Field("ladder_turn_interval", "models", "Turn interval", "scalar"),
     Field("oversight_turns", "models", "Rung budget", "scalar"),
     Field("tags", "identity", "Tags", "set"),
     Field("name", "identity", "Name", "scalar", governable=False),
@@ -180,11 +180,12 @@ def snapshot(cfg) -> dict:
         # The ladder's config block, defaults filled in so a routine that never mentioned it
         # compares equal to one that wrote the defaults out (the same reason budgets does it).
         "ladder": {**DEFAULT_LADDER, **(cfg.ladder or {})},
-        # The two interval knobs read from TUNING, not routine.yaml. `oversight_turns` stays
+        # The two TURN knobs read from TUNING, not routine.yaml. `oversight_turns` stays
         # None when unset: None means DERIVED (n // 2 + 1, floored), and filling in the derived
         # number here would make a routine that leaves it to the engine compare unequal to one
         # that pinned the same value by hand — two different settings.
-        "ladder_rung_height": int(cfg.tuning.get("ladder_rung_height") or DEFAULT_RUNG_HEIGHT),
+        "ladder_turn_interval": int(cfg.tuning.get("ladder_turn_interval")
+                                    or DEFAULT_TURN_INTERVAL),
         "oversight_turns": cfg.tuning.get("oversight_turns"),
         "tags": list(cfg.tags or []),
         "name": cfg.name,

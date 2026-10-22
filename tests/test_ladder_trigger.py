@@ -139,17 +139,17 @@ def test_the_ladder_is_off_until_a_routine_enables_it(tmp_path):
     object that has never heard of the ladder must read as disabled rather than raise."""
     settings = ladder.ladder_settings(_Ctx(tmp_path))
     assert settings["enabled"] is False
-    assert settings["height"] == ladder.DEFAULT_RUNG_HEIGHT
-    assert settings["max_depth"] == ladder.DEFAULT_MAX_DEPTH
+    assert settings["turn_interval"] == ladder.DEFAULT_TURN_INTERVAL
+    assert settings["rung_height"] == ladder.DEFAULT_RUNG_HEIGHT
 
 
 def test_the_engine_and_the_config_layer_share_one_set_of_defaults():
     """A second copy of a knob's default in the engine is how a knob comes to mean two things:
     the routine page would show one number and the trigger would use another."""
-    from rsched.config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
+    from rsched.config.base import DEFAULT_LADDER, DEFAULT_TURN_INTERVAL
 
-    assert DEFAULT_LADDER["max_depth"] == ladder.DEFAULT_MAX_DEPTH
-    assert ladder.DEFAULT_RUNG_HEIGHT is DEFAULT_RUNG_HEIGHT
+    assert DEFAULT_LADDER["rung_height"] == ladder.DEFAULT_RUNG_HEIGHT
+    assert ladder.DEFAULT_TURN_INTERVAL is DEFAULT_TURN_INTERVAL
     assert DEFAULT_LADDER["enabled"] is False
 
 
@@ -158,18 +158,18 @@ def test_a_malformed_knob_leaves_the_ladder_off_rather_than_ending_the_run(tmp_p
     degrade to the default — never raise into the loop."""
     ctx = _Ctx(tmp_path, ladder="yes please", tuning=["not", "a", "mapping"])
     settings = ladder.ladder_settings(ctx)
-    assert settings["enabled"] is False and settings["height"] == ladder.DEFAULT_RUNG_HEIGHT
+    assert not settings["enabled"] and settings["turn_interval"] == ladder.DEFAULT_TURN_INTERVAL
 
 
 @pytest.mark.parametrize("bad", [0, -5, True, "15", 2.5, None])
-def test_a_nonsense_rung_height_falls_back(tmp_path, bad):
-    ctx = _Ctx(tmp_path, ladder={"enabled": True}, tuning={"ladder_rung_height": bad})
-    assert ladder.ladder_settings(ctx)["height"] == ladder.DEFAULT_RUNG_HEIGHT
+def test_a_nonsense_turn_interval_falls_back(tmp_path, bad):
+    ctx = _Ctx(tmp_path, ladder={"enabled": True}, tuning={"ladder_turn_interval": bad})
+    assert ladder.ladder_settings(ctx)["turn_interval"] == ladder.DEFAULT_TURN_INTERVAL
 
 
-@pytest.mark.parametrize(("height", "expected"),
-                         [(2, 4), (6, 4), (10, 6), (15, 8), (20, 11), (30, 16)])
-def test_a_rungs_turn_cap_is_a_sublinear_read_plus_a_constant_judge(height, expected):
+@pytest.mark.parametrize(("interval", "expected"),
+                         [(2, 4), (6, 4), (10, 6), (15, 8), (20, 11), (30, 16), (50, 26)])
+def test_a_rungs_turn_cap_is_a_sublinear_read_plus_a_constant_judge(interval, expected):
     """The cost formula the operator chose over the design's `oversight_turns = n`
     (2026-10-02), and the reason it is a FORMULA: every routine that opts in inherits it.
 
@@ -180,7 +180,7 @@ def test_a_rungs_turn_cap_is_a_sublinear_read_plus_a_constant_judge(height, expe
     that silently does nothing. `n // 2 + 1` still grows, so a long interval is never starved,
     while holding the per-rung worst case at ~0.5× and the whole m=3 ladder at ~1.5×.
     """
-    assert ladder.oversight_turns_for(height) == expected
+    assert ladder.oversight_turns_for(interval) == expected
 
 
 def test_the_floor_catches_an_interval_too_short_to_judge(tmp_path):
@@ -189,15 +189,15 @@ def test_the_floor_catches_an_interval_too_short_to_judge(tmp_path):
     it on the reading and finishes with nothing, which reads as `continue`."""
     assert ladder.oversight_turns_for(2) == ladder.MIN_OVERSIGHT_TURNS
     small = _Ctx(tmp_path, ladder={"enabled": True},
-                 tuning={"ladder_rung_height": 30, "oversight_turns": 1})
+                 tuning={"ladder_turn_interval": 30, "oversight_turns": 1})
     assert ladder.ladder_settings(small)["oversight_turns"] == ladder.MIN_OVERSIGHT_TURNS
 
 
 def test_the_derived_cap_is_used_when_tuning_names_no_override(tmp_path):
-    big = _Ctx(tmp_path, ladder={"enabled": True}, tuning={"ladder_rung_height": 30})
+    big = _Ctx(tmp_path, ladder={"enabled": True}, tuning={"ladder_turn_interval": 30})
     assert ladder.ladder_settings(big)["oversight_turns"] == 16
     tuned = _Ctx(tmp_path, ladder={"enabled": True},
-                 tuning={"ladder_rung_height": 30, "oversight_turns": 25})
+                 tuning={"ladder_turn_interval": 30, "oversight_turns": 25})
     assert ladder.ladder_settings(tuned)["oversight_turns"] == 25
 
 
@@ -210,7 +210,7 @@ def test_no_rung_fires_while_the_ladder_is_disabled(tmp_path):
 
 
 def test_a_rung_fires_on_the_interval_and_not_before(tmp_path):
-    enabled = {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15}
+    enabled = {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15}
     early = _Loop(_Ctx(tmp_path, turn=14), _Subs("unused"))
     assert ladder.rung_is_due(early, enabled) is None
     due = _Loop(_Ctx(tmp_path, turn=15), _Subs("unused"))
@@ -220,7 +220,7 @@ def test_a_rung_fires_on_the_interval_and_not_before(tmp_path):
 def test_the_interval_is_counted_from_the_last_rung_not_from_the_runs_start(tmp_path):
     """A rung reports on the interval it OWNS. Counted from the run's start instead, every
     boundary past the first rung would be due and the ladder would fire continuously."""
-    enabled = {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15}
+    enabled = {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15}
     loop = _Loop(_Ctx(tmp_path, turn=20), _Subs("unused"))
     loop.ctx.last_rung_turn = 15
     assert ladder.rung_is_due(loop, enabled) is None
@@ -234,14 +234,14 @@ def test_the_interval_is_counted_from_the_last_rung_not_from_the_runs_start(tmp_
 ])
 def test_three_events_pull_an_escalation_forward(tmp_path, flag, expected):
     """`n` is a ceiling on the interval, not a metronome."""
-    enabled = {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15}
+    enabled = {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15}
     loop = _Loop(_Ctx(tmp_path, turn=2), _Subs("unused"))
     setattr(loop.ctx, flag, True)
     assert ladder.rung_is_due(loop, enabled) == expected
 
 
 def test_a_repeated_failure_pulls_an_escalation_forward(tmp_path):
-    enabled = {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15}
+    enabled = {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15}
     loop = _Loop(_Ctx(tmp_path, turn=3), _Subs("unused"))
     loop.repeat_failure_signal = ["util:thing failed twice unchanged"]
     assert ladder.rung_is_due(loop, enabled) == "repeat_failure"
@@ -250,7 +250,7 @@ def test_a_repeated_failure_pulls_an_escalation_forward(tmp_path):
 def test_the_top_rung_answers_to_a_person_not_to_a_fourth_rung(tmp_path):
     """m is a SEMANTIC ceiling: at the top, no rung fires. The design's escalation from there
     is to a PERSON, which a child cannot block on, so it surfaces as a decision record."""
-    enabled = {"enabled": True, "height": 1, "max_depth": 1, "oversight_turns": 4}
+    enabled = {"enabled": True, "turn_interval": 1, "rung_height": 1, "oversight_turns": 4}
     loop = _Loop(_Ctx(tmp_path, turn=50, depth=1), _Subs("unused"))
     assert ladder.rung_is_due(loop, enabled) is None
 
@@ -278,7 +278,7 @@ def test_a_rung_runs_as_an_oversight_child_on_the_supervisor_role_with_a_pinned_
     model pinned here: judging drift is the hardest inference, and the cheap tier loses it."""
     ctx = _Ctx(tmp_path)
     subs = _Subs(_Sub(summary=json.dumps(_directive())))
-    settings = {"enabled": True, "height": 12, "max_depth": 3, "oversight_turns": 12}
+    settings = {"enabled": True, "turn_interval": 12, "rung_height": 3, "oversight_turns": 12}
     ladder.escalate(_Loop(ctx, subs), "interval", settings)
     call = subs.calls[0]
     assert call["mode"] == "oversight"
@@ -299,7 +299,7 @@ def test_an_absent_supervisor_pattern_skips_the_rung_rather_than_degrading_it(tm
     ctx = _Ctx(tmp_path, library=False)
     subs = _Subs(_Sub(summary=json.dumps(_directive())))
     ladder.escalate(_Loop(ctx, subs), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert subs.calls == []                                   # no child was ever started
     assert ctx.transcript.kinds() == ["oversight_skipped"]
     reason = ctx.transcript.events[0][1]["reason"]
@@ -315,7 +315,7 @@ def test_a_skipped_rung_does_not_close_the_interval_it_never_read(tmp_path):
     ctx = _Ctx(tmp_path, turn=40, library=False)
     ctx.last_rung_turn = 10
     ladder.escalate(_Loop(ctx, _Subs("unused")), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert ctx.last_rung_turn == 10
 
 
@@ -326,7 +326,7 @@ def test_an_unreadable_library_skips_the_rung_instead_of_ending_the_run(tmp_path
     ctx.server.libraries_home = None
     assert ladder.supervisor_pattern_missing(ctx.server)
     ladder.escalate(_Loop(ctx, _Subs("unused")), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert ctx.transcript.kinds() == ["oversight_skipped"]
 
 
@@ -344,7 +344,7 @@ def test_the_supervisor_runs_on_its_own_pattern_never_the_generic_one(tmp_path):
     ctx = _Ctx(tmp_path)
     subs = _Subs(_Sub(summary=json.dumps(_directive())))
     ladder.escalate(_Loop(ctx, subs), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     prompt = subs.calls[0]["action"]["prompt"]
     for verdict in oversight.VERDICTS:
         assert verdict in prompt
@@ -359,7 +359,7 @@ def test_a_redirect_reaches_the_worker_as_freight_on_the_oversight_channel(tmp_p
     ctx = _Ctx(tmp_path)
     subs = _Subs(_Sub(summary=json.dumps(_directive())))
     ladder.escalate(_Loop(ctx, subs), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     filed = sorted((tmp_path / "inbox").glob("msg-*.json"))
     assert len(filed) == 1
     record = json.loads(filed[0].read_text(encoding="utf-8"))
@@ -374,7 +374,7 @@ def test_a_continue_verdict_injects_nothing(tmp_path):
     subs = _Subs(_Sub(summary=json.dumps(
         _directive(verdict="on_track", disposition="continue", instruction=[]))))
     ladder.escalate(_Loop(ctx, subs), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert list((tmp_path / "inbox").glob("msg-*.json")) == []
     assert "oversight_directive" in ctx.transcript.kinds()   # recorded, just not injected
 
@@ -385,7 +385,7 @@ def test_a_supervisors_next_rung_in_shortens_its_own_interval_but_cannot_lengthe
     ctx = _Ctx(tmp_path)
     subs = _Subs(_Sub(summary=json.dumps(_directive(next_rung_in=999))))
     ladder.escalate(_Loop(ctx, subs), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert ctx.next_rung_in == 15
 
 
@@ -401,7 +401,7 @@ def test_a_supervisors_next_rung_in_shortens_its_own_interval_but_cannot_lengthe
 def test_a_rung_that_hands_back_no_usable_directive_changes_nothing(tmp_path, sub, why):
     ctx = _Ctx(tmp_path)
     ladder.escalate(_Loop(ctx, _Subs(sub)), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert list((tmp_path / "inbox").glob("msg-*.json")) == [], why
     assert "oversight_no_directive" in ctx.transcript.kinds()
 
@@ -410,7 +410,7 @@ def test_a_rung_that_cannot_be_started_is_a_non_event(tmp_path):
     """The ordinary case on a deep or budget-spent tree, not an error."""
     ctx = _Ctx(tmp_path)
     ladder.escalate(_Loop(ctx, _Subs("child-task budget exhausted")), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert "oversight_skipped" in ctx.transcript.kinds()
     assert list((tmp_path / "inbox").glob("msg-*.json")) == []
 
@@ -441,7 +441,7 @@ def test_a_mechanism_that_raised_is_not_recorded_as_a_rung_that_declined(tmp_pat
         def _start_child(self, action, *, mode, prefix, overrides=None):
             raise AttributeError("'EngineLoop' object has no attribute 'subs'")
 
-    settings = {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15}
+    settings = {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15}
 
     (tmp_path / "broke").mkdir()
     (tmp_path / "declined").mkdir()
@@ -483,7 +483,7 @@ def test_the_interval_is_closed_even_when_the_rung_fails(tmp_path):
     interval is closed by the rung that READ it — whatever that rung then managed to say."""
     ctx = _Ctx(tmp_path, turn=40)
     ladder.escalate(_Loop(ctx, _Subs(_Sub(summary="not a directive"))), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert ctx.last_rung_turn == 40
 
 
@@ -492,7 +492,7 @@ def test_a_pull_forward_flag_is_spent_by_the_rung_it_fired(tmp_path):
     ctx = _Ctx(tmp_path, turn=7)
     ctx.escalation_requested = True
     ladder.escalate(_Loop(ctx, _Subs(_Sub(summary=json.dumps(_directive())))), "worker_requested",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert ctx.escalation_requested is False
     assert ctx.outcome_claimed_met is False
 
@@ -502,5 +502,5 @@ def test_the_workers_turn_counter_does_not_move_while_a_rung_runs(tmp_path):
     out of the worker's budget."""
     ctx = _Ctx(tmp_path, turn=25)
     ladder.escalate(_Loop(ctx, _Subs(_Sub(summary=json.dumps(_directive())))), "interval",
-                    {"enabled": True, "height": 15, "max_depth": 3, "oversight_turns": 15})
+                    {"enabled": True, "turn_interval": 15, "rung_height": 3, "oversight_turns": 15})
     assert ctx.turn == 25
