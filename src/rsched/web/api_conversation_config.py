@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 from .. import conversations as conv_mod
 from ..config import DELIBERATION_LEVELS, ROUTINE_MODEL_ROLES, write_tuning
 from ..paths import atomic_write_yaml, read_yaml
+from . import playbook_offer
 from .api_background import list_background_rows
 from .api_routine_edit import (
     PermissionsBody,
@@ -74,6 +75,11 @@ def detail(request: Request, slug: str) -> dict:
         "fs_read_roots": _raw_roots(info.cfg.dir, "fs_read_roots"),
         "fs_write_roots": _raw_roots(info.cfg.dir, "fs_write_roots"),
         "playbook": info.cfg.playbook_slug or None,   # bound source → Update-playbook button
+        # D175 (operator, 2026-10-10, option c): the finish flow OFFERS to distil a playbook
+        # when the conversation did substantial work. The predicate and its reason line live
+        # in playbook_offer so one testable reader answers for every surface that asks.
+        "playbook_offer": playbook_offer.offer(
+            info, bound_playbook=info.cfg.playbook_slug or None),
         # Model roles are catalog model NAMES (null → system_model fallback);
         # `catalog` = the picker, `catalog_meta` its per-model window sizing (R112/R128:
         # the picker shows what fits instead of letting an impossible pick die at reply #1).

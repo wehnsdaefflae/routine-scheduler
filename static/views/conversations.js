@@ -18,6 +18,7 @@ import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
 import { forkAt, rewindTo } from "/static/components/branches.js";
 import { flagRefusal } from "/static/components/refusalflag.js";
+import { playbookRow } from "/static/components/playbook-row.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createRail } from "/static/components/rail.js";
@@ -477,35 +478,10 @@ export async function render(view, slug, _query = {}) {
         }
         helpPanel.hidden = !helpPanel.hidden;
       };
-      // Save this conversation as a reusable playbook (the save-instruction analog); when it was
-      // itself seeded from a playbook, also offer to fold these deltas back into that playbook.
-      const savePb = el("button", { class: "btn small ghost",
-        title: "distil this conversation into a reusable playbook" }, "＋ save as playbook");
-      savePb.onclick = async () => {
-        savePb.disabled = true;
-        toast("distilling a playbook — a few seconds…");
-        try {
-          const r = await api(`/api/conversations/${slug}/playbook`, { method: "POST" });
-          toast(`saved playbook “${r.slug}”${r.axis ? `  ·  varies: ${r.axis}` : ""}`, 6000);
-        } catch (err) { toastError(err, 6000); }
-        savePb.disabled = false;
-      };
-      const pbRow = el("div", { class: "row", style: "gap:8px;margin-top:6px;flex-wrap:wrap" }, savePb);
-      if (detail.playbook) {
-        const updPb = el("button", { class: "btn small ghost",
-          title: `revise the “${detail.playbook}” playbook from this conversation` },
-          `⟳ update playbook: ${detail.playbook}`);
-        updPb.onclick = async () => {
-          updPb.disabled = true;
-          toast("revising the playbook…");
-          try {
-            const r = await api(`/api/conversations/${slug}/playbook`, { method: "PUT" });
-            toast(`updated playbook “${r.slug}”`, 6000);
-          } catch (err) { toastError(err, 6000); }
-          updPb.disabled = false;
-        };
-        pbRow.append(updPb);
-      }
+      // The playbook controls + D175's offer (components/playbook-row.js): save-as-playbook,
+      // the server's "this did real work" prompt when it applies, and update-playbook when the
+      // conversation was itself seeded from one.
+      const pbRow = playbookRow(slug, detail);
       // Manual stop for a live reply — the run has no automatic backstop when its budgets
       // are set to -1 (unlimited), so the user must be able to end it at any time. Aborts at
       // the next turn boundary (the reply finishes as `aborted`, transcript + LEDGER intact).
