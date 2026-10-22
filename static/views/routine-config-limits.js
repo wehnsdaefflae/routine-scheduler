@@ -74,9 +74,9 @@ export function limitsGroup(ctx) {
     machinesCard(d.machine_catalog || [], value || [], { onChange: set }));
 
   // The escalation ladder's CONFIG half. It sits with the per-run ceilings because that is what
-  // it is — a ceiling on how deep oversight of this routine may go — and because authority over
-  // being watched is the user's, so it saves through this page's accept bar like every other
-  // config field. The two INTERVAL knobs are tuning and live in the Models group beside
+  // it is — the ladder's RUNG HEIGHT, how deep oversight of this routine may go — and because
+  // authority over being watched is the user's, so it saves through this page's accept bar like
+  // every other config field. The two TURN knobs are tuning and live in the Models group beside
   // Deliberation, the other tuning key.
   const ladder = fieldBlock(form, "ladder", (value, set) =>
     ladderSwitch(value || d.ladder, { onCommit: set,
@@ -107,7 +107,7 @@ export function limitsGroup(ctx) {
         el("div", { class: "field" }, el("span", {}, "read-only roots"), readRoots.node),
         el("div", { class: "field mt" }, el("span", {}, "read-write roots"), writeRoots.node)),
       ...settingsSection({ title: "Oversight", id: "ladder" },
-        ["the ESCALATION LADDER: every `rung height` turns, a supervisor run reads this run's ",
+        ["the ESCALATION LADDER: every `turn interval` turns, a supervisor run reads this run's ",
          "recent progress — what it said, what it repeated, what failed — and may hand down a ",
          "directive that redirects it. The supervisor cannot see the run's context and the run ",
          "cannot see the supervisor's; its budget is its own, so the worker loses no turns. ",

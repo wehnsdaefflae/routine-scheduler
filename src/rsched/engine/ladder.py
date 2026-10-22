@@ -28,10 +28,10 @@ WHAT IS NOT HERE. `continue` injects nothing (constraint 1 of the design, and
 question once, at the one place a message would be filed, so no future injection site can lose
 the guarantee.
 
-THE KNOBS AND WHO OWNS THEM (step 5). `ladder.enabled` and `ladder.max_depth` are the USER's and
-live in `routine.yaml` (`config.base.DEFAULT_LADDER`); `ladder_rung_height` (`n`) and the rung's
-own `oversight_turns` are machine-tunable and live in `tuning.yaml`, so a meta-routine can raise
-`n` for a routine whose supervisor keeps answering `continue`. `enabled` defaults FALSE, so no
+THE KNOBS AND WHO OWNS THEM (step 5). `ladder.enabled` and `ladder.rung_height` (the ladder's
+height in rungs — the recursion limit) are the USER's and live in `routine.yaml`
+(`config.base.DEFAULT_LADDER`); `ladder_turn_interval` (`n`) and the rung's own `oversight_turns`
+are machine-tunable, in `tuning.yaml`, so a meta-routine can raise `n`. `enabled` is FALSE, so no
 live routine changes behaviour at the release and the fleet is opted in one routine at a time.
 """
 
@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 
-from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
+from ..config.base import DEFAULT_LADDER, DEFAULT_TURN_INTERVAL
 from . import child, inbox, oversight
 
 log = logging.getLogger("rsched.engine.ladder")
@@ -51,7 +51,7 @@ log = logging.getLogger("rsched.engine.ladder")
 MIN_OVERSIGHT_TURNS = 4
 
 
-def oversight_turns_for(height: int) -> int:
+def oversight_turns_for(interval: int) -> int:
     """A rung's own turn cap, derived from the interval it must read (operator, 2026-10-02).
 
     A rung's cost has a READ term — the `say` lines of the interval, which grows with `n` — and
@@ -68,13 +68,13 @@ def oversight_turns_for(height: int) -> int:
     inherits it; `tuning.yaml`'s `oversight_turns` overrides it per routine, so a meta-routine
     can raise it on measured evidence if real rungs are seen hitting the cap.
     """
-    return max(height // 2 + 1, MIN_OVERSIGHT_TURNS)
+    return max(interval // 2 + 1, MIN_OVERSIGHT_TURNS)
 
 #: The two defaults the CONFIG layer owns, read from it rather than restated here: a routine's
-#: `ladder:` block already merges over `DEFAULT_LADDER`, and a second copy of `max_depth` in the
-#: engine is how a knob comes to mean two things. `n` likewise lives in `config.base` beside the
-#: tuning vocabulary that validates it.
-DEFAULT_MAX_DEPTH = int(DEFAULT_LADDER["max_depth"])
+#: `ladder:` block already merges over `DEFAULT_LADDER`, and a second copy of `rung_height` in
+#: the engine is how a knob comes to mean two things. `n` likewise lives in `config.base` beside
+#: the tuning vocabulary that validates it.
+DEFAULT_RUNG_HEIGHT = int(DEFAULT_LADDER["rung_height"])
 
 #: The workflow pattern a supervisor rung runs on. NOT `general-task`: a run whose output BINDS
 #: another run must be instructed in what a dispatch is, what the four verdicts mean and that it
@@ -119,10 +119,10 @@ def supervisor_pattern_missing(server) -> str:
 
 
 def ladder_settings(ctx) -> dict:
-    """The ladder's knobs for this run: `enabled`, `height` (n), `max_depth` (m) and the rung's
-    own turn cap. Config (`routine.yaml`) is the user's and holds `enabled`/`max_depth`;
-    `tuning.yaml` holds the machine-tunable `n`, so a meta-routine can raise it for a routine
-    whose supervisor keeps answering `continue`.
+    """The ladder's knobs for this run: `enabled`, `turn_interval` (n), `rung_height` (m, the
+    recursion limit) and the rung's own turn cap. Config (`routine.yaml`) is the user's and holds
+    `enabled`/`rung_height`; `tuning.yaml` holds the machine-tunable `n`, so a meta-routine can
+    raise it for a routine whose supervisor keeps answering `continue`.
 
     Reads both leniently and falls back to the defaults, because this runs at every turn
     boundary of every run: a malformed knob must leave the ladder off, never end a run.
@@ -133,12 +133,12 @@ def ladder_settings(ctx) -> dict:
         cfg = {}
     if not isinstance(tuning, dict):
         tuning = {}
-    height = _positive(tuning.get("ladder_rung_height"), DEFAULT_RUNG_HEIGHT)
-    turns = _positive(tuning.get("oversight_turns"), oversight_turns_for(height))
+    interval = _positive(tuning.get("ladder_turn_interval"), DEFAULT_TURN_INTERVAL)
+    turns = _positive(tuning.get("oversight_turns"), oversight_turns_for(interval))
     return {
         "enabled": bool(cfg.get("enabled", False)),
-        "height": height,
-        "max_depth": _positive(cfg.get("max_depth"), DEFAULT_MAX_DEPTH),
+        "turn_interval": interval,
+        "rung_height": _positive(cfg.get("rung_height"), DEFAULT_RUNG_HEIGHT),
         "oversight_turns": max(turns, MIN_OVERSIGHT_TURNS),
     }
 
@@ -177,13 +177,13 @@ def rung_is_due(loop, settings: dict) -> str | None:
     if not settings["enabled"]:
         return None
     ctx = loop.ctx
-    if ctx.depth + 1 > min(settings["max_depth"], ctx.budgets.max_subrun_depth):
+    if ctx.depth + 1 > min(settings["rung_height"], ctx.budgets.max_subrun_depth):
         return None            # at the ladder's ceiling: the top rung answers to a person
     if (reason := pull_forward_reason(loop)) is not None:
         return reason
     since = ctx.turn - int(getattr(ctx, "last_rung_turn", 0))
-    return "interval" if since >= int(getattr(ctx, "next_rung_in", 0) or settings["height"]) \
-        else None
+    return "interval" if since >= int(getattr(ctx, "next_rung_in", 0)
+                                      or settings["turn_interval"]) else None
 
 
 def _supervisor_prompt(dispatch: dict, *, rung: int) -> str:
@@ -211,7 +211,7 @@ def _supervisor_prompt(dispatch: dict, *, rung: int) -> str:
         f"  instruction: at most {oversight.MAX_INSTRUCTION_LINES} lines, and ONLY when the "
         f"disposition is not `continue`\n"
         f"  next_look: one line naming what you will look at next time\n"
-        f"  next_rung_in: turns until the next escalation (at most the rung height)\n\n"
+        f"  next_rung_in: turns until the next escalation (at most the turn interval)\n\n"
         f"`continue` is the right answer for a run that is working, and it reaches the worker as "
         f"NOTHING AT ALL — a healthy run must never learn it is being watched, because a "
         f"repeated signal in a prompt becomes the thing the run optimizes against. Do not "
@@ -301,12 +301,12 @@ def escalate(loop, reason: str, settings: dict) -> None:
         ctx.transcript.event("oversight_skipped", {"rung": rung, "reason": sub})
         return
     sub.done.wait(timeout=_rung_deadline(settings))
-    directive = _directive_from(sub, cap=settings["height"])
+    directive = _directive_from(sub, cap=settings["turn_interval"])
     if directive is None:
         ctx.transcript.event("oversight_no_directive",
                              {"rung": rung, "status": str(getattr(sub, "status", ""))})
         return
-    ctx.next_rung_in = min(int(directive["next_rung_in"]), settings["height"])
+    ctx.next_rung_in = min(int(directive["next_rung_in"]), settings["turn_interval"])
     ctx.transcript.event("oversight_directive",
                          {"rung": rung, "verdict": directive["verdict"],
                           "disposition": directive["disposition"],

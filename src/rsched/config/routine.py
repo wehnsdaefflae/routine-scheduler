@@ -190,10 +190,10 @@ class RoutineConfig(_Config):
     improve: bool = True
     # The escalation ladder (docs/designs.md § The escalation ladder): whether a run of this
     # routine is supervised at all (`enabled`, default false — no live routine changes
-    # behaviour at the release) and the ceiling on ladder height (`max_depth`, default 3, a
-    # SEMANTIC ceiling). Both are the user's, which is why they are here and not in tuning:
-    # authority over being watched is not machine-tunable. The interval `n` and the rung's own
-    # turn cap are (tuning.yaml's `ladder_rung_height` / `oversight_turns`).
+    # behaviour at the release) and the ladder's height in rungs (`rung_height`, default 3 — the
+    # recursion limit, a SEMANTIC ceiling). Both are the user's, which is why they are here and
+    # not in tuning: authority over being watched is not machine-tunable. The turn interval `n`
+    # and the rung's own turn cap are (tuning.yaml's `ladder_turn_interval` / `oversight_turns`).
     ladder: dict = Field(default_factory=lambda: dict(DEFAULT_LADDER))
     # How much thinking lands on paper (see DELIBERATION_LEVELS). The runtime handle
     # only: load_routine fills it from TUNING (tuning.yaml) — routine.yaml never carries
@@ -321,7 +321,7 @@ def write_tuning(routine_dir: Path, updates: dict) -> None:
     controls and the creators (scaffold, conversations, clarify sessions) write through here.
 
     A value of `None` REMOVES its key rather than storing a null. A knob whose default is
-    DERIVED — `oversight_turns` is `ladder_rung_height // 2 + 1`, floored — has no literal
+    DERIVED — `oversight_turns` is `ladder_turn_interval // 2 + 1`, floored — has no literal
     value meaning "work it out again", so without a removal the only way back from a pinned
     number was editing the file by hand. Absence is that knob's one spelling of its default
     (`load_tuning` drops unknown keys and `engine/ladder` derives what is missing), so removal

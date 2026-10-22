@@ -54,11 +54,11 @@ def _scrub_ladder(cfg: RoutineConfig) -> list[str]:
         problems.append(f"ladder.enabled: expected true or false, got "
                         f"{cfg.ladder['enabled']!r} (ignored)")
         cfg.ladder["enabled"] = DEFAULT_LADDER["enabled"]
-    depth = cfg.ladder["max_depth"]
-    if not (isinstance(depth, int) and not isinstance(depth, bool) and depth > 0):
-        problems.append(f"ladder.max_depth: expected a whole number above zero, got "
-                        f"{depth!r} (ignored)")
-        cfg.ladder["max_depth"] = DEFAULT_LADDER["max_depth"]
+    height = cfg.ladder["rung_height"]
+    if not (isinstance(height, int) and not isinstance(height, bool) and height > 0):
+        problems.append(f"ladder.rung_height: expected a whole number above zero, got "
+                        f"{height!r} (ignored)")
+        cfg.ladder["rung_height"] = DEFAULT_LADDER["rung_height"]
     return problems
 
 

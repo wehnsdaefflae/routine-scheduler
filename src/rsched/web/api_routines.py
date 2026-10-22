@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from .. import lanes, registry, schedule, trials
 from .. import triggers as triggers_mod
 from ..config import ROUTINE_MODEL_ROLES
-from ..config.base import DEFAULT_LADDER, DEFAULT_RUNG_HEIGHT
+from ..config.base import DEFAULT_LADDER, DEFAULT_TURN_INTERVAL
 from ..endpoints.prices import USAGE_KEYS
 from ..engine.ladder import oversight_turns_for
 from ..engine.turnwindow import run_row
@@ -247,16 +247,16 @@ def routine_detail(request: Request, slug: str) -> dict:
         "deliberation": info.cfg.deliberation,
         # The ESCALATION LADDER, split across its two authority classes (docs/architecture.md):
         # `ladder` is CONFIG — whether a run of this routine is supervised at all and the
-        # ceiling on ladder height — because authority over being watched is the user's, so it
-        # saves through the accept bar. The two INTERVAL knobs are tuning (recipe-classed), so a
-        # meta-routine may re-level them on measured evidence; `oversight_turns` is sent as the
-        # stored value or null, and null means DERIVED (`n // 2 + 1`, floored) rather than unset —
-        # the control says so instead of showing an empty box that looks like zero.
+        # ladder's height in rungs (the recursion limit) — because authority over being watched
+        # is the user's, so it saves through the accept bar. The two TURN knobs are tuning
+        # (recipe-classed), so a meta-routine may re-level them on evidence. `oversight_turns`
+        # is the stored value or null, and null means DERIVED (`n // 2 + 1`, floored) not unset.
         "ladder": {**DEFAULT_LADDER, **(info.cfg.ladder or {})},
-        "ladder_rung_height": info.cfg.tuning.get("ladder_rung_height") or DEFAULT_RUNG_HEIGHT,
+        "ladder_turn_interval": (info.cfg.tuning.get("ladder_turn_interval")
+                                 or DEFAULT_TURN_INTERVAL),
         "oversight_turns": info.cfg.tuning.get("oversight_turns"),
         "oversight_turns_derived": oversight_turns_for(
-            int(info.cfg.tuning.get("ladder_rung_height") or DEFAULT_RUNG_HEIGHT)),
+            int(info.cfg.tuning.get("ladder_turn_interval") or DEFAULT_TURN_INTERVAL)),
         "max_subrun_depth": info.cfg.budgets.get("max_subrun_depth"),
         # The general rules binding this routine — routine.yaml's `rules:` IS the state
         # (see rules.py); the picker's options come from GET /api/library (`rules`).

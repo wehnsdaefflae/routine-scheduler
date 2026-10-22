@@ -62,28 +62,49 @@ def test_the_ladders_two_machine_tunable_knobs_load_from_tuning(make_routine):
     cfg, problems = load_routine(d)
     assert not problems and cfg.tuning == {}        # absent file: the formula's defaults apply
 
-    write_tuning(d, {"ladder_rung_height": 30, "oversight_turns": 12})
+    write_tuning(d, {"ladder_turn_interval": 30, "oversight_turns": 12})
     cfg, problems = load_routine(d)
     assert not problems
-    assert cfg.tuning["ladder_rung_height"] == 30 and cfg.tuning["oversight_turns"] == 12
+    assert cfg.tuning["ladder_turn_interval"] == 30 and cfg.tuning["oversight_turns"] == 12
 
 
 def test_a_nonsense_ladder_knob_is_reported_and_dropped(make_routine):
     d = make_routine(slug="ladder-tuning-bad")
-    (d / "tuning.yaml").write_text("ladder_rung_height: soon\noversight_turns: -3\n",
+    (d / "tuning.yaml").write_text("ladder_turn_interval: soon\noversight_turns: -3\n",
                                    encoding="utf-8")
     cfg, problems = load_routine(d)
-    assert "ladder_rung_height" not in cfg.tuning and "oversight_turns" not in cfg.tuning
-    assert any("ladder_rung_height" in p and "whole number" in p for p in problems), problems
+    assert "ladder_turn_interval" not in cfg.tuning and "oversight_turns" not in cfg.tuning
+    assert any("ladder_turn_interval" in p and "whole number" in p for p in problems), problems
     assert any("oversight_turns" in p for p in problems), problems
 
 
-def test_the_default_rung_height_is_twenty():
-    """20, not the design's 15: escalating less often on an unproven mechanism is the cheaper
-    way to learn whether the verdicts are worth anything (operator, 2026-10-02)."""
-    from rsched.config.base import DEFAULT_RUNG_HEIGHT
+def test_the_old_rung_height_tuning_key_is_not_read(make_routine):
+    """D189 renamed the TURN INTERVAL knob; `rung height` now means the recursion limit, which
+    is config. There is no alias (one deployment, house rule: change the thing), so the old
+    `ladder_rung_height` must be reported as an unknown tuning key and dropped — and the engine
+    must fall back to DEFAULT_TURN_INTERVAL rather than honour it.
+    """
+    from rsched.config.base import DEFAULT_TURN_INTERVAL
+    from rsched.engine.ladder import ladder_settings
 
-    assert DEFAULT_RUNG_HEIGHT == 20
+    d = make_routine(slug="ladder-tuning-old")
+    (d / "tuning.yaml").write_text("ladder_rung_height: 7\n", encoding="utf-8")
+    cfg, problems = load_routine(d)
+    assert "ladder_rung_height" not in cfg.tuning
+    assert any("ladder_rung_height" in p and "unknown tuning key" in p for p in problems), problems
+    settings = ladder_settings(SimpleNamespace(routine=cfg))
+    assert settings["turn_interval"] == DEFAULT_TURN_INTERVAL != 7
+
+
+def test_the_ladder_defaults_are_a_50_turn_interval_and_3_rungs():
+    """D189 (operator, 2026-10-22): the TURN INTERVAL defaults to 50 and `rung height` means
+    the recursion limit, default 3. The two numbers are pinned here because they are the whole
+    cost model of the ladder — 50 turns between rungs, at most 3 rungs deep."""
+    from rsched.config.base import DEFAULT_LADDER, DEFAULT_TURN_INTERVAL, TUNING_KEYS
+
+    assert DEFAULT_TURN_INTERVAL == 50
+    assert DEFAULT_LADDER["rung_height"] == 3
+    assert "max_depth" not in DEFAULT_LADDER and "ladder_rung_height" not in TUNING_KEYS
 
 
 def test_routine_yaml_never_carries_deliberation(make_routine):

@@ -555,8 +555,9 @@ and the capabilities digest's catalog listing):
   routine's export REDACTS trigger tokens).
   `ladder:` — the ESCALATION LADDER's user half (`engine/ladder.py`, `engine/oversight.py`):
   `enabled` (default **false**, so no live routine is supervised until someone opts it in) and
-  `max_depth` (default 3 — a SEMANTIC ceiling: by the third rung the distinct questions are
-  exhausted, and it is additionally floored by `budgets.max_subrun_depth`). It is config and not
+  `rung_height` (default 3 — the ladder's HEIGHT IN RUNGS, i.e. the recursion limit; a SEMANTIC
+  ceiling: by the third rung the distinct questions are exhausted, and it is additionally floored
+  by `budgets.max_subrun_depth`). It is config and not
   tuning because authority over being watched is the user's, not a meta-routine's; every
   unreadable value degrades toward OFF, since `true` is the field's only dangerous value.
   **Where a rung is VISIBLE**: four transcript event types (`oversight_dispatch`,
@@ -597,9 +598,9 @@ and the capabilities digest's catalog listing):
   permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how
   much thinking lands on paper: words the say contract, `engine/deliberation.py`; creation-suggested
   per task, slider on the routine page / conversation header, mid-run via control.json
-  `set_deliberation` from the run view); `ladder_rung_height:` (`n`, default **20** — turns between
-  escalations, a CEILING on the interval and never a metronome, since three events pull a rung
-  forward) and `oversight_turns:` (a rung's OWN pinned turn cap; unset it is DERIVED as
+  `set_deliberation` from the run view); `ladder_turn_interval:` (`n`, default **50** — turns
+  between escalations, a CEILING on the interval and never a metronome, since three events pull a
+  rung forward) and `oversight_turns:` (a rung's OWN pinned turn cap; unset it is DERIVED as
   `n // 2 + 1`, floored at 4). The two ladder knobs are tuning rather than config exactly so a
   meta-routine can raise `n` for a routine whose supervisor keeps answering `continue`, on
   measured evidence. The derived cap is a sublinear read plus a constant judge: `= n` prices a
