@@ -125,15 +125,31 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
             # succeeded and "make the replacement shorter" invited a trim-and-retry loop for
             # something only a larger anchor can fix. Current + anchor gives the budget; the way
             # out when the budget is zero is replacing MORE of the note, not writing less.
+            #
+            # R2753 + R2773, two unrelated routines on 2026-10-21, are the rest of it. The
+            # message stated the allowance and never the SUBMISSION, so a run still could not
+            # compute its own overrun: funscript-trainer retried SIX times on one 98-line note,
+            # each attempt a blind guess at its own line count. Hence the replacement's size and
+            # the exact cut. And the remedy order matters because the wrong remedy is the
+            # tempting one — moltbook-heartbeat sat permanently AT the cap while trying to
+            # CORRECT an assertion its own measurement had refuted, and "condense what is
+            # already there" pushes a run to delete established evidence to make room for a
+            # correction. Splitting the topic and leaving a pointer behind loses nothing, so it
+            # is named as the way out rather than as the third option.
             anchor_lines = len(str(action["anchor"]).splitlines())
-            budget = MEMORY_NOTE_MAX_LINES - (len(before.splitlines()) - anchor_lines)
+            before_lines, result_lines = len(before.splitlines()), len(data.splitlines())
+            repl_lines = len(str(action.get("replacement") or "").splitlines())
+            budget = MEMORY_NOTE_MAX_LINES - (before_lines - anchor_lines)
             return {"kind": "memory_write", "name": name, "error":
-                    f"the edit would leave the note at {len(data.splitlines())} lines — notes "
-                    f"are capped at {MEMORY_NOTE_MAX_LINES}. The note is UNCHANGED on disk. It "
-                    f"currently has {len(before.splitlines())} lines and your anchor covers "
-                    f"{anchor_lines}, so a replacement fits in {max(budget, 0)} line(s). Replace "
-                    "a LARGER anchor (more of the note for your new text to fit in), condense "
-                    "what is already there, or split the topic into another note"}
+                    f"the edit would leave the note at {result_lines} lines — notes are capped "
+                    f"at {MEMORY_NOTE_MAX_LINES}. The note is UNCHANGED on disk. It currently "
+                    f"has {before_lines} lines, your anchor covers {anchor_lines} and your "
+                    f"replacement is {repl_lines} line(s), so a replacement fits in "
+                    f"{max(budget, 0)} line(s): cut {result_lines - MEMORY_NOTE_MAX_LINES} "
+                    "line(s) from it, or replace a LARGER anchor (more of the note for your new "
+                    "text to fit in). Do NOT condense what is already there to make room — that "
+                    "spends established evidence on a correction: SPLIT the topic into a new "
+                    "note and leave a short pointer block behind in this one"}
     else:
         data = str(action["content"]).rstrip() + "\n"
     atomic_write(path, data)

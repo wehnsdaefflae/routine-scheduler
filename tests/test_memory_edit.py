@@ -117,6 +117,42 @@ def test_a_note_at_the_cap_is_told_its_budget_is_zero(make_routine, tmp_path):
     assert "fits in 1 line(s)" in obs["error"], obs["error"]
 
 
+def test_the_refusal_names_the_submitted_replacement_and_the_cut(make_routine, tmp_path):
+    """R2753: the message named the ALLOWANCE and never the SUBMISSION, so a run could not
+    compute its own overrun. funscript-trainer:20261021-023002 was refused SIX times in a row
+    on a 98-line note, each retry a blind guess at its own line count — its words: the message
+    "is genuinely helpful about the allowance but never states how many lines the replacement I
+    just submitted actually had". The two numbers that close that loop are the replacement's own
+    size and the cut it needs; the allowance alone does not determine either.
+    """
+    ctx = _ctx(make_routine, tmp_path)
+    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES - 2))
+    _write(ctx, "nearly-full", body, "a mature note")
+    obs = _edit(ctx, "nearly-full", "- fact 0",
+                "\n".join(f"- new {i}" for i in range(8)))
+    error = obs["error"]
+    assert "replacement is 8 line(s)" in error, error     # the SUBMITTED size, never stated
+    assert "cut 5" in error, error                        # (98 - 1 + 8) - 100
+
+
+def test_at_the_cap_the_refusal_sends_the_run_to_a_new_note_not_to_condensing(
+        make_routine, tmp_path):
+    """R2773: moltbook-heartbeat:20261021-164943 sat permanently AT the cap and was refused
+    twice while trying to CORRECT an assertion its own measurement had just refuted — so the
+    note could not accept the correction and a later run would have planned on a known-false
+    premise. At the cap the tempting remedy is condensing the evidence already there, which is a
+    LOSS of what the note exists to keep; the non-destructive way out is a NEW note plus a short
+    pointer in place of the old block, which is what that run finally did by hand.
+    """
+    ctx = _ctx(make_routine, tmp_path)
+    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES))
+    _write(ctx, "at-cap", body, "a mature note")
+    obs = _edit(ctx, "at-cap", "- fact 0", "- fact 0\n- extra")
+    error = obs["error"]
+    assert "SPLIT" in error, error
+    assert "pointer" in error, error
+
+
 def test_a_stale_or_ambiguous_anchor_is_refused_loudly(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path)
     _write(ctx, "case-state", "# case\n- one\n- one\n", "the open claim's state")
