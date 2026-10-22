@@ -30,6 +30,10 @@ def test_a_conversation_that_did_real_work_is_offered_a_playbook():
     assert o["mode"] == "save"
     assert str(SUBSTANTIAL_TURNS) in o["reason"]
     assert "playbook" in o["reason"]
+    # 0.443.1: the console leads with "This conversation did real work — ", so a reason
+    # beginning "N turns of work" rendered "did real work — 23 turns of work —". The two
+    # halves live in different files and each read fine alone; only the render showed it.
+    assert "turns of work" not in o["reason"]
 
 
 def test_a_short_exchange_is_not_nagged():

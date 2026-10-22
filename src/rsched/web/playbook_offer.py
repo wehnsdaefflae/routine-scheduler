@@ -54,5 +54,8 @@ def offer(info, *, bound_playbook: str | None) -> dict:
                            f"offered from {SUBSTANTIAL_TURNS}")}
     what = (f"refine “{bound_playbook}” with what this conversation did differently"
             if bound_playbook else "distil the procedure that satisfied it into a playbook")
+    # "turns", not "turns of work": the console leads with "This conversation did real
+    # work — ", so 0.443.0 rendered "did real work — 23 turns of work — distil…", saying
+    # work twice. Found by RENDERING the row; the source read fine.
     return {"show": True, "mode": mode, "turns": turns, "threshold": SUBSTANTIAL_TURNS,
-            "reason": f"{turns} turns of work — {what}"}
+            "reason": f"{turns} turns — {what}"}

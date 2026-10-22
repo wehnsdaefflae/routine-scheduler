@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.443.1] — 2026-10-22
+
+### Fixed
+- **D175's playbook offer said "work" twice.** The console leads the prompt with *"This
+  conversation did real work — "* and the server's reason line began *"23 turns of work — "*,
+  so the rendered sentence read "did real work — 23 turns of work — distil…". The reason now
+  says "23 turns — …". Found by rendering the component and reading it, which is the only way
+  this class of defect shows up: both halves are correct in their own source file.
+
 ## [0.443.0] — 2026-10-22
 
 ### Added
