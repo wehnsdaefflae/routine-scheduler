@@ -382,7 +382,9 @@ it at every boot. The **user** binds or unbinds from the conversation header, or
 `api_routine_edit.apply_rule_edit`). Nothing is copied anywhere: binding records a slug. The
 routine page's *General rules* panel edits the same list as part of that page's ONE accept
 (0.369.0) — which, like every multi-field routine config edit, waits for an active run to end
-(409) and so lands at the next run.
+(409) and so lands at the next run. That accept is no longer lost when it is refused: it is
+held with the active run's expected end, shown on the settings page as waiting, and applied
+when the run ends — or expired if one of its fields was decided elsewhere meanwhile (D178).
 
 Through the rules endpoint the edit is **not** 409-guarded during a run — no run writes
 routine.yaml, so the web layer is the only writer and no race exists — and a newly bound rule

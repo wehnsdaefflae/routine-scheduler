@@ -17,11 +17,12 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from ..paths import read_yaml
 from ..patterns import drafts, fields, store
 from ..patterns.recommend import CHECK_MESSAGE
+from . import held_accepts
 from .api_finishline import FinishLineBody, checked
 from .api_finishline import save as save_finish_line
 from .api_hooks import reconciled_triggers
 from .api_routine_patch import RoutinePatch, apply_updates
-from .routines_common import _info, _state, guard_not_active, write_routine_config
+from .routines_common import _info, _state, write_routine_config
 
 router = APIRouter(tags=["settings"])
 
@@ -58,6 +59,9 @@ def _settings_payload(request: Request, slug: str) -> dict:
         "pattern_missing": bool(info.cfg.pattern and pattern is None),
         "overrides": overrides,
         "draft": draft,
+        # D178: an accept pressed while a run was active, held with that run's expected end.
+        # The page renders it so the operator can SEE it is waiting and need not click again.
+        "held_accept": held_accepts.held(request, slug),
         # "Save as new pattern" is offered exactly when these values are no pattern yet
         "identical": identical,
         "save_as_enabled": not identical,
@@ -103,18 +107,26 @@ def apply_settings(request: Request, slug: str, body: ApplyBody) -> dict:
     CHECKED before the first is written, so an accept lands whole or not at all — the two
     owners used to validate after routine.yaml had already been committed, and their refusal
     answered an accept that had half landed. A change to a field this routine already holds
-    is dropped rather than rewritten, so an accept never commits noise. Guarded while a run is
-    active, like every multi-field config edit: a live run keeps the configuration it booted
-    with; a half-applied proposal would be neither.
+    is dropped rather than rewritten, so an accept never commits noise. Still REFUSED while a
+    run is active, like every multi-field config edit: a live run keeps the configuration it
+    booted with; a half-applied proposal would be neither. D178: that refusal now HOLDS the
+    attempt and names when it can land (`held_accepts.hold_or_refuse`); the held accept is
+    replayed through THIS function once the run ends, so held and immediate land identically.
     """
     info = _info(request, slug)
-    guard_not_active(request, info)
     server = _state(request).server
     saved = fields.snapshot(info.cfg)
     unknown = [k for k in body.changes if k not in fields.BY_KEY]
     if unknown:
         raise HTTPException(422, f"not a setting: {', '.join(unknown)}")
     wanted = {k: v for k, v in body.changes.items() if not fields.equal(k, saved.get(k), v)}
+    # D178: still refused during a run — but the attempt is HELD with the run's expected end
+    # and replayed through this same endpoint when the run ends. Judged on what the accept
+    # would actually CHANGE: one carrying only values the routine already holds changes
+    # nothing, so there is nothing to hold and nothing to refuse.
+    if wanted or (body.pattern is not None and body.pattern != info.cfg.pattern):
+        held_accepts.hold_or_refuse(request, info, changes=wanted, pattern=body.pattern,
+                                    base={k: saved.get(k) for k in wanted})
     lane_managed = _lane_managed(server, slug) is not None
     patch: dict = {}
     for key, value in wanted.items():

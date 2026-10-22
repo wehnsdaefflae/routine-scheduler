@@ -8,6 +8,13 @@ web/routines_common.guard_not_active). Historically the web bounced such an edit
 40 minutes (F279). Option A (operator-selected 2026-08-06): accept the edit, hold it
 durably, and APPLY it once the run ends, when no writer contends for the git index.
 
+The settings page's multi-field accept does NOT ride this spool. It stays refused during a run
+(it writes three owners at once, so half of it is neither the old settings nor the new) and is
+held as ONE replaceable record per routine, carrying the run's expected end and the stored
+values it was computed against — a state, not a queue of edits, and it EXPIRES instead of
+applying when one of its fields was decided elsewhere meanwhile. That is `pending_accepts.py`
+(the record) and `web/held_accepts.py` (the hold and the replay), D178/F668.
+
 Ownership mirrors triggers.py's event spool (and restart.request, the background
 .requests/ idiom): the WEB layer only RECORDS a pending edit — one JSON file per edit
 under `<routines_home>/.control/pending-edits/<slug>/pe-*.json` (atomic, chronologically
