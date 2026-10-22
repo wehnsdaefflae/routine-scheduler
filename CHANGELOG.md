@@ -15,6 +15,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.440.0] — 2026-10-22
+
+### Which model answered each turn (D188)
+
+The operator, 2026-10-16: *"we need to see with each turn which model was used."* Half of the
+record already existed — `engine/completion.py` has long stamped the resolved
+`endpoint/model` on every accepted action's usage — but **nothing in the console read it**: the
+turn row showed tokens with a provider-only tooltip. Two things were missing and are now there.
+
+- The **role** that resolved to that model is stamped beside it (`main`, `tool_call`,
+  `uncensored`), so a turn reads `main → claude-proxy/claude-opus-5 · 20 in / 8 out`. A new
+  `engine/turntakeover.py` moves the role to `uncensored` only when a takeover target really
+  serves, so the stamp is what happened and not what was configured.
+- `static/components/turn-model.js` renders it in the turn's own row. It is derived from the
+  **stamp**, never from config at render time: a run that failed over, or whose refused turn the
+  uncensored model took, would otherwise be audited against a model that never answered it.
+
+No new event type and no new envelope field: the model rides the existing `usage` object on the
+existing event, so the transcript vocabulary is untouched. A turn recorded before the field
+existed renders **blank**, not `null` — every archived run predates it.
+
+**Limits, named rather than implied.** A `model` override on an `llm` sub-call is *not* in the
+turn's stamp: that sub-call resolves its own target and its endpoint+model land in the
+observation payload and `llm-tasks.jsonl`. Only the main loop's turn is covered. A
+failover-served turn reads `main → <fallback>` correctly, but no test pins the ROLE on that path.
+Conversations inherit the display with no browser test asserting it there.
+
+### A resumed run that finishes ok no longer reads as failed forever (F637, F703)
+
+A run killed by three rejections of one correctable mistake, then resumed to `ok`, left two
+surfaces permanently disagreeing about whether it failed; nothing could supersede a
+`budget_exhausted` row, and the lane chain that closed not-ok stayed closed.
+
+A new health event **`run_corrected`** (`rsched/runcorrection.py`) is filed by an `ok` finish when
+the append-only stream already holds a not-ok ending for the same `run_id` — a resume reuses
+`slug:ts`, which is what makes the join possible. It carries `superseded`, and **the originals are
+never edited or deleted**: the failure really happened, and the audit trail keeps it. The health
+stream's fold resolves the correction for `blocked_fleet`, the budget endings, `run_health`, the
+lane-chain `stopped_by` row (which named a slug, and a slug is not a run) and the blocked-work
+view.
+
+It supersedes `run_failed`, `run_canceled`, `orphaned_run`, `run_partial`, a not-ok
+`budget_exhausted` and `wrong_turn_detected(attempts_exhausted)`. It deliberately does **not**
+supersede `schema_rejected`, `repeat_invalid` or `action_repeat` (those turns were paid for and
+stay measured) or `finish_gate_failed` (the checks still did not run). That boundary is the
+hand-off's second clause: a repeatedly-rejected-then-corrected mistake stops counting as a *run
+failure* while its cost stays visible.
+
+**The half that is not built, stated plainly:** a stopped lane chain is **not reopened**.
+`_finalize` consumes the in-flight record and calls `lane_runs.remove`, so re-arming would mean
+reconstructing a consumed chain against the scheduler's fire rules — a daemon behaviour change,
+not a record correction. The lane SURFACE reads the correction; the chain stays closed. No view
+lists corrections: you see the effect, not a "runs corrected this week" page. The writer is
+proven through the suite's `resume_from` harness, not against a live daemon resume.
+`health_events.py` is now at exactly 350/350 lines — the next event cannot be documented there
+without a split.
+
 ## [0.439.0] — 2026-10-22
 
 ### Added
