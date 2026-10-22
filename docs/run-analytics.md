@@ -221,6 +221,16 @@ console's blocked-fleet fold counts those rows.
 outgrew its ceiling and one that keeps finding a source down read identically there;
 only the health stream says which budget forced a finish, and `last_detail` names it.
 
+A third count, `corrected`, is the legs that ended in one of those two and whose RUN was then
+resumed and finished `ok` (`rsched/runcorrection.py`, F637/F703). The health stream is
+append-only, so before this a resumed-to-ok run said "failed" there forever while its own
+status.json, its result.md and the usage stream's newest-leg fold all said `ok` — two surfaces
+permanently disagreeing about the same run. An `ok` finish now files a `run_corrected` event
+carrying `superseded`, the event names it resolves, and both folds read it: a superseded row
+leaves the blocked-work surface, and a `lane_chain_stopped` whose `stopped_by` member run was
+corrected KEEPS its row (those members really did not run) with its not-ok verdict marked
+superseded. The originals are never edited — a correction supersedes, it does not erase.
+
 ### One-click roll-back
 
 `POST /api/routines/{slug}/recipe/revert {commit}` restores the recipe files to their
@@ -622,6 +632,17 @@ opaque LANE ID for a lane's refused, paused or stopped fire (resolve it against 
 store, never by reading a prefix), the repo's directory name for a commit that did not land
 (a routine's slug, or the library's own directory), empty for a scheduler tick. `total: 0`
 is the healthy reading.
+
+**A corrected run leaves this fold** (F637/F703). A run that ended not-ok, was resumed and
+finished `ok` files `run_corrected` (`rsched/runcorrection.py`), and the fold resolves it: the
+superseded row — the `attempts_exhausted` turn that ended the run, say — stops being counted,
+because the work it owed was done after all. Two rows deliberately do NOT disappear. A
+`lane_chain_stopped` whose `stopped_by` member run was corrected KEEPS its row with
+`corrected: true` and a detail saying the not-ok verdict is superseded: the chain's remaining
+members still never ran, which is the whole claim of that event, and reopening a closed chain
+is a bigger change than correcting a record. And a `wrong_turn_detected` whose reason is
+`schema_rejected`, `repeat_invalid` or `action_repeat` stays exactly as written — that turn was
+paid for at full prompt price and a later resume does not give the spend back.
 
 **And the console reads it** (R2653, 0.433.0): the Stats page's **Blocked work** section
 (`static/views/stats-blocked.js`) fetches that endpoint on its own window and renders one row per

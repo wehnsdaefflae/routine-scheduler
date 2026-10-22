@@ -193,7 +193,8 @@ def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
     per recipe version that has runs (plus the current version even when unproven), newest
     first; `regression`, the evaluation of the newest recipe change; `trend`, the same
     evaluation keyed on time instead (what a library revision moves and a recipe commit does
-    not); and `endings`, how this routine's partial finishes actually ended. Conversations and
+    not); and `endings`, how this routine's partial finishes actually ended — including
+    `corrected`, the legs whose run was resumed and finished ok (F637/F703). Conversations and
     other unversioned dirs degrade to a single `untracked` bucket — and still get a `trend`,
     which needs no versions at all.
     """

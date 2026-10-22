@@ -40,11 +40,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from .. import runcorrection
 from ..config import ServerConfig
 from ..health_events import HEALTH_EVENTS_FILE
 from ..paths import read_jsonl
 from . import memo
 from .stamps import instant
+
+#: The correction event both folds resolve against (`rsched/runcorrection.py`, F637/F703). It
+#: is NOT blocked work and NOT an ending — it is what says an earlier ending of the same run
+#: was superseded by a resumed leg that finished ok.
+CORRECTION = runcorrection.EVENT
 
 #: The events that mean WORK THAT WAS DUE DID NOT HAPPEN, each with the one line the console
 #: labels the row with. The vocabulary is `health_events.py`'s header enum — a name added
@@ -138,13 +144,67 @@ def _stamped(routines_home: Path) -> list[tuple[datetime, dict]]:
         out: list[tuple[datetime, dict]] = []
         for rec in health_records(routines_home):
             event = rec.get("event")
-            if event in BLOCKED_EVENTS or event in ENDING_EVENTS:
+            if event in BLOCKED_EVENTS or event in ENDING_EVENTS or event == CORRECTION:
                 when = instant(rec.get("ts"))
                 if when is not None:
                     out.append((when, rec))
         return out
 
     return memo.memoized_shared(f"health-stamped:{path}", [path], pair)
+
+
+def _corrections(routines_home: Path) -> dict[str, datetime]:
+    """Each corrected run_id → the instant of its NEWEST correction (F637/F703).
+
+    Read off the same stamped list every fold uses, so resolving a correction costs no second
+    parse. A run resumed twice keeps the latest, because a leg that failed AGAIN after an
+    earlier correction is not excused by it: the comparison is always against a stamp.
+    """
+    path = stream_path(routines_home)
+
+    def latest() -> dict[str, datetime]:
+        out: dict[str, datetime] = {}
+        for when, rec in _stamped(routines_home):
+            if rec.get("event") != CORRECTION:
+                continue
+            run_id = str(rec.get("run_id") or "")
+            if run_id:
+                out[run_id] = max(when, out.get(run_id, when))
+        return out
+
+    return memo.memoized_shared(f"health-corrections:{path}", [path], latest)
+
+
+def _corrected_after(corrections: dict[str, datetime], run_id: str,
+                     when: datetime) -> bool:
+    """Whether `run_id` was corrected at or after `when` — the row's own stamp, never a flat
+    "this run was corrected once" flag.
+    """
+    corrected = corrections.get(run_id)
+    return corrected is not None and corrected >= when
+
+
+def _resolve(rec: dict, when: datetime,
+             corrections: dict[str, datetime]) -> dict | None:
+    """One blocked-work row as a reader should see it once corrections are applied: None when
+    a later `ok` finish of the same run superseded it, an ANNOTATED COPY when the row stands
+    but its not-ok verdict does not, else the record untouched.
+
+    The lane-chain close is the annotated case, and deliberately so (F703): its remaining
+    members really did not run, so the row stays on this fold — what it must stop claiming is
+    that the member failed, once that member's run was resumed and finished ok. Records are
+    shared and immutable, so an annotation copies.
+    """
+    if runcorrection.is_correctable(rec) and _corrected_after(
+            corrections, str(rec.get("run_id") or ""), when):
+        return None
+    stopped_by = str(rec.get("stopped_by") or "")
+    if stopped_by and _corrected_after(corrections, stopped_by, when):
+        out = dict(rec)
+        out["detail"] = str(rec.get("detail") or "") + runcorrection.lane_note(stopped_by)
+        out["corrected"] = True
+        return out
+    return rec
 
 
 def _since(days: int) -> datetime:
@@ -171,15 +231,22 @@ def blocked_fleet(server: ServerConfig, *, days: int = DEFAULT_WINDOW_DAYS) -> d
     since = _since(days)
     rows: dict[tuple[str, str], dict] = {}
     span: dict[tuple[str, str], tuple[datetime, datetime]] = {}   # (first, last) instants
-    for when, rec in _window(server.routines_home, BLOCKED_EVENTS, since):
+    corrections = _corrections(server.routines_home)
+    for when, raw in _window(server.routines_home, BLOCKED_EVENTS, since):
+        resolved = _resolve(raw, when, corrections)
+        if resolved is None:
+            continue        # a resumed leg finished ok: this ending is superseded (F637/F703)
+        rec = resolved
         key = (str(rec.get("event")), str(rec.get("routine") or ""))
         ts, detail = str(rec.get("ts") or ""), str(rec.get("detail") or "")
         row = rows.get(key)
         if row is None:
             rows[key] = {"event": key[0], "means": BLOCKED_EVENTS[key[0]], "subject": key[1],
-                         "count": 1, "first_ts": ts, "last_ts": ts, "detail": detail}
+                         "count": 1, "first_ts": ts, "last_ts": ts, "detail": detail,
+                         "corrected": bool(rec.get("corrected"))}
             span[key] = (when, when)
             continue
+        row["corrected"] = row["corrected"] or bool(rec.get("corrected"))
         row["count"] += 1
         first, last = span[key]
         if when < first:
@@ -201,15 +268,27 @@ def budget_endings(server: ServerConfig, slug: str, *,
     The usage stream files both as `partial`, so a routine that outgrew its ceiling and one
     that keeps finding a source down read identically there. `last_detail` names which budget
     (the event carries `resource`/`limit`), which is the sentence a reader needs.
+
+    `corrected` is the third count (F637/F703): a leg that ended here, whose run was then
+    resumed and finished `ok`. It leaves the other two rather than vanishing — the budget
+    really did end that leg — but it is no longer read as how the RUN ended, which is the
+    question this split answers.
     """
     days = max(1, min(int(days), MAX_WINDOW_DAYS))
     counts = dict.fromkeys(ENDING_EVENTS, 0)
+    corrections = _corrections(server.routines_home)
+    corrected = 0
     last_detail, last_ts, newest = "", "", None
     for when, rec in _window(server.routines_home, ENDING_EVENTS, _since(days)):
         if str(rec.get("routine") or "") != slug:
+            continue
+        if runcorrection.is_correctable(rec) and _corrected_after(
+                corrections, str(rec.get("run_id") or ""), when):
+            corrected += 1
             continue
         counts[str(rec["event"])] += 1
         if newest is None or when >= newest:
             newest, last_ts = when, str(rec.get("ts") or "")
             last_detail = str(rec.get("detail") or "")
-    return {"window_days": days, **counts, "last_ts": last_ts, "last_detail": last_detail}
+    return {"window_days": days, **counts, "corrected": corrected,
+            "last_ts": last_ts, "last_detail": last_detail}
