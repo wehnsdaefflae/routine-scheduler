@@ -159,6 +159,21 @@ def test_a_non_repo_config_keeps_its_minus_one(tmp_path):
     assert "history could not be read" in record["kept"]["routines/historyless"]
 
 
+def test_a_server_without_the_extra_homes_does_not_break_the_boot(tmp_path):
+    """A boot migration is handed whatever `load_server_config` returns, and
+    `tests/test_bootstrap.py`'s fresh-container boot hands it a four-attribute stand-in with no
+    `conversations_home`. Reading that as an attribute made the WHOLE DAEMON BOOT die on an
+    AttributeError inside a migration that had nothing to migrate — it reddened release gate
+    1792680349875750345 on both parameters of that test."""
+    minimal = SimpleNamespace(routines_home=tmp_path / "routines")
+    minimal.routines_home.mkdir()
+    _routine(minimal.routines_home, "lonely", max_turns=100)
+
+    record = migrate_total_turns.run_migration(minimal)
+
+    assert record["migrated"] == {"routines/lonely": 300}
+
+
 def test_it_runs_once_and_covers_all_three_homes(tmp_path):
     """A conversation and a background task are routines on disk too — and the record is the
     guard: while it exists the migration does nothing, so a second boot cannot re-rewrite a
