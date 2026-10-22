@@ -22,10 +22,11 @@ from .. import reports
 from ..paths import read_json
 from ..schema_guard import validate
 from . import channels, child, hookmirror, inbox, mediaops, refusal, runtree
-from .actions import util_rejection_outcome, validate_action
+from .actions import validate_action
 from .actionschema import ACTION_SCHEMA
 from .commands import CommandError, parse_command
 from .observations import format_observation, live_observation, truncate
+from .shiftedfields import util_rejection_outcome
 
 log = logging.getLogger("rsched.engine.control")
 

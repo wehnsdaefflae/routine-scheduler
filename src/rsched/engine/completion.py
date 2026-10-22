@@ -21,13 +21,7 @@ from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.base import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import overflow, turndebris, turntakeover, wrongturn
-from .actions import (
-    KIND_EXAMPLES,
-    field_shift_diagnosis,
-    normalize_action,
-    util_rejection_outcome,
-    validate_action,
-)
+from .actions import KIND_EXAMPLES, normalize_action, validate_action
 from .actionschema import ACTION_SCHEMA
 from .degrade import (
     _handle_empty,
@@ -37,6 +31,7 @@ from .degrade import (
 )
 from .renamedkinds import hint as renamed_kind_hint
 from .replyactions import reply_actions
+from .shiftedfields import field_shift_diagnosis, util_rejection_outcome
 from .window import _override_window, compact_if_needed, note_prompt_size
 
 MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
