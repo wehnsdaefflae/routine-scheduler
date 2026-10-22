@@ -21,7 +21,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from .. import registry
+from .. import registry, retention
 from ..config import RoutineConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
@@ -113,7 +113,7 @@ def prune_runs(runner, cfg: RoutineConfig) -> None:
     """
     async def _prune() -> None:
         try:
-            await asyncio.to_thread(registry.apply_retention, cfg.dir, cfg.slug, cfg.keep_runs)
+            await asyncio.to_thread(retention.apply_retention, cfg.dir, cfg.slug, cfg.keep_runs)
         except OSError as exc:
             log.warning("retention failed for %s: %s", cfg.slug, exc)
 

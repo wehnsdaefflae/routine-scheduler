@@ -1167,7 +1167,7 @@ async def test_retention_runs_off_the_event_loop(tmp_path, monkeypatch):
     loop_thread = threading.current_thread().name
     seen: dict[str, str] = {}
     monkeypatch.setattr(
-        "rsched.registry.apply_retention",
+        "rsched.retention.apply_retention",
         lambda *a, **k: seen.setdefault("thread", threading.current_thread().name))
 
     runner_reap.prune_runs(runner, cfg)

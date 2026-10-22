@@ -64,7 +64,7 @@ settings:
     max_subrun_depth: 2
     max_subruns: 12
     max_total_tokens: -1
-    max_total_turns: -1
+    max_total_turns: 0
     max_turns: 200
     max_wall_clock_min: 180
   keep_runs: 30

@@ -215,6 +215,20 @@ export async function render(view, slug, query = {}) {
 // on runsBox itself, not on a closure).
 const RUNS_PREVIEW = 10;
 
+// A run's turn count, and — only when it RESUMED — the window that count was budgeted
+// against: `348 (window 179/200, resumed at 169)`. `turn` is cumulative across every resume
+// leg while the turn BUDGET is re-based at the resume point, so four audited runs showed a
+// turn count well past their own max_turns (freelance-radar: 348 against 200) with no sign of
+// why, and the only available reading was that the ceiling had failed (F564/D155). A run that
+// never resumed has no window and reads exactly as it did before — a parenthetical on every
+// row would be noise on all but a handful of them.
+function turnCell(r) {
+  if (r.turn == null) return null;
+  const w = r.window;
+  if (!w) return String(r.turn);
+  return `${r.turn} (window ${w.turns}/${w.max_turns}, resumed at ${w.base_turn})`;
+}
+
 function runsTable(runsBox, d) {
   runsBox.replaceChildren();
   const all = d.runs || [];
@@ -226,7 +240,7 @@ function runsTable(runsBox, d) {
   const rows = shown.map((r) => el("tr", {},
     el("td", { class: "inline" }, el("a", { href: `#/run/${r.run_id}` }, when(r.ts))),
     el("td", { class: "inline" }, chip(r.state, r.state)),
-    el("td", { class: "num inline", "data-label": "turns" }, r.turn == null ? null : String(r.turn)),
+    el("td", { class: "num inline", "data-label": "turns" }, turnCell(r)),
     el("td", { class: "num muted inline" }, r.elapsed_s != null ? fmtDur(r.elapsed_s) : "—"),
     el("td", { class: "muted inline" }, fmtTokens(r.usage)),
     // The summary is MODEL PROSE, and four surfaces show this one field — so ONE helper

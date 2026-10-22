@@ -15,7 +15,10 @@ double-counts a resume window.
 
 Resources (each value in its limit's own unit; limit -1 = unlimited, which lifts the ceiling):
   turns        turns used in THIS budget window   (limit = max_turns)
-  total_turns  turns used across ALL windows      (limit = max_total_turns — a conversation's life)
+  total_turns  turns used across ALL windows      (limit = max_total_turns — the RUN-SPANNING
+                                                   cap: every resume leg of a run, every reply
+                                                   of a conversation. Defaults to 3x max_turns,
+                                                   engine/turnwindow)
   wall_clock   MINUTES elapsed                     (limit = max_wall_clock_min)
   tokens       in+out tokens                       (limit = max_total_tokens)
   cost         real provider $ spend               (limit = max_cost)
@@ -28,6 +31,8 @@ place that wording lives now.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from . import turnwindow
 
 #: The SECOND and last warning line, as a fraction of the limit. A run that passed the first
 #: one and kept working gets one more notice near the ceiling — and NOTHING in between: the
@@ -45,20 +50,24 @@ CONSUMABLE = ("turns", "wall_clock", "tokens", "cost")
 FLOOR = {"turns": 1, "wall_clock": 1, "tokens": 1000, "cost": 1}
 
 
-def _fmt_exhausted(resource: str, limit: float) -> str:
+def _fmt_exhausted(resource: str, limit: float, window_limit: float = -1) -> str:
     return {
         "turns": f"turn budget exhausted ({int(limit)})",
-        "total_turns": f"conversation turn budget exhausted ({int(limit)} total turns)",
+        # NOT "turn budget exhausted": after a resume the window cap and this one are
+        # different numbers, and a run told only that it is out of turns cannot tell which
+        # one stopped it (F564/D155). `window_limit` is the sibling `turns` budget's.
+        "total_turns": turnwindow.exhausted(limit, window_limit),
         "wall_clock": f"wall-clock budget exhausted ({int(limit)} min)",
         "tokens": f"token budget exhausted ({int(limit)})",
         "cost": f"cost budget exhausted (${int(limit)})",
     }.get(resource, f"{resource} budget exhausted ({limit})")
 
 
-def _fmt_left(resource: str, left: float) -> str:
+def _fmt_left(resource: str, left: float, limit: float = -1,
+              window_limit: float = -1) -> str:
     return {
         "turns": f"~{int(left)} turns left",
-        "total_turns": f"~{int(left)} turns left in this conversation",
+        "total_turns": turnwindow.left(left, limit, window_limit),
         "wall_clock": f"~{max(0, int(left))} minutes left",
         "tokens": f"~{int(left)} tokens left",
         "cost": f"~${max(0.0, round(left, 2))} of budget left",
@@ -123,8 +132,17 @@ class BudgetLedger:
         for b in self.budgets:
             if b.exceeded(meter.get(b.resource, 0)):
                 return {"resource": b.resource, "limit": b.limit,
-                        "message": _fmt_exhausted(b.resource, b.limit)}
+                        "message": _fmt_exhausted(b.resource, b.limit, self._window_limit())}
         return None
+
+    def _window_limit(self) -> float:
+        """This ledger's per-WINDOW turn ceiling (`max_turns`), or -1 when unlimited — what the
+        run-spanning cap's wording contrasts itself against (engine/turnwindow).
+        """
+        for b in self.budgets:
+            if b.resource == "turns":
+                return b.limit
+        return -1
 
     def warnings(self, meter: dict) -> list[tuple[str, str]]:
         """Every budget past a warning line, in check order, as `(line-id, text)` — e.g.
@@ -140,7 +158,8 @@ class BudgetLedger:
             line = b.warn_line(current)
             left = b.left(current)
             if line is not None and left is not None:   # a warn line implies a finite limit
-                out.append((f"{b.resource}@{line:g}", _fmt_left(b.resource, left)))
+                out.append((f"{b.resource}@{line:g}",
+                            _fmt_left(b.resource, left, b.limit, self._window_limit())))
         return out
 
     def remaining(self, resource: str, meter: dict) -> float | None:

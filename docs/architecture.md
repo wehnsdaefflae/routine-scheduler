@@ -279,7 +279,10 @@ the limits (single-writer status.json preserved).
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →
-  `ctx.usage_base`; budgets ignore it). The **model can be switched mid-run** — a `control.json`
+  `ctx.usage_base`; budgets ignore it). status.json's `budgets` block carries that base turn,
+  the window's own count and both ceilings beside `turns_left`, and the runs table renders
+  `348 (window 179/200, resumed at 169)` — without them a resumed run showed a turn count past
+  its own `max_turns` beside a large "turns left" and read as a failed ceiling (F564/D155). The **model can be switched mid-run** — a `control.json`
   `switch_model` signal applied at the turn boundary (`for_model` re-resolves every turn).
 - **"Once" survives a resume** (`engine/guardscope.py`). The once-only guards — the hold
   ledger, each rule assist's single fire and the one assist finish deferral, the repos found
@@ -537,7 +540,10 @@ and the capabilities digest's catalog listing):
   levels `runs` /
   `reminders` — both user-changeable only, side by side on the routine page with cascades between
   them; a child run picks its pattern from the catalog and never drafts one),
-  `budgets:` (max_turns / max_total_turns (cumulative across resume windows) / wall_clock_min /
+  `budgets:` (max_turns — ONE resume WINDOW, which a resume re-bases (`budget_base_turn`), so it
+  is NOT a ceiling on a run / max_total_turns — the RUN-SPANNING cap over every window, which
+  defaults to 3x max_turns (`engine/turnwindow`) rather than unlimited, an explicit value
+  winning, `-1` included / wall_clock_min /
   total_tokens / max_cost (whole-$ ceiling) — the last four honor -1 = unlimited — / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, creation flow + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine

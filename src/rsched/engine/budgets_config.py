@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .budget import Budget, BudgetLedger
+from .turnwindow import DERIVE, total_turn_cap
 
 
 def _vm_hwm_kb() -> int | None:
@@ -50,12 +51,24 @@ class Budgets:
     max_subrun_depth: int
     ask_timeout_min: int
     max_cost: int = -1        # -1 = unlimited: whole-dollar ceiling on real provider $ spend
-    max_total_turns: int = -1  # -1 = unlimited: cumulative turn cap across ALL resume windows
-                               # (a conversation's whole life); max_turns bounds one window
+    max_total_turns: int = -1  # the RESOLVED cumulative cap across ALL resume windows
+                               # (max_turns bounds ONE window). -1 = unlimited; the config's
+                               # `0` means DERIVE and is resolved in from_config, never here —
+                               # a run's ceilings are read off this field by every check.
 
     @classmethod
     def from_config(cls, budgets: dict) -> Budgets:
-        return cls(**budgets)
+        """A routine's configured numbers as this run's ceilings.
+
+        The ONE place the run-spanning cap is resolved (`engine/turnwindow`): `max_total_turns`
+        defaults to 3x `max_turns` instead of unlimited, because `max_turns` bounds a resume
+        WINDOW and a re-based window bounds no chain of them (F564/D155). An explicit value
+        wins, -1 included.
+        """
+        resolved = dict(budgets)
+        resolved["max_total_turns"] = total_turn_cap(
+            int(resolved.get("max_turns", 0)), int(resolved.get("max_total_turns", DERIVE)))
+        return cls(**resolved)
 
     def ledger(self) -> BudgetLedger:
         """This run's stop conditions as the unified primitive (engine/budget.py). The ONE

@@ -10,7 +10,8 @@ import { el, toast } from "/static/util.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { fieldBlock, settingsGroup } from "/static/components/settings-field.js";
 import { describe } from "/static/components/settings-digest.js";
-import { BUDGET_FIELDS, UNLIMITED_BUDGETS } from "/static/components/budgetfields.js";
+import { BUDGET_FIELDS, DERIVED_BUDGETS, UNLIMITED_BUDGETS }
+  from "/static/components/budgetfields.js";
 import { connectionsCard } from "/static/components/connections.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { machinesCard } from "/static/components/machines.js";
@@ -41,10 +42,13 @@ export function limitsGroup(ctx) {
     const current = { ...(value || {}) };
     return el("div", { "data-budgets": "" }, ...BUDGET_FIELDS.map(([key, label, help]) => {
       const unlimited = UNLIMITED_BUDGETS.includes(key);
+      const derived = DERIVED_BUDGETS.includes(key);   // 0 = derive it, not "no budget"
+      const ok = (v) => v >= 1 || (unlimited && v === -1) || (derived && v === 0);
       return el("div", { class: "row", style: "margin:5px 0" },
         numberInput(current[key], { min: unlimited ? -1 : 0, attrs: { "data-budget": key },
-          reject: (v) => (!Number.isFinite(v) || (v < 1 && !(unlimited && v === -1))
-            ? `${label}: needs a positive number${unlimited ? " (or -1 = unlimited)" : ""}` : ""),
+          reject: (v) => (!Number.isFinite(v) || !ok(v)
+            ? `${label}: needs a positive number${unlimited ? " (or -1 = unlimited)" : ""}`
+              + `${derived ? " (or 0 = derive from max_turns)" : ""}` : ""),
           onValue: (v) => { current[key] = v; set({ ...current }); } }),
         el("span", { style: "min-width:220px" }, label),
         el("span", { class: "muted small" }, help));
