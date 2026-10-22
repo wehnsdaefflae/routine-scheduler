@@ -11,7 +11,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"fire_paused"|"fire_catchup"|"routine_catchup_declined"
         |"scheduler_tick_error"|"migration_due_soon"|"migration_expired"
         |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route"
-        |"obligation_overdue"|"ungated_write"|"wrong_turn_detected",
+        |"obligation_overdue"|"ungated_write"|"wrong_turn_detected"|"run_corrected",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -292,6 +292,10 @@ the daemon, not a run; detail carries the failure cause, F197).
 migration_due_soon / migration_expired: a `MIGRATION(expires=)` declaration entered its 21-day
 window, or passed it (`daemon/marker_watch`, F702) — routine and run_id empty, both carrying
 `markers` and the date. An expiry reds every gate on this host; the lead time had no reader.
+
+run_corrected: a run that ended NOT-OK was resumed and finished `ok`, so its earlier endings
+on this stream are superseded (`rsched/runcorrection.py`, F637/F703). Carries `superseded`,
+the event names it resolves. The originals STAY — a correction supersedes, it never erases.
 
 obligation_overdue: what a person asked of a routine or approved has stayed open in its
 `state/obligations.json` longer than `obligations.OVERDUE_DAYS` (`daemon/owed_watch`) — one row

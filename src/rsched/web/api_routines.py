@@ -291,7 +291,7 @@ def recipe_health(request: Request, slug: str) -> dict:
     them (stamped by the engine; pre-stamp history is date-attributed) with the regression
     evaluation of the newest recipe change; `trend`, the same evaluation over the last two
     run WINDOWS regardless of version — what a shared library revision moves and no recipe
-    commit records; and `endings`, which of this routine's partial finishes a budget forced.
+    commit records; and `endings`, which partials a budget forced + `corrected` (F637/F703).
     Flag-first: reverting is the user's explicit POST below, never automatic.
     """
     from ..readmodels.run_health import routine_health

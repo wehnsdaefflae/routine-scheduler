@@ -74,6 +74,31 @@ def test_a_healthy_fleet_still_gets_the_panel_saying_so(ui, ui_page):
     expect(section).to_contain_text("nothing blocked")
 
 
+def test_a_corrected_run_leaves_the_panel_and_its_lane_close_says_so(ui, ui_page):
+    """F637/F703. A run that ended not-ok, was resumed and finished `ok` must read `ok` here
+    too: its own row goes (the work was done), while the lane close it stopped STAYS — those
+    members really did not run — and stops claiming the member failed.
+    """
+    _a_counted_run(ui)
+    ts = _now_iso(ui_page)
+    _blocked(ui, [
+        {"ts": ts, "event": "wrong_turn_detected", "routine": "uir", "run_id": "uir:r1",
+         "reason": "attempts_exhausted", "turn": 4, "detail": "turn 4: out of attempts"},
+        {"ts": ts, "event": "lane_chain_stopped", "routine": "grp-77", "run_id": "lr-4",
+         "detail": "morning: 2 member runs, 1 not-ok (uir)", "stopped_by": "uir:r1"},
+        {"ts": ts, "event": "run_corrected", "routine": "uir", "run_id": "uir:r1",
+         "superseded": ["wrong_turn_detected"], "detail": "resumed and finished ok"},
+    ])
+    ui_page.goto(f"{ui.url}/#/stats")
+    section = ui_page.locator(".stat-section", has=ui_page.get_by_role("heading",
+                                                                      name="Blocked work"))
+    expect(section).to_be_visible()
+    expect(section).not_to_contain_text("wrong_turn_detected")
+    expect(section).to_contain_text("lane_chain_stopped")
+    expect(section).to_contain_text("superseded")
+    expect(section).to_contain_text("corrected")
+
+
 def test_a_lane_subject_is_not_parsed_into_a_route(ui, ui_page):
     """A lane id is opaque by the fold's own contract: the row links to where lanes live, and
     never to a route built out of the id's characters."""

@@ -169,6 +169,10 @@ def _log_ending(loop, status: str, summary: str) -> None:
     The reserved turn is what decides, NOT the status: a run that spends it and still finishes
     `ok` was ended by a budget just as much, and used to leave no event at all — 11 such runs
     since 09-01, so the fleet's budget-forced endings read as a smaller number than they are.
+
+    An `ok` ending also files the CORRECTION for any not-ok ending this same run left behind
+    on an earlier leg (`rsched/runcorrection.py`, F637/F703) — the stream is append-only, so a
+    resumed-to-ok run said "failed" forever on every surface that reads it. The originals stay.
     """
     ctx = loop.ctx
     if loop._finish_reserved:
@@ -178,6 +182,7 @@ def _log_ending(loop, status: str, summary: str) -> None:
     elif status in ("failed", "aborted"):
         event_type = "run_failed"
     else:
+        _correct_earlier_endings(loop, summary)
         return
     # `resource` and `limit` ride as FIELDS, not prose: which budget ended the run is exactly
     # the question a sweep must be able to filter on, and `detail` carried only the summary.
@@ -187,6 +192,24 @@ def _log_ending(loop, status: str, summary: str) -> None:
                      detail=summary[:500],
                      status=status if event_type == "budget_exhausted" else None,
                      resource=spent.get("resource"), limit=spent.get("limit"))
+    if status == "ok":
+        # The reserved turn was spent and the run STILL finished ok: the budget_exhausted row
+        # above is true and stays, and an earlier leg's not-ok ending is still corrected.
+        _correct_earlier_endings(loop, summary)
+
+
+def _correct_earlier_endings(loop, summary: str) -> None:
+    """An `ok` ending supersedes any not-ok ending this same run left on the health stream.
+
+    A resume reuses the run_id (`daemon/runner.resume`), so the run's own record self-corrects
+    — status.json, result.md and the usage stream's newest-leg fold all read `ok`. The health
+    stream is append-only and could not, which is what left two surfaces disagreeing forever.
+    """
+    from ..runcorrection import record
+
+    ctx = loop.ctx
+    record(ctx.server.routines_home, routine=ctx.routine.slug, run_id=ctx.run_id,
+           summary=summary[:200])
 
 
 def exit_commands_only(loop) -> str:

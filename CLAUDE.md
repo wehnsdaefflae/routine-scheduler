@@ -267,7 +267,16 @@ one you are about to touch, not all of them.
   provider with no constrained decoding. The violation is recorded as a transcript event and as
   `resource`/`limit` fields on the `budget_exhausted` health event and in status.json's
   `budgets.spent`, so which budget ended a run is answerable by a filter rather than by
-  reconstruction. **A turn that comes back WELL-FORMED AND WRONG is itself a health event**
+  reconstruction. **A resumed run that finishes `ok` SUPERSEDES its own earlier not-ok record**
+  (`run_corrected`, `rsched/runcorrection.py`, F637/F703): a resume reuses the run_id, so
+  status.json, result.md and the usage stream's newest-leg fold all read `ok`, while the
+  append-only health stream said "failed" forever — two surfaces permanently disagreeing about
+  one run. The correction carries `superseded` and the readers resolve it; the ORIGINAL ROW IS
+  NEVER EDITED OR DELETED, because that history is what the stream exists for. It supersedes
+  endings only (`run_failed`, `run_canceled`, `orphaned_run`, `run_partial`, a not-ok
+  `budget_exhausted`, and `wrong_turn_detected` with `reason=attempts_exhausted`): a turn merely
+  rejected or repeated was still paid for, and `finish_gate_failed` claims the checks did not
+  run, not that the run failed. **A turn that comes back WELL-FORMED AND WRONG is itself a health event**
   (`wrong_turn_detected`, `engine/wrongturn.py`, R2652): every net in `engine/degrade.py` — the
   module headed "when a turn comes back WRONG" — fires on a turn that failed to ARRIVE, so a
   rejected, repeated or attempt-exhausted turn was visible only as a transcript `error` and two

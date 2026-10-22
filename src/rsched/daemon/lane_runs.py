@@ -115,9 +115,17 @@ class LaneRunManager:
         # a routine that was simply disabled, which is the one reading an audit must not get.
         not_ok = [str(e.get("slug")) for e in entries
                   if e.get("outcome") not in ("ok", "skipped")]
+        # F637/F703: the row named a SLUG, and a slug is not a run — so when the member that
+        # closed this chain was resumed and finished ok, no reader could tell. `stopped_by`
+        # carries that member's run id (the last not-ok entry's, the one `on_failure: stop`
+        # acted on), which is what `readmodels/health_stream` resolves a correction against.
+        # The chain is never reopened: its remaining members really did not run.
+        stopped_by = next((str(e.get("run_id")) for e in reversed(entries)
+                           if e.get("outcome") not in ("ok", "skipped") and e.get("run_id")), "")
         log_health_event(
             self.home, f"lane_chain_{status}", routine=lane_id,
             run_id=str(rec.get("id") or ""),
+            stopped_by=stopped_by or None,
             detail=f"{rec.get('name') or lane_id}: {len(entries)} member runs, "
                    f"{len(not_ok)} not-ok"
                    + (f" ({', '.join(not_ok)})" if not_ok else "")

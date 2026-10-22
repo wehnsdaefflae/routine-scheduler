@@ -74,8 +74,14 @@ export async function blockedSection() {
     el("th", { class: "num" }, "times"), el("th", {}, "first"), el("th", {}, "newest"),
     el("th", {}, "newest detail"));
   const body = rows.map((r) => el("tr", {},
-    // the label is the SERVER's (`means`), which is what the vocabulary payload is for
-    el("td", {}, el("div", {}, r.event), el("div", { class: "faint small" }, r.means || "")),
+    // the label is the SERVER's (`means`), which is what the vocabulary payload is for.
+    // `corrected` (F637/F703): the run behind this row was resumed and finished ok. The row
+    // STAYS — a stopped chain's remaining members really did not run — but a reader must not
+    // keep reading it as a failure, and the server's own detail says what was superseded.
+    el("td", {}, el("div", {}, r.event),
+      r.corrected ? el("div", { class: "faint small" }, "corrected — the run behind this was "
+        + "resumed and finished ok") : null,
+      el("div", { class: "faint small" }, r.means || "")),
     subjectCell(r.subject),
     el("td", { class: "num" }, fmtInt(r.count)),
     el("td", { class: "faint small" }, when(r.first_ts)),
