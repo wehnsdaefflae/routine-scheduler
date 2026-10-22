@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .. import patchreceipt
 from . import notes, outputs
 from .actionschema import example_action
 from .capabilities import capabilities_digest
@@ -202,7 +203,13 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                            for q in open_qs)
         parts.append(f"Open deferred questions (still unanswered):\n{qlines}")
     if deferred_qa:
-        alines = "\n".join(f"- Q: {p['question']}\n  A: {p['answer']}" for p in deferred_qa)
+        # An answer to a question that carried a `config_patch` says whether the patch is
+        # LIVE (rsched/patchreceipt.py). Without it a run read an affirmative "Ok", recorded
+        # the budget raise as applied and planned 600 turns against a 400-turn ceiling —
+        # R2778, twice `budget_exhausted`. The verdict rides the pair in both directions: the
+        # apply button's answer says APPLIED, an ordinary answer says NOT APPLIED.
+        alines = "\n".join(f"- Q: {p['question']}\n  A: {p['answer']}"
+                           + patchreceipt.digest_suffix(p) for p in deferred_qa)
         parts.append(f"ANSWERS received to earlier questions (consume now):\n{alines}")
     return "\n\n".join(p for p in parts if p)
 

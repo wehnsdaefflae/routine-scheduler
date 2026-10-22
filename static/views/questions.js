@@ -253,15 +253,15 @@ export async function render(view, query = {}) {
             : q.ran_now ? "run starting now" : "next run"}`);
       say(q.answer, settledNote());
       // The unapplied proposal, kept alive on the receipt (see the comment at the return).
-      // `host` is this card's own body, so applying it writes its receipt where the answer is.
-      const settledBar = proposal(q, { host: body, clearWarn: () => {} });
-      const settledConfig = settledBar
-        ? el("div", { class: "mt" },
-            el("div", { class: "small faint" },
-              "the proposed config change was NOT applied — answering never applies it; "
-              + "approve it here while it is still offered"),
-            settledBar)
-        : null;
+      // R2778: `host` is this WRAPPER, not the card body, so applying REPLACES the "NOT
+      // applied" warning instead of landing beside it — with `body` as the host, one card
+      // carried both labels at once and no reader could tell which of them was true.
+      const settledConfig = el("div", { class: "mt" });
+      const settledBar = proposal(q, { host: settledConfig, clearWarn: () => {} });
+      if (settledBar) settledConfig.append(
+        el("div", { class: "small faint" },
+          "the proposed config change was NOT applied — answering never applies it; "
+          + "approve it here while it is still offered"), settledBar);
       return el("div", { class: "panel question-item answered" },
         el("div", { class: "q-meta" },
           q.meta ? chip("meta", "meta") : null,
@@ -289,7 +289,7 @@ export async function render(view, query = {}) {
         // second time on an option that read "Ja — Patch übernehmen", where the answer said yes
         // and nothing happened. The receipt is where it belongs, because answering is exactly
         // when the card moves here.
-        settledConfig);
+        settledBar ? settledConfig : null);
     }
     const runBits = q.run_id ? [
       el("a", { class: "btn small", href: `#/run/${q.run_id}` }, "view run"),

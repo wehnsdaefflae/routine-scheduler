@@ -288,9 +288,15 @@ def drain_injections(loop) -> None:
         # fs-write grant stayed EACCES until the next run.
         from .requests import apply_deferred_decisions
         apply_deferred_decisions(loop, pairs)
+    # R2778: an answer to a patch-carrying question says whether the patch is LIVE, in the same
+    # words the state digest uses (rsched/patchreceipt.py) — the mid-run door leads to exactly
+    # the harm the boot door did: the words "Ok" and no way to tell whether the ceiling moved.
+    from .. import patchreceipt
+
     for qa in pairs:
         inject_user_message(loop, {"text": f"ANSWER to your deferred question "
-                                           f"“{qa['question']}”:\n{qa['answer']}"})
+                                           f"“{qa['question']}”:\n{qa['answer']}"
+                                           + patchreceipt.digest_suffix(qa)})
     drained = inbox.drain_messages(ctx.routine.dir, loop.consumed_dir,
                                    vias=inbox.LIVE_MESSAGE_VIAS)
     for m in drained:

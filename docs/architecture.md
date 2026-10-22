@@ -1435,7 +1435,18 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   and `inbox` dir, every `runs/` dir and run `status.json`), so a warm call is a stat pass and never
   a `registry.scan`. `registry.info(server, home, slug)` answers for ONE directory off the same
   four memos — exactly what `scan(server, home).get(slug)` answers, without walking the home to
-  answer it — and every `/routines/{slug}/*` and `/conversations/{slug}/*` handler takes that
+  answer it. A row for an ANSWERED question whose record carried a `config_patch` also states
+  whether the patch was applied (`config_patch_applied` — `rsched/patchreceipt.py` owns the field
+  names and the wording). That one fact has three readers and one writer: the Decisions page's
+  settled card, `config-optimizer` (which reads the API rather than the prompt), and the asking
+  RUN, which gets it on its answer pair (`engine/inbox_questions.collect_deferred_answers`) and
+  reads it as a line of its state digest (`engine/composer`). It is true in both directions
+  because the `approve & apply` button is what declares it — `config_patch_applied` on the answer
+  POST, or `POST /api/questions/{qid}/patch-applied` (`web/api_patch_applied.py`) when the patch
+  is applied to a card that was already answered. Answering still never applies a patch (R2189);
+  R2778 is only about the asking run being TOLD which happened, after one read an affirmative
+  prose answer as approval and planned 600 turns against a live 400-turn ceiling. Every
+  `/routines/{slug}/*` and `/conversations/{slug}/*` handler takes that
   path; a name the directory does not answer to (a routine.yaml whose `slug` disagrees with its
   dir, a name that is not a slug at all) falls back to the full walk, which is also what keeps a
   URL segment from being joined onto a path.

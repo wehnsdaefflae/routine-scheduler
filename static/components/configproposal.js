@@ -87,9 +87,18 @@ export function configProposal(q, { host, clearWarn, onApplied }) {
       // An ALREADY-ANSWERED card must not be answered again: the answer route is what files a
       // decision, and re-filing one that is settled would resurrect it as open. Applying the
       // patch is the whole act there; the answer already exists.
+      //
+      // R2778: either way the RECORD has to say the patch was applied, because the asking run
+      // reads that field now (engine/inbox_questions → the state digest). A fresh answer
+      // carries the signal; an answer already filed is corrected through its own route, which
+      // touches no answer text and re-opens nothing. Without this the run would be told "NOT
+      // APPLIED" about a change that IS live — worse than the silence R2778 replaced.
       if (!q.answered) {
         await api(`/api/questions/${q.qid}/answer`,
-          { method: "POST", body: { text: "approved & applied the proposed config change" } });
+          { method: "POST", body: { text: "approved & applied the proposed config change",
+                                    config_patch_applied: true } });
+      } else {
+        await api(`/api/questions/${q.qid}/patch-applied`, { method: "POST" });
       }
       q.config_patch_applied = true;
       toast(`config change applied to ${where}`);

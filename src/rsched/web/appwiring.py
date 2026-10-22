@@ -138,6 +138,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_lanes,
         api_llm_tasks,
         api_messages,
+        api_patch_applied,
         api_pending,
         api_playbooks,
         api_push,
@@ -172,6 +173,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
                    api_schedule, api_stats, api_changes, api_health, api_finishline,
                    api_credential_names,
                    api_questions,
+                   api_patch_applied,   # /questions/{qid}/patch-applied — R2778's record fix
                    api_audit,
                    api_items, api_messages, api_pending,
                    api_traces,

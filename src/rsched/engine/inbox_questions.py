@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from .. import patchreceipt
 from ..ids import now_iso
 from ..paths import read_json
 from .inbox import _consume
@@ -53,6 +54,11 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
     consumers can seed the run overlay (requests.apply_deferred_decisions) — an
     "allow now" decided between runs grants exactly the run that consumes it, and a
     decision landing mid-run reaches the running run's policy at once (R118).
+
+    A pair for a question that carried a `config_patch` also carries
+    `config_patch_applied` (+ `config_patch_target`), so the asking run learns whether the
+    change it proposed is LIVE — R2778, where a run read an affirmative answer, recorded the
+    raise as applied, and planned 600 turns against a ceiling that was still 400.
     """
     inbox = routine_dir / "inbox"
     pending = routine_dir / "questions" / "pending"
@@ -82,6 +88,10 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
             # blocking ask later in this very run). Leave it alone.
             continue
         pair = {"qid": qid, "question": q.get("question", "?"), "answer": str(obj["text"])}
+        # R2778: and whether the `config_patch` the question carried was APPLIED. The run
+        # that asked for a 600-turn budget read only the operator's "Ok", recorded the raise
+        # as applied, and planned against a ceiling that was still 400.
+        patchreceipt.carry(pair, obj)
         if q.get("request") and obj.get("decision"):
             pair["request"] = [str(r) for r in q["request"]]
             pair["decision"] = str(obj["decision"])
@@ -128,6 +138,10 @@ def _archive_answer(routine_dir: Path, question: dict, answer: dict) -> Path:
               "consumed": now_iso()}
     if answer.get("decision"):
         record["decision"] = str(answer["decision"])
+    # R2778: and the patch verdict, or it survives only until the run that reads the answer —
+    # after which the settled card would offer `approve & apply` again for a change already
+    # live, and no reader of the archive could tell the two states apart.
+    patchreceipt.carry(record, answer)
     if isinstance(prior, dict) and prior.get("consumed"):
         # an amended answer keeps the ORIGINAL settlement time: the decision was made then,
         # and only its wording moved
