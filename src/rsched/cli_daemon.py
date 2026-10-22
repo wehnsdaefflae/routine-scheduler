@@ -38,6 +38,12 @@ def cmd_daemon(_args) -> int:
     # `enabled` — also before anything loads a routine.yaml, which no longer reads it
     from .migrate_enabled import run_migration as fold_off_switch
     fold_off_switch(server)
+    # MIGRATION(expires=2026-12-31): F564/D155's run-spanning cap shipped INERT on 28 of 33
+    # routines — the scaffold had written an explicit `max_total_turns: -1` and explicit wins.
+    # The operator chose the migration (R2782/R2790); it rewrites only a line git shows was
+    # written once by the scaffold and never touched, so a deliberate uncapping stands.
+    from .migrate_total_turns import run_migration as derive_total_turns
+    derive_total_turns(server)
     # The library repo exists BEFORE the syncs fill it. A container has no install step and its
     # library is an empty bind mount at first boot; the util sync installs only into an
     # existing utils/, and the repo used to be created by the web lifespan after these ran — so
