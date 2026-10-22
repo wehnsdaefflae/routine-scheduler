@@ -19,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import browsersource
 import pytest
 import uvicorn
 import yaml
@@ -98,17 +99,21 @@ def pytest_collection_modifyitems(items):
             in_ui = str(_UI_DIR) in str(getattr(item, "fspath", ""))
         if in_ui:
             item.add_marker(pytest.mark.ui)
-            item.add_marker(pytest.mark.xdist_group(BROWSER_GROUP))
-            item.add_marker(pytest.mark.flaky(reruns=4, reruns_delay=2,
-                                              rerun_except=r"sidecar .* is wedged"))
+            if _cdp_endpoint():
+                # Only a SHARED browser forces one work unit. With a browser per worker the
+                # directory spreads like any other, which is the whole point of launching.
+                item.add_marker(pytest.mark.xdist_group(BROWSER_GROUP))
+            item.add_marker(pytest.mark.flaky(
+                reruns=4, reruns_delay=2,
+                rerun_except=r"sidecar .* is wedged|BROWSER_CDP_TOKEN is required|no local "
+                             r"browser"))
 
 
-def _cdp_endpoint() -> str:
-    endpoint = os.environ.get("RSCHED_TEST_CDP")
-    if not endpoint:
-        pytest.fail(f"RSCHED_TEST_CDP is required; a local browser launch is forbidden.\n"
-                    f"{HOW_TO_RUN}")
-    return endpoint
+#: Which browser this suite drives, and why — `browsersource.py` beside this file carries the
+#: reasoning and the measurement, and is imported flat (not `from .browsersource`) because
+#: `tests/test_ui_harness.py` loads THIS file directly by path, where a relative import raises.
+_cdp_endpoint = browsersource.cdp_endpoint
+SIDECAR_CONNECT_TIMEOUT_MS = browsersource.SIDECAR_CONNECT_TIMEOUT_MS
 
 
 # The sidecar attach happens ONCE per gate (the whole directory is one work unit), so it can
@@ -117,19 +122,7 @@ def _cdp_endpoint() -> str:
 SIDECAR_CONNECT_TIMEOUT_MS = 60_000
 
 
-def _cdp_headers() -> dict[str, str]:
-    """The bearer the sidecar's auth proxy requires (deploy/browser-auth-proxy.py).
 
-    CDP authenticates nothing of its own, so the port sits behind a token door and this
-    suite is one of its callers. Taken from the environment rather than the secrets store:
-    a test run is not a routine and has no grant to read from.
-    """
-    token = os.environ.get("BROWSER_CDP_TOKEN", "").strip()
-    if not token:
-        pytest.fail("BROWSER_CDP_TOKEN is required to reach the browser sidecar — its CDP "
-                    "port is behind a bearer proxy. Export the same value the compose "
-                    "`chrome` service gets (see deploy/DOCKER.md).")
-    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture(scope="session")
@@ -147,14 +140,7 @@ def browser(playwright):
     partition. Exempting this failure from reruns turns 276 connects back into one, which is
     also why it can afford to be patient.
     """
-    endpoint = _cdp_endpoint()
-    try:
-        return playwright.chromium.connect_over_cdp(
-            endpoint, headers=_cdp_headers(), timeout=SIDECAR_CONNECT_TIMEOUT_MS)
-    except PlaywrightError as exc:
-        pytest.fail(f"browser sidecar {endpoint} is wedged — it accepts TCP but never attaches "
-                    f"over CDP. Restart the compose `chrome` service "
-                    f"(docker compose restart chrome). {type(exc).__name__}: {exc}")
+    return browsersource.acquire(playwright, HOW_TO_RUN)
 
 
 @pytest.fixture(scope="session")

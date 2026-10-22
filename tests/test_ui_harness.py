@@ -22,8 +22,17 @@ ROOT = Path(__file__).resolve().parents[1]
 def _load(relative: str, name: str) -> types.ModuleType:
     """Import a conftest by PATH under its own name — the hooks under test are plain module
     functions, and reaching them through the plugin manager would only hold for the runs that
-    happen to have collected that directory."""
-    spec = importlib.util.spec_from_file_location(name, ROOT / relative)
+    happen to have collected that directory.
+
+    The conftest's own flat imports (`import browsersource`, `from helpers import …`) resolve
+    because `tests/` is already on `sys.path` for this suite. Do NOT insert the loaded file's
+    own directory: `tests/ui/` is a package with its own `helpers.py`, so putting it first
+    shadows `tests/helpers.py` and the load fails on a name that resolves fine under pytest —
+    which is why the browser-source module lives in `tests/` beside `helpers.py` rather than
+    inside the ui package.
+    """
+    target = ROOT / relative
+    spec = importlib.util.spec_from_file_location(name, target)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module     # a @dataclass in the module resolves its own module by name
@@ -51,17 +60,40 @@ def _mark(item: _Item, name: str):
     return next(m for m in item.markers if m.name == name)
 
 
-def test_ui_items_carry_group_ui_and_rerun_markers():
+def test_ui_items_carry_ui_and_rerun_markers_and_spread_when_each_worker_launches(monkeypatch):
+    """The DEFAULT since 2026-10-22: no `RSCHED_TEST_CDP`, so every worker launches its own
+    browser and the directory spreads like any other suite — no `xdist_group`.
+
+    Operator: *"Maybe we shouldn't use the sidecar for browser tests at all anymore"*. Sharing
+    ONE browser is what the grouping existed for (599 items / 913 s on a single worker, measured
+    2026-10-21); with a browser per worker the pinning only costs wall clock.
+    """
+    monkeypatch.delenv("RSCHED_TEST_CDP", raising=False)
     item = _Item(ROOT / "tests" / "ui" / "test_flows.py")
     UI_CONFTEST.pytest_collection_modifyitems([item])
 
-    assert {m.name for m in item.markers} == {"ui", "xdist_group", "flaky"}
-    assert _mark(item, "xdist_group").args == (UI_CONFTEST.BROWSER_GROUP,)
+    assert {m.name for m in item.markers} == {"ui", "flaky"}
     flaky = _mark(item, "flaky")
     assert flaky.kwargs["reruns"] == 4
     # a wedged sidecar fails identically on every attempt; spending four reruns per test on it
     # turns a one-line diagnosis into a gate-length one
     assert "wedged" in flaky.kwargs["rerun_except"]
+    # F743: a missing bearer and a missing local browser are configuration, not flakes — the
+    # unconditional token demand cost 22 tests 88 reruns and 183 s before one ran a line
+    assert "BROWSER_CDP_TOKEN is required" in flaky.kwargs["rerun_except"]
+    assert "no local browser" in flaky.kwargs["rerun_except"]
+
+
+def test_an_attached_sidecar_still_pins_the_directory_to_one_work_unit(monkeypatch):
+    """The OPT-IN path: an endpoint names a browser every worker would share, so the group is
+    back. This is the half that must not regress — three workers rendering into one headful
+    Chrome is what the rerun shield was absorbing (38 reruns, a 1500 s timeout, 6 reds)."""
+    monkeypatch.setenv("RSCHED_TEST_CDP", "http://172.30.7.10:9222")
+    item = _Item(ROOT / "tests" / "ui" / "test_flows.py")
+    UI_CONFTEST.pytest_collection_modifyitems([item])
+
+    assert {m.name for m in item.markers} == {"ui", "xdist_group", "flaky"}
+    assert _mark(item, "xdist_group").args == (UI_CONFTEST.BROWSER_GROUP,)
 
 
 def test_fast_suite_items_are_left_unmarked():

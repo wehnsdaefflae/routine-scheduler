@@ -15,6 +15,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.440.1] — 2026-10-22
+
+### Changed
+- **The browser suite launches its OWN browser; the Chrome sidecar is now an explicit opt-in**
+  (operator, 2026-10-22: *"Maybe we shouldn't use the sidecar for browser tests at all anymore"*,
+  after the measurement below). Sharing one headful Chrome was what forced the whole directory
+  onto a single xdist worker: measured 2026-10-21, **599 items / 913 s of work run serially**
+  (setup 120 s, call 631 s, teardown 163 s; the 15 slowest items sum to ~110 s, so there is no
+  hot spot to optimise). The per-test cost is the same either way — **28.3 s local vs 29.8 s
+  attached** over the same 22 items — and four concurrent browsers did 42 s of work in **18 s**
+  wall, so the suite becomes bounded by cores rather than by item count.
+  `tests/ui/conftest.py` now launches a headless browser when `RSCHED_TEST_CDP` is unset
+  (falling back to the newest installed Chromium build, because the bundled revision may lag on
+  a box that has not re-downloaded it), and applies the `xdist_group` pinning **only** when an
+  endpoint IS named — a shared browser still needs it. Export `RSCHED_TEST_CDP` (and
+  `BROWSER_CDP_TOKEN`) to attach to the sidecar and watch tests run, exactly as before. The
+  sidecar itself is unchanged and stays what it is for: holding the operator's logins for the
+  `job-*`/`browser-session` utils at runtime.
+- **The browser selection gets its own `-n auto`: 4 workers, not cores-minus-one.** A browser
+  worker now costs a Chromium *and* a uvicorn *and* the test, so it is not the arithmetic the
+  fast suite uses. Measured on the first gate after the change: at `auto` on this 12-core box
+  the stage spread to **14 workers**, one died, and xdist aborted the whole stage with
+  `INTERNALERROR KeyError: <WorkerController gw12>` after 97 s with 13 nodes unresolved — not a
+  verdict about the candidate (the gate correctly called it `timeout`, not red). Four is the
+  shape that was actually measured (42 s of work in 18 s of wall clock) and is consistent with
+  the shared-browser era's contention evidence; `tests/browsersource.worker_cap` holds the
+  number and the reasoning, and `tests/conftest.pytest_xdist_auto_num_workers` calls it.
+- **A second defect this change exposed, which would have shipped as a false verdict:**
+  `connect_over_cdp(headers={})` fails Playwright's own validation with *"headers: expected
+  array, got object"* — and `acquire()` would have reported that as **a wedged sidecar**, i.e. a
+  healthy browser described as broken. `headers` is now passed only when non-empty. Found by
+  running the attached path after the change rather than assuming it still worked.
+- **F743**: `_cdp_headers()` demanded `BROWSER_CDP_TOKEN` for *every* endpoint, including a
+  loopback CDP port that authenticates nothing — and because that refusal is deterministic but
+  was not in the directory's `rerun_except`, the rerun shield spent four attempts per test on it:
+  **22 tests became 88 reruns and 183 s** before one test ran a line. The bearer is now sent only
+  to a non-loopback endpoint, the refusal says it is configuration rather than a flake, and both
+  it and a missing local browser are rerun-exempt.
+
+### Fixed
+- **The build-skew banner's button now restarts the SERVER, because reloading could never fix
+  this direction** (operator, 2026-10-22: *"Clicking the button doesn't do anything"*, with a
+  screenshot of the console at `13597aa2` against a server at `c2156577`). The banner detects a
+  page NEWER than the process — `/static` is served live from disk while every Python object
+  stays at the build the process booted with — and offered `location.reload()`, which re-fetches
+  the files the browser already has. The banner came straight back, so the button read as dead;
+  it was in fact working perfectly and fixing the wrong half. The stale half is the PROCESS, and
+  only a daemon relaunch replaces it. `static/components/skewbanner.js` now POSTs the same
+  `/api/settings/restart` the Settings page posts, reports what stands between the request and
+  the exit (`queued behind N active run(s)`, since the scheduler keeps starting runs and leaves
+  at the first quiet gap — `daemon/restart.RESTART_IDLE_S`), renders an already-pending request
+  as a disabled "restart already requested" instead of an untouched button, and keeps reload as
+  a secondary for the OPPOSITE skew (an old page against a newer server). Three browser tests in
+  `tests/ui/test_build_skew_banner.py` pin the POST, the queued-behind wording and the pending
+  state; the existing test moved with the behaviour rather than being deleted.
+
 ## [0.440.0] — 2026-10-22
 
 ### Which model answered each turn (D188)

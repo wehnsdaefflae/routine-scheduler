@@ -31,6 +31,7 @@ import yaml
 
 # The suite's two floors, discovered by pytest from these imports: no write into the LIVE
 # instance or spawn of this package's CLI (F394), and no observation a test makes unrendered.
+import browsersource
 from production_guard import _no_production_writes  # noqa: F401
 from render_guard import _every_observation_renders  # noqa: F401
 from rsched.config import ModelRef, ServerConfig
@@ -111,11 +112,10 @@ def pytest_xdist_auto_num_workers(config) -> int:
 
     Fewer workers is faster because the loss is contention, not idleness — the workers were
     never CPU-bound, they were waiting on a box that had been oversubscribed. Reserving a core
-    keeps `auto` portable (a 16-core CI machine still gets 15) instead of pinning a literal.
-    The browser tests do not enter this arithmetic: they are one work unit on one worker
-    (`pytest_configure` below), and no worker launches a browser of its own.
-    """
-    return max(2, (os.cpu_count() or 4) - 1)
+    keeps `auto` portable (a 16-core CI machine still gets 15). The BROWSER selection gets a
+    smaller number — each worker launches a browser; `browsersource.worker_cap` says why."""
+    reserved = max(2, (os.cpu_count() or 4) - 1)
+    return browsersource.worker_cap(getattr(config.option, "markexpr", ""), reserved)
 
 
 #: The interpreter the engine image runs (`FROM python:3.12-…` in the Dockerfile), pinned for
