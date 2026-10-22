@@ -15,6 +15,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.442.0] — 2026-10-22
+
+Two operator decisions about how the system talks: what a run owes at its finish, and when
+the console should ask for a playbook.
+
+### Changed
+- **The finish-summary contract asks for 3-6 conversational lines, not a DETAILED 8-20**
+  (D187, the operator's order of 2026-10-16: *"end-of-run summaries are way too much
+  blah-blah. condense them considerably and make sure the language used is
+  conversational"*). The contract was producing exactly what he was reading: it demanded
+  *"a DETAILED 8-20 line result summary"* and closed with *"err on the side of detail"*, so
+  a run that padded was obeying the instruction. The demand now reads *"a SHORT summary —
+  aim at 3-6 lines and write it the way you would TELL someone what happened"*, names what
+  must still be carried (the numbers, the names, the links, the decisions, what is open) and
+  what to leave out (preamble, the task restated, section headings). Changed in all four
+  places the demand is actually stated: the `finish` bullet a run reads
+  (`engine/kindprose.py`), the `summary` field description beside the field
+  (`engine/actionschema.py`), the schema example's placeholder (`engine/actions.py`), and
+  `docs/prompt-anatomy.md` — §2's table cell, §5.1's word-for-word quoted bullet, the
+  byte-pinned ACTION SCHEMA fence (re-rendered from the engine's own projection), and the
+  paragraph that used to justify the old demand. **Deliberately unchanged:** §5's honesty
+  paragraph (the flaw a run must name), the unbacked-claim guard and the `accounting` field —
+  condensing the register is not permission to leave out what a reader needs, and the doc now
+  says so.
+
+### Added
+- **A conversation that did real work is OFFERED a playbook** (D175, the operator's option
+  (c) of 2026-10-10 — keep the feature and make it earn its place, *"so the corpus grows from
+  use rather than from intent"*, explicitly as a bet that nothing was ever distilled because
+  nothing ever suggested it). Save-as-playbook had been a silent always-on button; the
+  missing half was the asking. `GET /api/conversations/{slug}` now carries a
+  `playbook_offer` block — `show`, `mode`, `turns`, `threshold` and a `reason` line written
+  for the operator, including the negatives (*"2 turns so far — a playbook is offered from
+  8"*) — decided server-side in the new `web/playbook_offer.py`: a conversation whose newest
+  summary-carrying run spent at least 8 turns is asked, and one seeded FROM a playbook is
+  offered the refinement rather than a near-duplicate. The console renders the prompt and
+  promotes the button out of `ghost` (the playbook row is extracted to the new
+  `static/components/playbook-row.js`; `views/conversations.js` 593 → 569 lines, ceiling
+  re-tightened). The threshold lives on the server so the sentence a user reads and the
+  predicate `tests/test_playbook_offer.py` pins are one thing — and so the bet stays
+  falsifiable: if the offer ships and still nothing is distilled, the retirement case
+  becomes evidence instead of inference. The library's one existing playbook is untouched.
+
 ## [0.441.0] — 2026-10-22
 
 ### Added
