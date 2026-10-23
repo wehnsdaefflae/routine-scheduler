@@ -1801,6 +1801,15 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   single-use, 60 s ticket spent on its own handshake (`streams.admits`). They are WebSockets
   because an EventSource holds one of the ~6 HTTP/1.1 connections a browser keeps per origin,
   and the bus plus a tail per live view filled that pool by the fourth tab (F606).
+  Being WebSockets also removed the only thing that had bounded their LOAD: a tail polls the
+  I/O pool twice every `POLL_S` (0.4 s) for as long as it is open, and until 0.376.0 the
+  browser's connection ceiling plus `stream.js`'s three-tail ration capped how many could be
+  open at once. The server now carries that bound itself (`web/ioload.py`): a socket holds one
+  of `MAX_LIVE_STREAMS` slots for its life, derived as `POOL_WORKERS - SLOW_IO_RESERVE` so the
+  SSH and provider-probe callers — which hold a pool thread for SECONDS — always have threads a
+  stream poll cannot be holding; past the ceiling a socket is closed 4429 (`CLOSE_BUSY`) and
+  `stream.js` backs off and catches up over REST. `GET /api/debug/threads` reports
+  `streams.live / ceiling / refused` beside the pool itself.
   Cross-routine FILE reads (`/api/routines/{slug}/file`, `/api/runs/{id}/file`) are the same
   class and deliberately NOT denied yet: one routine was granted a sibling's transcripts on
   purpose, and that grant has to
@@ -1979,8 +1988,15 @@ lock that a kill from elsewhere leaves is found by whoever next writes there, as
 The web process records its own slowness (0.332.0): a timing middleware in `web/app.py` counts
 requests in flight and keeps the last 50 that exceeded `SLOW_REQUEST_S` (2 s), each logged as a
 `slow request` WARNING, and `web/api_debug.py` serves `GET /api/debug/slow` (that ring) and
-`GET /api/debug/threads` (every Python thread's stack, the threadpool's borrowed tokens, the
-in-flight count) to the operator's primary token only. The live streams never reach the timing:
+`GET /api/debug/threads` (every Python thread's stack, the in-flight count, and the two
+thread pools) to the operator's primary token only. The two pools are reported together
+because confusing them costs a diagnosis: anyio's limiter (40 tokens, its own default) runs
+`def` handlers through starlette's `run_in_threadpool`, while every `asyncio.to_thread` call —
+the run tails' polls, the machines' SSH, the endpoint probes, the `rmtree`s and registry scans
+— runs on the loop's DEFAULT executor, which `web/ioload.py` installs as a named pool of
+exactly `POOL_WORKERS` (32) threads (asyncio's own `min(32, cpu_count + 4)` would make the
+live-stream ceiling derived from it depend on the host). `io_pool.queued` is the number of
+those jobs waiting for a thread: non-zero means QUEUED, not slow. The live streams never reach the timing:
 they are WebSockets, which an http middleware does not see. The container also carries `SYS_PTRACE` so `py-spy dump` works inside it
 (deploy/DOCKER.md). All of it exists because on 2026-09-12 every sync handler took 20-50 s for
 an hour with one worker thread at 70% CPU, and the daemon could name neither the thread nor the

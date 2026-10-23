@@ -7,7 +7,14 @@
 // Every tail holds its own socket. Tails used to be rationed to three, the rest falling back to
 // REST polling, because each one was an EventSource holding one of the ~6 HTTP/1.1 connections a
 // browser keeps per origin (F263, F606). They are WebSockets now, which the browser counts
-// against a separate, far larger limit, so a live view never has to wait for a slot.
+// against a separate, far larger limit, so the BROWSER no longer rations them.
+//
+// The SERVER does, because nothing else was left to: each open tail polls the daemon's I/O
+// thread pool twice every 0.4 s, so the number of open sockets is the load (web/ioload.py).
+// Past its ceiling a socket is closed 4429 and the tail lands in `onerror` like any other
+// drop — the backoff below (jittered, 15 s max) plus REST catch-up means a refused tail keeps
+// showing correct, slightly-behind content and takes a slot as soon as one frees, rather than
+// going blank. Nothing here is special-cased for it on purpose: one retry path, always tested.
 
 import { api, liveStream, openStreamCount } from "/static/api.js";
 

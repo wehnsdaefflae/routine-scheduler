@@ -66,6 +66,16 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
     async def lifespan(app: FastAPI):
         from .. import library_docs, utils_lib
         from ..docs_build import ensure_docs
+        from .ioload import install_pool
+
+        # Every off-loop read in this process runs on the loop's DEFAULT executor
+        # (`asyncio.to_thread`), which asyncio sizes `min(32, cpu_count + 4)` — 32 threads on
+        # the deployment, 8 on a four-core laptop. Size it explicitly and NAME its threads
+        # here, the first point with a running loop: the live-stream ceiling is derived from
+        # that number (web/ioload.py), and `/api/debug/threads` can only name the thread
+        # holding the GIL if the thread has a name. The loop closes its own default executor
+        # at shutdown, so this needs no teardown below.
+        app.state.io_pool = install_pool()
 
         # bootstrap the library repo (clone from remote if configured + absent, else init/leave),
         # then make sure its rules/ + permissions/ subdirs exist.
@@ -127,6 +137,15 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         app.state.search.shutdown()
         for running in (docs_task, push_task, apply_task, held_task, task):
             await _stop(running)
+        # The I/O pool LAST, once nothing is left to submit to it. `wait=False` so a shutdown is
+        # never held hostage by an SSH call or a provider probe mid-flight (those threads finish
+        # on their own); `cancel_futures` drops what never started. Explicit rather than left to
+        # the loop's own `shutdown_default_executor`, because a pool nobody shuts down keeps
+        # non-daemon threads alive through its atexit handler — invisible in production, and
+        # thousands of them across a test session that builds an app per test.
+        if app.state.io_pool is not None:
+            app.state.io_pool.shutdown(wait=False, cancel_futures=True)
+            app.state.io_pool = None
 
     return lifespan
 

@@ -49,8 +49,14 @@ def thread_stacks(limit: int = FRAMES_PER_THREAD) -> list[dict]:
 
 
 def _limiter() -> dict:
-    """The anyio threadpool that runs every sync handler: how many of its tokens are borrowed
-    is the difference between "the handlers are slow" and "the handlers are queued".
+    """The anyio worker-thread limiter: the pool a SYNC def handler runs on (starlette's
+    `run_in_threadpool`), 40 tokens by default and never set here.
+
+    It is NOT the pool this process does most of its I/O on, and reading it alone during the
+    2026-09-12 stall was reading a nearly idle pool: every `asyncio.to_thread` call — the run
+    tails' transcript polls, the machines' SSH, the endpoint probes, every `rmtree` and registry
+    scan — goes to the loop's DEFAULT EXECUTOR instead, which `io_pool` reports. Both are here
+    because an operator cannot tell which one is saturated without seeing both.
     """
     try:
         import anyio
@@ -62,8 +68,20 @@ def _limiter() -> dict:
 
 @router.get("/debug/threads")
 async def debug_threads(request: Request) -> dict:
-    return {"in_flight": int(getattr(request.app.state, "in_flight", 0)),
+    """Thread stacks plus the three numbers that tell "slow" from "QUEUED": the anyio limiter,
+    the named I/O pool every `asyncio.to_thread` runs on (`workers` / `threads` / `queued`),
+    and the live-stream gate (`live` / `ceiling` / `refused`) whose ceiling is derived from the
+    pool size in `web/ioload.py`. A non-zero `io_pool.queued` while `streams.live` sits at its
+    ceiling is this pool's contention, named.
+    """
+    from .ioload import pool_stats
+
+    state = request.app.state
+    gate = getattr(state, "stream_gate", None)
+    return {"in_flight": int(getattr(state, "in_flight", 0)),
             "threadpool": _limiter(),
+            "io_pool": pool_stats(getattr(state, "io_pool", None)),
+            "streams": gate.stats() if gate is not None else None,
             "threads": thread_stacks()}
 
 

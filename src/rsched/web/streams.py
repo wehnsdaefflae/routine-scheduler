@@ -32,6 +32,7 @@ from fastapi import WebSocket
 from ..engine.transcript import read_events
 from ..paths import read_json
 from ..registry import TERMINAL_STATES
+from .ioload import BusyError, StreamGate
 
 POLL_S = 0.4
 KEEPALIVE_S = 15.0
@@ -39,8 +40,19 @@ STREAM_TICKET_TTL_S = 60
 
 #: Close codes. 1008 is the protocol's own "policy violation"; the 4xxx range is the
 #: application's, and 4404 mirrors the HTTP status the console already reads as "gone".
+#: 4429 mirrors "too many requests" the same way: the server is at its live-socket ceiling
+#: (`ioload.MAX_LIVE_STREAMS`), which is not the client's fault and clears on its own, so
+#: `static/stream.js` treats it like any other drop — back off with jitter, catch up over REST.
 CLOSE_UNAUTHORIZED = 1008
 CLOSE_GONE = 4404
+CLOSE_BUSY = 4429
+
+#: The gate used when an app carries none of its own (`web/app.py` builds one per app). ONE per
+#: process, never one per socket: a per-socket gate would count to one and bound nothing, which
+#: is the exact failure this ceiling exists to end. Shared state in a module is otherwise avoided
+#: here — the alternative was letting a missing `app.state.stream_gate` raise AttributeError on
+#: the handshake, turning a wiring omission into a dead console.
+_FALLBACK_GATE = StreamGate()
 
 
 def _event(name: str, data: dict) -> dict:
@@ -148,11 +160,29 @@ async def serve(ws: WebSocket, open_stream: Callable[[], AsyncGenerator[dict, No
     there; the socket is then closed CLOSE_GONE. A refusal is sent AFTER accepting, because
     a browser reports every rejected handshake as the same bare 1006 — accepted and then
     closed, the code and reason reach the console and its traces.
+
+    Then the socket takes one of the server's live-stream slots and holds it for its whole life
+    (`ioload.StreamGate`). Past the ceiling it is closed CLOSE_BUSY instead: a run tail costs
+    two I/O-pool jobs every POLL_S for as long as it is open, so an unbounded number of sockets
+    is an unbounded number of jobs a second — and 0.376.0 removed the client-side ration that
+    had been standing in for this bound. The ceiling is checked AFTER the ticket, so an
+    unauthenticated caller can neither learn it nor occupy a slot by connecting.
     """
     await ws.accept()
     if not admits(ws):
         await ws.close(code=CLOSE_UNAUTHORIZED, reason="missing or invalid stream ticket")
         return
+    gate = getattr(ws.app.state, "stream_gate", None) or _FALLBACK_GATE
+    try:
+        with gate.hold():
+            await _open_and_pump(ws, open_stream)
+    except BusyError as exc:
+        await ws.close(code=CLOSE_BUSY, reason=str(exc)[:120])
+
+
+async def _open_and_pump(ws: WebSocket, open_stream: Callable[[], AsyncGenerator[dict, None]],
+                         ) -> None:
+    """Open the resource and pump it, or close CLOSE_GONE if it is not there."""
     try:
         stream = open_stream()
     except LookupError as exc:
