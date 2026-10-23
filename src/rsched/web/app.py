@@ -23,6 +23,7 @@ from ..ids import now_iso
 from ..llm_tasks import TaskCenter
 from . import assetskew
 from .appwiring import _include_api_routers, _make_lifespan
+from .ioload import attach_state
 from .screen_proxy import screen_for_path
 
 log = logging.getLogger("rsched.web")
@@ -182,6 +183,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     scheduler = Scheduler(server, runner, bus)
     app.state.server = server
     app.state.stream_tickets = {}   # ticket → monotonic expiry (see streams.admits / stream-ticket)
+    attach_state(app)   # the live-socket ceiling + the io_pool slot the lifespan fills (ioload)
     # pass → monotonic expiry, one store per relayed screen (F530). Separate from the stream
     # tickets on purpose: a different lifetime, a different scope, and a different failure if
     # one is ever mistaken for the other.

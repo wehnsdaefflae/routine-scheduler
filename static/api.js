@@ -226,6 +226,9 @@ export async function apiBlobUrl(path) {
 // and an EventSource holds one for its whole life, so the global bus plus a tail per live view
 // filled the pool by the fourth tab, which then never loaded. WebSockets are counted against a
 // separate, far larger limit, so no number of tabs or live views starves the page's fetches.
+// The SERVER caps concurrent sockets instead (web/ioload.py, close code 4429): a tail's polls
+// cost daemon I/O threads, which the browser's limit never bounded. A refused socket arrives
+// here as an ordinary close — `liveTail` retries it with backoff.
 //
 // onerror fires ONCE per stream, for a close this side did not ask for (the daemon restarting,
 // a refused ticket, the network) — and also when the socket goes SILENT: the server pings every
