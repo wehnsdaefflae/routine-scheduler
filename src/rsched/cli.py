@@ -37,7 +37,7 @@ def _routine_dir(server, slug_or_path: str) -> Path:
 
 
 def cmd_run_once(args) -> int:
-    from .engine.control import request_abort
+    from . import abortmark
     from .engine.runtime import run_routine
 
     server, problems = load_server_config()
@@ -52,8 +52,12 @@ def cmd_run_once(args) -> int:
     # command in flight through `procgroup.terminate` (utils_run.run_jailed) — the terminal's
     # SIGINT itself never reaches one, since it runs in a session of its own — and the run then
     # writes its own `aborted` close-out.
-    signal.signal(signal.SIGTERM, lambda *_: request_abort())
-    signal.signal(signal.SIGINT, lambda *_: request_abort())
+    # F751: each handler records WHO it is before raising the flag — a signal carries no
+    # sender, so the handler is the only witness and the finish text names it.
+    signal.signal(signal.SIGTERM,
+                  lambda *_: abortmark.signalled("signal", "SIGTERM to `rsched run-once`"))
+    signal.signal(signal.SIGINT,
+                  lambda *_: abortmark.signalled("user", "interrupted at the terminal (Ctrl-C)"))
 
     def on_event(obj: dict) -> None:
         print(_render_event(obj), flush=True)
@@ -87,8 +91,8 @@ def cmd_engine_run(args) -> int:
     because the daemon re-emits nothing below it and the stderr pipe is held in its memory.
     """
     logging.basicConfig(level=logging.WARNING, format=LOG_FORMAT)
+    from . import abortmark
     from .endpoints.instrument import FileSink, set_sink
-    from .engine.control import request_abort
     from .engine.runtime import run_routine
     from .registry import homes_fingerprint
 
@@ -112,7 +116,11 @@ def cmd_engine_run(args) -> int:
     # The daemon's abort (runner_state.abort_process): the flag ends the run at its next turn
     # boundary and a util, script or shell command in flight at once (utils_run.run_jailed).
     # Neither of the daemon's signals reaches that command — it leads a group of its own.
-    signal.signal(signal.SIGTERM, lambda *_: request_abort())
+    # F751: the handler records what it KNOWS — that a signal arrived — and a door that wrote
+    # a breadcrumb into the run dir first (a console cancel, `rsched abort`) outranks it, since
+    # that one knows who asked. An unmarked SIGTERM is a supervisor stop or a deploy.
+    signal.signal(signal.SIGTERM,
+                  lambda *_: abortmark.signalled("signal", "SIGTERM to the engine process"))
     try:
         status, _ = run_routine(routine_dir, server, run_ts=args.run_ts,
                                 model_overrides=parse_model_overrides(args.model),

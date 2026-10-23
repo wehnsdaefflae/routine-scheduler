@@ -9,11 +9,14 @@ disagree about how a run went.
 The verdict sentences live here too, because each one is read AFTER the fact by someone deciding
 what to change: they name the model that failed AND the one the operator chose (F547/D146), the
 first rung of a failover walk as well as the last (F566), and policy apart from model quality
-(R404/F351) — advice that names the wrong cause sends the fix to the wrong place.
+(R404/F351) — advice that names the wrong cause sends the fix to the wrong place. An ABORT's
+verdict (`aborted`) is the same rule applied to WHO rather than what: it names the actor the
+door recorded before signalling (`rsched/abortmark.py`, F751) instead of offering a disjunction.
 """
 
 from __future__ import annotations
 
+from .. import abortmark
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import archival, background, inbox, jobops
@@ -100,8 +103,24 @@ def endpoint_verdict(ctx: RunContext, exc: EndpointError) -> str:
     return f"Endpoint failure: {exc}.{hint}"
 
 
+def aborted(loop) -> str:
+    """Close a run out as `aborted`, NAMING the actor that stopped it (F751).
+
+    The engine catches a signal, and a signal carries no sender — so this used to read "Run
+    aborted by the user/daemon.", a disjunction that attributes the stop to nobody: a person's
+    cancel, a supervisor stop and a parent run's kill were indistinguishable afterwards. The
+    actor is resolved from what the door recorded BEFORE signalling (`rsched/abortmark.py`,
+    F480's breadcrumb pattern one layer down), and it rides the finish event as a field as well
+    as the prose — "count the aborts by actor" has to be answerable by a filter, not by reading
+    result.md. An abort nothing recorded says exactly that and stays `unknown`.
+    """
+    mark = abortmark.resolve(loop.ctx.root_run_dir, loop.abort_event)
+    return finish_run(loop, "aborted", mark.sentence, abort=mark)
+
+
 def finish_run(loop, status: str, summary: str, *, authored: bool = False,
-               reply_to: str | None = None, final: bool | None = None) -> str:
+               reply_to: str | None = None, final: bool | None = None,
+               abort: abortmark.Abort | None = None) -> str:
     """Close the run out — every ending, authored or not, through this one path."""
     ctx = loop.ctx
     # R82: repair a summary whose newlines were double-escaped (literal ``\n`` and no real
@@ -135,6 +154,11 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         # the summary says so (engine/jobops.py)
         summary += jobops.close_out(ctx, status)
     finish_payload = {"status": status, "summary": summary, "authored": authored}
+    if abort is not None:
+        # F751: the actor as a FIELD beside the prose — `actor` (who) and `cause` (the health
+        # stream's word for them), so an audit filters aborts by actor instead of reading
+        # result.md. Only an abort has one.
+        finish_payload.update(actor=abort.actor, cause=abort.cause)
     if reply_to:   # F438/D117: the reply targets an earlier message (conversations)
         finish_payload["reply_to"] = reply_to
     if final is not None:   # a conversation reply's own declaration (engine/goals.py)
@@ -143,7 +167,7 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
     ctx.transcript.event("finish", finish_payload,
                          usage_total=ctx.usage_total(), turns=ctx.turn)
     if ctx.depth == 0:
-        _log_ending(loop, status, summary)
+        _log_ending(loop, status, summary, abort)
     loop.final_summary = loop.final_summary or summary
     if ctx.depth == 0:
         from ..paths import atomic_write
@@ -157,7 +181,8 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
     return status
 
 
-def _log_ending(loop, status: str, summary: str) -> None:
+def _log_ending(loop, status: str, summary: str,
+                abort: abortmark.Abort | None = None) -> None:
     """The health event an ending files, if any.
 
     A `partial` is budget_exhausted ONLY when a budget violation forced it (the reserved
@@ -191,7 +216,11 @@ def _log_ending(loop, status: str, summary: str) -> None:
                      routine=ctx.routine.slug, run_id=ctx.run_id,
                      detail=summary[:500],
                      status=status if event_type == "budget_exhausted" else None,
-                     resource=spent.get("resource"), limit=spent.get("limit"))
+                     resource=spent.get("resource"), limit=spent.get("limit"),
+                     # F751: an ABORT's actor, in the reap's own `cause` vocabulary — the
+                     # engine's own ending was the one close-out that filed none, so a
+                     # stream filtered by cause saw every daemon-era abort and no engine one.
+                     cause=abort.cause if abort else None)
     if status == "ok":
         # The reserved turn was spent and the run STILL finished ok: the budget_exhausted row
         # above is true and stays, and an earlier leg's not-ok ending is still corrected.

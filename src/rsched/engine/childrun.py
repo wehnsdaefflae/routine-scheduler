@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .. import entities
+from .. import abortmark, entities
 from ..config.base import supervisor_role
 from . import child
 from .run_context import RunContext
@@ -66,7 +66,7 @@ class Subrun:
     workflow: str
     ctx: RunContext
     loop: EngineLoop                   # the child EngineLoop
-    abort_event: threading.Event
+    abort_event: abortmark.AbortEvent    # set with the REASON the parent stopped it (F751)
     started_mono: float
     mode: str = child.PARALLEL         # a child.MODE_NOUN key — the scheduling mode only
     parent_dir: Path | None = None     # where the hand-back lands (child.handback_dirname)
@@ -211,7 +211,9 @@ def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mod
     from .runtime import load_workflow
 
     body, _prov, tools = load_workflow(sub_dir, child_ctx.routine)
-    abort_event = threading.Event()
+    # Carries WHY the parent set it (F751): a parent's kill never leaves the process, so the
+    # reason rides the object the child already polls and its close-out can name the actor.
+    abort_event = abortmark.AbortEvent()
     # The child's workflow `tools:` allowlist binds the child exactly as a top-level run's
     # binds it — materialize carries the pattern's frontmatter through, load_workflow reads
     # it, and dropping it here would let any child use every kind.

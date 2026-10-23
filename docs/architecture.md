@@ -1927,7 +1927,8 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   (not a thread the kernel gave that id since) outside the caller's own process group — an
   engine leads a session of its own, and a stale pid once aimed both signals at the daemon. The
   engine's handler
-  only raises the abort flag (`engine/control.request_abort`), which the loop reads at every turn
+  records WHO the signal is and then raises the abort flag (`rsched/abortmark.signalled` →
+  `engine/control.request_abort`), which the loop reads at every turn
   boundary and right after a model call — no signal interrupts a model call, so a stop that lands
   in one waits for the call or for the SIGKILL. A util, script or `shell` command in flight is
   the one thing the flag must reach mid-turn: it leads a process group in a session of its own,
@@ -1943,6 +1944,27 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   SIGKILL to the backstop `terminate` armed, so a stop during a model call is never made to wait
   out a grace sized to the disk. Lengthening the daemon's grace to "fix" the order would cost
   exactly that.
+- **WHO aborted it** (`rsched/abortmark.py`, F751): a signal carries no sender, so the close-out
+  used to read "Run aborted by the user/daemon." — a disjunction attributing the stop to nobody
+  (fau:20261016-125013, aborted at turn 0 while carrying six jobs forward). F480's breadcrumb
+  pattern, one layer down: THE ACTOR SAYS WHO IT IS BEFORE IT SIGNALS, because afterwards there
+  is no moment left in which to say it. Three carriers for the three kinds of door — a door
+  outside the process (the run page's abort, a conversation's stop, a background task's cancel,
+  `rsched abort`) writes `runs/<ts>/abort.json` `{actor, reason, ts, pid}` and then signals, all
+  of them through the one shared sequence (`web/api_run_control.abort_with_fallback`); a signal
+  handler inside the engine records what it knows (`abortmark.signalled`) before raising the
+  flag, the only witness for a stop no door wrote (a `systemctl restart`, whose control-group
+  SIGTERM reaches engine and daemon in the same instant); and a parent's kill of a child sets
+  that child's own `AbortEvent`, which carries the reason, since the kill never leaves the
+  process. The engine resolves them in that order — parent, mark, signal record — and finishes
+  "Run aborted by the user — aborted from the run page.", "… by the parent run — …", "… by a
+  signal to the engine process — SIGTERM to the engine process.", or, when nothing was recorded,
+  "Run aborted by an unrecorded signal (no actor left a record)." The status stays `aborted`, and
+  the actor rides the finish event as `actor` + `cause` plus the health row's `cause`
+  (`user_abort` · `parent_kill` · `signal_kill` · `unknown` — `runner_reap.classify_cause`'s
+  vocabulary), so "count the aborts by actor" is a filter rather than a read of result.md. The
+  mark is PID-STAMPED, because a resume reuses the run dir: a mark naming another process is not
+  about this leg and reads `unknown`.
 - **Cancelling the one CALL that is running**, without ending the run (F586, decided as D160-C):
   `POST /api/runs/{id}/cancel-action` with the turn, which the web records as control.json
   `cancel_action` — the one intent in that file the engine reads MID-turn, because it is blocked
