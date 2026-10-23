@@ -14,20 +14,31 @@ from pathlib import Path
 
 
 def cut_index_for_turn(events: list[dict], turn: int) -> int | None:
-    """The event index that closes `turn` — its assistant_action, plus the observation that
-    answered it when there is one. None when the turn is not in the transcript.
+    """The event index that closes `turn` — its LAST assistant_action, plus the observation
+    that answered it when there is one. None when the turn is not in the transcript.
 
     The one definition of a clean TURN BOUNDARY in a transcript, shared by the D69 rewind
     (which truncates there) and conversation branching (which copies up to there, F325). Both
     need a prefix that replays into paired messages; cutting mid-turn leaves an assistant action
     with no result, which `replay_messages` would hand the model as a dangling turn.
+
+    A CHAINED turn (D203, engine/chain.py) carries one `assistant_action` per action it ran,
+    all stamped with the same `turn` — so "through turn N" is through the LAST of them. Taking
+    the first would cut the chain in half: every later element kept its observation in the
+    transcript, and a rewind that dropped them would hand the next leg a world the run had
+    already changed, with no record that it had.
     """
+    last: int | None = None
     for i, ev in enumerate(events):
         if ev.get("type") == "assistant_action" and ev.get("turn") == turn:
-            if i + 1 < len(events) and events[i + 1].get("type") == "observation":
-                return i + 1
-            return i
-    return None
+            last = i
+        elif last is not None and ev.get("type") not in ("assistant_action", "observation"):
+            break
+    if last is None:
+        return None
+    if last + 1 < len(events) and events[last + 1].get("type") == "observation":
+        return last + 1
+    return last
 
 
 def _user_message(ev: dict) -> bool:
@@ -91,7 +102,10 @@ def reply_opening(events: list[dict], turn: int, ts: str) -> dict | None:
         keep = opened[0]
         while keep > start and _reauthored_note(events[keep - 1]):
             keep -= 1
-    usage = events[turns[-1]].get("usage") if turns else None
+    # The newest turn that BOOKED usage: a chained reply (D203) books the whole turn on its
+    # FIRST action, so the last event of a chain carries none and `served_by` would be "".
+    usage = next((events[i].get("usage") for i in reversed(turns)
+                  if isinstance(events[i].get("usage"), dict)), None)
     return {"finish": events[fin], "messages": [events[i] for i in opened], "first": first,
             "keep": keep,
             "served_by": str(usage.get("model") or "") if isinstance(usage, dict) else ""}
