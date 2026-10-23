@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 
-from .. import patchreceipt, registry
+from .. import decline, patchreceipt, registry
 from ..engine import inbox
 from ..paths import read_json
 from ..readmodels import memo
@@ -133,6 +133,14 @@ def _mark_answered(routine_dir, item: dict) -> dict:
         # the target's config file.
         if patchreceipt.APPLIED in ans:
             item[patchreceipt.APPLIED] = bool(ans[patchreceipt.APPLIED])
+        # R2197: and whether the operator DECLINED it. The row says so as a VALUE (`decision`
+        # — the same key an access-request decision uses, whose values are all allow_*/deny_*,
+        # so there is no collision), because a refusal rendered off its answer TEXT is exactly
+        # what the decline verb exists to end. No second boolean: `_archive_answer` already
+        # carries `decision` into the durable record a consumed decision is read from, and a
+        # flag only one of the two paths set would make a declined card read as an ordinary
+        # answer the moment a run consumed it.
+        decline.carry(item, ans)
     return item
 
 def _record_dir(server, match: dict):

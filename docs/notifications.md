@@ -60,6 +60,15 @@ no util.
    run unblocks immediately on its stated default — the timeout path, chosen by you.
    Deferred (non-blocking) records can also be **snoozed** from the Decisions page: hidden
    there until a timestamp, still open to the routine.
+6. Or you say **no**: the *decline* button (`POST /api/questions/{qid}/decline`) is the
+   page's first-class refusal. The item leaves the open set as **declined** — not as prose —
+   and the routine that asked reads `decision: "declined"` as a value, with your reason if you
+   typed one in the answer box (`rsched/decline.py`, `web/api_question_decline.py`). Declining
+   is NOT snoozing (which leaves the question open to the routine) and NOT deferring (which
+   releases a parked run without deciding): it settles the item, so a declined proposal should
+   not come back unchanged. An **access request** is the one record it does not take: its "no"
+   is the typed decision *deny now* / *deny forever*, which is what the engine reads to deny
+   the grant.
 
 ## Web Push: what it needs, and what it does not
 

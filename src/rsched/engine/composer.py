@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .. import patchreceipt
+from .. import decline, patchreceipt
 from . import notes, outputs
 from .actionschema import example_action
 from .capabilities import capabilities_digest
@@ -208,8 +208,12 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         # the budget raise as applied and planned 600 turns against a 400-turn ceiling —
         # R2778, twice `budget_exhausted`. The verdict rides the pair in both directions: the
         # apply button's answer says APPLIED, an ordinary answer says NOT APPLIED.
+        # R2197: and whether the answer is a REFUSAL — the Decisions page's first-class "no"
+        # (rsched/decline.py). A declined proposal arrives as a value, so a run never has to
+        # read a polite sentence and guess; without the line it would read one and guess wrong.
         alines = "\n".join(f"- Q: {p['question']}\n  A: {p['answer']}"
-                           + patchreceipt.digest_suffix(p) for p in deferred_qa)
+                           + patchreceipt.digest_suffix(p) + decline.digest_suffix(p)
+                           for p in deferred_qa)
         parts.append(f"ANSWERS received to earlier questions (consume now):\n{alines}")
     return "\n\n".join(p for p in parts if p)
 

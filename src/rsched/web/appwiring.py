@@ -158,6 +158,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_pending,
         api_playbooks,
         api_push,
+        api_question_decline,
         api_questions,
         api_refusal_flag,
         api_routine_edit,
@@ -190,6 +191,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
                    api_credential_names,
                    api_questions,
                    api_patch_applied,   # /questions/{qid}/patch-applied — R2778's record fix
+                   api_question_decline,   # /questions/{qid}/decline — R2197's first-class "no"
                    api_audit,
                    api_items, api_messages, api_pending,
                    api_traces,
