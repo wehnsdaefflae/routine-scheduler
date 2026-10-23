@@ -16,8 +16,8 @@ from .lint import lint_workflow_py
 FORMAT_SPEC = '''A library workflow is a single self-contained Python file (.py) that DEPICTS a
 routine's control flow — it is NEVER executed. Structure:
 
-"""<module docstring: what the workflow does, and that it is a PATTERN acted out one action \
-per turn>"""
+"""<module docstring: what the workflow does, and that it is a PATTERN acted out in \
+engine actions>"""
 
 # Dummy parameter imports — each NAMES one piece of information the clarifier fixes for the concrete
 # task; the trailing comment gives its type and meaning. They never resolve at run time.

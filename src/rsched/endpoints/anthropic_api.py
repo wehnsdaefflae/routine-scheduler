@@ -29,9 +29,9 @@ Every optional field a model may refuse — the forced `tool_choice`, `output_co
 it for a retry (`_degrade`). This adapter's KIND is a WIRE, not a provider: a subscription
 proxy speaks it while serving `gpt-*` ids, Haiku 4.5 still honours temperature, and the newest
 Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse forced tool use — on
-those the tool is still offered, on `auto` with at most one call (`_ONE_CALL_AT_MOST`: the engine
-takes ONE action per turn), and the engine reads an action from a text reply when the model
-writes one instead. So no field is sent blindly or dropped blindly: the model that rejects one
+those the tool is still offered, on `auto` with at most one call (`_ONE_CALL_AT_MOST`: a reply's
+actions may chain, but they are READ in reply order — text blocks then the call — so one call
+keeps that order unambiguous), and the engine reads an action from a text reply too. So no field is sent blindly or dropped blindly: the model that rejects one
 says so, and pays a round trip per refused field.
 
 **Past actions are sent as CALLS** (`anthropic_messages.native_turns`, 0.407.0). On `auto`, a
@@ -40,8 +40,8 @@ which ends nothing — thinks on as though it had run, and makes the call for th
 actions in one reply, the second narrating the first as done. A schema'd call on `auto` therefore
 renders each past action as a `tool_use` of the action tool and the message after it as that
 call's `tool_result`, and a reply ends at its one call. `text` and `parsed` both still reach the
-engine, which runs a reply's FIRST action and names every later one back unexecuted
-(engine/replyactions.py, 0.406.0) — the safety net under the rendering. Before 0.406.0 the
+engine, which runs a reply's actions in the order it wrote them (engine/replyactions.py for the
+order, engine/chain.py for the run) — the safety net under the rendering. Before 0.406.0 the
 engine read only `parsed`: the first action vanished and the second, narrating it, ran.
 
 A reply no action can be read from — no `action` call with an object input, and no text — says

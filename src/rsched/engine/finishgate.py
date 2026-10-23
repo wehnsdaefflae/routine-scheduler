@@ -223,8 +223,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         _defer(loop, ctx,
                "OBSERVATION (finish REJECTED): you have not executed a single action this "
                "run, so the workflow cannot be complete and none of your claims have "
-               "observations behind them. Start at workflow step 1 and do the actual work, "
-               "one action per turn.")
+               "observations behind them. Start at workflow step 1 and do the actual work.")
         return None   # deferred — the loop goes round again
     if action["status"] == "ok" and ctx.depth == 0:
         # Claim guard (D31=B): a top-level ok-finish whose summary claims a

@@ -1,6 +1,6 @@
 """BACKGROUNDED ACTIONS — one read or fetch running off the turn's hot path (D118 phase 1).
 
-A run advances one action per turn and every action is dispatched synchronously, which is right
+A turn's actions are dispatched synchronously, one after another, which is right
 for a scheduled routine — nobody is watching it work — and wrong in a conversation, where a slow
 `util`, a long `llm` or a ten-minute test run FREEZES the human: a message sent meanwhile is only
 injected, picked up after the slow call finally lands.

@@ -230,12 +230,16 @@ one you are about to touch, not all of them.
   subruns, kill, wait, ask_user, report, do_nothing, finish` (34, `actionschema.KINDS`).
   `do_nothing` (D186) is how a scheduled run states that nothing was due and WHY — no fields,
   the reasoning is `say` (non-empty, checked for this kind alone), and it grounds no `ok`
-  finish (`engine/donothing.grounds_a_finish`, read by the loop and the resume rebuild alike). **A reply runs ONE
-  action — the FIRST it wrote** (`engine/replyactions.py`): a thinking model chains actions in one
-  reply (JSON text, then the call, the second narrating the first as done), and every later one is
-  named back NOT EXECUTED in the first one's observation. An adapter that kept only the call is how
-  runs narrated edits that never happened (R2443-R2445) — never let a parser keep a later action
-  over an earlier one, nor drop one without saying so. The CAUSE is removed at the wire: on the
+  finish (`engine/donothing.grounds_a_finish`, read by the loop and the resume rebuild alike). **A reply's actions run IN
+  ORDER, inside one turn** (`engine/replyactions.py` for the order, `engine/chain.py` for the run,
+  D203): a thinking model chains actions in one reply (JSON text, then the call, the second
+  narrating the first as done), so they run as written and every result comes back together at the
+  next turn. The chain STOPS at the first failure (`&&`), a hold, a cancel, an abort, a spent
+  budget, the cap, or an element failing the four checks every action meets; what did not run is
+  named back NOT EXECUTED **with the reason**, and a `finish`/`do_nothing` runs only as a reply's
+  FIRST action. A routine opts out with `chain_actions: false`. An adapter that kept only the call
+  is how runs narrated edits that never happened (R2443-R2445) — never let a parser keep a later
+  action over an earlier one, nor drop one without saying so. The CAUSE is removed at the wire: on the
   Anthropic `auto` route past actions are SENT as `tool_use` calls and observations as their
   `tool_result`s (`endpoints/anthropic_messages.native_turns`), because a model reading its own
   history as JSON text writes actions as text, which ends nothing. The rendering is positional

@@ -31,10 +31,12 @@ def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path
     assert "NO shell" not in text
     for needle in ("EXACTLY one JSON object", "the `util` action", "10 turns",
                    "deferred", "blocking", str(ctx.routine.dir),
-                   # the anti-batching override: a thinking model chains actions in one
-                   # reply, but the engine runs only the first and hands the rest back
-                   # (F180; 0.406.0 — the dropped first action of R2443-R2445)
-                   "ONE action per reply", "hands every later one back NOT EXECUTED",
+                   # ACTION CHAINING (D203): a thinking model chains actions in one reply,
+                   # so they RUN in that order, stopping at the first failure — and the
+                   # `paths` advice F180's anti-batching override left behind
+                   "they run IN ORDER, like commands typed in a",
+                   "The chain STOPS at the first action that",
+                   "belong in ONE action's `paths` list",
                    "while thinking has not happened"):
         assert needle in text, needle
 

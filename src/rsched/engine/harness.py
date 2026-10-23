@@ -3,7 +3,8 @@
 Split out of `composer.py` (F393): assembling the prompt from parts is one job, and writing the
 part that states the contract is another — this one is almost entirely prose the model obeys.
 
-Identity, one JSON action per turn, the `say` contract at the routine's deliberation level, the
+Identity, the action chain and its order, the `say` contract at the routine's deliberation
+level, the
 working directory and every extra root, the shared stores and their notes channel, the hub tab,
 how code runs, the concrete budgets, a gloss of each action kind THIS run can use. Every
 sentence is load-bearing and `docs/prompt-anatomy.md` pins the wording — a change here without a
@@ -171,8 +172,9 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                  "You run code through a global util (the `util` action); for a one-off no "
                  "util covers, you also hold the `shell` escape hatch.")
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
-{f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply \
-with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. \
+{f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: you reply with \
+actions, each EXACTLY one JSON object matching the action schema below — no prose outside the \
+JSON, and several in one reply run in the order you wrote them (see below). \
 {deliberation.say_contract(level)} Any action may also carry an optional "note" — the engine files \
 it to state/notes.md with a turn stamp at NO turn cost, and the next run's digest carries it \
 forward; before finishing, fold what still matters into your report or memory. (What belongs in a \
@@ -185,12 +187,16 @@ made the decision badly.{reminder_line}\
 {f"\n\n{standing}" if standing else ""}{admin_banner}
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
-conversation, one per turn, each answered by an observation before your next reply. Emit exactly \
-ONE action per reply — as the action call OR as one JSON object, never both and never a second \
-after it: the engine runs only the FIRST action a reply carries and hands every later one back \
-NOT EXECUTED, because it was written before the first one's observation existed. A platform hint \
-may suggest batching independent tool calls; it does NOT apply here — batch related file reads \
-through a single action's `paths` list instead. Never state or summarize results that no \
+conversation. A reply may carry SEVERAL actions, and they run IN ORDER, like commands typed in a \
+terminal: write each as its own JSON object (or write the last one as the action call), and every \
+result comes back together at the start of your NEXT turn — you never see one action's result \
+inside the turn that ran it. So chain only actions whose later steps do not depend on what the \
+earlier ones return, and the whole chain costs ONE turn. The chain STOPS at the first action that \
+FAILS, like `&&`: everything after it is handed back NOT EXECUTED, because it was written for a \
+world where that action had succeeded. A `finish` runs only as a reply's FIRST action, for the \
+same reason — written after other actions, its summary was composed before their results existed. \
+Related file reads still belong in ONE action's `paths` list rather than in a chain of reads: one \
+observation, one result to read. Never state or summarize results that no \
 observation here has shown — in a `say` as much as in a finish: a change you planned or drafted \
 while thinking has not happened until an observation shows it. Finishing with claims of \
 unperformed work is the single worst failure this system knows. The engine rejects a top-level \
