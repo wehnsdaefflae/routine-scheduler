@@ -20,7 +20,7 @@ import time
 from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.base import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import overflow, turndebris, turntakeover, wrongturn
+from . import overflow, paramsalvage, turndebris, turntakeover, wrongturn
 from .actions import (
     KIND_EXAMPLES,
     field_shift_diagnosis,
@@ -285,7 +285,13 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     from .availability import request_denial
 
     first, *loop.unexecuted = reply_actions(completion)
-    candidate = normalize_action(first)
+    # A parameter the transport glued onto its neighbour is put back BEFORE the validator
+    # judges the model's intent — the same seam `normalize_action` strips grammar debris at,
+    # one layer earlier (engine/paramsalvage.py says what it cost when it was not).
+    repaired, salvaged = paramsalvage.repair(first)
+    if salvaged:
+        paramsalvage.record(loop.ctx, first, salvaged)
+    candidate = normalize_action(repaired)
     problems = (validate(candidate, ACTION_SCHEMA)
                 or validate_action(candidate, allowed_kinds=loop.allowed_tools,
                                    grants=loop.grants)

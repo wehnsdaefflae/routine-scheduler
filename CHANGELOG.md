@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.444.1] — 2026-10-23
+
+### Fixed
+- **A tool parameter that swallowed the ones after it is repaired before validation**
+  (F747). Measured on `birthday-admin:20261022-080004`: the model closed its `summary`
+  parameter with a MISMATCHED tag — `</summary>` instead of `</parameter>` — and the
+  provider's pseudo-XML tool-call reader then ran on to the next real `</parameter>`. So
+  `summary` arrived carrying its own text PLUS `</summary>\n<parameter
+  name="accounting">[…]`, and `accounting` arrived ABSENT. The engine answered "your
+  `accounting` is incomplete: no entry for d1…g1" — truthfully, about a field the model had
+  written and could still see in its own reply. That run spent turns 84-95 bisecting the
+  field at full prompt price and ended by shipping a 47-character diagnostic stub as its
+  permanent summary, with placeholder accounting entries the check accepted; its work was
+  sound and only its record was destroyed. New `src/rsched/engine/paramsalvage.py` puts the
+  swallowed parameters back at the seam `normalize_action` already strips grammar debris at
+  (`engine/completion.action_candidate`), under three conditions that all must hold: the
+  closer names the field CARRYING it, every restored name is a real `ACTION_SCHEMA` field,
+  and the field being restored is EMPTY — any one failing abandons the whole repair and
+  returns the action untouched, so prose quoting the broken shape (this entry included) is
+  never eaten. The repair is not silent: each one files `tool_param_salvaged`, one row per
+  run, deliberately NOT blocked work (the turn happened — `git_lock_cleared` is the
+  precedent) and deliberately not a `wrong_turn_detected` reason. The swallow hit every
+  finish whose summary ran long (1470-5170 chars, 9 of them) and no short one (47-103
+  chars, 5 of them); a scan of 149 fleet transcripts over 14 days found it in that one run.
+
 ## [0.444.0] — 2026-10-23
 
 Three decisions the operator accepted long ago and nothing had built: R2197 (2026-10-03),

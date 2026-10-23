@@ -4,7 +4,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"run_partial"|"orphaned_run"
         |"run_canceled"|"oversize_state_file"|"prompt_oversize_shrunk"
         |"wizard_build_degraded"|"fire_refused"|"trigger_capped"|"model_window_corrected"
-        |"util_killed"|"finish_gate_failed"|"observation_render_failed"
+        |"util_killed"|"finish_gate_failed"|"observation_render_failed"|"tool_param_salvaged"
         |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"lane_catchup_declined"
