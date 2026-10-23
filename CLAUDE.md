@@ -189,13 +189,21 @@ one you are about to touch, not all of them.
 - `uv run rsched run-once <slug>` — execute one run from the CLI (slug under `routines_home`, or a dir
   path), streaming events. `--model kind=catalog-name` overrides a model role (catalog names, not endpoint:model pairs) and `--effort kind=level` a role's reasoning effort (effort is its own setting, `routine.yaml` `efforts:` — never a catalog row per level); `--quiet` drops the stream.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
-- `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>]`
+- `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>] | drain | postdeploy`
   — see `rsched --help`. `validate` checks every routine's `routine.yaml`, lints its recipe
   prose (`main.md`, `stages/`) AND reports its SETUP SURFACE (`readmodels/surface.py` joined with
   `readmodels/remedies.py`: what the held docs, bound rules and reserved utils still need, each
   unmet line ending in the remedy that settles it — a `blocks` row fails the command, a
   `warn`/`note` row is reported only); `lint` covers the library. `engine-run` is internal
-  (daemon-spawned).
+  (daemon-spawned). `drain` and `postdeploy` BRACKET A DEPLOY and are the only two commands that
+  are about the instance rather than about its config: drain quiesces the box before the restart
+  (F746), postdeploy checks the box AFTER it (R2428) — served build vs the checkout, backup
+  freshness, state-path ownership, and which instance answered — printing one line per check and
+  appending one row to `.control/postdeploy.jsonl`. Exit 1 means ACT; a NOTE keeps it green. It
+  exists because a deploy session is this project's highest-yield defect detector (nine of
+  2026-10-01's releases say "found while deploying") and was entirely unstructured: the checks are
+  pure functions in `rsched/postdeploy.py` over inputs `cli_postdeploy.py` reads, so the
+  checklist is testable without a live box.
 
 ## Core contracts — extend, never repurpose
 
@@ -1084,7 +1092,15 @@ itself can never wait. Three things cover it instead. **`rsched drain`** is the 
 BEFORE a deploy: it pauses scheduling, waits for the in-flight runs and exits non-zero naming
 what is still running, so `rsched drain && docker compose up -d` stops rather than eating a run
 (`--resume` lifts the pause afterwards; the drain deliberately leaves it in place so no fire
-slips into the seconds before the process is replaced). When a restart lands anyway, the app
+slips into the seconds before the process is replaced). **`rsched postdeploy`** is the one to type
+AFTER it (R2428): the instance is now running the new code, and nothing ever asked whether it is
+healthy or whether what it serves is what was built — `deploy/DOCKER.md` §1 verifies a build
+artefact, not the live instance. It is four named checks, each derived from a defect a human found
+mid-deploy (a deploy that did not relaunch; the backup that failed 19 nights with no indicator at
+all; a root-owned file in a home the backup reads as the host user; the wrong host answering), one
+line each, exit 1 only when the operator must act — and one row per session in
+`.control/postdeploy.jsonl`, so the highest-yield inspection in this project finally leaves a
+record instead of living in the operator's head. When a restart lands anyway, the app
 lifespan's shutdown half writes the deliberate-shutdown mark on ANY graceful SIGTERM
 (`restart.mark_graceful_exit`) — without it the next boot reaped every live run as
 `cause: unknown`, 79 runs over 50 boots and not one ever attributed to a restart — and the boot

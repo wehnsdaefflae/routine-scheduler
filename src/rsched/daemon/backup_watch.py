@@ -20,6 +20,14 @@ only one of them is ours:
   console renders without being recompiled (`readmodels/health_stream`). A silence of three weeks
   must not be reachable again by either path failing alone.
 
+`staleness` has a SECOND reader since R2428: `rsched postdeploy`'s `backup-freshness` check, which
+reports this verdict to an operator standing at a box he has just deployed. It is the same
+judgement deliberately — one reader of backup state — read for a different decision, and it
+differs in one place: an UNKNOWN (no readable stamp) is a FAIL there and claims nothing here. Both
+readings follow from F602. For a health event filed off a 5-second tick, a share this process
+cannot see is not evidence that a backup failed; for a person inspecting the instance, the absence
+of the indicator IS the finding, because that absence is precisely what hid nineteen nights.
+
 STALE_AFTER_DAYS is 3 rather than 1: the nightly timer has a 15-minute jitter, a host can be off for
 a night, and a watchdog that cries after one missed night is one nobody reads by the second week.
 Three nights is still three weeks early.

@@ -650,7 +650,7 @@ def setup_gate(tmp_path, monkeypatch):
 @pytest.fixture
 def cli_server(tmp_path, monkeypatch):
     """Tmp homes wired into every cmd_* via each holding module's load_server_config seam."""
-    from rsched import cli, cli_runctl, cli_validate
+    from rsched import cli, cli_postdeploy, cli_runctl, cli_validate
     from rsched.config import load_server_config
     lib = tmp_path / "library"
     for kind in ("workflows", "rules", "permissions"):
@@ -662,7 +662,7 @@ def cli_server(tmp_path, monkeypatch):
     server, problems = load_server_config(cfg_path)
     assert not problems
     (tmp_path / "routines").mkdir(exist_ok=True)
-    for holder in (cli, cli_runctl, cli_validate):      # EVERY holder, or the real config loads
+    for holder in (cli, cli_postdeploy, cli_runctl, cli_validate):  # EVERY: else real config
         monkeypatch.setattr(holder, "load_server_config", lambda: (server, []))
     return server
 

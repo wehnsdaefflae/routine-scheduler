@@ -1,8 +1,10 @@
 """`rsched` CLI: `daemon` (scheduler + web UI, what systemd runs), `run-once` (execute one
 run now, streaming events), `validate` (server config + routine.yaml checks), `lint`
 (workflow library), `suggest` (rank library workflows for an instruction), `scaffold`
-(create a routine dir from a library workflow), `abort` (stop a run) — plus the internal
-`engine-run` the daemon spawns for each run. `rsched <cmd> --help` lists per-command flags.
+(create a routine dir from a library workflow), `abort` (stop a run), `drain` (quiesce before a
+deploy) and `postdeploy` (check the LIVE instance after one, and record the session) — plus the
+internal `engine-run` the daemon spawns for each run. `rsched <cmd> --help` lists per-command
+flags.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from pathlib import Path
 
 from .cli_daemon import LOG_FORMAT, cmd_daemon
 from .cli_overrides import parse_effort_overrides, parse_model_overrides
+from .cli_postdeploy import add_parser as add_postdeploy_parser
 from .cli_render import _render_event
 from .cli_runctl import cmd_abort, cmd_drain
 from .cli_validate import cmd_validate
@@ -231,6 +234,10 @@ def main(argv: list[str] | None = None) -> int:
     dr.add_argument("--resume", action="store_true",
                     help="lift the pause this command left in place, after the deploy")
     dr.set_defaults(fn=cmd_drain)
+
+    # …and the AFTER half of the same deploy (R2428): the instance is running the new code — is
+    # it healthy, and is what it serves what we built? Its flags live with its body.
+    add_postdeploy_parser(sub)
 
     li = sub.add_parser("lint", help="lint the workflow library + materialized workflows")
     li.add_argument("target", nargs="?", help="limit to entries containing this string")
