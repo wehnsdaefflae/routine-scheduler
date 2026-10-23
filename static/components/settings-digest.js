@@ -74,6 +74,8 @@ export function describe(key, v) {
     case "run_gate": return gateLine(v || {});
     case "triggers": return (v || []).length ? (v || []).map(triggerLine).join(" · ") : "no triggers";
     case "improve": return v ? "included in improvement" : "left out of improvement";
+    // D203: default ON, so a missing value reads as chaining — never as "off"
+    case "chain_actions": return v === false ? "one action per reply" : "actions chain";
     case "permissions": return list(v, "no conduct permissions");
     case "capabilities": {
       const c = v || {};

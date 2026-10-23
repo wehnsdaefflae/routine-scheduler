@@ -178,7 +178,10 @@ def _phase_stats(run_dir: Path) -> list[dict]:
             cell = stats.setdefault(name, {"phase": name, "turns": 0, "tokens": 0,
                                            "cost": 0.0, "elapsed_s": 0, "first_turn": None})
             usage = ev.get("usage") or {}
-            cell["turns"] += 1
+            # A CHAINED action (D203) is another action of the SAME turn, not another turn:
+            # the rail counts turns, and the whole reply's usage is booked on its first action.
+            if not ev.get("chained"):
+                cell["turns"] += 1
             if cell["first_turn"] is None:
                 turn = ev.get("turn")
                 cell["first_turn"] = int(turn) if isinstance(turn, int) else None

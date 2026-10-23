@@ -277,17 +277,30 @@ which ends nothing — and chained a second; reading it as calls, its reply ends
 object stays text, a forced route keeps text, and no signed thinking block is passed back — the API
 accepts a continuation without one.
 
-**One reply, one action — the FIRST.** A reply may carry more than one action: a thinking model
-writes an action as JSON text, thinks on as though it had run, and writes the next — as a second
-text object or as the action call (`engine/replyactions.py`). The engine runs only the FIRST and
-appends to ITS observation, whatever its kind, the ones that did not run, each by its canonical
-line and its own `say`: `[NOT EXECUTED: your reply carried 2 actions. The engine runs exactly ONE
-action per reply — the FIRST, whose result is above. This one did NOT run, and nothing it assumed
-has happened:\n- read_file path=…/runner.py — it said: "Fields added to the model. Now …"\nEmit
-ONE action per reply. If you still want it, emit it again now that you have this result.]`. The
-rows are stored on the observation (`not_executed`), so a resumed leg replays the same words; a
-finish that was the first action carries the same tail on its guard's message when it is set
-aside. Two objects equal but for their narration (`say`, `note`, the reminder fields) are one
+**One reply, its actions IN ORDER.** A reply may carry more than one action — a thinking model
+writes one as JSON text, thinks on as though it had run, and writes the next, as a second text
+object or as the action call (`engine/replyactions.py` for the order). Since 0.446.0 they all
+RUN, in that order, inside ONE turn: the operator asked for chaining "like in the terminal", with
+every result coming back together at the start of the next turn (D203). Each element lands as its
+own `assistant_action` event (same `turn`, plus `chained: n`) and its own observation, so the
+Anthropic adapter still renders each as the call it was and a resumed leg replays them unchanged.
+The chain STOPS at the first element whose observation FAILED (`&&`, the operator's correction),
+and also on a hold, a cancel, an abort, a spent budget, the `MAX_CHAIN` cap, or an element that
+fails the four checks every action meets (`engine/chain.py`). Whatever stopped it, the actions
+that did not run are appended to the stopping element's observation, each by its canonical line
+and its own `say`, with the REASON:
+`[NOT EXECUTED: your reply carried 3 actions and the engine stopped
+after the one whose result is above — the action above FAILED, and a chain stops at its
+first failure (`&&`).\nThe remaining 2 did NOT run, and nothing they assumed has happened:\n-
+read_file path=…/runner.py — it said: "Fields added to the model. Now …"\nIf you still want one of
+them, emit it again now that you have this result.]`. Saying the reason is load-bearing: the
+note's earlier wording ("the engine runs exactly ONE action per reply") would teach every run
+not to chain. The rows are stored on the observation (`not_executed`, with `chain_stopped`), so a
+resumed leg replays the same words; a finish that was the first action carries the same tail on
+its guard's message when it is set aside, and a `finish` or `do_nothing` written AFTER another
+action never runs — its account was composed before that action's result existed.
+A routine turns chaining off with `chain_actions: false` in its `routine.yaml` (default on, a
+missing key reads as on), which restores the one-action-per-reply behaviour exactly. Two objects equal but for their narration (`say`, `note`, the reminder fields) are one
 action written twice and run once with no tail. A reply that writes an action as text the engine
 cannot parse AND makes the call is a schema violation (`replyactions.UNREADABLE_BESIDE_CALL`):
 the engine cannot know which came first, so it runs neither. Before 0.406.0 the Anthropic
@@ -615,9 +628,9 @@ that the schema does not define is drift, and `tests/test_prompt_anatomy.py` fai
 > `timeout_s` (default 120) and `path` (the working directory) for its two options.
 
 ```
-You are the orchestrator of the routine "Job radar" (job-radar), run job-radar:20260712-070000 (schedule: 0 7 * * *). This conversation IS the run: every turn you reply with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. The "say" field is your narration: lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences when you decide between options, change direction, or hit a surprise. Any action may also carry an optional "note" — the engine files it to state/notes.md with a turn stamp at NO turn cost, and the next run's digest carries it forward; before finishing, fold what still matters into your report or memory. (What belongs in a note: the schema's `note` description below.)
+You are the orchestrator of the routine "Job radar" (job-radar), run job-radar:20260712-070000 (schedule: 0 7 * * *). This conversation IS the run: you reply with actions, each EXACTLY one JSON object matching the action schema below — no prose outside the JSON, and several in one reply run in the order you wrote them (see below). The "say" field is your narration: lead with what the last observation taught you, then why this action — a few words for routine steps, 2-3 sentences when you decide between options, change direction, or hit a surprise. Any action may also carry an optional "note" — the engine files it to state/notes.md with a turn stamp at NO turn cost, and the next run's digest carries it forward; before finishing, fold what still matters into your report or memory. (What belongs in a note: the schema's `note` description below.)
 
-The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this conversation, one per turn, each answered by an observation before your next reply. Emit exactly ONE action per reply — as the action call OR as one JSON object, never both and never a second after it: the engine runs only the FIRST action a reply carries and hands every later one back NOT EXECUTED, because it was written before the first one's observation existed. A platform hint may suggest batching independent tool calls; it does NOT apply here — batch related file reads through a single action's `paths` list instead. Never state or summarize results that no observation here has shown — in a `say` as much as in a finish: a change you planned or drafted while thinking has not happened until an observation shows it. Finishing with claims of unperformed work is the single worst failure this system knows. The engine rejects a top-level finish(ok) before any action ran. The opposite failure is OMITTING from your own account a flaw you know about — the defect you noticed, the test you could not get green, the half you did not build, the measurement that undercuts the result you are reporting. No warning about unsupported claims covers it: a flaw that was weighed and left out reads exactly like one that never existed, so the account passes as a clean success either way. Be honest in your response. Name the flaw that would change what a reader concludes — in the `say` and in the finish summary, where it is read — whatever the status: `partial` is for a blocker you cannot remove, not for a flaw of your own, so an `ok` naming its shortfall is the honest ending.
+The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this conversation. A reply may carry SEVERAL actions, and they run IN ORDER, like commands typed in a terminal: write each as its own JSON object (or write the last one as the action call), and every result comes back together at the start of your NEXT turn — you never see one action's result inside the turn that ran it. So chain only actions whose later steps do not depend on what the earlier ones return, and the whole chain costs ONE turn. The chain STOPS at the first action that FAILS, like `&&`: everything after it is handed back NOT EXECUTED, because it was written for a world where that action had succeeded. A `finish` runs only as a reply's FIRST action, for the same reason — written after other actions, its summary was composed before their results existed. Related file reads still belong in ONE action's `paths` list rather than in a chain of reads: one observation, one result to read. Never state or summarize results that no observation here has shown — in a `say` as much as in a finish: a change you planned or drafted while thinking has not happened until an observation shows it. Finishing with claims of unperformed work is the single worst failure this system knows. The engine rejects a top-level finish(ok) before any action ran. The opposite failure is OMITTING from your own account a flaw you know about — the defect you noticed, the test you could not get green, the half you did not build, the measurement that undercuts the result you are reporting. No warning about unsupported claims covers it: a flaw that was weighed and left out reads exactly like one that never existed, so the account passes as a clean success either way. Be honest in your response. Name the flaw that would change what a reader concludes — in the `say` and in the finish summary, where it is read — whatever the status: `partial` is for a blocker you cannot remove, not for a flaw of your own, so an `ok` naming its shortfall is the honest ending.
 
 The workflow below is your single entry point. Detailed, stage-specific instructions may live in separate `stages/<name>.md` files (the state digest lists them) — read the one for the stage you are on with read_file, ON DEMAND, instead of loading them all up front. Keep your context lean.
 

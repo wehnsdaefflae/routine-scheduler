@@ -122,11 +122,17 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # (outputs.digest) — the only route to output the observation could not carry
         "instead of re-running the util",
         "rather than re-running the util",
-        # the anti-batching override (composer harness paragraph, F180) and the observation
-        # tail naming what a multi-action reply did NOT run (engine/replyactions.py, 0.406.0)
-        "ONE action per reply",
-        "the engine runs only the FIRST action a reply carries",
+        # ACTION CHAINING (D203, harness paragraph + engine/chain.py): the order, the `&&`
+        # stop, the batched return, the finish's one place — and the `paths` advice F180's
+        # anti-batching override left behind, which a chain of reads does not replace
+        "they run IN ORDER, like commands typed in a",
+        "result comes back together at the start of your NEXT turn",
+        "The chain STOPS at the first action that",
+        "A `finish` runs only as a reply's FIRST action, for the",
+        "belong in ONE action's `paths` list",
+        # …and the observation tail naming what the chain did not run, with its reason
         "did NOT run, and nothing",
+        "actions and the engine stopped",
         # access requests (the four-state grant model): the request field's schema
         # description, the denial routing + tombstone wording (grants.request_route),
         # the decided observation, the once-grant CAPABILITIES line, and the declined

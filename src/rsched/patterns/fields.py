@@ -38,6 +38,10 @@ FIELDS: tuple[Field, ...] = (
     Field("run_gate", "schedule", "Run gate", "doc"),
     Field("triggers", "schedule", "Triggers", "doc"),
     Field("improve", "schedule", "Include in improvement", "scalar"),
+    # D203: the operator's own per-routine switch, deliberately NOT governable — a pattern
+    # that reasserted it would write an explicit value into every follower's config, which
+    # is how 28 routines sat on a superseded default (R2782).
+    Field("chain_actions", "schedule", "Action chaining", "scalar", governable=False),
     Field("permissions", "abilities", "Permissions", "set"),
     Field("capabilities", "abilities", "Capabilities", "doc"),
     Field("rules", "abilities", "General rules", "set"),
@@ -162,6 +166,7 @@ def snapshot(cfg) -> dict:
         "run_gate": cfg.run_gate.model_dump(),
         "triggers": list(cfg.triggers or []),
         "improve": bool(cfg.improve),
+        "chain_actions": bool(cfg.chain_actions),
         "permissions": list(cfg.permissions or []),
         "capabilities": effective_capabilities(cfg.capabilities),
         "rules": list(cfg.rules or []),

@@ -315,7 +315,7 @@ def test_the_label_ledger_replays_in_the_order_the_live_turn_applies_it():
     the hold of that very action, once per finish payload, and never for an action the
     reserved finish turn refused to run."""
     from rsched.engine import remind_ledger
-    from rsched.engine.loop import RESERVED_REFUSAL
+    from rsched.engine.chain import RESERVED_REFUSAL
 
     def act(turn, rid=""):
         fb = {"remind_feedback": {"id": rid, "label": "did"}} if rid else {}

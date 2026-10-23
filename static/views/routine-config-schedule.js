@@ -63,13 +63,24 @@ export function scheduleGroup(ctx) {
         + "routine and may refine its recipe"));
   });
 
+  // ACTION CHAINING (D203): on for every routine, and this is the off switch the operator
+  // asked for — "on for every routine but can be toggled off in the routine settings".
+  const chaining = fieldBlock(form, "chain_actions", (value, set) => {
+    const box = el("input", { type: "checkbox", checked: value !== false ? "" : null,
+      "data-chain-actions": "", onchange: () => set(box.checked) });
+    return el("label", { class: "row", style: "gap:8px" }, box,
+      el("span", {}, "action chaining — a reply's actions run in order, in one turn, stopping "
+        + "at the first that fails; off runs only the first action of each reply"));
+  });
+
   const node = settingsGroup({
     form, title: "Schedule & gate", hint: "when it fires · whether a fire becomes a run",
     open: true,
-    keys: ["schedule", "run_gate", "triggers", "improve"],
-    moreKeys: ["triggers", "improve"],
+    keys: ["schedule", "run_gate", "triggers", "improve", "chain_actions"],
+    moreKeys: ["triggers", "improve", "chain_actions"],
     digest: () => [describe("triggers", form.get("triggers")),
-                   describe("improve", form.get("improve"))].join(" · "),
+                   describe("improve", form.get("improve")),
+                   describe("chain_actions", form.get("chain_actions"))].join(" · "),
     sections: [
       ...settingsSection({ title: "Schedule", id: "schedule" },
         "when this routine runs on its own — a cron-like cadence in the server's timezone, plus "
@@ -98,6 +109,12 @@ export function scheduleGroup(ctx) {
         "an action, not a setting: arming a one-shot takes effect at once.",
         scheduleOnceCard(slug)),
       ...settingsSection({ title: "Include in improvement", id: "improve" }, null, improve.node),
+      ...settingsSection({ title: "Action chaining", id: "chain-actions" },
+        "a reply may carry several actions; they run in the order the model wrote them, inside "
+        + "ONE turn, and every result comes back together at the start of its next turn — like "
+        + "commands typed in a terminal. The chain stops at the first action that fails. Off, "
+        + "the engine runs only the first action of each reply and hands the rest back.",
+        chaining.node),
     ],
   });
   return node;

@@ -24,7 +24,7 @@ from .remind import replay_key
 
 def rebuild(loop, events: list[dict]) -> None:
     """Re-seed both ledgers from the events inside the guard scope (engine/guardscope.py)."""
-    from .loop import RESERVED_REFUSAL
+    from .chain import RESERVED_REFUSAL
 
     loop.reminder_replayed, loop.reminder_owed = set(), {}
     pending: tuple[object, dict] | None = None    # (turn, non-finish action) until observed

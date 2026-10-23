@@ -78,6 +78,9 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "oversight_turns": (NEXT_RUN, ("a rung's turn cap is read from the tuning composed at boot; "
                                    "a rung already dispatched keeps the budget it was given")),
     "improve": (NEXT_RUN, "it is read by the improver, not by the run"),
+    "chain_actions": (NEXT_RUN, ("a run already going composed its prompt under the old "
+                                 "contract: the harness prose tells it whether its actions "
+                                 "chain, so the switch reaches the NEXT run")),
     "workflow": (NEXT_RUN, "the recipe was decomposed into the prompt at boot"),
     "pattern": (NEXT_RUN, ("a reference: which library pattern this routine's settings are read "
                            "against — the settings themselves are this routine's own")),
@@ -106,7 +109,8 @@ ADOPTABLE = tuple(f for f, (half, _) in CLASSIFICATION.items() if half == LIVE)
 ROUTINE_PATCH_FIELDS = frozenset({
     "enabled", "run_gate", "schedule", "budgets", "models", "efforts", "trial", "connections",
     "grants", "machines", "name", "description", "tags", "pattern", "hub_tab", "permissions",
-    "capabilities", "rules", "shared_reminders", "improve", "deliberation", "keep_runs",
+    "capabilities", "rules", "shared_reminders", "improve", "chain_actions", "deliberation",
+    "keep_runs",
     "fs_read_roots", "fs_write_roots", "outcome",
     # the escalation ladder: its config block, and its two tuning knobs
     "ladder", "ladder_turn_interval", "oversight_turns",

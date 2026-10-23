@@ -1,22 +1,24 @@
-"""Every action ONE model reply carried, in the order it wrote them — and which of them runs.
+"""Every action ONE model reply carried, in the order it wrote them — the list the engine runs.
 
-The engine executes exactly ONE action per turn: the FIRST the reply wrote. Every later one is
-returned to the run unexecuted, by name, in the observation of the one that ran
-(`unexecuted_note`). Nothing a model emits is dropped without a word.
+The actions of one reply run IN ORDER, inside one turn, and all their results reach the model
+together at its next turn (`engine/chain.py`, the operator's terminal). This module is where the
+ORDER comes from; which of them actually run — and where a chain stops — is chain.py's.
 
-**Why the first.** A thinking model chains: it writes an action, thinks on as though it had
-run, and writes the next — whose `say` then reports the first one's effect ("Fields added. Now
-computing it in run_probe"). Since 0.396.0 put the Anthropic action tool on `auto` so effort
-reaches the model, Opus 5 does this on most multi-step moments: the FIRST action arrives as JSON
-in a text block, the second as the tool call — and the adapter's `parsed` (the call) was all the
-engine read. So the second ran, the first vanished, and the second's narration claimed a change
-nobody had made (R2443-R2445: an import, test files, a pushed fix, an ask body — 17 false claims
-in two llmsectest runs, and fleet-wide wherever an Anthropic model thinks). Replaying the real
-turn 194 of llmsectest-weekday:20261010-040001 through the live proxy reproduced the shape five
-times in five; a sharper tool description changed nothing, and with no tool offered at all the
-model still wrote two actions as two text blocks. Running the LATER action is wrong whichever
-channel carried it: it presupposes the earlier one. Running the first is what the model meant to
-happen first, and it is the only one whose narration describes a world that exists.
+**Why the order is what the model meant.** A thinking model chains: it writes an action, thinks
+on as though it had run, and writes the next — whose `say` then reports the first one's effect
+("Fields added. Now computing it in run_probe"). Since 0.396.0 put the Anthropic action tool on
+`auto` so effort reaches the model, Opus 5 does this on most multi-step moments: the FIRST action
+arrives as JSON in a text block, the second as the tool call — and the adapter's `parsed` (the
+call) was all the engine read. So the second ran, the first vanished, and the second's narration
+claimed a change nobody had made (R2443-R2445: an import, test files, a pushed fix, an ask body —
+17 false claims in two llmsectest runs, and fleet-wide wherever an Anthropic model thinks).
+Replaying the real turn 194 of llmsectest-weekday:20261010-040001 through the live proxy
+reproduced the shape five times in five; a sharper tool description changed nothing, and with no
+tool offered at all the model still wrote two actions as two text blocks. Running the LATER
+action alone is wrong whichever channel carried it: it presupposes the earlier one. So the first
+runs first — and since 0.446.0 the later ones run after it, in the order written, which is what
+the model was describing all along. A chain stops at the first FAILURE for the same reason the
+order matters: past that point the narration describes a world that does not exist.
 
 **Order.** A reply's text precedes its tool call — the Messages API ends a turn at the call, and
 an OpenAI-compatible reply's content precedes its tool calls — so the actions written as text come
@@ -53,9 +55,9 @@ _NAMES_A_KIND = re.compile(r'"kind"\s*:\s*"(' + "|".join(KINDS) + r')"')
 
 UNREADABLE_BESIDE_CALL = (
     "your reply wrote an action as text that could not be parsed, AND made an action call. "
-    "The engine executes exactly ONE action per reply — the first — and it cannot tell what "
-    "the unreadable one was, so it ran neither. Reply with ONLY the one action you want to run "
-    "now.")
+    "A reply's actions run in order, so the engine would have run the unreadable one FIRST — "
+    "and it cannot tell what it was, so it ran neither. Reply with the actions you want to run "
+    "now, each as one readable JSON object.")
 
 _DECODER = json.JSONDecoder(strict=False)   # tolerant of raw newlines inside strings, like
                                             # schema_guard.loads_tolerant
@@ -130,10 +132,15 @@ def unexecuted_row(action: dict) -> dict:
     return {"action": canon(action)[:ROW_CHARS], "say": str(action.get("say") or "")[:ROW_CHARS]}
 
 
-def unexecuted_note(rows: list[dict] | None) -> str:
-    """The tail an observation carries when its reply held more actions than the one that ran;
-    "" when it held one. Names each by its canonical line and its own say — the say is the part
-    that claimed an effect, so it is the part the run has to see did not happen.
+def unexecuted_note(rows: list[dict] | None, because: str = "") -> str:
+    """The tail an observation carries when its reply held more actions than the engine ran;
+    "" when it ran them all. Names each by its canonical line and its own say — the say is the
+    part that claimed an effect, so it is the part the run has to see did not happen.
+
+    `because` is why the engine stopped where it did — the chain's own stop reason
+    (engine/chain.py). Saying it is what keeps the note from teaching the opposite of the
+    feature: before chaining, this note told every run "the engine runs exactly ONE action per
+    reply", which a run that reads it stops chaining over.
     """
     if not rows:
         return ""
@@ -142,9 +149,9 @@ def unexecuted_note(rows: list[dict] | None) -> str:
                       + (f' — it said: "{r["say"]}"' if r.get("say") else "")
                       for r in rows)
     they, it = ("it", "it") if others == 1 else ("they", "one of them")
-    return (f"\n\n[NOT EXECUTED: your reply carried {others + 1} actions. The engine runs exactly "
-            "ONE action per reply — the FIRST, whose result is above. "
-            f"{'This one' if others == 1 else f'These {others}'} did NOT run, and nothing "
-            f"{they} assumed has happened:\n{lines}\n"
-            f"Emit ONE action per reply. If you still want {it}, emit it again now that you have "
-            "this result.]")
+    reason = f" {because.rstrip('.')}." if because else ""
+    return (f"\n\n[NOT EXECUTED: your reply carried {others + 1} actions and the engine stopped "
+            f"after the one whose result is above —{reason or ' it ran no further.'} "
+            f"{'The last one' if others == 1 else f'The remaining {others}'} did NOT run, and "
+            f"nothing {they} assumed has happened:\n{lines}\n"
+            f"If you still want {it}, emit it again now that you have this result.]")

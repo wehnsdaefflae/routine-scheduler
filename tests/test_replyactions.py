@@ -68,22 +68,29 @@ def test_an_unreadable_text_action_beside_a_call_runs_neither():
     assert exc.value.problems == [UNREADABLE_BESIDE_CALL]
 
 
-def test_the_note_names_each_unrun_action_and_its_claim():
+def test_the_note_names_each_unrun_action_its_claim_and_why_it_stopped():
     assert unexecuted_note([]) == "" and unexecuted_note(None) == ""
-    one = unexecuted_note([unexecuted_row(READ)])
-    assert "carried 2 actions" in one and "This one did NOT run" in one
+    one = unexecuted_note([unexecuted_row(READ)], "the action above FAILED")
+    assert "carried 2 actions" in one and "The last one did NOT run" in one
+    assert "the action above FAILED." in one          # WHY, so the run does not stop chaining
     assert "read_file path=runner.py" in one and '"Fields added. Now reading the runner."' in one
-    two = unexecuted_note([unexecuted_row(READ), unexecuted_row(EDIT)])
-    assert "carried 3 actions" in two and "These 2 did NOT run, and nothing they" in two
-    obs = {"kind": "write_file", "path": "x", "bytes": 1, "not_executed": [unexecuted_row(READ)]}
+    two = unexecuted_note([unexecuted_row(READ), unexecuted_row(EDIT)], "the budget is spent")
+    assert "carried 3 actions" in two and "The remaining 2 did NOT run, and nothing they" in two
+    obs = {"kind": "write_file", "path": "x", "bytes": 1, "chain_stopped": "the action above "
+           "FAILED", "not_executed": [unexecuted_row(READ)]}
     assert format_observation(obs).endswith(one)
 
 
-def test_a_two_action_reply_runs_the_first_and_tells_the_run_what_did_not_run(
-        make_routine, scripted):
-    """End to end: the first action's file is written, the second's is not, the observation the
-    run reads next names the second with its own claim, and the transcript keeps the record."""
+def test_a_two_action_reply_runs_the_first_when_chaining_is_off(make_routine, scripted):
+    """End to end with the routine's `chain_actions` switch OFF (engine/chain.py): the first
+    action's file is written, the second's is not, the observation the run reads next names the
+    second with its own claim and says why, and the transcript keeps the record."""
+    import yaml
+
     d = make_routine(slug="dual")
+    cfg = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
+    cfg["chain_actions"] = False
+    (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
     first = write_file("state/first.txt", content="1", say="Writing the first file.")
     second = write_file("state/second.txt", content="2",
                         say="First file written. Now the second.")

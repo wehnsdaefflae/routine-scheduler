@@ -43,7 +43,7 @@ TRIAL_FILE = "trial.json"
 #: a run may use and how far it may go — the config hash covers these and nothing else.
 BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "grants", "budgets",
                        "permissions", "shared_reminders", "capabilities", "fs_read_roots",
-                       "fs_write_roots", "ladder"})
+                       "fs_write_roots", "ladder", "chain_actions"})
 #: What does not change what a run DOES: who the routine is and where it shows (identity), WHEN
 #: it runs (its clock, its triggers, its gate, its off switch), how long its runs are kept,
 #: whether ANOTHER routine may edit it (`improve`) — and what the fingerprint measures as a

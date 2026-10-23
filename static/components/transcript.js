@@ -258,7 +258,10 @@ export function createTranscript(container, opts = {}) {
         // turn count + timestamp stack vertically (.turnmeta) so the timestamp sits UNDER
         // the turn count rather than beside it — reclaims horizontal space for the say text.
         el("div", { class: "turnmeta" },
-          el("span", { class: "n" }, `turn ${ev.turn ?? "?"}`),
+          // A CHAINED action (D203) is another action of the SAME turn: say which one it is,
+          // or three boxes reading "turn 1" look like a run repeating itself.
+          el("span", { class: "n" },
+            ev.chained ? `turn ${ev.turn ?? "?"} · ${ev.chained}` : `turn ${ev.turn ?? "?"}`),
           ev.ts ? el("span", { class: "ts", title: ev.ts }, fmtTime(ev.ts)) : null),
         el("span", { class: "saytext" }, mdInline(a.say || ""))),
       a.note ? el("div", { class: "note", title: "captured to state/notes.md" },

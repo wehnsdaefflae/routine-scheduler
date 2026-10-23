@@ -271,21 +271,34 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     (schema first, then per-kind/permission checks). Raises on unparseable text —
     callers decide whether that is a retry or a silent fallback.
 
-    The candidate is the FIRST action the reply wrote; every later one is left on
-    `loop.unexecuted` for the observation to name (engine/replyactions.py says why the first).
-    Set on every attempt, so the accepted one's list is what the turn's observation reads.
+    The candidate is the FIRST action the reply wrote; every later one is queued on
+    `loop.chain_queue`, to run in order inside this same turn (engine/chain.py) or — chaining
+    off, a finish, the reserved turn — to be named back unexecuted. Set on every attempt, so
+    the accepted one's list is what the turn's observation reads.
+    """
+    first, *loop.chain_queue = reply_actions(completion)
+    return judge(loop, first)
+
+
+def judge(loop, action: dict) -> tuple[dict, list]:
+    """Repair, normalize and CHECK one action the model wrote: `(candidate, problems)`.
+
+    The four checks every action meets — the schema, the per-kind/capability/grant validator, a
+    denied authoring recreate, a denied access request — plus the parameter salvage that must
+    happen before any of them judges the model's intent. Split out of `action_candidate` for
+    engine/chain.py: a chained action is checked HERE, by this same function, or the chain
+    would be a hole in the permission model (R2823).
     """
     from ..grantpolicy import REQUEST_ROUTE_MARK
     from .authoring import recreate_denial  # function-level: authoring pulls in the ask stack
     from .availability import request_denial
 
-    first, *loop.unexecuted = reply_actions(completion)
     # A parameter the transport glued onto its neighbour is put back BEFORE the validator
     # judges the model's intent — the same seam `normalize_action` strips grammar debris at,
     # one layer earlier (engine/paramsalvage.py says what it cost when it was not).
-    repaired, salvaged = paramsalvage.repair(first)
+    repaired, salvaged = paramsalvage.repair(action)
     if salvaged:
-        paramsalvage.record(loop.ctx, first, salvaged)
+        paramsalvage.record(loop.ctx, action, salvaged)
     candidate = normalize_action(repaired)
     problems = (validate(candidate, ACTION_SCHEMA)
                 or validate_action(candidate, allowed_kinds=loop.allowed_tools,

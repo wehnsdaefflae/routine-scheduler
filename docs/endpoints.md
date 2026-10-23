@@ -466,10 +466,11 @@ that answer, which ran at the proxy's default effort, and the warning log names 
 reply carried). An endpoint set `tool_choice: forced` sends the forced choice, and on a model
 that refuses it gets `auto` held to one call. A model that answers in text instead has its action
 read from the text — and a THINKING model often does both in one reply: its first action as JSON
-text, the next as the call, narrating the first as done. The engine runs the reply's FIRST action
-and hands every later one back NOT EXECUTED, by name, in that observation (`engine/replyactions.py`,
-0.406.0); before that the adapter's call was all it read, so the first action vanished and the
-call that claimed it ran (R2443-R2445). The cause is removed at the wire since 0.407.0: on `auto`
+text, the next as the call, narrating the first as done. The engine runs the reply's actions in that
+order (`engine/replyactions.py` for the order, `engine/chain.py` for the run), stopping at the
+first failure and handing the rest back NOT EXECUTED by name in that observation; before 0.406.0
+the adapter's call was all it read, so the first action vanished and the call that claimed it ran
+(R2443-R2445). The cause is removed at the wire since 0.407.0: on `auto`
 every past action is SENT as a call of the action tool and its observation as that call's result
 (`anthropic_messages.native_turns`), so the model reads its history as calls rather than JSON text
 and a reply ends at its one call — in live replays of the same turn, two actions in 5 of 5 replies

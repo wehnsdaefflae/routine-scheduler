@@ -208,7 +208,9 @@ def render_observation(obs: dict) -> tuple[str, str | None]:
     raw result instead; `live_observation` is how a live turn records that it happened.
     """
     try:
-        return _observation_body(obs) + unexecuted_note(obs.get("not_executed")), None
+        return (_observation_body(obs)
+                + unexecuted_note(obs.get("not_executed"),
+                                  str(obs.get("chain_stopped") or ""))), None
     except Exception as exc:  # the floor: any renderer defect costs a line, never the run
         return obs_floor.defect_text(obs, exc), obs_floor.describe(exc)
 

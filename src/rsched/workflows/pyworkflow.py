@@ -147,7 +147,7 @@ def render_markdown(source: str, meta: dict, *, done_when: list[str] | None = No
         "## Run flow\n"
         "Follow the control-flow PATTERN below. It is written as Python for precision — "
         "you do NOT\n"
-        "execute it; you ACT IT OUT one engine action per turn, following its branches, loops and\n"
+        "execute it; you ACT IT OUT in engine actions, following its branches, loops and\n"
         "error handling. A function call like `write_file(path, content)` means emit a "
         "`write_file`\n"
         "ACTION with those fields (per the ACTION SCHEMA) — never put a call's arguments "
