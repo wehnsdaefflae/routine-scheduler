@@ -274,7 +274,7 @@ class SubrunManager:
                              "this run has spawned, with its number and state"}
         if sub.done.is_set():
             return {"kind": "kill", "n": n, "already_finished": True, "status": sub.status}
-        sub.abort_event.set()
+        sub.abort_event.set("the parent run killed this child-task")   # F751: the actor
         sub.done.wait(timeout=KILL_JOIN_S)
         return {"kind": "kill", "n": n, "killed": True,
                 "status": sub.status if sub.done.is_set() else "stopping"}
@@ -346,7 +346,7 @@ class SubrunManager:
         """
         running = [sub for sub in self.subruns.values() if not sub.done.is_set()]
         for sub in running:
-            sub.abort_event.set()
+            sub.abort_event.set(reason)   # F751: the child's close-out names why it stopped
         deadline = time.monotonic() + KILL_JOIN_S
         for sub in self.subruns.values():
             sub.done.wait(timeout=max(0.0, deadline - time.monotonic()))

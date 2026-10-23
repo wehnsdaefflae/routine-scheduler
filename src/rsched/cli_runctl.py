@@ -46,7 +46,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import registry
+from . import abortmark, registry
 from .config import ServerConfig, load_server_config
 from .daemon import pause
 
@@ -93,6 +93,10 @@ def cmd_abort(args) -> int:
               else f"no active run for {target}", file=sys.stderr)
         return 1
     run = alive[0]
+    # Say WHO before signalling (F751): a signal carries no sender, and the engine's close-out
+    # reads this to name the actor instead of offering "the user/daemon".
+    abortmark.write(run.dir, actor="user", reason="`rsched abort` at the command line",
+                    pid=run.pid)
     ok = asyncio.run(abort_process(run.pid))
     print(f"abort {'sent' if ok else 'failed — process not found'} for {run.run_id}",
           file=sys.stderr)

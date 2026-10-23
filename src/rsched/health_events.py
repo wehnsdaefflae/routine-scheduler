@@ -234,16 +234,16 @@ with the signal buried in `detail`, so a health sweep looking for failures read 
 clean (F422, whose premise — "rc=-9 emits no health-event" — was wrong; what it could not do was
 FIND them). Absent on every other event: only a close-out has a process to report on.
 
-They also carry `cause` (F480), the one word that says WHY the process is gone: `user_abort` ·
-`oom_kill` (rc=-9) · `signal_kill` (any other signal — a supervisor stop, a deploy, a manual
-kill) · `engine_crash` (non-zero exit) · `no_finish` (exited cleanly and wrote no finish, an
-engine defect) · `daemon_restart` (the boot reap found the breadcrumb a deliberate shutdown left)
-· `unknown` (nothing established a cause). The live reap derives it from `rc`; the BOOT reap sets
+They also carry `cause` (F480), the one word for WHY the process is gone: `user_abort` ·
+`oom_kill` (rc=-9) · `signal_kill` (another signal) · `engine_crash` (non-zero exit) ·
+`no_finish` (clean exit, no finish) · `daemon_restart` (a shutdown mark) · `parent_kill` (a
+parent killed this child) · `unknown` (nothing established one). An ENGINE abort's row carries it
+too, from the door's own record (F751). The live reap derives it from `rc`; the BOOT reap sets
 it explicitly, because it has no rc and the previous code filled that vacuum by asserting one —
-every dead-pid run at boot was written "orphaned by daemon restart" whether or not a restart had
-happened, and that sentence sent three investigations (F480, R1501, R1515) at a drain that works.
-`unknown` is therefore the expected majority reading at boot, and a deliberate one: an audit
-filtering for it asks "what killed these runs?", not a defect.
+every dead-pid run at boot was written "orphaned by daemon restart" whether a restart had
+happened or not, and that sentence sent three investigations (F480, R1501, R1515) at a working
+drain. `unknown` is therefore the expected majority reading at boot, and a deliberate one: an
+audit filtering for it asks "what killed these runs?", not a defect.
 
 fire_refused: a fire produced no run. run_id empty (no run was created). Makes a routine
 that goes chronically un-fired visible to audit consumers instead of only a log.info line.

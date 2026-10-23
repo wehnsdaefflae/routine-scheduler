@@ -12,6 +12,7 @@ import time
 from types import SimpleNamespace
 
 from helpers import run_context
+from rsched import abortmark
 from rsched.engine import child, control, subruns
 from rsched.engine.observations import format_observation
 from rsched.engine.run_context import RunContext
@@ -196,7 +197,7 @@ def test_kill_all_gives_every_child_one_shared_deadline(monkeypatch):
     monkeypatch.setattr(mgr, "_collect", lambda _sub: None)
     for n in (1, 2, 3):                          # three children that never stop
         mgr.subruns[n] = SimpleNamespace(n=n, done=threading.Event(), status="running",
-                                         abort_event=threading.Event(), announced=False,
+                                         abort_event=abortmark.AbortEvent(), announced=False,
                                          summary="")
     started = time.monotonic()
     killed = mgr.kill_all(reason="parent run finished (ok)")

@@ -217,7 +217,7 @@ class EngineLoop:
                 else:
                     self._observe(action, streak)
         except RunAborted:
-            return self._finish_run("aborted", "Run aborted by the user/daemon.")
+            return loopend.aborted(self)   # names the ACTOR that stopped it (F751)
         except EndpointError as exc:
             self.ctx.transcript.event("error", {"where": "endpoint", "message": str(exc)})
             return self._finish_run("failed", loopend.endpoint_verdict(self.ctx, exc))

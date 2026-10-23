@@ -22,6 +22,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
+from .. import abortmark
 from ..config import DELIBERATION_LEVELS, EFFORT_LEVELS, load_routine
 from ..daemon.runner_state import abort_process
 from ..ids import now_iso
@@ -285,10 +286,18 @@ async def rewind_run(request: Request, run_id: str, body: Rewind) -> dict:
         raise HTTPException(409, "rewound, but could not resume (already running or draining)")
     return {"ok": True, "run_id": rid, **info}
 
-async def abort_with_fallback(runner, slug: str, run_dir: Path) -> bool:
+async def abort_with_fallback(runner, slug: str, run_dir: Path,
+                              reason: str = "cancelled from the console") -> bool:
     """Abort via the runner (daemon-owned runs) with a recorded-pid fallback for runs the
     daemon doesn't track (a CLI run, a pre-restart orphan) — the ONE abort sequence the
     run, conversation, and background endpoints all share.
+
+    It is also where the ABORT BREADCRUMB is written (F751), for the same reason it is the one
+    sequence: a signal carries no sender, so the actor has to say who it is BEFORE signalling —
+    after the SIGTERM there is no later moment, and the engine's own close-out used to attribute
+    every abort to "the user/daemon", which is nobody. `reason` is the DOOR: each caller names
+    itself (the run page's abort, a conversation's stop, a background task's cancel), because
+    "the user" is the actor for all of them and what differs is what he clicked.
 
     Only a run its own status still calls ACTIVE is aborted, by either path. A finished run's
     status.json keeps the last pid it had, and the kernel is free to hand that number to any
@@ -300,15 +309,19 @@ async def abort_with_fallback(runner, slug: str, run_dir: Path) -> bool:
     """
     if run_state(run_dir) in TERMINAL_STATES:
         return False
-    if await runner.abort(slug):
-        return True
     st = read_json(run_dir / "status.json")
     pid = st.get("pid") if isinstance(st, dict) else None
+    # The engine writes its OWN pid into status.json, so this stamps the mark for exactly the
+    # process about to be signalled — a mark a later leg finds names another pid and is ignored.
+    abortmark.write(run_dir, actor="user", reason=reason, pid=pid)
+    if await runner.abort(slug):
+        return True
     return await abort_process(pid)
 
 @router.post("/runs/{run_id}/abort")
 async def abort(request: Request, run_id: str) -> dict:
     slug, run_dir = _run_dir(request, run_id)
-    if not await abort_with_fallback(request.app.state.runner, slug, run_dir):
+    if not await abort_with_fallback(request.app.state.runner, slug, run_dir,
+                                     "aborted from the run page"):
         raise HTTPException(409, "no live process for this run")
     return {"ok": True}

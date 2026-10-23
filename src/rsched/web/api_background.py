@@ -74,16 +74,21 @@ def launch_background(request: Request, slug: str, prompt: Annotated[str, Form()
     return {"ok": True, "taskid": taskid}
 
 
-async def _abort(request: Request, taskid: str, ti: registry.RoutineInfo) -> bool:
+async def _abort(request: Request, taskid: str, ti: registry.RoutineInfo,
+                 reason: str = "a background task was cancelled") -> bool:
     """Abort one detached task through the run abort path, falling back to its recorded pid
     when it outlived a daemon restart (no longer in the runner's active set). True when a
     process was told to stop.
+
+    `reason` is what the task's own abort record will say it was stopped by (F751) — the two
+    callers are different acts: a person cancelling one task, and a conversation being deleted
+    out from under all of them.
     """
     from .api_run_control import abort_with_fallback
 
     runner = request.app.state.runner
     last = ti.last_run
-    return (await abort_with_fallback(runner, taskid, last.dir) if last
+    return (await abort_with_fallback(runner, taskid, last.dir, reason) if last
             else await runner.abort(taskid))
 
 
@@ -103,5 +108,5 @@ async def cancel_background(request: Request, slug: str, taskid: str) -> dict:
 async def teardown_background(request: Request, slug: str) -> None:
     """On conversation delete: abort + remove its detached tasks."""
     for taskid, ti in _background_tasks(request, slug):
-        await _abort(request, taskid, ti)
+        await _abort(request, taskid, ti, f"the owning conversation {slug!r} was deleted")
         await asyncio.to_thread(shutil.rmtree, ti.cfg.dir, ignore_errors=True)
