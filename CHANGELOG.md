@@ -15,6 +15,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.446.0] — 2026-10-23
+
+### Action chaining (D203, the operator's decision)
+
+A reply's actions now RUN, in the order the model wrote them, inside ONE turn — "like in the
+terminal", with every result coming back together at the start of the next turn. `reply_actions`
+already returned the ordered list and the loop ran element 0; the new `engine/chain.py` runs them
+all and owns the whole of what one landed turn does. The chain stops at the first action that
+FAILS (`&&`, the operator's correction), and also on a hold, a cancel, an abort, a spent budget,
+a `MAX_CHAIN` of 8, or an element that fails the four checks every action meets
+(`completion.judge`, split out of `action_candidate`, so a chain is not a hole in the permission
+model). A `finish` or `do_nothing` runs only as a reply's FIRST action: written after another
+action, its account was composed before that action's result existed (R2443-R2445). A read
+earlier in the same chain does not ground a later overwrite — the model has not seen it yet.
+Each element lands as its own `assistant_action` event (same `turn`, plus `chained: n`) and its
+own observation, so the Anthropic adapter still renders each as the call it was and a resumed leg
+replays them unchanged; the rewind/branch boundary, the phase rail, the refusal flag's
+`served_by` and the console's turn labels were all corrected for a turn with several actions.
+ON for every routine, with an off switch in the routine page's settings (`chain_actions`, default
+true, a missing key reads as on — R2782's lesson, and no pattern governs it). Every prose surface
+that told runs "exactly ONE action per reply" was rewritten in the same release.
+
+### A run finishes `partial` only when it is blocked (D204, the operator's decision)
+
+"Routines should finish partially instead of fully okay, *only* if they're blocked by sth they
+cannot unblock themselves." Every surface a run reads now says that one thing: the harness
+honesty paragraph (the honesty half untouched), the finish bullet, the `status` schema
+description, the four pinned copies in `docs/prompt-anatomy.md`, and the `general-task` +
+`converse` seed patterns — the ledger sentence keeping its force and losing the status word.
+`library-seed`'s own `evidence-discipline` carried the retired definition and would have seeded
+the contradiction into a fresh install. Of 232 ok and 4 partial fleet finishes in the 14 days to
+2026-10-23, all four partials were the run's own choice and none was forced by the engine.
+
+### Fixed
+
+- **A placeholder accounting entry no longer satisfies the finish guard** (F748). A run finished
+  `ok` on `d2 met: test`: the check saw that an entry existed and parsed its verdict, never that
+  the clause after it answered for nothing. The floor is WORDS, not characters — over 2,093
+  entries from 14 days of transcripts the shortest legitimate ones are `no filing` (9 chars) and
+  `no letter due`, so a character floor would refuse real `not due` accounts. The refusal quotes
+  the offending entry back. `accounting_counts` still counts it, deliberately: it is the
+  `met_rate` ruler and discounting would re-score history.
+- **An aborted run names the actor that stopped it** (F751). "Run aborted by the user/daemon."
+  attributed an abort to nobody. Each door now leaves a pid-stamped `runs/<ts>/abort.json` before
+  it signals (F480's pattern one layer down), the engine's own signal handlers record what they
+  know, and a parent's kill carries its reason on the child's `AbortEvent`; the finish text and
+  payload name the actor, `unknown` only when nothing established it.
+- **A `routine.yaml` edit no longer bypasses the run gate** (R2813, the operator's ruling). The
+  bypass fired on any change to the routine's config, and one routine's gate had been overridden
+  on five of its six admitted fires — every one by his own settings edits, three of them to the
+  gate itself. `CHANGE_SURFACE` drops `routine.yaml`; a revised recipe (`tuning.yaml`, `main.md`,
+  `stages/`) and the finish line still admit a fire, and *Run now* is the deliberate one-off.
+
 ## [0.445.2] — 2026-10-23
 
 ### Fixed
