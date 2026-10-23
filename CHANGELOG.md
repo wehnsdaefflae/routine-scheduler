@@ -15,6 +15,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.444.0] — 2026-10-23
+
+Three decisions the operator accepted long ago and nothing had built: R2197 (2026-10-03),
+R2196 (2026-10-03) and R2426 (2026-10-10).
+
+### Added
+- **A decision can be DECLINED** (R2197 — *"a decision can be answered, snoozed, or deferred,
+  but never declined"*). The Decisions page had exactly three verbs: `answer` (which closes the
+  item, but only by *saying something*), `snooze` (its own docstring: "UI noise control, **NOT
+  an answer**") and `defer` ("the record stays open as deferred"). So an operator who had read a
+  proposal and did not want it could type prose, snooze in circles, or leave it open — and every
+  accept/reject item this instance files was compensating with hand-maintained status blocks.
+  `POST /questions/{qid}/decline` writes the **ordinary** `inbox/answer-<qid>.json` payload with
+  `decision: "declined"` plus an optional reason, so `collect_deferred_answers` drains it
+  unchanged and there is no new consumption path. The value is carried onto the answer pair, the
+  archive row, the `/api/questions` row, a digest line reading REFUSED and a red `declined` chip
+  in place of "answered" — so an asking routine learns `declined` as a **value** instead of
+  parsing a sentence, which is what lets it stop re-surfacing a refused idea without a human
+  keeping a do-not-chase list. The open design point (reuse `engine/requests.DECISIONS` or not)
+  was decided on the tree's own evidence: a **parallel, question-scoped** value in
+  `rsched/decline.py`, because those values seed a run's grant overlay, because
+  `_decide_request` already 400s a decision on a non-request question, and because `deny_now`
+  means "declined for THIS run", which a declined proposal is not. An access request's "no"
+  therefore stays its typed decision: the route 400s one and the button is absent from that card.
+  A defect found by reading rather than by a test: a redundant `declined: true` flag was set
+  only on the `_mark_answered` path, while a **consumed** answer's settled card is rebuilt from
+  `questions/answered/<qid>.json` (F525) — so a declined decision would have read as an ordinary
+  answer at exactly the boot that acted on it. One value now travels both paths.
+  *Known limit:* a declined BLOCKING ask is settled by `interact._held_not_settled` matching the
+  phrase's head word, not by the value; widening D38's settle rule needs `interact.py`, which is
+  at the size bar. A test pins the head word, so a reword goes red first.
+- **`rsched validate` asks whether THIS instance's config can FAIL OVER** (R2196 — *"the suite
+  proves the CODE correct against fixtures and never asks whether this instance's config is
+  flyable"*). Every `load_server_config` call in `tests/` but two passes a tmp path, rightly so
+  (`production_guard.py`, after F394) — so the defect class that falls through is a CONFIG
+  defect, and the property that killed **eight routines at turn 0 on 2026-09-14** was checkable
+  with no network call at all: `Astra high`'s only fallback was `Opus high`, both transported by
+  `cliproxy`, and one expired subscription token took the whole chain out. `rsched/conformance.py`
+  checks two offline properties per role — a chain with **no reachable fallback** (R1492: a
+  classifier refusal advances the chain, so a model with nowhere to go turns a refusal into a
+  dead run) and a chain whose members **share one failure domain**. A domain has two independent
+  axes and sharing *either* is fatal: the endpoint's `base_url` (one host, one outage) and its
+  `key_var` (one credential, one expiry). Demanding both would have passed the 2026-09-14 shape
+  itself. `system_model` is checked as the instance's, since every unset role runs on it.
+  **Reported, never counted:** the findings print as `NOTE  failover ·` lines beside the setup
+  and recipe notes and do not change the exit code — whether a single-domain chain is acceptable
+  depends on how many providers this instance has, and making it fatal is the operator's call.
+  Not measured against the live fleet: a run cannot read the server config (Errno 13), so an
+  in-run count of affected routines is vacuous and was not claimed.
+- **The console's stream load is bounded again, and the pool it lands on is named** (R2426).
+  0.376.0 removed `stream.js`'s three-tail ration and its REST-polling fallback — correctly,
+  since under SSE the browser's ~6-connections-per-origin ceiling was the de-facto cap. But
+  WebSockets count against a far larger limit, so both caps went at once and the server never
+  had one. **One correction to the accepted item's premise, which changed the fix:** the tails do
+  *not* use anyio's 40-token limiter. `streams.run_stream` calls `asyncio.to_thread` — the event
+  loop's default executor — and so do `settings/machines.py`'s SSH calls and
+  `settings/endpoint_probe.py`'s provider calls; the only `anyio.to_thread` caller in
+  `src/rsched` is `api_questions.py`. The documented explicit-`CapacityLimiter` route would have
+  bound nothing. New `web/ioload.py` owns `POOL_WORKERS=32`, `SLOW_IO_RESERVE=8` and the
+  **derived** `MAX_LIVE_STREAMS=24`; `streams.serve` holds a slot for each socket's life and
+  closes `4429 CLOSE_BUSY` past the ceiling. The derivation is the point: `run_stream` awaits its
+  two reads sequentially, so one tail holds at most one pool thread at an instant and the
+  ceiling provably leaves 8 threads for the SSH and provider callers. `/api/debug/threads` now
+  reports `io_pool{workers,threads,queued}` + `streams{live,ceiling,refused}` — a silent default
+  is what this item is about. *Still open:* `q-20260912-121159-40` (the true bulkhead) needs
+  those callers moved off `asyncio.to_thread`; the two constants are reasoned, not measured
+  under load.
+
+### Changed
+- `rsched validate` moved out of `cli.py` whole, into `src/rsched/cli_validate.py` — `cli.py` was
+  at its 356-line ceiling and is now 266, back under the house bar (its ratchet entry dropped),
+  the same split F746 made for `abort`/`drain`. The decision card's lifecycle controls moved out
+  of `static/views/questions.js` (493 → 460) into `static/components/decision-lifecycle.js`, so
+  the decline button cost that file no line.
+
 ## [0.443.1] — 2026-10-22
 
 ### Fixed
