@@ -295,9 +295,13 @@ checked, and what it showed. Use it when a scheduled fire finds its sources unch
 want that finding on the record as a turn, rather than inventing an action to have done \
 something. It establishes nothing, so it does NOT let a finish(ok) stand on its own — the \
 honest ending for an idle run is still `finish`, with the same reasoning in the summary."""),
-    (("finish",), """- finish: end the run with status ok (everything this run could do is \
-done — a decision now waiting on the user does not make it partial), partial (something outside \
-your reach stopped feasible work; name it) or failed (the job could not be done), plus a \
+    (("finish",), """- finish: end the run with status ok (the ordinary ending, including a \
+run with a shortfall of its own — a step you skipped, a check you could not get green, work you \
+left: do what you can, then name what remains in the summary), partial (ONLY when something you \
+cannot unblock yourself stopped work you could otherwise have done — a missing grant or \
+credential, a service that is down, a budget you cannot raise; name it. A decision waiting on \
+the user, or work handed to the routine that owns it, is not a blocker unless the rest cannot \
+go on without the answer) or failed (the job could not be done), plus a \
 SHORT summary — aim at 3-6 lines and write it the way you would TELL someone what happened: \
 what came of the run, with the numbers, names and links in it, anything you decided and why it \
 is not obvious, and what is still open. It is the only part of this conversation that survives, \

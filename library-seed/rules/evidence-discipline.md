@@ -32,7 +32,12 @@ knows.
 - **A gap stays a gap.** A lookup that came back empty, a source you could not read, a step that
   was blocked: report each as undone, with what blocked it. Never fill it with the plausible
   value; never advance a marker, a cursor or a claim past work that did not happen.
-- **The status is a claim too.** `ok`: everything within this run's reach is done — a
-  decision now waiting on the user does not make it partial. `partial`: something outside your
-  reach stopped work you could otherwise have done — name it. `failed`: the job could not be
-  done; report it with its output.
+- **The status is a claim too, and it says whether you were blocked.** `partial` only when
+  something you cannot unblock yourself stopped work you could otherwise have done — a missing
+  grant or credential, a service that is down, a budget you cannot raise — and name it. A
+  shortfall of your own is never a blocker: a step you skipped, a check you could not get
+  green, a mistake you made, work you chose to leave. Do that work if you can; what still
+  remains is named in the summary and the accounting, and the status is `ok`. A question you
+  filed for the user, or work you handed to the routine that owns it, does not make it partial
+  either — unless the work you could otherwise do cannot go on without the answer. `failed`:
+  the job could not be done; report it with its output.
