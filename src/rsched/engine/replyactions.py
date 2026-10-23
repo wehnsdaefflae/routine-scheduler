@@ -130,10 +130,15 @@ def unexecuted_row(action: dict) -> dict:
     return {"action": canon(action)[:ROW_CHARS], "say": str(action.get("say") or "")[:ROW_CHARS]}
 
 
-def unexecuted_note(rows: list[dict] | None) -> str:
-    """The tail an observation carries when its reply held more actions than the one that ran;
-    "" when it held one. Names each by its canonical line and its own say — the say is the part
-    that claimed an effect, so it is the part the run has to see did not happen.
+def unexecuted_note(rows: list[dict] | None, because: str = "") -> str:
+    """The tail an observation carries when its reply held more actions than the engine ran;
+    "" when it ran them all. Names each by its canonical line and its own say — the say is the
+    part that claimed an effect, so it is the part the run has to see did not happen.
+
+    `because` is why the engine stopped where it did — the chain's own stop reason
+    (engine/chain.py). Saying it is what keeps the note from teaching the opposite of the
+    feature: before chaining, this note told every run "the engine runs exactly ONE action per
+    reply", which a run that reads it stops chaining over.
     """
     if not rows:
         return ""
@@ -142,9 +147,9 @@ def unexecuted_note(rows: list[dict] | None) -> str:
                       + (f' — it said: "{r["say"]}"' if r.get("say") else "")
                       for r in rows)
     they, it = ("it", "it") if others == 1 else ("they", "one of them")
-    return (f"\n\n[NOT EXECUTED: your reply carried {others + 1} actions. The engine runs exactly "
-            "ONE action per reply — the FIRST, whose result is above. "
-            f"{'This one' if others == 1 else f'These {others}'} did NOT run, and nothing "
-            f"{they} assumed has happened:\n{lines}\n"
-            f"Emit ONE action per reply. If you still want {it}, emit it again now that you have "
-            "this result.]")
+    reason = f" {because.rstrip('.')}." if because else ""
+    return (f"\n\n[NOT EXECUTED: your reply carried {others + 1} actions and the engine stopped "
+            f"after the one whose result is above —{reason or ' it ran no further.'} "
+            f"{'The last one' if others == 1 else f'The remaining {others}'} did NOT run, and "
+            f"nothing {they} assumed has happened:\n{lines}\n"
+            f"If you still want {it}, emit it again now that you have this result.]")

@@ -27,6 +27,7 @@ from . import (
     archival,
     assist,
     background,
+    chain,
     donothing,
     finishstands,
     hold,
@@ -39,7 +40,6 @@ from . import (
     requests,
     sidefields,
 )
-from .actions import ALWAYS_KINDS
 from .actionschema import brief_value
 from .boot import boot
 from .compaction import turn_record
@@ -68,19 +68,6 @@ from .switches import (
 )
 
 REPEAT_WARN = 3
-#: What the RESERVED finish turn may still execute — the narrowed grammar's own vocabulary
-#: (`kindsurface.schema_for_kinds({"finish"})` carries ALWAYS_KINDS with it), so it is that
-#: tuple rather than a copy of it. Spending the reserve on a `report` instead of a `finish` is
-#: the model's call and costs it the authored summary; anything else is an action on a turn the
-#: model was told executes nothing.
-RESERVED_TURN_KINDS = frozenset(ALWAYS_KINDS)
-#: The refusal of anything else there. An action refused with it ran nothing — not even the
-#: side fields every other turn applies — which is how `remind_ledger.rebuild` tells it apart.
-RESERVED_REFUSAL = ("the reserved finish turn executes nothing but `finish` (or "
-                    + " / ".join(f"`{k}`" for k in ALWAYS_KINDS if k != "finish")
-                    + ") — the budget is spent")
-
-
 __all__ = [
     "MAX_SCHEMA_ATTEMPTS",
     "POLL_S",
@@ -156,6 +143,10 @@ class EngineLoop:
     subruns: Any
     turn_records: list[dict]
     unexecuted: list[dict]
+    chain_queue: list[dict]
+    chain_run: int
+    chain_seen: set[str]
+    chain_opening: set[str] | None
     failures: dict[str, int]
     util_reminder: Any
     workflow_body: Any
@@ -209,13 +200,11 @@ class EngineLoop:
                 streak = loopnudge.repeat_streak(self, action)
                 if verdict := self._fail_fast(action, retries_before, streak):
                     return self._finish_run("failed", verdict)
-                if action["kind"] == "finish":
-                    if (outcome := self._finish(action)) is not None:
-                        return outcome
-                elif self._finish_reserved and action["kind"] not in RESERVED_TURN_KINDS:
-                    self._refuse_on_reserved_turn(action)
-                else:
-                    self._observe(action, streak)
+                # Every action this ONE reply wrote, in order, inside this one turn
+                # (engine/chain.py): the finish branch, the reserved-turn refusal and the
+                # ordinary observe all live there, for one action as for eight.
+                if (outcome := chain.take_turn(self, action, streak)) is not None:
+                    return outcome
         except RunAborted:
             return self._finish_run("aborted", "Run aborted by the user/daemon.")
         except EndpointError as exc:
@@ -258,13 +247,20 @@ class EngineLoop:
         # `announce_finished_subruns` above uses for a child run, sized to one action.
         background.collect(self)
 
-    def _land(self, action: dict, usage: dict) -> None:
+    def _land(self, action: dict, usage: dict | None = None, *, chained: bool = False) -> None:
         """The accepted action becomes the turn: counted, recorded with the phase it was
         taken in, its note filed, appended as the model's message, remembered for the digest.
+
+        A CHAINED element (engine/chain.py) lands the same way inside the SAME turn: the turn
+        counter does not advance again — a chain is one model call — and the event carries
+        which element of the reply it was, so a reader can tell a chain from a turn apiece.
+        No usage: the whole reply's spend is booked on its first action.
         """
         ctx = self.ctx
-        ctx.turn += 1
+        if not chained:
+            ctx.turn += 1
         ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
+                             **({"chained": self.chain_run} if chained else {}),
                              **({"phase": ctx.phase} if ctx.phase else {}))
         sidefields.land(self, action)   # note filed, role swap applied: turn-free, best-effort
         self.messages.append({"role": "assistant",
@@ -309,24 +305,13 @@ class EngineLoop:
         remind_note += remind.at_finish(self, action)
         # A finish that was its reply's FIRST action, with more written after it: when a guard
         # sets the finish aside, the run is told those did not run either (replyactions).
-        remind_note += unexecuted_note([unexecuted_row(a) for a in self.unexecuted])
+        remind_note += unexecuted_note(
+            [unexecuted_row(a) for a in self.unexecuted],
+            "a `finish` ends the run, so nothing written after it could run")
         outcome = finishstands.check_finish_or_stand(self, action, self.ctx)
         if outcome is None and remind_note and self.messages:
             self.messages[-1]["content"] += remind_note   # rides the guard's own message
         return outcome
-
-    def _refuse_on_reserved_turn(self, action: dict) -> None:
-        """Record a non-finish emitted on the reserved finish turn — and do NOT run it.
-
-        "This is your LAST turn — the engine executes nothing else" is a promise, and it was
-        only a promise: the reserved turn's grammar is narrowed to `finish`, but a provider
-        without constrained decoding can emit any kind and the executor ran it. The budget
-        check that opens the next cycle force-finishes — the same ending as before, minus the
-        action.
-        """
-        self.ctx.transcript.event("observation", {
-            "kind": action["kind"], "rejected": True, "reason": RESERVED_REFUSAL},
-            turn=self.ctx.turn)
 
     def _observe(self, action: dict, streak: int) -> None:
         """Run ONE action and append what came back, with its tails.
@@ -343,11 +328,10 @@ class EngineLoop:
         """
         ctx = self.ctx
         obs = hold.before_dispatch(self, action) or actionroute.dispatch_action(self, action, ctx)
-        if self.unexecuted:
-            # The reply carried more actions than this one; they did not run, and the run is
-            # told so by name in THIS observation — stored on it, so a resumed leg replays the
-            # same words (engine/replyactions.py). Their own side fields never ran either.
-            obs = {**obs, "not_executed": [unexecuted_row(a) for a in self.unexecuted]}
+        # Whether the rest of this reply still runs (engine/chain.py: `&&`), and the actions
+        # that did NOT — named by name in THIS observation and stored on it, so a resumed leg
+        # replays the same words (engine/replyactions.py). Their side fields never ran either.
+        obs = {**obs, **chain.stop_fields(self, obs)}
         held = hold.is_hold(obs)
         if donothing.grounds_a_finish(obs):
             self.executed_actions += 1   # a HELD or do_nothing action established nothing

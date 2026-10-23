@@ -37,8 +37,8 @@ from .base import (
 )
 from .outcome import OutcomeConfig
 from .routine_scrub import scrub_bindings
-from .tuning import load_tuning
 from .trialconf import TrialConfig
+from .tuning import load_tuning
 
 
 class RunGateConfig(BaseModel):
@@ -187,6 +187,14 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
+    # ACTION CHAINING (engine/chain.py, operator 2026-10-23): a reply's actions run IN ORDER,
+    # the chain stopping at the first that fails, and every result comes back together at the
+    # start of the next turn — one turn, one model call. ON for every routine; the toggle on
+    # the routine page opts out with `chain_actions: false`, which restores one action per turn.
+    # Default TRUE and a missing key means ON: a scaffold writing an explicit value is how 28
+    # configs sat on a superseded default for weeks (R2782), so nothing writes this but a user
+    # turning it off.
+    chain_actions: bool = True
     # The escalation ladder (docs/designs.md § The escalation ladder): whether a run of this
     # routine is supervised at all (`enabled`, default false — no live routine changes
     # behaviour at the release) and the ladder's height in rungs (`rung_height`, default 3 — the
