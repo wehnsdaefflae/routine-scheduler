@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.447.3] — 2026-10-24
+
+### Fixed
+
+- **Two tests no longer burn 60 seconds of real time each in every release gate** (F739).
+  `test_remind_global_resolution.py::test_resolution_from_the_shared_store_still_asks_for_approval`
+  (`[listed]` and `[universal]`) files a blocking approval that nobody answers, so
+  `interact.handle_ask` polled all the way to `ask_timeout_min` — and the test routine
+  inherited `conftest.py`'s 1 minute, the smallest whole minute there is. Both now pass
+  `budgets={"ask_timeout_min": 0}`, the value `test_decisions.py` already uses for exactly
+  this shape: the question is filed, the wait expires at once, the run continues on its
+  default and the shared store is untouched, so every assertion is unchanged and the path
+  under test is the same one. **Measured: the whole file went from ~130 s to 0.38 s** (6
+  passed), taking ~120 s off every release gate the fleet runs. No production code changed —
+  the deadline was never the defect, the test's own budget was.
+
 ## [0.447.2] — 2026-10-24
 
 ### Fixed

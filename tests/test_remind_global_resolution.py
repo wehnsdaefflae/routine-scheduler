@@ -113,7 +113,11 @@ def test_resolution_from_the_shared_store_still_asks_for_approval(make_routine, 
     have come back "is in the shared store" / "is live for this run" instead) and then stopped
     at the approval, with the library untouched.
     """
-    d = make_routine(slug="remcur")
+    # ask_timeout_min=0: the approval is never answered, so the wait is pure dead time —
+    # 60 s of wall clock EACH in every release gate (F739). Timing out at once exercises the
+    # same path (file the question, continue on the default, the store untouched) and the
+    # assertions below are unchanged. `test_decisions.py` uses 0 for the same shape.
+    d = make_routine(slug="remcur", budgets={"ask_timeout_min": 0})
     home = _curated(d, reach=reach)
     set_capabilities(d, reminders="global", remind_confirm="always")
     ep = scripted([{**write_file("state/a.txt"),
