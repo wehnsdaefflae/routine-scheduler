@@ -24,6 +24,8 @@ from ..ids import is_slug
 # stage) — small enough that output truncation cannot ship a stub routine. Each
 # call gets DECOMPOSE_ATTEMPTS tries (transport errors AND invalid payloads) before the whole
 # pipeline degrades to the verbatim pattern.
+# These are CEILINGS, not requests: `_budget` lowers each to what the resolved model can
+# actually return, because a model asked above its own output cap answers a 400 or truncates.
 DECOMPOSE_TIMEOUT_S = 300
 
 DECOMPOSE_ATTEMPTS = 2
@@ -195,6 +197,18 @@ def _outcome_prompt(outcome) -> str:
             "`--selftest`. A measure the records cannot support is left out, never estimated.")
 
 
+def _budget(ref, want: int) -> int:
+    """How many output tokens ONE call asks for: the artifact's constant, never more than this
+    model can return. `ModelRef.max_tokens` is that cap already resolved (per-MODEL config →
+    the provider-discovered maximum → the endpoint default → the engine floor), so asking above
+    it is asking for a 400 or a truncation — providers validate `input + requested_output <=
+    window` (endpoints/limits.py). An UNRESOLVED cap (0/None, a model nothing was discovered
+    for) leaves the constant standing: clamping to it would ask for nothing at all.
+    """
+    cap = int(ref.max_tokens or 0)
+    return min(want, cap) if cap else want
+
+
 def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
               done_when: list[str], never: list[str], slug: str, outcome=None) -> dict:
     """Outline → main → one call per stage. Raises on any hard failure (the caller falls
@@ -217,7 +231,7 @@ def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
                 comp = endpoint.complete(
                     [{"role": "user", "content": prompt}], model=ref.model, schema=schema,
                     effort=ref.effort, temperature=ref.temperature,
-                    max_tokens=max(int(ref.max_tokens or 0), max_tokens),
+                    max_tokens=_budget(ref, max_tokens),
                     timeout=DECOMPOSE_TIMEOUT_S,
                     purpose=f"Decompose {what} → {slug}", kind="decompose")
                 data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
