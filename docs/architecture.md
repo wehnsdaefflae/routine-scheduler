@@ -1498,7 +1498,12 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   reads it as a line of its state digest (`engine/composer`). It is true in both directions
   because the `approve & apply` button is what declares it — `config_patch_applied` on the answer
   POST, or `POST /api/questions/{qid}/patch-applied` (`web/api_patch_applied.py`) when the patch
-  is applied to a card that was already answered. Answering still never applies a patch (R2189);
+  is applied to a card that was already answered. A question still OPEN that carries a patch says
+  so too, and names the control that would apply it (`patchreceipt.pending_suffix`, on the
+  digest's open-questions line) — the operator's ruling of 2026-10-23: a prose answer never
+  applies, but what the run reads names the one-click action that would. Deliberately not a
+  verdict: APPLIED/NOT APPLIED judge an answer that exists and a pending patch is neither.
+  Answering still never applies a patch (R2189);
   R2778 is only about the asking run being TOLD which happened, after one read an affirmative
   prose answer as approval and planned 600 turns against a live 400-turn ceiling. A row for a
   DECLINED decision says so the same way — `declined: true` + `decision: "declined"` (+ `reason`),

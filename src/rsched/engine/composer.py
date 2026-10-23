@@ -199,8 +199,11 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                      "read the file in inbox/ before describing any of it as open):\n"
                      + flines)
     if open_qs:
+        # A question carrying a `config_patch` names the one control that would apply it
+        # (rsched/patchreceipt.pending_suffix) — the operator's ruling of 2026-10-23: a prose
+        # answer never applies, but what the run reads names the action that would.
         qlines = "\n".join(f"- [{q['qid']}] {q['question']} (asked {q.get('asked', '?')})"
-                           for q in open_qs)
+                           + patchreceipt.pending_suffix(q) for q in open_qs)
         parts.append(f"Open deferred questions (still unanswered):\n{qlines}")
     if deferred_qa:
         # An answer to a question that carried a `config_patch` says whether the patch is

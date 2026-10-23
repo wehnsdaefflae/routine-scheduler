@@ -101,6 +101,31 @@ def digest_line(pair: dict) -> str:
             + "; the operator's \"approve & apply\" button is still available.")
 
 
+def pending_suffix(question: dict) -> str:
+    """What a run reads under its own question that is STILL OPEN and carries a patch, or "".
+
+    The operator's ruling of 2026-10-23 (q-20261023-130002-345, option 3): *"a prose answer
+    never applies, but what the run reads names the one-click action that would"*. R2189 keeps
+    prose out of the config-writing path; `digest_line` tells the run what happened AFTER an
+    answer. Between them sat the question still open, which reached the run as bare prose — so
+    a run whose own proposal was waiting could not tell that exactly one control applies it,
+    and that waiting for an answer to do it is waiting for something that cannot happen.
+
+    Deliberately not a verdict: `APPLIED`/`NOT APPLIED` judge an answer that exists, and a
+    pending patch is neither. It says what is still true (the live value is the old one) and
+    names the control by the label the operator sees on it
+    (`static/components/configproposal.js`), so neither reader is describing a different thing.
+    """
+    patch = question.get("config_patch")
+    if not isinstance(patch, dict) or not patch:
+        return ""
+    where = str(patch.get("routine") or question.get("routine") or "").strip()
+    return ("\n  carries a config_patch, NOT yet applied"
+            + (f" ({where} still holds the old value)" if where else "")
+            + " — answering never applies it; only the Decisions page's "
+              '"approve & apply" button does.')
+
+
 def digest_suffix(pair: dict) -> str:
     """`digest_line` as an indented continuation line, or "" — for a renderer appending it
     under an existing `A:` line (the state digest, the mid-run answer injection).

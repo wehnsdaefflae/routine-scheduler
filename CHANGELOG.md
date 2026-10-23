@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.447.1] — 2026-10-23
+
+### Fixed
+
+- **A still-open `config_patch` names the one control that would apply it** (the operator's
+  ruling of 2026-10-23, `q-20261023-130002-345`, option 3 verbatim: *"a prose answer never
+  applies, but what the run reads names the one-click action that would"*). R2189 keeps prose out
+  of the config-writing path and R2778 tells the asking run what happened AFTER an answer;
+  between them sat the question still OPEN, which reached the run as bare prose. A run whose own
+  budget proposal was pending could not tell from its prompt that exactly one control applies it
+  — so waiting for an answer to apply it was waiting for something that cannot happen. The
+  digest's open-questions line now carries `carries a config_patch, NOT yet applied (<routine>
+  still holds the old value) — answering never applies it; only the Decisions page's
+  "approve & apply" button does.` New `patchreceipt.pending_suffix`, beside the two verdicts it
+  must not be mistaken for: it is deliberately NOT one, because `APPLIED` / `NOT APPLIED` judge
+  an answer that exists and a pending patch is neither (pinned by a test). A question carrying no
+  patch gains nothing — the line is absent, not empty — so every other routine's open questions
+  read exactly as before.
+
 ## [0.447.0] — 2026-10-23
 
 ### The run gate's history, on the routine page (R2764, the operator's words)

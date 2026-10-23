@@ -201,3 +201,44 @@ def test_the_questions_api_says_whether_a_patch_was_applied(client):
     assert row.get("config_patch_applied") is False, (
         f"an answered patch row must state the patch verdict, not leave the reader to guess "
         f"it from the target's config: {row}")
+
+
+# --- the question still OPEN: the operator's ruling of 2026-10-23 -------------------------
+# q-20261023-130002-345, option 3 verbatim: "Middle: a prose answer never applies, but what
+# the run reads names the one-click action that would". R2189 keeps prose out of the
+# config-writing path and R2778 tells the run what happened AFTER an answer. Between them sat
+# the question still OPEN, which rendered as bare prose — so a run whose own budget proposal
+# was waiting could not tell from its prompt that one control, and only that control, applies
+# it, nor that waiting quietly for prose to do it is waiting for something that cannot happen.
+
+
+def test_a_still_open_patch_question_names_the_control_that_would_apply_it(tmp_path):
+    digest = state_digest(tmp_path, [], [
+        {"qid": QID, "question": QUESTION, "asked": "20261021",
+         "config_patch": {"routine": "apir", "budgets": {"max_turns": 600}}}])
+    assert QUESTION in digest
+    # the one-click action, by the name the operator sees on it (static/components/
+    # configproposal.js:74) — not "the UI" and not "the Decisions page" alone
+    assert "approve & apply" in digest
+    # and WHAT it would change, so the run knows whose config is still the old one
+    assert "apir" in digest
+
+
+def test_the_open_line_does_not_read_as_the_answered_verdict(tmp_path):
+    """A pending patch is neither applied nor refused, and must not borrow either word:
+    `digest_line`'s APPLIED/NOT APPLIED are verdicts on an answer that exists."""
+    digest = state_digest(tmp_path, [], [
+        {"qid": QID, "question": QUESTION, "asked": "20261021",
+         "config_patch": {"routine": "apir", "budgets": {"max_turns": 600}}}])
+    assert "config_patch APPLIED" not in digest
+    assert "config_patch NOT APPLIED" not in digest
+
+
+def test_an_open_question_carrying_no_patch_gains_nothing(tmp_path):
+    """The line is absent, not empty-but-present: every other routine's open questions read
+    exactly as they did, so no run learns to expect a patch sentence."""
+    digest = state_digest(tmp_path, [], [
+        {"qid": "q-plain", "question": "Which folder?", "asked": "20261021"}])
+    assert "Which folder?" in digest
+    assert "approve & apply" not in digest
+    assert "config_patch" not in digest
