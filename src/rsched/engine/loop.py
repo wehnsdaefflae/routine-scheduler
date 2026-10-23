@@ -34,10 +34,10 @@ from . import (
     loopnudge,
     loopsetup,
     mediaops,
-    notes,
     recall,
     remind,
     requests,
+    sidefields,
 )
 from .actions import ALWAYS_KINDS
 from .actionschema import brief_value
@@ -266,7 +266,7 @@ class EngineLoop:
         ctx.turn += 1
         ctx.transcript.event("assistant_action", dict(action), turn=ctx.turn, usage=usage,
                              **({"phase": ctx.phase} if ctx.phase else {}))
-        notes.capture(ctx, action)   # the note channel: turn-free, stamped, best-effort
+        sidefields.land(self, action)   # note filed, role swap applied: turn-free, best-effort
         self.messages.append({"role": "assistant",
                               "content": json.dumps(action, ensure_ascii=False)})
         self.turn_records.append(turn_record(ctx.turn, action))

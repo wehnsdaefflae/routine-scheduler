@@ -11,7 +11,7 @@ and cost the small-model support the whole design is built around.
 
 from __future__ import annotations
 
-from . import schema_remind
+from . import roleswap, schema_remind
 
 READ_PATHS_MAX = 8
 
@@ -66,15 +66,15 @@ ACTION_SCHEMA: dict = {
                            "engine files it to state/notes.md with a turn stamp, costing no "
                            "turn; don't repeat it in say.",
         },
-        # The consequence-reminder side fields (rsched/reminders.py) — like `note`, they
-        # ride ANY kind at no turn cost, and like `note` they exist because the moment of
-        # realisation and the moment of recording have to be the same turn. Projected out of
-        # the schema entirely when the reminders capability is off (kindsurface).
-        # Both carry their own CAPS in their field descriptions, interpolated from the
-        # constants the write path enforces (F680): a limit learned only from a refusal costs
-        # a turn, and three routines paid it in one window.
+        # The consequence-reminder side fields (rsched/reminders.py) — like `note`, they ride
+        # ANY kind at no turn cost, and like `note` exist because the moment of realisation and
+        # the moment of recording have to be the same turn. Projected out of the schema entirely
+        # when the reminders capability is off (kindsurface). Both carry their own CAPS in their
+        # field descriptions, interpolated from the constants the write path enforces (F680): a
+        # limit learned only from a refusal costs a turn, and three routines paid it in one window.
         "remind": schema_remind.REMIND_FIELD,
         "remind_feedback": schema_remind.REMIND_FEEDBACK_FIELD,
+        "role_swap": roleswap.ROLE_SWAP_FIELD,   # D185: the run swaps its own model (roleswap)
         "kind": {"type": "string", "enum": list(KINDS)},
         # util / write_util (how a run executes code)
         "name": {

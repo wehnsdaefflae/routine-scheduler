@@ -18,12 +18,11 @@ from .actionschema import KINDS, PSEUDO_UTILS
 from .decideaction import field_problems as decide_field_problems
 from .goalops import field_problems as goal_field_problems
 from .jobfields import field_problems as job_field_problems
-from .remindfields import field_problems as reminder_field_problems
-from .sayfields import problems as say_field_problems
+from .sidefields import problems as side_field_problems
 
 # The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine files
 # rather than an argument to the action. One written INSIDE `say` is corrected: engine/sayfields.
-SIDE_FIELDS = ("note", "remind", "remind_feedback")
+SIDE_FIELDS = ("note", "remind", "remind_feedback", "role_swap")
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
 # so a run can always end, and `report` so any routine can always raise work that is not its
@@ -525,8 +524,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     # The side fields are gated on their own terms (the capability rides the FIELD, not the
     # kind), so this runs outside the ALWAYS_KINDS exemption above: a `remind` on a `report`
     # must meet the same bar as one on a `util`.
-    problems += reminder_field_problems(obj, grants)
-    problems += say_field_problems(obj)     # a side field written inside `say` as markup (F679)
+    problems += side_field_problems(obj, grants)   # the fields riding ANY kind (engine/sidefields)
     # `background` is refused on the kinds that may not defer, with the REASON and the list
     # (D118 phase 1). The stray-field check below would already reject it — but as one name
     # inside "fields [...] do not belong to kind=write_file (allowed: [thirty names])", which
