@@ -17,6 +17,7 @@ from .cli_daemon import LOG_FORMAT, cmd_daemon
 from .cli_overrides import parse_effort_overrides, parse_model_overrides
 from .cli_render import _render_event
 from .cli_runctl import cmd_abort, cmd_drain
+from .cli_validate import cmd_validate
 from .config import EFFORT_LEVELS, MODEL_KINDS, ROUTINE_MODEL_ROLES, load_server_config
 from .paths import expand
 
@@ -118,97 +119,6 @@ def cmd_engine_run(args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     return RUN_EXIT_CODES.get(status, 1)
-
-
-def cmd_validate(args) -> int:
-    from .config import load_routine
-
-    server, sproblems = load_server_config()
-    total = list(sproblems)
-    for line in total:
-        print(f"server config: {line}")
-    targets = ([_routine_dir(server, args.routine)] if args.routine else
-               sorted(p for p in server.routines_home.iterdir()
-                      if p.is_dir() and not p.name.startswith("."))
-               if server.routines_home.is_dir() else [])
-    from .readmodels.remedies import surface_lines
-    from .readmodels.surface import routine_surface
-    from .trials import ignored_problem, roles_problem
-    from .workflows.recipelint import recipe_notes
-
-    for d in targets:
-        cfg, problems = load_routine(d)
-        # A model trial naming a model the catalog lacks is ignored at every fire — the loader
-        # cannot see the catalog, so it is said here (rsched/trials.py)
-        if cfg and (trial_problem := ignored_problem(server, cfg.trial)):
-            problems.append(trial_problem)
-        # And the STANDING roles, for the same reason and from the same module: a stored name
-        # goes stale when the catalog is renamed underneath it, and the write edge that checked
-        # it is long past (F643 — two runs died at boot on a `Sonnet` that was valid when taken)
-        if cfg and (role_problem := roles_problem(server, cfg.models)):
-            problems.append(role_problem)
-        # Setup COHERENCE is a second, independent question from "is the file well-formed":
-        # a routine can parse perfectly and still hold a rule that tells it to publish into a
-        # directory it cannot write. Only a blocking row fails the command — an interrupt or a
-        # note is reported and does not turn the exit code red.
-        lines: list[str] = []
-        if cfg:
-            try:
-                lines = surface_lines(routine_surface(server, cfg))
-            except (OSError, ValueError) as exc:      # a broken library must not fail validate
-                lines = [f"NOTE  setup surface unavailable: {exc}"]
-        # And a third question: does the RECIPE still hold together (F516)? The config can be
-        # perfect and the setup complete while main.md routes to a stage somebody renamed. It
-        # is reported and never counted — a recipe is a hand-tuned document, and a check that
-        # turned a phrasing into a failed command would be switched off inside a week.
-        recipe: list[str] = []
-        if cfg:
-            recipe = recipe_notes(d, cfg.capabilities)
-        blocking = [ln for ln in lines if ln.startswith("FAIL")]
-        status = "ok" if cfg and not problems and not blocking else "PROBLEMS"
-        print(f"{d.name}: {status}")
-        for pr in problems:
-            print(f"  - {pr}")
-        for ln in lines:
-            print(f"  {ln}")
-        for ln in recipe:
-            print(f"  NOTE  recipe · {ln}")
-        total.extend(problems)
-        total.extend(blocking)
-    for line in _instance_problems(server):
-        print(f"instance: {line}")
-    return 1 if total else 0
-
-
-def _instance_problems(server) -> list[str]:
-    """Coherence checks that belong to no single routine, so no routine's surface can see them.
-
-    A LANE is the case twice over. A scheduled lane with no members fires nothing on every tick
-    of its cron, forever, leaving a `lane_chain_done: 0 member runs` in the health stream that
-    reads exactly like a lane whose members all completed. Two of them had been running empty
-    for weeks. And a lane naming a slug that is not a routine is a DANGLING REFERENCE: routines
-    are deleted out of band, so no cascade removes them from the store, the chain logs a
-    warning and skips them, and the only other trace is an `unknown routine(s)` the console
-    used to raise over the WHOLE membership (F442).
-
-    Reported, never fatal — an empty lane is a normal intermediate state while you are building
-    one; a phantom member is stale bookkeeping.
-    """
-    from . import lanes as lanes_mod
-
-    try:
-        all_lanes = lanes_mod.list_lanes(server.routines_home)
-    except OSError:
-        return []
-    live = ({p.name for p in server.routines_home.iterdir() if (p / "routine.yaml").is_file()}
-            if server.routines_home.is_dir() else set())
-    empty = [f"lane {ln['name']!r} ({ln['id']}) has a schedule ({ln['cron']!r}) but no members "
-             "— it fires nothing on every tick"
-             for ln in all_lanes if ln.get("cron") and not lanes_mod.member_slugs(ln)]
-    phantom = [f"lane {ln['name']!r} ({ln['id']}) names {slug!r}, which is not a routine — "
-               "the chain skips it every fire; remove it from the lane"
-               for ln in all_lanes for slug in lanes_mod.member_slugs(ln) if slug not in live]
-    return empty + phantom
 
 
 def cmd_lint(args) -> int:

@@ -760,6 +760,22 @@ by a test, by the engine, or by a past incident.
   the web layer knows, dropping the slug from every lane holding it as `lanes_left`; the web
   refuses only the slugs a caller ADDS, so one stale member cannot lock a lane against every
   further edit, F442).
+  It also asks whether THIS INSTANCE's config can FAIL OVER (`rsched/conformance.py`, R2196) —
+  the question a fixture-only suite is structurally blind to, since every `load_server_config`
+  call in `tests/` but two passes a tmp path, and rightly so (`production_guard.py`). Two
+  offline properties, no network call: a role whose chain has no reachable fallback (a hard
+  provider failure or a classifier refusal then ends the run — R1492), and a chain whose every
+  member shares ONE failure domain. A failure domain has two independent axes and sharing either
+  is fatal: the endpoint's `base_url` (one host, one outage) and its `key_var` (one credential,
+  one expiry). That second axis is the 2026-09-14 incident — `Astra high`'s only fallback was
+  `Opus high`, both on `cliproxy`, and eight routines died at turn 0 within two minutes on one
+  expired token. `system_model` is checked as the INSTANCE's, since every unset role runs on it.
+  REPORTED, never counted: whether a single-domain chain is acceptable is a judgement about this
+  instance's providers (a one-provider instance has no other domain to reach), so it prints as a
+  `NOTE  failover ·` line beside the setup and recipe notes and leaves the exit code alone.
+  Making it fatal is the operator's call.
+  `src/rsched/cli_validate.py` is where all of this lives — `cli.py` was at the size bar, so the
+  command moved out whole, exactly as F746 moved `abort`/`drain` into `cli_runctl.py`.
   An `expects:` row must be an UNCONDITIONAL presumption — it fires on EVERY holder, and has
   been wrong twice the same way by presuming a write root a holder never needs.
 - **A lane's fire table is process memory; the WATERMARK is what survives.** `lane_next_fires`

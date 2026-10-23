@@ -1413,7 +1413,23 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   resolve only if the run makes such a call (`uncensored` only when a refusal is referred).
   `folder-reorg` carried a stale `uncensored` for weeks while every one of its runs finished fine;
   a fire guard over all roles would have taken a working routine dark to prevent a death that was
-  not happening — a refusal must not cost more than the failure it prevents. The failure it ends: `library-sync` and `tv-show-tracker-seedbox-manager` each
+  not happening — a refusal must not cost more than the failure it prevents.
+  **A name that resolves is not yet a chain that can fail over** (R2196, `rsched/conformance.py`,
+  reported by `rsched validate`). `roles_problem` asks whether the catalog still carries the name;
+  conformance asks the next question, offline and with no network call: does the role's chain have
+  a reachable fallback at all, and do its members sit in more than one FAILURE DOMAIN? A domain
+  has two independent axes, and sharing either one is fatal — the endpoint's `base_url` (one host,
+  one outage) and its `key_var` (one credential, one expiry). The second axis is what happened on
+  2026-09-14: `Astra high`'s only fallback was `Opus high`, both transported by `cliproxy`, so the
+  chain read like a failover and was not one, and eight routines died at turn 0 within two minutes
+  on a single expired subscription token. 0.344.0 then made resolution transitive so "the
+  reachable set finally matches what a reader of `config.yaml` would already assume" — this is the
+  same gap measured one layer out, over the instance rather than the code. The walk mirrors
+  `resolve_chain`'s (breadth-first, declaration order, skipping self-references, duplicates and
+  unresolvable names) but over NAMES alone, so it needs no registry and survives a broken config
+  rather than raising on it. Unlike `stale_role` it blocks nothing and fails no command: whether a
+  single-domain chain is acceptable depends on how many providers this instance has, so it is a
+  `NOTE  failover ·` line and the operator decides. The failure it ends: `library-sync` and `tv-show-tracker-seedbox-manager` each
   carried a bare `Sonnet` stored when that was a catalog name, and after the rename each run died
   on its first turn resolving it (`EndpointError`, rc=1, no finish, no summary, an `orphaned_run`
   and nothing saying why). A run that cannot reach its first turn is now never born, and the

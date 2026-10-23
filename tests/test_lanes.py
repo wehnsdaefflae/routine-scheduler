@@ -262,7 +262,7 @@ def test_a_stale_member_is_kept_but_never_blocks_an_edit(api_client):
 def test_validate_names_a_phantom_member_and_an_empty_scheduled_lane(tmp_path):
     """The two instance-level cases no routine's own setup surface can see. Nothing cascades
     a deletion out of the store, so `rsched validate` is where a phantom member surfaces."""
-    from rsched.cli import _instance_problems
+    from rsched.cli_validate import _instance_problems
 
     _mk(tmp_path, "alpha")
     home = tmp_path / "routines"
