@@ -183,6 +183,43 @@ def test_a_changed_recipe_since_the_last_ok_run_is_work(tmp_path):
     assert gate_prepare.changed_since(tmp_path, base) == "main.md"
 
 
+def test_a_config_edit_is_not_a_reason_but_a_recipe_edit_still_is(tmp_path):
+    """The operator's ruling (R2813, answering R2765): a routine.yaml edit must leave the gate
+    applying as configured. Five of one routine's six admitted fires had bypassed its gate on
+    "routine.yaml changed since the last ok run" — every one of them his own edit, three to the
+    gate itself. A revised recipe (tuning.yaml, main.md, stages/) can still add work."""
+    import os
+    import time
+
+    from rsched.daemon import gate_prepare
+    past = time.time() - 3600
+    since = __import__("datetime").datetime.fromtimestamp(past).astimezone().isoformat()
+    base = {"started": since, "ended": since}
+    (tmp_path / "routine.yaml").write_text("run_gate: {enabled: true}\n")
+    assert gate_prepare.changed_since(tmp_path, base) == ""
+    assert "routine.yaml" not in gate_prepare.CHANGE_SURFACE
+    (tmp_path / "tuning.yaml").write_text("x: 1\n")
+    assert gate_prepare.changed_since(tmp_path, base) == "tuning.yaml"
+    os.utime(tmp_path / "tuning.yaml", (past - 60, past - 60))
+    (tmp_path / "stages").mkdir()
+    (tmp_path / "stages" / "scan.md").write_text("step")
+    assert gate_prepare.changed_since(tmp_path, base) == "stages/scan.md"
+
+
+async def test_a_fresh_routine_yaml_leaves_the_checks_to_decide(setup_gate, monkeypatch):
+    """Through the real admission path: an ok run, then a config edit — the checks are asked
+    and their "no work" skips the fire, instead of the edit admitting it unasked."""
+    cfg, _, runner = setup_gate
+    use(cfg, {"kind": "max_quiet", "days": 30})
+    ok_run(cfg, earlier())
+    (cfg.dir / "routine.yaml").write_text("run_gate: {enabled: true}\n")
+    monkeypatch.setattr(runner_state, "engine_cmd", lambda *a, **k: pytest.fail("engine boot"))
+    _, run, st = await finish(runner, cfg)
+    assert st["outcome"] == "skipped"
+    gate = read_json(run.run_dir / "gate.json")
+    assert gate["decision"] == "skip" and gate["checks"][0]["kind"] == "max_quiet"
+
+
 def test_the_last_ok_runs_own_finish_line_stamp_is_not_a_change(tmp_path):
     """A finish STAMPS the finish line (`finishline.record`: a distance per open outcome, and
     the file itself for a routine whose recipe has only a Done-when list), so that write is

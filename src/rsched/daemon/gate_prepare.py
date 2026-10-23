@@ -120,11 +120,11 @@ def last_ok(routine_dir: Path, current_run_id: str) -> tuple[dict | None, str]:
     return None, ""
 
 
-#: The files whose change means the person (or an improver) changed what this routine is or
-#: does — any of them newer than the last ok run makes the next fire a run, whatever the
-#: checks say: a granted permission can unblock parked work, a revised recipe can add some.
-#: A run reads these at its BOOT, so a change counts from the moment the last ok run STARTED.
-CHANGE_SURFACE = ("routine.yaml", "tuning.yaml", "main.md")
+#: The RECIPE files — any newer than the last ok run makes the next fire a run, whatever the
+#: checks say, since a revised recipe can add work; a run reads them at BOOT, so a change counts
+#: from when the last ok run STARTED. NOT `routine.yaml`: the operator ruled (R2813) that a config
+#: edit leaves the gate applying as configured — use Run now to fire once (it skips admission).
+CHANGE_SURFACE = ("tuning.yaml", "main.md")
 
 #: The finish line counts from the moment the last ok run ENDED. Its finish reads the line
 #: again — the accounting answers for every open outcome — and then STAMPS it
@@ -136,9 +136,8 @@ FINISH_LINE = "state/finish-line.json"
 
 
 def changed_since(routine_dir: Path, base: dict) -> str:
-    """The first configuration or recipe file modified since the last ok run (`base`, from
-    `last_ok`) read it, or "": the boot-read surface against its start, the finish line
-    against its end.
+    """The first recipe file or finish line modified since the last ok run (`base`) read it, or
+    "" — the recipe against its start, the finish line against its end; never routine.yaml.
     """
     try:
         started = datetime.fromisoformat(base["started"]).timestamp()
@@ -159,7 +158,7 @@ def changed_since(routine_dir: Path, base: dict) -> str:
 
 def baseline_says_run(cfg: RoutineConfig, current_run_id: str) -> tuple[dict | None, str]:
     """`(last_ok, reason)` — a non-empty reason means the fire runs before any check is asked:
-    the last admitted run did not finish ok, or this routine's configuration or recipe changed
+    the last admitted run did not finish ok, or this routine's recipe or finish line changed
     since it did.
     """
     base, why_not = last_ok(cfg.dir, current_run_id)

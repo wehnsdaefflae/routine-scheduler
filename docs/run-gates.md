@@ -72,9 +72,12 @@ Built in, never configured, because each one is work by construction:
   (`carry`), a wake date that has come, a quiet limit passed, or no check watching it
   (`rsched/jobs.clock_due`): nothing else would ever bring the routine back for it;
 - the last admitted run did not finish ok — it may have left work behind;
-- its configuration or recipe changed since the last ok run (`routine.yaml`, `tuning.yaml`,
-  `main.md`, `stages/`, `state/finish-line.json`): a granted permission can unblock parked
-  work, a revised recipe can add some. A run reads its configuration and recipe at boot, so
+- its recipe changed since the last ok run (`tuning.yaml`, `main.md`, `stages/`,
+  `state/finish-line.json`): a revised recipe can add work. **Not `routine.yaml`**: a settings
+  edit leaves the gate applying as configured (the operator's ruling, R2813 — one routine's gate
+  had been bypassed on five of its six admitted fires, every one by his own settings edits, three
+  of them to the gate itself). To fire once after a settings change, use *Run now*, which skips
+  admission by design (below). A run reads its recipe at boot, so
   those count from when the last ok run STARTED; it reads the finish line again at its finish
   and stamps it there (a distance per open outcome), so the finish line counts from when that
   run ENDED — measured from the start, the run's own stamp read as a change and no routine
