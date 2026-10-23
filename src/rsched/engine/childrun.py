@@ -48,6 +48,16 @@ def inheritable_resources(granted_now: set[str], granted_once: set[str]) -> set[
     """The parent grants a child run inherits: RESOURCE entities only (sub-workflows run
     with capabilities off; entities.is_resource is that line) — and never a once-armed
     one (D76): "one action" must not become a child's whole-run grant.
+
+    REACH IS NOT AUTHORITY, and briefing a child as though it were is the standing mistake
+    (F589). A child inherits the parent's resource entities, so since 0.432.0 it REACHES what
+    the routine reaches — it can run the routine's own `scripts/`, read its roots, call the
+    utils those grants name. It holds NO reserved capability: no `shell`, no reserved util or
+    verb, no authoring permission, whatever the parent holds. So a standing order briefed to a
+    child in terms of a capability (`run the gate with shell`, `write the util`) does not run
+    and cannot be made to run from inside the child — it refuses, and the parent reads the
+    refusal in a finish summary. Brief a child in terms of REACH (paths, scripts, plain utils)
+    and keep every reserved act in the parent's own turns.
     """
     return {e for e in granted_now
             if entities.is_resource(e) and e not in granted_once}

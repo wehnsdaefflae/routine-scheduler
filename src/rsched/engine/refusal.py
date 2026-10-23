@@ -80,7 +80,14 @@ _HEAD_CAP = 200        # reply chars the marker fast path reads its opening sent
 #: (or the end), or a line break. The semicolon and the colon count because they are where
 #: an answer hands over to its caveat — "Here's the summary; I can't provide the 2025
 #: figures" opens with the summary, not with a decline.
-_OPENING_STOP = re.compile(r"[.!?;:](?=\s|$)|\n")
+#:
+#: The FULLWIDTH and CJK stops split UNCONDITIONALLY, with no whitespace lookahead (R2844):
+#: `。` U+3002, `！` U+FF01, `？` U+FF1F, `．` U+FF0E, `；` U+FF1B, `：` U+FF1A. A writing
+#: system that uses them puts no space after them, so demanding the ASCII lookahead would
+#: leave the defect in place for exactly the text that has it — and then the whole `_HEAD_CAP`
+#: head reads as "the opening sentence", letting a marker anywhere in 200 characters decide a
+#: refusal the single-sentence restriction exists to prevent.
+_OPENING_STOP = re.compile(r"[.!?;:](?=\s|$)|[\u3002\uff01\uff1f\uff0e\uff1b\uff1a]|\n")
 
 CLASSIFY_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["refusal"],

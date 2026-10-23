@@ -318,9 +318,15 @@ class AnthropicEndpoint:
         texts = [b.get("text", "") for b in blocks if b.get("type") == "text"]
         if len(calls) > 1:
             # `_ONE_CALL_AT_MOST` asks the API for at most one; a wire that drops the field
-            # gets the FIRST — the engine runs a reply's first action (engine/replyactions.py).
+            # gets the FIRST, and the others are DISCARDED HERE — `Completion.parsed` is one
+            # object, so they never reach `replyactions.reply_actions` and chaining (0.446.0)
+            # cannot run them. Not "the first is read because the engine runs one action":
+            # since 0.446.0 a reply's actions all run, in order, and actions written as TEXT
+            # do chain — only extra CALLS are lost, silently, at this parse. Carrying them
+            # means `parsed` holding a list, which is every adapter's shape: F754.
             log.warning("%s: a reply carried %d action calls despite the one-call choice — "
-                        "the first is read", self.name, len(calls))
+                        "the first is read, the other %d are DISCARDED (F754)",
+                        self.name, len(calls), len(calls) - 1)
         parsed = calls[0] if calls and isinstance(calls[0], dict) else None
         stop = str(data.get("stop_reason") or "")
         # stop_details is populated by the API only on stop_reason "refusal" — a dict

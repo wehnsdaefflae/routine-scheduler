@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.447.2] — 2026-10-24
+
+### Fixed
+
+- **The refusal shortcut's opening sentence now ends at a fullwidth or CJK stop** (R2844,
+  restated in R2863). `refusal._OPENING_STOP` split on ASCII `.!?;:` followed by whitespace,
+  so a reply whose first sentence ended in `。` `！` `？` `．` `；` `：` was never split and the
+  whole 200-character head counted as "the opening sentence" — letting the zero-cost marker
+  shortcut decide a refusal from a marker in a LATER sentence, which is exactly the
+  over-broad match the single-sentence restriction exists to prevent. The new stops split
+  with NO whitespace lookahead, because the writing systems that use them put no space after
+  them. `tests/test_refusal_fullwidth_stop.py` has a case per codepoint; red-first verified
+  against the old pattern (all 12 cases carried the second sentence and its marker, none do
+  now), and the ASCII rule is pinned unchanged so `3.5 million` is still one sentence.
+
+### Documentation
+
+- **`childrun.inheritable_resources` states the post-0.432.0 contract** (F589): a spawned
+  child has REACH (it can run the routine's own `scripts/`, read its roots, call the utils
+  its grants name) but holds NO reserved capability — no `shell`, no reserved util or verb,
+  no authoring permission, whatever the parent holds. So a standing order briefed to a child
+  in terms of a capability does not run and cannot be made to run from inside the child.
+  Brief children in terms of reach; keep reserved acts in the parent's turns.
+- **`anthropic_api._parse`'s multi-call warning no longer cites the pre-chaining contract**
+  (F754). It said "the first is read — the engine runs a reply's first action", which has
+  been false since 0.446.0: a reply's actions all run, in order. Actions written as TEXT do
+  chain; extra tool-use CALLS are still DISCARDED at this parse, because `Completion.parsed`
+  is one object. The comment and the log line now say that, and name F754. **The carrying
+  fix is not in this release** — `parsed` holding a list touches every adapter, so it is
+  filed as F754 and handed to `scheduler-builder`.
+
 ## [0.447.1] — 2026-10-23
 
 ### Fixed
