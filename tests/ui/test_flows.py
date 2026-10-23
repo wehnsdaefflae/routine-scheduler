@@ -91,7 +91,7 @@ def test_decisions_inbox_groups(ui, ui_page):
     from datetime import UTC, datetime, timedelta
 
     soon = (datetime.now(UTC) + timedelta(minutes=10)).isoformat(timespec="seconds")
-    ui.seed_question("uir", "q-d1", "Deferred thing?")
+    ui.seed_question("uir", "q-d1", "Deferred thing?", asked="20260715-090000")
     ui.seed_run("uir", "20260715-090000", "waiting_user",
                 question={"qid": "q-b1", "question": "Blocking thing?", "options": [],
                           "asked": "20260715-090000", "expires": soon})

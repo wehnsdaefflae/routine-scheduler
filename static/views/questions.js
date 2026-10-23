@@ -1,9 +1,15 @@
 // Decisions inbox: everything open across routines — blocking questions, deferred ones,
-// and the self-audit report's open decisions (meta badge) — in ONE answering surface,
-// grouped by priority (blocking > deferred > meta > settled; asks about to hit their
-// timeout are flagged "expiring" and sort first). Keyboard-first: the first pending item
-// autofocuses, Enter submits, ↑/↓ move, 1–9 pick an option. Toolbar: filter by kind or
-// routine, sort by priority/age/routine (non-priority sorts render flat).
+// standing proposals, and the self-audit report's open decisions (meta badge) — in ONE
+// answering surface, grouped by priority (blocking > deferred > meta > proposals > settled;
+// asks about to hit their timeout are flagged "expiring" and sort first). Keyboard-first: the
+// first pending item autofocuses, Enter submits, ↑/↓ move, 1–9 pick an option. Toolbar: filter
+// by kind or routine, sort by priority/age/routine (non-priority sorts render flat).
+//
+// The categories themselves — the groups, the filter chips, the ordering and what counts as
+// urgent — live in views/questions-taxonomy.js. PROPOSALS (R2425) are the group nothing is
+// waiting on, so they render below the ones that are and carry NO urgency affordance: no
+// expiring chip, no deadline sort, and an absolute `asked` stamp with no relative age, because
+// a proposal that has sat three weeks is not late.
 
 import { replaceHash } from "/static/router.js";
 import { api } from "/static/api.js";
@@ -14,26 +20,11 @@ import { linkifyRefs } from "/static/components/reflinks.js";
 import { configProposal } from "/static/components/configproposal.js";
 import { declinedChip, lifecycleControls } from "/static/components/decision-lifecycle.js";
 import { md, summaryLine } from "/static/md.js";
-import { act, chip, el, emptyState, groupHead, skeleton, when } from "/static/util.js";
+import { act, chip, el, emptyState, fmtAbs, groupHead, skeleton, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
+import { FILTERS, GROUPS, SORTS, expiringSoon, kindOf, sortQuestions, waitsOnYou }
+  from "/static/views/questions-taxonomy.js";
 
-const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"], ["meta", "Meta"], ["snoozed", "Snoozed"]];
-const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"], ["routine", "routine"]];
-
-const rank = (q) => (q.answered ? 3 : q.mode === "blocking" ? 0 : q.meta ? 2 : 1);
-// inbox groups, strongest first — the priority sort renders these as sections
-// [noun, what the group is, membership, does it wait on a person]
-const GROUPS = [
-  ["Blocking", "a run is waiting on you", (q) => !q.answered && q.mode === "blocking", true],
-  ["Deferred", "the next run picks these up",
-   (q) => !q.answered && !q.meta && q.mode !== "blocking", true],
-  ["Meta", "system-level decisions", (q) => !q.answered && q.meta, true],
-  ["Settled", "what you answered, and what became of it", (q) => q.answered, false],
-];
-const EXPIRING_MS = 30 * 60 * 1000;   // a blocking ask this close to its timeout is LOUD
-const expiringSoon = (q) => q.mode === "blocking" && q.expires
-  && new Date(q.expires).getTime() - Date.now() < EXPIRING_MS;
-const kindOf = (q) => (q.meta ? "meta" : q.mode);
 // F621: a decision born as a REPORT — a routine routed work to another routine and the call
 // is the operator's. The chip names the report and who acts once he answers, because that is
 // what makes the card answerable without opening anything: the question text alone does not
@@ -122,19 +113,7 @@ export async function render(view, query = {}) {
       if (state.filter !== "all") qs = qs.filter((q) => kindOf(q) === state.filter);
     }
     if (state.routine) qs = qs.filter((q) => q.routine === state.routine);
-    const byAsked = (a, b) => String(a.asked || "").localeCompare(String(b.asked || ""));
-    if (state.sort === "priority") {
-      qs = [...qs].sort((a, b) => rank(a) - rank(b)
-        || String(a.expires || "9999").localeCompare(String(b.expires || "9999"))
-        || byAsked(a, b));
-    }
-    else if (state.sort === "oldest") qs = [...qs].sort(byAsked);
-    else if (state.sort === "newest") qs = [...qs].sort((a, b) => byAsked(b, a));
-    else if (state.sort === "routine") {
-      qs = [...qs].sort((a, b) =>
-        a.routine.localeCompare(b.routine) || rank(a) - rank(b) || byAsked(a, b));
-    }
-    return qs;
+    return sortQuestions(qs, state.sort);
   }
 
   function syncToolbar() {
@@ -167,14 +146,14 @@ export async function render(view, query = {}) {
       list.append(state.items.length
         ? emptyState("◌", "Nothing matches this filter", "Widen the filter above — there are open items elsewhere.")
         : emptyState("✓", "No decisions to make right now",
-            "The routines are self-sufficient. Blocking questions pause their run here; deferred and meta ones wait for the next run."));
+            "The routines are self-sufficient. Blocking questions pause their run here; deferred and meta ones wait for the next run; proposals wait for you, with no clock on them."));
       return;
     }
     // Nothing open, but settled rows to show: say so at the top rather than leaving the reader
     // to scroll a page of answered proposals looking for one that is not.
     if (state.filter !== "snoozed" && !qs.some((q) => !q.answered))
       list.append(emptyState("✓", "Nothing waits on you",
-        "Every decision here is answered. Blocking questions pause their run here; deferred and meta ones wait for the next run."));
+        "Every decision here is answered. Blocking questions pause their run here; deferred and meta ones wait for the next run; proposals wait for you, with no clock on them."));
     if (state.sort === "priority") {
       let i = 0;
       for (const [noun, explain, match, waits] of GROUPS) {
@@ -414,7 +393,17 @@ export async function render(view, query = {}) {
         chip(q.mode, q.mode),
         q.snoozed ? chip("snoozed", "meta") : null,
         sourceLink(q),
-        q.asked ? el("span", {}, "asked ", when(q.asked)) : null,
+        // The age affordance, and the one place a PROPOSAL differs from an ask (R2425):
+        // `when()` renders a self-refreshing relative age ("3w ago") beside the stamp, which
+        // on a standing proposal reads as lateness — nothing is waiting, so there is nothing
+        // to be late for. A proposal shows the date it was filed, flat.
+        q.asked
+          ? (waitsOnYou(q) ? el("span", {}, "asked ", when(q.asked))
+              : el("span", { class: "faint small",
+                             title: "filed by a run that has ended — nothing consumes this "
+                                    + "answer until you decide, or until the routine runs again" },
+                  "filed ", el("span", { class: "when" }, fmtAbs(q.asked))))
+          : null,
         q.snoozed && q.snoozed_until
           ? el("span", { class: "faint small" }, "returns ", when(q.snoozed_until, { mode: "rel" })) : null,
         q.mode === "blocking" && q.expires

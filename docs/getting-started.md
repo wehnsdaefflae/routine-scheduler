@@ -74,9 +74,12 @@ tinted band, in the palette's violet — is how the system is changing and wheth
   how well and its **Recipe health** (runs by recipe version, the regression flag and its
   one-click roll-back). The routine's own page keeps just one line pointing there — coral when
   its newest change regressed ([run analytics](run-analytics.md)).
-- **Decisions** (Decisions tab) is the one inbox for everything routines need from you:
-  blocking questions (a run is waiting), deferred ones (the next run picks the answer up),
-  util approvals, and self-audit decisions. A blocking question waits up to the routine's
+- **Decisions** (Decisions tab) is the one inbox for everything routines need from you, sorted
+  by urgency: blocking questions (a run is waiting), deferred ones (the next run picks the
+  answer up), util approvals, self-audit decisions — and, below everything that waits,
+  **Proposals**: standing ideas a routine filed whose run has since ended, so nothing is
+  waiting on them. Those carry no urgency marking at all (no age, no countdown): decide when
+  you like. A blocking question waits up to the routine's
   configured timeout, then the run **continues on the default the model stated** — the
   question stays open for a future run. The console is the only decision surface — no
   channel mirrors a question anywhere else. **Browser notifications** are opt-in under
@@ -134,7 +137,8 @@ inject a message mid-run, or switch the model mid-flight.
 
 **7 · Decide.** When the routine needs you, the Decisions tab (and the dashboard badge)
 shows it. Blocking questions pause their run and show when the run will continue without
-you; deferred ones feed the next run. Everything is answerable inline.
+you; deferred ones feed the next run; proposals — filed by a run that has ended — wait for
+you with no clock on them. Everything is answerable inline.
 
 **8 · Tune.** The routine's page holds its settings as ONE form, led by the settings pattern it
 follows ([patterns](patterns.md)). The pattern bar names that pattern and how many values differ
