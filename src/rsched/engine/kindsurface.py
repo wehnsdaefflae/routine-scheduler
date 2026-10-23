@@ -29,7 +29,7 @@ from .actions import ALWAYS_KINDS, KIND_FIELDS
 from .actionschema import ACTION_SCHEMA, KINDS
 
 # Fields every kind carries (actions.validate_action allows `note` on any kind, like `say`).
-_UNIVERSAL_FIELDS = ("say", "note", "kind")
+_UNIVERSAL_FIELDS = ("say", "note", "kind", "role_swap")
 # …and the two that ride every kind only while the reminders capability is on. They are
 # projected like a KIND rather than described-then-refused: a run whose capability is off
 # cannot generate them at all (kindsurface's whole premise).

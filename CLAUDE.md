@@ -305,6 +305,18 @@ one you are about to touch, not all of them.
   `state/notes.md` at no turn cost, stamped run·turn·phase·action (`engine/notes.py`; the stamp is
   an address into the transcript archive; the digest carries the file's tail into the next run;
   curation into `.memory/` stays memory_write's turn-priced job).
+  A third turn-free side field, **`role_swap`** (D185, `engine/roleswap.py`), lets the RUN choose
+  which model answers its turns: `cheap` re-points its own `main` role at the routine's
+  `tool_call` model, `strong` restores the model the routine configured. It is a side field and
+  not an action KIND on purpose — a dedicated action would spend one full turn of the expensive
+  model asking to become cheap, which is the cost it exists to save. The swap is the same
+  mutation the operator's console switch makes (`switches.apply_model_switch`: assign
+  `routine.models['main']`), applied at `loop._land` where `note` is filed, so it lands on the
+  NEXT completion — `endpoints.for_model` re-resolves the role every turn, so model, window and
+  effort self-correct. A position the routine cannot serve (no `tool_call` model) is NAMED to the
+  run as an engine note rather than silently served by the system-model fallback. The operator's
+  2026-10-16 choice of the run-chosen trigger over a stage- or turn-count rule made auditability
+  a condition: D188's per-turn model stamp is what satisfies it.
   Two more SIDE FIELDS ride any kind the same turn-free way, behind the `reminders` capability:
   **`remind`** leaves/revises/deletes a CONSEQUENCE REMINDER — a `(regex → consequence)` pair over
   the canonical action string — and **`remind_feedback`** labels how one's hold turned out

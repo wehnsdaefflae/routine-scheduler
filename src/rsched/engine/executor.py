@@ -21,7 +21,6 @@ from .. import sandbox, shellrun, utils_lib, utils_run
 from ..ids import is_slug
 from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
-from .actions import could_be_util
 from .control import cancelled_for_turn
 from .decideaction import do_decide
 from .exec_env import _extra_secrets, _unbound_connection_request
@@ -35,6 +34,7 @@ from .output_compression import command_output
 from .reach import routine_root
 from .run_context import RunContext, work_dir
 from .shellwrite import marks_a_write, record_ungated_write
+from .shiftedfields import could_be_util
 
 
 def script_home(ctx: RunContext, name: str) -> Path | None:

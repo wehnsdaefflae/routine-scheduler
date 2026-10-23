@@ -12,11 +12,12 @@ from conftest import finish, util, write_file
 from helpers import run_context, server_config
 from rsched import utils_run
 from rsched.config import ServerConfig, load_routine
-from rsched.engine.actions import util_rejection_outcome, validate_action
+from rsched.engine.actions import validate_action
 from rsched.engine.budgets_config import Budgets
 from rsched.engine.executor import dispatch
 from rsched.engine.run_context import RunContext
 from rsched.engine.runtime import run_routine
+from rsched.engine.shiftedfields import util_rejection_outcome
 from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
 from rsched.paths import read_json

@@ -176,7 +176,12 @@ with EXACTLY one JSON object matching the action schema below — no prose outsi
 {deliberation.say_contract(level)} Any action may also carry an optional "note" — the engine files \
 it to state/notes.md with a turn stamp at NO turn cost, and the next run's digest carries it \
 forward; before finishing, fold what still matters into your report or memory. (What belongs in a \
-note: the schema's `note` description below.){reminder_line}\
+note: the schema's `note` description below.) The same way, any action may carry "role_swap" to \
+change WHICH MODEL answers your turns from the next one on: "cheap" serves them with this \
+routine's tool-call model, "strong" puts its main model back. Your context is untouched either \
+way. Swap down when the work left is mechanical — a gate you are waiting out, a batch of reads, \
+bookkeeping already decided — and back up BEFORE the thinking starts, not after a cheap turn has \
+made the decision badly.{reminder_line}\
 {f"\n\n{standing}" if standing else ""}{admin_banner}
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \
