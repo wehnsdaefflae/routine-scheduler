@@ -810,8 +810,8 @@ def test_finish_gate_rejects_an_incomplete_accounting(make_routine, scripted, mo
     assert status == "ok"
     rejected = [e["payload"]["accounting"] for e in events if e["type"] == "observation"
                 and e["payload"].get("accounting")]
-    assert rejected == [{"missing": ["d1", "d2"], "bare": [], "refused": []},
-                        {"missing": [], "bare": ["d2"], "refused": []}]
+    assert rejected == [{"missing": ["d1", "d2"], "bare": [], "placeholder": [], "refused": []},
+                        {"missing": [], "bare": ["d2"], "placeholder": [], "refused": []}]
     # the accounting lands in the run's status, where the next run's digest reads it
     status_doc = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
     assert status_doc["accounting"][1].startswith("d2 unmet: Reuters returns 403")
@@ -841,7 +841,7 @@ def test_a_briefed_run_answers_for_its_brief_not_the_recipe(make_routine, script
     assert status == "ok"
     rejected = [e["payload"]["accounting"] for e in events if e["type"] == "observation"
                 and e["payload"].get("accounting")]
-    assert rejected == [{"missing": ["b1"], "bare": [], "refused": []}]
+    assert rejected == [{"missing": ["b1"], "bare": [], "placeholder": [], "refused": []}]
     header = next(e for e in events if e["type"] == "header")
     assert header["brief"] == "re-check the Q3 figures"
     assert json.loads((run_dir / "status.json").read_text())["brief"] == \
@@ -920,7 +920,7 @@ def test_a_line_whose_stage_was_never_entered_goes_to_the_judge_with_that_as_a_h
 """)
     (d / "stages").mkdir()
     (d / "stages" / "publish.md").write_text("# publish\n\nPublish it.\n", encoding="utf-8")
-    scripted([probe(), _accounted("Published.", "d1 met: published")])
+    scripted([probe(), _accounted("Published.", "d1 met: the page is published")])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
 
@@ -956,7 +956,7 @@ def test_a_judge_refuting_a_stage_keyed_line_still_challenges_it_once(make_routi
     (d / "stages" / "publish.md").write_text("# publish\n\nPublish it.\n", encoding="utf-8")
     scripted([
         probe(),
-        _accounted("Published.", "d1 met: published"),                      # challenged
+        _accounted("Published.", "d1 met: the page is published"),          # challenged
         _accounted("Published.", "d1 met: the page reads back — see turn 1"),   # stands
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)

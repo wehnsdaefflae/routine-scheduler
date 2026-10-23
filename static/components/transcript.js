@@ -26,6 +26,7 @@ import { answerForm } from "/static/components/answerform.js";
 import { newTabHref } from "/static/components/blobtab.js";
 import { highlightJson } from "/static/components/code.js";
 import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
+import { accountingGaps, accountingLine } from "/static/components/obs-accounting.js";
 import { backgroundState, backgroundText, killBrief, killText }
   from "/static/components/obs-background.js";
 import { turnUsage } from "/static/components/turn-model.js";
@@ -62,30 +63,6 @@ export function operatorFlagText(p) {
   return `⚑ you flagged the reply at turn ${p.turn ?? "?"}${p.model ? ` (${p.model})` : ""} `
     + "as a refusal — it and everything after it were archived and your message was re-sent; "
     + `${p.takeover_model || "the uncensored model"} carries the conversation from here`;
-}
-
-// A finish deferred for its ACCOUNTING (engine/accounting.problems): the ids it left out, the
-// entries with a verdict and no note, and the verdicts it claimed that its line cannot carry.
-function accountingGaps(found) {
-  const parts = [];
-  if ((found.missing || []).length) parts.push(`no verdict for ${found.missing.join(", ")}`);
-  if ((found.bare || []).length) parts.push(`no note behind ${found.bare.join(", ")}`);
-  if ((found.refused || []).length) parts.push(found.refused.join("; "));
-  return parts.join(" · ") || "an entry did not parse";
-}
-
-// What a finish recorded: the verdict it gave each line, the finish-line outcomes it newly
-// proved, and where a check of its transcript disagreed — or that the finish line is reached.
-function accountingLine(p) {
-  if (p.goal_reached) {
-    return "— the finish line is reached: scheduling stops; a Decisions card asks to "
-      + "confirm retiring the routine —";
-  }
-  const judged = Object.entries(p.judged || {}).map(([id, v]) => `${id} ${v}`).join(" · ");
-  const met = (p.met || []).length ? ` · proved ${p.met.join(", ")}` : "";
-  const disputed = (p.disputed || []).length
-    ? ` · a check of the transcript disagreed on ${p.disputed.join(", ")}` : "";
-  return `— accounting: ${judged || "nothing owed"}${met}${disputed} —`;
 }
 
 export function referButton(onRefer, label, snippet) {

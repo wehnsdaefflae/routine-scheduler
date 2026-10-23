@@ -667,7 +667,10 @@ by a test, by the engine, or by a past incident.
   RUN MUST NEVER DO is held before the action by permissions, rules and reminders; a
   recipe's `## Never` carries what none of them can hold. The finish owes an `accounting` FIELD
   — one entry per Done-when line, per open goal and per open outcome (`engine/accounting.py`); the gate checks
-  presence and shape, never semantics. A `met` is checked once against the run's own
+  presence, shape and a CONTENT FLOOR, never semantics: an evidence clause under two words, or
+  made only of words a real account never consists of alone (`test`, `tbd`, `n/a`, `ok`, …), is
+  a placeholder and the deferral names the entry verbatim (F748 — a run finished `ok` on
+  `d1 met: test`). A `met` is checked once against the run's own
   transcript (`engine/verifier.py`: FAIL-OPEN everywhere, AT MOST ONE challenge per line per
   run, a re-asserted verdict STANDS and is recorded `disputed`). Budgets stay a runaway
   BACKSTOP. Reaching the finish line RETIRES the routine without writing config:

@@ -124,9 +124,11 @@ def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
     checkpoint, `deferred` if the run sets the task aside), so it can never trap a run.
 
     Then THE ACCOUNTING: one entry per Done-when line of the recipe and per open outcome of the
-    finish line, as a FIELD — checked for presence and shape only (semantics stay the model's;
-    the verifier reads the `met` claims). The main finish only: a follow-up after the run ended
-    answers the person, not the recipe.
+    finish line, as a FIELD — checked for presence, shape and a content FLOOR, never semantics
+    (those stay the model's; the verifier reads the `met` claims). The floor
+    (`accounting.is_placeholder`) refuses an evidence clause that answers for nothing —
+    `d1 met: test`, on which a run finished `ok` (F748) — and names the entry. The main finish
+    only: a follow-up after the run ended answers the person, not the recipe.
 
     A FINAL conversation reply may not leave a goal unmet: `final` is the claim that what the
     person asked for is delivered, so `accounting.problems` refuses an unmet goal there.

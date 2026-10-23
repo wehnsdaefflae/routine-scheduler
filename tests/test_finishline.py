@@ -237,10 +237,10 @@ def test_parse_reads_the_four_verdicts():
 
 
 def test_a_complete_accounting_has_no_problems():
-    verdicts = accounting.parse(["d1 met: yes", "d2 unmet: waits on Kai",
+    verdicts = accounting.parse(["d1 met: the ledger matches", "d2 unmet: waits on Kai",
                                  "g1 met: portal receipt", "g2 distance: the review"])
     assert accounting.problems(verdicts, DONE, OUTCOMES) == \
-        {"missing": [], "bare": [], "refused": []}
+        {"missing": [], "bare": [], "placeholder": [], "refused": []}
 
 
 def test_missing_and_bare_entries_are_named():
@@ -264,7 +264,7 @@ def test_a_done_when_line_takes_no_distance():
 
 
 def test_the_deferral_says_what_is_missing_and_the_shape():
-    msg = accounting.deferral({"missing": ["d2"], "bare": ["d1"], "refused": []})
+    msg = accounting.deferral({"missing": ["d2"], "bare": ["d1"], "placeholder": [], "refused": []})
     assert msg.startswith("OBSERVATION (finish deferred): your `accounting` is incomplete")
     assert "no entry for d2" in msg and "nothing after the verdict for d1" in msg
     assert "`g<n> distance: <what remains>`" in msg
@@ -385,7 +385,7 @@ def test_a_brief_stands_in_for_the_done_when_list(tmp_path):
     assert found["refused"] == ["b1: a Done-when line or a goal is met, unmet or not due"]
     assert accounting.problems(accounting.parse(["b1 met: the figures match"]),
                                goals.owed(ledger), []) == {
-        "missing": [], "bare": [], "refused": []}
+        "missing": [], "bare": [], "placeholder": [], "refused": []}
 
 
 def test_a_brief_round_trips_through_the_run_dir(tmp_path):

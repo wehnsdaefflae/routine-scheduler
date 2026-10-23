@@ -1738,10 +1738,19 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   THE ACCOUNTING (`engine/accounting.py`): a depth-0 main finish carries an `accounting` FIELD —
   one entry per Done-when line (`d<n> met|unmet|not due: <why>`) and per open outcome
   (`g<n> distance: <what remains>`, or `g<n> met: <evidence>` where the run is the judge). The
-  finish gate sets aside a finish whose accounting is missing a line, bare, or claims what its
+  finish gate sets aside a finish whose accounting is missing a line, bare, a PLACEHOLDER, or
+  claims what its
   line cannot be (the R108 one-extra-turn shape; the reserved-finish turn and a follow-up reply
-  after the run ended owe nothing). It checks presence and shape, never semantics — a field, not
-  prose in the summary, because verdicts read back out of prose were lost one time in six. The
+  after the run ended owe nothing). It checks presence, shape and a content FLOOR, never
+  semantics — a field, not
+  prose in the summary, because verdicts read back out of prose were lost one time in six.
+  The floor (`accounting.is_placeholder`) refuses an evidence clause of fewer than two words,
+  or one made only of words a real account never consists of alone (`test`, `tbd`, `n/a`,
+  `ok`, …), naming the offending entry verbatim so the model sees what it wrote; it is
+  calibrated on the fleet's own entries — the shortest LEGITIMATE ones are two-word `not due`
+  accounts like `no filing`, which is why the rule counts words and not characters (F748:
+  `birthday-admin:20261022-080004` finished `ok` carrying `d1 met: test`). Whether a `met` is
+  TRUE is the claim verifier's separate question. The
   accounting lands in the run's `status.json` (the runs table, the dashboard), the finish line's
   distances and one `stopping_update` transcript event; the next run's digest carries the finish
   line and what the last run left `unmet`, said ONCE at boot and never per turn
