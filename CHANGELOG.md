@@ -15,6 +15,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.445.0] — 2026-10-23
+
+Four decided items: **R2428** and **R2425** (accepted 2026-10-10), and the two that 0.444.0
+could not ship because the live checkout was mid-edit — **D185**'s completed campaign and
+**R2195**.
+
+### Added
+- **`rsched postdeploy` — the deploy session as a fixed checklist with a record** (R2428). A
+  deploy session is this project's highest-yield defect detector and was entirely unstructured:
+  of 2026-10-01's releases, only 0.374.0 came from a scheduled detector; everything else came
+  from a human mid-deploy. `rsched validate` asks whether the config is flyable and `rsched
+  drain` quiesces the box — both run BEFORE; nothing ran after. Four named checks now do, each
+  derived from a defect that really went unnoticed: `served-identity` prints WHICH box answered
+  and where the address came from (0.374.0 — a deploy script drove the wrong host's Docker
+  daemon, ~5.2 GB built locally), `build-skew` compares the version the daemon SERVES with the
+  checkout it came from (`docker compose up -d` never reloads bind-mounted code, so a green
+  `compose config` means nothing about what is live), `backup-freshness` reports how long since
+  `rsched-backup.service` last COMPLETED (F602 — 19 nights unnoticed), and
+  `state-path-ownership` walks the homes the daemon must write for a uid it cannot write as
+  (0.373.1 — one root-owned 0600 file failed its whole home). One line per check, one JSONL row
+  per session in `<routines_home>/.control/postdeploy.jsonl`, so the inspection leaves a trace
+  instead of living in the operator's head. The item explicitly rejected "more deploy tests" —
+  10+ deploy modules exist and more would have caught none of the four, because each was a
+  property of the live instance and not of a fixture. Exit 1 means exactly one thing: the
+  operator must act before he walks away from this deploy; everything else is NOTE and stays
+  green, because a command that exits non-zero on something benign is run once and never again.
+  `daemon/backup_watch.staleness` and `/api/status`'s own `build_skew` are consumed as given,
+  not re-derived — with one deliberate divergence recorded in `backup_watch`'s docstring: a
+  backup record that cannot be READ AT ALL is a FAIL here where the daemon's watch calls it
+  `unknown`, because F602's lesson is that for a human at the box the ABSENCE of the indicator
+  IS the finding. **Known limit: the real HTTP call to `/api/status` is exercised nowhere** —
+  `_status` is stubbed in all 42 tests, since a run's sandbox cannot read the live config
+  (Errno 13) or `/api/settings` (403). The checks' logic is tested; their one real I/O path is
+  not, and the command has never run against a live instance.
+- **A fifth Decisions group: the proposals nothing is waiting on** (R2425). The page is an inbox
+  sorted by urgency, and all four captions promised a CONSUMER waiting on the operator — for a
+  standing proposal that is literally false: accepted items landed under *"Deferred — the next
+  run picks these up"* and no run picked them up. Precedent: 0.345.1 split Messages' `active 75`
+  into `active 59 · unread 16`. The new group's caption is `Proposals — considered ideas, decide
+  when you like`, rendered below Blocking/Deferred/Meta and above Settled, with the urgency
+  affordances OFF: `waits: false` drops the coral waiting-on-a-person colour, the card renders
+  `filed <date>` with NO `[data-when]` so the 30-second time ticker can never age it into
+  "3w ago", there is no expiring chip and no countdown, and inside the group items sort by
+  routine rather than by lateness. A proposal that has sat three weeks is not late. The
+  predicate is DERIVED, settling the item's open point without touching the backend: a proposal
+  is an open, non-blocking, non-meta item whose asking run has ENDED (`run_state` is already on
+  the row, and this is the derivation the card's own "answer & run now" control already makes).
+  **Known limit, asserted in a test rather than glossed:** the client cannot see FUTURE
+  SCHEDULES, so an ordinary deferred ask from a finished run reads as a proposal even if its
+  routine fires in an hour; and the open card's kind chip still reads `deferred`, since it
+  renders the record's own `mode`.
+- **A run can choose its own model** (D185, the campaign's completion). `role_swap` is a SIDE
+  FIELD riding any action — `cheap` to drop `main` to the routine's configured cheap model when
+  the run judges the remaining work mechanical, `strong` to come back up — applied at the turn
+  boundary that already re-resolves roles every turn. It is deliberately NOT a new action kind:
+  a kind costs five prose/count pins and a whole expensive turn spent asking to be cheap, which
+  is self-defeating for a token-saving feature, while `note` and `remind` are the repo's own
+  precedent for a field that rides the action a run was taking anyway. Since D188 (0.440.0) the
+  per-turn model is on the transcript, so a swap is auditable after the fact.
+- **A dead model credential is found before a run spends its first turn** (R2195). The daemon
+  proactively keeps user connections alive but never checked the credentials every run depends
+  on; a new `endpoint_needs_reauth` health event fires when every proxy account that could serve
+  a model endpoint is unavailable. **Known limit: it watches only CLIProxy-bound endpoints** —
+  OpenRouter and Nano-GPT are not covered.
+
+### Changed
+- **The side fields' checks live in one module** (D185 step 1 + 2's extractions).
+  `engine/shiftedfields.py` takes the three readers of a malformed action out of
+  `engine/actions.py` (the util naming rule, F546's telemetry attribution and D146-C's
+  whole-object diagnosis — they must not drift, because the guard and the diagnosis read ONE
+  signature), and `engine/sidefields.py` takes the side fields' validation and landing, so each
+  new side field no longer costs the action contract's single home two lines it does not have.
+  `actions.py` 632 → 545, with both ceilings re-tightened. The Decisions page's inbox TAXONOMY
+  (groups, filter chips, priority ordering, the expiring-soon rule) likewise moves out of
+  `static/views/questions.js` into `static/views/questions-taxonomy.js` (460 → 449) — that file
+  had ZERO ratchet slack, so the extraction came first and the fifth group second.
+
+### Fixed
+- `tests/size_ratchet.json`'s `note` lost 34 characters of the R2197 clause when 0.444.0's merge
+  resolution joined two appended clauses, leaving one beginning mid-sentence
+  (`entry dropped)7 moved the decision card's…`). Provenance prose only — no ceiling and no
+  behaviour — but that note is the only record of why each ceiling moved.
+
 ## [0.444.1] — 2026-10-23
 
 ### Fixed
