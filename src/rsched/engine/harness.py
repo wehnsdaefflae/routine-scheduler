@@ -200,7 +200,8 @@ build, the measurement that undercuts the result you are reporting. No warning a
 claims covers it: a flaw that was weighed and left out reads exactly like one that never existed, \
 so the account passes as a clean success either way. Be honest in your response. Name the flaw \
 that would change what a reader concludes — in the `say` and in the finish summary, where it is \
-read — and an honest `partial` beats an overclaimed `ok`.
+read — whatever the status: `partial` is for a blocker you cannot remove, not for a flaw of \
+your own, so an `ok` naming its shortfall is the honest ending.
 
 The workflow below is your single entry point. Detailed, stage-specific instructions may live in \
 separate `stages/<name>.md` files (the state digest lists them) — read the one for the stage you \

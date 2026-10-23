@@ -545,11 +545,11 @@ ACTION_SCHEMA: dict = {
                                       "not been processed for this many days"},
         # finish
         "status": {"type": "string", "enum": ["ok", "partial", "failed"],
-                   "description": "finish: ok = everything this run could do is done (a "
-                                  "decision now waiting on the user does not make it partial); "
-                                  "partial = something outside your reach stopped feasible "
-                                  "work, named in the summary; failed = the job could not be "
-                                  "done"},
+                   "description": "finish: ok = the ordinary ending, including a run whose own "
+                                  "shortfall (a skipped step, a red check, work left) is named "
+                                  "in the summary; partial = only when something you cannot "
+                                  "unblock yourself stopped work you could otherwise have done, "
+                                  "named as well; failed = the job could not be done"},
         "summary": {
             "type": "string",
             "description": "job checkpoint: what this run did for the job and what the next "

@@ -196,8 +196,9 @@ def reply(result, new_topic=False):
     your next reply. Never call a reply final to end it sooner; never leave one non-final when
     the work is in fact done.
 
-    Status ok (or partial when the job is not done and you are handing over mid-plan), and the
-    summary is the MESSAGE the user reads in the chat — direct, conversational markdown grounded in this cycle's observations. Include:
+    Status ok — a non-final reply handing over mid-plan is an ordinary `ok` with the goals left
+    open, not a partial; reserve partial for something you cannot unblock yourself (a missing
+    grant, a service that is down) and name it. The summary is the MESSAGE the user reads in the chat — direct, conversational markdown grounded in this cycle's observations. Include:
     what you did or found, artifact filenames if any, checkpoint commits if any, where the
     plan now stands if there is one, and open questions. If new_topic, make the summary's
     FIRST line exactly `[new-topic] <a short title for the suggested new conversation>` and

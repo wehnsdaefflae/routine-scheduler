@@ -232,9 +232,11 @@ def record():
     the turns left against what recording costs. If recording no longer fits, stop the work in
     hand and record instead, naming what was unfinished. An unfinished piece of work that is
     recorded is a queue the next run picks up; an unfinished piece of work that is unrecorded
-    happened to nobody. A run that ends without its ledger entry is `partial`, whatever else it
-    delivered — and if that verdict ever feels unfair, the remedy is the reserve, not a kinder
-    verdict.
+    happened to nobody. A run that ends without its ledger entry has failed its record, whatever
+    else it delivered: name that in the summary — and if owning it ever feels unfair, the remedy
+    is the reserve, not a quieter account. It is a shortfall of your own, not a blocker, so the
+    status stays `ok` with the gap named; `partial` is for something you cannot unblock
+    yourself.
 
     Update state/phase.json and any state files; append exactly one LEDGER entry for the run
     (what changed, why, decisions, and candidates rejected + why). Advance phase.json to
