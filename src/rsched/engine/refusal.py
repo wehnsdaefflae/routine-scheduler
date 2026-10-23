@@ -100,11 +100,23 @@ CLASSIFY_SCHEMA = {
 TAKEOVER_CAP = 16
 
 
+#: The typography a model substitutes for the straight quotes REFUSAL_MARKERS are typed with:
+#: the curly single quotes (U+2018/U+2019), the modifier letter apostrophe (U+02BC) and the
+#: fullwidth apostrophe (U+FF07) read as "'", the curly double quotes (U+201C/U+201D) as '"'.
+#: Folded in the HAYSTACK only — the markers stay the repo's own readable constants. Without
+#: it `I can’t help with that` (U+2019, which models write constantly) missed the zero-cost
+#: shortcut and spent a classification subcall on an obvious opener. A punctuation fold, not a
+#: unicode-folding layer: no accent stripping, no dash or ellipsis mapping.
+_QUOTE_FOLD = str.maketrans({"\u2018": "'", "\u2019": "'", "\u02bc": "'", "\uff07": "'",
+                             "\u201c": '"', "\u201d": '"'})
+
+
 def _opening_sentence(text: str) -> str:
-    """The reply's first non-empty sentence, lower-cased — the only span a marker decides on.
-    Read from the reply's first `_HEAD_CAP` characters, so a run-on opener is cut there.
+    """The reply's first non-empty sentence, lower-cased and quote-folded — the only span a
+    marker decides on. Read from the reply's first `_HEAD_CAP` characters, so a run-on opener
+    is cut there.
     """
-    head = (text or "").strip()[:_HEAD_CAP].lower()
+    head = (text or "").strip()[:_HEAD_CAP].lower().translate(_QUOTE_FOLD)
     return next((part.strip() for part in _OPENING_STOP.split(head) if part.strip()), "")
 
 

@@ -16,6 +16,20 @@ REFUSAL = "I'm sorry, but I can't help with that request."
 ANSWER_TEXT = "Here is the answer you asked for."
 
 
+def test_marker_shortcut_matches_curly_apostrophe():
+    # Models type the apostrophe as U+2019; REFUSAL_MARKERS are typed straight. Both
+    # spellings must hit the zero-cost shortcut, and folding must not invent refusals.
+    assert refusal.looks_like_refusal("I\u2019m sorry, but I can\u2019t help with that.")
+    assert refusal.looks_like_refusal(REFUSAL)
+    assert not refusal.looks_like_refusal("Here\u2019s the summary you asked for.")
+
+
+def test_marker_shortcut_folds_apostrophe_variants():
+    # The other apostrophe spellings the fold covers, each read as the straight one.
+    for apos in ("\u2018", "\u02bc", "\uff07"):
+        assert refusal.looks_like_refusal(f"I{apos}m sorry, but I can{apos}t help with that.")
+
+
 class _Ep:
     context_tokens = 1_000_000
 
