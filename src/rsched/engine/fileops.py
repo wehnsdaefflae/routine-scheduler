@@ -21,10 +21,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..grants import CONFIG_FILE
-from ..jobs import JOBS_FILE
 from ..paths import atomic_write, read_json
 from ..readmodels.statemap import STAGES_DIR
-from . import docread, fileformat, obligations
+from . import docread, fileformat, storeseal
 from .finishline import FILE as FINISH_LINE
 from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
@@ -350,16 +349,10 @@ def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
     return None
 
 
-JOBS_REFUSAL = ("state/jobs.json is the engine's job store — change a job with the `job` "
-                "action (create / update / checkpoint / delete), which keeps the run's ledger "
-                "and the gate that holds your finish in step with it")
-#: Engine-owned stores, changed only through their own action (a write could fake a checkpoint).
-_STORES: dict[str, str] = {JOBS_FILE: JOBS_REFUSAL, str(obligations.FILE): obligations.REFUSAL}
-
-
 def _jobs_gate(ctx: RunContext, resolved) -> str | None:
+    """The engine-owned stores (`storeseal`): jobs.json only while the routine keeps jobs."""
     for d in routine_dirs(ctx):
-        for rel, why in _STORES.items():
+        for rel, why in storeseal.stores(ctx).items():
             if resolved in (d / rel, (d / rel).resolve()):
                 return why
     return None
@@ -380,7 +373,7 @@ def _removal_gate(ctx: RunContext, resolved: Path) -> str | None:
         line = d / FINISH_LINE
         if line.exists() and line.is_relative_to(resolved):
             return f"this would remove {FINISH_LINE}: {FINISH_LINE_REFUSAL}"
-        for rel, why in _STORES.items():
+        for rel, why in storeseal.stores(ctx).items():
             if (d / rel).exists() and (d / rel).is_relative_to(resolved):
                 return f"this would remove {rel}: {why}"
     return None
