@@ -588,6 +588,24 @@ The endpoint card and dashboard show the real account windows from Anthropic's u
 API through the proxy, including usage outside this scheduler. A failed quota read
 shows a soft error; it does not block inference. OAuth tokens remain in the proxy.
 
+### Noticing a DEAD credential before a run spends a turn
+
+The same binding is what the daemon watches. `daemon/endpoint_watch.py` asks each
+CLIProxy-managed endpoint for its account list every 10 minutes — the lightest probe
+there is, never a completion and never an upstream request — and writes a verdict per
+endpoint to `.control/endpoint-health.json`: `ok`, `cooling` (all accounts unavailable
+but the proxy expects one back — a usage limit), `needs_reauth` (all unavailable with no
+retry expected: the credential is dead and only a person can fix it, so sign the account
+back in from the endpoint card) or `unknown` (the proxy could not be read, or no account
+is signed in — nothing is claimed). A `needs_reauth` verdict files one
+`endpoint_needs_reauth` health event a day while it holds. It is a PREDICTOR of failure,
+not a missed fire, so it is not on the blocked-fleet fold (`GET /api/health/blocked`).
+
+Why it exists: on 2026-09-14 06:18 a claude-proxy subscription token expired and eight
+routines failed at turn 0 within two minutes, each `503 auth_unavailable`. An endpoint
+with no proxy binding is NOT watched — for an API-key endpoint the light probe is the
+credits read, which the Settings card makes by hand.
+
 ## Abliterated GLM 5.2 (uncensored community variants)
 
 Status as of 2026-07: the abliterations of `zai-org/GLM-5.2` exist as Hugging Face

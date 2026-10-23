@@ -2,16 +2,16 @@
 
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"run_partial"|"orphaned_run"
-        |"run_canceled"|"oversize_state_file"|"prompt_oversize_shrunk"
-        |"wizard_build_degraded"|"fire_refused"|"trigger_capped"|"model_window_corrected"
-        |"util_killed"|"finish_gate_failed"|"observation_render_failed"
-        |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
-        |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
+        |"run_canceled"|"oversize_state_file"|"prompt_oversize_shrunk"|"fire_refused"
+        |"wizard_build_degraded"|"trigger_capped"|"model_window_corrected"|"util_killed"
+        |"finish_gate_failed"|"observation_render_failed"|"endpoint_needs_reauth"
+        |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"lane_chain_done"
+        |"model_chain_exhausted"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"lane_catchup_declined"
-        |"fire_paused"|"fire_catchup"|"routine_catchup_declined"
-        |"scheduler_tick_error"|"migration_due_soon"|"migration_expired"
-        |"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route"
-        |"obligation_overdue"|"ungated_write"|"wrong_turn_detected"|"run_corrected",
+        |"fire_paused"|"fire_catchup"|"routine_catchup_declined"|"scheduler_tick_error"
+        |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
+        |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"
+        |"wrong_turn_detected"|"run_corrected",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -28,24 +28,23 @@ applied inside `log_health_event` so no call site can forget it. `health_cooldow
 holds the measurements, the window's justification and the payload-dedupe dead end. Every
 other event here is an incident and is filed every time: two of them are two facts.
 
-budget_exhausted vs run_partial: BOTH are a `partial` finish, and they used to be one
-event. budget_exhausted is the finish a BUDGET VIOLATION forced (the reserved finish turn
-was spent, or the engine ended the run itself); run_partial is a partial the model chose
-with budget to spare — the job needs another run, a source was down, an ask timed out.
-The distinction is the whole point of reading the stream: an instance where every routine
-"exhausts its budget" nightly reads as starved, when most of those were authored finishes.
-budget_exhausted carries `resource` (turns · total_turns · wall_clock · tokens · cost),
-`limit` and `status` as structured fields — WHICH budget ended the run was recorded
-nowhere, and reconstructing it from status.json worked for 22 of 90 cases. It is emitted
-whenever the RESERVED FINISH TURN was spent, whatever the finish status: a run that spends
-it and still finishes `ok` was ended by a budget just as much (11 such runs since 09-01
-left no event at all).
+budget_exhausted vs run_partial: BOTH are a `partial` finish, and they used to be one event.
+budget_exhausted is the finish a BUDGET VIOLATION forced (the reserved finish turn was spent, or
+the engine ended the run itself); run_partial is a partial the model chose with budget to spare —
+the job needs another run, a source was down, an ask timed out. The distinction is the whole
+point of reading the stream: an instance where every routine "exhausts its budget" nightly reads
+as starved, when most of those were authored finishes. budget_exhausted carries `resource` (turns
+· total_turns · wall_clock · tokens · cost), `limit` and `status` as structured fields — WHICH
+budget ended the run was recorded nowhere, and reconstructing it from status.json worked for 22
+of 90 cases. It is emitted whenever the RESERVED FINISH TURN was spent, whatever the finish
+status: a run that spends it and still finishes `ok` was ended by a budget just as much (11 such
+runs since 09-01 left no event at all).
 
-oversize_state_file: the run-end autocommit left a file OUT of the routine's own repo
-because it exceeds `engine/autocommit.OVERSIZE_BYTES` (detail names path and size). The
-file stays on disk and the run's work is untouched; what it never becomes is a git blob
-in a repo the instance mirrors and pushes — one 223 MB inventory once blocked every
-library push for days, and the mirror repo's history had to be rewritten to drop it.
+oversize_state_file: the run-end autocommit left a file OUT of the routine's own repo because it
+exceeds `engine/autocommit.OVERSIZE_BYTES` (detail names path and size). The file stays on disk
+and the run's work is untouched; what it never becomes is a git blob in a repo the instance
+mirrors and pushes — one 223 MB inventory once blocked every library push for days, and the
+mirror repo's history had to be rewritten to drop it.
 
 commit_failed: a commit into a repo the instance versions did not land (`libgit.commit`) — a
 routine's run-end autocommit, a web edit, a boot seed sync, a migration, the recipe snapshot.
@@ -67,15 +66,26 @@ this product read backup state, so three weeks of no backup passed with zero sig
 other half of that fix is the unit's own `OnFailure=` push, which still works when this daemon is
 down — a single mechanism would have had to be the one that was up.
 
+endpoint_needs_reauth: every proxy account that could serve a model ENDPOINT is unavailable with no
+retry expected — the credential is dead and a run whose model resolves there fails at turn 0
+(`daemon/endpoint_watch`, R2195). routine is empty (an instance fact, `backup_stale`'s idiom);
+`endpoint` and the `probe` that asked ride as fields, one row a day while the state holds. On
+2026-09-14 06:18 a claude-proxy subscription token expired and eight routines failed at turn 0
+within two minutes, each `503 auth_unavailable`: the daemon kept user CONNECTIONS alive and never
+asked it of the model credentials. An account the proxy expects back is `cooling`, never this
+(`oauth_refresh`: only a REFUSAL flags `needs_reauth`). It PREDICTS failed work rather than
+reporting work that was due and did not happen, so it is deliberately absent from
+`readmodels/health_stream.BLOCKED_EVENTS`.
+
 deprecated_route: a request ARRIVED on an API path that has been renamed and is served only for
 compatibility (`web/api_hooks.py`: the old webhook spelling `/api/hooks/<slug>/<token>`, whose
 canonical path is `/api/webhooks/<slug>/<token>`). routine = the slug the call was for, run_id
-empty; carries `route` and `replacement`. It is NOT blocked work — the call was accepted and
-did everything it asked for — so it is deliberately absent from
+empty; carries `route` and `replacement`. It is NOT blocked work — the call was accepted and did
+everything it asked for — so it is deliberately absent from
 `readmodels/health_stream.BLOCKED_EVENTS`; what it answers is the only question a deprecation
-cannot be ended without: who is still calling the old path. Filed on ACCEPTED calls alone,
-past every rejection: a 404 probe or a wrong token is not a caller to migrate, and the hook
-route is unauthenticated, so recording rejections would let anyone fill this stream.
+cannot be ended without: who is still calling the old path. Filed on ACCEPTED calls alone, past
+every rejection: a 404 probe or a wrong token is not a caller to migrate, and the hook route is
+unauthenticated, so recording rejections would let anyone fill this stream.
 
 ungated_write: a run holding `shell` ran a command whose SHAPE may have written, and no
 file-action gate saw it (D158's deliberate hole; `engine/shellwrite.py` holds the shapes).
@@ -92,64 +102,60 @@ wrong_turn_detected: a turn came back WELL-FORMED AND WRONG, and the engine saw 
 attempts_exhausted · action_repeat), `turn`, `model` and `effort` as structured fields, plus
 `streak` on a repeat. It exists because `engine/degrade.py` — literally documented as "when a
 turn comes back WRONG" — carries four ordered nets that ALL fire on a turn which failed to
-ARRIVE; a reply that arrives whole and is wrong is, to that ladder, a success, recovered on the
+ARRIVE; a reply that arrives whole and is wrong is, to that ladder, a success recovered on the
 next attempt. The only trace was a transcript `error` event and two per-run counters
 (`schema_retries`, `schema_forcefails`), so the FLEET rate — how often, at which turn, under
 which model and effort — was readable nowhere. ONE row per (reason, turn): a turn rejected three
 times is one wrong turn, and the per-attempt record is already on the transcript. It is a
-MEASUREMENT and changes no effort, no model and no attempt budget; the rows are also the
-`(turn, effort-that-sufficed)` corpus the later effort-ladder increment must be justified by.
+MEASUREMENT and changes no effort, model or attempt budget; the rows are also the `(turn,
+effort-that-sufficed)` corpus the later effort-ladder increment must be justified by.
 Deliberately NOT in `health_cooldown.REPEAT_COOLDOWN_HOURS`: a rate suppressed by the hour is
 not a rate, and nothing the blocked-fleet fold COUNTS may be cooled down.
 
-git_lock_cleared: a provably stale `index.lock` was removed before a write (`gitlock` — the
-commit lock was held, no git process worked in the repo, the lock was empty and older than
-`gitlock.STALE_AFTER_S`). Carries `repo` and `lock_age_s`. Nothing failed, so it is not blocked
-work; a run of them is something killing git mid-write — the disk stalling, the OOM killer, a
-container stopped mid-commit.
+git_lock_cleared: a provably stale `index.lock` was removed before a write (`gitlock`: the commit
+lock was held, no git process worked there, it was empty and older than `gitlock.STALE_AFTER_S`).
+Carries `repo` and `lock_age_s`. Nothing failed, so it is not blocked work; a run of them is
+something killing git mid-write — a stalling disk, the OOM killer, a container stopped mid-commit.
 
-util_killed: a child command the engine ran — a util, a routine `script` or a `shell`
-command — was stopped by a SIGNAL (engine/executor). Carries `kind` (util · script ·
-shell), `util` (its name, or the head of the command), `signal` and
-`children_vm_hwm_kb` (this run's high-water memory across all its finished children — an
-upper bound on the one that died). Inside the container a signal 9 is the cgroup OOM
-killer, and the engine SURVIVES it: the run reads an ordinary failed command and carries
-on, which is why five such kills on 2026-09-14 and 09-17 (anon-rss 1.86-2.05 GB in
-/var/log/kern.log) left no trace in this stream at all. A run of them on one util is a
-util that does not stream what it reads.
+util_killed: a child command the engine ran — a util, a routine `script` or a `shell` command —
+was stopped by a SIGNAL (engine/executor). Carries `kind` (util · script · shell), `util` (its
+name, or the head of the command), `signal` and `children_vm_hwm_kb` (this run's high-water memory
+across all its finished children — an upper bound on the one that died). Inside the container a
+signal 9 is the cgroup OOM killer, and the engine SURVIVES it: the run reads an ordinary failed
+command and carries on, which is why five such kills on 2026-09-14 and 09-17 (anon-rss 1.86-2.05
+GB in /var/log/kern.log) left no trace in this stream at all. A run of them on one util is a util
+that does not stream what it reads.
 
-trigger_capped: a report trigger hit its daily cap; one event per day at the transition,
-because a capped trigger is a dark routine and dark must be visible (F276).
+trigger_capped: a report trigger hit its daily cap; one event per day at the transition, because
+a capped trigger is a dark routine and dark must be visible (F276).
 
-prompt_oversize_shrunk: a composed prompt exceeded the model's window and the window guard
-shrank the run's local view to fit (engine/window.py). The turn survives, so nothing fails —
-what it marks is a run whose context is being silently truncated, which an audit reads as a
-routine that has outgrown its model or its state files.
+prompt_oversize_shrunk: a composed prompt exceeded the model's window and the window guard shrank
+the run's local view to fit (engine/window.py). The turn survives, so nothing fails — what it
+marks is a run whose context is silently truncated, which an audit reads as a routine that has
+outgrown its model or its state files.
 
-lane_fire_catchup: at daemon boot a SCHEDULED lane's most recent due fire had not been
-armed and the lane's catchup policy is run_once, so ONE make-up chain was armed (routine =
-the lane id, run_id empty). Never a backlog: one fire, however many were missed, exactly
-like a routine's own `catchup: run_once`. It says WHAT the watermark showed and not WHY,
-because the daemon cannot know: the reading the code has is "nobody armed it", and the
-event asserting a cause instead ("daemon down, restarting or draining") is the same shape
-of invention F480 removed from the boot reap. Every path that HANDLES a due fire stamps
-the watermark — an arm, and the operator's global pause skipping one deliberately — so
-what remains is a fire the daemon was not there for.
+lane_fire_catchup: at daemon boot a SCHEDULED lane's most recent due fire had not been armed and
+the lane's catchup policy is run_once, so ONE make-up chain was armed (routine = the lane id,
+run_id empty). Never a backlog: one fire however many were missed, like a routine's own
+`catchup: run_once`. It says WHAT the watermark showed and not WHY, because the daemon cannot
+know: its only reading is "nobody armed it", and asserting a cause instead ("daemon down,
+restarting or draining") is the invention F480 removed from the boot reap. Every path that
+HANDLES a due fire stamps the watermark — an arm, and a global pause skipping one deliberately —
+so what remains is a fire the daemon was not there for.
 
-scheduler_tick_error: a scheduling pass raised, so whatever it owed is late. routine =
-`(daemon)` when a whole pass or the boot rescan raised (daemon/scheduler.py); otherwise the
-ITEM one manager's pass could not service — a routine, a lane, a one-shot spool — filed once
-until it next succeeds, while the rest of that pass carries on (daemon/tickguard.py).
+scheduler_tick_error: a scheduling pass raised, so whatever it owed is late. routine = `(daemon)`
+when a whole pass or the boot rescan raised (daemon/scheduler.py); otherwise the ITEM one
+manager's pass could not service — a routine, a lane, a one-shot spool — filed once until it next
+succeeds, while the rest of that pass carries on (daemon/tickguard.py).
 
-cache_read_degraded: a finished run's prompt-cache READ SHARE fell below half — it
-re-wrote its prefix every turn (1.25x) instead of re-reading it (0.1x), a 12.5x
-multiplier on the same work. Carries `cache_read_share`, `cache_read_tokens` and
-`cache_write_tokens` as structured fields, because the question it answers ("is any
-transport doing this, and since when") has to be filterable. It is emitted at all only
-because NOTHING ELSE shows it: the reads stay (the static prefix still hits), the token
-count FALLS, and the cost is carried by a subscription's weighting rather than a visible
-bill — which is how September 2026 ran four days that way and burned a weekly limit.
-An endpoint reporting no cache traffic at all is silent, not degraded.
+cache_read_degraded: a finished run's prompt-cache READ SHARE fell below half — it re-wrote its
+prefix every turn (1.25x) instead of re-reading it (0.1x), a 12.5x multiplier on the same work.
+Carries `cache_read_share`, `cache_read_tokens` and `cache_write_tokens` as structured fields,
+because the question it answers ("is any transport doing this, and since when") has to be
+filterable. It is emitted at all only because NOTHING ELSE shows it: the reads stay (the static
+prefix still hits), the token count FALLS, and the cost is carried by a subscription's weighting
+rather than a visible bill — which is how September 2026 ran four days that way and burned a
+weekly limit. An endpoint reporting no cache traffic at all is silent, not degraded.
 
 cost_trend_degraded: a finished routine's LAST runs are clearly worse than the ones before them —
 the routine page's regression heuristic (readmodels/run_health, same thresholds) keyed on TIME
@@ -164,15 +170,15 @@ the comparison holds, so a run of them on one routine is the regression and thei
 normal.
   WHOSE regression it is, is decided before the row is written (`readmodels/trend_attribution`,
 F568): the same window is read across the fleet, and `scope` carries the verdict — `host` (≥3
-comparable routines ran it and a strict majority degraded together), `routine` (comparable
-routines ran it and did not), `unattributable` (fewer than 3 comparable routines, so neither
-verdict is available). It rides with `peers_compared`, `peers_degraded` and `fleet_share`. A
-`host` row carries NO `routine` — `backup_stale`'s idiom for an instance fact — and names where
-it was read in `detected_on`; that empty key is also what makes one condition of the box file
-ONE finding, since the cooldown keys on (event, routine). A host-wide outage on 2026-09-27/28
-filed three rows naming three routines for one problem with the host (F574), which is what an
-operator read as three accusations. The degradation is reported under all three verdicts: what
-attribution changes is who is named and what the sentence claims.
+comparable routines ran it and a strict majority degraded together), `routine` (comparable ones
+ran it and did not), `unattributable` (fewer than 3 comparable routines, so neither verdict is
+available), riding with `peers_compared`, `peers_degraded` and `fleet_share`. A `host` row
+carries NO `routine` — `backup_stale`'s idiom for an instance fact — and names where it was read
+in `detected_on`; that empty key is also what makes one condition of the box file ONE finding,
+since the cooldown keys on (event, routine). A host-wide outage on 2026-09-27/28 filed three rows
+naming three routines for one problem with the host (F574), which an operator read as three
+accusations. The degradation is reported under all three verdicts: attribution changes only who
+is named and what the sentence claims.
 
 model_failover: one rung of a role's fallback chain failed hard mid-turn and the next one served
 the turn (engine/degrade.py). The run finishes `ok` — the chain absorbed it — so nothing else
@@ -212,10 +218,9 @@ did NOT run, so nothing about that finish was checked.
   The OPTIONAL `build_skew` field names the cause where it is knowable: a held object from the
 build the run booted with meeting code loaded from a newer one on disk — a release that landed
 mid-run, not an engine bug (F677, `engine/buildskew.py`). The instance's first three rows of this
-event (2026-10-12, 07:34-08:26) were all that case and said only
-`AttributeError: 'GrantPolicy' object has no attribute 'jobs_on'`, which sent nobody to the
-release 11 minutes earlier that caused them; the sentence now rides `detail` as well, so a reader
-of the stream alone sees it.
+event (2026-10-12, 07:34-08:26) were all that case and said only `AttributeError: 'GrantPolicy'
+object has no attribute 'jobs_on'`, which sent nobody to the release 11 minutes earlier that
+caused them; the sentence now rides `detail` too, so a reader of the stream alone sees it.
 
 observation_render_failed: a renderer RAISED on a live turn and the run read the raw result rather
 than ending (engine/obs_floor.py) — an engine defect; detail names kind, exception and frame.
@@ -232,46 +237,44 @@ FIND them). Absent on every other event: only a close-out has a process to repor
 They also carry `cause` (F480), the one word that says WHY the process is gone: `user_abort` ·
 `oom_kill` (rc=-9) · `signal_kill` (any other signal — a supervisor stop, a deploy, a manual
 kill) · `engine_crash` (non-zero exit) · `no_finish` (exited cleanly and wrote no finish, an
-engine defect) · `daemon_restart` (the boot reap found the breadcrumb a deliberate shutdown
-left) · `unknown` (nothing established a cause). The live reap derives it from `rc`; the BOOT
-reap sets it explicitly, because it has no rc and the previous code filled that vacuum by
-asserting one — every dead-pid run at boot was written "orphaned by daemon restart" whether or
-not a restart had happened, and that sentence sent three investigations (F480, R1501, R1515) at
-a drain that works. `unknown` is therefore the expected majority reading at boot, and a
-deliberate one: an audit filtering for it is asking "what killed these runs?", not a defect.
+engine defect) · `daemon_restart` (the boot reap found the breadcrumb a deliberate shutdown left)
+· `unknown` (nothing established a cause). The live reap derives it from `rc`; the BOOT reap sets
+it explicitly, because it has no rc and the previous code filled that vacuum by asserting one —
+every dead-pid run at boot was written "orphaned by daemon restart" whether or not a restart had
+happened, and that sentence sent three investigations (F480, R1501, R1515) at a drain that works.
+`unknown` is therefore the expected majority reading at boot, and a deliberate one: an audit
+filtering for it asks "what killed these runs?", not a defect.
 
 fire_refused: a fire produced no run. run_id empty (no run was created). Makes a routine
 that goes chronically un-fired visible to audit consumers instead of only a log.info line.
 WHICH refusals are logged depends on the CAUSE, not on the fire reason:
 
-  - overrun (still active from a prior run) and draining (quiescing for a self-update
-    restart) are logged for the SCHEDULED (cron) path only — a resume, trigger, manual or
-    lane fire overruns legitimately and would spam the stream;
-  - a STALE MODEL ROLE is logged for EVERY fire reason, because it is a broken config
-    rather than a collision: no run of that routine can start until the name is fixed, and
-    the detail carries the operator-facing sentence naming the role (F643,
-    rsched/trials.roles_problem). Only `models.main` refuses a fire
-    (daemon/runner.FIRE_BLOCKING_ROLES) - the loop resolves it on turn one, while a stale
-    `tool_call`/`uncensored` may never be resolved at all and is reported by `rsched
-    validate` rather than taking a working routine dark.
+  - overrun (still active from a prior run) and draining (quiescing for a self-update restart)
+    are logged for the SCHEDULED (cron) path only — a resume, trigger, manual or lane fire
+    overruns legitimately and would spam the stream;
+  - a STALE MODEL ROLE is logged for EVERY fire reason, because it is a broken config rather
+    than a collision: no run of that routine can start until the name is fixed, and the detail
+    carries the operator-facing sentence naming the role (F643, rsched/trials.roles_problem).
+    Only `models.main` refuses a fire (daemon/runner.FIRE_BLOCKING_ROLES) - the loop resolves it
+    on turn one, while a stale `tool_call`/`uncensored` may never be resolved at all and is
+    reported by `rsched validate` rather than taking a working routine dark.
 
 A deliberate global PAUSE is NOT this event: the scheduler skips those fires earlier — an
-intentional operator action is never logged as a refusal. Nor is `enabled: false`, which is
-the operator's own off switch.
+intentional operator action is never logged as a refusal. Nor is `enabled: false`, the
+operator's own off switch.
 
-lane_chain_done / lane_chain_stopped: a sequential lane chain ended (daemon/lane_runs,
-F316). routine = the lane id, run_id = the chain record id (lr-...), detail counts member
-runs and not-ok outcomes. A lane id is OPAQUE: a lane keeps the id it was created with, so
-resolve it against the lane store (rsched.lanes) rather than reading a prefix. The
-in-flight file is consumed at that moment, so this event is the chain's durable record -
-and a scheduled lane's periodic done event is a HEARTBEAT: its absence across a schedule
-period means the lane starved (F316's defect class: a week of missed fires with zero
-signal).
+lane_chain_done / lane_chain_stopped: a sequential lane chain ended (daemon/lane_runs, F316).
+routine = the lane id, run_id = the chain record id (lr-...), detail counts member runs and
+not-ok outcomes. A lane id is OPAQUE: a lane keeps the id it was created with, so resolve it
+against the lane store (rsched.lanes) rather than reading a prefix. The in-flight file is
+consumed at that moment, so this event is the chain's durable record - and a scheduled lane's
+periodic done event is a HEARTBEAT: its absence across a schedule period means the lane starved
+(F316's defect class: a week of missed fires with zero signal).
 
-lane_chain_member_skipped: a chain named a member that is not a routine in any home -
-routine = the member slug, detail names the lane and whether the chain stopped or
-continued past it. A member the user switched off, or one that retired on its own final
-goal, is a deliberate skip and logs nothing.
+lane_chain_member_skipped: a chain named a member that is not a routine in any home - routine =
+the member slug, detail names the lane and whether the chain stopped or continued past it. A
+member the user switched off, or one that retired on its own final goal, is a deliberate skip
+and logs nothing.
 
 lane_fire_refused: a DUE scheduled lane fire armed nothing because the previous chain
 is still in flight (the lane analog of fire_refused; routine = the lane id, run_id
@@ -293,15 +296,14 @@ migration_due_soon / migration_expired: a `MIGRATION(expires=)` declaration ente
 window, or passed it (`daemon/marker_watch`, F702) — routine and run_id empty, both carrying
 `markers` and the date. An expiry reds every gate on this host; the lead time had no reader.
 
-run_corrected: a run that ended NOT-OK was resumed and finished `ok`, so its earlier endings
-on this stream are superseded (`rsched/runcorrection.py`, F637/F703). Carries `superseded`,
-the event names it resolves. The originals STAY — a correction supersedes, it never erases.
+run_corrected: a run that ended NOT-OK was resumed and finished `ok`, so its earlier endings here
+are superseded (`rsched/runcorrection.py`, F637/F703). Carries `superseded`, the event names it
+resolves. The originals STAY — a correction supersedes, it never erases.
 
 obligation_overdue: what a person asked of a routine or approved has stayed open in its
-`state/obligations.json` longer than `obligations.OVERDUE_DAYS` (`daemon/owed_watch`) — one row
-per routine per day, `obligations` how many, the detail naming each and what the last run left.
+`state/obligations.json` past `obligations.OVERDUE_DAYS` (`daemon/owed_watch`) — one row per
+routine per day, `obligations` how many, detail naming each and what the last run left.
 
-Best-effort: I/O errors are silently swallowed so logging never blocks the daemon or engine.
 """
 
 from __future__ import annotations
@@ -324,13 +326,11 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
     """Append a health event to the JSONL log under routines_home/.control/.
 
     `fields` adds event-specific STRUCTURED keys beside the five common ones — `rc` and
-    `vm_hwm_kb` on a close-out, `resource`/`limit` on budget_exhausted, `repo` on a commit
-    event, …; each event's own are listed in the module docstring. A None value is dropped
-    rather than written, so a caller can pass an unknown reading without minting a null the
-    readers must handle.
-
-    An event named in `REPEAT_COOLDOWN_HOURS` is DROPPED when the same (event, routine) was
-    filed inside its window — the standing-condition rule, applied here so no call site can
+    `vm_hwm_kb` on a close-out, `resource`/`limit` on budget_exhausted, `repo` on a commit event,
+    …; each event's own are listed in the module docstring. A None value is dropped rather than
+    written, so a caller can pass an unknown reading without minting a null the readers must
+    handle. An event named in `REPEAT_COOLDOWN_HOURS` is DROPPED when the same (event, routine)
+    was filed inside its window — the standing-condition rule, applied here so no call site can
     forget it.
 
     Best-effort: silently ignores I/O errors so logging never blocks the daemon or engine.

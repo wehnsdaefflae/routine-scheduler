@@ -871,6 +871,21 @@ by a test, by the engine, or by a past incident.
   from the public catalog — re-read daily; what no source publishes stays UNPRICED (no figure,
   named in `model-prices.json`'s `unpriced`). No static price table, no guessed rate: a fallback
   is a frozen guess that looks like a measurement (operator, 2026-10-17).
+- **A dead model CREDENTIAL is noticed before a run spends a turn.** `daemon/endpoint_watch.py`
+  (R2195) is to endpoints what `daemon/oauth_refresh.py` is to connections: every
+  `CHECK_EVERY_S` (10 min, never the 5 s tick, `_off_tick` like every other manager) it asks each
+  CLIProxy-managed endpoint for its account list — the LIGHTEST already-implemented probe, never
+  the live completion test and never an upstream request — and writes one of four states to
+  `<routines>/.control/endpoint-health.json` (`endpoints/endpoint_health.py`, derived state, never
+  config): `ok` · `cooling` (all accounts unavailable, a retry expected — a usage limit) ·
+  `needs_reauth` (all unavailable, no retry: the credential is dead) · `unknown` (the proxy could
+  not be read, or no account is signed in — nothing claimed, `backup_stale`'s rule).
+  `needs_reauth` files `endpoint_needs_reauth` once a day while it holds, and the latch lives in
+  the RECORD so a daemon restart cannot re-file the fleet. It PREDICTS failed work rather than
+  reporting a missed fire, so it is deliberately NOT in `health_stream.BLOCKED_EVENTS`. An
+  endpoint with no proxy binding is skipped: its light probe is the credits read, still inline in
+  `web/settings/endpoint_probe.py`. Before this, one expiring claude-proxy token (2026-09-14
+  06:18) failed eight routines at turn 0 within two minutes and nothing detected it.
 - **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
   what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
   metadata APIs; a listing that carries NO figures — every `anthropic` endpoint here is a
