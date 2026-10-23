@@ -15,6 +15,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.447.0] — 2026-10-23
+
+### The run gate's history, on the routine page (R2764, the operator's words)
+
+> "like the list of previous runs under 'What a finished run delivers' we also need a history of
+> the previous gates. which ones fired, which ones didn't. report that"
+
+The gate has recorded every decision since F457 (`daemon/run_gate.py`:284) and no read surface
+served a byte of it: a routine's payload carried `run_gate` — the CONFIG, what the gate WOULD
+ask — and its run rows, what ran, with the question between them answerable only by reading JSON
+on the box. New `readmodels/gate_history.py` projects `runs/<ts>/gate.json` onto each run row as
+`gate`: the `decision`, the `fire_reason`, the gate's own sentence, and per check its `id`,
+`kind`, whether it found `work` and why. **"Which ones didn't" is reachable because a skipped
+fire leaves a run dir** — `daemon/runner.py` claims it (:230) before it asks `run_gate.admit`
+(:330), so a skip is a run row with no turns, not a missing row. The gate's `fingerprints` (a
+hash per check, the baseline the NEXT fire compares against) are projected away rather than
+filtered in the console. Memoized on gate.json's own stat, since a routine page reads 50 rows per
+request. The routine page gains a `gate` column with a per-check hover and a
+`n of the last m fires judged · x fired · y skipped` tally — **only when some fire on show was
+actually judged**, so the ungated majority of the fleet reads exactly as before. A fire no gate
+judged renders as absent, never as a gate that found nothing.
+
+### Fixed
+
+- **The health-event stream is readable from inside a run** (R2764). `.control/` is not listable
+  for uid 1000 on this instance although the file inside it is 0644, so `gu rsched logs` raises
+  `PermissionError [Errno 13]` and the documented way to inspect gate and fire events was
+  unusable from EVERY routine run. `GET /api/health/events` serves the records themselves —
+  newest first, `routine` and `event` narrowing by exact name, a bounded `limit` (100, max 2000)
+  and a `total` saying what the answer left out. The web process already parsed that exact file
+  for `/health/blocked`, so this costs no new reader and no new store. `/health/blocked` stays
+  the right read for "what did the fleet owe and not deliver": it folds and it windows, keeping
+  only `BLOCKED_EVENTS`; this one neither folds nor windows, because a reader chasing a quiet
+  failure wants the last event of its kind however old it is. The util still reads the file
+  directly and knows nothing of the route — that half belongs to the util library.
+
 ## [0.446.0] — 2026-10-23
 
 ### Action chaining (D203, the operator's decision)
