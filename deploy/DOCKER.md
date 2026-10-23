@@ -486,6 +486,7 @@ docker compose build                        # all three images: rsched, chrome, 
 docker compose exec rsched rsched drain     # pause scheduling, wait for in-flight runs (F746)
 docker compose up -d                        # recreates each container whose image or config changed
 docker compose exec rsched rsched drain --resume   # lift the pause the drain left in place
+docker compose exec -u mark rsched rsched postdeploy   # the live instance, checked + recorded (below)
 ```
 
 Both run bare, from the checkout's root: they read this host's files and profiles from `.env`
@@ -512,6 +513,45 @@ docker compose exec -u mark rsched gh --version             # its apt repository
 
 `-u mark` is the runtime user: an `exec` as root is how root-owned files landed in mark's caches
 before ([When the console goes slow](#when-the-console-goes-slow)).
+
+### After the deploy — verify the LIVE INSTANCE
+
+Everything above this line verifies a BUILD ARTEFACT: the image answers, node is v24, the CLI is
+installed. None of it says the instance now serving is healthy, or that what it serves is what you
+built. That gap is where this project finds most of its defects — nine of 2026-10-01's releases say
+"found while deploying" — and until R2428 the inspection was unwritten, had no checklist and left
+no record. It is one command now, and it is read-only against the box:
+
+```bash
+docker compose exec -u mark rsched rsched postdeploy    # host install: uv run rsched postdeploy
+```
+
+One line per check, then a summary. **Exit 1 means act before you walk away**; a NOTE is
+information and keeps the exit code green, so this is safe to chain after the deploy.
+
+| Check | Reads | A FAIL means |
+| --- | --- | --- |
+| `served-identity` | `/api/status` at `--url` (default `http://127.0.0.1:<config port>`) | nothing answered — you may be on the wrong host, or the container is down. Nothing below it is a verdict then. **The address and where it came from are printed with every run**, because 0.374.0 was a deploy script driving the wrong host's Docker daemon (~5.2 GB built locally) |
+| `build-skew` | the version `/api/status` serves vs `__version__` in the checkout, plus the daemon's own `build_skew` | the deploy did NOT relaunch the process. `docker compose up -d` compares the CONFIG, finds no drift because the source is bind-mounted, and no-ops — a green `compose config` and `Container rsched Running` both look like success |
+| `backup-freshness` | `.rsched-backup-completed` under `$RSCHED_MIRROR` / the default root, via `daemon/backup_watch.staleness` | no COMPLETE snapshot inside the window — **or no readable record at all**, which is equally a FAIL here: `rsched-backup.service` failed 19 nights (2026-09-12 → 10-01) and the defect was the ABSENCE of an indicator, not a broken one |
+| `state-path-ownership` | every home the daemon writes (`routines`, `conversations`, `background`, the library, `.config/routine-scheduler`) and the files under them | a path is owned by a uid the daemon cannot write as. One root-owned 0600 file fails its whole home for `backup.sh`, which reads every home as the host user — and a failed home keeps **no snapshot that night** (0.373.1, the root-run cliproxy sidecar, every night from 2026-09-14) |
+
+The reference uid is **whoever owns `routines_home`**, never `id -u`: an `exec` without `-u mark`
+runs as root, and then every root-owned file would compare equal and the check would pass on
+exactly the instance it exists to catch.
+
+Each session appends one row to `~/routines/.control/postdeploy.jsonl` — timestamp, URL, version,
+build, a verdict per check, and the summary line — so "when did this last look clean" is a
+question with an answer:
+
+```bash
+tail -n 3 ~/routines/.control/postdeploy.jsonl | python3 -m json.tool
+```
+
+`--no-record` prints the checklist and writes nothing. `--url` points it at another instance (the
+address is printed with the verdicts, so a session can never be silently about the wrong machine).
+The command never restarts and never fixes anything: each of the four defects above needed a
+different fix, so the verdict is yours.
 
 ## Health
 

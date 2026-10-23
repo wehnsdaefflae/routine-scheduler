@@ -1892,7 +1892,15 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   `RESTART_RESUMES`, held by a global pause, never applied to a parked run (its question is
   durable) nor to a crash or an OOM — `cause: unknown` means nothing was established, and
   nothing is restarted on it. Orphaned runs claiming to be alive are still closed out at boot;
-  what changed is that a restart-caused one does not stay closed.
+  what changed is that a restart-caused one does not stay closed. What none of that answers is
+  whether the instance that came back is HEALTHY and serving the build it was deployed from, and
+  until R2428 nothing did: `rsched postdeploy` (`cli_postdeploy.py` over the pure checks in
+  `postdeploy.py`) is the operator's own after-half — served version vs the checkout plus
+  `/api/status`'s `build_skew`, backup freshness through `daemon/backup_watch.staleness`,
+  state-path ownership against the uid that owns `routines_home`, and which instance answered —
+  one line per check, exit 1 only on a FAIL, one row per session in `.control/postdeploy.jsonl`.
+  Every judgement is a pure function over passed-in inputs, so the checklist is provable without a
+  live instance; the I/O (one GET, the stats, the append) is the CLI module's alone.
 - **Aborting a run** (`runner.abort` → `runner_state.abort_process`, behind the run page's abort,
   a conversation's stop, a background task's cancel and `rsched abort`): SIGTERM to the engine's
   process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. A pid read from a
