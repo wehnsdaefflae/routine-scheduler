@@ -443,7 +443,17 @@ the redirect_uri.
 one pass at a time, so a provider that is down never holds a fire) refreshes EXPIRING tokens near
 expiry, persists rotation and flags `needs_reauth` on
 rejection — which badges it in Settings → Connections, the only notification there is (0.230.0
-deleted every implicit outbound send) — a no-op for non-expiring providers (Notion). **Engine injection**:
+deleted every implicit outbound send) — a no-op for non-expiring providers (Notion).
+`daemon/endpoint_watch.py` (`EndpointWatch`, R2195) does the same for the MODEL credentials every
+run depends on: every `CHECK_EVERY_S` (10 min, never the 5 s tick) it asks each CLIProxy-managed
+endpoint for its account list — the LIGHTEST already-implemented probe, never a completion — and
+writes a four-state verdict to `.control/endpoint-health.json` (`endpoints/endpoint_health.py`,
+derived state like `endpoints/limits.py`), filing `endpoint_needs_reauth` once a day while a
+credential is dead with no retry expected. Before it, nothing detected a dead credential until a
+run spent its first turn: a claude-proxy token expiring on 2026-09-14 06:18 failed eight routines
+at turn 0 inside two minutes. An endpoint with no proxy binding is skipped — the light probe for
+an API-key endpoint is the credits read, still inline in `web/settings/endpoint_probe.py`.
+**Engine injection**:
 `executor.do_util` resolves the routine's bound connections to `{<PROVIDER>_ACCESS_TOKEN: token}`
 and passes them to `utils_run.run_util` as `extra_secrets`; `_child_env` injects each ONLY if the
 util declares the var — so a token reaches a util iff the routine binds the connection AND the util

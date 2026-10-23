@@ -1,12 +1,11 @@
 """The cron scheduler: derives its fire table live from the routine catalog.
 
-Every tick (5s) it checks due fires; every registry_rescan_s it rescans ~/routines (so
-edits to routine.yaml — schedule changes, enable/disable — take effect without restarts).
-Catch-up (`run_once`) is evaluated exactly once, at daemon boot. A fire that finds its
-routine still running is skipped and logged (`overrun_skipped`, inside Runner.fire).
-Event triggers ride the same tick: spooled webhook events become coalesced fires — the
-trigger analog of the overrun rule is that events QUEUE instead of being skipped
-(daemon/triggers.py, docs/triggers.md).
+Every tick (5s) it checks due fires; every registry_rescan_s it rescans ~/routines (so edits to
+routine.yaml — schedule changes, enable/disable — take effect without restarts). Catch-up
+(`run_once`) is evaluated exactly once, at daemon boot. A fire that finds its routine still
+running is skipped and logged (`overrun_skipped`, inside Runner.fire). Event triggers ride the
+same tick: spooled webhook events become coalesced fires — the trigger analog of the overrun
+rule is that events QUEUE instead of being skipped (daemon/triggers.py, docs/triggers.md).
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ from ..ids import now_iso
 from . import pause, pause_skip, reap_resume, restart, runner_reap
 from .backup_watch import BackupWatch
 from .detached import DetachedManager
+from .endpoint_watch import EndpointWatch
 from .events import EventBus
 from .lane_runs import LaneRunManager
 from .library_watch import LibraryWatch
@@ -59,9 +59,8 @@ class Scheduler:
         self.runner = runner
         self.bus = bus
         # Detached background tasks (the `detach` action): daemon-managed processes that outlive a
-        # conversation reply and report back on completion. The manager is the single writer of
-        # background_home; ticked after the cron-fire loop like every manager below, and no longer
-        # once a restart has begun shutting the process down.
+        # conversation reply and report back on completion. Single writer of background_home;
+        # ticked after the cron-fire loop like every manager below, not once a restart is closing.
         self.detached = DetachedManager(server, runner)
         # Event triggers (webhooks today): the web layer only spools events durably; this
         # manager turns them into coalesced fires at the tick (see daemon/triggers.py).
@@ -73,8 +72,11 @@ class Scheduler:
         # durably; this manager advances it one member per tick — fire, wait for terminal,
         # apply the on_failure policy, fire the next (see daemon/lane_runs.py).
         self.lane_runs = LaneRunManager(server, runner)
-        # OAuth upkeep: refresh expiring connections before they lapse (daemon/oauth_refresh.py).
+        # Credential upkeep: refresh expiring CONNECTIONS before they lapse (oauth_refresh.py),
+        # and ask each proxy-backed ENDPOINT whether its own credential is still alive, which
+        # nothing did until eight routines failed at turn 0 on one dead token (endpoint_watch.py).
         self.oauth = OAuthRefreshManager(server)
+        self.credentials = EndpointWatch(server)   # `endpoints` is the CONFIG dict, not this
         # The library MOVES under its holders — a sync pull, a hand edit, a restored bundle — with
         # no writer to gate. This notices and files the breakage as a decision (library_watch.py).
         self.library = LibraryWatch(server)
@@ -276,14 +278,13 @@ class Scheduler:
                         firetimes.next_fire(lanes.schedulable(lane), now) or due)
                     if is_paused:
                         log.info("scheduling paused — skipped due lane fire of %r", lane_id)
-                        # A deliberate skip is a HANDLED fire, so it moves the watermark. Only
-                        # an arm stamped it before, so the operator's pause left the lane's last
-                        # due fire reading as unarmed, and the next boot — nightly, here — made
-                        # it up as a whole chain and blamed the daemon for being down, and the
-                        # OWED stamp beside it is what lets the resume make it up (D156 C).
-                        # Both, with the event, live in `pause_skip` beside the routine path:
-                        # the two were inlined here and DRIFTED, which is how a lane-less
-                        # routine's dropped fire ended up the one kind with no record at all.
+                        # A deliberate skip is a HANDLED fire and moves the watermark: only an
+                        # arm stamped it before, so a pause left the lane's last due fire
+                        # reading as unarmed, the next boot made it up as a whole chain and
+                        # blamed a daemon that was up, and the OWED stamp beside it is what
+                        # lets the resume make it up (D156 C). Both, with the event, live in
+                        # `pause_skip` beside the routine path: inlined here the two DRIFTED,
+                        # leaving a lane-less routine's dropped fire with no record at all.
                         pause_skip.lane_fire_dropped(
                             self.server, lane, due, self.lane_next_fires[lane_id])
                         continue
@@ -317,13 +318,14 @@ class Scheduler:
                     # sequential lane fires: advance each armed chain one member per tick
                     await self.lane_runs.tick(self.catalog)
                 # Upkeep runs BESIDE the tick (`_off_tick`), never inside it: OAuth refreshes
-                # expiring connections with a 20 s POST each (and a provider that is down keeps
-                # every connection due), the library watch re-resolves every routine after a
-                # library change — awaited here, either held every fire behind it.
+                # expiring connections with a 20 s POST each (a provider that is down keeps every
+                # connection due), the library watch re-resolves every routine after a library
+                # change, the endpoint watch asks each proxy whose credential is still alive —
+                # awaited here, any of them held every fire behind it. Then the readers of facts
+                # nothing else surfaces (backup F602, a migration deadline F702, owed work).
                 self._off_tick("oauth", self.oauth.tick)
                 self._off_tick("library-watch", self.library.tick)
-                # …and the readers of facts nothing else surfaces, filing what is due and undone
-                # (backup state F602, a migration deadline F702, owed work — see __init__).
+                self._off_tick("endpoint-watch", self.credentials.tick)
                 self._off_tick("backup-watch", self.backup.tick)
                 self._off_tick("marker-watch", self.markers.tick)
                 self._off_tick("owed-watch", self.owed.tick)
@@ -334,12 +336,12 @@ class Scheduler:
 
     def _off_tick(self, key: str, work: Callable[[], Coroutine[None, None, None]]) -> None:
         """Start `work` as a task beside the tick unless the previous one for `key` is still
-        running. Every pass started here (the two refreshes below, OAuth upkeep, the library
-        watch) ends in a thread on the loop's default executor, and a provider or box that
-        answers slowly holds its attempt for a whole connect timeout — awaited in the tick it
-        held every fire behind it, and started afresh each 5 s tick it stacked threads on the
-        pool every run's llm tailer awaits. The task is KEPT here: the loop holds only a weak
-        reference to a task, so one nobody holds may be collected mid-flight.
+        running. Every pass started here (the two refreshes below, OAuth upkeep, the library and
+        endpoint watches) ends in a thread on the loop's default executor, and a provider or box
+        that answers slowly holds its attempt for a whole connect timeout — awaited in the tick it
+        held every fire behind it, and started afresh each 5 s tick it stacked threads on the pool
+        every run's llm tailer awaits. The task is KEPT here: the loop holds only a weak reference
+        to a task, so one nobody holds may be collected mid-flight.
         """
         running = self._off_tick_tasks.get(key)
         if running is not None and not running.done():
@@ -355,10 +357,9 @@ class Scheduler:
 
         Noticing every 5s is not the same as READING every 5s, and the two were once the same
         call: the TTL is machine_queue's (REFRESH_AFTER_S), and ONE refresh runs at a time
-        (`_off_tick`). An unreachable box holds each attempt for its connect timeout (20-60s),
-        so a fresh attempt per tick stacked up to a dozen threads on the loop's default executor
-        (8 workers on the 4-core host) — the same pool LibraryWatch, the OAuth refresh and every
-        run's llm tailer draw from.
+        (`_off_tick`). An unreachable box holds each attempt for its connect timeout (20-60s), so
+        a fresh attempt per tick stacked up to a dozen threads on the loop's default executor (8
+        workers on the 4-core host) — the pool LibraryWatch, OAuth and every llm tailer draw from.
         """
         from ..machine_queue import refresh as refresh_queues
 
@@ -380,12 +381,11 @@ class Scheduler:
         previous figures stand.
 
         Reading provider METADATA is not an outbound message, so the 0.230.0 ban on
-        engine/daemon-implicit sends does not reach it — nothing is told anything, and the
-        result is derived state under `.control/`, never config.
-
-        The cache stays stale until a refresh WRITES it, and asking every provider in turn can
-        take several connect timeouts — so without `_off_tick` every tick in between started
-        another full refresh beside the one still running.
+        engine/daemon-implicit sends does not reach it — nothing is told anything, and the result
+        is derived state under `.control/`, never config. The cache stays stale until a refresh
+        WRITES it, and asking every provider in turn can take several connect timeouts — so
+        without `_off_tick` every tick in between started another full refresh beside the one
+        still running.
         """
         from ..endpoints import limits
 
