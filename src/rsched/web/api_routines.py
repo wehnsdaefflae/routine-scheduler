@@ -135,7 +135,7 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict,
                                 if q.get("mode", "deferred") != "blocking")
                             > DEFERRED_BACKLOG_N,
         "problems": info.problems,
-        "improve": info.cfg.improve,
+        "improve": info.cfg.improve, "chain_actions": info.cfg.chain_actions,
         "spend": _spend_line(monthly, info.slug),
     }
 

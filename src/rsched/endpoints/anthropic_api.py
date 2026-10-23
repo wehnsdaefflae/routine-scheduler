@@ -31,8 +31,9 @@ proxy speaks it while serving `gpt-*` ids, Haiku 4.5 still honours temperature, 
 Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse forced tool use — on
 those the tool is still offered, on `auto` with at most one call (`_ONE_CALL_AT_MOST`: a reply's
 actions may chain, but they are READ in reply order — text blocks then the call — so one call
-keeps that order unambiguous), and the engine reads an action from a text reply too. So no field is sent blindly or dropped blindly: the model that rejects one
-says so, and pays a round trip per refused field.
+keeps that order unambiguous), and the engine reads an action from a text reply too. So no
+field is sent blindly or dropped blindly: the model that rejects one says so, and pays a round
+trip per refused field.
 
 **Past actions are sent as CALLS** (`anthropic_messages.native_turns`, 0.407.0). On `auto`, a
 thinking Opus 5 that reads its own history as JSON text writes its next action as text too —

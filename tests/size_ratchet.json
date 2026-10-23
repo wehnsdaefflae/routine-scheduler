@@ -53,7 +53,7 @@
     "tests/test_assists.py": 857,
     "tests/test_background_actions.py": 1063,
     "tests/test_backup_snapshots.py": 422,
-    "tests/test_composer.py": 1092,
+    "tests/test_composer.py": 1091,
     "tests/test_config.py": 458,
     "tests/test_conversations.py": 1214,
     "tests/test_create_routine.py": 515,

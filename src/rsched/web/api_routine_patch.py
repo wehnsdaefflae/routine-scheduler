@@ -113,9 +113,9 @@ class RoutinePatch(BaseModel):
     capabilities: dict | None = None        # the capabilities mapping under those permissions —
     #                                          raised to cover held docs' requires, floored back
     rules: list[str] | None = None          # general-rule slugs this routine practises — REPLACE
-    #                                          wholesale, validated against the library
-    #                                          (rules.apply_changes)
-    improve: bool | None = None             # include in the routine-improver's passes (default on)
+    #                                          wholesale, validated (rules.apply_changes)
+    improve: bool | None = None             # the routine-improver's passes (default on)
+    chain_actions: bool | None = None       # chain a reply's actions (default on; chain.py)
     pattern: str | None = None              # the library settings pattern it follows — a
     #                                          reference only; `""` follows none (docs/patterns.md)
     shared_reminders: list[str] | None = None  # the library's shared reminders this routine
