@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.445.2] — 2026-10-23
+
+### Fixed
+- **The job-store seal follows the routine's `jobs` dial, not the path** (F752, taken over from
+  R2787). `state/jobs.json` was sealed for EVERY routine purely by name, and the refusal pointed
+  the refused run at the `job` action — which, with the job layer off, is projected out of its
+  schema and does not exist for it. `voice-model-trainer` met exactly that: no `jobs:` key in
+  its `routine.yaml`, its own 174 KB hand-maintained record of remote training jobs at that
+  path, and a recipe stage built around writing it. Renaming either side would have fixed one
+  routine and left the collision for the next, so the seal now asks the dial.
+  New `engine/storeseal.py` holds the engine-owned stores and their refusals: `engine/fileops.py`
+  was at its size ceiling (628) with no room to make the seal dial-aware, and the seal is
+  consulted from two places (the write gate and the removal gate, which asks the same question
+  of everything a `delete` would take with it), so it was a boundary the code already had.
+  **Only positive knowledge of "off" unseals.** `_jobs_gate` is one of the seals `_write_gate`
+  applies ABOVE its `if grants is None` early return (F698 found the strongest refusals were the
+  ones a policy-less context skipped), so a context with no policy keeps the seal, as does a
+  policy held across a release that cannot answer `jobs_on` (F677) — in that case the setting is
+  read from the routine's own capabilities through `engine/buildskew.py`. A child run is
+  unaffected: it is not a routine whose dial is off.
+  `tests/test_store_seal_dial.py` pins all six: the reported write lands, a routine that keeps
+  jobs is still refused, no-policy still seals, a held pre-rename policy still seals rather than
+  failing open, the obligations half is unconditional, and the removal gate follows the same
+  dial both ways.
+
 ## [0.445.1] — 2026-10-23
 
 Two `docs/designs.md` entries, both isolated defect fixes in code that was already doing nearly
