@@ -229,9 +229,53 @@ function turnCell(r) {
   return `${r.turn} (window ${w.turns}/${w.max_turns}, resumed at ${w.base_turn})`;
 }
 
+// The GATE's verdict on the fire a run row IS (readmodels/gate_history.py, R2764) — the
+// operator's words: "like the list of previous runs under 'What a finished run delivers' we also
+// need a history of the previous gates. which ones fired, which ones didn't". The run history is
+// already the fire history, because a SKIPPED fire leaves a run dir (daemon/runner.py claims it
+// at :230, before run_gate.admit at :330) — so the verdict goes on the row of the fire it
+// decided, rather than in a second table that would have to be read alongside this one.
+const GATE_WORD = { run: "fired", skip: "skipped", bypass: "fired (bypass)", error: "gate error" };
+const GATE_CLS = { run: "ok", skip: "idle", bypass: "ok", error: "failed" };
+
+// A verdict without the check that decided it is not a diagnosis, and a gate is a LIST of
+// checks — so the hover carries why the fire happened at all, then each check's own answer.
+function gateTitle(g) {
+  return [`fire reason: ${g.fire_reason || "unrecorded"}`,
+    ...(g.checks || []).map((c) => `${c.id}${c.kind && c.kind !== c.id ? ` (${c.kind})` : ""}: `
+      + `${c.work ? "work" : "no work"}${c.reason ? ` — ${c.reason}` : ""}`)].join("\n");
+}
+
+function gateCell(r) {
+  const g = r.gate;
+  // A fire no gate judged is not a gate that found nothing: an ungated fire, or a run from
+  // before the gate existed, reads as absent rather than as a decision nobody made.
+  if (!g) return el("span", { class: "faint" }, "—");
+  return el("span", { class: "gate-cell", title: gateTitle(g) },
+    chip(GATE_WORD[g.decision] || g.decision, GATE_CLS[g.decision] || "idle"),
+    // clipped inline, exactly like the summary cell below — a gate reason runs to 300 chars
+    // and views.css is at its own size ceiling
+    g.reason ? el("span", { class: "muted gate-why", style: "margin-left:6px;display:inline-block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" }, g.reason) : null);
+}
+
+// "which ones fired, which ones didn't", counted over every fire the page holds — so the
+// answer does not have to be assembled by eye from the rows.
+function gateTally(all) {
+  const counted = all.filter((r) => r.gate);
+  const n = (...kinds) => counted.filter((r) => kinds.includes(r.gate.decision)).length;
+  const parts = [[n("run", "bypass"), "fired"], [n("skip"), "skipped"],
+    [n("error"), "gate error"]].filter(([c]) => c);
+  return el("div", { class: "muted gate-tally", style: "padding:6px 10px" },
+    `gate history · ${counted.length} of the last ${all.length} fires judged · `
+    + parts.map(([c, word]) => `${c} ${word}`).join(" · "));
+}
+
 function runsTable(runsBox, d) {
   runsBox.replaceChildren();
   const all = d.runs || [];
+  // Only when some fire on show was actually judged: most of the fleet opted into no gate
+  // (F457), and an empty cell on every row of every ungated routine is noise.
+  const gated = all.some((r) => r.gate);
   const expanded = runsBox.dataset.expanded === "1";
   const shown = expanded ? all : all.slice(0, RUNS_PREVIEW);
   // `inline` marks the cells that share ONE line when the table stacks on a phone (base.css):
@@ -240,6 +284,7 @@ function runsTable(runsBox, d) {
   const rows = shown.map((r) => el("tr", {},
     el("td", { class: "inline" }, el("a", { href: `#/run/${r.run_id}` }, when(r.ts))),
     el("td", { class: "inline" }, chip(r.state, r.state)),
+    gated ? el("td", { class: "inline" }, gateCell(r)) : null,
     el("td", { class: "num inline", "data-label": "turns" }, turnCell(r)),
     el("td", { class: "num muted inline" }, r.elapsed_s != null ? fmtDur(r.elapsed_s) : "—"),
     el("td", { class: "muted inline" }, fmtTokens(r.usage)),
@@ -249,12 +294,15 @@ function runsTable(runsBox, d) {
     // cell with its asterisks.
     el("td", { class: "muted prose", style: "max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
       summaryLine(r.summary))));
+  const heads = ["when", "state", ...(gated ? ["gate"] : []),
+    "turns", "duration", "tokens", "summary"];
   runsBox.append(el("div", { class: "panel", style: "padding:0" },
+    gated ? gateTally(all) : null,
     el("div", { class: "tablewrap" },
       el("table", { class: "list stack" },
-        el("thead", {}, el("tr", {}, ["when", "state", "turns", "duration", "tokens", "summary"].map((h) => el("th", {}, h)))),
+        el("thead", {}, el("tr", {}, heads.map((h) => el("th", {}, h)))),
         el("tbody", {}, rows.length ? rows
-          : el("tr", {}, el("td", { class: "muted", colspan: 6 }, "no runs yet — fire one with ▶ run now")))))));
+          : el("tr", {}, el("td", { class: "muted", colspan: heads.length }, "no runs yet — fire one with ▶ run now")))))));
   if (all.length > RUNS_PREVIEW) {
     runsBox.append(el("div", { class: "row", style: "justify-content:center;padding:6px 0" },
       el("button", { class: "btn small", onclick: () => {

@@ -20,7 +20,7 @@ from ..config import ROUTINE_MODEL_ROLES
 from ..config.base import DEFAULT_LADDER, DEFAULT_TURN_INTERVAL
 from ..endpoints.prices import USAGE_KEYS
 from ..engine.ladder import oversight_turns_for
-from ..engine.turnwindow import run_row
+from ..readmodels.gate_history import gate_run_row
 from ..readmodels.stats import monthly_spend
 from .api_jobs import layer_on
 from .config_fields import decision_picker, effort_picker
@@ -273,9 +273,9 @@ def routine_detail(request: Request, slug: str) -> dict:
         "ledger_tail": ledger_tail,
         "files": files,
         "questions": info.open_questions,
-        # each row carries the WINDOW its turn count belongs to, or null when the run never
-        # resumed (engine/turnwindow.run_row, F564/D155)
-        "runs": [run_row(r) for r in info.runs[:50]],
+        # each row carries the WINDOW its turn count belongs to (engine/turnwindow.run_row,
+        # F564/D155) + the GATE verdict that decided that fire (readmodels/gate_history, R2764)
+        "runs": [gate_run_row(r) for r in info.runs[:50]],
         "budgets": info.cfg.budgets,
         "keep_runs": info.cfg.keep_runs,
         # fs roots resolve to absolute server paths on load; the editor shows + saves those.

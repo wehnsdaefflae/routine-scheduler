@@ -15,7 +15,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 
-from ..readmodels.health_stream import DEFAULT_WINDOW_DAYS, MAX_WINDOW_DAYS, blocked_fleet
+from ..readmodels.health_stream import (
+    DEFAULT_LIMIT,
+    DEFAULT_WINDOW_DAYS,
+    MAX_LIMIT,
+    MAX_WINDOW_DAYS,
+    blocked_fleet,
+    recent_events,
+)
 
 router = APIRouter(tags=["health"])
 
@@ -30,3 +37,27 @@ def blocked(request: Request,
     compiled with. `total` is 0 on a healthy instance — an empty list is the good reading.
     """
     return blocked_fleet(request.app.state.server, days=days)
+
+
+@router.get("/health/events")
+def events(request: Request,
+           limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
+           routine: str = "",
+           event: str = "",
+           ) -> dict:
+    """The health stream's own RECORDS, newest first — `events`, with `total` (how many
+    matched) and `limit` (how many of them this answer carries).
+
+    The stream is the instance's record of what fired, what was gated and what was refused, and
+    from inside a routine run it is unreadable: `.control/` is not listable for uid 1000 on this
+    instance, so `gu rsched logs` raises `PermissionError [Errno 13]` even though the file it
+    wants is 0644 (R2764). This web process already parses that file for `/health/blocked`, so
+    the route exists to make the stream reachable at all — a run fetches it like any other
+    read surface.
+
+    `/health/blocked` stays the right read for "what did the fleet owe and not deliver": it
+    folds and it windows. This one neither folds nor windows — `routine` and `event` narrow it
+    by exact name, a bounded `limit` takes the newest, and every event the writers produce is
+    visible, including the ones no fold keeps.
+    """
+    return recent_events(request.app.state.server, limit=limit, routine=routine, event=event)
