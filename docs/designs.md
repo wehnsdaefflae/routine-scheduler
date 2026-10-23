@@ -344,26 +344,16 @@ allowing the browser-view relay.
 
 ---
 
-## The refusal shortcut misses curly apostrophes
+## schedule_once's dead `expires_at` (T3.5)
 
-`engine/refusal.REFUSAL_MARKERS` are typed with a straight apostrophe, and models often write
-`I can’t` (U+2019): the opening-sentence shortcut never matches those and leaves each to the
-classifier call. Normalise apostrophes and quotes in the opening sentence before matching.
-
-**First increment.** The normalisation, red-first with `I’m sorry, but I can’t help with that.`
-
----
-
-## Pipeline output within the model's cap; schedule_once's dead `expires_at` (C1.1, T3.5)
-
-(a) `workflows/pipeline.py` asks for `MAIN_MAX_TOKENS` / `STAGE_MAX_TOKENS` = 16 000 whatever the
-model; one whose window-derived output cap (`endpoints/limits._output_cap`) is smaller is asked for
-more than it can return. Request the smaller of the two.
-(b) `schedule_once.arm(expires_at=…)` is set only by a test and exposed nowhere: delete the
+`schedule_once.arm(expires_at=…)` is set only by a test and exposed nowhere: delete the
 parameter and its field (the dead-code rule; exposing it in the console was the alternative the
 review weighed and did not recommend).
 
-**First increment.** (a), red-first with a model whose discovered output cap is 8 192.
+Part (a) of this entry — the pipeline asking for more output than the model can return — SHIPPED
+in 0.445.1 (`workflows/pipeline._budget`); what is left is this deletion.
+
+**First increment.** The deletion itself, with the test that set it adjusted.
 
 ---
 

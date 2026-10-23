@@ -15,6 +15,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.445.1] — 2026-10-23
+
+Two `docs/designs.md` entries, both isolated defect fixes in code that was already doing nearly
+the right thing — hence a patch, not a minor.
+
+### Fixed
+- **The refusal shortcut reads a curly apostrophe as the straight one.** `REFUSAL_MARKERS` are
+  typed with `'`, and models write `I can’t` (U+2019) constantly, so the zero-cost
+  opening-sentence shortcut matched none of them and spent a classification subcall on an
+  obvious opener. `engine/refusal._opening_sentence` now folds the HAYSTACK's punctuation
+  (U+2018, U+2019, U+02BC, U+FF07 → `'`; U+201C, U+201D → `"`); the markers stay the repo's own
+  readable constants. A punctuation fold and nothing more — no NFKC, no accent stripping, no
+  dash or ellipsis mapping. Red first: `looks_like_refusal("I’m sorry, but I can’t help with
+  that.")` asserted False against the old code, and a new negative case pins that folding
+  invents no refusals.
+  *Known limit:* no marker contains a double quote, so the two U+201C/U+201D mappings change no
+  outcome today and are untested; they are kept so that a marker carrying a quoted phrase cannot
+  reintroduce the bug. *Not fixed, reported as R2844:* `_OPENING_STOP` splits on ASCII sentence
+  stops only, so a fullwidth or CJK stop leaves the whole 200-character head as "the opening
+  sentence".
+- **A pipeline call asks for what the model can return, not a flat 16,000.**
+  `workflows/pipeline.py` asked `max(ref.max_tokens, <the artifact's constant>)`, so a model
+  whose resolved output cap is below the constant was asked for more than it can deliver — a 400
+  or a silent truncation, since providers validate `input + requested_output <= window`. The bug
+  was the DIRECTION of an operator already present: the new `_budget(ref, want)` takes the
+  smaller of the two, and leaves the constant standing when the cap is unresolved (clamping to a
+  falsy cap would ask for zero tokens and ship nothing). It reaches the cap through the existing
+  public seam, `ModelRef.max_tokens`, which `EndpointRegistry.resolve` already fills from the
+  provider-discovered `max_output_tokens` with operator config winning — no private import.
+  **Slightly wider than the design entry's (a), deliberately:** the same `max()` was also
+  RAISING the outline call from its 8,000 constant up to the model's cap, so every request is
+  now ≤ both bounds. Red first: `assert [8192, 16000, 16000] == [8000, 8192, 8192]`.
+  *Scope:* `tests/test_pipeline_budget.py` pins what the pipeline ASKS FOR (unit-level over
+  `_pipeline` with a scripted endpoint); the cached-row → `ref.max_tokens` chain is pinned by
+  `tests/test_model_limits.py`, not by the new module. Part (b) of that entry (deleting
+  `schedule_once.arm(expires_at=…)`) is NOT built, so the entry stays in `docs/designs.md`
+  carrying only (b).
+
 ## [0.445.0] — 2026-10-23
 
 Four decided items: **R2428** and **R2425** (accepted 2026-10-10), and the two that 0.444.0
