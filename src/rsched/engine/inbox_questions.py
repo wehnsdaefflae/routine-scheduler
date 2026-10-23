@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .. import patchreceipt
+from .. import decline, patchreceipt
 from ..ids import now_iso
 from ..paths import read_json
 from .inbox import _consume
@@ -92,6 +92,11 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
         # that asked for a 600-turn budget read only the operator's "Ok", recorded the raise
         # as applied, and planned against a ceiling that was still 400.
         patchreceipt.carry(pair, obj)
+        # R2197: …and whether the operator DECLINED it (rsched/decline.py). The access-request
+        # branch below carries `decision` only for a record with `request` ids, so a refusal of
+        # an ordinary proposal reached the run as prose and nothing else — which is the whole
+        # thing the decline verb exists to stop.
+        decline.carry(pair, obj)
         if q.get("request") and obj.get("decision"):
             pair["request"] = [str(r) for r in q["request"]]
             pair["decision"] = str(obj["decision"])
@@ -138,6 +143,11 @@ def _archive_answer(routine_dir: Path, question: dict, answer: dict) -> Path:
               "consumed": now_iso()}
     if answer.get("decision"):
         record["decision"] = str(answer["decision"])
+    # R2197: a DECLINE's reason rides with its value, for the same reason the patch verdict
+    # does below — the archive is what the settled card is rebuilt from once a run has
+    # consumed the answer, so a refusal whose reason stopped here would lose the operator's
+    # own words at exactly the boot that acted on it.
+    decline.carry(record, answer)
     # R2778: and the patch verdict, or it survives only until the run that reads the answer —
     # after which the settled card would offer `approve & apply` again for a change already
     # live, and no reader of the archive could tell the two states apart.

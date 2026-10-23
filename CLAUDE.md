@@ -935,6 +935,16 @@ by a test, by the engine, or by a past incident.
   budget-raise proposal, recorded the raise as applied and planned 600 turns against a live
   400-turn ceiling (R2778), and a run told "NOT APPLIED" about a patch that IS live would plan
   the same way round.
+  **A decision can also be DECLINED** — `POST /api/questions/{qid}/decline`
+  (`web/api_question_decline.py`, vocabulary in `rsched/decline.py`). Answering closed an item
+  only by SAYING something, a snooze is noise control that leaves it open in every run's digest
+  and a defer releases a parked run without deciding, so a refusal was prose and nothing else
+  (R2197). The decline writes the ORDINARY answer payload — same consumption path, same archive
+  — and adds the VALUE `decision: "declined"` (+ optional `reason`), which rides the answer pair
+  to the asking run, the `/api/questions` row and the settled card's red `declined` chip. It is
+  deliberately NOT `engine/requests.DECISIONS`: those values decide an ENTITY and seed a run's
+  grant overlay, so an access request's "no" stays `deny_now`/`deny_forever` and the decline
+  route refuses that record with a 400 naming them.
 
 ## Standards
 

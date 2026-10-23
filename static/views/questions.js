@@ -12,12 +12,12 @@ import { pendingBand } from "/static/components/pending.js";
 import { answerForm } from "/static/components/answerform.js";
 import { linkifyRefs } from "/static/components/reflinks.js";
 import { configProposal } from "/static/components/configproposal.js";
+import { declinedChip, lifecycleControls } from "/static/components/decision-lifecycle.js";
 import { md, summaryLine } from "/static/md.js";
-import { act, chip, el, emptyState, groupHead, skeleton, toast, toastError, when } from "/static/util.js";
+import { act, chip, el, emptyState, groupHead, skeleton, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
 
 const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"], ["meta", "Meta"], ["snoozed", "Snoozed"]];
-const SNOOZES = [["60", "1 hour"], ["240", "4 hours"], ["1440", "1 day"], ["10080", "1 week"]];
 const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"], ["routine", "routine"]];
 
 const rank = (q) => (q.answered ? 3 : q.mode === "blocking" ? 0 : q.meta ? 2 : 1);
@@ -268,7 +268,10 @@ export async function render(view, query = {}) {
           q.type === "util-approval" ? chip("util approval", "partial") : null,
           q.type === "request" ? chip("access request", "partial") : null,
           reportChip(q),
-          chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""}`
+          // R2197: a DECLINED decision says so, in place of the "answered" chip — a refusal
+          // rendered as an ordinary answer is exactly what the decline verb exists to end.
+          declinedChip(q)
+          || chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""}`
             + ` · ${q.settled ? "acted on" : q.ran_now ? "run started" : "queued"}`, "ok"),
           sourceLink(q),
           q.asked ? el("span", {}, "asked ", when(q.asked)) : null,
@@ -297,58 +300,22 @@ export async function render(view, query = {}) {
       q.run_state && TERMINAL.has(q.run_state)
         ? el("span", { class: "faint small" }, "run already ended — the answer feeds the next one") : null,
     ] : [];
-    // Lifecycle controls beside the answer: a BLOCKING question can be deferred to the
-    // next run (unblocks the run on its stated default, record stays open); every other
-    // file-backed record can be snoozed (hidden here until a timestamp — runs still see it).
-    let lifecycle = null;
-    if (q.mode === "blocking" && !q.meta) {
-      lifecycle = el("button", { class: "btn small",
-        title: "unblock the run WITHOUT deciding — it continues on its stated default and the question stays open for the next run" },
-        "defer to next run");
-      lifecycle.onclick = async () => {
-        lifecycle.disabled = true;
-        try {
-          await api(`/api/questions/${q.qid}/defer`, { method: "POST", body: {} });
-          toast("deferred — the run continues on its default");
-          panel.classList.remove("warn");
-          controls.replaceChildren(el("div", { class: "flow-note" },
-            chip("deferred to next run", "partial"),
-            el("span", {}, "the run continues on its default — the question stays open")));
-          q.mode = "deferred";
-          syncToolbar();
-        } catch (err) { toastError(err); lifecycle.disabled = false; }
-      };
-    } else if (!q.meta) {
-      if (q.snoozed) {
-        lifecycle = el("button", { class: "btn small", title: "bring it back into the inbox now" },
-          "unsnooze");
-        lifecycle.onclick = async () => {
-          try {
-            await api(`/api/questions/${q.qid}/snooze`, { method: "POST", body: { minutes: 0 } });
-            toast("back in the inbox");
-            q.snoozed = false;
-            delete q.snoozed_until;
-            renderList();
-          } catch (err) { toastError(err); }
-        };
-      } else {
-        lifecycle = el("select", { class: "small", "data-nopersist": true,
-          title: "hide this decision here for a while — the routine still sees it as open" },
-          el("option", { value: "" }, "snooze…"),
-          ...SNOOZES.map(([min, label]) => el("option", { value: min }, label)));
-        lifecycle.onchange = async () => {
-          if (!lifecycle.value) return;
-          try {
-            const r = await api(`/api/questions/${q.qid}/snooze`,
-              { method: "POST", body: { minutes: +lifecycle.value } });
-            toast("snoozed — it waits under the Snoozed filter");
-            q.snoozed = true;
-            q.snoozed_until = r.snoozed_until;
-            renderList();
-          } catch (err) { toastError(err); lifecycle.value = ""; }
-        };
-      }
-    }
+    // Lifecycle controls beside the answer — DECLINE (the first-class no, R2197), defer-to-
+    // next-run and snooze: the three ways a card leaves this page without an answer in prose.
+    // They live in their own component (components/decision-lifecycle.js) because this view is
+    // at its size ceiling, and because none of them is the answer protocol the form owns.
+    // `panel`/`controls`/`form` are declared below and reached at CLICK time, as the inline
+    // handlers did.
+    const lifecycle = lifecycleControls(q, {
+      settle: (label, note, cls = "partial") => {
+        panel.classList.remove("warn");
+        controls.replaceChildren(el("div", { class: "flow-note" },
+          chip(label, cls), el("span", {}, note)));
+      },
+      refresh: () => renderList(),
+      syncToolbar,
+      reason: () => form.input.value,
+    });
     // "answer & run now": the operator's deliberate fire beside the answer — a manual run,
     // the same as the routine page's Run now. Only for a deferred routine question whose
     // run has ended: a blocking one resumes its own run, a meta one is self-audit's, and a
@@ -424,7 +391,7 @@ export async function render(view, query = {}) {
         if (at >= 0) inputs.splice(at, 1);
         focusAt(index);          // move on to the next open question
       },
-      extraControls: [briefIn, runNow, lifecycle].filter(Boolean),
+      extraControls: [briefIn, runNow, ...lifecycle].filter(Boolean),
     });
     if (runNow) runNow.onclick = () => { wantRun = true; form.submit(false); };
     inputs.push(form.input);

@@ -895,6 +895,19 @@ and the capabilities digest's catalog listing):
   boot), a non-blocking one **snoozed** (`snoozed_until` on the record → `snoozed: true` derived
   on read; hidden from the inbox + badge, still in the run's digest), and a routine with >5
   unanswered deferred asks gets a `decision_backlog` flag on its dashboard card.
+  Any of them can also be **DECLINED** — the page's first-class "no"
+  (`POST /api/questions/{qid}/decline`, `web/api_question_decline.py`). R2197: answering closed
+  an item only by saying something, a snooze left it open in every run's digest and a defer
+  released a parked run without deciding, so a refusal could only be prose. A decline writes the
+  ORDINARY answer payload (`rsched/decline.py` owns the one payload shape, the one phrase and
+  the digest line), so the item leaves the open set exactly as an answer does and
+  `collect_deferred_answers` drains it unchanged — what it adds is the VALUE
+  `decision: "declined"` (+ an optional `reason`), carried onto the answer pair both delivery
+  seams read, so the asking routine matches a token instead of parsing a sentence. An ACCESS
+  REQUEST is refused by the route (400): its "no" is `deny_now`/`deny_forever` — the values the
+  engine reads to deny the grant and the only ones that settle a blocking request's wait
+  (`engine/interact._held_not_settled`) — and the question-scoped word is kept separate from
+  that grant vocabulary for exactly that reason.
   `~/routines/.control/reports.jsonl` is the append-only REPORT ledger every routine writes
   through the ungated `report` action (`R<n>` id, routine, title, detail, an optional `target`
   when the reporter can name the owner, plus event rows folded onto it: `delivered`, stamped
@@ -1477,7 +1490,12 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   POST, or `POST /api/questions/{qid}/patch-applied` (`web/api_patch_applied.py`) when the patch
   is applied to a card that was already answered. Answering still never applies a patch (R2189);
   R2778 is only about the asking run being TOLD which happened, after one read an affirmative
-  prose answer as approval and planned 600 turns against a live 400-turn ceiling. Every
+  prose answer as approval and planned 600 turns against a live 400-turn ceiling. A row for a
+  DECLINED decision says so the same way — `declined: true` + `decision: "declined"` (+ `reason`),
+  derived from the answer file by the same `_mark_answered` and owned by `rsched/decline.py` —
+  with the same three readers: the settled card renders a red `declined` chip IN PLACE of the
+  "answered" one, and the asking run gets the value on its answer pair and a digest line that
+  says REFUSED in words it cannot read as a go-ahead. Every
   `/routines/{slug}/*` and `/conversations/{slug}/*` handler takes that
   path; a name the directory does not answer to (a routine.yaml whose `slug` disagrees with its
   dir, a name that is not a slug at all) falls back to the full walk, which is also what keeps a
