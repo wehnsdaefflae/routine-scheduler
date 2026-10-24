@@ -7,7 +7,8 @@ mixes three things that leave the list in different ways:
 
 - a WORKLIST, which falls only when its OWNER acts,
 - a FEED of unread run summaries, which come back every time any routine finishes, and
-- reports IN TRANSIT, which no one can act on until the target's next scheduled run drains them.
+- reports IN TRANSIT, which no one can act on until the target's next scheduled run drains them,
+- reports addressed to a routine that no longer EXISTS, which nobody can ever drain.
 
 So `counts()` names each part, and splits the worklist BY OWNER. On 2026-10-18 the count read
 100 and one of those items was the operator's to act on; it could only fall when another routine
@@ -54,7 +55,29 @@ def in_transit(item: dict, readers: Collection[str]) -> bool:
             and str(item.get("to") or "") in readers)
 
 
-def counts(items: list[dict], readers: Collection[str] = ()) -> dict:
+def unroutable(item: dict, installed: Collection[str]) -> bool:
+    """An addressed report whose target is no routine this instance holds (`installed`).
+
+    A routine that was deleted — or ARCHIVED, which `registry.scan` cannot see either, since it
+    skips `.archive/` — leaves nothing a delivery could reach: no live directory, no inbox, no
+    run. So the row can be drained by NOBODY, and on the worklist it reads as live work waiting
+    on an owner, which is why R2629 (`steward-hub-maintainer` → `grants-radar`, archived
+    2026-10-19) was counted as drainable backlog for days. It is counted and named APART, never
+    dropped: the row is work somebody filed, and only a person can re-route or retract it.
+
+    Not the same as a target that is switched off or retired — that routine EXISTS, the
+    operator can switch it back on, and `in_transit` already keeps it on the worklist where it
+    reads as stuck. `installed` is the routines a home holds whatever their state; empty means
+    the caller has not said what the fleet is, so nothing is judged (as with `readers`).
+    """
+    if not installed or item["type"] != "report":
+        return False
+    target = str(item.get("to") or "")
+    return bool(target) and target not in installed
+
+
+def counts(items: list[dict], readers: Collection[str] = (),
+           installed: Collection[str] = ()) -> dict:
     """Totals by type and by status — the filter chips' numbers, always over the UNFILTERED
     set so a chip never counts only what the current filter already shows — and `active`, the
     live items cross-tabulated into parts that never overlap:
@@ -64,14 +87,18 @@ def counts(items: list[dict], readers: Collection[str] = ()) -> dict:
     - `folded` — rows another report TOOK OVER: they cannot be answered and settle with their
       carrier, so counting them would make ten defects carried in one hand-off read as ten
       open threads, and would put this page apart from self-audit's own vitals line;
+    - `unroutable` — addressed reports whose target is no routine any more: nobody can drain
+      them, so counting them as worklist showed live work waiting on an owner that is gone;
     - `in_transit` — addressed reports waiting for their target's next run.
 
     `readers` is the set of routines that will run; without it nothing is in transit.
+    `installed` is every routine the home holds whatever its state; without it nothing is
+    unroutable. Both are the CALLER's knowledge of the fleet — this module reads no disk.
     """
     by_type: dict[str, int] = defaultdict(int)
     by_status: dict[str, int] = defaultdict(int)
     by_owner: dict[str, int] = defaultdict(int)
-    worklist = unread = folded = transit = 0
+    worklist = unread = folded = transit = stranded = 0
     for item in items:
         by_type[item["type"]] += 1
         by_status[item["status"]] += 1
@@ -81,6 +108,8 @@ def counts(items: list[dict], readers: Collection[str] = ()) -> dict:
             unread += item["status"] == "open"
         elif item.get("superseded"):
             folded += 1
+        elif unroutable(item, installed):
+            stranded += 1
         elif in_transit(item, readers):
             transit += 1
         else:
@@ -89,4 +118,4 @@ def counts(items: list[dict], readers: Collection[str] = ()) -> dict:
     owners = dict(sorted(by_owner.items(), key=lambda kv: (-kv[1], kv[0])))
     return {"type": dict(by_type), "status": dict(by_status),
             "active": {"worklist": worklist, "unread": unread, "folded": folded,
-                       "in_transit": transit, "by_owner": owners}}
+                       "unroutable": stranded, "in_transit": transit, "by_owner": owners}}

@@ -23,6 +23,16 @@ export function backlogChips(active, filters, { pick, pickOwner }) {
   if (active.folded)
     out.push(tagChip(`folded ${active.folded}`,
       { active: filters.folded === "1", onClick: () => pick("folded", "1") }));
+  // Addressed to a routine that is GONE: no inbox, no run, nobody who could ever drain it. On
+  // the worklist it read as live work waiting on an owner who does not exist (F738), so it is
+  // counted apart — and said out loud, because only a person can re-route or retract the row.
+  if (active.unroutable) {
+    const chip = tagChip(`unroutable ${active.unroutable}`);
+    chip.title = "reports addressed to a routine this instance no longer has — no inbox to "
+      + "deliver into and no run that could read them, so nobody can drain them: re-route or "
+      + "retract each one";
+    out.push(chip);
+  }
   if (active.in_transit) {
     const chip = tagChip(`in transit ${active.in_transit}`);
     chip.title = "reports addressed to a routine that has not run since they were filed — "

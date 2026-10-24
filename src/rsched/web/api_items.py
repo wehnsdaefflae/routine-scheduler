@@ -136,13 +136,16 @@ def items(request: Request,
     changelog = memo.memoized_shared(
         f"changelog:{changelog_path}", [changelog_path],
         lambda: items_model.read_changelog(changelog_path))
+    readers, installed = _fleet(request)
     return {"exists": True, "routine": SELF_AUDIT_SLUG,
             "items": shown[:max(1, limit)], "total": len(shown),
             # recomputed over the MERGED set: `counts` is documented as always being over the
             # unfiltered whole, so it has to include the summaries the page can now filter to.
             # `readers` are the routines that will run: only a report addressed to one of them
-            # is IN TRANSIT rather than stuck.
-            "counts": item_counts.counts(all_items, readers=_readers(request)),
+            # is IN TRANSIT rather than stuck. `installed` is every routine the home holds, so
+            # a report addressed to a DELETED one is counted apart as unroutable instead of
+            # sitting on a worklist nobody can drain (F738).
+            "counts": item_counts.counts(all_items, readers=readers, installed=installed),
             "changelog": _light_changelog(list(reversed(changelog))[:60]),
             "report": report, "last_run": last_run,
             "queued": queued_messages(routine_dir),
@@ -180,10 +183,17 @@ def _light_changelog(rows: list[dict]) -> list[dict]:
     return light
 
 
-def _readers(request: Request) -> set[str]:
-    """Every routine the daemon may start a run of — the ones a delivery will reach."""
-    return {slug for slug, info in registry.scan(request.app.state.server).items()
-            if info.fireable}
+def _fleet(request: Request) -> tuple[set[str], set[str]]:
+    """`(readers, installed)` — the two fleet facts the counts need, off ONE home walk.
+
+    `readers` are the routines the daemon may start a run of: a delivery will reach them, so a
+    report addressed to one is in transit rather than stuck. `installed` is every routine the
+    home holds whatever its state — a target outside it is addressed to nothing at all, and
+    `registry.scan` is the authority for both because it is what the daemon itself reads
+    (`.archive/` is skipped: an archived incarnation starts no run and owns no inbox).
+    """
+    scanned = registry.scan(request.app.state.server)
+    return {slug for slug, info in scanned.items() if info.fireable}, set(scanned)
 
 
 class ReadBody(BaseModel):
