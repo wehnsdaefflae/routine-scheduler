@@ -97,6 +97,15 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
 
         push_task = asyncio.create_task(push_mod.bus_listener(server, bus))
         _observe(push_task, "web-push listener")
+        # The util-stats snapshot's ONE writer: a debounced recompute per burst of run events,
+        # in a thread. Every engine used to do this at its own run end — a library git walk,
+        # the whole usage stream and every un-counted transcript, for a file no engine reads
+        # (daemon/util_stats_watch.py). Here rather than on the scheduler's tick because it
+        # reacts to events, not to a clock, and the bus lives in this layer.
+        from ..daemon import util_stats_watch
+
+        utilstats_task = asyncio.create_task(util_stats_watch.bus_listener(server, bus))
+        _observe(utilstats_task, "util-stats snapshot watch")
         # The LLM task manager sink: every instrumented complete() (run in threadpool/to_thread
         # workers) marshals its lifecycle records onto THIS loop, where the task center + bus live.
         set_sink(DaemonSink(task_center, asyncio.get_running_loop()))
@@ -135,7 +144,7 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         set_sink(None)
         await _stop(search_task)
         app.state.search.shutdown()
-        for running in (docs_task, push_task, apply_task, held_task, task):
+        for running in (docs_task, push_task, utilstats_task, apply_task, held_task, task):
             await _stop(running)
         # The I/O pool LAST, once nothing is left to submit to it. `wait=False` so a shutdown is
         # never held hostage by an SSH call or a provider probe mid-flight (those threads finish

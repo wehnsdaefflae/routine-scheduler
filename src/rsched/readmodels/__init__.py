@@ -6,7 +6,9 @@ behind a stat fingerprint (`memo.memoized` — inode+mtime+size, so atomic rewri
 appends always miss). Deleting any cache state must never lose data, and no read path here
 writes anything. Two writers sit beside the view they serve: the summaries' read
 watermark (`summaries.mark_read` / `mark_all_read`) and the persisted util-stats snapshot
-(`util_stats.write_util_stats_snapshot`).
+(`util_stats.write_util_stats_snapshot`) — which has exactly ONE caller, the daemon's
+`daemon/util_stats_watch.py`, debounced on run events. Every engine used to call it at its own
+run end, so each run paid for a fleet-wide view no engine reads.
 The FTS index (`rsched.search`) follows the same discipline with its own incremental
 machinery; `rsched.registry` is the catalog/run-index sibling.
 

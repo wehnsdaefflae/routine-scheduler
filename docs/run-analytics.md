@@ -452,6 +452,17 @@ own counts; parents never fold them in (the read-model sums records at every dep
    rejected/denied calls never became observations back then, so those counts honestly
    start at the stream's adoption.
 
+The Stats tab computes that table live per request. The PERSISTED copy
+(`util_stats.snapshot_path()`, under `XDG_STATE_HOME` so a Landlock-jailed util can read it —
+the `util-stats` global util is its only reader) is written by exactly one process: the
+daemon's `daemon/util_stats_watch.py`, a bus subscriber that recomputes once per burst of
+`run_*` events, in a thread, debounced (5 s of quiet, capped at 60 s). Every engine used to
+write it at its own run end — all three sources re-read per run, for a file no engine reads —
+and a burst of finishes paid for it once each. Consequences worth knowing: a run started
+outside the daemon (`rsched run-once`) publishes no bus event and so does not refresh the
+snapshot by itself (the next daemon-fired run does), and the file can lag a just-finished run
+by the debounce window. Neither touches the Stats tab, which never reads it.
+
 ## Output compression (Stats tab → Output compression by routine)
 
 A mechanism that spends run time to save tokens has to be able to show which of the two it is

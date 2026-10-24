@@ -275,8 +275,13 @@ def write_util_stats_snapshot(server: ServerConfig) -> dict:
     """Compute `util_stats(server)` once and persist it (atomic replace) to
     `snapshot_path()`, stamped with a `generated` ISO timestamp. Returns the snapshot dict.
 
-    Best-effort on the WRITE — an I/O error is swallowed so the run-finish hook that calls
-    this can never break a run — but the computed data is always returned to the caller.
+    ONE caller: `daemon/util_stats_watch.py`, debounced on run events, in a thread. It used to
+    be every engine at its own run end, which made each run in the fleet pay for a git walk,
+    a parse of the whole usage stream and a scan of every un-counted transcript — to produce a
+    file no engine reads.
+
+    Best-effort on the WRITE — an I/O error is swallowed so a caller for whom this is only
+    telemetry can never be broken by it — but the computed data is always returned.
     """
     try:
         data = {"generated": now_iso(), **util_stats(server)}

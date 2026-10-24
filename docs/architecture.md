@@ -969,7 +969,10 @@ and the capabilities digest's catalog listing):
   OWN counts, never folded into the parent), and
   `asks_deferred` (deferred-question churn). `util_stats.py` joins the stream with the library's
   git history (created/revised per util) and a stat-memoized transcript backfill for pre-stream
-  runs — the Stats tab's "Global utils" table. The referral AUDIT (`ctx.referrals`: turns + llm
+  runs — the Stats tab's "Global utils" table, computed live per request. Its PERSISTED snapshot
+  (`util_stats.snapshot_path()`, read only by the `util-stats` util) has ONE writer: the daemon's
+  `daemon/util_stats_watch.py`, debounced on `run_*` bus events, in a thread. Every engine used to
+  write it at its own run end, paying all three source reads per run for a file no engine reads. The referral AUDIT (`ctx.referrals`: turns + llm
   calls the uncensored
   model answered — both paths increment it, children fold into the parent, status.json carries it
   per run) surfaces on the routine page's Models section.

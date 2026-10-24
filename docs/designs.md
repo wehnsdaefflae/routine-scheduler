@@ -313,14 +313,22 @@ The 20 worst are all test modules (`test_loop.py` 3268, `test_api.py` 3011, `ui/
 
 ---
 
-## Read models: the util-stats snapshot once in the daemon; an incremental search index (R1.3, R1.6)
+## Read models: an incremental search index (R1.6)
 
-(a) `engine/runtime.py` writes the util-stats snapshot from EVERY engine at run end; compute it once
-in the daemon, in a thread like the limits refresh, on `run_*` events (debounced).
-(b) The search index is rebuilt whole; index a run's transcript when it finishes and drop what
+The search index is rebuilt whole; index a run's transcript when it finishes and drop what
 retention prunes.
 
-**First increment.** (a).
+**First increment.** Index one finished run's transcript incrementally, leaving the whole-rebuild
+path as the fallback.
+
+**(a), the util-stats snapshot, SHIPPED in 0.448.1** — `daemon/util_stats_watch.py` computes it
+once on `run_*` events (5 s debounce, 60 s cap) instead of in every engine at run end. Measured
+honestly while building: the snapshot is 0.225 s cold against the live homes and the fleet runs
+~23.6 root runs/day, so the saving is ≈5 s of CPU/day. The reason it was still worth shipping is
+structural — one writer instead of N for a file no engine reads, and the per-run cost was the one
+that only grows (the whole durable usage stream, parsed per run with nothing memoized). Two
+documented behaviour changes: `rsched run-once` no longer refreshes the snapshot by itself, and
+the file may lag a finish by up to 60 s.
 
 ---
 
