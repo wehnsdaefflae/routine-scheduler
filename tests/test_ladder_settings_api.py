@@ -29,9 +29,9 @@ from rsched.patterns import fields
 from rsched.web.api_routine_patch import (
     TUNING_FIELDS,
     RoutinePatch,
-    _apply_ladder,
     _validate_tuning,
 )
+from rsched.web.patch_merge import apply_ladder
 
 LADDER_FIELDS = ("ladder", "ladder_turn_interval", "oversight_turns")
 
@@ -125,13 +125,13 @@ def test_a_partial_ladder_patch_merges_over_the_stored_block():
     """The control toggles `enabled` without resending the rung height, so the body alone
     cannot be judged — it is validated MERGED, like run_gate."""
     raw = {"ladder": {"enabled": True, "rung_height": 3}}
-    _apply_ladder(raw, {"ladder": {"rung_height": 5}})
+    apply_ladder(raw, {"ladder": {"rung_height": 5}})
     assert raw["ladder"] == {"enabled": True, "rung_height": 5}
 
 
 def test_switching_the_ladder_on_keeps_the_default_rung_height():
     raw: dict = {}
-    _apply_ladder(raw, {"ladder": {"enabled": True}})
+    apply_ladder(raw, {"ladder": {"enabled": True}})
     assert raw["ladder"] == {"enabled": True, "rung_height": 3}
 
 
@@ -148,7 +148,7 @@ def test_a_bad_ladder_value_is_refused_rather_than_degraded(patch):
     time, and the WRONG one for a save: a person told "saved" would get a silently disabled
     ladder. Every bad value is refused here instead."""
     with pytest.raises(HTTPException) as exc:
-        _apply_ladder({}, {"ladder": dict(patch)})
+        apply_ladder({}, {"ladder": dict(patch)})
     assert exc.value.status_code == 400
     assert "ladder" in str(exc.value.detail)
 

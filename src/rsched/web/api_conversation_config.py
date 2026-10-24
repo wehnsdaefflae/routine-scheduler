@@ -181,11 +181,15 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
         raw["connections"] = validate_connections(updates["connections"])
     if "machines" in updates:
         raw["machines"] = validate_machines(request.app.state.server, updates["machines"])
+    repaired: list[str] = []
     if "deliberation" in updates:   # tuning, not config — lands in tuning.yaml
         if updates["deliberation"] not in DELIBERATION_LEVELS:
             raise HTTPException(400, f"deliberation: unknown level "
                                      f"{updates['deliberation']!r}")
-        write_tuning(info.cfg.dir, {"deliberation": updates["deliberation"]})
+        # F759: the writer holds tuning.yaml to the vocabulary `load_tuning` reads and names
+        # what it dropped — a renamed key is cleared by an ordinary save, and SAID, here too.
+        repaired = [f"tuning.{k}"
+                    for k in write_tuning(info.cfg.dir, {"deliberation": updates["deliberation"]})]
     if set(updates) - {"deliberation"}:   # a tuning-only patch never rewrites routine.yaml
         atomic_write_yaml(path, raw)
     # F337: a reply already in flight booted from the OLD config. Tell it what changed and
@@ -193,7 +197,8 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
     # so "I changed it mid-reply" means the same thing in both homes.
     live = signal_config_change(info, list(updates), updates)
     return {"ok": True, "updated": list(updates),
-            **({"told_live_run": True} if live else {})}
+            **({"told_live_run": True} if live else {}),
+            **({"repaired": repaired} if repaired else {})}
 
 @router.post("/conversations/{slug}/rules")
 def set_conversation_rules(request: Request, slug: str, body: RulesBody) -> dict:

@@ -19,9 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from .. import rules as rules_mod
 from .. import schedule
 from ..config import DELIBERATION_LEVELS, write_tuning
-from ..config.base import DEFAULT_LADDER, LADDER_KEYS, TUNING_KEYS, _known_tz
+from ..config.base import TUNING_KEYS, _known_tz
 from ..config.outcome import OutcomeConfig
-from ..config.routine import RunGateConfig, RunGatePatch
+from ..config.routine import RunGatePatch
 from ..config.trialconf import TrialConfig
 from ..engine.ladder import MIN_OVERSIGHT_TURNS
 from ..paths import read_yaml
@@ -31,6 +31,7 @@ from .config_fields import (
     validate_roots,
 )
 from .patch_bindings import apply_bindings
+from .patch_merge import apply_ladder, apply_run_gate
 from .routines_common import (
     _git_commit,
     _info,
@@ -184,53 +185,6 @@ def _validate_tuning(tuning: dict) -> None:
                                      "hands back nothing, which reads as `continue`"
                                      + (" (0 = derive it from the turn interval)"
                                         if key == "oversight_turns" else ""))
-
-
-def _apply_ladder(raw: dict, updates: dict) -> None:
-    """Merge a partial `ladder` block into the stored one and validate the RESULT.
-
-    CONFIG, not tuning: authority over being watched is the user's. A partial patch is the
-    normal case (the control toggles `enabled` without resending the depth), so the body alone
-    cannot be judged.
-
-    Every bad value is REFUSED here rather than left to `load_routine`, which degrades an
-    unreadable block toward OFF — the safe direction at load time, and the wrong one for a save:
-    a user who typed `rung_height: 0` and was told "saved" would get a silently disabled ladder.
-    """
-    block = raw.get("ladder")
-    merged = dict(block) if isinstance(block, dict) else dict(DEFAULT_LADDER)
-    patch = updates.pop("ladder") or {}
-    if not isinstance(patch, dict):
-        raise HTTPException(400, "ladder: expected a mapping of {enabled, rung_height}")
-    if unknown := sorted(set(patch) - LADDER_KEYS):
-        raise HTTPException(400, f"ladder: unknown key(s) {unknown} "
-                                 f"(expected {sorted(LADDER_KEYS)})")
-    merged.update(patch)
-    if not isinstance(merged.get("enabled"), bool):
-        raise HTTPException(400, "ladder.enabled: expected true or false")
-    height = merged.get("rung_height")
-    if isinstance(height, bool) or not isinstance(height, int) or height < 1:
-        raise HTTPException(400, f"ladder.rung_height: expected a whole number of rungs of at "
-                                 f"least 1 (got {height!r}) — it is also floored by "
-                                 "budgets.max_subrun_depth at run time")
-    raw["ladder"] = merged
-
-
-def _apply_run_gate(raw: dict, updates: dict) -> None:
-    """Merge a partial `run_gate` into the stored one and validate the RESULT.
-
-    A partial patch is the normal case — the console toggles `enabled` without resending the
-    checks — so the body alone cannot be judged: `{enabled: true}` is sound over a stored check
-    list and unsound over none. The merge is validated as a whole and written as a whole; `checks`
-    REPLACES the stored list, like every list this endpoint takes. Pops the key, so the generic
-    merge below never sees it.
-    """
-    stored = raw.get("run_gate")
-    merged = {**(stored if isinstance(stored, dict) else {}), **updates.pop("run_gate")}
-    try:
-        raw["run_gate"] = RunGateConfig.model_validate(merged).model_dump()
-    except ValueError as exc:
-        raise HTTPException(422, f"run_gate: {exc}") from exc
 
 
 def _apply_pattern_fields(server, raw: dict, updates: dict) -> None:
@@ -416,13 +370,14 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
         if tuning.get("oversight_turns") == 0:
             tuning["oversight_turns"] = None
         if not updates:
-            write_tuning(info.cfg.dir, tuning)
+            fixed = [f"tuning.{k}" for k in write_tuning(info.cfg.dir, tuning)]
             _git_commit(request, info.cfg.dir,
                         f"tuning.yaml edit via web ({', '.join(tuning)})")
             _state(request).scheduler.rescan()
             live = signal_config_change(info, list(tuning), dict(tuning))
             return {"ok": True, "updated": list(tuning),
-                    **({"told_live_run": True} if live else {})}
+                    **({"told_live_run": True} if live else {}),
+                    **({"repaired": fixed} if fixed else {})}
     apply_bindings(_state(request).server, raw, updates)
     # Validate the grant-decision rows (entities.py ids → bool); REPLACE wholesale —
     # removing a row returns that entity to undecided (asked on first use / requestable).
@@ -437,11 +392,16 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
     # editor would have written.
     _apply_permissions_fields(request, info, raw, updates)
     _apply_pattern_fields(_state(request).server, raw, updates)
+    # F759: each merger returns the stale keys it dropped from the block it WROTE — a key a
+    # rename left in the stored file, which no patch could name (naming it is a 400) and every
+    # save used to carry forward for `load_routine` to report again. Named in the response, so
+    # a repair is learned from the observation rather than from a problem line that stopped.
+    repaired: list[str] = []
     if "run_gate" in updates:
-        _apply_run_gate(raw, updates)
+        repaired += apply_run_gate(raw, updates)
     _apply_resource_fields(raw, updates)
     if "ladder" in updates:
-        _apply_ladder(raw, updates)
+        repaired += apply_ladder(raw, updates)
     if "tags" in updates:
         raw["tags"] = clean_tags(updates.pop("tags"))
     if "hub_tab" in updates and not updates["hub_tab"]:
@@ -458,11 +418,13 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
         else:
             raw[key] = val
     if tuning:
-        write_tuning(info.cfg.dir, tuning)
+        repaired += [f"tuning.{k}" for k in write_tuning(info.cfg.dir, tuning)]
     # F337 rides in the shared writer: a run already in flight booted its policy, schema and
     # prompt from the OLD config, and is told what changed and which half reaches it now.
     live = write_routine_config(
         request, info, raw,
         message=message or f"routine.yaml edit via web ({', '.join(requested)})",
         fields=requested, values=signal_values)
-    return {"ok": True, "updated": requested, **({"told_live_run": True} if live else {})}
+    return {"ok": True, "updated": requested,
+            **({"told_live_run": True} if live else {}),
+            **({"repaired": repaired} if repaired else {})}

@@ -31,7 +31,7 @@
     "src/rsched/sandbox.py": 414,
     "src/rsched/utils_run.py": 520,
     "src/rsched/web/api_questions.py": 394,
-    "src/rsched/web/api_routine_patch.py": 468,
+    "src/rsched/web/api_routine_patch.py": 430,
     "src/rsched/web/api_routines.py": 384,
     "src/rsched/workflows/lint.py": 353,
     "static/app.js": 398,
