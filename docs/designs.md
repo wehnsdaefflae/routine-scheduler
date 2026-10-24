@@ -344,19 +344,6 @@ allowing the browser-view relay.
 
 ---
 
-## schedule_once's dead `expires_at` (T3.5)
-
-`schedule_once.arm(expires_at=…)` is set only by a test and exposed nowhere: delete the
-parameter and its field (the dead-code rule; exposing it in the console was the alternative the
-review weighed and did not recommend).
-
-Part (a) of this entry — the pipeline asking for more output than the model can return — SHIPPED
-in 0.445.1 (`workflows/pipeline._budget`); what is left is this deletion.
-
-**First increment.** The deletion itself, with the test that set it adjusted.
-
----
-
 ## Deploy leftovers (SD2.5–6) and a pinned claude CLI
 
 - `deploy/` chrome entrypoint: supervise Xvfb and Chrome with `wait -n`, so one dying ends the

@@ -217,16 +217,16 @@ async def test_tick_drops_request_for_a_retired_routine(tmp_path):
     assert schedule_once.pending_requests(server.routines_home, "oneshot") == []
 
 
-async def test_tick_drops_expired_request(tmp_path):
+async def test_a_long_stale_request_still_fires(tmp_path):
+    """T3.5: `expires_at` is gone — a one-shot EVENTUALLY runs once, however stale."""
     server = tmp_server(tmp_path)
     _routine(server)
-    now = datetime.now(UTC)
-    schedule_once.arm(server.routines_home, "oneshot", fire_at=now - timedelta(minutes=5),
-                      reason="x", requested_by="x", expires_at=now - timedelta(minutes=1))
-    runner = FakeRunner()
-    await OneShotManager(server, runner).tick(registry.scan(server))
-    assert runner.fired == []
-    assert schedule_once.pending_requests(server.routines_home, "oneshot") == []   # dropped
+    rec = schedule_once.arm(server.routines_home, "oneshot", reason="x", requested_by="x",
+                            fire_at=datetime.now(UTC) - timedelta(days=30))
+    assert "expires_at" not in rec
+    await OneShotManager(server, runner := FakeRunner()).tick(registry.scan(server))
+    assert runner.fired and runner.fired[0][0] == "oneshot"
+    assert schedule_once.pending_requests(server.routines_home, "oneshot") == []   # consumed
 
 
 # -- the schedule_run action: schema + capability gate ----------------------------------
