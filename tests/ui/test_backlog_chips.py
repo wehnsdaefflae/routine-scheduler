@@ -28,6 +28,12 @@ IN_TRANSIT = {"id": "R1", "ts": "2026-10-17T08:00:00+00:00", "routine": "self-au
               "run_id": "self-audit:20261017-080000", "title": "For the radar", "detail": "",
               "target": "radar"}
 
+#: Addressed to a routine this instance does not have: no inbox, no run, nobody who can drain
+#: it (F738). It must be counted apart and SAID, never left on the worklist as live work.
+UNROUTABLE = {"id": "R2", "ts": "2026-10-16T07:06:46+00:00", "routine": "steward-hub-maintainer",
+              "run_id": "steward-hub-maintainer:20261016-045256", "detail": "",
+              "title": "Nobody can drain this one", "target": "deleted-radar"}
+
 
 def test_the_active_chip_says_whom_the_worklist_waits_on(ui, ui_page, make_routine):
     make_routine(slug="self-audit")
@@ -37,12 +43,15 @@ def test_the_active_chip_says_whom_the_worklist_waits_on(ui, ui_page, make_routi
     (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
     control = ui.routines / ".control"
     control.mkdir(parents=True, exist_ok=True)
-    (control / "reports.jsonl").write_text(json.dumps(IN_TRANSIT) + "\n", encoding="utf-8")
+    (control / "reports.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in (IN_TRANSIT, UNROUTABLE)), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/messages")             # the default view: summaries
     bar = ui_page.locator(".filterbar")
+    # R2 is addressed to nothing, so it is NOT in the 3 the worklist waits on
     expect(bar.locator(".tag", has_text="active")).to_contain_text("active 3")
     expect(bar.locator(".tag", has_text="in transit")).to_have_text("in transit 1")
+    expect(bar.locator(".tag", has_text="unroutable")).to_have_text("unroutable 1")
     expect(bar.locator(".tag", has_text="scheduler-builder")).to_have_text("scheduler-builder 2")
 
     bar.locator(".tag", has_text="you 1").click()

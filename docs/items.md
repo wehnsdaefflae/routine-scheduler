@@ -384,13 +384,25 @@ items[]              the matching items, newest origin first (`total` = matches 
                      never from LOOKING SOMETHING UP — a `?focus=` reflink turns it on.
 counts{type,status,  totals across the UNFILTERED set, for the filter chips
        active}       (`readmodels/item_counts.py`). `active` cross-tabulates the other two
-                     into four parts that never overlap: `worklist` (non-summary, non-folded
+                     into five parts that never overlap: `worklist` (non-summary, non-folded
                      items open or in_progress, minus those in transit) + `unread`
                      (summaries still open) + `folded` (rows another report took over) +
-                     `in_transit` (addressed reports still `open`, aimed at a routine that
-                     will run — its next scheduled run drains them, and nobody can act on
-                     them before; one aimed at a routine that starts no run stays on the
-                     worklist, where it reads as stuck). The page's headline number is the
+                     `unroutable` (addressed reports whose target is no routine the home
+                     holds any more) + `in_transit` (addressed reports still `open`, aimed at
+                     a routine that will run — its next scheduled run drains them, and nobody
+                     can act on them before; one aimed at a routine that EXISTS but starts no
+                     run — switched off, retired — stays on the worklist, where it reads as
+                     stuck). UNROUTABLE is the one no owner can ever clear: a routine that was
+                     deleted or ARCHIVED leaves nothing `registry.scan` can see (it skips
+                     `.archive/`), hence no inbox and no run, so the row is drainable by
+                     nobody, and on the worklist it read as live work waiting on an owner who
+                     is gone (F738 — R2629, `steward-hub-maintainer` → `grants-radar`, archived
+                     2026-10-19). It is counted and named apart, never dropped: the row is
+                     work somebody filed, and only a person can re-route or retract it. The
+                     two fleet facts are the CALLER's (`api_items._fleet`, off one
+                     `registry.scan`) — `readers` the routines that will run, `installed`
+                     every routine the home holds whatever its state; `item_counts` reads no
+                     disk, and without either set nothing is judged by it. The headline is the
                      one place summing them LIES: a worklist and a feed in one figure can
                      never fall to zero by working the backlog, so a steady backlog reads as
                      a growing one (2026-09-15: "53 open" was 37 items and 16 unread).

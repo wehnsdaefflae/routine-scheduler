@@ -375,8 +375,8 @@ def test_api_items_without_the_self_audit_routine(api_client):
     assert c.get("/api/items").json() == {
         "exists": False, "routine": "self-audit", "items": [], "total": 0,
         "counts": {"type": {}, "status": {},
-                   "active": {"worklist": 0, "unread": 0, "folded": 0, "in_transit": 0,
-                              "by_owner": {}}}, "report": None,
+                   "active": {"worklist": 0, "unread": 0, "folded": 0, "unroutable": 0,
+                              "in_transit": 0, "by_owner": {}}}, "report": None,
         "last_run": None, "queued": [], "answered_decisions": []}
 
 
