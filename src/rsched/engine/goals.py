@@ -31,7 +31,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from . import inbox
+from . import goalpicks, inbox
 
 STATUSES = ("open", "met", "dropped")
 #: Open goals at once. A list nobody can hold in mind is not a goal list; the finish line caps
@@ -123,9 +123,14 @@ def person_texts(events: list[dict], *, opening: str = "", brief: str = "") -> l
     conversation's first message (its instruction); a routine's instruction is its recipe's,
     not something a person asked of THIS run, so it is never passed. The brief comes first: the
     runner wrote it before the engine started.
+
+    An answer that is a bare numbered PICK carries the words of the choice it picked, appended
+    to it (engine/goalpicks.py): the engine renders an options question as numbered picks, so
+    the choice behind the keystroke is as much the person's as the keystroke itself (F731).
     """
     out = [t for t in (brief, opening) if t]
-    out += [t for ev in events if (t := _person_spoke(ev))]
+    questions = goalpicks.asked(events)
+    out += [goalpicks.with_choice(ev, t, questions) for ev in events if (t := _person_spoke(ev))]
     return out
 
 

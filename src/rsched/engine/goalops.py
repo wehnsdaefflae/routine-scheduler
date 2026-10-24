@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from . import goals, runkind, verifier
+from . import goalpicks, goals, runkind, verifier
 
 # `runkind` and `verifier` are imported at module scope deliberately (F658): `goal check` runs
 # the SAME claim verification a finish does, so a lazy import here has the same failure as the
@@ -63,11 +63,15 @@ def field_problems(obj: dict) -> list[str]:
     return out
 
 
-def _texts(loop) -> list[str]:
+def _person(loop) -> tuple[list[dict], list[str]]:
+    """The transcript's events, and everything the person wrote to this run in order. Both,
+    from one read: grounding a numbered PICK needs the questions the events carry, not only
+    the words (engine/goalpicks.py).
+    """
     ctx = loop.ctx
     opening = str(loop.instruction or "") if runkind.is_conversation(ctx) else ""
-    return goals.person_texts(goals.transcript_events(ctx.run_dir), opening=opening,
-                              brief=ctx.brief)
+    events = goals.transcript_events(ctx.run_dir)
+    return events, goals.person_texts(events, opening=opening, brief=ctx.brief)
 
 
 def _obs(loop, verb: str, message: str, **extra) -> dict:
@@ -117,14 +121,24 @@ def _add(loop, action: dict, verb: str) -> dict:
     if len(goals.open_goals(ctx.goals)) + len(items) > goals.MAX_OPEN:
         return _refuse(verb, f"at most {goals.MAX_OPEN} goals open at once — merge them into "
                              "fewer end states; the steps toward them belong in your plan")
-    texts = _texts(loop)
+    events, texts = _person(loop)
     heard = []
     for _text, quote in items:
-        if (at := goals.heard_at(quote, texts)) is None:
+        if (at := goals.heard_at(quote, texts)) is not None:
+            heard.append((quote, at))
+            continue
+        # A bare numbered PICK ("1.", "2", "3)") is what the person's whole reply is when he
+        # answers the numbered choices the engine itself rendered, so the WORDS of the choice
+        # he picked are what ground the goal — and what it is recorded as (F731). A number no
+        # choice he picked carries resolves to nothing and is refused below, like any other
+        # words he never wrote.
+        chosen = goalpicks.quoted_choice(quote, events)
+        at = goals.heard_at(chosen, texts) if chosen else None
+        if at is None:
             return _refuse(verb, _not_found(quote, later=False))
-        heard.append(at)
+        heard.append((chosen, at))
     added = []
-    for (text, quote), at in zip(items, heard, strict=True):
+    for (text, _asked), (quote, at) in zip(items, heard, strict=True):
         goal = goals.blank(goals.next_id(ctx.goals), text, quote, source="person", heard=at,
                            turn=ctx.turn)
         ctx.goals.append(goal)
@@ -138,7 +152,7 @@ def _change(loop, action: dict) -> dict:
     if goal.get("rejected"):
         return goal
     text, quote = _items(action)[0]
-    if (at := goals.heard_at(quote, _texts(loop), after=goal["heard"])) is None:
+    if (at := goals.heard_at(quote, _person(loop)[1], after=goal["heard"])) is None:
         return _refuse("change", _not_found(quote, later=True))
     goal.update(text=text[:goals.TEXT_MAX], quote=quote[:goals.QUOTE_MAX], heard=at,
                 turn=loop.ctx.turn, remains="")
@@ -151,7 +165,7 @@ def _drop(loop, action: dict) -> dict:
     if goal.get("rejected"):
         return goal
     quote = str(action.get("quote") or "").strip()
-    if goals.heard_at(quote, _texts(loop), after=goal["heard"]) is None:
+    if goals.heard_at(quote, _person(loop)[1], after=goal["heard"]) is None:
         return _refuse("drop", _not_found(quote, later=True))
     goal.update(status="dropped", dropped_by=quote[:goals.QUOTE_MAX], turn=loop.ctx.turn)
     loop.ctx.write_status()
