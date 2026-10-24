@@ -15,6 +15,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.450.0] — 2026-10-24
+
+### A resumed run no longer loses the children it started (F732)
+
+Filed at the operator's own request on 2026-10-19 ("maybe we can do sth to at least be able to
+salvage some of the data in the future"), after a run of this builder spawned four children, was
+interrupted and resumed, and the next `subruns` call answered **"no sub-workflows spawned this
+run"** over seven child directories — two of them holding a finished hand-back.
+
+`SubrunManager.subruns` is in-memory (threads and completion events cannot be rebuilt), so a
+resumed leg starts with an empty registry while every `sub/<n>/` directory is still on disk. New
+`engine/subsalvage.py` owns the row shape for **both** sources, because a shape living in two
+modules drifts: a salvaged row would quietly stop carrying a field the live ones gained. A
+directory with no live child becomes a row in state `orphaned-by-resume` naming its path and what
+landed in its `artifacts/`; `wait` and `kill` on that number refuse **with that reason** instead of
+"no sub-workflow N", which read as "it never existed" and sent a run off to redo finished work.
+The empty sentence now scopes itself to THIS leg.
+
+Salvage, not recovery, deliberately: the thread died with its leg, so nothing will be announced or
+collected and the directory is the deliverable. Nothing new is written at spawn — the directories
+already outlive the leg (`childrun._highest_child_number` relies on exactly that for numbering), so
+a second bookkeeping file could only drift from the truth. The extraction takes `subruns.py` from
+359 to 349 lines, under the size bar for good.
+
+The first release gate reddened on one node, and it is worth recording: `tests/test_loop.py` built
+the manager's parent as `SimpleNamespace(ctx=SimpleNamespace(depth=1))`, so the salvage read of
+`parent.ctx.run_dir` raised — the exact defect class 0.448.0's own double-conformance gate exists
+for, which covers `loop`/`ctx`/`transcript`/`budgets` doubles but not this one.
+
+### A body the model generated incomplete no longer reads as a clean write (F588)
+
+The item asked for "the bytes WRITTEN, not the payload's length" — and that is **empty for a local
+write**: `fileops.py` has reported `path.stat().st_size` since the F460/R2452 work, and `write()` is
+all-or-nothing, so the two numbers agree whenever the write succeeded. The usable difference can
+only come from the BODY, so `fileformat.unparsed()` names a body that does not parse as the format
+its path declares and the observation carries one WARNING line. Before this, half a JSON document
+and a cut-off `.jsonl` record both read back as successful writes of complete files.
+
+A note rather than a refusal: a deliberately-invalid fixture written to a `.json` path costs one
+noisy line, never a blocked write. `edit_file` has the identical blindness and is **not** covered —
+the item names `write_file`, and the predicate is reusable as-is.
+
+### A renamed ladder or tuning key is repairable through the API again (F759)
+
+Reported by config-optimizer. `_apply_ladder` tested `unknown` against the PATCH's keys and then
+merged, so a pre-rename key in the STORED block survived every write and `load_routine` reported it
+forever — `fau` still carried `ladder.max_depth` and `ladder_rung_height` from a web edit made
+before D189's rename, and the operator's own repair attempt
+(`{"ladder": {"max_depth": null}}`) **could not work in principle**: `model_dump(exclude_none=True)`
+strips the null before any writer sees it. That is why his apply "did not fire".
+
+So the writers now hold their RESULT to the known set and say what they dropped (`repaired` in the
+response), while an unknown key in the patch stays a 400 — a typo must stay loud, or a save answers
+`updated` and does nothing. `write_tuning` returns what it dropped and both its callers report it.
+New `web/patch_merge.py` holds the mergers (`api_routine_patch.py` 468 → 430 lines): one
+vocabulary, read at both ends, the same set `config/routine_scrub.py` and `load_tuning` scrub
+against. The live effect on behaviour was nil — the loader already dropped both keys and fau
+resolved to the operator's intent — so this is about repairability, and about two console error
+toasts that had no cure.
+
 ## [0.449.0] — 2026-10-24
 
 ### The util-stats snapshot is computed once, in the daemon (R1.3, `docs/designs.md` part (a))
