@@ -73,6 +73,21 @@ def test_the_tally_answers_the_question_at_a_glance(ui, ui_page):
     expect(ui_page.locator(".runs-box")).to_contain_text("1 skipped")
 
 
+def test_on_a_phone_the_gate_chip_says_it_is_the_gate(ui, ui_page):
+    """Below 860px the runs table stacks and every `inline` cell becomes a line of one card
+    (base.css) — so "skipped" would sit beside "finished" with nothing saying which is which.
+    `data-label` is the stacked cell's header, which the stylesheet renders as `::before`; this
+    reads that generated text, because the attribute alone proves only that it was spelled."""
+    _two_fires(ui)
+    ui_page.set_viewport_size({"width": 390, "height": 844})
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    expect(ui_page.locator(".runs-box .gate-cell").first).to_be_visible()
+    label = ui_page.evaluate(
+        "() => getComputedStyle(document.querySelector('.runs-box td:has(.gate-cell)'),"
+        " '::before').content")
+    assert "gate" in (label or "").lower(), label
+
+
 def test_an_ungated_routine_reads_exactly_as_it_did(ui, ui_page):
     """Most of the fleet has no gate. Their rows get no column and no tally — an empty cell
     per run would be noise on every routine that never opted in (F457)."""
