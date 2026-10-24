@@ -1336,7 +1336,7 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   fixed); the body is `## Parameters` (with `{{named}}` placeholders) + `## Instructions` + optional
   `## Detailed references` / `## Notes`. Storage + the live catalog are `playbooks.py` (a dedicated
   subfolder reader — NOT single-file `library_docs.py`/`DOC_RE`); git is the library ROOT
-  (`workflows.library.git_commit`). A conversation is SEEDED from a picked playbook (its brief
+  (`libgit.commit(…, paths=["playbooks/<slug>"])`, C1.10). A conversation is SEEDED from a picked playbook (its brief
   becomes `instruction.md`, the first message specializes it, `playbook: {slug, commit}` in
   `routine.yaml` records the binding → `cfg.playbook_slug`). The conversation's **Save as playbook**
   distils a NEW one and **Update playbook** revises the bound one, both from the transcript via the

@@ -9,8 +9,9 @@ from each MAIN.md's front matter (there is no index file); the whole set is git-
 synced with the rest of the library (`git add -A` at the repo root already covers it).
 
 Distinct from a routine's "recipe" (its materialized main.md): a playbook is a library template,
-never executed. Git lives at the library ROOT — use workflows.library.git_commit / head_commit /
-git_log for commits (this module is pure storage).
+never executed. Git lives at the library ROOT — commit with `libgit.commit(home, message,
+routines_home=…, paths=["playbooks/<slug>"])` (C1.10) and read it with
+workflows.library.head_commit / git_log (this module is pure storage).
 """
 
 from __future__ import annotations

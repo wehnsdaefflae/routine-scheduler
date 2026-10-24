@@ -18,8 +18,7 @@ def save_playbook(request: Request, slug: str) -> dict:
     suffixed on collision) — use PUT to refine the one a conversation was seeded from. A sync def:
     FastAPI runs it in a worker thread, so the blocking inference never stalls the event loop.
     """
-    from .. import playbooks
-    from ..workflows import library
+    from .. import libgit, playbooks
 
     info = conversation_info(request, slug)
     server = request.app.state.server
@@ -31,8 +30,8 @@ def save_playbook(request: Request, slug: str) -> dict:
     pb["slug"] = playbooks.unique_slug(home, pb["slug"])
     main_text, details = playbook_distill.materialize(pb)
     playbooks.write_playbook(home, pb["slug"], main=main_text, details=details)
-    library.git_commit(home, f"save playbook {pb['slug']} (from conversation {slug})",
-                       routines_home=server.routines_home, paths=[f"playbooks/{pb['slug']}"])
+    libgit.commit(home, f"save playbook {pb['slug']} (from conversation {slug})",
+                  routines_home=server.routines_home, paths=[f"playbooks/{pb['slug']}"])
     return {"ok": True, "slug": pb["slug"], "title": pb["title"], "when": pb["when"],
             "axis": pb["axis"]}
 
@@ -43,8 +42,7 @@ def update_playbook(request: Request, slug: str) -> dict:
     by adjusting/intervening in the conversation (committed). 400 if the conversation has no bound
     playbook; 404 if that playbook was since deleted (Save a new one instead).
     """
-    from .. import playbooks
-    from ..workflows import library
+    from .. import libgit, playbooks
 
     info = conversation_info(request, slug)
     server = request.app.state.server
@@ -62,6 +60,6 @@ def update_playbook(request: Request, slug: str) -> dict:
         raise HTTPException(502, f"could not revise the playbook: {exc}") from exc
     main_text, details = playbook_distill.materialize(pb)
     playbooks.write_playbook(home, bound, main=main_text, details=details)
-    library.git_commit(home, f"update playbook {bound} (from conversation {slug})",
-                       routines_home=server.routines_home, paths=[f"playbooks/{bound}"])
+    libgit.commit(home, f"update playbook {bound} (from conversation {slug})",
+                  routines_home=server.routines_home, paths=[f"playbooks/{bound}"])
     return {"ok": True, "slug": bound, "title": pb["title"], "axis": pb["axis"]}

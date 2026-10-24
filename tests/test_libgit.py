@@ -5,12 +5,17 @@ when git's index lock is in the way is tests/test_git_locks.py.
 
 from __future__ import annotations
 
+import ast
 import subprocess
 from pathlib import Path
 
 from conftest import git_in
 from rsched import libgit, utils_lib
 from rsched.paths import atomic_write, file_lock, repo_lock_path
+
+#: This checkout's package, never the installed one (F495: a bare pytest in a worktree imports
+#: the live tree's `src/`).
+SRC = Path(__file__).resolve().parents[1] / "src" / "rsched"
 
 
 def _git(home, *args: str) -> str:
@@ -208,6 +213,104 @@ def test_ensure_library_clones_its_remote_into_an_empty_bind_mount(tmp_path):
 
     assert (lib / "kept.md").read_text(encoding="utf-8") == "from the remote\n"
     assert _git(lib, "log", "-1", "--format=%s").strip() == "a library with history"
+
+
+#: The `git_commit` pass-throughs C1.10 deliberately HOLDS BACK: its first increment converts
+#: the wrapper with the most call sites (`workflows/library.py`, 7) and leaves these two to be
+#: judged before the move is repeated. Shrink-only, like every ratchet here: a forwarder is
+#: named here or it does not exist, and one that is converted loses its entry for good.
+COMMIT_FORWARDERS_HELD_BACK = frozenset({
+    "library_docs.py:git_commit",
+    "utils_lib.py:git_commit",
+})
+
+
+def _commit_forwarders() -> set[str]:
+    """Every module-level function whose WHOLE body is `return libgit.commit(...)`.
+
+    That shape is a pass-through: no guard, no default, no decision of its own. It adds a name
+    a reader must follow before the lock-aware, SIGTERM-first, failure-filing primitive comes
+    into view, and it is where a divergent default would go unnoticed. A function that GUARDS
+    the commit (`web/routines_common._git_commit`, which returns early for a dir with no
+    `.git`) or does work around it (`bootstrap.sync_seed_library_docs`) is not one of these.
+    """
+    found = set()
+    for path in sorted(SRC.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            body = [s for s in node.body
+                    if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))]
+            if len(body) != 1 or not isinstance(body[0], ast.Return):
+                continue
+            call = body[0].value
+            if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "commit"
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == "libgit"):
+                found.add(f"{path.relative_to(SRC).as_posix()}:{node.name}")
+    return found
+
+
+def test_no_pass_through_forwarder_stands_in_front_of_libgit_commit():
+    """C1.10: every git write goes through `libgit.commit` — the per-repo lock, the stale-lock
+    clearance, the SIGTERM-first timeout and the `commit_failed` health event are all in there,
+    and a call site that cannot see which primitive it reached cannot be reasoned about.
+
+    Three byte-identical `git_commit(home, message, *, routines_home, paths)` forwarders stood
+    in front of it, one per library-doc kind, each only returning `libgit.commit(...)`. They are
+    what F285 closed for `libgit.git` and the same drift risk one layer up: the day one of them
+    grows a default (`routines_home=None`, an unscoped stage), its callers inherit it silently.
+    """
+    extra = sorted(_commit_forwarders() - COMMIT_FORWARDERS_HELD_BACK)
+    assert not extra, (
+        f"pass-through commit forwarder(s) {extra}: call `libgit.commit(home, message, "
+        "routines_home=…, paths=…)` at the call site and delete the wrapper (C1.10). "
+        "A wrapper C1.10 has not converted yet belongs in COMMIT_FORWARDERS_HELD_BACK.")
+    converted = sorted(COMMIT_FORWARDERS_HELD_BACK - _commit_forwarders())
+    assert not converted, (
+        f"{converted} no longer exists — drop it from COMMIT_FORWARDERS_HELD_BACK. The set is "
+        "shrink-only, or a converted wrapper could quietly come back.")
+
+
+def test_the_library_write_endpoints_commit_the_subjects_they_always_did(tmp_path):
+    """"Keeping each message" is the conversion's hard requirement, so the subjects are pinned
+    where a reader can see them: history is how the library's writes are read back, and a
+    normalised or re-worded subject is an unreadable `git log` nobody notices until they need it.
+
+    Four of the seven converted call sites are reachable here (both playbook routes, both
+    workflow routes); the other three — `workflows.generate`, and Save/Update playbook from a
+    conversation — need an inference and are exercised by their own suites.
+    """
+    from conftest import authed_client, seeded_server
+
+    server = seeded_server(tmp_path, kinds=("workflows", "rules", "permissions", "playbooks"))
+    home = server.libraries_home
+    libgit.init_repo(home, first_commit="seed the library", push_hook=False)
+    kept = (home / "workflows" / "general-task.py").read_text(encoding="utf-8")
+
+    with authed_client(server) as c:
+        pb = c.get("/api/playbooks/research-and-report").json()["content"]
+        edited = pb.replace("## Instructions", "## Instructions\n\n1. Be thorough.", 1)
+        assert c.put("/api/playbooks/research-and-report",
+                     json={"content": edited}).status_code == 200
+        assert c.delete("/api/playbooks/research-and-report").status_code == 200
+        # a REAL change: an identical body stages nothing, `commit` answers "clean", and the
+        # subject this test exists to pin never reaches the log
+        assert c.put("/api/workflows/general-task",
+                     json={"content": kept + "\n# edited via the Library tab\n"}
+                     ).status_code == 200
+        assert c.delete("/api/workflows/general-task").status_code == 200
+
+    assert _git(home, "log", "--format=%s").splitlines() == [
+        "delete workflows/general-task.py via web",
+        "edit workflows/general-task.py via web",
+        "delete playbook research-and-report via web",
+        "edit playbook research-and-report via web",
+        "seed the library",
+    ]
 
 
 def test_ensure_library_still_creates_one_over_a_populated_but_never_used_dir(tmp_path):

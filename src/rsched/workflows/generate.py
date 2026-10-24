@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import re
 
+from .. import libgit
 from ..config import ServerConfig
 from ..endpoints import EndpointRegistry
 from ..ids import slugify
 from ..paths import atomic_write
-from .library import git_commit, list_rules, read_workflow, workflows_dir
+from .library import list_rules, read_workflow, workflows_dir
 from .lint import lint_workflow_py
 
 FORMAT_SPEC = '''A library workflow is a single self-contained Python file (.py) that DEPICTS a
@@ -146,8 +147,9 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
                                r"\g<1>" + slug + r"\g<2>", draft, count=1)
             # atomic: the catalog, the lint and the library sync read this directory live
             atomic_write(path, draft.rstrip() + "\n")
-            git_commit(home, f"draft workflow {slug} (generated on demand)",
-                       routines_home=server.routines_home, paths=[f"workflows/{slug}.py"])
+            libgit.commit(home, f"draft workflow {slug} (generated on demand)",
+                          routines_home=server.routines_home,
+                          paths=[f"workflows/{slug}.py"])
             return slug, ""
         if attempt == 0:
             fix = _complete([{"role": "user", "content":
