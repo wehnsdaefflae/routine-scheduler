@@ -39,9 +39,12 @@ boundary is worse than the first, and the measured precedent is `config-optimize
 admin API authority through a token fallback (R2615) while breaking no rule it was told.
 
 This module is pure policy over `configflow`'s vocabulary and imports nothing else, so the
-engine, the daemon and the web layer can all read the same answer. The WRITE lives where the
-one validated writer already is (`web/patch_authority.guard_autonomous`, called by
-`web/api_routine_patch.apply_updates` before anything is written).
+engine, the daemon and the web layer can all read the same answer. The WRITE is guarded by
+`autoapply` — the one reading of `refusals` that stands between a patch and the applier — and
+`web/api_routine_patch.apply_updates` is the single writer both the PATCH route and the
+settings page go through. (This line used to name `web/patch_authority.guard_autonomous`,
+which has never existed in the tree; it sent every reader of the policy module looking for a
+boundary that was really one import away.)
 """
 
 from __future__ import annotations

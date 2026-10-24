@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.450.2] — 2026-10-25
+
+### The config dial pointed every reader at a module that has never existed
+
+`configdial.py`'s own docstring told whoever came looking for the write-side boundary that it
+lives in `web/patch_authority.guard_autonomous`. **There is no `patch_authority` module anywhere
+in the tree** — `find . -name "patch_authority*"` returns nothing, and `guard_autonomous` appears
+in exactly one place: that sentence. The real boundary is one import away (`autoapply` holds the
+single reading of `configdial.refusals` before the applier writes, as `autoapply.py:27` says),
+and the single writer both doors go through is `web/api_routine_patch.apply_updates`. The line
+now names those, and says what it used to claim so the correction is legible.
+
+Found by re-verifying a five-run-old deep-sweep premise against today's tree rather than filing
+it from the sweep's own notes: of its seven checkable claims, four were already fixed or had
+moved file (`actionschema`'s "a run can never edit its own config" is gone, `background.py`'s
+docstring now matches its own `STOPPABLE_KINDS`, `detached.py` moved to `daemon/` and its
+`_STRIP_ACTIONS` does list the memory kinds) and this one was still true verbatim.
+
 ## [0.450.1] — 2026-10-25
 
 ### An answer filed after a run consumed the first one reaches the next run (F763)
