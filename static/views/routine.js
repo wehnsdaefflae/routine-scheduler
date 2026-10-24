@@ -284,7 +284,10 @@ function runsTable(runsBox, d) {
   const rows = shown.map((r) => el("tr", {},
     el("td", { class: "inline" }, el("a", { href: `#/run/${r.run_id}` }, when(r.ts))),
     el("td", { class: "inline" }, chip(r.state, r.state)),
-    gated ? el("td", { class: "inline" }, gateCell(r)) : null,
+    // `data-label` is the stacked cell's header (base.css): the gate chip ("skipped") would
+    // otherwise sit on the same phone line as the state chip ("finished") with nothing saying
+    // which is which — the same reason the turns cell carries one.
+    gated ? el("td", { class: "inline", "data-label": "gate" }, gateCell(r)) : null,
     el("td", { class: "num inline", "data-label": "turns" }, turnCell(r)),
     el("td", { class: "num muted inline" }, r.elapsed_s != null ? fmtDur(r.elapsed_s) : "—"),
     el("td", { class: "muted inline" }, fmtTokens(r.usage)),
