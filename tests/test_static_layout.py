@@ -81,22 +81,11 @@ def test_rails_persist_at_mid_widths():
     assert "position: sticky" in block, "grid rails must stick (remain on scroll)"
 
 
-def test_no_view_references_undefined_conv_classes():
-    """Every conv-*/pane-* class literal the conversations view mounts is styled — by a RULE:
-    a class a comment merely mentions is not styled."""
-    src = (STATIC / "views" / "conversations.js").read_text(encoding="utf-8")
-    css = _rules((STATIC / "views.css").read_text(encoding="utf-8"))
-    used = set()
-    for m in re.finditer(r'class: [`"]([^`"]+)[`"]', src):
-        for token in re.split(r"[\s$]", m.group(1)):
-            if token.startswith(("conv-", "pane-")):
-                used.add(token.rstrip("{"))
-    # plain containers, intentionally unstyled (conv-head holds the styled .conv-head-row pair;
-    # the substring match had been reading it as styled through them)
-    structural = {"conv-main", "conv-head"}
-    # a CLASS TOKEN, not a substring: `.conv-tag` must not count as styled because
-    # `.conv-tagsel` is
-    styled = set(re.findall(r"\.((?:conv|pane)-[\w-]+)", css))
-    missing = (used - structural) - styled
-    assert not missing, f"classes mounted but unstyled in views.css: {sorted(missing)}"
+#: The conv-*/pane-* class contract that lived here is now `tests/test_static_class_contract.py`
+#: (R2885): the same token-not-substring rule, widened from this view's two prefixes to every
+#: class every static/**/*.js module mounts, against all five stylesheets — plus the second rule
+#: the prefix scope could not express, that a STATE class must be REACHABLE where it is mounted.
+#: `conv-head` is waived there, as it was here, as a plain container; `conv-main`, the other of
+#: this check's two waivers, has since been styled (views.css:1013) and needs none. One copy of
+#: a rule, not two: a narrower duplicate would go green on exactly what the wider one reds on.
 

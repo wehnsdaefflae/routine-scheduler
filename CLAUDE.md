@@ -1025,6 +1025,16 @@ by a test, by the engine, or by a past incident.
   a longer measure for anything a mind wrote (NO serif type anywhere in the console — operator,
   2026-10-12; `tests/test_stylesheet_tokens.py` pins it at both copies of the type tokens). Dark is the default with a real three-state theme; every token is defined
   for both. `views.css` builds only on those tokens and adds no colour of its own.
+  Two machine checks hold the palette, on its INPUTS and on its OUTPUT:
+  `tests/test_stylesheet_tokens.py` (every colour a token, every token defined for both themes)
+  and `tests/test_static_class_contract.py` (every class a `static/**/*.js` module mounts is
+  styled by a rule, and a STATE class — `ok`/`bad`/`warn`/`failed`/`unservable`/… — is
+  REACHABLE from the module that mounts it). The second exists because being named somewhere is
+  not enough: 0.399.2 shipped `ladderstrip.js` emitting a bare `bad` that only
+  `.test-result.bad` named, so a rung that BROKE rendered in the ink of a rung that declined to
+  run. A severity class is COMPOUND (`chip ok`, `test-result bad`, `panel warn`) or scoped by an
+  ancestor the module mounts (`.ladderstrip .bad`) — never a bare token, and never waived in
+  that file's allowlist, which is for classes carrying no meaning at all.
   The console keeps PRODUCTION apart from DEVELOPMENT (operator, 2026-10-08): the rail's Work and
   Fleet groups are the routines doing their jobs, its **Develop** group (Changes, Stats, Library —
   one iris band, `.nav-zone.dev` in base.css) is how the system is changing and whether that

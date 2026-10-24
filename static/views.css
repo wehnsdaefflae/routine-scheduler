@@ -315,7 +315,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
    matched NOTHING tree-wide (`.bad` existed only as `.test-result.bad`), so a rung that BROKE
    rendered in exactly the ink of a rung that declined to run — the very conflation F644 exists
    to end, surviving on the one surface the fix had not reached. Found by rendering the strip,
-   not by reading it: the two lines are identical in the source's intent and identical on screen. */
+   not by reading it. Held by a machine check since R2885 (tests/test_static_class_contract.py): deleting these three rules reds it, naming ladderstrip.js's bad/warn/ok and the rules that cannot match them — and note what that check had to assert, because widening the old class contract's SCOPE would not have caught this at all (`bad` IS named, by `.test-result.bad` below): REACHABILITY, a state class the module mounting it can actually match. */
 .ladderstrip .bad { color: var(--err); }
 .ladderstrip .warn { color: var(--warn); }
 .ladderstrip .ok { color: var(--ok); }

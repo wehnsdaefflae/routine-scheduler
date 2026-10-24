@@ -89,3 +89,23 @@
 .runjob .rj-where {
   word-break: break-all;
 }
+
+/* ---------- the files card (components/fileactivity.js): a row nothing can open ------------
+ *
+ * R2885, found by the class contract (tests/test_static_class_contract.py), not by looking: a
+ * row the server will not serve took `unservable` (fileactivity.js:72) and NO stylesheet had a
+ * rule for it — `.file-row` and `.file-row.err` were the only rules the card had. So a path the
+ * console cannot open rendered in exactly the ink of one it can, and the only thing saying so
+ * was the ABSENCE of the two buttons at the far end of the row: the same conflation 0.399.2
+ * ended on the oversight strip, on the one surface that fix had not reached.
+ *
+ * Quiet ink, not the error palette: nothing failed — the run read the file, and the console
+ * declining to serve a path outside its scope (D172, web/servable.py) is a limit, not a fault.
+ * The row stays legible; it reads as inert, which is what it is. The rule lives here rather
+ * than beside `.file-row` in views.css because that sheet is frozen at its ratchet ceiling,
+ * and the files card is a rail card.
+ */
+.file-row.unservable .file-path {
+  color: var(--ink-3);
+}
+
