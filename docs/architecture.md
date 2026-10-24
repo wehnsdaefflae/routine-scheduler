@@ -623,7 +623,15 @@ and the capabilities digest's catalog listing):
   objection), a fixed cap starves the read at large `n` into `oversight_no_directive` —
   supervision that silently does nothing. Absent file = defaults;
   `config.load_tuning`/`write_tuning` are the one reader/writer pair, and a key not in
-  `config.base.TUNING_KEYS` is reported and dropped, never applied.
+  `config.base.TUNING_KEYS` is reported and dropped, never applied — by BOTH halves (F759):
+  the writer holds its RESULT to the same vocabulary and returns what it dropped, because a
+  writer that merges a renamed key forward makes the loader's report permanent and unreachable
+  (a null clears a key someone can still name; a key outside the set cannot be named at all).
+  The same rule covers the two partial-block mergers behind `PATCH /routines/{slug}`
+  (`web/patch_merge.py`, `ladder` + `run_gate`): an unknown key in the PATCH stays a 400, a
+  stale key in the STORED block is dropped from the merge, and the response names it under
+  `repaired` so a repair is read from the observation. Without it a rename left a routine
+  unrepairable through the API — and unsavable where the merge is `extra="forbid"`.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
   routes to `stages/<name>.md` modules, read on demand) with its `## Done when` — what one finished run
   leaves behind, accounted at every main finish — and, where the operator named prohibitions, `## Never`. The clarified instruction is only a transient compile SEED —

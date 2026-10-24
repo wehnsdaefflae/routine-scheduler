@@ -72,7 +72,7 @@ class RunGateConfig(BaseModel):
 
 class RunGatePatch(BaseModel):
     """A PARTIAL run gate for the PATCH edge: each field optional, the merge validated whole
-    by `RunGateConfig` (web/api_routine_patch._apply_run_gate).
+    by `RunGateConfig` (web/patch_merge.apply_run_gate).
     """
 
     model_config = ConfigDict(extra="forbid", strict=True)
