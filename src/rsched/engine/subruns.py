@@ -17,7 +17,7 @@ from __future__ import annotations
 import threading
 import time
 
-from . import child, inbox
+from . import child, inbox, subsalvage
 from .childrun import Subrun, build_child, claim_child
 from .observations import truncate
 
@@ -254,24 +254,14 @@ class SubrunManager:
                                compression=sub.ctx.compression_stats)
 
     def status_table(self) -> dict:
-        now = time.monotonic()
-        rows = [{"n": sub.n, "label": sub.label, "workflow": sub.workflow,
-                 "mode": sub.mode,
-                 "state": sub.status if sub.done.is_set() else "running",
-                 "turns": sub.ctx.turn,
-                 # a finished child's elapsed is how long it RAN, not how long ago it started
-                 "elapsed_s": round((sub.ended_mono or now) - sub.started_mono, 1),
-                 "summary_head": (truncate(sub.summary, cap=200)[0]
-                                  if sub.done.is_set() else "")}
-                for sub in self.subruns.values()]
+        rows = subsalvage.rows(self.subruns, self.parent.ctx.run_dir)
         return {"kind": "subruns", "count": len(rows), "rows": rows}
 
     def kill(self, n: int) -> dict:
         sub = self.subruns.get(int(n))
         if sub is None:
             return {"kind": "kill", "n": n,
-                    "error": f"no sub-workflow {n} — the `subruns` action lists every child "
-                             "this run has spawned, with its number and state"}
+                    "error": subsalvage.no_such_child(self.parent.ctx.run_dir, int(n))}
         if sub.done.is_set():
             return {"kind": "kill", "n": n, "already_finished": True, "status": sub.status}
         sub.abort_event.set("the parent run killed this child-task")   # F751: the actor
@@ -291,8 +281,7 @@ class SubrunManager:
         deadline = time.monotonic() + timeout
         if not self.subruns or (n is not None and int(n) not in self.subruns):
             return {"kind": "wait", "error":
-                    "no such sub-workflow to wait for — the `subruns` action lists every "
-                    "child this run has spawned, with its number and state"
+                    subsalvage.no_such_child(self.parent.ctx.run_dir, int(n))
                     if n is not None else "no sub-workflows have been spawned"}
 
         def satisfied() -> bool:

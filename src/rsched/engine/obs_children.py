@@ -9,6 +9,21 @@ run would otherwise assume it shares the parent's working directory.
 from __future__ import annotations
 
 from . import child
+from .subsalvage import STATE as ORPHANED
+
+
+def _salvaged(row: dict) -> str:
+    """What an ORPHANED row adds: where the work is, and that nothing will be handed back.
+
+    Only the orphan carries it (a live child's hand-back is copied into the parent's own
+    artifacts/ on exit), so a reader meeting this suffix knows the engine is out of the loop
+    and the directory is the deliverable.
+    """
+    if row.get("state") != ORPHANED:
+        return ""
+    landed = ", ".join(row.get("artifacts") or []) or "nothing in artifacts/"
+    return (f"\n    started by an EARLIER LEG — not waitable, not killable. On disk: "
+            f"{row.get('dir')} (hand-back: {landed})")
 
 
 def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
@@ -39,10 +54,15 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
                 "you started it and will report back).")
     if kind == "subruns":
         if not obs.get("rows"):
-            return "OBSERVATION (subruns): no sub-workflows spawned this run."
+            # Never "none spawned" (F732): the registry is in-memory, so a RESUMED leg knows
+            # only about this leg's children — and the sentence it used to print was a claim
+            # about the whole run that a fresh leg has no standing to make.
+            return ("OBSERVATION (subruns): no record of a child in THIS leg — and none on "
+                    "disk either, so none was started.")
         lines = [f"- #{r['n']} {r['label']!r} [{r['workflow']}] {r['state']} · "
                  f"{r['turns']} turns · {r['elapsed_s']}s"
                  + (f" · {r['summary_head']}" if r["summary_head"] else "")
+                 + _salvaged(r)
                  for r in obs["rows"]]
         return "OBSERVATION (subruns):\n" + "\n".join(lines)
     if kind == "kill":

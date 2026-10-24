@@ -20,7 +20,6 @@
     "src/rsched/engine/loop.py": 437,
     "src/rsched/engine/remind.py": 605,
     "src/rsched/engine/run_context.py": 593,
-    "src/rsched/engine/subruns.py": 359,
     "src/rsched/engine/window.py": 402,
     "src/rsched/grantpolicy.py": 385,
     "src/rsched/grants.py": 376,

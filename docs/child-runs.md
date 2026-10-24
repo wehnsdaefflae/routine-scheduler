@@ -247,7 +247,16 @@ Completed subtasks are already in the parent transcript (as the wait / finished-
 so a resume replays them untouched. Children are **threads** in the parent process, so a run
 interrupted with children still running finds them dead on resume — the engine marks each aborted
 in the transcript and adds an ENGINE NOTE listing them, so the model re-issues what it needs
-instead of `wait`-ing forever for a child that can never finish. Because children die with the
+instead of `wait`-ing forever for a child that can never finish.
+
+The **registry** (`SubrunManager.subruns`) is in-memory too, so a resumed leg starts with an empty
+one while every `sub/<n>/` directory the earlier leg made is still on disk — one of them possibly
+holding a finished hand-back in `artifacts/`. `subruns` therefore reports those directories as
+rows in state `orphaned-by-resume`, each naming its path and what landed in its `artifacts/`
+(`engine/subsalvage.py`), and `wait`/`kill` on such a number refuse with that reason instead of
+"no sub-workflow N" — which read as "it never existed" and sent a run off to redo finished work.
+This is **salvage, not recovery**: the thread died with its leg, so nothing will be announced or
+collected, and the directory is the deliverable. Because children die with the
 process, a subtask does **not** survive across conversation reply-finishes — a job that must
 outlive a reply (a long, fire-and-forget scrape) is a different capability, the **`detach`** action
 (a detached background task that runs as its own daemon process and reports back to the conversation

@@ -207,11 +207,15 @@ def test_kill_all_gives_every_child_one_shared_deadline(monkeypatch):
     assert elapsed < 0.6, f"waited {elapsed:.2f}s — one grace per stuck child"
 
 
-def test_a_finished_childs_elapsed_is_how_long_it_ran():
+def test_a_finished_childs_elapsed_is_how_long_it_ran(tmp_path):
     """The `subruns` table's elapsed column stops when the child does — it used to keep
     counting the time since the child STARTED, so a child that ran 3 s read as running for as
-    long as the parent kept going."""
-    mgr = subruns.SubrunManager(SimpleNamespace(ctx=None))
+    long as the parent kept going.
+
+    The parent ctx carries a real `run_dir` because `status_table` reads the child
+    directories there too (F732 salvage) — an empty tmp_path contributes no orphan row.
+    """
+    mgr = subruns.SubrunManager(SimpleNamespace(ctx=SimpleNamespace(run_dir=tmp_path)))
     done = threading.Event()
     done.set()
     mgr.subruns[1] = SimpleNamespace(n=1, label="x", workflow="general-task", mode="parallel",
