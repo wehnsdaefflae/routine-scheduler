@@ -104,8 +104,17 @@ instead of applying if one of its fields was decided elsewhere while it waited �
 lands whole or not at all, and an older click does not overwrite a newer decision; the page
 then says which field moved and the changes are still there to accept again.
 
-A proposed value is validated before it is offered, with the same validators the accept uses —
-a proposal the accept button would refuse is not a proposal.
+A proposed value is validated before it is offered — a proposal the accept button would refuse
+is not a proposal. Every field is checked for SHAPE against the accept's own patch model; a
+field named in `recommend.semantic_checks()` (`connections`, `efforts`, `machines`, `models`)
+or `recommend.whole_field_checks()` (`finish_line`) is then checked for MEANING with the exact
+validator the accept route runs. The remaining 18 governable fields are offered on their shape
+alone, and `recommend.NO_SEMANTIC_CHECK` names each one with the reason: five have no meaning
+to judge, while **13 carry a validator on the accept route that the recommender does not
+consult** — so a value the system generated can still be refused on a page nobody typed into
+(R2884, measured on 0.447.3; `deliberation` and `capabilities` are the two the operator hit).
+`tests/test_recommend_coverage.py` holds that split to a ratchet: a new governable field must
+be checked, and an entry leaves the allowlist only when its check is implemented.
 
 ## Where patterns meet a routine
 
