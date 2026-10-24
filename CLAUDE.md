@@ -183,6 +183,21 @@ one you are about to touch, not all of them.
   the test — the engine's own floor, which keeps a live run going, raises in the suite. A test
   of the result DICT proves nothing about the words the run reads: 0.410.0 tested three refusals
   that way and the first live one ended a run. A handler test past both seams renders its own.
+  `tests/test_double_conformance.py` is its DOUBLE-CONFORMANCE FLOOR: every attribute a test
+  double ASSIGNS must exist on the class it impersonates (`loop` → `EngineLoop`, `ctx` →
+  `RunContext`, `budgets`, `transcript`), read statically with `ast` over `tests/**.py` — never
+  by importing them. F644 is why: `engine/ladder.py` dispatched through `loop.subs` where the
+  real name is `loop.subruns`, and the ladder's tests passed because their fake loop defined
+  `subs` to match the caller, so no rung judged anything for months. A double's attribute
+  surface is authored by the test out of the same misreading that produced the caller, so the
+  two agree with each other and with nothing else. `SimpleNamespace` stays the suite's double
+  (410 of them) — the floor checks what they assign, bans nothing. A real attribute may be
+  declared in any of FOUR places and the checker reads all four (class annotations, class
+  assignments, `self.x =` in its own methods, and a COLLABORATOR's `loop.x = …` anywhere under
+  `src/` — `_recipe_unlocked` exists only because `engine/loopsetup.py` assigns it), so
+  `dir(cls)` is not the surface. Its `MIN_DOUBLES`/`MIN_SURFACE` floors make a detector that
+  stops finding doubles red instead of passing vacuously: widen the recognised shapes, never
+  lower a floor.
 - `uv run ruff check` + `uv run mypy` — the strict quality gates (ruff runs `select = ALL`;
   every ignore in pyproject.toml carries its house-style reason). Both MUST be green in every
   commit; `uv run pre-commit install` wires them into git.
