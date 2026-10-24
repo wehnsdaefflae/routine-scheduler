@@ -38,7 +38,7 @@ as starved, when most of those were authored finishes. budget_exhausted carries 
 budget ended the run was recorded nowhere, and reconstructing it from status.json worked for 22
 of 90 cases. It is emitted whenever the RESERVED FINISH TURN was spent, whatever the finish
 status: a run that spends it and still finishes `ok` was ended by a budget just as much (11 such
-runs since 09-01 left no event at all).
+runs since 09-01 left no event at all). An abort's row: `loopend.abort_fields` (F751, F597).
 
 oversize_state_file: the run-end autocommit left a file OUT of the routine's own repo because it
 exceeds `engine/autocommit.OVERSIZE_BYTES` (detail names path and size). The file stays on disk

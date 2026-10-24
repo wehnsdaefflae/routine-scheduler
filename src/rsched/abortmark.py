@@ -37,7 +37,8 @@ from __future__ import annotations
 
 import os
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .ids import now_iso
@@ -67,6 +68,16 @@ class Abort:
 
     actor: str
     reason: str
+    #: Seconds between the door's own stamp and the engine resolving this abort — HOW LONG it
+    #: went unseen (F597). `None` when no door moment exists to subtract from: a signal handler
+    #: writes no file, a parent's kill never leaves the process, and a foreign-pid mark is not
+    #: about this leg. Nothing measured is not "instant", which is why this is not 0.0.
+    #:
+    #: OUT OF EQUALITY, deliberately: this class is one resolved ATTRIBUTION, and two aborts
+    #: naming the same actor for the same reason are the same attribution however long each
+    #: took to land. A wall-clock reading inside `__eq__` would also make every comparison
+    #: against a constructed expectation untestable.
+    unseen_s: float | None = field(default=None, compare=False)
 
     @property
     def cause(self) -> str:
@@ -140,6 +151,27 @@ def write(run_dir: Path, *, actor: str, reason: str, pid: int | None) -> None:
         pass        # never block the abort this is describing
 
 
+def _unseen_s(stamp: object) -> float | None:
+    """How long this abort went unseen: the engine's moment minus the door's own stamp (F597).
+
+    An abort that went unseen for 30-60 seconds was unreproducible because nothing subtracted
+    these two, though both were known. Three ways to have no number, and each returns `None`
+    rather than a zero that would claim a measurement: no stamp, a stamp nothing can parse
+    (the mark is written best-effort by a door about to signal, so a malformed one must cost
+    the measurement and not the attribution), and a stamp AHEAD of this clock is floored —
+    a negative wait is not a thing that happened.
+    """
+    if not isinstance(stamp, str) or not stamp:
+        return None
+    try:
+        door = datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+    if door.tzinfo is None:
+        door = door.replace(tzinfo=UTC)
+    return max(0.0, round((datetime.now(UTC) - door).total_seconds(), 1))
+
+
 def resolve(run_dir: Path, event: threading.Event | None = None) -> Abort:
     """WHO aborted the run this engine is closing out.
 
@@ -154,7 +186,8 @@ def resolve(run_dir: Path, event: threading.Event | None = None) -> Abort:
     mark = read_json(Path(run_dir) / MARK_FILE)
     if (isinstance(mark, dict) and mark.get("actor") in ACTORS
             and mark.get("pid") == os.getpid()):
-        return Abort(str(mark["actor"]), str(mark.get("reason") or ""))
+        return Abort(str(mark["actor"]), str(mark.get("reason") or ""),
+                     _unseen_s(mark.get("ts")))
     if _SIGNAL["actor"]:
         return Abort(_SIGNAL["actor"], _SIGNAL["reason"])
     if event is not None and event.is_set():

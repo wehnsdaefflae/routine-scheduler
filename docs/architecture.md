@@ -1970,6 +1970,14 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   vocabulary), so "count the aborts by actor" is a filter rather than a read of result.md. The
   mark is PID-STAMPED, because a resume reuses the run dir: a mark naming another process is not
   about this leg and reads `unknown`.
+  **HOW LONG it went unseen** rides both surfaces too, as `unseen_s` (F597): the door stamps its
+  own moment in the mark and the engine resolves the abort at close-out, so the interval that
+  made an abort unseen for 30-60 seconds unreproducible is now one subtraction in
+  `abortmark._unseen_s`. Only a door that left a stamp has one — a signal handler writes no file
+  and a parent's kill never leaves the process — and the field is DROPPED rather than filed as
+  `0`, because nothing measured is not the same claim as "the engine saw it instantly". It is
+  out of `Abort.__eq__` on purpose: the class is one resolved attribution, and two aborts naming
+  the same actor for the same reason are the same attribution however long each took to land.
 - **Cancelling the one CALL that is running**, without ending the run (F586, decided as D160-C):
   `POST /api/runs/{id}/cancel-action` with the turn, which the web records as control.json
   `cancel_action` — the one intent in that file the engine reads MID-turn, because it is blocked
