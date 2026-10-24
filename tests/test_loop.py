@@ -3105,10 +3105,10 @@ def test_subruns_action_reports_children(make_routine, scripted):
     assert "child summary" in rows[0]["summary_head"]
 
 
-def test_a_missing_child_refusal_names_the_action_that_lists_them():
+def test_a_missing_child_refusal_names_the_action_that_lists_them(tmp_path):
     """The not-found remedy, on the child side: `kill 3` and `wait n=3` for a child that does
-    not exist tell the run which action would have shown it. The parallel to a missing path
-    naming `read_file` on its parent directory — a refusal states the fact AND the way out.
+    not exist tell the run which action would have shown it — a refusal states the fact AND
+    the way out. ONE wording for both since F732, which also made the answer read the disk.
     """
     import threading
     from types import SimpleNamespace
@@ -3119,12 +3119,12 @@ def test_a_missing_child_refusal_names_the_action_that_lists_them():
                           done=threading.Event(), announced=False, collected_paths=(),
                           ctx=SimpleNamespace(turn=1))
     stub = SimpleNamespace(subruns={1: sub}, exit_event=threading.Event(),
-                           parent=SimpleNamespace(ctx=SimpleNamespace(depth=1)))
+                           parent=SimpleNamespace(ctx=SimpleNamespace(depth=1, run_dir=tmp_path)))
     err = SubrunManager.kill(stub, 3)["error"]
     assert "no sub-workflow 3" in err and "`subruns` action lists" in err
     err = SubrunManager.wait(stub, {"n": 3, "timeout_s": 0}, poll_s=0.01,
                              aborted=threading.Event())["error"]
-    assert "no such sub-workflow" in err and "`subruns` action lists" in err
+    assert "no sub-workflow 3" in err and "`subruns` action lists" in err
 
 
 def test_wait_timeout_reports_timed_out():
