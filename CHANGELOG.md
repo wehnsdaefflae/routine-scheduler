@@ -15,6 +15,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.449.0] — 2026-10-24
+
+### The util-stats snapshot is computed once, in the daemon (R1.3, `docs/designs.md` part (a))
+
+Every engine used to recompute one fleet-wide read model at run end — a library git walk, the
+whole durable usage stream and every un-counted transcript — to write a file **no engine reads**.
+The new `daemon/util_stats_watch.py` subscribes to the existing `EventBus`, wakes only on `run_*`,
+debounces (5 s quiet, 60 s cap), computes off the event loop and is guarded so a raise cannot end
+the listener; it is mounted in `web/appwiring.py`'s lifespan beside the Web Push listener, because
+the bus lives in `web/` and `daemon/scheduler.py` sits at its 466-line ceiling. No reader contract
+moved: `snapshot_path()`, the file shape, `/api/stats` computing live and the `util-stats` util as
+its only reader are untouched. **The speed win is negligible and is stated as such**: 0.225 s cold
+against the live homes × 23.6 root runs/day ≈ **5 s of CPU per day**. What justifies it is
+structural — one writer instead of N, and the per-run cost was the one that only grows. Two
+behaviour changes: `rsched run-once` no longer refreshes the snapshot by itself, and the file may
+lag a finish by up to 60 s.
+
+### How long an abort went UNSEEN is recorded (F597)
+
+An abort that goes unseen for 30-60 seconds was unreproducible, because nothing subtracted two
+moments that were both already known: the door stamps `runs/<ts>/abort.json` with its own `ts`
+before it signals (F751), and the engine resolves that mark at close-out. `Abort.unseen_s` is
+computed in `abortmark._unseen_s` and rides the finish event and the health row through the new
+`loopend.abort_fields`, so the actor fields and the interval cannot drift apart. It is **absent,
+not zero**, when no door stamped a moment (a signal handler writes no file, a parent's kill never
+leaves the process): nothing measured is a different claim from an instant abort. Out of
+`Abort.__eq__` on purpose — the class is one resolved attribution, and two aborts naming the same
+actor for the same reason are the same attribution however long each took to land.
+
+### A numbered answer to a numbered question grounds a goal (F731)
+
+The engine renders an options question as numbered picks — and told a run to lay its choices out
+that way — then the goal validator refused the run for the ambiguity the engine had built: *"the
+words '1.' are not in anything the person wrote to this run. Quote them verbatim"*. A routine that
+had correctly recorded an approval as a goal could not record it at all. **The finding's
+prescription would have fixed neither reported case, which measuring showed**: both live records
+(`vodafone-outage-claims` run `20261019-031230`, and `tv-show-tracker-seedbox-manager`'s from
+September) carry `"options": []` — their choices were numbered in the question's own *prose*,
+because a question that really carries `options` submits the option TEXT and needs no resolving.
+New `engine/goalpicks.py` therefore reads choices from `options` when present and from the
+question's numbered prose otherwise, in both answer-event shapes, skipping fenced code blocks (the
+measured question contains a ```js snippet whose first line begins `1 < r.length`). The grounding
+rule does not weaken: words nobody wrote, a pick of a number never offered, and a choice offered
+but not picked are all still refused. The latest pick of a repeated number wins, and a question
+numbering two different lists resolves to nothing rather than guessing.
+
+### A report addressed to a routine that no longer exists is counted apart (F738)
+
+`item_counts.counts()` takes `installed` and classifies an addressed report whose target is no
+routine this instance holds as `unroutable` — a fifth disjoint part of `counts.active` with its own
+chip beside the live count. Such a row can be drained by **nobody**, yet read as live work waiting
+on an owner. It is reported beside the count rather than returned to triage: re-routing would mean
+writing in a read model, would have to override the `to` the owner is derived from, and would push
+another routine's queued work into someone else's triage. Two corrections to the finding came out
+of building it — `grants-radar` was **archived, not deleted**, so the predicate had to be "no
+INSTALLED routine" (`registry.scan`, which skips `.archive/`) rather than "no routine in any
+home"; and this moves **zero rows today** (R2629 was folded into R2888), so the guard is
+prospective. A switched-off or retired target is deliberately not unroutable: it exists and can be
+switched back on.
+
+### `workflows.library`'s git pass-through is gone (C1.10)
+
+Its 7 production call sites call `libgit.commit` directly, every subject byte-identical, and
+`tests/test_libgit.py::test_no_pass_through_forwarder_stands_in_front_of_libgit_commit` holds the
+line. **The entry's premise was stale and the build corrected it**: all three wrappers were already
+one-line pass-throughs, so nothing bypassed libgit and the lock, the SIGTERM-first timeout and the
+`commit_failed` filing were in force everywhere. What this buys is indirection removal — a
+per-module `git_commit` hides which primitive a writer reached, and is where a divergent default
+would spread unseen. The red-first is therefore structural, not behavioural: the obvious
+behavioural test is green before the change and proves nothing. `library_docs` and `utils_lib`
+remain, named by the test as held back.
+
+### Removed
+
+- **`schedule_once`'s dead `expires_at`** (T3.5, the entry's own prescription). It was set by a
+  test and by nothing else — no API body, no `schedule_run` action and no console control could
+  produce one — so all it could do was drop a make-up fire nobody could see it drop. Gone from
+  `arm()`'s parameter and the record it writes, `describe()`'s passthrough, and the daemon
+  manager's expiry branch. The docs now say a one-shot **eventually** runs once however stale, and
+  that cancelling is how an armed one is dropped. The test that set the field becomes the one
+  pinning the new contract: a `fire_at` 30 days past still fires.
+
 ## [0.448.0] — 2026-10-24
 
 ### Fixed
