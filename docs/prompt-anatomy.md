@@ -273,7 +273,9 @@ past action as a `tool_use` of the action tool (id `rs_<index>`, its position in
 the bytes never change as the run grows) and the message after it as that call's `tool_result`,
 wording unchanged. A model reading its history as JSON TEXT wrote its next action as text too —
 which ends nothing — and chained a second; reading it as calls, its reply ends at its one call
-(5 of 5 live replays two actions before, 0 of 5 after). A message that is not exactly one JSON
+(5 of 5 live replays two actions before, 0 of 5 after). The one-call ask is a REQUEST, so a wire
+that ignores it can still send several: all of them reach the engine and run in wire order
+(`Completion.parsed_rest`, F754). A message that is not exactly one JSON
 object stays text, a forced route keeps text, and no signed thinking block is passed back — the API
 accepts a continuation without one.
 

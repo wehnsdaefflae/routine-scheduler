@@ -18,7 +18,7 @@ import json
 import time
 
 from ..endpoints.base import EndpointError, retry_base_delay
-from ..endpoints.base import fold_usage as base_fold
+from ..endpoints.usage import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import overflow, paramsalvage, turndebris, turntakeover, wrongturn
 from .actions import KIND_EXAMPLES, normalize_action, validate_action

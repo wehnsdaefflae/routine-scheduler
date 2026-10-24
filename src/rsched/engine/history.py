@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 
-from ..endpoints.base import fold_usage
+from ..endpoints.usage import fold_usage
 from . import enginenote
 from .compaction import turn_record
 from .observations import format_observation

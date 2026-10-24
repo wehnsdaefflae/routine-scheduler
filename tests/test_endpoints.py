@@ -927,7 +927,7 @@ def test_openrouter_cache_writes_are_folded_into_usage(monkeypatch):
     """`cache_read_share` is reads ÷ (reads + writes). With writes dropped it returns None
     for this whole endpoint and `cache_read_degraded` — the one signal separating a warm
     prefix from one re-written every turn — can never fire on an aggregator path."""
-    from rsched.endpoints.base import cache_read_share
+    from rsched.endpoints.usage import cache_read_share
 
     monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
         "choices": [{"message": {"content": "x"}}],
@@ -1142,7 +1142,7 @@ def test_anthropic_a_reply_carries_its_text_beside_its_call_and_the_first_of_two
     """The live shape behind R2443-R2445: a thinking Opus writes its FIRST action as JSON text
     and the next as the call. Both must reach the engine — the text action used to vanish here,
     and the call narrating it as done ran (engine/replyactions.py decides which runs). A wire
-    that ignores the one-call choice and sends two calls gets the FIRST, never the last."""
+    ignoring the one-call choice keeps BOTH, in order: `parsed` then `parsed_rest` (F754)."""
     first = {"say": "Adding the fields.", "kind": "edit_file", "path": "m.py",
              "anchor": "a", "replacement": "b"}
     second = {"say": "Fields added. Now reading the runner.", "kind": "read_file",
@@ -1159,4 +1159,4 @@ def test_anthropic_a_reply_carries_its_text_beside_its_call_and_the_first_of_two
     c = _anth().complete(MESSAGES, model="claude-opus-5", schema={"type": "object"})
     assert json.loads(c.text) == first and c.parsed == second
     c = _anth().complete(MESSAGES, model="claude-opus-5", schema={"type": "object"})
-    assert c.parsed == first
+    assert c.parsed == first and c.parsed_rest == [second]

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..config import RoutineConfig, ServerConfig
 from ..endpoints import EndpointRegistry
-from ..endpoints.base import fold_usage
+from ..endpoints.usage import fold_usage
 from ..ids import now_iso
 from ..ids import run_id as make_run_id
 from ..paths import atomic_write_json, read_json, resolve_rel

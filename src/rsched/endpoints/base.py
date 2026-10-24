@@ -70,6 +70,12 @@ class Completion:
 
     text: str                     # raw reply text ("" when only parsed content came back)
     parsed: dict | None = None    # object from the endpoint's native schema mode, if any
+    # The schema'd objects a reply carried AFTER `parsed`, in wire order — a reply that chains as
+    # several CALLS (F754); empty for a reply with one object or none. `parsed` stays exactly one
+    # object, which is what its ~30 readers mean by it; the rest live here, and
+    # `replyactions.reply_actions` folds them in after the text actions so chaining runs them in
+    # order. Dropping them was the R2443-R2445 false-claim shape on the call channel.
+    parsed_rest: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     provider: str = ""            # serving provider behind an aggregator (OpenRouter), if reported
     # Why generation stopped, VERBATIM from the provider (anthropic stop_reason, openai
@@ -90,26 +96,6 @@ class Completion:
     # `forced_reask` — what an unreadable `auto` reply carried — to the answer it got by asking
     # once more with the tool forced, a turn that ran at the proxy's default effort.
     stop_details: dict = field(default_factory=dict)
-
-
-def fold_usage(total: dict, delta: dict) -> None:
-    """Add one usage reading into a running total, IN PLACE, by the vocabulary above.
-
-    Four hand-rolled versions of this existed — the turn sum, the run context's accumulator,
-    the resumed-legs replay, and the per-completion fold — so growing the vocabulary meant
-    remembering four places. Dollars round to six places on every add, not once at the end:
-    totals are re-added across a resumed run's legs, where float error compounds.
-
-    Zero and absent are the same thing here, so a delta carrying no cache traffic and no cost
-    adds no key (an unpriced completion no `notional`). A total that must REPORT `in`/`out` —
-    a run's status.json — seeds them first: `{"in": 0, "out": 0}`, then fold.
-    """
-    for key in ("in", "out", "cached_in", "cache_write"):
-        if delta.get(key):
-            total[key] = total.get(key, 0) + int(delta[key])
-    for key in ("cost", "notional"):
-        if delta.get(key):
-            total[key] = round(total.get(key, 0.0) + float(delta[key]), 6)
 
 
 class ChatEndpoint(Protocol):
@@ -293,25 +279,6 @@ def _retry_after_seconds(resp: httpx.Response) -> float | None:
     except (TypeError, ValueError):
         return None
     return secs if secs > 0 else None
-
-
-def cache_read_share(usage: dict | None) -> float | None:
-    """Prompt-cache reads ÷ all cache traffic for one usage record — the ONE number that
-    separates a healthy append-only run from a broken one, and the only one that does.
-
-    Reads alone cannot: when a transport stops resuming its session, the static
-    system+tools prefix keeps hitting (so `cached_in` stays non-zero and volume looks
-    normal) while the whole conversation is re-WRITTEN every turn at 1.25x instead of
-    re-read at 0.1x. That is a 12.5x multiplier on the same work, and it ran unseen for
-    four days in September 2026 until a weekly subscription limit was exhausted.
-
-    None when the transport reports no cache traffic at all — an endpoint that does not
-    cache, or a run too short to have any. Absence is not a low share.
-    """
-    reads = int((usage or {}).get("cached_in") or 0)
-    writes = int((usage or {}).get("cache_write") or 0)
-    total = reads + writes
-    return reads / total if total else None
 
 
 def json_or_raise(resp, name: str) -> dict:

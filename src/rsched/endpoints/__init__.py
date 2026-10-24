@@ -19,9 +19,10 @@ from ..config import (
 )
 from . import failover, limits
 from .anthropic_api import AnthropicEndpoint
-from .base import ChatEndpoint, Completion, EndpointError, cache_read_share
+from .base import ChatEndpoint, Completion, EndpointError
 from .instrument import InstrumentedEndpoint
 from .openai_compat import OpenAICompatEndpoint
+from .usage import cache_read_share
 
 __all__ = ["ChatEndpoint", "Completion", "EndpointError", "EndpointRegistry",
            "InstrumentedEndpoint", "cache_read_share", "make_endpoint"]

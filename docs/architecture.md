@@ -322,8 +322,10 @@ Two kinds:
   once forced in the same call (`stop_details["forced_reask"]`), so the shape 0.372.0 met cannot
   cost a run. Past actions are SENT as calls of the action tool and their observations as the calls'
   results (`anthropic_messages.native_turns`, on `auto` only), so a reply ends at its one call;
-  should a reply still carry an action as text beside its call, the engine runs the FIRST and
-  names the rest back unexecuted (`engine/replyactions.py`). Message rendering — merging, media,
+  should a reply still carry actions as text beside its call — or several CALLS, which the
+  one-call ask cannot prevent (F754: `parsed` the first, `parsed_rest` the others in wire order)
+  — every one of them reaches the engine, which runs them in reply order
+  (`engine/replyactions.py` for the order, `engine/chain.py` for the run). Message rendering — merging, media,
   calls, cache markers — is `anthropic_messages.py`; `anthropic_api.py` is the transport. Effort via `output_config`. Every
   optional field a model may refuse — the forced `tool_choice`, `output_config`, `temperature`,
   the `cache_control` markers — is degraded on a 400 that names it, one field per 400 until the

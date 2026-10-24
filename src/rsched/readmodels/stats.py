@@ -3,7 +3,7 @@ across every run in the routines AND conversations homes, sliced by routine, mod
 endpoint, day, kind, and run-state. Cache reads and WRITES are both carried on every
 slice: the ratio between them is the only reading that distinguishes a healthy
 append-only run from one re-writing its whole conversation every turn (see
-`endpoints.base.cache_read_share`), and a slice is where a single bad endpoint shows.
+`endpoints.usage.cache_read_share`), and a slice is where a single bad endpoint shows.
 
 The filesystem (each run's status.json) is the source of truth: no database, and the
 roll-up itself is recomputed on every call — a routine dropped in appears on the next one,

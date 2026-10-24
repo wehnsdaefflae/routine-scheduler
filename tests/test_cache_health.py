@@ -12,7 +12,8 @@ import json
 
 from conftest import finish
 from helpers import health_events
-from rsched.endpoints.base import Completion, cache_read_share
+from rsched.endpoints.base import Completion
+from rsched.endpoints.usage import cache_read_share
 from rsched.engine.runtime import run_routine
 from test_loop import TS, _server, probe
 

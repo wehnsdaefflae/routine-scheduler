@@ -119,7 +119,10 @@ def reply_actions(completion) -> list[dict]:
         if not _is_action(obj):
             raise SchemaViolation([UNREADABLE_BESIDE_CALL])
         written = [obj]
-    return _distinct([*written, completion.parsed])
+    # `parsed_rest` is the calls a reply carried after its first (F754) — a reply that chains as
+    # CALLS rather than as text. Empty for every reply with one call or none.
+    rest = [c for c in completion.parsed_rest if _is_action(c)]
+    return _distinct([*written, completion.parsed, *rest])
 
 
 #: How much of an unexecuted action the run is shown again: enough to recognise it and re-emit it,

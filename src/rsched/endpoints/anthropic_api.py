@@ -30,8 +30,9 @@ it for a retry (`_degrade`). This adapter's KIND is a WIRE, not a provider: a su
 proxy speaks it while serving `gpt-*` ids, Haiku 4.5 still honours temperature, and the newest
 Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse forced tool use — on
 those the tool is still offered, on `auto` with at most one call (`_ONE_CALL_AT_MOST`: a reply's
-actions may chain, but they are READ in reply order — text blocks then the call — so one call
-keeps that order unambiguous), and the engine reads an action from a text reply too. So no
+actions may chain, but they are READ in reply order — text blocks then the calls — so one call
+keeps that order unambiguous; a wire ignoring the ask sends several and `_parse` keeps them ALL,
+in wire order, as `parsed` + `parsed_rest` — F754), and the engine reads a text reply too. So no
 field is sent blindly or dropped blindly: the model that rejects one says so, and pays a round
 trip per refused field.
 
@@ -40,10 +41,11 @@ thinking Opus 5 that reads its own history as JSON text writes its next action a
 which ends nothing — thinks on as though it had run, and makes the call for the one after: two
 actions in one reply, the second narrating the first as done. A schema'd call on `auto` therefore
 renders each past action as a `tool_use` of the action tool and the message after it as that
-call's `tool_result`, and a reply ends at its one call. `text` and `parsed` both still reach the
-engine, which runs a reply's actions in the order it wrote them (engine/replyactions.py for the
-order, engine/chain.py for the run) — the safety net under the rendering. Before 0.406.0 the
-engine read only `parsed`: the first action vanished and the second, narrating it, ran.
+call's `tool_result`, and a reply ends at its one call. `text`, `parsed` and `parsed_rest` all
+reach the engine, which runs a reply's actions in the order it wrote them (engine/replyactions.py
+for the order, engine/chain.py for the run) — the safety net under the rendering. Before 0.406.0
+the engine read only `parsed`: the first action vanished and the second, narrating it, ran — and
+a reply chaining as several CALLS lost all but the first the same way until F754.
 
 A reply no action can be read from — no `action` call with an object input, and no text — says
 what it DID carry: `stop_details["unread"]` lists its content blocks (each type, a tool call's
@@ -301,6 +303,7 @@ class AnthropicEndpoint:
         if again.parsed is None and not again.text.strip():
             return unread
         return Completion(text=again.text, parsed=again.parsed,
+                          parsed_rest=again.parsed_rest,
                           usage=_summed(unread.usage, again.usage),
                           stop_reason=again.stop_reason,
                           stop_details={**again.stop_details, "forced_reask": what})
@@ -316,18 +319,16 @@ class AnthropicEndpoint:
         calls = [b.get("input") for b in blocks
                  if b.get("type") == "tool_use" and b.get("name") == "action"]
         texts = [b.get("text", "") for b in blocks if b.get("type") == "text"]
-        if len(calls) > 1:
-            # `_ONE_CALL_AT_MOST` asks the API for at most one; a wire that drops the field
-            # gets the FIRST, and the others are DISCARDED HERE — `Completion.parsed` is one
-            # object, so they never reach `replyactions.reply_actions` and chaining (0.446.0)
-            # cannot run them. Not "the first is read because the engine runs one action":
-            # since 0.446.0 a reply's actions all run, in order, and actions written as TEXT
-            # do chain — only extra CALLS are lost, silently, at this parse. Carrying them
-            # means `parsed` holding a list, which is every adapter's shape: F754.
-            log.warning("%s: a reply carried %d action calls despite the one-call choice — "
-                        "the first is read, the other %d are DISCARDED (F754)",
-                        self.name, len(calls), len(calls) - 1)
-        parsed = calls[0] if calls and isinstance(calls[0], dict) else None
+        # `_ONE_CALL_AT_MOST` is a REQUEST, so a wire that drops the field sends several calls.
+        # Every readable one is kept — `parsed` the first, `parsed_rest` the rest, folded by
+        # `replyactions.reply_actions` after the text actions. Dropping the tail here (with a
+        # server-log warning no run reads) left the false-claim guard blind on this channel: F754.
+        objects = [c for c in calls if isinstance(c, dict)]
+        parsed = objects[0] if calls and isinstance(calls[0], dict) else None
+        rest = objects[1:] if parsed is not None else []
+        if rest:
+            log.info("%s: a reply chained %d action calls despite the one-call choice — all of "
+                     "them run, in wire order (F754)", self.name, len(objects))
         stop = str(data.get("stop_reason") or "")
         # stop_details is populated by the API only on stop_reason "refusal" — a dict
         # like {"type": "refusal", "category": "cyber"|…|null, "explanation": …} — and is
@@ -340,6 +341,7 @@ class AnthropicEndpoint:
         return Completion(
             text="\n".join(texts),
             parsed=parsed,
+            parsed_rest=rest,
             usage=_usage(data.get("usage") or {}),  # reads ~0.1x, writes ~1.25x
             stop_reason=stop,
             stop_details=details,
