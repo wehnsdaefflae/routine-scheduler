@@ -53,7 +53,11 @@ export function mountJobs(host, slug, { active = false } = {}) {
     const summary = t.last?.summary || "";
     return el("tr", { "data-job": t.id },
       el("td", {},
-        el("div", { class: "strong" }, t.title || t.id),
+        // A `<b>`, as the rail's twin of this row renders the same title (runjob.js:61): the
+        // class this line carried was `strong`, which NO stylesheet has ever had a rule for
+        // (R2885, tests/test_static_class_contract.py), so the job's title — the one thing
+        // the row is read for — rendered at body weight like the id line under it.
+        el("div", {}, el("b", {}, t.title || t.id)),
         el("div", { class: "muted small mono" }, `${t.id} · ${t.workspace}/`
           + (t.checks?.length ? ` · watched by ${t.checks.join(", ")}` : " · no gate check")
           + (t.origin ? ` · formerly the routine ${t.origin}` : ""))),

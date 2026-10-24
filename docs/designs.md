@@ -376,7 +376,10 @@ in 0.445.1 (`workflows/pipeline._budget`); what is left is this deletion.
 - A blob URL carries the console's ORIGIN: a new tab opens only through `components/blobtab.js`
   (`newTabHref`) — the rule behind 0.371.0's token-theft fix, nowhere in CLAUDE.md.
 - `tests/test_stylesheet_tokens.py` pins the palette tokens — name it beside the design-system
-  paragraph and the global-chrome gotcha.
+  paragraph and the global-chrome gotcha. DONE (R2885): the design-system paragraph now names
+  both halves — that test for the palette's inputs, `tests/test_static_class_contract.py` for
+  its output (every mounted class styled; a STATE class reachable where it is mounted, which is
+  what 0.399.2 cost).
 - Deploy: `~/.credentials` is optional (bundle and backup tolerate its absence);
   `tests/test_deploy_state.py` pins compose against `deploy/state-paths.sh`.
 
