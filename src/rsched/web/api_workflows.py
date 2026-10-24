@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from .. import libgit
 from ..paths import atomic_write
 from ..readmodels import library_reads
 from ..workflows import library
@@ -251,7 +252,7 @@ def delete_global_reminder(request: Request, rid: str) -> dict:
     they are each routine's own evidence about what fired, and they age out with the routine's
     state rather than with the library's copy.
     """
-    from .. import libgit, reminders
+    from .. import reminders
 
     server = request.app.state.server
     if not reminders.is_reminder_id(rid):
@@ -292,8 +293,8 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
         raise HTTPException(422, "; ".join(problems))
     rel = f"workflows/{slug}.py"
     atomic_write(home / rel, body.content.rstrip() + "\n")
-    library.git_commit(home, f"edit {rel} via web", routines_home=server.routines_home,
-                       paths=[rel])
+    libgit.commit(home, f"edit {rel} via web", routines_home=server.routines_home,
+                  paths=[rel])
     return {"ok": True, "head": library.head_commit(home)}
 
 
@@ -319,8 +320,8 @@ def delete_workflow(request: Request, slug: str) -> dict:
     if path is None:
         raise HTTPException(404, f"no workflow {slug!r}")
     path.unlink()
-    library.git_commit(home, f"delete workflows/{slug}.py via web",
-                       paths=[f"workflows/{slug}.py"],
-                       routines_home=request.app.state.server.routines_home)
+    libgit.commit(home, f"delete workflows/{slug}.py via web",
+                  paths=[f"workflows/{slug}.py"],
+                  routines_home=request.app.state.server.routines_home)
     return {"ok": True, "head": library.head_commit(home)}
 

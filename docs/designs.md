@@ -275,12 +275,21 @@ grandparent's fork can be misread. Record the whole lineage in the branch header
 
 ## Every git write goes through libgit (C1.10)
 
-**Problem.** `library_docs`, `utils_lib` and `workflows.library` each wrap `git commit` themselves
-(~20 call sites, e.g. `engine/authoring.py`). CLAUDE.md's rule: a git call goes through
-`libgit.git` / `libgit.commit` — SIGTERM-first, lock-aware, a failure filed.
+**Problem, CORRECTED while building the first increment.** All three wrappers were ALREADY
+one-line pass-throughs to `libgit.commit`, so nothing bypassed it: the lock, the SIGTERM-first
+timeout and the `commit_failed` filing were in force at every call site. What this entry buys is
+INDIRECTION REMOVAL — a per-module `git_commit` hides which primitive a writer reached and is
+where a divergent default (`routines_home=None`, an unscoped stage) would spread unseen — not
+coverage. The behavioural red-first the entry implied ("the lock is respected") is green before
+the change and proves nothing; the enforcing test is structural.
 
-**First increment.** Replace the wrapper with the most call sites by `libgit.commit(…,
-routines_home=…)`, keeping each message, with its tests.
+**SHIPPED (0.448.1):** `workflows.library`'s wrapper is gone, its 7 call sites converted, subjects
+byte-identical, and `tests/test_libgit.py::test_no_pass_through_forwarder_stands_in_front_of_libgit_commit`
+holds the line.
+
+**What remains.** `library_docs` and `utils_lib`, which the enforcing test names as held back.
+`utils_lib` is the expensive one: 7 direct test calls plus 7 monkeypatch seams
+(`test_loop`, `test_util_widening`, `test_run_approval`) move with it, so it is its own increment.
 
 ---
 

@@ -1,9 +1,15 @@
-"""Workflow library access: flat Python pattern files in a git repo, catalog derived live."""
+"""Workflow library access: flat Python pattern files in a git repo, catalog derived live.
+
+Reads only. A WRITER commits for itself — `libgit.commit(home, message, routines_home=…,
+paths=…)` (C1.10): this module held a `git_commit` that did nothing but return that call, and a
+pass-through in front of the lock-aware, SIGTERM-first, failure-filing primitive is a name a
+reader must follow and the place a divergent default would hide. `head_commit` and `git_log`
+stay because they ANSWER something about the library the caller cannot get from `libgit` alone.
+"""
 
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Sequence
 from pathlib import Path
 
 from .. import libgit
@@ -73,16 +79,6 @@ def head_commit(home: Path) -> str:
         return r.stdout.strip() if r.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         return ""
-
-
-def git_commit(home: Path, message: str, *, routines_home: Path | None,
-               paths: Sequence[str] | None = None) -> libgit.Commit:
-    """Commit a workflow/playbook change under the shared library-repo lock (see
-    libgit.commit); `paths` (relative to `home`, e.g. `workflows/<slug>.py`) scopes the stage
-    so a concurrent writer's commit can't sweep it. A failure is filed in
-    `routines_home`'s health stream.
-    """
-    return libgit.commit(home, message, routines_home=routines_home, paths=paths)
 
 
 def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[dict]:

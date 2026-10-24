@@ -1,7 +1,8 @@
 """Playbook library API: list (catalog), read MAIN.md + its on-demand detail files, lint-gated
 MAIN edits, delete. Playbooks are captured from conversations (Save/Update-playbook — see
 api_conversations.py) and reused to seed new ones; here they are browsed and hand-edited like any
-library doc. Git lives at the library root (workflows.library.*).
+library doc. Git lives at the library root: reads through `workflows.library`, writes through
+`libgit.commit` (C1.10).
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import playbooks
+from .. import libgit, playbooks
 from ..ids import is_slug
 from ..readmodels import library_reads
 from ..workflows import library
@@ -88,8 +89,8 @@ def put_playbook(request: Request, slug: str, body: PlaybookBody) -> dict:
     if problems:
         raise HTTPException(422, "; ".join(problems))
     playbooks.write_playbook(home, slug, main=body.content)
-    library.git_commit(home, f"edit playbook {slug} via web", paths=[f"playbooks/{slug}"],
-                       routines_home=request.app.state.server.routines_home)
+    libgit.commit(home, f"edit playbook {slug} via web", paths=[f"playbooks/{slug}"],
+                  routines_home=request.app.state.server.routines_home)
     return {"ok": True, "head": library.head_commit(home)}
 
 
@@ -98,6 +99,6 @@ def delete_playbook(request: Request, slug: str) -> dict:
     home = _home(request)
     if not playbooks.delete_playbook(home, _slug(slug)):
         raise HTTPException(404, f"no playbook {slug!r}")
-    library.git_commit(home, f"delete playbook {slug} via web", paths=[f"playbooks/{slug}"],
-                       routines_home=request.app.state.server.routines_home)
+    libgit.commit(home, f"delete playbook {slug} via web", paths=[f"playbooks/{slug}"],
+                  routines_home=request.app.state.server.routines_home)
     return {"ok": True, "head": library.head_commit(home)}
