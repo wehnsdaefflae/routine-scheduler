@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 from ..grants import CONFIG_FILE
 from ..paths import atomic_write, read_json
 from ..readmodels.statemap import STAGES_DIR
-from . import docread, fileformat, storeseal
+from . import docread, fileformat, grounding, storeseal
 from .finishline import FILE as FINISH_LINE
 from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
@@ -149,7 +149,8 @@ def _sniff(path: Path) -> tuple[int, bool]:
 
 def _binary_error(size: int) -> str:
     return (f"binary file ({size:,} bytes) — read_file shows text only; "
-            "view_image sees an image or PDF, a util or shell handles the rest")
+            "view_image sees an image or PDF, a util or shell handles the rest"
+            + grounding.REFUSAL_GROUNDS)
 
 
 def _refusal(rel_path: str, size: int, binary: bool) -> dict | None:
@@ -166,7 +167,8 @@ def _refusal(rel_path: str, size: int, binary: bool) -> dict | None:
     if size > READ_MAX_BYTES:
         return {"path": rel_path, "size": size,
                 "error": f"{size:,} bytes exceeds the read_file cap of {READ_MAX_BYTES:,} "
-                         "bytes — page it with shell (head / sed -n) or a util instead"}
+                         "bytes — page it with shell (head / sed -n) or a util instead"
+                         + grounding.REFUSAL_GROUNDS}
     return None
 
 
@@ -474,9 +476,7 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
                 and not path.is_relative_to(_own_dir(ctx))
                 and str(path) not in ctx.seen_paths):
             return {"kind": "write_file", "path": action["path"],
-                    "error": "this OVERWRITES an existing file this run has never read — "
-                             "read_file it first (then overwrite knowingly), or use "
-                             "edit_file with a verbatim anchor for a targeted change"}
+                    "error": grounding.OVERWRITE_REFUSAL}
         path.parent.mkdir(parents=True, exist_ok=True)
         data = action["content"]
         if not isinstance(data, str):

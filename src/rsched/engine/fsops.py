@@ -17,6 +17,7 @@ import shutil
 from pathlib import Path
 
 from ..paths import expand
+from . import grounding
 from .fileops import _own_dir, _write_gate
 from .run_context import RunContext, resolve_action_path
 
@@ -60,10 +61,7 @@ def _unseen_destruction(ctx: RunContext, resolved, what: str) -> str | None:
     if (resolved.is_symlink() or resolved.is_relative_to(_own_dir(ctx))
             or str(resolved) in ctx.seen_paths):
         return None
-    return (f"this {what} a path outside the routine's own dir that this run has never "
-            "read — read_file it first (a directory reads as its listing, a binary or "
-            "oversized file as its size: both count), then remove it knowingly, so a stray "
-            "call cannot destroy something sight-unseen")
+    return grounding.destruction_refusal(what)
 
 
 def do_delete(action: dict, ctx: RunContext) -> dict:
