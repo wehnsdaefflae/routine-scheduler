@@ -503,7 +503,15 @@ returns either changes the ledger and ends `GOALS NOW:` plus the whole list (`�
   injection (never `report`, `background`, `branch` or another machine `via`, never an engine
   note or a slash command), an answer. A `change` or `drop` needs words written AFTER the ones the
   goal came from: `…in anything the person wrote AFTER the words this goal came from — an earlier
-  sentence cannot be the reason a later request changed…`.
+  sentence cannot be the reason a later request changed…`. A reply that is a bare numbered PICK
+  (`1.`, `2`, `3)`) grounds a `set`/`add` on the WORDS of the choice it picked, and the goal is
+  recorded carrying those words (`goals.person_texts` → `engine/goalpicks.py`, F731): the engine
+  renders an options question as numbered picks — `options` as buttons labelled `<n> · <option>`,
+  or a numbered list the asking run wrote into the question's own prose — so refusing the
+  keystroke it invited blamed the run for the engine's own ambiguity. The choices come from the
+  question's `options` when it carried them, else from its numbered prose list; a number no
+  choice the person picked carries is refused exactly as any other words he never wrote, and the
+  refusal names what the model quoted, never a resolved choice.
 - `OBSERVATION (goal check): b1 stays OPEN — a check of your own transcript does not support it:
   <objection> …` — `check` meets the finish's judge (`verifier.refuted`) on that one line, at most
   once per line per guard scope (the challenge is recorded as `claims_unsupported` and shares
