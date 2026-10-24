@@ -15,6 +15,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.448.0] — 2026-10-24
+
+### Fixed
+
+- **A reply that chains as several CALLS now reaches the engine whole** (F754). The Anthropic
+  adapter kept `calls[0]` and dropped every later action call with a `log.warning` no run reads.
+  Since 0.446.0 a reply's actions all RUN (`engine/chain.py`), so what was lost was a chain
+  arriving as calls: the extra actions vanished at the wire with no `unexecuted_note`, and the
+  model's narration claimed effects for actions nobody ran — the R2443-R2445 false-claim shape,
+  surviving on one channel. `Completion` now carries them: `parsed` the first object,
+  `parsed_rest` the rest in wire order, folded by `replyactions.reply_actions` after the reply's
+  text actions so the chain runs them in reply order. The forced re-ask carries them through too.
+  A stringly first call is still UNREADABLE and still re-asks — nothing is promoted into first
+  place, because the order is what the model meant. `endpoints/base.py` was at its ratchet ceiling
+  with zero slack, so the pure usage-dict arithmetic (`fold_usage`, `cache_read_share`) moved next
+  door into the new `endpoints/usage.py`, exactly as `media_types.py` once did: 383 → 350 lines,
+  back under the house bar, ceiling entry dropped for good. One test had to change rather than the
+  code: `tests/test_util_guard.py` handed `action_candidate` a `SimpleNamespace` stand-in built
+  from the two `Completion` fields it knew about, and reading a third raised there — found by the
+  release gate, and precisely the defect class R2883 (below) ships a check for, except that its
+  conformance test covers engine objects and not `Completion`.
+- **A refusal that grounds a path now says so** (R2879). A `read_file` refused for being binary
+  or oversized adds the path to `seen_paths` on the refusal itself (0.339.0), so the move, delete
+  or overwrite that follows is ALLOWED — but the refusal never said it, so a run that did the
+  right sequence read it as a dead end, spent a turn confused and reported the gate as a defect.
+  No behaviour changed; the words did. Four messages across `fileops.py` and `fsops.py` depend on
+  one fact — WHICH looks count — so the fact and its wording moved into the new
+  `engine/grounding.py` and all four now state it from one place, with a test pinning that they
+  cannot drift apart again.
+- **The gate cell says it is the gate on a phone.** R2764's new gate `<td>` was marked `inline`
+  but declared no `data-label`, which `base.css` renders as the cell's header once the runs table
+  stacks below 860px — so at phone width the gate chip ("skipped") sat on the same line as the
+  state chip ("finished") with nothing saying which was which. Red first in the browser at
+  390×844: `getComputedStyle(td, '::before').content` read `none` before and `"gate "` after.
+- **Two console classes that carried meaning and no style** (found by the new class contract
+  below): `unservable` (`fileactivity.js`) had no rule at all, so a path the console cannot serve
+  rendered in exactly the ink of one it can, and `strong` (`jobs-panel.js`) was dead, so a job
+  title rendered at body weight where its rail twin uses `<b>`.
+
+### Added
+
+- **One conformance test asserts that every attribute a test double ASSIGNS exists on the real
+  class** (R2883, decided 2026-10-10). F644 found `engine/ladder.py` dispatching through
+  `loop.subs` where the real attribute is `loop.subruns` — "a rung has never judged anything" —
+  and the ladder's own tests passed because their fake loop defined `subs` to match the caller: a
+  hand-built double's attribute surface is authored by the test from the same misreading that
+  produced the calling code. `tests/test_double_conformance.py` reads the suite's own source with
+  `ast`, never importing it, and checks 126 doubles of four impersonated classes (34 `loop`, 72
+  `ctx`, 17 `transcript`, 3 `budgets`) against surfaces read from class annotations, class
+  assignments, `self.x` in their own methods and collaborator `loop.x =` across `src/` — `dir()`
+  alone has no `subruns`. Coverage floors make a broken detector red rather than vacuously green.
+  No test was rewritten, no double replaced, `SimpleNamespace` is not banned. Known limits:
+  detection is by NAME, so ~126 of ~208 namespace doubles are unchecked, only four classes are
+  covered, and `Completion` is not among them — which is how F754's stand-in got through.
+- **Every governable field the settings recommender may propose is now checked or decided**
+  (R2884, decided 2026-10-10). `_semantic_problem` validated 4 of `GOVERNABLE`'s 23 keys while
+  both values the operator actually hit (`deliberation`, `capabilities.confirm`) have validators
+  on the accept route it never calls — and the accept is whole-draft, so one refused field 400s
+  every other change the person kept. `tests/test_recommend_coverage.py` requires every key to be
+  semantically checked or on a commented `NO_SEMANTIC_CHECK` allowlist with its reason, forbids
+  overlap, refuses an allowlist entry that is not governable, and lets the allowlist only SHRINK.
+  The checked set is read from the CODE — `_semantic_problem`'s `if` chain became the
+  `semantic_checks()` dispatch table it dispatches on — so the test is not a second hand-kept
+  list agreeing with itself. 18 fields were uncovered (not 19: `efforts` was added after the
+  2026-10-10 measurement); 13 of them name a validator the recommender does not consult.
+  Behaviour is unchanged. Known and deliberately not papered over: `CHANGES_SCHEMA` types
+  `value_json` as free text, so no closed vocabulary is an `enum` in the decoded schema today.
+- **Every class a JS module mounts is styled, and a STATE class must be REACHABLE from the module
+  that mounts it** (R2885, decided 2026-10-10). Nothing checked that two states meaning opposite
+  things LOOK different: `tests/test_stylesheet_tokens.py` machine-checks the palette's INPUTS and
+  nothing checked its output, which is how 0.399.2 shipped `ladderstrip.js` emitting a bare `bad`
+  — so a rung that BROKE rendered in exactly the ink of a rung that declined to run. The accepted
+  increment was to widen the existing class contract's `conv-*`/`pane-*` scope; measuring it
+  showed that would NOT have caught 0.399.2, because `bad` IS named in CSS (by `.test-result.bad`
+  and two others) — none of which that module can match. So `tests/test_static_class_contract.py`
+  ships the widened scope (rule A: every mounted class token is named by some rule in one of the
+  five stylesheets, waivable by an explicit allowlist — 44 of 746 tokens, four named reasons) AND
+  the rule the prefix scope could not express (rule B: a state class must be reachable from its
+  mounting module — never waivable). Proven by reproducing 0.399.2's defect with no throwaway:
+  rule A passed, rule B red naming all three tokens and the rules that cannot match them. A
+  stale-waiver test reds on any allowlist entry no longer mounted or since styled and forbids
+  waiving a state word. Shortfall, named: rule B proves a state class can MATCH a rule, not that
+  two states' computed colours differ — the later browser increment still stands — and the
+  41-word severity vocabulary is hand-maintained, so a state word added later goes unchecked
+  until someone adds it.
+
 ## [0.447.3] — 2026-10-24
 
 ### Fixed
