@@ -11,6 +11,7 @@ import pytest
 
 from conftest import finish
 from rsched import bootstrap, utils_lib
+from rsched.endpoints.base import Completion
 from rsched.engine.authoring import recreate_denial
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
@@ -82,7 +83,10 @@ def test_denial_rides_the_schema_retry_cycle(tmp_path):
     from rsched.engine.completion import action_candidate
 
     _seed_deleted_util(tmp_path)
-    completion = SimpleNamespace(parsed=_wu("doomed"), text="")
+    # A REAL Completion, not a hand-built stand-in: `reply_actions` reads every field an
+    # endpoint fills (`parsed_rest` since F754), and a namespace with the two fields this test
+    # happened to know about broke the moment the engine read a third (R2883's whole argument).
+    completion = Completion(parsed=_wu("doomed"), text="")
     candidate, problems = action_candidate(_loop(tmp_path), completion)
     assert candidate["kind"] == "write_util"
     assert problems and "DELETED" in problems[0]
