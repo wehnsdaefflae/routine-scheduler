@@ -89,7 +89,7 @@ def spool_dir(routines_home: Path, slug: str) -> Path:
 
 
 def arm(routines_home: Path, slug: str, *, fire_at: datetime, reason: str,
-        requested_by: str, expires_at: datetime | None = None) -> dict:
+        requested_by: str) -> dict:
     """Record one armed one-shot durably (atomic). Returns the stored record (with its id).
     `fire_at` must already be an aware UTC instant (see parse_fire_at).
     """
@@ -99,7 +99,6 @@ def arm(routines_home: Path, slug: str, *, fire_at: datetime, reason: str,
         "reason": str(reason or ""),
         "requested_by": str(requested_by or ""),
         "created": now_iso(),
-        "expires_at": expires_at.astimezone(UTC).isoformat() if expires_at else None,
     }
     spool.write(routines_home, "schedule-once", slug, rec, name=f"req-{rec['id']}.json")
     return rec
@@ -161,8 +160,7 @@ def describe(routines_home: Path, slug: str) -> dict:
             armed.append({"id": str(r.get("id")), "fire_at": str(r.get("fire_at") or ""),
                           "reason": str(r.get("reason") or ""),
                           "requested_by": str(r.get("requested_by") or ""),
-                          "created": str(r.get("created") or ""),
-                          "expires_at": r.get("expires_at")})
+                          "created": str(r.get("created") or "")})
     armed.sort(key=lambda a: str(a["fire_at"]))
     state = read_state(routines_home, slug)
     return {"armed": armed,

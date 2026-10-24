@@ -49,8 +49,7 @@ gated engine action may write, and the daemon consumes.
   "fire_at": "2026-07-22T03:00:00+00:00", // absolute UTC instant (aware)
   "reason": "re-check BahnBonus seat availability",
   "requested_by": "self-audit:20260719-101727",  // or "ui"
-  "created": "2026-07-19T10:30:00+00:00",
-  "expires_at": null                      // optional: drop instead of fire if past this
+  "created": "2026-07-19T10:30:00+00:00"
 }
 ```
 
@@ -86,8 +85,9 @@ the `Scheduler` after the cron loop and beside `triggers.tick` (`daemon/schedule
 
 **Missed while the daemon was down:** a `fire_at` already past at boot is still on disk →
 it fires on the first tick (a make-up fire — desirable for a one-shot; the point is it
-*eventually* runs once). The manager also drops a request past an optional `expires_at`
-instead of firing it — but neither the API nor the `schedule_run` action can set one today.
+*eventually* runs once), however stale it has become. An `expires_at` field once bounded that
+staleness, but no caller set it and no surface showed it, so T3.5 deleted it rather than build
+a console for it: cancel an armed one-shot you no longer want, which the API and the page do.
 
 **When it may fire.** `fire_at` is an ISO-8601 instant (naive reads as UTC) or an offset from
 now (`+3d`, `+2h`, `+30m`, `+45s`), and must lie in the future and at most a year out
@@ -148,7 +148,7 @@ is a **new engine action** the engine executes un-sandboxed, exactly like `write
 
 - **Unit:** spool read/write/consume; `OneShotManager.tick` fires when due, defers on
   active/draining, consumes on fire, drops on a routine that is missing, off or retired,
-  make-up-fires a past req at boot, honours `expires_at`.
+  make-up-fires a past req at boot however stale (nothing bounds that — T3.5).
 - **Action:** `validate_action` for `schedule_run` (bad slug, past `fire_at`, empty reason);
   grants gating (denied without `scheduling`).
 - **Web + UI:** the three endpoints; a `tests/ui/` Playwright flow (arm → appears → cancel →

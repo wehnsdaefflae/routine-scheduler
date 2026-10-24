@@ -9,9 +9,9 @@ stay the daemon's job, exactly as for cron and trigger fires.
 AUTO-DEACTIVATE = CONSUME: on a successful fire the manager DELETES the request file. The
 armed file is gone, so nothing can re-fire it — that IS the non-repeating guarantee (no
 routine.yaml rewrite, no self-disabling cron). A make-up fire is free: a `fire_at` already
-past at boot is still on disk, so it fires on the first tick (a one-shot's point is that it
-*eventually* runs once); `expires_at` bounds that staleness — past it, the request is dropped
-instead of fired.
+past at boot is still on disk, so it fires on the first tick — a one-shot's point is that it
+*eventually* runs once, and nothing bounds that staleness. (An `expires_at` field once did,
+set by no caller and exposed nowhere; T3.5 deleted it rather than build a console for it.)
 
 Delivery is crash-safe: the reason is written as a DETERMINISTIC inbox message
 (msg-once-<id>.json) before the request is consumed, so a crash between injection and unlink
@@ -72,8 +72,8 @@ class OneShotManager:
             log.exception("schedule-once tick failed")
 
     def _due_request(self, slug: str, paths: list[Path]) -> tuple[Path, dict] | None:
-        """The earliest-due armed request, dropping corrupt/expired files as it goes (an
-        unreadable request would otherwise be rescanned every 5s forever).
+        """The earliest-due armed request, dropping corrupt files as it goes (an unreadable
+        request would otherwise be rescanned every 5s forever).
         """
         now = datetime.now(UTC)
         due: list[tuple[Path, dict, datetime]] = []
@@ -82,11 +82,6 @@ class OneShotManager:
             if not rec:
                 spool.drop([path], what="schedule-once requests", slug=slug,
                            reason="unreadable request file")
-                continue
-            exp = _parse(rec.get("expires_at")) if rec.get("expires_at") else None
-            if exp is not None and exp <= now:
-                spool.drop([path], what="schedule-once requests", slug=slug,
-                           reason="expired before firing")
                 continue
             fire_at = _parse(rec.get("fire_at"))
             if fire_at is None:
