@@ -242,10 +242,22 @@ def weekly_cron_at(moment, tz: str = "UTC") -> str:
 
 def mock_proxy(monkeypatch, handler) -> None:
     """Send every request the CLIProxy management client makes to `handler` instead
-    (an httpx MockTransport handler)."""
-    factory = httpx.Client
-    monkeypatch.setattr(cliproxy_mgmt.httpx, "Client", lambda **kw: factory(
+    (an httpx MockTransport handler).
+
+    RE-ENTRANT (F755): a second call in the same test RE-AIMS the mock instead of wrapping
+    it. It used to read `httpx.Client` off the module it had already patched, so the second
+    lambda called the first one with `transport=` — which `httpx.Client` had already been
+    given — and the resulting `TypeError: got multiple values for keyword argument
+    'transport'` surfaced as "could not reach the proxy's management API", a sentence about
+    the network describing a bug in the test. `_REAL_CLIENT` is captured once at import, so
+    every call builds a client from the real class.
+    """
+    monkeypatch.setattr(cliproxy_mgmt.httpx, "Client", lambda **kw: _REAL_CLIENT(
         transport=httpx.MockTransport(handler), **kw))
+
+
+#: The unpatched `httpx.Client`, bound before any test can monkeypatch it — see `mock_proxy`.
+_REAL_CLIENT = httpx.Client
 
 
 #: A `create_routine` `produces` field that settles an outcome contract (engine/outcome_words.py).

@@ -244,3 +244,24 @@ def test_complete_refuses_a_bad_paste_before_any_request(proxy, monkeypatch):
     assert not out["ok"] and "different sign-in attempt" in out["error"]
     out = cliproxy_login.complete(proxy, "bogus", "st-1", "abc")
     assert not out["ok"] and "unknown provider" in out["error"]
+
+
+# ---- the helper itself --------------------------------------------------------------------
+
+
+def test_mocking_the_proxy_twice_re_aims_it_instead_of_wrapping_it(proxy, monkeypatch):
+    """F755: a second `mock_proxy` in one test used to wrap the mock it had already
+    installed, so the inner call got `transport=` twice. The TypeError surfaced as
+    "could not reach the proxy's management API" — a sentence about the network standing in
+    for a bug in the test — which is why two test files carry comments warning authors off
+    the second call instead of it simply working."""
+    mock_proxy(monkeypatch, lambda request: httpx.Response(200, json={"files": [
+        {"name": "claude-first.json", "provider": "claude", "email": "first@example.org"}]}))
+    first = cliproxy_login.accounts(proxy)
+    assert first["ok"] and [a["label"] for a in first["accounts"]] == ["first@example.org"]
+
+    mock_proxy(monkeypatch, lambda request: httpx.Response(200, json={"files": [
+        {"name": "claude-second.json", "provider": "claude", "email": "second@example.org"}]}))
+    second = cliproxy_login.accounts(proxy)
+    assert second["ok"], second.get("error")      # red before the fix: TypeError -> not ok
+    assert [a["label"] for a in second["accounts"]] == ["second@example.org"]

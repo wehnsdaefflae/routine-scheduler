@@ -82,10 +82,16 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
             # run, whose boot digest presents it with full context.
             continue
         qfile = pending / f"{qid}.json"
-        q = read_json(qfile)
-        if not isinstance(q, dict):
-            # No matching pending question — the answer belongs to someone else (e.g. a
-            # blocking ask later in this very run). Leave it alone.
+        raw = read_json(qfile)
+        was_pending = isinstance(raw, dict)
+        # F763: no pending record does NOT mean no question — an answer filed after a run
+        # consumed the first one has had its record unlinked already, and skipping it here is
+        # what left eight answers unread across the fleet. `_reanswered` recovers the ask from
+        # the durable archive; None means nothing was ever asked under this qid.
+        q = raw if isinstance(raw, dict) else _reanswered(routine_dir, qid)
+        if q is None:
+            # The answer belongs to someone else (e.g. a blocking ask later in this very run,
+            # whose record lives in the run's status.json). Leave it alone.
             continue
         pair = {"qid": qid, "question": q.get("question", "?"), "answer": str(obj["text"])}
         # R2778: and whether the `config_patch` the question carried was APPLIED. The run
@@ -107,11 +113,38 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
             pair["revised"] = True
         _archive_answer(routine_dir, q, obj)
         _consume(path, consumed_dir)
-        try:
-            qfile.unlink()
-        except OSError:
-            pass
+        if was_pending:
+            try:
+                qfile.unlink()
+            except OSError:
+                pass
     return pairs
+
+
+def _reanswered(routine_dir: Path, qid: str) -> dict | None:
+    """The ASK behind an answer whose pending record is already gone (F763), from the
+    durable archive — or None when nothing was ever asked under this qid.
+
+    A pending record is unlinked the moment a run consumes its answer. An answer filed
+    AFTER that (the operator answering the same card again, or the Decisions page's own
+    catalog serving a record a boot consumed seconds earlier) had nothing left to match, so
+    the loop skipped it and no run ever read it: eight such files were sitting across the
+    fleet when this was found, the oldest 41 days and 15 runs old, including two where the
+    second answer was the SPECIFIC one (`config-optimizer` q-20261009-020522-41, archived
+    answer "approved & applied the proposed config change" at 04:41:29, inbox answer
+    "Apply — add the 7-day heartbeat" at 04:41:37). A later answer is the operator's latest
+    word, which is precisely what must reach the run.
+
+    The archive is the same source `revise_answer` re-queues from, and the pair is marked
+    `revised` by the caller's own `obj.get("revised")` only when the writer said so — this
+    path does not invent that claim.
+    """
+    archived = read_json(_answered_dir(routine_dir) / f"{qid}.json")
+    if not isinstance(archived, dict) or not archived.get("question"):
+        return None
+    return {k: v for k, v in archived.items()
+            if k not in ("answered", "answer", "answer_source", "answered_ts",
+                         "consumed", "first_consumed", "revised", "decision")}
 
 
 def _answered_dir(routine_dir: Path) -> Path:

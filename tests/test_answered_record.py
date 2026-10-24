@@ -114,3 +114,47 @@ def test_an_answer_still_waiting_is_revised_in_place(tmp_path):
 
     pairs = inbox.collect_deferred_answers(rd, tmp_path / "run" / "consumed")
     assert [p["answer"] for p in pairs] == ["second"]
+
+
+def test_a_second_answer_after_consumption_still_reaches_the_next_run(tmp_path):
+    """F763 — the operator answers a card AGAIN after a run already took the first answer.
+
+    The pending record is gone by then, so the loop used to skip the new file forever
+    ("the answer belongs to someone else … Leave it alone") and nothing anywhere said so.
+    Eight such files were sitting across the fleet when this was found, the oldest 41 days
+    and 15 runs old; in two of them the SECOND answer was the specific one — the first said
+    "approved & applied the proposed config change", the unread one said "Apply — add the
+    7-day heartbeat". A later answer is the operator's latest word.
+    """
+    rd = tmp_path / "self-audit"
+    (rd / "questions" / "pending").mkdir(parents=True)
+    _ask(rd, "q-1", "Which one?", ["Apply — add the 7-day heartbeat", "Leave it"])
+    _answer(rd, "q-1", "approved & applied the proposed config change")
+    assert len(inbox.collect_deferred_answers(rd, tmp_path / "run1" / "consumed")) == 1
+    assert not (rd / "questions" / "pending" / "q-1.json").exists()   # consumed, as designed
+
+    _answer(rd, "q-1", "Apply — add the 7-day heartbeat")             # he clicks the option
+    pairs = inbox.collect_deferred_answers(rd, tmp_path / "run2" / "consumed")
+
+    assert [p["answer"] for p in pairs] == ["Apply — add the 7-day heartbeat"]
+    assert pairs[0]["question"] == "Which one?"          # the ask came back from the archive
+    assert not (rd / "inbox" / "answer-q-1.json").exists()            # and it is drained
+    settled = inbox.answered_questions(rd)
+    assert len(settled) == 1                             # still ONE row, carrying the latest
+    assert settled[0]["answer"] == "Apply — add the 7-day heartbeat"
+    assert settled[0]["revised"] is True                 # amended, with the original's time
+    assert settled[0]["first_consumed"]
+
+
+def test_an_answer_for_a_question_nobody_ever_asked_is_left_alone(tmp_path):
+    """The control for F763: reconstruction reads the ARCHIVE, so an answer with neither a
+    pending record nor an archived ask is still not invented into a pair — that file belongs
+    to a blocking ask whose record lives in the run's status.json, and consuming it here
+    would take an answer the asking run is parked waiting for.
+    """
+    rd = tmp_path / "self-audit"
+    (rd / "questions" / "pending").mkdir(parents=True)
+    _answer(rd, "q-blocking", "yes")
+
+    assert inbox.collect_deferred_answers(rd, tmp_path / "run" / "consumed") == []
+    assert (rd / "inbox" / "answer-q-blocking.json").exists()         # untouched

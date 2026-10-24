@@ -15,6 +15,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.450.1] — 2026-10-25
+
+### An answer filed after a run consumed the first one reaches the next run (F763)
+
+**Eight operator answers were sitting unread across the fleet, the oldest 41.6 days and 15 runs
+old.** A pending question record is unlinked the moment a run consumes its answer
+(`engine/inbox_questions.py:117`). An answer filed AFTER that — the operator answering the same
+card again, or the Decisions page serving a record a boot consumed seconds earlier — had no
+pending record left to match, so `collect_deferred_answers` skipped it with *"the answer belongs
+to someone else … Leave it alone"* and **no run would ever read it**. The route that files the
+answer (`web/api_questions._file_answer`) writes the file unconditionally and returns `ok`, so
+nothing on any surface said the answer had gone nowhere.
+
+The specimen that shows it is not theoretical, in `config-optimizer`:
+`questions/answered/q-20261009-020522-41.json` carries `consumed: 2026-10-09T04:41:29+02:00`
+with the answer *"approved & applied the proposed config change"*, while
+`inbox/answer-q-20261009-020522-41.json` is stamped **04:41:37 — eight seconds later** — and
+says *"Apply — add the 7-day heartbeat"*. He answered generically, a boot took it, he then
+clicked the actual option, and the specific answer has been unreadable for 15.8 days. Same for
+`-42` (*"Apply — raise max_turns to 150"*). The oldest, `q-20260911-032048-121`, has no archive
+either, so it is invisible on the Decisions page as well.
+
+`collect_deferred_answers` now reconstructs the ASK from the durable archive
+(`_reanswered`) when the pending record is gone, which is the same source and the same field
+filter `revise_answer` has used since F525 — so a later answer is delivered, archived over the
+original row (keeping its `first_consumed`) and marked `revised`. Fixed in the CONSUMER rather
+than in the web route on purpose: the loss happens however the file came to be written.
+
+The control is pinned too — an answer with neither a pending record NOR an archived ask is
+still left alone, because that file belongs to a blocking ask whose record lives in the run's
+`status.json`, and taking it here would steal the answer a parked run is waiting for.
+
+### `mock_proxy` is re-entrant, so a second call re-aims the mock instead of wrapping it (F755)
+
+`tests/helpers.py::mock_proxy` read `httpx.Client` off the module it had already patched, so a
+second call in one test wrapped the first mock and passed `transport=` twice. The resulting
+`TypeError` was caught by `cliproxy_login`'s own `except (httpx.HTTPError, ValueError,
+TypeError)` and surfaced as **"Could not reach the proxy's management API"** — a sentence about
+the network standing in for a bug in the test. Two test files carry comments warning authors off
+the second call (`test_cliproxy_login.py:230`, `test_endpoint_watch.py:247`) instead of it simply
+working. The real class is now captured once at import.
+
 ## [0.450.0] — 2026-10-24
 
 ### A resumed run no longer loses the children it started (F732)
