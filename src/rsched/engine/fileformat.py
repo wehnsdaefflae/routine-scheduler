@@ -97,3 +97,41 @@ def check_after(path: Path, before: str, after: str) -> str | None:
             "UNCHANGED on disk. Re-read the region with read_file and fix the replacement; "
             "if your reply was truncated or garbled, write the smaller edit you actually "
             "meant rather than re-sending the same text.")
+
+
+def unparsed(path: Path, text: str) -> dict[str, str]:
+    """`{"unparsed": why}` when a body that should parse does not — else `{}` (F588).
+
+    write_file reports the length of the payload it received, and Python's `write()` is
+    all-or-nothing: bytes-written EQUALS that length whenever the write succeeded. So the
+    numbers in the observation cannot distinguish a complete body from one the model's
+    generation stopped inside — "report the bytes written" is, for a local file, the same
+    number twice. The BODY can tell them apart, for a format whose whole point is to parse.
+
+    Deliberately a NOTE, not a refusal. `check_after` above refuses what it can prove was
+    good before; everything it exempts on purpose — a NEW file, a file already broken, an
+    appended record — is exactly where a truncated generation lands, and a run that reads
+    "this file does not parse" on the turn it wrote it can act on it in that turn.
+
+    A whole-document format is judged ON DISK after the write, so an append to one and a
+    repair that did not repair are both caught, and the verdict is a measurement of what
+    landed rather than of what was handed in. A record-per-line file is judged on the body
+    just written: each line stands alone, so re-reading a whole ledger per append buys
+    nothing.
+    """
+    suffix = path.suffix.lower()
+    if suffix in _RECORD_PER_LINE:
+        for n, line in enumerate(text.splitlines(), 1):
+            if line.strip() and (bad := _problem(line, ".json")) is not None:
+                return {"unparsed": f"has a record that does not parse as JSON (line {n} of "
+                                    f"what was just written): {bad}"}
+        return {}
+    if suffix not in _PARSERS:
+        return {}
+    try:
+        whole = path.read_text(encoding="utf-8")
+    except OSError:                      # unreadable right after writing it: nothing to say
+        return {}
+    problem = _problem(whole, suffix)
+    _parse, name = _PARSERS[suffix]
+    return {"unparsed": f"does not parse as {name}: {problem}"} if problem else {}
