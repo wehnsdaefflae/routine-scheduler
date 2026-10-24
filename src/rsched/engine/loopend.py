@@ -118,6 +118,23 @@ def aborted(loop) -> str:
     return finish_run(loop, "aborted", mark.sentence, abort=mark)
 
 
+def abort_fields(abort: abortmark.Abort) -> dict[str, object]:
+    """What an abort files as FIELDS, built once for both surfaces that carry them.
+
+    `actor` (who) and `cause` (the health stream's word for them) are F751's: "count the aborts
+    by actor" has to be answerable by a filter, not by reading result.md. `unseen_s` is F597's —
+    how long the abort went unseen between the door's stamp and the engine resolving it, which
+    is what made an abort unseen for 30-60 seconds unreproducible. It is DROPPED when nothing
+    measured it (a signal handler leaves no file, a parent's kill never leaves the process), and
+    `log_health_event` drops a None anyway: a row without the key says nobody measured, where a
+    0 would say the engine was instant.
+    """
+    fields: dict[str, object] = {"actor": abort.actor, "cause": abort.cause}
+    if abort.unseen_s is not None:
+        fields["unseen_s"] = abort.unseen_s
+    return fields
+
+
 def finish_run(loop, status: str, summary: str, *, authored: bool = False,
                reply_to: str | None = None, final: bool | None = None,
                abort: abortmark.Abort | None = None) -> str:
@@ -155,10 +172,7 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         summary += jobops.close_out(ctx, status)
     finish_payload = {"status": status, "summary": summary, "authored": authored}
     if abort is not None:
-        # F751: the actor as a FIELD beside the prose — `actor` (who) and `cause` (the health
-        # stream's word for them), so an audit filters aborts by actor instead of reading
-        # result.md. Only an abort has one.
-        finish_payload.update(actor=abort.actor, cause=abort.cause)
+        finish_payload.update(abort_fields(abort))
     if reply_to:   # F438/D117: the reply targets an earlier message (conversations)
         finish_payload["reply_to"] = reply_to
     if final is not None:   # a conversation reply's own declaration (engine/goals.py)
@@ -220,7 +234,8 @@ def _log_ending(loop, status: str, summary: str,
                      # F751: an ABORT's actor, in the reap's own `cause` vocabulary — the
                      # engine's own ending was the one close-out that filed none, so a
                      # stream filtered by cause saw every daemon-era abort and no engine one.
-                     cause=abort.cause if abort else None)
+                     # F597 adds `unseen_s`: the same row answers how long it took to land.
+                     **(abort_fields(abort) if abort else {}))
     if status == "ok":
         # The reserved turn was spent and the run STILL finished ok: the budget_exhausted row
         # above is true and stays, and an earlier leg's not-ok ending is still corrected.
