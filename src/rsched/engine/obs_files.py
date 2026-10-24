@@ -101,6 +101,14 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         if err := obs.get("error"):
             return f"OBSERVATION (write_file {obs.get('path')} FAILED): {err}"
         base = f"OBSERVATION (write_file): wrote {obs['bytes']} bytes to {obs['path']}"
+        # F588: `bytes` is the payload's length, and for a local write that IS the number of
+        # bytes written — so the numbers are blind to a body the generation stopped inside.
+        # The BODY is not: a format that should parse and does not is named here, on the turn
+        # the run wrote it, instead of surfacing as a parse error in whatever reads it next.
+        warn = (f"\nWARNING — the body just written {obs['unparsed']}. A reply cut off "
+                "mid-generation lands exactly like this: treat the file as possibly incomplete "
+                "and write it again whole rather than reading this as a finished file."
+                if obs.get("unparsed") else "")
         if obs.get("append"):
             size = obs.get("size")
             # a record-per-line file's separator was missing and the engine added it (R2452) —
@@ -109,8 +117,8 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                      if obs.get("terminated") else "")
             # show the resulting total so a silent overwrite (size == bytes) is visible
             return base + (f" (appended; file now {size} bytes{fixed})" if size is not None
-                           else f" (appended{fixed})")
-        return base
+                           else f" (appended{fixed})") + warn
+        return base + warn
     if kind == "edit_file":
         if err := obs.get("error"):
             return f"OBSERVATION (edit_file {obs.get('path')} FAILED): {err}"

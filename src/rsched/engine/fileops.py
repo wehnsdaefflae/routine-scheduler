@@ -523,14 +523,14 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         size = path.stat().st_size      # TOTAL bytes on disk after the write
     except (OSError, PermissionError) as exc:
         return {"kind": "write_file", "path": action["path"], "error": str(exc)}
-    # `bytes` = payload WRITTEN this action; `size` = the file's total size AFTER it. An
-    # append that truly appended shows size == prior + bytes; an overwrite shows size ==
-    # bytes — so append-vs-overwrite is provable from the observation alone.
-    out = {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
-           "append": bool(action.get("append")), "size": size}
-    if terminated:
-        out["terminated"] = True   # the engine added the record separator; say so (R2452)
-    return out
+    # `bytes` = the payload written — for a local write that IS bytes written (write() is
+    # all-or-nothing); `size` = the total AFTER it, proving append-vs-overwrite; `unparsed`
+    # = a body that should parse and does not, F588's one signal for a cut-short generation
+    # (the predicate is `fileformat.unparsed`; this module is at its size ceiling).
+    return {"kind": "write_file", "path": action["path"], "bytes": len(data.encode("utf-8")),
+            "append": bool(action.get("append")), "size": size,
+            **({"terminated": True} if terminated else {}),  # separator supplied (R2452)
+            **fileformat.unparsed(path, data)}
 
 
 def _nearest_anchor_hint(text: str, anchor: str) -> str:

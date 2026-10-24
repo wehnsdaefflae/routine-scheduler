@@ -127,3 +127,71 @@ def test_structured_append_is_one_compact_jsonl_line(make_routine, tmp_path):
     assert (ctx.routine.dir / "audit" / "report.json").read_text(
         encoding="utf-8").count("\n") > 1          # a whole document stays pretty-printed
 
+
+
+def test_a_truncated_json_body_does_not_read_as_a_clean_write(make_routine, tmp_path):
+    """F588: a body the MODEL generated incomplete is written whole and reads as a success.
+
+    Python's write() is all-or-nothing, so bytes-written EQUALS the payload's length whenever
+    the write succeeded — asserted below, because it is why "report the bytes written" is by
+    itself no fix at all. The difference a run can act on has to come from the BODY: a `.json`
+    whose whole purpose is to parse, and does not. F460's parse gate refuses only an overwrite
+    of a file that parsed BEFORE, so a NEW file — the usual shape of a generated artefact —
+    arrives here ungated and the observation says nothing.
+
+    The specimen, from this instance's own history: `sprind`'s memory note
+    (`.memory/analysis-pipeline.md`, quoted again in R461) — "a single write_file of a full
+    25-key analysis OBJECT gets TRUNCATED (my reasoning + the JSON share the turn's output
+    budget; fails ~>5KB or after long thinking)". The target was `work/<app>/analysis.json`,
+    a NEW file each run: nothing in the observation said so, so the routine had to learn it
+    from downstream breakage and work around it by authoring ≤5KB fragments and merging them.
+    """
+    import json
+
+    ctx = action_ctx(make_routine(), tmp_path)
+    whole = json.dumps({"phase": "steady", "open": ["F588", "F460"], "sweep": "2026-10-24"},
+                       indent=2)
+    cut = whole[:len(whole) // 2]                 # the generation stopped mid-document
+    obs = do_write_file({"kind": "write_file", "path": "state/plan.json",
+                         "content": cut}, ctx)
+    assert "error" not in obs, obs               # not refused: the file did not parse BEFORE
+    # the measurement that makes the item's literal wording empty: both numbers are the same
+    assert obs["bytes"] == obs["size"] == len(cut.encode("utf-8"))
+    # The engine's own wording is pinned either side of the parser's complaint. The complaint
+    # itself is matched loosely on purpose: pinning CPython's "(char 39)" offset would make
+    # this test flaky across interpreter versions for no gain.
+    shown = format_observation(obs)
+    head, _, rest = shown.partition("\n")
+    assert head == "OBSERVATION (write_file): wrote 44 bytes to state/plan.json", head
+    assert rest.startswith("WARNING — the body just written does not parse as JSON: "), rest
+    assert "Unterminated string" in rest, rest        # the parser names where it stopped
+    assert rest.endswith("A reply cut off mid-generation lands exactly like this: treat the "
+                         "file as possibly incomplete and write it again whole rather than "
+                         "reading this as a finished file."), rest
+
+
+def test_a_complete_body_or_a_prose_body_is_reported_without_a_warning(make_routine, tmp_path):
+    """No false positive: a body that parses, and a format with nothing to parse, are clean."""
+    import json
+
+    ctx = action_ctx(make_routine(), tmp_path)
+    good = do_write_file({"kind": "write_file", "path": "state/ok.json",
+                          "content": json.dumps({"a": 1})}, ctx)
+    assert "unparsed" not in good and "does not parse" not in format_observation(good)
+    prose = do_write_file({"kind": "write_file", "path": "state/half.md",
+                           "content": "# A heading and a sentence that stops mid-"}, ctx)
+    assert "unparsed" not in prose and "does not parse" not in format_observation(prose)
+
+
+def test_a_truncated_record_appended_to_a_jsonl_file_is_named(make_routine, tmp_path):
+    """The record-per-line family is exempt from F460's gate on purpose (a partial line is
+    legal mid-append), which leaves an appended record the only thing that can say it: a row
+    cut short merges nothing and corrupts nothing, it just is not JSON — and the reader of
+    that ledger finds out instead of the run that wrote it."""
+    ctx = action_ctx(make_routine(), tmp_path)
+    obs = do_write_file({"kind": "write_file", "path": "state/shipped.jsonl",
+                         "content": '{"version": "0.411.0", "commit": "c03b',
+                         "append": True}, ctx)
+    assert "error" not in obs, obs
+    shown = format_observation(obs)
+    assert "does not parse" in shown, shown
