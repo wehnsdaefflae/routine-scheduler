@@ -880,7 +880,11 @@ by a test, by the engine, or by a past incident.
   fingerprint of its sources with SINGLE-FLIGHT misses (`readmodels/memo`) — `/api/items`
   (0.312.1) and `/api/questions` (0.340.0, three catalog walks per call at 10-20 in flight)
   both starved the daemon before they were; a new read model joins them before it is fetched
-  on an event.
+  on an event. A read model that is WRITTEN on an event rather than fetched satisfies it the
+  other way: the util-stats snapshot has exactly ONE subscriber (`daemon/util_stats_watch.py`),
+  which debounces the burst, awaits its own pass so two can never overlap, and runs the compute
+  in a thread — it used to be written by every engine at its own run end, which is the per-run
+  cost of a fleet-wide view no engine reads.
 - **An exclusive machine's compute is QUEUED, not locked.** `MachineConfig.exclusive` makes
   `remote submit` take a ticket instead of launching (`rsched/machine_queue.py`), ordered FAIR
   SHARE — round-robin across ROUTINES by each one's oldest waiting ticket, FIFO within one. The

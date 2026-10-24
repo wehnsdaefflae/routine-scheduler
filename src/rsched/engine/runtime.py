@@ -248,16 +248,17 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                            fingerprint=runrecord.fingerprint(ctx, orch_ref),
                            quality=runrecord.quality(ctx), outcome=ctx.outcome_measures)
         _log_cache_health(ctx, cfg.slug)
-        # Both read the stream this run's record just landed in: the persisted util-stats
-        # snapshot (the single source the Stats tab and the util-review routine share) and
-        # the cost-trend flag. Best-effort: a telemetry write must never break a finished run.
+        # The cost-trend flag reads the stream this run's record just landed in, and is a
+        # per-RUN judgement (this run against this routine's own history), so it belongs here.
+        # The util-stats SNAPSHOT does not: it is one fleet-wide read model that no engine
+        # reads, and every run used to recompute it — a library git walk, the whole usage
+        # stream and every un-counted transcript — to write a file only the Stats tab's
+        # routine-side twin consumes. The daemon owns it now, once per burst of run events
+        # (`daemon/util_stats_watch.py`). Best-effort: telemetry must never break a finished run.
         try:
-            from ..readmodels.util_stats import write_util_stats_snapshot
-            write_util_stats_snapshot(server)
             _log_cost_trend(ctx, cfg.slug)
         except Exception:  # stats telemetry must never break a run — but leave a breadcrumb
-            log.warning("run-end telemetry failed (util-stats snapshot / cost trend)",
-                        exc_info=True)
+            log.warning("run-end telemetry failed (cost trend)", exc_info=True)
         return status, run_dir
     finally:
         machines_mod.unmount_routine_shares(mounts)
