@@ -319,7 +319,7 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
             if have:
                 cap_bits.append(
                     "script — run this routine's OWN persistent helper scripts (scripts/, "
-                    "your venv, deterministic work only — no model access inside): "
+                    "deterministic work only — no model access inside): "
                     + "; ".join(f"{s['name']} ({s['summary']})" if s["summary"] else s["name"]
                                 for s in have)
                     + ". When you notice a repeating deterministic sub-step (fetch, parse, "
@@ -340,10 +340,10 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                     "shells out to + 'informational-exits: 2' for a documented non-zero exit "
                     "that is an ANSWER not a failure, then call it with the script action). "
                     "When you notice a repeating deterministic sub-step (fetch, parse, "
-                    "compute, render), write a PERSISTENT script for it instead of redoing "
-                    "it by hand — it runs in your venv inside your sandbox, survives this "
-                    "run, and future runs call it for free. Placement test: a script is for "
-                    "THIS routine only — capability another routine could plausibly reuse "
+                    "compute, render), write a PERSISTENT script for it instead of redoing it by "
+                    "hand — it runs inside your sandbox (a venv only when it declares PEP 723 "
+                    "deps), survives this run, and future runs call it for free. Placement test: "
+                    "a script is for THIS routine only — capability another routine could reuse "
                     "belongs in the shared library as a util instead. " + _THEN_SCRIPT)
         if "create_routine" in kinds:
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "

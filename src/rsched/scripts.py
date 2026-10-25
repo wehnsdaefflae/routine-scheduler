@@ -2,8 +2,10 @@
 
 A script is ONE PEP 723 file `scripts/<name>.py` inside the routine's own dir — private
 to the routine, versioned by its repo's autocommit, authored by the run itself
-(`write_file`) or by the user — executed in a persistent venv in the routine's workdir
-(`<routine>/.venv`, deps installed on first use, gitignored). It is the recipe's TOOLING,
+(`write_file`) or by the user — executed on the daemon's own interpreter when it declares no
+dependencies, and otherwise in a persistent venv at `<routine>/scripts/.venv` (deps installed
+on first use, gitignored). WHERE that interpreter comes from, and why the venv is inside
+`scripts/` rather than beside it, is `scriptenv.py`'s subject (F764). It is the recipe's TOOLING,
 never its peer: the recipe stays the single interpreter of the task and delegates to a
 script only sub-steps that need no judgment (polling, parsing, calculations, assembling a
 fixed artifact). A repeating deterministic sub-step is written into `scripts/` once and
@@ -40,18 +42,13 @@ codes stop counting toward the repeat-failure detector, every other non-zero sti
 
 from __future__ import annotations
 
-import os
 import re
-import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
-from . import sandbox, utils_header, utils_lib, utils_run
-from .paths import ensure_gitignored
+from . import sandbox, scriptenv, utils_header, utils_lib, utils_run
 
 SCRIPT_TIMEOUT_S = 300
-VENV_DIR = ".venv"
-_INSTALL_TIMEOUT_S = 300
 
 
 def scripts_dir(routine_dir: Path) -> Path:
@@ -60,14 +57,6 @@ def scripts_dir(routine_dir: Path) -> Path:
 
 def script_path(routine_dir: Path, name: str) -> Path:
     return scripts_dir(routine_dir) / f"{name}.py"
-
-
-def venv_dir(routine_dir: Path) -> Path:
-    return routine_dir / VENV_DIR
-
-
-def venv_python(routine_dir: Path) -> Path:
-    return venv_dir(routine_dir) / "bin" / "python"
 
 
 # A script's name is the ROUTINE'S own choice: kebab-case like a util, or the snake_case a
@@ -214,79 +203,6 @@ def misdeclared(routine_dir: Path, name: str) -> list[str]:
     return sorted(set(_ENGINE_KEYS_IN_BLOCK.findall(m.group(1))))
 
 
-def script_deps(routine_dir: Path, name: str) -> list[str]:
-    """The script's PEP 723 `dependencies`, from its `# /// script` block. [] when the
-    block is absent or unparseable — a missing dep then fails visibly at exec.
-    """
-    try:
-        text = script_path(routine_dir, name).read_text(encoding="utf-8")
-    except OSError:
-        return []
-    lines, taking = [], False
-    for ln in text.splitlines():
-        if ln.strip() == "# /// script":
-            taking = True
-            continue
-        if ln.strip() == "# ///":
-            break
-        if taking:
-            lines.append(ln.removeprefix("# ").removeprefix("#"))
-    try:
-        meta = tomllib.loads("\n".join(lines)) if lines else {}
-    except tomllib.TOMLDecodeError:
-        return []
-    deps = meta.get("dependencies")
-    return [str(d) for d in deps] if isinstance(deps, list) else []
-
-
-def ensure_env(routine_dir: Path, name: str, *,
-               policy: sandbox.SandboxPolicy, libraries_home: Path,
-               aborted: Callable[[], bool] | None = None) -> str | None:
-    """Create `<routine>/.venv` if missing and install the script's PEP 723 dependencies
-    into it (a fast no-op when already satisfied). Returns an error line, or None. The
-    install is a BUILD step: it runs net-open inside the routine jail (the util prewarm's
-    R40 rationale — a `net: none` script must still be able to fetch its deps), and a
-    failure surfaces instead of letting the exec die on an import it cannot explain. A build
-    step ends with its run like the script it builds for (`aborted`, `utils_run.run_jailed`),
-    and the line it returns is then the runner's own note.
-    """
-    # git add -A would otherwise commit the whole interpreter tree into the routine's repo
-    ensure_gitignored(routine_dir, VENV_DIR, "the scripts venv (rebuilt on demand)")
-    py = venv_python(routine_dir)
-    steps: list[list[str]] = []
-    if not py.exists():
-        steps.append(["uv", "venv", str(venv_dir(routine_dir))])
-    if deps := script_deps(routine_dir, name):
-        steps.append(["uv", "pip", "install", "--quiet", "--python", str(py), *deps])
-    for step in steps:
-        try:
-            cmd = sandbox.wrap(step, policy=policy, libraries_home=libraries_home,
-                               fs_roots=True,
-                               fs_paths=callee_fs_paths(routine_dir, name, libraries_home),
-                               net=True)
-        except sandbox.SandboxRefusal as exc:
-            return str(exc)
-        r = utils_run.run_jailed(cmd, env=dict(os.environ), cwd=routine_dir,
-                                 timeout=_INSTALL_TIMEOUT_S, label=f"venv setup ({step[1]})",
-                                 aborted=aborted)
-        if r.aborted:
-            return r.stderr.strip()
-        if r.timed_out:
-            # The install cap is fixed and SEPARATE from the action's timeout_s, which bounds the
-            # script's runtime, not this build step — so no recipe can raise it (R1296). A dep too
-            # heavy to install inside it does not belong in a per-routine venv; say so, rather than
-            # leave the caller re-setting timeout_s to no effect.
-            return (f"venv setup failed ({step[1]}): dependency install exceeded the fixed "
-                    f"{_INSTALL_TIMEOUT_S}s cap. That cap is not the action's timeout_s (which "
-                    "bounds the script's runtime, not this build) and cannot be raised from a "
-                    "recipe — use a lighter dependency, or offload heavy compute to a util or a "
-                    "remote machine.")
-        if r.returncode != 0:
-            return (f"venv setup failed ({step[1]}): "
-                    f"{(r.stderr or r.stdout).strip()[-400:]}")
-    return None
-
-
 def run_script(routine_dir: Path, name: str, args: list[str], *,
                policy: sandbox.SandboxPolicy, libraries_home: Path,
                env_secrets: dict[str, str] | None = None,
@@ -294,7 +210,8 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
                aborted: Callable[[], bool] | None = None,
                cancelled: Callable[[], bool] | None = None,
                seal_dir: Path | None = None) -> tuple[int, str, str]:
-    """Controlled runner: the routine's own venv python on the script, ONLY the caller's
+    """Controlled runner: the interpreter `scriptenv` picks (the daemon's own for a script
+    declaring no dependencies, the routine's venv python for one that does), ONLY the caller's
     `env_secrets` injected (the caller filters to declared+granted names; every other
     store key is scrubbed — `utils_run.scoped_env`), the shared jail (`sandbox.wrap` —
     run fs roots), working directory = the routine dir so relative paths resolve like
@@ -311,8 +228,10 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
         have = ", ".join(p["name"] for p in list_scripts(routine_dir)) or "(none yet)"
         return 2, "", f"no script {name!r} (available: {have})"
     _declared, net, _opt = needs(routine_dir, name, libraries_home)
-    if problem := ensure_env(routine_dir, name, policy=policy,
-                             libraries_home=libraries_home, aborted=aborted):
+    stores = callee_fs_paths(routine_dir, name, libraries_home)
+    if problem := scriptenv.ensure_env(routine_dir, name, policy=policy,
+                                       libraries_home=libraries_home, fs_paths=stores,
+                                       aborted=aborted):
         # A build the run's abort ended reports the abort's code, as the script itself would.
         stopped = aborted is not None and aborted()
         return (utils_run.ABORT_EXIT if stopped else 2), "", problem
@@ -333,10 +252,9 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     env["RSCHED_UTIL_TIMEOUT_S"] = str(timeout)
     try:
         cmd = sandbox.wrap(
-            [str(venv_python(routine_dir)), str(script_path(routine_dir, name)),
+            [str(scriptenv.interpreter(routine_dir, name)), str(script_path(routine_dir, name)),
              *[str(a) for a in args]], policy=policy, libraries_home=libraries_home,
-            net=net, fs_roots=True,
-            fs_paths=callee_fs_paths(routine_dir, name, libraries_home))
+            net=net, fs_roots=True, fs_paths=stores)
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
     # The SHARED runner (utils_run.run_jailed), not a plain `subprocess.run`: a script with a

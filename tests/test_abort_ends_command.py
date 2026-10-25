@@ -139,11 +139,16 @@ def test_both_riders_report_an_abort_with_what_was_printed(tmp_path, make_routin
 def test_a_venv_build_the_abort_ended_reports_the_abort(tmp_path, make_routine):
     """The build before a script is a jailed call too; ended by the abort, it reports the
     abort's code and the runner's own words — not a failed dependency install.
+
+    The script DECLARES a dependency, which is what gives it a build phase at all: since F764
+    a script whose PEP 723 block declares none runs on the daemon's interpreter and no venv is
+    attempted (`scriptenv`), so an abort would land on the script instead.
     """
     routine = make_routine(slug="abort-build")
     (routine / "scripts").mkdir()
-    (routine / "scripts" / "fresh.py").write_text('"""fresh — never runs."""\n',
-                                                  encoding="utf-8")
+    (routine / "scripts" / "fresh.py").write_text(
+        '# /// script\n# dependencies = ["idna"]\n# ///\n"""fresh — never runs."""\n',
+        encoding="utf-8")
     code, out, err = scripts.run_script(routine, "fresh", [],
                                         policy=sandbox.SandboxPolicy(mode="off", own_dir=routine),
                                         libraries_home=tmp_path / "lib", aborted=lambda: True)
