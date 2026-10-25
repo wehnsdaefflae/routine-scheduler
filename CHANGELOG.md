@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.453.0] — 2026-10-25
+
+### A decision answered mid-run records WHAT was decided, not just that it was
+
+The operator answered six decisions (D210-D215) on the Decisions page between 02:07 and 02:17.
+self-audit's report, generated at **02:40 — after all six**, still listed every one
+`status: "open"` with an empty `resolution`, because only its own next run writes that field. So
+every surface reading the report alone showed six answered decisions as awaiting him, and a
+routine reported them back to him as outstanding. His words: *"there is no unanswered question on
+the decisions page. file dis discrepancy as a bug and fix it"*, then *"also make the report record
+a resolution for an answer that arrived mid-run"*.
+
+Measured before anything was built: `/api/questions` serves 286 rows with **zero** unanswered, so
+the Decisions page was right — the whole discrepancy was on the reading side. Answering writes two
+durable records (`web/api_audit.write_feedback`, under a lock): the marker in
+`audit/decisions-answered.json`, and the queued `[AUDIT decision · D21x] selected: …` message
+carrying his own words.
+
+The report file belongs to self-audit, so the engine fixes the read model every surface shares.
+`readmodels/items._report_item` now lets an answered marker settle a decision the report still
+calls `open` (not only one whose status is `unknown`), and fills an empty `resolution` from his
+queued answer's words — falling back to `answered <ts>` once a mid-run delivery has consumed the
+message, which says the answer exists without inventing words nobody wrote. A resolution the
+report *did* write always wins: that is self-audit's considered wording. `source_paths` now
+fingerprints the audit inbox, so his answer invalidates the memo rather than waiting for some
+other source to change. New `readmodels/decision_answers.py` holds the reader, because putting it
+in `items.py` crossed the 350-line house bar.
+
 ## [0.452.0] — 2026-10-25
 
 ### A routine's own `scripts/` can run — the venv goes where the jail can create it
