@@ -16,12 +16,21 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
 
 from .. import reports
 from ..paths import read_json
 from ..schema_guard import validate
-from . import channels, child, hookmirror, inbox, mediaops, refusal, runtree
+from . import (
+    cancelcall,
+    channels,
+    child,
+    freightnote,
+    hookmirror,
+    inbox,
+    mediaops,
+    refusal,
+    runtree,
+)
 from .actions import validate_action
 from .actionschema import ACTION_SCHEMA
 from .commands import CommandError, parse_command
@@ -80,56 +89,12 @@ def pause_gate(loop, poll_s: float) -> None:
     ctx.write_status("running")
 
 
-def cancelled_for_turn(ctx) -> Callable[[], bool]:
-    """The per-call cancel check a jailed command polls (F586, decided as D160-C): control.json's
-    `cancel_action` names the TURN whose call the operator stopped, and this returns True only
-    while that turn is the one running.
-
-    KEYED BY TURN, and that is the whole safety property. A bare `{"cancel": true}` flag is read
-    by whatever call is in flight when the engine next looks — which, for a cancel clicked just
-    as a long call finishes, is the NEXT call, one the operator never asked to stop. The turn is
-    what the UI's red × already knows (it renders a specific action's row), so the intent
-    travels as "stop the call of turn N" and expires by itself.
-
-    It is a POLLED FILE READ, not the abort's mechanism: `request_abort`'s flag is process-wide
-    and set by a signal handler, while a cancel arrives from the web with the engine blocked
-    inside `run_jailed`'s wait — there is no signal and no turn boundary to read it at. So this
-    mirrors `pause_gate` above: `paths.read_json` on the run's own control.json, which is
-    web-owned and engine-read. A missing or malformed file reads as "not cancelled" — the file
-    is advisory, and a command must never be killed by a parse error. So does a value that is
-    not a plain int, BOOLS INCLUDED: `True == 1` in Python, so a bare `{"cancel_action": true}`
-    would otherwise stop turn 1's call. And a context with no run dir at all (a test, a CLI
-    call) never cancels, the way `run_context._never_aborted` answers for the abort.
-    """
-    # A BACKGROUND call carries its own stop predicate, keyed by its handle (engine/background:
-    # `_cancellable_ctx`). It takes precedence because the turn key cannot work there: a
-    # background call outlives the turn that started it, so a check keyed on `ctx.turn` can
-    # never fire again once the run moves on — which left `kill handle=…` unable to stop even a
-    # `shell` blocked on a ten-minute subprocess. The file channel stays for the foreground.
-    if (stop := getattr(ctx, "background_stop", None)) is not None:
-        return stop
-    run_dir = getattr(ctx, "root_run_dir", None)
-    turn = getattr(ctx, "turn", 0)
-    if run_dir is None:
-        # A context no loop drives (a test, a CLI call, a selftest) has no run dir to read, and
-        # the right answer there is `_never_aborted`'s: never cancelled. Raising instead would
-        # make the cancel's presence break every caller that never had one.
-        return lambda: False
-    control = run_dir / "control.json"
-
-    def cancelled() -> bool:
-        wanted = read_json(control)
-        if not isinstance(wanted, dict):
-            return False
-        value = wanted.get("cancel_action")
-        # `isinstance(True, int)` and `True == 1` are both true in Python, so a BARE FLAG —
-        # exactly the `{"cancel_action": true}` shape this design rejects — would otherwise
-        # cancel turn 1's call. Found by this step's own test, not by review.
-        if isinstance(value, bool) or not isinstance(value, int):
-            return False
-        return value == turn
-
-    return cancelled
+#: The PER-CALL cancel (F586/D160-C) lives with what it IS — `engine/cancelcall.py`. Everything
+#: in this module runs BETWEEN turns and mutates only the loop's message list; a cancel is read
+#: MID-turn, by a util, script or shell command in flight. Re-exported under the name
+#: `executor`, `background` and the tests already use, so no caller moved (F529: the extraction
+#: is what made room here for the turn-boundary freight clock below).
+cancelled_for_turn = cancelcall.cancelled_for_turn
 
 
 def inject_user_message(loop, m: dict) -> None:
@@ -308,6 +273,11 @@ def drain_injections(loop) -> None:
                              and inbox.user_authored(str(m.get("via") or "")))
     ctx.reports_open += reports.stamp_delivered(
         ctx.server.routines_home, drained, run_id=ctx.run_id)
+    # F529, the other half of the exclusion above: what this run may NOT consume is NAMED
+    # here, now that the drain has taken everything it may. The boot digest said this once,
+    # at boot — and the operator answered three decisions into a run whose digest was five
+    # hours old, then asked whether his answers had been lost. Named, never delivered.
+    freightnote.at_boundary(loop)
 
 
 def child_finished_message(*, mode: str, n: int, label: str, workflow: str, status: str,

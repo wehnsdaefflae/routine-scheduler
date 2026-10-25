@@ -1633,10 +1633,10 @@ def test_injection_mid_run(make_routine, scripted):
     status, run_dir = run_routine(d, ServerConfig(), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "ok"
-    injected = [e["payload"]["text"] for e in events if e["type"] == "user_injection"]
-    assert "also mention the moon" in injected          # live run view arrives
+    injected = [e["payload"]["text"] for e in events        # an ENGINE NOTE is not the user
+                if e["type"] == "user_injection" and e["payload"].get("source") != "engine"]
+    assert "also mention the moon" in injected and not any("freight" in t for t in injected)
     assert any("background task finished" in t for t in injected)   # detached result arrives
-    assert not any("freight" in t for t in injected)    # routine-page msg does NOT
     assert not any("sibling delivery" in t for t in injected)       # report does NOT
     assert any("USER MESSAGE (injected mid-run)" in m["content"]
                for m in ep.calls[1]["messages"])
