@@ -1497,11 +1497,15 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   SINGLE-FLIGHT per key (0.340.0: a burst of identical requests — every open tab refetching one
   endpoint on a bus event — computes once while the rest wait and re-read), `readmodels/usage_stream`
   is the ONE parser of workflow-usage.jsonl and `readmodels/health_stream` the ONE parser of
-  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the eight
+  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the 18
   events that mean WORK THAT WAS DUE DID NOT HAPPEN — `fire_refused`, `lane_fire_refused`,
-  `lane_fire_paused`, `lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error`,
-  `trigger_capped`, `commit_failed` — one row per (event, subject) with a count and the newest
-  detail, because none of them can reach a run page, Items row or Stats slice) — a read-model is a pure
+  `fire_paused`, `routine_catchup_declined`, `lane_fire_paused`, `lane_catchup_declined`,
+  `lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error`,
+  `finish_gate_failed`, `trigger_capped`, `commit_failed`, `backup_stale`,
+  `migration_expired`, `migration_due_soon`, `obligation_overdue`, `wrong_turn_detected`,
+  `model_chain_exhausted` — one row per (event, subject) with a count and the newest
+  detail, because none of them can reach a run page, Items row or Stats slice; the count and
+  the names are pinned by `tests/test_chain_exhausted_blocked.py`) — a read-model is a pure
   derivation, deletable state, never a writer. The Decisions read model (`web/decisions_read.py` — what `/api/questions`, the
   badge, the tab-open notifier and Web Push all read) is memoized per home on the same fingerprint
   over the catalog's own sources (the home listing, every `routine.yaml`, every `questions/pending`

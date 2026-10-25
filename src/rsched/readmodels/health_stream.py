@@ -13,7 +13,12 @@ The unit of due work is not always a FIRE. `wrong_turn_detected` (R2652) is a TU
 back well-formed and wrong — paid for at full prompt price, its work re-driven or lost — and it
 belongs here for the reason `finish_gate_failed` does: the run reads as ordinary on every other
 surface, because a rejected turn recovers and the run finishes `ok`, so what did not happen is
-invisible to any run page.
+invisible to any run page. `model_chain_exhausted` (F716) is the turn that could not be taken at
+all — every model in the role's chain failed hard or was cooling. That one DOES leave a failed
+run page, so it looks like the exception; it is not, because when the cause is the host's shared
+proxy the failure is never one routine's, and a per-routine run page is exactly the surface that
+cannot say "the fleet has no model". Eight such events in one day (2026-10-19, all claude-proxy
+503 `auth_unavailable`) reached no surface a person clicks.
 
 `blocked_fleet` is that fold: one row per (event, subject) with a count and the newest
 detail, so "what is the fleet not doing" is answered by a fetch instead of by ssh.
@@ -103,6 +108,18 @@ BLOCKED_EVENTS: dict[str, str] = {
     "wrong_turn_detected": "a turn came back well-formed and WRONG — rejected, repeated, or "
                            "out of schema attempts — so the turn was paid for and the work it "
                            "owed was re-driven or lost (engine/wrongturn.py)",
+    # F716. The unit here is a TURN that could not be taken at all: every member of the role's
+    # chain failed hard or was cooling, so there was no model to ask. A failed run has a run
+    # page — but when the cause is the host's shared proxy the failure is never one routine's,
+    # and no surface said so: 2026-10-19 carried five of these plus three run_failed, every one
+    # claude-proxy 503 auth_unavailable, across scheduler-builder and bahnbonus-seat-position.
+    # `subject` is the routine, so a provider outage reads as one row per affected routine with
+    # the chain HEAD in the detail; a single row is a hiccup, several on one day is the fleet
+    # off its models.
+    "model_chain_exhausted": "a role's WHOLE fallback chain was unusable — every model failed "
+                             "hard or was cooling, so the turn could not be taken: the detail "
+                             "names the chain head and the last model tried "
+                             "(engine/degrade.py)",
 }
 
 #: Partial finishes, split by whether a budget forced them (health_events.py's own

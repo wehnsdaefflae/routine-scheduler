@@ -619,17 +619,24 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. Ten health events record the opposite —
-`fire_refused`, `lane_fire_refused`, `lane_fire_paused`, `lane_chain_stopped`,
+Everything above measures runs that HAPPENED. 18 health events record the opposite —
+`fire_refused`, `lane_fire_refused`, `fire_paused`, `routine_catchup_declined`,
+`lane_fire_paused`, `lane_catchup_declined`, `lane_chain_stopped`,
 `lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped`, `commit_failed`,
-`finish_gate_failed` and `wrong_turn_detected`
+`backup_stale`, `migration_expired`, `migration_due_soon`, `obligation_overdue`,
+`finish_gate_failed`, `wrong_turn_detected` and `model_chain_exhausted`
 — and no run page, Items row or Stats slice can carry any of them: the first seven produce
 no run at all; a commit that did not land happens after a run's finish is written, or
 outside any run (a web edit, a boot seed sync, a migration); a finish gate that RAISED
 (F678) leaves a run that reads as finished on every surface, because it did finish — on its own
-authored status and summary, with the checks that should have judged that ending never run; and a
+authored status and summary, with the checks that should have judged that ending never run; a
 turn that came back WRONG (below) is a turn paid for at full prompt price whose work was
-re-driven, which a run finishing `ok` shows nowhere. They had fourteen writers and
+re-driven, which a run finishing `ok` shows nowhere; and an EXHAUSTED CHAIN (F716) is a turn that
+could not be taken at all — every model in the role's chain failed hard or was cooling. That last
+one does leave a failed run page, which is why it was left off this fold for so long, but when
+the cause is the host's shared proxy the failure is never one routine's: on 2026-10-19 eight such
+events, every one a claude-proxy 503 `auth_unavailable`, killed legs of three routines and a
+per-routine run page is precisely the surface that cannot say "the fleet has no model". They had fourteen writers and
 no reader inside the product: the nightly audit opened `.control/health-events.jsonl` over
 ssh and the console showed none of it, which is how F316's week of missed lane fires
 passed with zero signal.
