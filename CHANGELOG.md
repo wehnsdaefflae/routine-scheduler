@@ -15,6 +15,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.454.0] — 2026-10-25
+
+### Harness² adopted where it fits: a change is judged by its moment, the order is the one stated, the always-on contract has a budget
+
+The operator asked for an analysis of Harness² (arXiv 2610.14224, google-research/harness2)
+against this system's "the workflow is the harness" approach, then: *"or you implement the
+improvements yourself. now"*. Measured on the live fleet's last 442 depth-0 runs first:
+
+- runs follow a stable stage path (87% monotone, pairwise concordance 0.99 against the order runs
+  actually take), but the ENGINE's declared order was wrong for 10 of 29 routines;
+- stage coverage tracks nothing (coverage vs Done-when unmet share r = −0.008);
+- the engine's own always-on contract is 60-85% of a run's first prompt, the routine's recipe a
+  median 5%;
+- 96% of recipe changes end `too few runs` — at about one recipe change per two runs, the rate
+  verdict can almost never be drawn;
+- every routine's claim verifier resolved to the model it judges.
+
+**The moment test** (`engine/frictions.py`, `readmodels/change_frictions.py`). Every run now
+records `quality.frictions`: its failures by a signature every routine names the same way
+(`schema`, `script:`/`util:<name>`, `edit_miss`, `read_miss`, `memory_cap`, `refused:<kind>`,
+`deferral:<rung>`, `budget:<resource>`, `unmet:d<n>`), counted from its own transcript at its
+end; the reserved-turn injection carries a `budget` key so the resource is on the record. Each
+change then carries Harness²'s compose criterion beside its rate verdict: a signature in ≥2 runs
+before it is the harness's, and after it it is `fixed` or `persists`; a new one is `introduced`.
+Two runs a side suffice; a window that has to reach across a neighbouring change names it
+`confounded`; a recipe commit's `Addresses: <signature>` line is judged as its aim (`fixed`,
+`persists`, or `unfounded` when the runs before never repeated it). A run with no recorded
+frictions is unknown, never clean. A one-shot boot backfill (`migrate_frictions.py`) counts the
+runs retention kept. The Changes view gets a failures column and a moment table, and a change the
+moment test judged is no longer folded away as "came faster than it ran".
+
+**The stage order main.md STATES** (`statemap.declared_order`): its numbered Run flow list or its
+arrow chain, not the first place prose names a stage. On the same 436 runs the declared first
+stage is the one runs start with in 390 (was 273); no routine's pair order got worse.
+`change_signals.COUNTED_SINCE` gains `stages_skipped: 0.366.10` (F563 changed that ruler), and
+two docs stopped describing behaviour F620 removed.
+
+**The engine contract's budget** (`tests/test_prompt_budget.py`). `composer.system_sections`
+names the prompt's sections (the prompt is byte-identical), every run records their sizes as
+`quality.prompt_chars`, and the harness + schema + example — 61 878 chars, the same for every
+routine, re-sent every turn — are held to a shrink-only ceiling: growth fails until something
+else is cut or the ceiling is raised by hand with a reason.
+
+**`NOTE verifier`** (`rsched/verifier_model.py`): `rsched validate` names a routine whose
+`tool_call` role resolves to its `main` model's provider model — all 32 today. Which model judges
+which stays the operator's choice; the verifier docs no longer promise a second model.
+
+Outside this repo, routine-improver's recipe now runs separate MECHANICS (a chronic signature,
+fenced from domain content) and DOMAIN passes, names what each commit `Addresses:`, reads the
+moment test of its own last edit first, and keeps `state/experience.md` (cue · lesson ·
+evidence) for proven fixes; its `scripts/outcome_review.py` reports `mechanics`.
+
 ## [0.453.0] — 2026-10-25
 
 ### A decision answered mid-run records WHAT was decided, not just that it was
