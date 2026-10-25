@@ -15,6 +15,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.456.0] — 2026-10-25
+
+### The language a run writes in is stated, once (F544, decided as D214)
+
+The engine said what `say`, the finish summary, a question and a note are FOR, and never what
+language they are IN. F544 asked for that sentence; D214 is the operator's answer — *"English
+only, just like the rest of the conversation / routine run"*.
+
+- **The harness contract now states it** (`engine/harness.py`), in the paragraph that already
+  owns the prose channel, beside the say contract — not restated per field. `actionschema.py`'s
+  own comment says why: a cross-cutting property worded twice ships a contradiction, which is
+  how "ONE terse clause" and "2-3 sentences" once reached one prompt together. One sentence, one
+  site, every kind covered.
+- **It draws the distinction that keeps it true.** The run's OWN prose is English — the narration,
+  the summary, questions, notes, reports — because every run is read beside every other run's and
+  one language keeps them comparable. What a run PRODUCES takes the language its reader needs: an
+  email to a German counterparty is German, a translated document is in its target language. A
+  flat "English only" would have forbidden deliverables this instance exists to send.
+- **The author-side half shipped with it**, which was the operator's condition on this item —
+  *"a rule for authors and a prompt-surface statement that disagree are worse than neither"*. The
+  shared library's new `prose-language` rule carries the same two-part statement for recipe
+  authors, so the two surfaces cannot drift apart into a contradiction.
+- **It was paid for by a cut, not by raising a ceiling.** `tests/test_prompt_budget.py` holds the
+  always-on engine contract to a shrink-only ratchet with zero slack — 0.454.0's Harness²
+  discipline, *"if you add always-on text, cut something else to pay for it"*, because every word
+  is re-sent on every turn of every run. The harness RESTATED the whole `role_swap` field
+  description; it now points at it the way the same paragraph already points at `note`'s. No
+  guidance is lost — it is in the same prompt, one screen down. The engine's always-on contract is
+  **61821 chars, 57 smaller than before this item**, and `prompt_budget.json` is re-locked by the
+  repo's own `--update` so the cut cannot silently re-grow.
+- `docs/prompt-anatomy.md` is deliberately NOT edited: §5.1 is a rendered artefact (the schema dump
+  inside it is pinned byte-for-byte against the composer's own projection), re-rendered from the
+  composer and never hand-patched. A hand edit there broke the fence's JSON in this very item.
+
+Supersedes the misleading record on 0.401.0: that release named F544 in its commit subject and in
+its CHANGELOG header while shipping only R2249's vision-refusal bug, which is why this row stayed
+`in_progress` for 15 days. Its `shipped.jsonl` row has an empty `done` list and is correct; the
+commit subject was not. Fold the changelog from `shipped.jsonl`, never from commit subjects.
+
 ## [0.455.0] — 2026-10-25
 
 ### Six decided items: a decline withholds, a rejected turn is taught, settings are judged at the writer, a run proposes its own recipe, the run-history depth is a real boundary, and an answered decision keeps its card
