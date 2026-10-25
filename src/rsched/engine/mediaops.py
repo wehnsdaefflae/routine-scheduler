@@ -27,7 +27,8 @@ from ..endpoints.media_types import (
     oversize_reason,
     read_media_b64,
 )
-from .fileops import UTIL_DEFAULT_TIMEOUT_S, _memory_gate, _runs_read_gate
+from ..rundepth import read_gate as _runs_read_gate
+from .fileops import UTIL_DEFAULT_TIMEOUT_S, _memory_gate
 from .observations import truncate
 from .run_context import RunContext, resolve_action_path, work_dir
 

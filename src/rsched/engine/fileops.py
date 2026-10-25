@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .. import rundepth
 from ..grants import CONFIG_FILE
 from ..paths import atomic_write, read_json
 from ..readmodels.statemap import STAGES_DIR
@@ -59,42 +60,6 @@ def _within(resolved: Path, sealed: Path) -> bool:
     relative CLI dir path — nothing matched, which opened the seal instead of closing it.
     """
     return resolved.is_relative_to(sealed) or resolved.is_relative_to(sealed.resolve())
-
-
-def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
-    """Backstop for previous-run access (GrantPolicy.deny handles the relative-path form inside
-    the schema-retry cycle; this catches absolute paths and scopes `runs: last`). The
-    current run's own tree — status, archived history, a child's own workspace — is always
-    readable. Anchored on the ROUTINE's runs/: a child (run history `none`) reaches it
-    through the parent's tree, and a gate on its own workspace's runs/ never saw that.
-    """
-    g = ctx.grants
-    if g is None:
-        return None
-    runs_dir = (routine_dirs(ctx)[-1] / "runs").resolve()
-    try:
-        rel = resolved.relative_to(runs_dir)
-    except ValueError:
-        return None
-    if resolved.is_relative_to(ctx.root_run_dir.resolve()):
-        return None
-    if g.run_history == "none":
-        # after D96 a routine's own policy always carries at least "last" — this branch
-        # serves scopes genuinely without history (sub-workflow children, synthetic
-        # policies), so the copy must not claim the ROUTINE lacks a permission (R46).
-        return ("previous runs are not readable in this scope — a routine reads its own "
-                "last run by default, but sub-workflows run without run history; fold "
-                "what the child needs into its brief instead")
-    if g.run_history == "last":
-        prior = sorted(d.name for d in runs_dir.iterdir()
-                       if d.is_dir() and d.name != ctx.root_run_dir.name)
-        last = prior[-1] if prior else None
-        if not rel.parts or rel.parts[0] != last:
-            return (f"previous runs are readable at the default 'last' depth only "
-                    f"({'runs/' + last if last else 'none exists yet'}); the routine's "
-                    f"run-history setting at 'all' opens them for longitudinal work — the "
-                    f"operator's choice")
-    return None
 
 
 def _window(lines: Iterable[str], start: int, max_lines: int) -> tuple[list[str], int]:
@@ -233,7 +198,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     conversion: docread.Conversion | None = None
     try:
         path = resolve_action_path(ctx, rel_path)
-        if err := _memory_gate(ctx, path) or _runs_read_gate(ctx, path):
+        if err := _memory_gate(ctx, path) or rundepth.read_gate(ctx, path):
             return {"path": rel_path, "error": err}
         if path.is_dir():
             directory = True

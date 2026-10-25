@@ -26,6 +26,7 @@ from .decideaction import do_decide
 from .exec_env import _extra_secrets, _unbound_connection_request
 from .fileops import UTIL_DEFAULT_TIMEOUT_S, do_edit_file, do_read_file, do_write_file
 from .fsops import do_delete, do_mkdir, do_move
+from .jailnotes import jail_notes as _jail_notes
 from .llmaction import do_list_models, do_llm
 from .mediaops import do_view_image
 from .memops import do_memory_read, do_memory_write, do_read_rule
@@ -126,26 +127,6 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> dict:
     return fields
 
 
-def _dead_root_note(policy) -> dict:
-    """The observation field naming a granted fs root the kernel cannot stat (R2260).
-
-    `sandbox.wrap` drops an unreadable READ root so one dead mount cannot cost the run every
-    util, and logs it — but the log is the operator's surface, not the run's. A run told
-    nothing would reason from a jail it believes it has, and would read a util's "no such
-    file" as the file being gone rather than the root being dropped. So the drop is named
-    HERE too, in the call's own observation. Empty when every granted root is healthy, which
-    is the normal case and costs one stat per root.
-    """
-    dead = sandbox.unreadable_roots(policy)
-    if not dead:
-        return {}
-    return {"dead_fs_roots": {
-        "paths": list(dead),
-        "note": "the kernel cannot stat these granted fs roots (a dead or flaky mount). A "
-                "READ root is dropped from this call's jail so the rest of your tools keep "
-                "working — a util needing it fails on its own merits; a WRITE root refuses "
-                "the call instead, because a write under it would land nowhere. Repair the "
-                "mount or ask for the root to be removed from this routine's config."}}
 
 
 def _ended_by_abort(ctx: RunContext, code: int) -> bool:
@@ -290,7 +271,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
            **command_output(ctx, name, out, err, code), **withheld.note(ctx),
-           **withheld_verb_scoped(ctx, name, args), **_dead_root_note(policy), **killed}
+           **withheld_verb_scoped(ctx, name, args), **_jail_notes(policy), **killed}
     if ended is not None:
         # Not a failure, so no repair route: a resumed run replays this observation, and
         # "the util itself may be broken — fix it" would send it after a util that is fine.
@@ -377,7 +358,7 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     killed = _note_if_killed(ctx, "script", name, code)
     obs = {"kind": "script", "name": name, "args": args, "exit": code,
            **command_output(ctx, f"script-{name}", out, err, code),
-           **withheld.note(ctx), **_dead_root_note(policy), **killed}
+           **withheld.note(ctx), **_jail_notes(policy), **killed}
     if ended := _ended_by_a_person(ctx, code):
         obs[ended] = True
     return obs
@@ -432,7 +413,7 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
     killed = _note_if_killed(ctx, "shell", command[:60], int(result["exit"]))
     obs = {"kind": "shell", "command": command, "exit": result["exit"],
            **command_output(ctx, "shell", result["stdout"], result["stderr"], result["exit"]),
-           **_dead_root_note(policy), **killed}
+           **_jail_notes(policy), **killed}
     obs["truncated"] = obs["truncated"] or result["truncated"]
     if marks_a_write(command):
         # D158: no gate saw this write, so the record is the only place it exists — and R2654

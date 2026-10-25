@@ -478,7 +478,9 @@ capabilities:
   rule_confirm: always          # write_rule approval: always | creations | never
   remind_confirm: always        # curated-reminder approval: always | creations | never
   config_confirm: always        # its OWN config-patch autonomy: always | own_fields | never
-  runs: last                    # previous-run read depth: none | last | all
+  runs: last                    # previous-run read depth: none | last | all — enforced BOTH in
+                                # the read actions and in the Landlock jail, so a util or shell
+                                # command handed a deeper path is refused too (docs/sandboxing.md)
   reminders: local              # consequence reminders: none | local | global
   jobs: off                     # the job layer: off | on (docs/jobs.md)
 ```

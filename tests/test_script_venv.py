@@ -95,7 +95,8 @@ def test_a_dependency_free_script_runs_on_the_system_interpreter(tmp_path):
 def test_the_venv_a_dependency_carrying_script_needs_is_mounted_writable(tmp_path):
     """The placement test, in the terms R2892's diagnosis is in: can the venv build create
     the directory at all? `.venv` at the routine-dir ROOT cannot — the dir itself is mounted
-    read-only and there is no rule for a child that does not exist — while `scripts/` is an
+    unwritable (list-only since D207) and there is no rule for a child that does not exist —
+    while `scripts/` is an
     ordinary unsealed child, mounted read-write for every routine.
     """
     from rsched import scriptenv
@@ -103,11 +104,15 @@ def test_the_venv_a_dependency_carrying_script_needs_is_mounted_writable(tmp_pat
     d = _home(tmp_path, WITH_DEPS, "fetcher")
     ro: list[str] = []
     rw: list[str] = []
-    ownseal.mount_own_dir(sandbox.SandboxPolicy(own_dir=d), ro, rw)
+    ls: list[str] = []
+    ownseal.mount_own_dir(sandbox.SandboxPolicy(own_dir=d), ro, rw, ls)
     assert _writable(rw, scriptenv.venv_dir(d)), "the script venv is unwritable in the jail"
     assert _writable(rw, scriptenv.venv_python(d))
     assert not _writable(rw, d / ".venv"), "the pre-F764 placement reads as writable"
-    assert str(d) in ro      # the dir stays visible and read-only — F764's whole cause
+    # the dir stays VISIBLE and unwritable — F764's whole cause. Since D207 it is visible as a
+    # LIST-ONLY mount rather than a read-only one (the run-history depth needs that shape:
+    # `rundepth`), which changes nothing about the write placement this test is about.
+    assert str(d) in ls and str(d) not in ro
 
 
 def test_the_kernel_refuses_the_old_placement_and_allows_the_new(tmp_path, monkeypatch):

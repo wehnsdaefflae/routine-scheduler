@@ -109,11 +109,12 @@ def test_filesystem_declarations_intersect_grants(setup_gate, monkeypatch, decla
     assert (str(second) in spec["rw"]) == (declaration == "roots")
     assert str(forbidden) not in spec["ro"] + spec["rw"]
     # The routine dir is always VISIBLE — a gate check runs with it as its working directory —
-    # and since D179 it is no longer writable WHOLESALE: it is mounted read-only and its
-    # UNSEALED children read-write, so the kernel refuses exactly what the engine's file gate
-    # refuses. The run gate is a second door into the same jail, so the seal is pinned here
-    # too rather than only in tests/test_own_dir_seal.py.
-    assert str(cfg.dir) in spec["ro"]
+    # and it is no longer readable or writable WHOLESALE: D179 mounts its UNSEALED children
+    # read-write, and D207 mounts the dir LIST-ONLY with what may be READ enumerated beneath it
+    # (under runs/, only the dirs the depth allows). The run gate is a SECOND DOOR into the same
+    # jail — it builds its own policy, before a run exists — so both are pinned here too, not
+    # only in tests/test_own_dir_seal.py and tests/test_run_depth.py.
+    assert str(cfg.dir) in spec["ls"] and str(cfg.dir) not in spec["ro"]
     assert str(cfg.dir / "scripts") in spec["rw"]
     assert str(cfg.dir / CONFIG_FILE) not in spec["rw"]
 

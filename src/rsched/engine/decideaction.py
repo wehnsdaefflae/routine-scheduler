@@ -143,7 +143,8 @@ def _gather(action: dict, ctx: RunContext
     """
     # lazily: actions.py imports this module for its checks, and fileops sits above it
     from ..paths import resolve_rel
-    from .fileops import _memory_gate, _runs_read_gate, _sniff
+    from ..rundepth import read_gate as _runs_read_gate
+    from .fileops import _memory_gate, _sniff
     evidence = action.get("evidence") or ""
     texts: dict[str, str] = {}
     images: list[DecisionImage] = []

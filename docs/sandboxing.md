@@ -249,7 +249,8 @@ only — "may have written", never "did not") and the observation carries `ungat
 
 **Inside the routine's own directory the KERNEL now refuses them anyway (D179).** The seals
 above are path predicates, so `ownseal` subtracts those paths from the jail: the own dir is
-mounted read-only and its UNSEALED children read-write, which means `.memory/`, `runs/`,
+mounted LIST-ONLY (read-only until D207 moved the read boundary in beside it — see *The
+run-history depth* below) and its UNSEALED children read-write, which means `.memory/`, `runs/`,
 `.util_outputs/`, `.doc_cache/`, `routine.yaml` and — without the recipe-authoring permission —
 `main.md`/`stages/`/`tuning.yaml` are unwritable by any subprocess, however it writes. Landlock
 has no deny rule (a ruleset is an allow-list of hierarchies and a nested rule can only ADD
@@ -259,6 +260,47 @@ routine dir fails with a bare kernel error rather than a readable refusal, and t
 exists only where the jail engages — under `sandbox: off`, or on a kernel without Landlock,
 `ungated_write` is again the whole mechanism. Paths OUTSIDE the routine dir are unaffected: a
 granted write root is a grant, and the accountability marker remains the record there.
+
+### The run-history depth is a kernel boundary, not prompt economy (D207)
+
+`capabilities.runs` (none | last | all) says how far back a run may read its own previous runs.
+Until D207 only the ACTION layer enforced it: `read_file` refused an older
+`runs/<ts>/gate.json` with *"previous runs are readable at the default 'last' depth only"*,
+while `gu json get <that same absolute path>` returned it — a util is handed the path and opens
+it with ordinary access, and the jail mounted the whole routine dir readable, its own `runs/`
+tree included. The operator decided it is a real boundary and that it belongs where the jail is
+composed.
+
+It is enforced by MOUNTING ONLY THE PERMITTED RUN DIRECTORIES, which is the same consequence
+of Landlock having no deny rule that shaped the write seal above: the routine dir is mounted
+LIST-ONLY (`ACCESS_LS` — `FS_READ_DIR` alone, the new third rights class and the spec's `ls`
+key), every other child of it is mounted read-only one by one, and under `runs/` only what the
+depth allows plus the CURRENT run's own tree (always readable at every depth — the engine
+points the model there after compaction, and a child run's workspace lives under
+`runs/<ts>/sub/<n>/`). `rundepth.py` is the one predicate both enforcers compile from;
+`ownseal.mount_own_dir` applies it, which covers BOTH doors into `sandbox.wrap` — the
+util/script/shell path and the daemon's admission jails (`daemon/gate_prepare.py`, which build
+their own policy before a run exists and therefore fall to the closed `last` floor).
+
+Three costs, all accepted and all consequences of the mechanism rather than choices:
+
+* **Run ids stay enumerable.** `FS_READ_DIR` is inherited downward, so `ls runs/` and a glob
+  still see every name; what is refused is CONTENT. The alternative Landlock offers is a
+  routine dir that cannot be listed at all, which breaks every `ls .` and `cd` a jailed command
+  makes. A glob that enumerates and then opens therefore fails LOUDLY at the open (EACCES).
+* **A bare kernel error is what the command sees**, so the engine teaches instead: the call's
+  observation carries `run_depth` naming the depth, the run dirs that ARE readable, how many
+  were refused, and that the depth is the operator's setting to widen.
+* **Only children that EXIST when the jail is composed are mounted readable.** A Landlock rule
+  needs a live inode, and the own dir is no longer a single read-only hierarchy covering
+  whatever appears under it — so a NEW top-level entry inside the routine dir is unreadable to
+  the call that created it (it becomes readable to the next one, since every call composes its
+  own jail). The write seal has carried the same cost since D179; this extends it to reads.
+* **A granted root that CONTAINS the routine dir does not get carved** — `~/routines` for the
+  meta routines, and the routine dir itself, which every child run holds as a root (F185). A
+  root is mounted as one hierarchy, and for a routine holding that root every other routine's
+  `runs/` is readable by the grant anyway, which this depth never governed. The run is TOLD
+  (`run_depth.not_enforced_under`) rather than left believing in a boundary it does not have.
 
 R2654 connected that marker to a reader. For two years its only consumer was its own test — no
 read model, no endpoint, no console case — and a compensating control nothing reads is not one.
