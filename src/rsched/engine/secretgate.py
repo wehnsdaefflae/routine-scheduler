@@ -10,6 +10,20 @@ through the same decision record every other ask uses.
 An OPTIONAL secret a util declares with `?` is never worth blocking a run for: it is withheld
 silently and the run is told what it lost, so a degraded call beats a stalled one.
 
+A DECLINED REQUIRED secret is withheld the same way and the call proceeds (F756): a decline
+protects the credential, not the util — forbidding a util is a `util:` grant's job. That holds
+for every call THIS GATE sees, because this gate only sees calls the RUN chose: `util`, a
+`/util` slash command, and the routine's own `scripts/<name>.py`. The engine's own util calls
+never reach here (the run chose neither the util nor its arguments), and the one that needs a
+credential — `mediaops.vision_describe`, the vision fallback behind `view_image` — REFUSES on a
+declined secret instead. That asymmetry is deliberate and is the operator's recorded answer to
+D213 (2026-10-25): the engine refuses for calls IT chose to make and withholds for calls the RUN
+chose. Read from the run's side it is one rule — a decline never silently degrades work the run
+did not ask for: a call the run wrote comes back degraded and judgeable, a call the engine made
+on its behalf comes back refused with the reason, rather than failing inside a util the run never
+invoked. Before F756 both sites refused, and one declined name disabled every call of a util,
+including calls needing none of it.
+
 `secret_state` answers about ROWS and nothing else — never about an adjacent `util:` grant that
 happens to declare the name. That is deliberate (F562): a granted util used to leave its own
 declared secrets undecided, so the first call filed a SECOND blocking request for the same

@@ -220,3 +220,109 @@ def test_a_declined_secret_a_script_declares_is_withheld_too(make_routine, scrip
     assert status == "ok"
     assert ran, "the script must RUN with the declined credential withheld"
     assert DECLINED not in ran[0] and ran[0].get(GRANTED) == STORE[GRANTED]
+
+
+# --- D213: refuse for the ENGINE's calls, withhold for the RUN's -------------
+#
+# The operator's answer, verbatim (2026-10-25): "Two meanings, recorded: the engine refuses for
+# calls IT chose to make and withholds for calls the RUN chose — ship F756 and write that
+# distinction into both sites so it reads as deliberate".
+#
+# F756 alone would leave one word meaning two things by accident: `mediaops.vision_describe`
+# (the view_image fallback) REFUSES on a declined secret while a util the run called now runs
+# withheld. These tests make that asymmetry a PINNED rule instead of drift, over the same grant
+# row, and pin the prose at both sites so neither can be corrected away alone.
+
+VISION_KEY = "VISION_KEY"
+
+
+def _vision_library(tmp_path, monkeypatch, *, grants: dict):
+    """A ctx for the ENGINE's own call: a `vision` util declaring one required key, the
+    central store holding it, and the routine's grant standing under test. The same shape
+    tests/test_view_image.py uses for this function, kept local so this file reads alone.
+    """
+    from types import SimpleNamespace
+
+    from rsched import secrets as secrets_mod
+
+    home = tmp_path / "lib"
+    (home / "utils" / "vision").mkdir(parents=True)
+    (home / "utils" / "vision" / "main.py").write_text(
+        '"""vision — describe a file.\n\nusage: vision <file>\n'
+        f'secrets: {VISION_KEY}\nnet: outbound\nfs: roots\n"""\n', encoding="utf-8")
+    monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {VISION_KEY: "central-value"})
+    monkeypatch.setattr(secrets_mod, "load_routine_secrets", lambda slug: {})
+    routine = SimpleNamespace(slug="seer", dir=tmp_path, fs_read_roots=[], fs_write_roots=[],
+                              connections={}, machines=[], grants=dict(grants))
+    return SimpleNamespace(server=SimpleNamespace(libraries_home=home, sandbox="off",
+                                                  machines={}, routine_token=""),
+                           routine=routine, read_roots=list, write_roots=list,
+                           granted_now=set(), denied_now=set(), grant_args={},
+                           aborted=lambda: False)
+
+
+def test_the_engine_s_own_call_is_refused_where_the_run_s_is_withheld_from(tmp_path,
+                                                                          monkeypatch):
+    """D213's two meanings, over ONE declined row and one declaring util.
+
+    `vision_describe` is the engine's call — the run asked to SEE a file, not to run the
+    vision util — so it is REFUSED and the util never runs. `withheld_for_util`, the gate
+    every call the RUN wrote goes through, answers about the same util and the same row by
+    withholding that one name, leaving the call to proceed. Both sides are asserted here so
+    neither can be "made consistent" by moving one of them without reading this.
+    """
+    from rsched.engine import mediaops
+    from rsched.engine.secretgate import withheld_for_util
+
+    ctx = _vision_library(tmp_path, monkeypatch, grants={f"secret:{VISION_KEY}": False})
+    ran: list = []
+    monkeypatch.setattr(utils_run, "run_util",
+                        lambda *a, **k: (ran.append(k), (0, '{"text": "seen"}', ""))[1])
+
+    refusal = mediaops.vision_describe(ctx, "/x.png", "?")
+    assert ran == [], "the ENGINE's own call must not run without the declined credential"
+    assert refusal.startswith("error: the user declined exposing 1 secret the vision")
+    assert VISION_KEY not in refusal, "R17: a decline enumerates nothing"
+    assert "engine chose this call" in refusal and "withheld" in refusal, (
+        "the refusal must say WHY it refuses where a run's own call is withheld from — "
+        "D213: without that, the two behaviours read as an inconsistency")
+
+    withheld = withheld_for_util(ctx, "vision")
+    assert withheld.declined == (VISION_KEY,) and withheld.names == {VISION_KEY}
+    assert withheld.note(ctx) == {"withheld_declined": 1}, (
+        "the RUN's own call withholds exactly that name and proceeds — the same row, the "
+        "same util, the other side of D213")
+
+
+def test_an_undecided_secret_refuses_the_engine_s_call_without_asking(tmp_path, monkeypatch):
+    """The decline is what differs, not the gate: with the row UNDECIDED the engine's call
+    runs (nobody said no, and it may not ask from inside a view), which is what makes the
+    refusal above an enforcement of the user's answer rather than a missing credential.
+    """
+    from rsched.engine import mediaops
+
+    ctx = _vision_library(tmp_path, monkeypatch, grants={})
+    monkeypatch.setattr(utils_run, "run_util", lambda *a, **k: (0, '{"text": "seen"}', ""))
+    assert mediaops.vision_describe(ctx, "/x.png", "?") == "seen"
+
+
+def test_both_sites_state_the_distinction_in_prose():
+    """D213's second half: "write that distinction into both sites so it reads as deliberate".
+    A reader arriving at either site must find the rule, and the two doc surfaces that tell
+    the operator and the run what a decline does must agree with the code.
+    """
+    from pathlib import Path
+
+    from rsched.engine import mediaops, secretgate
+
+    repo = Path(__file__).resolve().parents[1]
+    sites = {"engine/mediaops.vision_describe": mediaops.vision_describe.__doc__ or "",
+             "engine/secretgate": secretgate.__doc__ or "",
+             "docs/sandboxing.md": (repo / "docs" / "sandboxing.md").read_text(),
+             "docs/rules-permissions.md": (repo / "docs"
+                                           / "rules-permissions.md").read_text()}
+    for where, text in sites.items():
+        assert "D213" in text, f"{where} does not name the decision it implements"
+        assert "refuses for calls IT chose" in text, (
+            f"{where} does not state the operator's distinction verbatim — the whole point "
+            "of D213's second half is that both sites read as deliberate")

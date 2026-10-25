@@ -659,10 +659,27 @@ and back out):
   binding, an fs root. `secret:` is the one class with no native switch — its
   allow-forever is a `grants:` true row, and it covers the CENTRAL store only: a
   routine-scoped secret (D103, `secrets.d/<slug>.env`) is owned by its routine, so there is
-  nothing to decide and the gate skips the name entirely. Only a REQUIRED secret declaration triggers the
+  nothing to decide and the gate skips the name entirely. Only an UNDECIDED REQUIRED secret
+  declaration triggers the
   engine's own blocking request; an OPTIONAL one (`NAME?` in the util header, D51/F290)
   is withheld from the call instead of prompting — the run requests it explicitly when a
   call really needs it.
+
+  **Declining a secret withholds that credential; it does not disable the util** (F756). A
+  `secret:<NAME>` false row (or a decline given at the exposure ask — the same intent, so the
+  same path) scrubs that one name from the call's environment exactly as a `?`-optional one is
+  scrubbed, and the call RUNS. A util that genuinely cannot work without it fails inside, with
+  its own message, which is already what happens to a declared-but-unset secret. Before this,
+  one declined name refused EVERY call of that util: the operator granted `GMAIL_*` to `gu mail`
+  and declined `FAU_*`, after which even `mail --account default` — needing no FAU credential —
+  was refused, so the grant UI offered a per-secret decline the enforcement could not keep. To
+  forbid a util, withhold its `util:` grant or reserve it; a secret row is not that lever.
+  The engine's OWN credential-needing call goes the other way: `view_image`'s vision fallback is
+  REFUSED on a declined secret, since the run chose neither that util nor its arguments and a
+  credential-less attempt would fail inside it about a call the run never wrote. That is the
+  operator's recorded answer to **D213** (2026-10-25): *the engine refuses for calls IT chose to
+  make and withholds for calls the RUN chose* — one rule read from the run's side, where a
+  decline never silently degrades work the run did not ask for.
 A reserved util may be requested as `util:signal:read`: the scope is exactly the
 first argument, not any later argument. A bare `util:signal` grant still covers all
 verbs. A broad conduct doc can cover a scoped grant; a scoped-only doc cannot cover
