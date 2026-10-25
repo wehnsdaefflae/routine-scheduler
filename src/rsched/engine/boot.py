@@ -11,6 +11,7 @@ from ..paths import read_json, resolve_rel
 from . import (
     askback,
     enginenote,
+    freightnote,
     goals,
     guardscope,
     inbox,
@@ -64,6 +65,10 @@ def boot(loop) -> None:
             vias=inbox.LIVE_MESSAGE_VIAS if resuming else None)
         ctx.reports_open += reports.stamp_delivered(
             ctx.server.routines_home, msgs, run_id=ctx.run_id)
+        # F529: whatever is STILL queued after that drain is what this leg's digest is about
+        # to name, so the boundary clock counts it as already said. A fresh run drained every
+        # channel and seeds nothing; a resumed leg seeds exactly what it may not take.
+        freightnote.seed(loop)
         # F335: the notes sharers of a store left for this routine — read and DELETED here,
         # once per leg, beside the inbox drain above: a note is delivered exactly once
         store_notes = sharedstores.drain(ctx.server.routines_home, ctx.routine.slug,

@@ -28,7 +28,7 @@ from pathlib import Path
 from .. import decline, patchreceipt, registry
 from ..engine import inbox
 from ..paths import read_json
-from ..readmodels import memo
+from ..readmodels import decision_answers, memo
 
 _DECISION_RE = re.compile(r"\[AUDIT decision · ([^\]]+)\]")
 
@@ -94,25 +94,43 @@ def _audit_decisions_fresh(rdir: Path) -> list[dict]:
     answered = read_json(rdir / "audit" / "decisions-answered.json")
     if not isinstance(answered, dict):
         answered = {}
+    words = decision_answers.queued_answer_words(rdir)
+    generated = str(report.get("generated") or "")
     out = []
     for d in report.get("decisions") or []:
         did = str(d.get("id") or "").strip()
         options = [str(o) for o in (d.get("options") or [])]
         settled = (str(d.get("status") or "").strip().lower() in _DECIDED_STATUSES
                    or str(d.get("detail") or "").lstrip().upper().startswith("SETTLED"))
-        if not did or did in queued or settled or len(options) == 1:
+        if not did or settled or len(options) == 1:
             continue
+        # ANSWERED, by the two records his click writes (`web/api_audit.write_feedback`). The
+        # durable marker decides when it exists, because it is the one with a timestamp: an
+        # answer at-or-after this report is answered, and a NEWER report re-asking the
+        # decision outranks it (self-audit re-asks deliberately). A queued message with no
+        # marker has no timestamp to compare, so it reads as answered, as it always did.
         marker = str(answered.get(did) or "")
-        if marker and marker >= str(report.get("generated") or ""):
-            # answered since this report was written — not open again until a newer
-            # report says so
-            continue
+        was_answered = marker >= generated if marker else did in queued
         text = str(d.get("title") or did)
         if d.get("detail"):
             text += "\n\n" + str(d["detail"])
-        out.append({"qid": f"audit:{did}", "routine": SELF_AUDIT_SLUG, "mode": "deferred",
-                    "meta": True, "question": text, "options": options,
-                    "asked": report.get("generated") or ""})
+        row = {"qid": f"audit:{did}", "routine": SELF_AUDIT_SLUG, "mode": "deferred",
+               "meta": True, "question": text, "options": options,
+               "asked": generated}
+        if was_answered:
+            # F529, the acknowledgement half: this row used to be DROPPED, so the card he had
+            # just answered vanished and nothing anywhere said his answer had landed — "i
+            # answered your questions. for the second time btw. did my answers get lost the
+            # first time?!". It is not a new ask: every surface that counts what waits filters
+            # `answered` out (views/questions.js, web/push.pending), and the page renders it in
+            # the Settled band with his own words, like every other decision shape (F525).
+            row["answered"] = True
+            row["answer"] = words.get(did.upper()) or f"answered {marker}"
+            row["answer_source"] = "web"
+            # `settled` = a run has taken it: the message is gone from the inbox, so the
+            # marker is all that is left (the page says "read by the run that asked").
+            row["settled"] = did not in queued
+        out.append(row)
     return out
 
 def _mark_answered(routine_dir, item: dict) -> dict:

@@ -217,6 +217,17 @@ a caching contract. Consequences worth stating:
 - **Some notes are re-authored rather than replayed.** The ones `boot` writes afresh on every
   leg — the resume framing, the setup-gap list, the orphaned-children note — carry
   `replay: false` and the replay skips them, so a leg cannot stack one copy per resume.
+- **Freight that arrived mid-run is NAMED at the turn boundary** (`engine/freightnote.py`,
+  F529): a file that landed in `inbox/` on a channel this leg may not consume — a decision
+  answer, which belongs to the routine's next FRESH run (D92/D93) — is announced as an engine
+  note once per file, carrying `An answer sitting in inbox/ is ANSWERED — do not record it as
+  still open or awaiting him, and do not ask him again.` Nothing is consumed and nothing is
+  marked read; the next fresh run still gets everything. `boot` seeds the named set after its
+  own drain, so the digest's `QUEUED FOR THIS ROUTINE'S NEXT FRESH RUN` section and this note
+  never say the same thing twice. The digest is composed once, at boot; the double ask this
+  ends happened every moment after it — a run told at turn 5 that a decision was open wrote a
+  report at turn 150 calling it open, hours after he had answered, and he answered a second
+  time ("i answered your questions. for the second time btw").
 - **A slash command replays as ONE message**, command plus result, the same shape
   `control.command_message` builds live — not as two.
 - **A finish the gate set aside replays as its deferral.** Every rung records the message it

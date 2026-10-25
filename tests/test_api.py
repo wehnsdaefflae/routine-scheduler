@@ -2201,9 +2201,9 @@ def test_audit_decisions_merge_into_questions(client):
     msgs = list((tmp / "routines" / "self-audit" / "inbox").glob("msg-*.json"))
     assert len(msgs) == 1
     assert read_json(msgs[0])["text"] == "[AUDIT decision · D2] selected: A"
-    # queued now → gone from the open list (the free-text ask is untouched)
+    # out of the OPEN list (F529: it stays as an answered row — test_decision_acknowledged)
     assert [q["qid"] for q in c.get("/api/questions").json()
-            if q.get("meta")] == ["audit:D6"]
+            if q.get("meta") and not q.get("answered")] == ["audit:D6"]
     # unknown decision → 404
     assert c.post("/api/questions/audit:D9/answer", json={"text": "x"}).status_code == 404
     # a decided one is not answerable through the decisions surface either — the Items
@@ -2312,12 +2312,12 @@ def test_audit_decision_answer_survives_inbox_consumption(client):
     assert c.post("/api/questions/audit:D2/answer", json={"text": "A"}).status_code == 200
     marker = read_json(adir / "decisions-answered.json")
     assert isinstance(marker, dict) and marker.get("D2")
-    assert not [q for q in c.get("/api/questions").json() if q.get("meta")]
-
+    qs = lambda: c.get("/api/questions").json()   # noqa: E731
+    assert not [q for q in qs() if q.get("meta") and not q.get("answered")]
     # a run consumes the inbox message (mid-run delivery) — the decision must STAY hidden
     for p in (rdir / "inbox").glob("msg-*.json"):
         p.unlink()
-    assert not [q for q in c.get("/api/questions").json() if q.get("meta")]
+    assert not [q for q in qs() if q.get("meta") and not q.get("answered")]
 
     # a NEWER report listing it open again re-opens it (the routine deliberately re-asks).
     # Far-future stamp: the answered-marker is written with REAL now(), so a near-past
