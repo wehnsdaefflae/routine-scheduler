@@ -89,7 +89,12 @@ def boot(loop) -> None:
                                                           list(ctx.routine.rules)),
                               store_notes=store_notes, goals=ctx.goals,
                               conversation=runkind.is_conversation(ctx),
-                              jobs_section=jobs_section)
+                              jobs_section=jobs_section,
+                              # D200: which of the two recipe-revision asks this run reads —
+                              # a run that may write its own recipe is told to make the edit,
+                              # one that may not is told its lines become a proposal
+                              recipe_unlocked=bool(
+                                  getattr(ctx.grants, "recipe_unlocked", False)))
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"

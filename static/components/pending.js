@@ -1,4 +1,4 @@
-// The Decisions page's five PENDING bands — records a run or the daemon filed that nobody has
+// The Decisions page's six PENDING bands — records a run or the daemon filed that nobody has
 // decided yet. Bands of their own rather than rows blended into the decision list, because none
 // is a question: no answer text, no options, two buttons each.
 //
@@ -25,6 +25,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
+import { RECIPE, recipeRow } from "/static/components/recipe-card.js";
 import { SWAP, swapRow } from "/static/components/swap-card.js";
 import { UNOWNED, unownedRow } from "/static/components/unowned-card.js";
 import { el, groupHead, toast, toastError, when } from "/static/util.js";
@@ -160,7 +161,8 @@ export function pendingBand({ onChanged } = {}) {
     const goals = recs.filter((r) => r.kind === GOAL);
     const swaps = recs.filter((r) => r.kind === SWAP);
     const unowned = recs.filter((r) => r.kind === UNOWNED);
-    const creations = recs.filter((r) => ![DRIFT, GOAL, SWAP, UNOWNED].includes(r.kind));
+    const recipes = recs.filter((r) => r.kind === RECIPE);
+    const creations = recs.filter((r) => ![DRIFT, GOAL, SWAP, UNOWNED, RECIPE].includes(r.kind));
     host.replaceChildren();
     // Finished routines first: this is the only band whose subject has ALREADY changed state.
     if (goals.length) {
@@ -175,6 +177,12 @@ export function pendingBand({ onChanged } = {}) {
     if (unowned.length) {
       host.append(band("Unowned work", "nobody would act on these — give each an owner or close it",
         unowned, (rec) => unownedRow(rec, { reload: load, onChanged })));
+    }
+    if (recipes.length) {
+      host.append(band("Recipe revisions",
+        "a run proposed a change to its own recipe at its finish; applying resumes it with "
+        + "the recipe writable",
+        recipes, (rec) => recipeRow(rec, { reload: load, onChanged })));
     }
     if (creations.length) {
       host.append(band("Queued creations",

@@ -1816,6 +1816,27 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   NOTE saying so, with no remedy: a diagnosis offering to undo a finished job reads as a defect
   report on a routine that did exactly what it was for. Lane membership and roots are left
   alone, so reopening costs nothing.
+- **Recipe revisions — a run proposing a change to its OWN recipe** (`engine/recipeproposal.py`,
+  D200, operator requirement 2026-10-19: *"I want recipes to suggest a change in their recipes
+  themselves when they finish"*). The home is the ENGINE FINISH SEAM, not a general rule (which
+  reaches only routines whose config holds it) and not per-recipe text: every finishing routine
+  run is ASKED, in the digest's FINISH block beside what its accounting owes
+  (`engine/finish_digest.py`) — modelled on D195's known-flaw prompt, which likewise asks for
+  something a run would otherwise never volunteer. The ask is NOT in the harness contract: that
+  body is the always-on engine contract held to a shrink-only budget
+  (`tests/test_prompt_budget.py`), where new prose is paid for by cutting prose.
+  The ANSWER rides the run's own summary, one `RECIPE REVISION: <file> — <change>` line per
+  revision, exactly as D195's flaw answer rides prose rather than a new action field. Because a
+  scheduled run holds no `write_recipe` (the decision row's constraint: vodafone-outage-claims'
+  own `main.md` d17 asked this of itself on 2026-10-20 and the engine refused the edit), the
+  lines become ONE `recipe-revision` card on the `pending.py` bridge, deduped on the lines
+  themselves — the same gap noticed next run is one card, new reasoning is its own. Approving
+  (`web/api_recipe_revision.py`) does not write the recipe from out here: the proposal is prose,
+  the reasoning is in that run's transcript, so it ARMS the unlock that already exists
+  (`engine/revise.py`) and resumes the proposing run with its recipe writable — the "grant the
+  capability at that moment" half of the same constraint, through one unlock path rather than a
+  second that can drift. A run that ALREADY holds recipe self-write is asked the same question
+  and files no card: it makes the edit, and the autocommit carries it.
 - **Checking the claims** (`engine/verifier.py`). The accounting proves a run ANSWERED for every
   line; it cannot prove the answer TRUE, so a run could write `d3 met: PDF verified` having never
   opened the PDF. Each `met` is therefore checked once, by a second call on the `tool_call` role —

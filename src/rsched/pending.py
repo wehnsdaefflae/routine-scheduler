@@ -79,6 +79,12 @@ def identity(kind: str, routine: str, fields: dict) -> tuple:
                 str(fields.get("target") or fields.get("name") or ""))
     if kind == "library-drift":
         return (kind, routine, str(fields.get("entity") or ""))
+    if kind == "recipe-revision":     # D200: one standing card per set of REVISIONS proposed
+        # Not `(kind, routine)` like the default: a routine is asked for its recipe revisions
+        # at EVERY finish, so the same gap noticed again must dedupe (that is the repeat this
+        # rule exists for) while genuinely new reasoning from a later run must not be folded
+        # into a standing card and lost — the lines ARE the ask.
+        return (kind, routine, "\n".join(str(x) for x in (fields.get("lines") or [])))
     if kind == "replace-routine":     # one standing swap per routine it would replace
         return (kind, str(fields.get("replaces") or ""))
     if kind == "unowned-report":      # one standing decision per report nobody owns

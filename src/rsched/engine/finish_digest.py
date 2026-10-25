@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..paths import read_json
-from . import accounting, donewhen, finishline
+from . import accounting, donewhen, finishline, recipeproposal
 from . import goals as goals_mod
 
 _JUDGE = {"run": "the run proves it", "you": "the operator decides", "date": "on its date"}
@@ -38,8 +38,9 @@ def _last_unmet(routine_dir: Path) -> list[str]:
 
 
 def digest_section(routine_dir: Path, *, goals: list[dict] | None = None,
-                   conversation: bool = False) -> str:
-    """The block, or "" for a run that owes nothing and was asked nothing.
+                   conversation: bool = False, recipe_unlocked: bool = False) -> str:
+    """The block — never empty for a routine run, which is always asked for its own recipe
+    revisions (D200); "" for a conversation that owes nothing and was asked nothing.
 
     The run's GOALS come first (engine/goals.py). A routine run whose goals began with the
     operator's brief answers for them instead of its recipe's Done when; a CONVERSATION owes
@@ -86,4 +87,12 @@ def digest_section(routine_dir: Path, *, goals: list[dict] | None = None,
     if residuals := _last_unmet(routine_dir):
         out.append("THE LAST RUN LEFT UNMET (its own words — pick these up first):\n"
                    + "\n".join(f"  - {r}" for r in residuals))
+    # D200, the operator's answer: the engine finish seam asks EVERY finishing run for its own
+    # recipe revisions. Here rather than in the harness contract for two reasons — the always-on
+    # contract (harness/schema/example) is held to a shrink-only budget, so prose there is paid
+    # for by cutting prose there (tests/test_prompt_budget.py); and this block is already where
+    # the engine says what a finish owes, said ONCE at boot in the body compaction never evicts.
+    # Unconditional for a routine run, like D195's honesty instruction: a run that is not asked
+    # does not answer, and this is exactly the question a recipe cannot ask of itself.
+    out.append(recipeproposal.digest_ask(unlocked=recipe_unlocked))
     return "\n".join(out)

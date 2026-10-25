@@ -277,9 +277,9 @@ def test_unmet_residuals_carry_the_runs_own_words():
 
 # ---- the digest block --------------------------------------------------------------------------
 
-def test_the_digest_says_nothing_for_a_routine_that_owes_nothing(tmp_path):
+def test_a_routine_owing_nothing_reads_only_the_recipe_ask(tmp_path):
     (tmp_path / "main.md").write_text("# R\n\nDo it.\n", encoding="utf-8")
-    assert finish_digest.digest_section(tmp_path) == ""
+    assert finish_digest.digest_section(tmp_path).startswith("RECIPE REVISIONS:")   # D200
 
 
 def test_the_digest_renders_the_finish_line_and_the_contract(tmp_path):
