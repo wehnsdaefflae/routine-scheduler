@@ -7,7 +7,7 @@ import { api, apiUpload } from "/static/api.js";
 import { filePicker } from "/static/components/filepicker.js";
 import { questionPanel } from "/static/components/answerform.js";
 import { deliberationControl } from "/static/components/deliberation.js";
-import { confirmDialog, promptDialog } from "/static/components/dialog.js";
+import { confirmDialog } from "/static/components/dialog.js";
 import { setQuery, remount } from "/static/router.js";
 import { loadQuestions } from "/static/questions-store.js";
 import { liveTail } from "/static/stream.js";
@@ -18,6 +18,7 @@ import { createPhaseGraph } from "/static/components/phasegraph.js";
 import { createRunAccounting } from "/static/components/run-accounting.js";
 import { mountRunJob } from "/static/components/runjob.js";
 import { createModelSwitch } from "/static/components/runswitch.js";
+import { createRewindButton, createSuperviseButton } from "/static/components/runsupervise.js";
 import { renderLadder } from "/static/components/ladderstrip.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtAbs, fmtDur, fmtTokens, skeleton, streamStatus,
@@ -201,30 +202,12 @@ export async function render(view, runId, query = {}) {
       remountSoon();
     } catch (err) { toastError(err); resumeBtn.disabled = false; }
   };
-  // D69: rewind a terminal run to a chosen turn and re-open it live from there — the remedy
-  // for a run that died or derailed (e.g. a context overflow) instead of losing the whole
-  // conversation. Truncates the transcript through the turn (archiving the dropped tail) and
-  // resumes on the same run dir.
-  const rewindBtn = el("button", { class: "btn small", hidden: true,
-    title: "rewind to a chosen turn and continue from there" }, "⟲ rewind");
-  rewindBtn.onclick = async () => {
-    const ans = await promptDialog(
-      `Rewind ${runId}: keep the transcript through which turn? Everything after it is `
-      + `archived and the run re-opens live from that point.`, { placeholder: "turn number" });
-    if (ans == null) return;
-    const turn = parseInt(ans, 10);
-    if (!Number.isInteger(turn) || turn < 1) {
-      toast("enter a turn number (1 or higher)", 4000, { error: true }); return;
-    }
-    rewindBtn.disabled = true;
-    try {
-      const r = await api(`/api/runs/${runId}/rewind`,
-        { method: "POST", body: { turn } });
-      toast(`rewound to turn ${r.kept_through_turn} — reconnecting…`);
-      remountSoon();
-    } catch (err) { toastError(err); rewindBtn.disabled = false; }
-  };
-  controls.append(pauseBtn, abortBtn, resumeBtn, rewindBtn);
+  // Both in runsupervise.js: ⟲ rewind a terminal run (D69), and 👁 supervise a LIVE one — ask
+  // for a rung at its next turn boundary (F750), which is how a person supervises a run in
+  // flight now that the daemon's one-run-per-routine rule rightly refuses a second run.
+  const rewindBtn = createRewindButton(runId, remountSoon);
+  const superviseBtn = createSuperviseButton(runId);
+  controls.append(pauseBtn, abortBtn, resumeBtn, rewindBtn, superviseBtn);
 
   // Live model + effort mid-run switch (applies at the next turn; the engine re-resolves both).
   const { node: switchBox, setModel } = createModelSwitch(runId, modelSpan);
@@ -340,6 +323,7 @@ export async function render(view, runId, query = {}) {
     const terminal = TERMINAL.has(state);
     pauseBtn.disabled = abortBtn.disabled = terminal;
     pauseBtn.hidden = abortBtn.hidden = terminal;   // controls for a live run
+    superviseBtn.hidden = terminal;   // a rung needs a turn boundary still to come (F750)
     resumeBtn.hidden = !terminal;                   // resume only a terminal run
     rewindBtn.hidden = !terminal;                   // D69: rewind only a terminal run
     if (terminal) rewindBtn.disabled = false;

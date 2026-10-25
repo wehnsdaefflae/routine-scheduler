@@ -214,6 +214,28 @@ def switch_deliberation(request: Request, run_id: str, body: DeliberationSwitch)
     merge_control(run_dir, {"set_deliberation": {"level": body.level, "ts": now_iso()}})
     return {"ok": True, "switch": f"deliberation → {body.level}"}
 
+@router.post("/runs/{run_id}/supervise")
+def supervise_now(request: Request, run_id: str) -> dict:
+    """Ask a LIVE run for a supervisory rung — the door F750 opens.
+
+    A person could not start a supervisory run by hand while the run it would supervise was
+    live: `runner.fire_blocker` refuses a second run of a routine, and that refusal is right
+    (`runner.active` is keyed by slug; two concurrent runs of one routine would race its
+    state). This is not an exemption from it. The ladder already supervises a live run the only
+    way that is safe — in-process, at the worker's next turn boundary, as an OVERSIGHT child
+    whose turns are its own — so what a person needs is a request ON the run, which is what
+    this records (`engine.switches.person_asked` reads it, `engine.ladder.at_boundary` acts).
+
+    It does NOT require `ladder.enabled`: the knob is off on every routine by default, so
+    requiring it would shut the door on exactly the run he is watching. The ask is the
+    authorization. One ask is one rung — the engine consumes it by reading it.
+    """
+    _, run_dir = _run_dir(request, run_id)
+    require_active(run_dir, "supervise")
+    merge_control(run_dir, {"supervise_now": {"ts": now_iso()}})
+    return {"ok": True, "supervise": "a rung runs at this run's next turn boundary"}
+
+
 class ActionCancel(BaseModel):
     turn: int   # the turn whose util/script/shell call is to be stopped
 

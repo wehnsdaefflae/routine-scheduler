@@ -40,35 +40,17 @@ from __future__ import annotations
 import logging
 
 from ..config.base import DEFAULT_LADDER, DEFAULT_TURN_INTERVAL
-from . import child, inbox, oversight
+from . import child, inbox, oversight, switches
 
 log = logging.getLogger("rsched.engine.ladder")
 
-#: The floor under a rung's own turn budget. Redundant for any `n >= 6` once the cap is derived
-#: (below), and kept anyway: it costs nothing and catches someone setting `n = 2`. A rung with
-#: one or two turns cannot read a dispatch AND answer — it spends its budget on the reading and
-#: finishes with nothing, which reads as `continue` and is the one failure mode that is invisible.
-MIN_OVERSIGHT_TURNS = 4
-
-
-def oversight_turns_for(interval: int) -> int:
-    """A rung's own turn cap, derived from the interval it must read (operator, 2026-10-02).
-
-    A rung's cost has a READ term — the `say` lines of the interval, which grows with `n` — and
-    a JUDGE term — assemble one directive, fixed whatever `n` is. The design's `oversight_turns
-    = n` prices BOTH as if both scaled, which is exactly the 2×-the-worker ceiling the design
-    itself calls "the objection that decides the feature". A fixed cap prices both as fixed,
-    which starves the read at large `n` and yields `oversight_no_directive`: supervision that
-    silently does nothing.
-
-    `n // 2 + 1` is sublinear read + constant. It still grows with the interval, so a long
-    interval is never starved, while holding the per-rung worst case at a steady ~0.5× the
-    worker's turns (n=10→6, 15→8, 20→11, 30→16) and the whole `m = 3` ladder at ~1.5× rather
-    than ~6×. It is a FORMULA rather than a tuned constant because every routine that opts in
-    inherits it; `tuning.yaml`'s `oversight_turns` overrides it per routine, so a meta-routine
-    can raise it on measured evidence if real rungs are seen hitting the cap.
-    """
-    return max(interval // 2 + 1, MIN_OVERSIGHT_TURNS)
+#: Re-exports, so a name has ONE spelling for its callers wherever it is defined: the rung's
+#: turn-cap arithmetic lives in `oversight.py` (the ladder's PURE half, documented there) and
+#: eight callers already import both names from here; `REQUESTED_BY_PERSON` lives in `switches`,
+#: which owns the control.json read a person's ask arrives on (F750).
+MIN_OVERSIGHT_TURNS = oversight.MIN_OVERSIGHT_TURNS
+oversight_turns_for = oversight.oversight_turns_for
+REQUESTED_BY_PERSON = switches.REQUESTED_BY_PERSON
 
 #: The two defaults the CONFIG layer owns, read from it rather than restated here: a routine's
 #: `ladder:` block already merges over `DEFAULT_LADDER`, and a second copy of `rung_height` in
@@ -327,7 +309,12 @@ def at_boundary(loop) -> None:
     """
     try:
         settings = ladder_settings(loop.ctx)
-        if (reason := rung_is_due(loop, settings)) is not None:
+        # A PERSON's ask comes first and is not gated on `enabled` (F750, switches.person_asked):
+        # the knob is off by default, so gating it would shut the door on the very run he is
+        # watching. Everything after it is the mechanism judging for itself.
+        if (reason := switches.person_asked(loop)) is None:
+            reason = rung_is_due(loop, settings)
+        if reason is not None:
             escalate(loop, reason, settings)
     except Exception as exc:
         # The mechanism RAISED — not a rung declining to run. These were one event until
