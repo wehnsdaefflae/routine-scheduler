@@ -309,6 +309,11 @@ retryable `EndpointError`s; a 200 with an unparseable body is one of them). Both
 The credential ladder (`resolve_api_key`: inline api_key → key_var in Secrets → key_env_file) has label-only mirrors BESIDE the resolvers
 (`api_key_source`) feeding the Settings card's "credential in use" line — which rung is
 live, plus a shadow warning when an inline key hides a set secret; key values never leave the server.
+The WRITE side of the same ladder is `web/settings/endpoint_keys.py`: an endpoints save reads
+the submitted `api_key` in three states (absent and `""` keep a stored inline key, since the
+editor submits the field blank; an explicit `null` clears it) and refuses a save that would
+leave the endpoint with no rung resolving at all — but only when that save is what changed the
+credential, so a keyless local backend and an endpoint awaiting its key both still save.
 Two kinds:
 - **openai** — any OpenAI-compatible API (OpenRouter, vLLM, Ollama). Schema via json_schema / json_object
   / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400, and without

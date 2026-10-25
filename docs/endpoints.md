@@ -40,7 +40,17 @@ OpenAI chat-completions dialect, cloud or local.
    which rung of the ladder is actually live (inline / secret / env file / none — labels
    only, values are never returned) and warns when an inline key **shadows** a set secret:
    the inline key wins, so editing the secret changes nothing until the inline key is
-   removed.
+   removed. To remove it, send an **explicit null**:
+   `PUT /api/settings/endpoints/<name>` with `{"api_key": null}` deletes the inline key and
+   the Secrets rung takes over. A **blank or absent** `api_key` is deliberately
+   non-destructive — the editor submits that field empty on every unrelated edit, so only a
+   null means "delete it". A save that would leave the endpoint with **no** resolvable
+   credential is refused (400) naming the `key_var` to provision: you cannot clear the last
+   key, nor point a working endpoint at a secret nobody holds. An endpoint that already
+   resolves nothing keeps saving normally — a keyless local backend (Ollama, vLLM), or one
+   added with no credential field at all, which is why step 1 above does not ask for one.
+   Filling `key_var` in on the **add** form does mean the secret has to be in the store
+   already: add the secret first, or add the endpoint bare and give it a key on its card.
 3. **Test it.** Pick a model id on the card (the dropdown lists what the endpoint itself says
    it serves — see *Model-id picker* below) and hit *test* — you get latency, whether the
    model respected a JSON schema, and the raw error (with an auth hint) if the call failed.
@@ -98,7 +108,9 @@ system_model: glm                 # the fallback model for setup-time work — a
   first, then `key_var` in the Secrets store, then `key_var` inside `key_env_file`
   (a `~/.credentials/*.env` style file). `key_var` defaults per kind — `OPENAI_API_KEY`
   for `openai`, `ANTHROPIC_API_KEY` for `anthropic` — set it explicitly for an aggregator
-  (e.g. `OPENROUTER_API_KEY`).
+  (e.g. `OPENROUTER_API_KEY`). Over the API the inline `api_key` has three states, not two:
+  absent and `""` keep whatever is stored, `null` clears it
+  (`web/settings/endpoint_keys.py`).
 - `schema_mode` — how the endpoint enforces the one-JSON-action-per-turn contract:
   - `json_schema` (default): strict `response_format` — OpenRouter, OpenAI, Ollama ≥ 0.5.
     Providers that reject it — with a 400, or a generic 503 that hides a schema-incapable
