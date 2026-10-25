@@ -251,9 +251,21 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                        "on your routine card, and his answer arrives in YOUR inbox for your "
                        "next run — so do not also ask it as an ask_user."
                        if obs.get("decision_qid") else "")
+            # F770: your words say you closed a row that none of your FIELDS dispose of, so it
+            # is still open and only you can still fix that — this turn. Not a refusal: the
+            # prose may be a citation this check read as a claim.
+            said = (" Your text says it disposes of "
+                    f"{', '.join(obs['claimed_not_disposed'])}, but `answers`, `settles` and "
+                    "`supersedes` name none of them — so " +
+                    ("that row stays" if len(obs["claimed_not_disposed"]) == 1
+                     else "those rows stay") +
+                    " open, counted in every backlog, and its recipient cannot close it for "
+                    "you (a row is disposed of only for the routine it was delivered TO). "
+                    "Re-file with the id in the right field if you meant it."
+                    if obs.get("claimed_not_disposed") else "")
             return (f"OBSERVATION (report filed as {obs.get('id')}: {obs.get('title')!r} — "
-                    f"{where}.{took}{cut}{decided} Refer to it by that id if you mention it "
-                    "again. Continue your own task.)")
+                    f"{where}.{took}{cut}{decided}{said} Refer to it by that id if you mention "
+                    "it again. Continue your own task.)")
         return ("OBSERVATION (report: could NOT write the reports log (I/O error) — the "
                 "report was not filed. Continue your own task; put it in your finish summary "
                 "instead.)")

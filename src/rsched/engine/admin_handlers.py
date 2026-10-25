@@ -220,6 +220,15 @@ def handle_report(loop, action: dict) -> dict:
     # still re-file the rest.
     if filed and (dropped := reports.clip_detail(detail)[1]):
         out["detail_truncated"] = dropped
+    # F770: prose that says it closes a row, while no field disposes of it, closes nothing —
+    # and the sender reads its own words and is satisfied, while the recipient sees a live row
+    # it may not close. Said HERE and nowhere else, because this turn is the only moment the
+    # author can still add the field; it does not refuse, since the prose may be right and the
+    # id merely cited in a shape the check reads as a claim.
+    if filed and (claimed := report_threads.undisposed_claims(
+            title=title, detail=detail,
+            disposed=(answers, *settles, *(filed[2] or ())))):
+        out["claimed_not_disposed"] = claimed
     if target:
         out["target"] = target
         out["delivery"] = "the target reads it on its next scheduled run"
