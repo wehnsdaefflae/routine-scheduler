@@ -152,17 +152,16 @@ def _report_item(kind: str, entry: dict, report: dict,
     title, detail = str(entry.get("title") or ""), str(entry.get("detail") or "")
     since = report.get("since") if isinstance(report.get("since"), dict) else {}
     status = _status_from_report(entry)
-    if kind == "decision" and answered.get(item_id) and status in ("unknown", "open"):
-        # The user answered it — a recorded fact, and it outranks `open` in the report.
-        # `open` used to survive here: the report's own status is only rewritten by
-        # self-audit's NEXT run, so between his click and that run every surface reading the
-        # report showed an answered decision as awaiting him. On 2026-10-25 he answered
-        # D210-D215 between 02:07 and 02:17, the 02:40 report still listed all six `open`
-        # with an empty `resolution`, and a routine reported them back to him as outstanding.
-        # His instruction: "also make the report record a resolution for an answer that
-        # arrived mid-run". The marker is written by `web/api_audit.write_feedback` under a
-        # lock on every answer, so it is as durable as the report itself.
-        status = "settled"
+    if status == "unknown" and kind == "decision" and answered.get(item_id):
+        status = "settled"                      # the user answered it — a recorded fact
+    # An `open` status is NOT overridden here, deliberately. A widening to
+    # `status in ("unknown", "open")` was built on 2026-10-25 and reverted the same run:
+    # `tests/test_api.py::test_items_page_reflects_answered_decision_after_consumption` pins
+    # that an item's status comes from the REPORT (self-audit's judgement, where `settled`
+    # means the item is dealt with) while the answer is an OVERLAY the pages apply from
+    # `web/api_audit.answered_decisions`. The live case says the same: D213 was answered on
+    # 2026-10-25 and the work it authorized (F756) is still unshipped, so `settled` would
+    # misreport it. What was missing was never the status — it was the resolution below.
     item = {
         "id": item_id, "type": kind, "status": status, "title": title, "detail": detail,
         "origin": {"routine": SELF_AUDIT_SLUG, "run_id": str(report.get("run_id") or ""),

@@ -11,9 +11,17 @@ a conversation. His instruction: *"also make the report record a resolution for 
 arrived mid-run"*.
 
 The report file belongs to self-audit, so the ENGINE cannot write its `resolution` field. What
-the engine owns is the item read model every surface reads, and it already flips an answered
-decision to `settled` on the marker — it just left the resolution empty, which is a status with
-nothing behind it. These tests pin that his words travel with the status.
+the engine owns is the item read model every surface reads, and that model recorded the answer
+with NO WORDS BEHIND IT: a decision could read answered with an empty resolution, so no surface
+could say what was decided. These tests pin that his words travel with the answer.
+
+WHAT THESE TESTS DELIBERATELY DO NOT CHANGE — the item's `status`. It is the REPORT's
+(self-audit's judgement, where `settled` means the item is dealt with) and the answer is an
+OVERLAY the pages apply from `web/api_audit.answered_decisions`;
+`test_api.py::test_items_page_reflects_answered_decision_after_consumption` pins that division.
+A widening that let the marker flip `open` → `settled` was built on 2026-10-25, reddened that
+test and was reverted the same run: D213 was answered and the work it authorized (F756) is
+still unshipped, so `settled` would have misreported it.
 """
 from __future__ import annotations
 
@@ -67,9 +75,13 @@ def test_an_answered_decision_carries_the_operators_words_as_its_resolution(tmp_
         queued=[("D213", ANSWER_TEXT)])
 
     item = _item(rdir, "D213")
-    assert item["status"] == "settled", "an answered decision is settled, not open"
-    assert item["resolution"], "a settled decision with an empty resolution records nothing"
+    assert item["resolution"], "an answered decision with an empty resolution records nothing"
     assert "ship F756" in item["resolution"], item["resolution"]
+    # The STATUS stays the report's: D213 is answered and the work it authorized (F756) is
+    # not shipped, so `settled` would misreport it. `web/api_audit.answered_decisions` is the
+    # overlay that says "he answered this", and `test_api.py::
+    # test_items_page_reflects_answered_decision_after_consumption` pins that division.
+    assert item["status"] == "open"
 
 
 def test_the_marker_alone_still_settles_it_and_says_so(tmp_path):
@@ -84,7 +96,7 @@ def test_the_marker_alone_still_settles_it_and_says_so(tmp_path):
         answered={"D214": "2026-10-25T02:08:46+01:00"})
 
     item = _item(rdir, "D214")
-    assert item["status"] == "settled"
+    assert item["status"] == "open"             # still the report's, as above
     assert "2026-10-25T02:08:46+01:00" in item["resolution"], item["resolution"]
 
 

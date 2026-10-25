@@ -34,14 +34,21 @@ durable records (`web/api_audit.write_feedback`, under a lock): the marker in
 carrying his own words.
 
 The report file belongs to self-audit, so the engine fixes the read model every surface shares.
-`readmodels/items._report_item` now lets an answered marker settle a decision the report still
-calls `open` (not only one whose status is `unknown`), and fills an empty `resolution` from his
-queued answer's words — falling back to `answered <ts>` once a mid-run delivery has consumed the
-message, which says the answer exists without inventing words nobody wrote. A resolution the
-report *did* write always wins: that is self-audit's considered wording. `source_paths` now
-fingerprints the audit inbox, so his answer invalidates the memo rather than waiting for some
-other source to change. New `readmodels/decision_answers.py` holds the reader, because putting it
-in `items.py` crossed the 350-line house bar.
+`readmodels/items._report_item` now fills an empty `resolution` from his queued answer's words —
+falling back to `answered <ts>` once a mid-run delivery has consumed the message, which says the
+answer exists without inventing words nobody wrote. A resolution the report *did* write always
+wins: that is self-audit's considered wording. `source_paths` now fingerprints the audit inbox,
+so his answer invalidates the memo rather than waiting for some other source to change. New
+`readmodels/decision_answers.py` holds the reader, because putting it in `items.py` crossed the
+350-line house bar.
+
+The item's **`status` is deliberately untouched.** A first build also let the answered marker
+flip `open` → `settled`; the release gate reddened on
+`test_api.py::test_items_page_reflects_answered_decision_after_consumption`, which pins that an
+item's status is the REPORT's (self-audit's judgement, where `settled` means the item is dealt
+with) while the answer is an overlay the pages apply from `web/api_audit.answered_decisions`. The
+live case agrees: D213 was answered and the work it authorizes (F756) is still unshipped, so
+`settled` would misreport it. What was missing was never the status — only the words behind it.
 
 ## [0.452.0] — 2026-10-25
 
