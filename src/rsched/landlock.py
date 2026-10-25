@@ -12,10 +12,13 @@ Two roles in one file so the daemon and the child share a single source of const
   wrapper stays a pure mechanism. It runs standalone (no rsched imports) because the
   interpreter must read only this one file before the jail closes.
 
-The spec is one JSON object: ``{"ro": [path, …], "rw": [path, …], "net": bool}`` —
-ro paths get read+execute, rw paths the full filesystem mask for the kernel's ABI,
-and net=false additionally denies ALL TCP bind/connect (Landlock ABI ≥ 4). UDP/ICMP
-are not restrictable by Landlock today — the network boundary is TCP-only.
+The spec is one JSON object:
+``{"ro": [path, …], "rw": [path, …], "ls": [path, …], "net": bool}`` — ro paths get
+read+execute, rw paths the full filesystem mask for the kernel's ABI, ls paths LIST-ONLY
+(entries enumerable, file contents not readable — the shape a depth boundary needs, since
+Landlock has no deny rule: `rundepth.py`), and net=false additionally denies ALL TCP
+bind/connect (Landlock ABI ≥ 4). UDP/ICMP are not restrictable by Landlock today — the
+network boundary is TCP-only.
 
 Hand-rolled on purpose: the PyPI `landlock` package is permanently dev-status and
 lacks the ABI-4 network rules this sandbox needs (evaluated 2026-07-17).
@@ -47,6 +50,13 @@ FS_IOCTL_DEV = 1 << 15             # ABI ≥ 5
 _FS_MASK_BY_ABI = {1: (1 << 13) - 1, 2: (1 << 14) - 1, 3: (1 << 15) - 1,
                    4: (1 << 15) - 1, 5: (1 << 16) - 1}
 ACCESS_RO = FS_EXECUTE | FS_READ_FILE | FS_READ_DIR
+# LIST-ONLY: a directory's ENTRIES are readable, its files' CONTENTS are not. The third rights
+# class exists because Landlock has no deny rule — a nested rule only ADDS rights — so a tree
+# with a hole in it (a routine dir whose older `runs/<ts>/` must stay shut: rundepth.py, D207)
+# cannot be expressed by subtracting from ACCESS_RO. It is expressed by granting the parent
+# this and the permitted children ACCESS_RO. FS_READ_DIR is inherited downward, so names stay
+# enumerable at any depth while an open of a file beneath gets EACCES — loud, not silent.
+ACCESS_LS = FS_READ_DIR
 # Rights that may appear in a rule whose target is a regular FILE (dir-only rights on a
 # file rule are EINVAL).
 _FILE_RIGHTS = FS_EXECUTE | FS_WRITE_FILE | FS_READ_FILE | FS_TRUNCATE | FS_IOCTL_DEV
@@ -140,12 +150,17 @@ def _add_path_rule(libc: ctypes.CDLL, ruleset_fd: int, path: str, access: int) -
         os.close(parent_fd)
 
 
-def apply(ro: list[str], rw: list[str], *, net: bool) -> None:
+def apply(ro: list[str], rw: list[str], *, net: bool, ls: list[str] | None = None) -> None:
     """Restrict the CURRENT process (and all descendants) to the given filesystem view:
-    read+execute beneath each `ro` path, full access beneath each `rw` path, everything
-    else denied. net=False additionally denies all TCP bind/connect. Raises
-    SandboxApplyError when the kernel can't enforce the spec — callers never get a
-    silently weaker jail.
+    read+execute beneath each `ro` path, full access beneath each `rw` path, LIST-ONLY
+    beneath each `ls` path (its entries are enumerable, its files are not readable —
+    `ACCESS_LS`), everything else denied. net=False additionally denies all TCP
+    bind/connect. Raises SandboxApplyError when the kernel can't enforce the spec —
+    callers never get a silently weaker jail.
+
+    Rights are ADDITIVE down the hierarchy, so the order rules are added does not matter:
+    an `ls` parent with `ro` children is a readable hole in a listable tree, which is the
+    only way Landlock can express a depth boundary (rundepth.py).
     """
     abi = abi_version()
     if abi < 1:
@@ -154,12 +169,15 @@ def apply(ro: list[str], rw: list[str], *, net: bool) -> None:
         raise SandboxApplyError(
             0, f"net restriction needs Landlock ABI {NET_ABI}, kernel has {abi}")
     handled_fs = fs_mask(abi)
+    ls = ls or []
     attr = _RulesetAttr(handled_fs, 0 if net else NET_BIND_TCP | NET_CONNECT_TCP)
     size = ctypes.sizeof(_RulesetAttr) if abi >= NET_ABI else ctypes.sizeof(ctypes.c_uint64)
     libc = _libc()
     ruleset_fd = libc.syscall(_SYS_CREATE_RULESET, ctypes.byref(attr), size, 0)
     _check(ruleset_fd, "landlock_create_ruleset")
     try:
+        for path in ls or ():
+            _add_path_rule(libc, ruleset_fd, path, ACCESS_LS & handled_fs)
         for path in ro:
             _add_path_rule(libc, ruleset_fd, path, ACCESS_RO & handled_fs)
         for path in rw:
@@ -179,7 +197,8 @@ def main(argv: list[str]) -> int:
     try:
         spec = json.loads(argv[0])
         apply([str(p) for p in spec.get("ro") or []],
-              [str(p) for p in spec.get("rw") or []], net=bool(spec.get("net")))
+              [str(p) for p in spec.get("rw") or []], net=bool(spec.get("net")),
+              ls=[str(p) for p in spec.get("ls") or []])
     except (ValueError, SandboxApplyError) as exc:
         sys.stderr.write(f"sandbox: {exc} — refusing to run the util unsandboxed\n")
         return EXIT_SANDBOX_FAILED

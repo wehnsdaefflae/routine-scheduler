@@ -73,7 +73,10 @@ the limits (single-writer status.json preserved).
   `routine.yaml` is NEVER writable by any run, even under an fs_write_root or a revise — config is the user's,
   no exceptions (the block is by FILENAME anywhere the run can write, external repos included — a
   deliberate over-block: any file named routine.yaml is treated as config); the machine-tunable knobs live in tuning.yaml, where the FILE boundary is the
-  permission boundary; executor.py backstops absolute paths and scopes `runs: last`).
+  permission boundary; `rundepth.read_gate` backstops absolute paths and scopes `runs: last`,
+  and since D207 the SAME depth is compiled into the Landlock jail — `rundepth` is the one
+  predicate, `ownseal.mount_own_dir` mounts only the permitted run dirs, so a util handed an
+  older run's absolute path is refused by the kernel and not merely by the action layer).
   A disallowed/switched-off call is corrected inside the schema-retry cycle with an error naming the
   covering permission, and never becomes a turn.
 - **The system prompt is composed once at boot** (`engine/composer.py`; the CAPABILITIES

@@ -35,10 +35,9 @@ import shutil
 import sys
 import tempfile
 from dataclasses import dataclass, replace
-from functools import lru_cache
 from pathlib import Path
 
-from . import entities, landlock, ownseal
+from . import entities, landlock, ownseal, privatestores, rundepth
 from .paths import expand, within
 
 log = logging.getLogger("rsched.sandbox")
@@ -74,8 +73,10 @@ class SandboxPolicy:
     utils_lib at dispatch — this carries only what the run/permission layer knows.
 
     `own_dir` is not a grant but is still NARROWED — `ownseal` withholds the children the
-    engine's write gate refuses (D179), which is what `recipe_unlocked` is for. Everything in
-    `read_roots`/`write_roots` IS a grant, seen only when a util's `fs:` line declares it.
+    engine's write gate refuses (D179), which is what `recipe_unlocked` is for, and withholds
+    the previous RUN dirs the run-history depth refuses (D207), which is what `run_depth` is
+    for. Everything in `read_roots`/`write_roots` IS a grant, seen only when a util's `fs:`
+    line declares it.
     """
 
     mode: str = "permissive"
@@ -83,6 +84,11 @@ class SandboxPolicy:
     write_roots: tuple[Path, ...] = ()
     own_dir: Path | None = None
     recipe_unlocked: bool = False
+    #: The run's run-history scope (`rundepth.Scope`), or None for a policy with no run behind
+    #: it — a `base_policy`, or the daemon's admission jail, neither of which mounts a routine
+    #: dir a previous run could be read from. None means the own dir mounts read-only whole,
+    #: which is the pre-D207 shape.
+    run_depth: object | None = None
 
 
 # Read-only asset dirs the util sandbox may see on EVERY run regardless of the calling
@@ -108,13 +114,16 @@ def policy_for_ctx(ctx) -> SandboxPolicy:
     write_roots, the same set the engine's own file actions honor), plus any
     operator-staged shared read-only asset dirs (e.g. the captcha-solver browser
     extension). One policy source, two enforcers: these roots and the engine path gates
-    are compiled from the same grants.
+    are compiled from the same grants — including the run-history depth (D207), which the
+    action gate reads from `ctx.grants.run_history` and the jail now reads from the same
+    place through `rundepth.scope_for_ctx`.
     """
     return SandboxPolicy(mode=ctx.server.sandbox,
                          read_roots=(*ctx.read_roots(), *_shared_read_roots(ctx.server)),
                          write_roots=tuple(ctx.write_roots()),
                          own_dir=ctx.routine.dir,
-                         recipe_unlocked=ownseal.recipe_unlocked_for(ctx))
+                         recipe_unlocked=ownseal.recipe_unlocked_for(ctx),
+                         run_depth=rundepth.scope_for_ctx(ctx))
 
 
 def base_policy(server) -> SandboxPolicy:
@@ -250,38 +259,11 @@ def _ensure_write_roots(policy: SandboxPolicy) -> None:
                                      f"it grants nothing until created")
 
 
-@lru_cache(maxsize=8)
-def _private_store_paths_cached(libraries_home: str,
-                                stamp: float) -> frozenset[Path]:  # noqa: ARG001
-    # `stamp` is the CACHE KEY, not an input: it is the newest util-dir mtime, so a
-    # write_util revision produces a different key and the scan reruns.
-    from .utils_lib import list_utils
-    out: set[Path] = set()
-    try:
-        for util in list_utils(Path(libraries_home)):
-            for _mode, declared in util.get("fs_paths") or ():
-                expanded = os.path.expandvars(declared)
-                if "$" not in expanded:      # an unset variable names no path to subtract
-                    out.add(expand(expanded))
-    except OSError:
-        return frozenset()
-    return frozenset(out)
-
-
-def private_store_paths(libraries_home: Path) -> frozenset[Path]:
-    """Every path some util's `fs:` line claims as a PRIVATE store, across the whole library.
-
-    These are subtracted from the wholesale `roots` mount, so a grant that exists to let one
-    util reach its credential store does not hand that store to every other util in the run.
-    Keyed on the newest util directory mtime, so a `write_util` revision (an atomic
-    tmp+rename inside that directory) invalidates the cache without needing a restart.
-    """
-    root = Path(libraries_home) / "utils"
-    try:
-        stamp = max((d.stat().st_mtime for d in root.iterdir() if d.is_dir()), default=0.0)
-    except OSError:
-        return frozenset()
-    return _private_store_paths_cached(str(libraries_home), stamp)
+#: Every privately-claimed util store path in the library — `privatestores.paths`, re-exported
+#: because that scan is a question about the LIBRARY, not about one run's policy (and this
+#: module is over the house line budget, so it may only shrink). Callers and tests keep the
+#: name they had.
+private_store_paths = privatestores.paths
 
 
 def _without_planted_links(policy: SandboxPolicy) -> SandboxPolicy:
@@ -384,7 +366,11 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
         net = True
     ro, rw = _toolchain()
     ro.append(str(libraries_home))
-    ownseal.mount_own_dir(policy, ro, rw)      # D179: visible, writable only where the gate is
+    # D179: visible, writable only where the gate is — and D207: when the policy carries a
+    # run-history depth, READABLE only where that depth allows, which needs the third rights
+    # class (`ls`, list-only) because Landlock cannot carve a hole out of a readable tree.
+    ls: list[str] = []
+    ownseal.mount_own_dir(policy, ro, rw, ls)
     if fs_roots:
         # The run's granted roots wholesale — MINUS every path some util claims as a private
         # store. Without that subtraction the narrowing would be worthless for the case it
@@ -409,6 +395,18 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
             (rw if mode == "rw" else ro).append(str(p))
         elif mode == "ro" and (p := _admit(declared, policy.read_roots)) is not None:
             ro.append(str(p))
-    spec = {"ro": sorted(set(ro)), "rw": sorted(set(rw)), "net": bool(net)}
+    # A granted root that CONTAINS the routine dir (`~/routines`, or the routine dir itself,
+    # which every child run holds as a root — F185/childrun.py) is mounted as one hierarchy,
+    # and rights are additive DOWNWARD: mounting it `ro` would re-grant read beneath the whole
+    # routine dir and undo the carve. The routine's OWN dir is dropped from the wholesale
+    # mount for that reason — `mount_own_dir` has already enumerated what may be read inside
+    # it. A root ABOVE the routine dir is reported to the run instead (`rundepth.uncarvable`,
+    # the `not_enforced_under` field): enumerating a whole routines home is not a mount, and a
+    # routine granted that root reads every other routine's runs/ by the grant anyway.
+    if policy.own_dir is not None:
+        own = Path(policy.own_dir).resolve()
+        ro = [p for p in ro if Path(p).resolve() != own]
+    spec = {"ro": sorted(set(ro)), "rw": sorted(set(rw)),
+            "ls": sorted(set(ls)), "net": bool(net)}
     wrapper = str(Path(landlock.__file__).resolve())
     return [sys.executable, wrapper, json.dumps(spec, separators=(",", ":")), "--", *cmd]

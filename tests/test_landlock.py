@@ -67,6 +67,56 @@ def test_ro_root_denies_write(tmp_path):
     assert r.returncode != 0 and "PermissionError" in r.stderr
 
 
+@needs_landlock
+def test_ls_root_lists_its_entries_but_refuses_their_contents(tmp_path):
+    """The third rights class the run-history depth is built on (D207, `rundepth`).
+
+    Landlock has no deny rule, so a readable tree with an unreadable hole in it cannot be
+    expressed by subtraction — only by mounting the parent LIST-ONLY and the permitted
+    children readable. This is the kernel property that makes that shape work: beneath an
+    `ls` path the NAMES are enumerable (so `ls .` and a glob still work, which every jailed
+    command and every `cd` needs) while an `open()` of a file there is refused.
+    """
+    tree = tmp_path / "routine"
+    (tree / "runs" / "20260101-000000").mkdir(parents=True)
+    (tree / "runs" / "20260101-000000" / "status.json").write_text("{}")
+    (tree / "notes.md").write_text("visible")
+    spec = _base_spec()
+    spec["ls"] = [str(tree)]
+    r = _run_jailed(spec, f"import os; print(sorted(os.listdir({str(tree)!r})))")
+    assert r.returncode == 0, r.stderr
+    assert "runs" in r.stdout and "notes.md" in r.stdout      # names, at the top
+    deep = tree / "runs" / "20260101-000000"
+    r = _run_jailed(spec, f"import os; print(sorted(os.listdir({str(deep)!r})))")
+    assert r.returncode == 0, r.stderr                        # and inherited downward
+    assert "status.json" in r.stdout
+    for target in (tree / "notes.md", deep / "status.json"):
+        r = _run_jailed(spec, f"open({str(target)!r}).read()")
+        assert r.returncode != 0 and "PermissionError" in r.stderr, f"{target} was readable"
+
+
+@needs_landlock
+def test_an_ro_child_is_a_readable_hole_in_an_ls_parent(tmp_path):
+    """Rights are ADDITIVE down the hierarchy, which is the other half of the carve: the
+    permitted run directory is mounted `ro` INSIDE the list-only routine dir and is fully
+    readable, while its sibling stays refused. Order of rule addition must not matter.
+    """
+    tree = tmp_path / "routine"
+    allowed = tree / "runs" / "20260102-000000"
+    refused = tree / "runs" / "20260101-000000"
+    for d in (allowed, refused):
+        d.mkdir(parents=True)
+        (d / "status.json").write_text('{"state": "finished"}')
+    spec = _base_spec()
+    spec["ls"] = [str(tree)]
+    spec["ro"].append(str(allowed))
+    r = _run_jailed(spec, f"print(open({str(allowed / 'status.json')!r}).read())")
+    assert r.returncode == 0, r.stderr
+    assert "finished" in r.stdout
+    r = _run_jailed(spec, f"open({str(refused / 'status.json')!r}).read()")
+    assert r.returncode != 0 and "PermissionError" in r.stderr
+
+
 @needs_net_abi
 def test_net_none_denies_tcp_connect():
     spec = {**_base_spec(), "net": False}

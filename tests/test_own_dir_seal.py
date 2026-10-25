@@ -38,12 +38,23 @@ def _dir_with_children(tmp_path: Path) -> Path:
     return own
 
 
-def _spec(own: Path, *, recipe_unlocked: bool = False) -> tuple[set[str], set[str]]:
+def _spec(own: Path, *,
+          recipe_unlocked: bool = False) -> tuple[set[str], set[str], set[str]]:
+    """The own-dir mount's READ, WRITE and LIST-ONLY rules.
+
+    The third set arrived with D207: the run-history depth needs the routine dir mounted
+    list-only, with what may be READ enumerated beneath it, because Landlock cannot carve an
+    unreadable hole out of a readable tree. The write seal below is unaffected — `ls` grants
+    no write and no file read — but the own dir is no longer in `ro`, which is a real change
+    this file states rather than hides. The depth's own mount is asserted in
+    test_run_depth.py.
+    """
     ro: list[str] = []
     rw: list[str] = []
+    ls: list[str] = []
     policy = sandbox.SandboxPolicy(own_dir=own, recipe_unlocked=recipe_unlocked)
-    ownseal.mount_own_dir(policy, ro, rw)
-    return set(ro), set(rw)
+    ownseal.mount_own_dir(policy, ro, rw, ls)
+    return set(ro), set(rw), set(ls)
 
 
 def _writable(rw: set[str], path: Path) -> bool:
@@ -59,7 +70,7 @@ def _writable(rw: set[str], path: Path) -> bool:
 
 def test_every_path_the_write_gate_refuses_is_withheld_from_the_jail(tmp_path):
     own = _dir_with_children(tmp_path)
-    _, rw = _spec(own)
+    _, rw, _ = _spec(own)
     for sealed in (".memory", "runs", ".util_outputs", ".doc_cache", "routine.yaml",
                    "main.md", "stages", "tuning.yaml"):
         assert not _writable(rw, own / sealed), f"{sealed} is writable in the jail"
@@ -75,8 +86,12 @@ def test_the_own_dir_is_still_visible_and_its_ordinary_children_writable(tmp_pat
     to 2026-10-21).
     """
     own = _dir_with_children(tmp_path)
-    ro, rw = _spec(own)
-    assert str(own) in ro
+    ro, rw, ls = _spec(own)
+    # LIST-ONLY since D207 (the dir was `ro` before): a command still cds into it and lists
+    # it, and each child it may READ is mounted beneath — what changed is that `runs/` is no
+    # longer among them wholesale. `rundepth` carries the why.
+    assert str(own) in ls and str(own) not in ro
+    assert str(own / "main.md") in ro and str(own / "routine.yaml") in ro
     for ordinary in ("state", "artifacts", "scripts", "LEDGER.md", "notes.md"):
         assert str(own / ordinary) in rw, f"{ordinary} lost its write access"
 
@@ -87,7 +102,7 @@ def test_recipe_authoring_lifts_the_recipe_half_and_nothing_else(tmp_path):
     Config and the engine-owned stores are not permissions and never lift.
     """
     own = _dir_with_children(tmp_path)
-    _, rw = _spec(own, recipe_unlocked=True)
+    _, rw, _ = _spec(own, recipe_unlocked=True)
     for recipe in ("main.md", "stages", "tuning.yaml"):
         assert str(own / recipe) in rw, f"{recipe} is sealed from a routine that may write it"
     for never in (".memory", "runs", "routine.yaml"):
@@ -171,6 +186,9 @@ def test_the_kernel_actually_refuses_the_write_a_shell_redirect_used_to_make(
 def test_a_missing_or_unreadable_own_dir_mounts_nothing_rather_than_raising(tmp_path):
     """Composition is total about a broken root (R2260): a dir that cannot be listed costs the
     run no util. Nothing is mounted writable, which fails closed."""
-    ro, rw = _spec(tmp_path / "never-created")
+    ro, rw, ls = _spec(tmp_path / "never-created")
     assert rw == set()
-    assert ro == {str(tmp_path / "never-created")}
+    # the dir is still NAMED (list-only), and nothing beneath it is readable: a `runs/` that
+    # cannot be listed mounts no run dir rather than raising (R2260, and `rundepth._names`).
+    assert ls == {str(tmp_path / "never-created")}
+    assert ro == set()

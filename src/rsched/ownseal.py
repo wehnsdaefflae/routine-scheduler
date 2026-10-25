@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import rundepth
 from .grants import CONFIG_FILE, RECIPE_PREFIXES
 
 #: Engine-owned or sealed children of a routine dir, as `_write_gate` refuses them. `runs/` is
@@ -77,20 +78,58 @@ def recipe_unlocked_for(ctx) -> bool:
     return bool(getattr(getattr(ctx, "grants", None), "recipe_unlocked", False))
 
 
-def mount_own_dir(policy, ro: list[str], rw: list[str]) -> None:
-    """Add `policy.own_dir`'s jail rules to `ro`/`rw`, in place — the sandbox's one call site.
+def mount_own_dir(policy, ro: list[str], rw: list[str], ls: list[str]) -> None:
+    """Add `policy.own_dir`'s jail rules to `ro`/`rw`/`ls`, in place — the sandbox's one call
+    site, and therefore the one place BOTH doors into `sandbox.wrap` pass through (the util /
+    script / shell path via `sandbox.policy_for_ctx`, and the daemon's admission path, which
+    builds its own `SandboxPolicy` in `daemon/gate_prepare.py`).
 
-    The dir itself is READ-ONLY so a command can still cd into it, list it and read its
-    recipe, config and notes; its UNSEALED children are read-write. It is here rather than in
-    `sandbox.wrap` so the reason the mount is split lives with the predicate that splits it,
-    and so `sandbox.py` (at its size ceiling) carries the call and not the rationale.
+    WITHOUT a run-history depth the dir itself is READ-ONLY so a command can cd into it, list
+    it and read its recipe, config and notes; its UNSEALED children are read-write.
+
+    WITH one (D207) that single read-only rule is the hole the depth has to close: it grants
+    read beneath the whole routine dir, `runs/` included, so a util handed an old
+    `runs/<ts>/gate.json` opens it while `read_file` of the same path is refused. Landlock has
+    no deny rule, so the dir is mounted LIST-ONLY instead and everything the run may actually
+    read is enumerated — every child except `runs/`, plus exactly the run directories
+    `rundepth` permits. Same shape, same reason, as the write seal below it.
+
+    It is here rather than in `sandbox.wrap` so the reason the mount is split lives with the
+    predicate that splits it, and so `sandbox.py` (at its size ceiling) carries the call and
+    not the rationale.
     """
     own = policy.own_dir
     if own is None:
         return
-    ro.append(str(own))
+    # EVERY policy carrying a routine dir is carved, which is what makes BOTH doors into
+    # `sandbox.wrap` covered by one change. A policy built without a run behind it (the
+    # daemon's admission jails) has no depth to read, so it falls to the closed `last` floor
+    # rather than to the old mount-everything shape: a door nobody tests is exactly where a
+    # half-fix survives (`rundepth.default_scope`).
+    scope = getattr(policy, "run_depth", None) or rundepth.default_scope(own)
+    ls.append(str(own))
+    ro += [str(c) for c in readable_children(own)]
+    ro += [str(d) for d in rundepth.readable(scope)]
+    if (current := rundepth.current_dir(scope)) is not None:
+        ro.append(str(current))
     rw += [str(c) for c in writable_children(
         own, recipe_unlocked=bool(getattr(policy, "recipe_unlocked", False)))]
+
+
+def readable_children(own_dir: Path) -> list[Path]:
+    """`own_dir`'s children that stay wholly readable when the dir is mounted list-only —
+    everything except `runs/`, whose depth `rundepth` decides directory by directory.
+
+    `.memory/`, `routine.yaml` and the recipe are all HERE: the run-history depth is about
+    previous runs, and nothing else about what a jailed command may READ changes with D207.
+    Only existing children can be mounted (a Landlock rule needs an inode), the accepted cost
+    `writable_children` already carries.
+    """
+    try:
+        children = sorted(own_dir.iterdir())
+    except OSError:
+        return []
+    return [c for c in children if c.name != rundepth.RUNS_DIR]
 
 
 def writable_children(own_dir: Path, *, recipe_unlocked: bool) -> list[Path]:
