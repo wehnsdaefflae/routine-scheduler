@@ -517,10 +517,10 @@ async def test_a_boot_rescan_that_raises_does_not_stop_the_scheduler(tmp_path, m
     boot rescan and boot catch-up run BEFORE the loop and were not, which is the same failure
     with a worse blast radius — nothing fires until a human restarts it."""
     import asyncio
-    import json
 
     import rsched.daemon.scheduler as sched_mod
     from conftest import FakeRunner
+    from helpers import health_events
     from rsched import registry
     from rsched.config import ServerConfig
     from rsched.daemon.events import EventBus
@@ -545,7 +545,7 @@ async def test_a_boot_rescan_that_raises_does_not_stop_the_scheduler(tmp_path, m
     await asyncio.sleep(0.15)
     assert not task.done()                       # the loop is alive, not unwound
     task.cancel()
-    stream = server.routines_home / ".control" / "health-events.jsonl"
-    events = [json.loads(x) for x in stream.read_text(encoding="utf-8").splitlines() if x.strip()]
-    assert [e["event"] for e in events] == ["scheduler_tick_error"]
-    assert "boot rescan" in events[0]["detail"]
+    # The stream is SHARED (a real loop's watches file into it too: marker_watch's
+    # migration_due_soon from 2026-10-25), so an equality over ALL of it reds on a date.
+    mine = health_events(server.routines_home, event="scheduler_tick_error")
+    assert len(mine) == 1 and "boot rescan" in mine[0]["detail"]   # filed once, not per tick
