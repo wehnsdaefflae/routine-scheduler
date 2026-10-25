@@ -10,3 +10,14 @@
 .outcome-move.bad, .outcome-table .bad { color: var(--err); }
 .outcome-panel .summons { color: var(--summons); }
 .outcome-table td .mono { margin-left: 4px; }
+
+/* The MOMENT TEST on a change (components/change-moment.js): a repeated failure the change
+ * removed is OK, one it brought in is ERR, an aim the runs before never repeated is WARN, and
+ * what persists is quiet. A window that reached across a neighbouring change wears WARN. */
+.chg-moment { display: inline-flex; flex-wrap: wrap; gap: 6px; font-family: var(--f-mono); font-size: var(--t-xs); }
+.mo-mark { font-family: var(--f-mono); font-size: var(--t-xs); white-space: nowrap; }
+.mo-mark.mo-fixed { color: var(--ok); }
+.mo-mark.mo-introduced { color: var(--err); }
+.mo-mark.mo-unfounded, .mo-confounded { color: var(--warn); }
+.mo-mark.mo-persists, .mo-mark.mo-quiet { color: var(--ink-2); }
+.mo-table { margin-top: 8px; }

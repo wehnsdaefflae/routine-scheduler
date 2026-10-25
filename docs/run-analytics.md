@@ -260,8 +260,9 @@ measured, from the runs themselves, with nothing declared:
 - **How it went.** Beside it, `quality`: the accounting lines owed, met, unmet and not due
   (Done-when lines and goals), stages skipped, claims the verifier challenged and the ones that
   stood disputed, actions a caution held, schema retries, the person's interventions while the run
-  worked, wall time, cache reads and writes. Run-cumulative (reseeded on a resume), so the fold
-  keeps the newest leg's values.
+  worked, wall time, cache reads and writes — and `frictions`, what went WRONG by signature
+  (`engine/frictions.py`, counted from the run's own transcript at its end; below). Run-cumulative
+  (reseeded on a resume), so the fold keeps the newest leg's values.
 
 A routine's input differs from run to run, so no run's OUTPUT is scored. What stays comparable is
 the process: the same routine answering for the same Done when should be about as correct, as
@@ -287,6 +288,37 @@ after, each side only runs of one key, are judged signal by signal, each dimensi
 `mixed`, `no effect`, `measuring` (the newest change, still collecting runs) or `too few runs`
 (another change came first; a routine whose recipe changes every run cannot be said to have
 improved, and saying so is the finding — on this instance's history, 96% of all routine changes).
+
+### The moment test
+
+The rate verdict needs three runs of ONE key on each side, and most changes never get them. Every
+change therefore also carries a second reading that needs far fewer, taken from Harness²
+(arXiv 2610.14224): a failure that REPEATED before an edit is a real property of the harness, and
+the edit is judged by whether THAT failure came back, not by whether an average moved
+(`readmodels/change_frictions.py`, the `frictions` field of every change).
+
+- **Signatures** (`engine/frictions.py`) name a failure the same way in every run of every
+  routine, read from events the engine already writes: `schema`, `script:<name>` and
+  `util:<name>` (a non-zero exit), `edit_miss`, `read_miss`, `memory_cap`, `refused:<kind>`,
+  `deferral:<rung>` (the finish-gate rung that set the finish aside), `budget:<resource>` (from
+  the `budget` key the reserved-turn injection now carries) and `unmet:d<n>` (the final
+  accounting). A `shell` exit, an endpoint error and a refusal are not signatures — grep's "no
+  match", and the transport failing, which no change to a routine addresses — nor is a goal,
+  which never recurs. A run is counted once per signature, however often it hit it.
+- **The verdict.** A signature carried by at least two of the runs before the change is CHRONIC;
+  after it, it is `fixed` (in no run) or `persists`; one in no run before and two after was
+  `introduced`. Two runs a side are enough to say it (`status: judged`); fewer reads `measuring`
+  (the newest change) or `too few runs`.
+- **Confounded, said out loud.** Where a change's own segment is too short, its window reaches
+  across the neighbouring change until it has its two runs, and names each one crossed in
+  `confounded` — the reading then belongs to those changes together, and the page marks it ⚠.
+- **Aims.** A recipe commit may carry `Addresses: <signature>[, …]` on its own line. Each named
+  signature is judged on its own: `fixed`, `persists`, or `unfounded` when the runs before the
+  change never repeated it ("an edit that cannot name the moment is speculation"). An unreadable
+  commit range leaves `aims` null — unknown, never "none declared".
+- **Unknown is not clean.** A run with no `frictions` (recorded before 0.454.0 and not
+  backfilled, or no transcript to read) is left out of both sides. The one-shot boot backfill
+  (`migrate_frictions.py`) counted every run whose transcript retention kept, on its newest leg.
 
 What reaches MANY routines at once is judged across them, POOLED (`readmodels/change_fleet.py`):
 each routine adds the runs on either side of its boundary that carry its own key unchanged, its
@@ -399,8 +431,11 @@ an iris `development` kicker over their title and iris section ticks.
   what changed, e.g. `recipe 1a2b3c4→3c4d5e6`, `model Opus high→Sonnet high` · runs before →
   after · the verdict chip · three tiny marks for correctness, completeness and effectiveness · the
   engine releases inside its windows, as a range "0.379–0.391 (4 releases)" past two), each row
-  opening onto its signal table; consecutive `too few runs` changes fold into one line "N changes
-  came faster than it ran · dates", more than three rule entries read "N rules revised", and the
+  opening onto its signal table and its moment table; a last **failures** column carries the
+  moment test (`components/change-moment.js`: `✓N gone` in the ok tone, `+N new` in the failure
+  tone, an aim's verdict, ⚠ when the window was confounded); consecutive `too few runs` changes
+  the moment test could not judge either fold into one line "N changes came faster than it ran ·
+  dates" (one it judged keeps its own row), more than three rule entries read "N rules revised", and the
   list shows 10 then "show N older"; the **Model fit** table, where a rebuilt group shows its
   provider id and "≈ N"; and **Recipe health** (the version table, the regression banner with its
   roll-back, the cautions' tallies).

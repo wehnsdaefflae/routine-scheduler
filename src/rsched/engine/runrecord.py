@@ -18,7 +18,9 @@ and as cheap from one run to the next. So every run records two things beside it
   CORRECTNESS — claims the verifier challenged and the ones that stood disputed, actions a
   caution held, schema retries; COMPLETENESS — accounting lines owed, met, unmet, not due, and
   stages skipped; EFFECTIVENESS — the person's mid-run interventions, wall time, cache reads and
-  writes (turns, tokens, cost, status and util outcomes are top-level fields already).
+  writes (turns, tokens, cost, status and util outcomes are top-level fields already) — and
+  the run's FRICTIONS, each thing that went wrong by its signature (engine/frictions.py), which
+  the moment test reads (readmodels/change_frictions.py).
 
 Both are RUN-cumulative (the counters reseed on a resume, `history.prior_counters`), so the
 stream's fold keeps the newest leg's values, like `turns`. Written at depth 0 only.
@@ -32,7 +34,7 @@ from pathlib import Path
 
 from .. import __version__
 from ..paths import read_json
-from . import accounting
+from . import accounting, frictions
 
 #: Written by the runner for a run fired as a MODEL TRIAL (rsched/trials.arm), read once at the
 #: record; the runner reads its `models` again on every leg to name them to `engine-run`.
@@ -117,6 +119,7 @@ def accounting_counts(entries: object) -> dict[str, int]:
 
 def quality(ctx) -> dict:
     usage = ctx.usage_total()
+    found = frictions.of_run(ctx.run_dir)
     return {
         **accounting_counts(ctx.accounting),
         "stages_skipped": len(ctx.stage_coverage().get("skipped") or []),
@@ -128,4 +131,6 @@ def quality(ctx) -> dict:
         "elapsed_s": int(ctx.elapsed_total_s()),
         "cache_read": int(usage.get("cached_in") or 0),
         "cache_write": int(usage.get("cache_write") or 0),
+        # what went wrong, by signature — absent (unknown) when no transcript could be read
+        **({"frictions": found} if found is not None else {}),
     }

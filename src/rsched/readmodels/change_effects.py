@@ -29,6 +29,12 @@ archived and created again names two routines, so runs are grouped by INCARNATIO
 (readmodels/incarnations.py): the per-routine changes are the live routines', the fleet readings
 take the archived ones too.
 
+Beside the rate verdict every change carries the MOMENT TEST (readmodels/change_frictions.py):
+whether the failures that repeated before it — by the signatures every run records
+(engine/frictions.py) — came back after it. It needs two runs a side instead of three of one
+key, names every neighbouring change its window had to reach across (`confounded`), and judges
+what a recipe commit says it `Addresses:` on its own line.
+
 Flag-first, like the recipe-health regression flag: nothing here reverts or proposes anything.
 The config-optimizer reads it to propose a pending change; a person reads it on the Changes page.
 """
@@ -37,7 +43,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import memo
+from . import change_frictions, memo
 from .change_fleet import MIN_RUNS, WINDOW, fleet, releases
 from .change_keys import diff, engines, reconstructed, segments
 from .change_signals import baseline, judge, overall, run_signals
@@ -84,17 +90,20 @@ def _evaluate(before: list[dict], after: list[dict], *, current: bool) -> dict:
             "reconstructed": reconstructed([*before, *after]), **judged}
 
 
-def _changes_of(runs: list[dict]) -> list[dict]:
+def _changes_of(runs: list[dict], routine_dir: Path | None) -> list[dict]:
     segs = segments(runs)
     out = []
     for i in range(1, len(segs)):
         (old_key, old_runs), (new_key, new_runs) = segs[i - 1], segs[i]
         before, after = old_runs[-WINDOW:], new_runs[:WINDOW]
+        what = diff(old_key, new_key)
         out.append({"at": str(new_runs[0].get("ts") or ""),
                     "run_id": str(new_runs[0].get("run_id") or ""),
-                    "what": diff(old_key, new_key),
+                    "what": what,
                     "engines": engines([*before, *after]),
-                    **_evaluate(before, after, current=i == len(segs) - 1)})
+                    **_evaluate(before, after, current=i == len(segs) - 1),
+                    # the moment test: did the failures it met come back?
+                    "frictions": change_frictions.judge(segs, i, what, routine_dir)})
     return out[::-1]                                           # newest first
 
 
@@ -111,7 +120,8 @@ def changes(routines_home: Path) -> dict:
         everything = incarnation_runs(routines_home)
         by_name = {name: runs for name, (_inc, runs) in everything.items()}
         bases = {name: baseline(runs) for name, runs in by_name.items()}
-        per = {name: _changes_of(runs) for name, runs in by_name.items()}
+        per = {name: _changes_of(runs, routines_home / name if inc.live else None)
+               for name, (inc, runs) in everything.items()}
         verdicts = {(name, ch["run_id"]): ch["verdict"] for name, chs in per.items()
                     for ch in chs}
         live = {name for name, (inc, _runs) in everything.items() if inc.live}

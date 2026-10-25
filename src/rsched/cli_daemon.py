@@ -77,6 +77,10 @@ def cmd_daemon(_args) -> int:
     # context volume, which every cost ranking now reads — after the rebuild above, same window
     from .migrate_usage_volume import run_migration as backfill_usage_volume
     backfill_usage_volume(server)
+    # MIGRATION(expires=2026-12-31): the runs retention kept gain the friction signatures the
+    # moment test reads, counted from their transcripts — after the volume backfill, same window
+    from .migrate_frictions import run_migration as backfill_frictions
+    backfill_frictions(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

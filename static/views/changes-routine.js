@@ -11,7 +11,10 @@
 //                  verdict · three tiny marks for correctness / completeness / effectiveness,
 //                  the engine releases inside the windows as a faint note (a range once there
 //                  are more than two). A row opens onto its signal table: each signal's two
-//                  sides and a ▲▼ coloured only by better/worse.
+//                  sides and a ▲▼ coloured only by better/worse. The last column is the MOMENT
+//                  TEST (components/change-moment.js): the repeated failures the change removed
+//                  or brought in, or the verdict on what its commit said it `Addresses:` — and
+//                  a change it could judge is never folded away as `too few runs`.
 //                  The history is months long and most of it changed faster than it ran, so
 //                  the list is compressed three ways: consecutive `too few runs` changes fold
 //                  into ONE row that opens onto them, a change revising more than three rules
@@ -29,6 +32,7 @@ import { api } from "/static/api.js";
 import { DIMENSIONS, dimMarks, fmtSignal, signalMark, verdictChip, whatChanged }
   from "/static/components/change-marks.js";
 import { foldEntries, rebuiltMark } from "/static/components/change-folds.js";
+import { momentCell, momentDetail } from "/static/components/change-moment.js";
 import { onRunFinished } from "/static/components/run-finished.js";
 import { fmt, sparkStrip } from "/static/components/sparkline.js";
 import { mountOutcome } from "/static/components/outcome-panel.js";
@@ -108,7 +112,7 @@ function changeRows(ch, opened) {
   const key = ch.run_id || ch.at;
   const isOpen = opened.has(key);
   const detail = el("tr", { class: "chg-detail", hidden: !isOpen },
-    el("td", { colspan: 5 }, signalTable(ch.signals || [])));
+    el("td", { colspan: 6 }, signalTable(ch.signals || []), momentDetail(ch.frictions)));
   const tri = el("span", { class: "tri" }, isOpen ? "▾" : "▸");
   const toggle = () => {
     const now = detail.hidden;
@@ -129,7 +133,8 @@ function changeRows(ch, opened) {
       `${ch.runs_before} → ${ch.runs_after}`),
     el("td", { class: "inline" }, el("span", { class: "v-line" },
       verdictChip(ch.verdict), ch.reconstructed ? rebuiltMark() : null)),
-    el("td", { class: "inline" }, dimMarks(ch.dimensions)));
+    el("td", { class: "inline" }, dimMarks(ch.dimensions)),
+    el("td", { class: "inline", "data-label": "failures" }, momentCell(ch.frictions)));
   return [row, detail];
 }
 
@@ -162,7 +167,7 @@ function groupRows(group, opened) {
     group.some((ch) => ch.reconstructed) ? rebuiltMark() : null);
   const row = el("tr", { class: "chg-group", "data-group": group.length,
                          onclick: (e) => { if (!e.target.closest("a, button")) toggle(); } },
-    el("td", { colspan: 5 }, head));
+    el("td", { colspan: 6 }, head));
   paint();
   return [row, ...members];
 }
@@ -176,7 +181,8 @@ function changesTable(changes, opened) {
     run = [];
   };
   for (const ch of changes) {
-    if (ch.verdict === "too few runs") { run.push(ch); continue; }
+    // a change the moment test could judge is not folded away, whatever its rates could say
+    if (ch.verdict === "too few runs" && ch.frictions?.status !== "judged") { run.push(ch); continue; }
     flush();
     entries.push(changeRows(ch, opened));
   }
@@ -185,7 +191,8 @@ function changesTable(changes, opened) {
   return el("div", { class: "tablewrap" }, el("table", { class: "list stack chg-table" },
     el("thead", {}, el("tr", {}, th("when"), th("what changed"),
       th("runs", "runs judged before → after the change", "num"), th("verdict"),
-      th("c · c · e", "correctness · completeness · effectiveness: + better, − worse, ± mixed, · same"))),
+      th("c · c · e", "correctness · completeness · effectiveness: + better, − worse, ± mixed, · same"),
+      th("failures", "the moment test: did the failures that repeated before the change come back after it? ✓ gone, + new, ⚠ the window reached across other changes"))),
     el("tbody", {}, ...foldEntries(entries, {
       keep: KEEP, key: "changes", state: opened, closed: `show ${older} older`, opened: "show newest only" }))));
 }

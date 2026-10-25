@@ -80,7 +80,10 @@ def reserve_finish(loop, spent: dict) -> None:
             "your response: name what is unfinished, what you could not get working and what "
             "you found wrong — this is the ending where a flaw is easiest to leave out and "
             "most expensive to lose. That summary is all that survives.")
-    loop.ctx.transcript.event("user_injection", {"text": text, "source": "engine"})
+    # `budget` names the resource on the record (engine/frictions.py reads it back): the text
+    # says it to the model, the key says it to every reader that is not one.
+    loop.ctx.transcript.event("user_injection", {"text": text, "source": "engine",
+                                                 "budget": spent.get("resource")})
     loop.messages.append({"role": "user", "content": text})
 
 
