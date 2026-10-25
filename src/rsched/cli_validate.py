@@ -6,7 +6,8 @@ questions, which is why it outgrew its home:
 
 1. is every file well-formed (`load_routine`'s own problems)?
 2. do the stored MODEL NAMES still exist in the catalog (`trials` — the loader cannot see it)?
-3. can each role's chain actually FAIL OVER (`conformance`, R2196)?
+3. can each role's chain actually FAIL OVER (`conformance`, R2196)? — and is its claim verifier
+   a different model from the one it judges (`verifier_model`, a NOTE)?
 4. is the SETUP coherent (`readmodels.surface`) and does the RECIPE still hold together
    (`workflows.recipelint`) — reported, never fatal?
 
@@ -43,6 +44,7 @@ def cmd_validate(args) -> int:
     from .readmodels.remedies import surface_lines
     from .readmodels.surface import routine_surface
     from .trials import ignored_problem, roles_problem
+    from .verifier_model import shared_verifier_problem
     from .workflows.recipelint import recipe_notes
 
     for d in targets:
@@ -65,6 +67,8 @@ def cmd_validate(args) -> int:
         # judgement into a failed command would be switched off inside a week. Making it fatal
         # is the operator's call, filed as a decision by the run that built this.
         chains = chain_problems(server, cfg.models) if cfg else []
+        # …and whether its claim verifier is a second model at all (rsched/verifier_model.py)
+        judge = shared_verifier_problem(server, cfg.models) if cfg else None
         # Setup COHERENCE is a second, independent question from "is the file well-formed":
         # a routine can parse perfectly and still hold a rule that tells it to publish into a
         # directory it cannot write. Only a blocking row fails the command — an interrupt or a
@@ -91,6 +95,8 @@ def cmd_validate(args) -> int:
             print(f"  {ln}")
         for ln in chains:
             print(f"  NOTE  failover · {ln}")
+        if judge:
+            print(f"  NOTE  verifier · {judge}")
         for ln in recipe:
             print(f"  NOTE  recipe · {ln}")
         total.extend(problems)

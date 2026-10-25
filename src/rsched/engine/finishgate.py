@@ -253,8 +253,8 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                    "then finish again.", unbacked_claims=unbacked)
             return None   # deferred — the loop goes round again
     # The accounting proves each line was ANSWERED, not that the answer is true. So each `met`
-    # claim is checked once, by a second model, against the run's own record — the ACTIONS it
-    # took and the tail of its conversation (engine/verifier.py).
+    # claim is checked once, by a second call on the `tool_call` role, against the run's own
+    # record — the ACTIONS it took and the tail of its conversation (engine/verifier.py).
     #
     # ONE judge, reading the evidence. A Done-when line may name the stage that produces it,
     # and a run that never entered that stage used to be objected to with no model asked — and

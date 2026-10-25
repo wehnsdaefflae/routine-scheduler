@@ -5,10 +5,14 @@ whether a `met` is TRUE: a run can write `d3 met: PDF verified` having never ope
 the record, the next run and the page would all agree it is done. The failure is silent and
 confident, which is the bad kind.
 
-So at the finish a SECOND model — the `tool_call` role, never the main one — is asked, per line
+So at the finish a second CALL — on the `tool_call` role, a fresh context that is not the run's
+own — is asked, per line
 the accounting claims `met` (a Done-when line, or a finish-line outcome the run proves), whether
 the run's own transcript supports the claim. A refuted claim sets the finish aside for one turn
-and the model either does the work or restates its case.
+and the model either does the work or restates its case. It is a second MODEL only when that
+role resolves to a different one: an unset `tool_call` runs the system model, as an unset `main`
+does, and `rsched validate` names a routine whose verifier shares its main model as a
+`NOTE verifier` line (rsched/verifier_model.py) — the choice is the operator's.
 
 ## What the judge is shown, and why a stage read is only a HINT (F620)
 

@@ -1813,8 +1813,11 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   alone, so reopening costs nothing.
 - **Checking the claims** (`engine/verifier.py`). The accounting proves a run ANSWERED for every
   line; it cannot prove the answer TRUE, so a run could write `d3 met: PDF verified` having never
-  opened the PDF. Each `met` is therefore checked once, by a SECOND model (the `tool_call` role,
-  never the main one) asked whether the run's own transcript tail supports each claim. A line
+  opened the PDF. Each `met` is therefore checked once, by a second call on the `tool_call` role —
+  a fresh context, and a second MODEL only when that role resolves to a different one (an unset
+  role runs the system model, as an unset `main` does; `rsched validate` names a routine whose
+  verifier shares its main model as `NOTE verifier`) — asked whether the run's own transcript
+  tail supports each claim. A line
   whose producing stage this run never entered carries that as a HINT the judge reads under the
   claim (`verifier.hinted`, F620) — never a verdict of its own: stage entry is detected from
   module reads and the run's phase cursor, which a run that did the work in full can lack. The design
