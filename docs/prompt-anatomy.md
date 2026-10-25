@@ -28,7 +28,12 @@ rises once cache hits are observed (§3f).
 
 ## 1 · The system prompt (composed once, `build_system_prompt`)
 
-Eight sections, in this order:
+Eight sections, in this order — `composer.system_sections` returns them as `(name, text)` pairs
+and `build_system_prompt` joins them, so the boot can record what each one weighs in the run
+record (`quality.prompt_chars`). Rows 1-3, the ENGINE CONTRACT, are the same for every routine
+and re-sent every turn; they are held to a shrink-only budget (`tests/test_prompt_budget.py`,
+`tests/prompt_budget.json`, 61 878 chars on 2026-10-25 for a routine holding every kind): a change
+that grows them fails until something else is cut or the ceiling is raised on purpose.
 
 | # | Section | Source | What the model learns |
 |---|---|---|---|

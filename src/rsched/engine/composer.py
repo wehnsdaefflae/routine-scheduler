@@ -221,10 +221,15 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     return "\n\n".join(p for p in parts if p)
 
 
-def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
-                        digest: str, inbox_msgs: list[str],
-                        allowed_kinds: set[str] | None = None,
-                        report_msgs: list[str] | None = None) -> str:
+def system_sections(ctx: RunContext, workflow_body: str, instruction: str,
+                    digest: str, inbox_msgs: list[str],
+                    allowed_kinds: set[str] | None = None,
+                    report_msgs: list[str] | None = None) -> list[tuple[str, str]]:
+    """The composed system prompt as `(name, text)` sections, in prompt order — what
+    `build_system_prompt` joins, and what the run record measures (`prompt_chars`): the
+    always-on prompt is the largest body every turn re-sends, so its make-up is recorded
+    rather than estimated.
+    """
     # CAPABILITIES lists utils at name+summary altitude only — exact usage flags stay
     # on-demand via `util name=list`, so the prompt stays lean and never serves stale flags.
     # Rule prose is NOT inlined: the library holds one copy, the workflow names the held
@@ -233,12 +238,12 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
     # restricted workflow never reads the fields and prose of channels it cannot use.
     kinds = effective_kinds(allowed_kinds, ctx.grants)
     sections = [
-        harness_contract(ctx, kinds),
-        "# ACTION SCHEMA (your every reply matches this)\n"
-        + json.dumps(schema_for_kinds(
-            kinds, reminders=bool(ctx.grants and ctx.grants.reminders_on)), indent=1),
-        "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1),
-        "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip(),
+        ("harness", harness_contract(ctx, kinds)),
+        ("schema", "# ACTION SCHEMA (your every reply matches this)\n"
+         + json.dumps(schema_for_kinds(
+             kinds, reminders=bool(ctx.grants and ctx.grants.reminders_on)), indent=1)),
+        ("example", "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1)),
+        ("workflow", "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip()),
     ]
     # A top-level ROUTINE's task is its self-contained recipe (main.md + stages/), so no
     # instruction is placed in the prompt — the seed isn't even persisted. A SUBRUN has no
@@ -247,19 +252,32 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
     # (instruction.md), so it carries the section too (without it the agent never sees its
     # task — only the converse HOW-to pattern).
     if ctx.depth > 0 or (is_conversation(ctx) and instruction.strip()):
-        sections.append("# INSTRUCTION (your assigned task)\n" + instruction.strip())
-    sections.append("# CAPABILITIES (what this run can actually use)\n"
-                    + capabilities_digest(ctx, allowed_kinds))
-    sections.append("# STATE DIGEST (fresh at run start)\n" + digest)
+        sections.append(("instruction", "# INSTRUCTION (your assigned task)\n"
+                         + instruction.strip()))
+    sections.append(("capabilities", "# CAPABILITIES (what this run can actually use)\n"
+                     + capabilities_digest(ctx, allowed_kinds)))
+    sections.append(("digest", "# STATE DIGEST (fresh at run start)\n" + digest))
     if inbox_msgs:
         joined = "\n\n".join(f"--- message {i + 1} ---\n{m}" for i, m in enumerate(inbox_msgs))
-        sections.append("# MESSAGES FROM THE USER (consume now)\n" + joined)
+        sections.append(("messages", "# MESSAGES FROM THE USER (consume now)\n" + joined))
     if report_msgs:
         # No standing prose here: what to do with a report addressed to you is the `report`
         # action's own contract, already in the harness bullet above.
-        sections.append("# REPORTS ADDRESSED TO YOU (consume now)\n"
-                        + "\n\n".join(report_msgs))
-    return "\n\n".join(sections)
+        sections.append(("reports", "# REPORTS ADDRESSED TO YOU (consume now)\n"
+                         + "\n\n".join(report_msgs)))
+    return sections
+
+
+def join_sections(sections: list[tuple[str, str]]) -> str:
+    return "\n\n".join(text for _name, text in sections)
+
+
+def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
+                        digest: str, inbox_msgs: list[str],
+                        allowed_kinds: set[str] | None = None,
+                        report_msgs: list[str] | None = None) -> str:
+    return join_sections(system_sections(ctx, workflow_body, instruction, digest, inbox_msgs,
+                                         allowed_kinds, report_msgs))
 
 
 def kickoff_message(ctx: RunContext) -> str:

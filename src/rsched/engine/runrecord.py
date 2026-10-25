@@ -20,7 +20,8 @@ and as cheap from one run to the next. So every run records two things beside it
   stages skipped; EFFECTIVENESS — the person's mid-run interventions, wall time, cache reads and
   writes (turns, tokens, cost, status and util outcomes are top-level fields already) — and
   the run's FRICTIONS, each thing that went wrong by its signature (engine/frictions.py), which
-  the moment test reads (readmodels/change_frictions.py).
+  the moment test reads (readmodels/change_frictions.py), and `prompt_chars`, the always-on
+  system prompt's size per section (harness, schema, workflow, capabilities, digest, …).
 
 Both are RUN-cumulative (the counters reseed on a resume, `history.prior_counters`), so the
 stream's fold keeps the newest leg's values, like `turns`. Written at depth 0 only.
@@ -133,4 +134,6 @@ def quality(ctx) -> dict:
         "cache_write": int(usage.get("cache_write") or 0),
         # what went wrong, by signature — absent (unknown) when no transcript could be read
         **({"frictions": found} if found is not None else {}),
+        # what the always-on prompt weighed, section by section (composer.system_sections)
+        **({"prompt_chars": dict(ctx.prompt_chars)} if ctx.prompt_chars else {}),
     }

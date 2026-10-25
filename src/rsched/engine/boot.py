@@ -19,7 +19,7 @@ from . import (
     obligations,
     runkind,
 )
-from .composer import build_system_prompt, kickoff_message, state_digest
+from .composer import join_sections, kickoff_message, state_digest, system_sections
 from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
 from .transcript import read_events
@@ -97,10 +97,13 @@ def boot(loop) -> None:
     # messages become the prompt's MESSAGES sections, and a report another routine addressed
     # here gets its own section rather than being read as something the user said
     prose = [] if resuming else [m for m in msgs if not m.get("command")]
-    system = build_system_prompt(ctx, loop.workflow_body, loop.instruction, digest,
-                                 [m["text"] for m in prose if not m.get("report")],
-                                 allowed_kinds=loop.allowed_tools,
-                                 report_msgs=[m["text"] for m in prose if m.get("report")])
+    sections = system_sections(ctx, loop.workflow_body, loop.instruction, digest,
+                               [m["text"] for m in prose if not m.get("report")],
+                               allowed_kinds=loop.allowed_tools,
+                               report_msgs=[m["text"] for m in prose if m.get("report")])
+    # what each section of the always-on prompt weighs, for the run record (runrecord.quality)
+    ctx.prompt_chars = {name: len(text) for name, text in sections}
+    system = join_sections(sections)
     if resuming:
         replayed, last_turn, records = replay_messages(events)
         loop.messages = [{"role": "system", "content": system}, *replayed]

@@ -261,7 +261,9 @@ measured, from the runs themselves, with nothing declared:
   (Done-when lines and goals), stages skipped, claims the verifier challenged and the ones that
   stood disputed, actions a caution held, schema retries, the person's interventions while the run
   worked, wall time, cache reads and writes — and `frictions`, what went WRONG by signature
-  (`engine/frictions.py`, counted from the run's own transcript at its end; below). Run-cumulative
+  (`engine/frictions.py`, counted from the run's own transcript at its end; below), and
+  `prompt_chars`, the always-on system prompt's size per section (`composer.system_sections`:
+  harness, schema, example, workflow, capabilities, digest, …). Run-cumulative
   (reseeded on a resume), so the fold keeps the newest leg's values.
 
 A routine's input differs from run to run, so no run's OUTPUT is scored. What stays comparable is

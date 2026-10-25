@@ -210,9 +210,9 @@ class RunContext:
     # operator could act on, hidden behind a timeout at a provider they never chose (F566).
     first_failover_cause: str = ""
     budget_base_turn: int = 0         # turns before this count against a prior window (resume)
-    # Which budget warning LINES this run has already been given (budget_warning): a warning
-    # is an event, said once per line crossed, never a per-turn countdown.
+    # Budget warning LINES already given (budget_warning): said once per line, never a countdown
     _budget_warned: set = field(default_factory=set)
+    prompt_chars: dict = field(default_factory=dict)  # the system prompt by section (boot.py)
     schema_retries: int = 0           # cumulative schema-violation retries this run (telemetry)
     referrals: int = 0                # turns/llm-calls answered by the `uncensored` model (audit)
     refusal_level: int = 0    # the uncensored back-off (engine/refusal.py, 2026-10-16)

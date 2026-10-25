@@ -605,7 +605,12 @@ one you are about to touch, not all of them.
   `KEEP_RUNS` runs — retention is a backstop, never a promise.
 - **The prompt surface is documented** in `docs/prompt-anatomy.md` (rendered on the Help tab). Revise
   it with ANY change to composer/loop/actions/schema_guard wording — `tests/test_prompt_anatomy.py`
-  pins the load-bearing strings and fails on drift.
+  pins the load-bearing strings and fails on drift. The ENGINE CONTRACT (harness, schema, example — the same
+  for every routine, re-sent every turn, 60-85% of a run's first prompt) is held to a SHRINK-ONLY
+  budget (`tests/test_prompt_budget.py` over `tests/prompt_budget.json`; `--update` lowers it and
+  refuses to raise it): new always-on prose pays for itself by cutting other always-on prose, or
+  the ceiling is raised by hand with the reason in the commit. Every run records its prompt's
+  size per section (`quality.prompt_chars`).
 - **Transcript events** (`engine/transcript.py` `EVENT_TYPES` — append-only JSONL, the engine is
   the only writer): `header, assistant_action, observation, question, answer, user_injection,
   subrun_start, subrun_end, compaction, error, refusal, stopping_update, stages_skipped, finish,

@@ -123,7 +123,7 @@ def test_the_quality_counters_survive_a_resume():
 def test_quality_reads_only_done_when_and_goal_lines(tmp_path):
     (tmp_path / "transcript.jsonl").write_text(
         '{"type": "error", "payload": {"where": "schema"}}\n', encoding="utf-8")
-    ctx = SimpleNamespace(run_dir=tmp_path,
+    ctx = SimpleNamespace(run_dir=tmp_path, prompt_chars={"harness": 30, "workflow": 5},
         accounting=["d1 met: x", "b1 unmet: y", "g1 distance: far", "d2 not due: none"],
         usage_total=lambda: {"in": 1, "out": 1, "cached_in": 9, "cache_write": 3},
         stage_coverage=lambda: {"skipped": ["gather"]}, claims_challenged=1,
@@ -132,4 +132,5 @@ def test_quality_reads_only_done_when_and_goal_lines(tmp_path):
     assert runrecord.quality(ctx) == {
         "owed": 3, "met": 1, "unmet": 1, "not_due": 1, "stages_skipped": 1, "challenged": 1,
         "disputed": 0, "holds": 2, "schema_retries": 1, "interventions": 0, "elapsed_s": 12,
-        "cache_read": 9, "cache_write": 3, "frictions": {"schema": 1}}
+        "cache_read": 9, "cache_write": 3, "frictions": {"schema": 1},
+        "prompt_chars": {"harness": 30, "workflow": 5}}
