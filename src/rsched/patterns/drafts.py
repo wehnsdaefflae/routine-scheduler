@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ..ids import is_slug, now_iso
 from ..paths import atomic_write_json, read_json
-from . import fields
+from . import fields, validate
 
 DIR = Path(".control") / "settings-drafts"
 
@@ -33,10 +33,15 @@ def read(routines_home: Path, slug: str) -> dict | None:
     doc = read_json(_path(routines_home, slug))
     if not isinstance(doc, dict) or not isinstance(doc.get("changes"), dict):
         return None
+    # A field outside the vocabulary is dropped, and so is a VALUE the accept would refuse:
+    # `write` refuses one now, but a document stored before it did (or hand-edited since) must
+    # still be readable — this is what every settings-page load calls, and a page that 500s
+    # cannot even show the person the draft to discard.
     changes = {k: {"value": fields.canonical(k, v.get("value")),
                    "reason": str(v.get("reason") or "")}
                for k, v in doc["changes"].items()
-               if k in fields.BY_KEY and isinstance(v, dict) and "value" in v}
+               if k in fields.BY_KEY and isinstance(v, dict) and "value" in v
+               and validate.valid(k, fields.canonical(k, v.get("value")))}
     if not changes and not doc.get("pattern"):
         return None
     return {"changes": changes, "pattern": doc.get("pattern"),
@@ -46,9 +51,26 @@ def read(routines_home: Path, slug: str) -> dict | None:
 
 def write(routines_home: Path, slug: str, *, changes: dict[str, dict], pattern: str | None,
           message: str, source: str, reason: str = "") -> dict:
-    """Replace the routine's pending changes. `changes` is `{field: {value, reason}}`; a field
-    outside the vocabulary is dropped rather than stored, because nothing could apply it.
+    """Replace the routine's pending changes. `changes` is `{field: {value, reason}}`.
+
+    EVERY value is validated here, at the WRITER (F610), and an invalid one is REFUSED —
+    nothing is stored, and the `ValueError` names the offending key and the vocabulary that was
+    allowed instead. The recommender validated what it proposed and no other caller did, so
+    "follow this pattern" and the pattern-diff half of "Recommend for this routine" stored
+    values the accept route refuses, and the refusal arrived on the operator's click. The
+    accept is whole-draft, so one refused field 400s every other change the person kept: that
+    is how `connections: {"fau-mail": {...}}` cost ewsan-bohrdaten-steward all nine of its
+    proposed settings. The check lives here rather than in each caller so a call site added
+    later is validated by construction instead of by whoever remembers.
+
+    `validate.problem` judges each field the way the accept would — `RoutinePatch` for shape,
+    the accept route's own validators for meaning, and the field's own owner for `triggers`
+    and `finish_line`, which are not patch fields at all. A value needing the instance catalogs
+    (`models`, `machines`) keeps its semantic half for the click: a filing check stricter than
+    the accept would refuse a proposal that works.
     """
+    if found := validate.problems({k: (v or {}).get("value") for k, v in changes.items()}):
+        raise ValueError("; ".join(found))
     doc = {"created": now_iso(), "source": source, "message": message, "reason": reason,
            "pattern": pattern,
            "changes": {k: {"value": fields.canonical(k, v.get("value")),

@@ -34,6 +34,20 @@ DEFAULT_PATTERN_FIELDS = tuple(k for k in fields.GOVERNABLE if k not in (
 
 
 
+def _propose(server, slug: str, **kw) -> None:
+    """Write pending changes, turning the writer's refusal into the 422 the page shows.
+
+    `drafts.write` validates every proposed value (F610) and raises `ValueError` naming the
+    offending key and the vocabulary it wanted; unwrapped that is a 500 on the page whose job
+    is to say what is wrong. The alternative it closes is worse: the value stored silently and
+    400d on the accept click, taking every other change in the whole-draft accept with it.
+    """
+    try:
+        drafts.write(server.routines_home, slug, **kw)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 def _settings_payload(request: Request, slug: str) -> dict:
     info = _info(request, slug)
     server = _state(request).server
@@ -201,9 +215,9 @@ def propose_pattern(request: Request, slug: str, body: FollowBody) -> dict:
     changes = {k: {"value": row["after"], "reason": f"the value {pattern['title']} carries"}
                for k, row in fields.diff(saved, pattern["settings"],
                                          list(pattern["settings"])).items()}
-    drafts.write(server.routines_home, slug, changes=changes, pattern=pattern["slug"],
-                 message=f"these changes make it follow {pattern['title']}.",
-                 source="follow")
+    _propose(server, slug, changes=changes, pattern=pattern["slug"],
+             message=f"these changes make it follow {pattern['title']}.",
+             source="follow")
     return _settings_payload(request, slug)
 
 
@@ -237,8 +251,8 @@ def recommend_settings(request: Request, slug: str) -> dict:
     switch = pattern["slug"] if pattern is not None and pattern["slug"] != info.cfg.pattern \
         else None
     if changes or switch:
-        drafts.write(server.routines_home, slug, changes=changes, pattern=switch,
-                     message=CHECK_MESSAGE, source="recommend")
+        _propose(server, slug, changes=changes, pattern=switch,
+                 message=CHECK_MESSAGE, source="recommend")
     return _settings_payload(request, slug)
 
 

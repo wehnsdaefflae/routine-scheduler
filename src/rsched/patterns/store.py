@@ -39,7 +39,7 @@ import yaml
 from ..entities import guarded_roots
 from ..ids import now_iso
 from ..paths import atomic_write_yaml, read_yaml
-from . import fields
+from . import fields, validate
 
 SUBDIR = "patterns"
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,60}$")
@@ -67,7 +67,15 @@ def _document(path: Path) -> tuple[object, str]:
 
 
 def problems(doc: object) -> list[str]:
-    """What is wrong with a pattern document, as sentences. Empty when it is sound."""
+    """What is wrong with a pattern document, as sentences. Empty when it is sound.
+
+    Its field NAMES, its folder grants, AND its VALUES (F610): a pattern's settings become a
+    new routine's values and its pending changes, so a pattern carrying vocabulary the accept
+    route refuses is a proposal defect on every routine made from it — and the refusal used to
+    arrive on the operator's accept click, whole-draft, taking every other change with it. The
+    values are judged by `validate`, the same judge `drafts.write` uses, so the library and the
+    pending-changes writer cannot disagree about what is proposable.
+    """
     if not isinstance(doc, dict):
         return ["a pattern is a mapping"]
     out = [f"{key} is required" for key in ("title", "summary", "workflow")
@@ -81,6 +89,8 @@ def problems(doc: object) -> list[str]:
             out.append(f"settings.{key}: not a setting")
         elif not fields.BY_KEY[key].governable:
             out.append(f"settings.{key}: a pattern never carries a routine's own {key}")
+        elif why := validate.problem(key, settings[key]):
+            out.append(f"settings.{why}")
     out.extend(f"settings.{key}: {root} is a credential store — a pattern never grants one"
                for key in ("fs_read_roots", "fs_write_roots")
                for root in guarded_roots(settings.get(key)))
@@ -144,10 +154,21 @@ def unusable(libraries_home: Path) -> dict[str, str]:
 def create(libraries_home: Path, slug: str, doc: dict) -> dict:
     """Write a NEW pattern. Refuses an existing slug — patterns are immutable — and a document
     with problems. Returns the stored pattern. The caller commits the library.
+
+    The settings are judged AS GIVEN, before the canonical copy below drops what it cannot
+    hold: a document whose only setting is a misspelled field name would otherwise be refused
+    as "settings must name at least one field", naming nothing the author could fix (F610,
+    house rule: a refusal teaches the correct call).
     """
     path = _path(libraries_home, slug)
     if path.exists():
         raise FileExistsError(f"a pattern named {slug!r} already exists")
+    if found := problems({"title": str(doc.get("title") or "").strip(),
+                          "summary": str(doc.get("summary") or "").strip(),
+                          "workflow": str(doc.get("workflow") or "").strip(),
+                          "asks": list(doc.get("asks") or []),
+                          "settings": doc.get("settings")}):
+        raise ValueError("; ".join(found))
     body = {"title": str(doc.get("title") or "").strip(),
             "summary": str(doc.get("summary") or "").strip(),
             "workflow": str(doc.get("workflow") or "").strip(),
