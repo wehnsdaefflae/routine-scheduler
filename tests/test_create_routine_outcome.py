@@ -10,6 +10,7 @@ import yaml
 
 from helpers import PRODUCES
 from rsched.config.outcome import OutcomeConfig
+from rsched.endpoints.base import Completion
 from rsched.engine import create_routine, donewhen, outcome_words
 from rsched.engine.create_routine import DRAFT_RELPATH
 from rsched.readmodels.surface_outcome import names_a_measure
@@ -130,7 +131,9 @@ def test_a_recipe_whose_done_when_names_no_measure_is_regenerated(monkeypatch):
     named = plain + f"- d2 — {outcome_words.done_when_line(cfg)}\n"
     answers = iter([outline, {"main": plain}, {"main": named},
                     {"body": "Read the inbox.\nWrite the record."}])
-    endpoint = SimpleNamespace(complete=lambda *_a, **_k: SimpleNamespace(
+    # A REAL Completion out of the scripted endpoint (F766): a namespace standing in for one is
+    # missing whatever field production reads next — see tests/test_double_conformance.py.
+    endpoint = SimpleNamespace(complete=lambda *_a, **_k: Completion(
         parsed=next(answers), text=""))
     ref = SimpleNamespace(model="m", effort="", temperature=None, max_tokens=0)
     monkeypatch.setattr(pipeline, "DECOMPOSE_ATTEMPTS", 2)

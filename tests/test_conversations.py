@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -14,6 +15,7 @@ import yaml
 from conftest import authed_client, seeded_server
 from rsched import conversations as conv_mod
 from rsched.config import load_routine
+from rsched.endpoints.base import Completion
 from rsched.paths import atomic_write_json
 
 REPO = Path(__file__).resolve().parents[1]
@@ -1091,15 +1093,15 @@ def test_autolabel_rewrites_config_atomically(server, monkeypatch):
     """autolabel rewrites routine.yaml OFF the reply path while the daemon may scan it —
     the rewrite must land whole (title + tags applied, every other key intact) and leave
     no atomic_write tmp debris behind in the conversation dir."""
-    from types import SimpleNamespace
-
     d = conv_mod.create_conversation(server, slug="c-atomic", first_message="track my garden beds")
     before = yaml.safe_load((d / "routine.yaml").read_text())
 
     class FakeEndpoint:
         def complete(self, *a, **k):
-            return SimpleNamespace(parsed={"title": "Garden bed tracker",
-                                           "tags": ["Garden", "WEEKLY!"]}, text="")
+            # A REAL Completion: a namespace standing in for one is missing whatever field
+            # production reads next, which is what F766 cost (tests/test_double_conformance.py).
+            return Completion(parsed={"title": "Garden bed tracker",
+                                      "tags": ["Garden", "WEEKLY!"]}, text="")
 
     class FakeRegistry:
         def __init__(self, _server): ...
@@ -1120,15 +1122,13 @@ def test_autolabel_uses_the_conversations_own_model(server, monkeypatch):
     """Title + tags come from the conversation's OWN model (for_model('main', its models)),
     never the system model — so a conversation pinned to an uncensored model titles with it
     instead of a default model that might refuse the request."""
-    from types import SimpleNamespace
-
     d = conv_mod.create_conversation(server, slug="c-mdl", first_message="hello",
                                      models={"main": "uncensored-x"})
     seen: dict = {}
 
     class FakeEndpoint:
         def complete(self, *a, **k):
-            return SimpleNamespace(parsed={"title": "Titled thing", "tags": []}, text="")
+            return Completion(parsed={"title": "Titled thing", "tags": []}, text="")
 
     class FakeRegistry:
         def __init__(self, _server): ...

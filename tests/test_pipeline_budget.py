@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from rsched.config import DEFAULT_MODEL_MAX_TOKENS
+from rsched.endpoints.base import Completion
 from rsched.workflows import pipeline
 
 OUTLINE = {"stages": [{"name": "work", "scope": "do it", "inputs": "-", "outputs": "-"}]}
@@ -34,7 +35,9 @@ def _asked(**ref_fields) -> list[int]:
 
     def complete(_messages, **kw):
         asked.append(kw["max_tokens"])
-        return SimpleNamespace(parsed=next(answers), text="")
+        # A REAL Completion, never a namespace standing in for one: `_pipeline` reads whatever
+        # fields an endpoint fills, and a hand-built surface lacks the next one added (F766).
+        return Completion(parsed=next(answers), text="")
 
     ref = SimpleNamespace(model="m", effort="", temperature=None, **ref_fields)
     out = pipeline._pipeline(lambda: (SimpleNamespace(complete=complete), ref), "raw", "task",
