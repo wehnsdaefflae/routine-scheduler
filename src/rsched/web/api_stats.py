@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
+from ..readmodels.cache_gap import cache_gap
 from ..readmodels.compression_stats import compression_stats
 from ..readmodels.recipe_size import recipe_sizes
 from ..readmodels.stats import aggregate, monthly_spend
@@ -27,9 +28,11 @@ def stats(request: Request) -> dict:
     outcome breakdowns + a memoized transcript backfill for pre-stream history),
     `recipes` — per-routine recipe length with its ~30-day git baseline (F371), and
     `compression` — the per-routine output-compression roll-up (same durable stream:
-    what the optional compressor applied, saved, and had refused).
+    what the optional compressor applied, saved, and had refused), and `cache_gap` — the
+    per-routine BETWEEN-RUNS prompt-cache premium (F507/D163: what each fire's cold first
+    turn was billed above a cache read, read from the retained transcripts' turn-1 rows).
     """
     server = request.app.state.server
     return {**aggregate(server), "monthly": monthly_spend(server),
             "utils": util_stats(server), "recipes": recipe_sizes(server),
-            "compression": compression_stats(server)}
+            "compression": compression_stats(server), "cache_gap": cache_gap(server)}

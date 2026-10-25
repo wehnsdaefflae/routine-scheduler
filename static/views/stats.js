@@ -9,6 +9,7 @@ import { api } from "/static/api.js";
 import { GROUPS, METRICS, RANGES, chartNode, colorMap, hideTip } from "/static/components/charts.js";
 import { el, emptyState, fmtDur, fmtInt, fmtNum, fmtUsd, skeleton, storage } from "/static/util.js";
 import { blockedSection } from "/static/views/stats-blocked.js";
+import { cacheGapSection } from "/static/views/stats-cachegap.js";
 import { NBSP, compressionSection, foldRows, monthlySection, routineHref, statSection }
   from "/static/views/stats-parts.js";
 
@@ -291,6 +292,10 @@ export async function render(view) {
 
     // ---- monthly spend (durable series) ------------------------------------
     parts.push(monthlySection(agg.monthly, Object.fromEntries(
+      Object.entries(agg.by_routine || {}).map(([k, d]) => [k, d.kind]))));
+
+    // ---- the between-runs prompt-cache gap (F507/D163), beside the spend it adds to ----
+    parts.push(cacheGapSection(agg.cache_gap, Object.fromEntries(
       Object.entries(agg.by_routine || {}).map(([k, d]) => [k, d.kind]))));
 
     // ---- per-util execution stats -------------------------------------------
