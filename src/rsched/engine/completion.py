@@ -20,7 +20,7 @@ import time
 from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.usage import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import overflow, paramsalvage, turndebris, turntakeover, wrongturn
+from . import overflow, paramsalvage, schemamemo, turndebris, turntakeover, wrongturn
 from .actions import KIND_EXAMPLES, normalize_action, validate_action
 from .actionschema import ACTION_SCHEMA
 from .degrade import (
@@ -111,6 +111,31 @@ def _turn_schema(loop) -> dict | None:
     if shed:
         loop._shed_schema_turns -= 1
     return None if (loop._schema_off or shed) else loop.action_schema
+
+
+def _record_rejection(loop, exc, completion, *, attempt: int, repeated: bool,
+                      raw: str) -> str:
+    """File this rejection everywhere it is recorded, and return what the run already knew.
+
+    Three records, one per reader: the transcript `error` event, the per-run counter, and the
+    `wrong_turn_detected` health event the FLEET rate is read off (`engine/wrongturn.py`, which
+    holds why a RECALLED rejection carries the `repeat_invalid` reason).
+
+    The return value is F736's: `schemamemo.recall` records the rejection MESSAGE against this
+    run and returns the sentence naming the turn it was FIRST earned at ("" the first time).
+    Consulted BEFORE the records are written, so the transcript can say so.
+    """
+    ctx = loop.ctx
+    recalled = schemamemo.recall(loop, exc.problems, turn=ctx.turn + 1)
+    ctx.transcript.event("error", {"where": "schema", "attempt": attempt,
+                                   "message": str(exc)[:500], "raw": raw[:1500],
+                                   **({"recalled": True} if recalled else {}),
+                                   **({"provider": completion.provider}
+                                      if completion.provider else {})})
+    ctx.note_schema_retry()
+    wrongturn.record(ctx, "repeat_invalid" if (repeated or recalled) else "schema_rejected",
+                     turn=ctx.turn + 1, detail=str(exc)[:200])
+    return recalled
 
 
 def next_action(loop) -> tuple[dict | None, dict]:
@@ -220,17 +245,12 @@ def next_action(loop) -> tuple[dict | None, dict]:
             raw = completion.text or json.dumps(completion.parsed or {})
             repeated = prev_raw is not None and raw.strip() == prev_raw.strip()
             prev_raw = raw
-            ctx.transcript.event("error", {"where": "schema", "attempt": attempt,
-                                           "message": str(exc)[:500], "raw": raw[:1500],
-                                           **({"provider": completion.provider}
-                                              if completion.provider else {})})
-            ctx.note_schema_retry()
-            # …and the same fact as a HEALTH EVENT (R2652): the counter above is per run and
-            # reaches no fleet surface, so how often a turn comes back WELL-FORMED AND WRONG
-            # was measurable nowhere. A measurement only — nothing about this turn's effort,
-            # model or attempt budget changes (engine/wrongturn.py).
-            wrongturn.record(ctx, "repeat_invalid" if repeated else "schema_rejected",
-                             turn=ctx.turn + 1, detail=str(exc)[:200])
+            # Every record this rejection earns — transcript event, per-run counter, health
+            # event — plus what the run ALREADY knew about it (F736): `_record_rejection`
+            # returns the recall sentence, which is "" unless this exact rejection message was
+            # earned at an earlier turn of this run.
+            recalled = _record_rejection(loop, exc, completion, attempt=attempt,
+                                         repeated=repeated, raw=raw)
             # Refusal takeover (engine/refusal.py, operator 2026-10-16): a free-text
             # reply the classification judges a content REFUSAL arms the back-off
             # episode and hands the refused TURN to the routine's uncensored model
@@ -251,7 +271,15 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 {"role": "user", "content": retry_message(
                     exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""),
                     repeated=repeated,
-                    diagnosis=diagnose(completion.parsed or {}))})
+                    diagnosis=diagnose(completion.parsed or {}),
+                    help_text=schemamemo.field_help(exc.problems),
+                    recalled=recalled)})
+            if recalled:
+                # The ask itself stops being identical (F736): the lever the line below spends
+                # on the attempt NUMBER is spent here on the evidence that this ask does not
+                # work. Same model, same effort, same attempt budget — `engine/schemamemo.py`
+                # holds why a constrained decoder is the likeliest author of the repeat.
+                schema = None
             if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                 # Persistent violations under a provider-enforced grammar are often the
                 # grammar's fault (empty-string debris fields are its signature) — give

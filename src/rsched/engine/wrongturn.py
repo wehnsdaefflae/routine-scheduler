@@ -29,9 +29,15 @@ judgement about a turn:
   refused by a per-kind, capability or grant check (`completion.action_candidate`). The
   commonest one, and the one that recovers: the turn usually lands on the next attempt, which
   is exactly why nothing recorded it.
-* `repeat_invalid` — the model returned the IDENTICAL invalid reply after being corrected
-  (`completion.next_action`'s `repeated`). Its own reason rather than a second rejection,
-  because a correction that teaches nothing is the signature the later increment is built for.
+* `repeat_invalid` — a correction that taught NOTHING, in either of the two ways it can:
+  the model returned the IDENTICAL invalid reply inside ONE turn
+  (`completion.next_action`'s `repeated`), or it earned a rejection MESSAGE this run had
+  already earned at an EARLIER turn (`engine/schemamemo.recall`, F736 — which holds the
+  measurement, and is also what stops that retry being the identical ask). The second half is
+  why this reason reads nonzero at all: `repeated` compares against a per-turn local, so a
+  rejection re-earned fifty turns later was invisible to it. Its own reason rather than a
+  second rejection, because a correction that teaches nothing is the signature the later
+  increment is built for.
 * `attempts_exhausted` — every schema attempt spent with no action accepted, so the turn that
   was due produced nothing at all and the run ends `failed`.
 * `action_repeat` — a perfectly schema-VALID action that is the same one again, at the streak

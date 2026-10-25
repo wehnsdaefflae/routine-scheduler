@@ -82,7 +82,8 @@ def parse_reply(text: str, schema: dict) -> dict:
 
 
 def retry_message(problems: list[str], *, example: dict | None = None,
-                  repeated: bool = False, diagnosis: str = "") -> str:
+                  repeated: bool = False, diagnosis: str = "",
+                  help_text: str = "", recalled: str = "") -> str:
     """The correction the model reads after an invalid action.
 
     `diagnosis` names what is wrong with the OBJECT when the schema's own problem lines
@@ -92,11 +93,23 @@ def retry_message(problems: list[str], *, example: dict | None = None,
     spent eight rejections being told `timeout_s: 0 is less than the minimum of 1` while the
     real fault was `kind='util'` with `name='300'` and a URL in `args` (F547/D146-C). A
     correction that names the symptom four times teaches nothing.
+
+    `help_text` says what the named FIELD is, in the contract's own words, and `recalled` says
+    this run has earned this identical rejection before and at which turn — both composed by
+    `engine/schemamemo.py`, which holds F736's measurement: `(root): 'say' is a required
+    property` was sent to one run at eleven separate turns without ever telling it what `say`
+    is. Keyword-only with empty defaults, so a caller that has neither (every caller outside
+    the schema-retry cycle) gets the message byte for byte as before. They go BEFORE the
+    closing contract line, which is quoted as the last line by tests/test_prompt_anatomy.py.
     """
     lines = "\n".join(f"- {p}" for p in problems)
     parts = ["Your previous reply was not a valid action:", lines]
     if diagnosis:
         parts.append(diagnosis)
+    if help_text:
+        parts.append(help_text)
+    if recalled:
+        parts.append(recalled)
     if repeated:
         parts.append("You returned the SAME invalid action again — do not repeat it; "
                      "fix the problems listed above.")

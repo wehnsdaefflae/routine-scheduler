@@ -25,7 +25,12 @@ compaction gate), with `engine/wrongturn.py` the MEASUREMENT beside it — a tur
 well-formed and WRONG files `wrong_turn_detected` (every net in `engine/degrade.py` answers a
 turn that failed to ARRIVE; a wrong one is, to that ladder, a success), changing no effort, no
 model and no retry: R2652's first increment is the trigger alone, so the rate can justify the
-ladder rather than the other way round. `engine/control.py` is the
+ladder rather than the other way round. `engine/schemamemo.py` is what that rate then bought
+(F736): it remembers the rejection MESSAGES this run has already earned, so a repeat earns a
+correction naming the field in the contract's own words plus the turn that first earned it, and
+that retry sheds the provider grammar instead of re-sending the identical ask — within the same
+three attempts, and never by ending the run, which the measured specimens show would cost more
+than the retries it saves. `engine/control.py` is the
 between-turns control plane (abort, pause gate, injection drain, subrun announcements) and
 `engine/switches.py` its `control.json` switches (model, deliberation, rule bindings, a live
 config change), `engine/loopend.py` how a run ENDS (the engine-authored verdicts and the one

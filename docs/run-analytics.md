@@ -730,15 +730,26 @@ FLEET rate, and what turn of a run it happens at, were readable nowhere.
 
 Four reasons, each a failure the engine already detects, none of them a new judgement about a
 turn: `schema_rejected` (an invalid action — unparseable, schema-invalid, or refused by a
-per-kind/capability/grant check), `repeat_invalid` (the IDENTICAL invalid reply again after being
-corrected — a correction that taught nothing), `attempts_exhausted` (every schema attempt spent,
+per-kind/capability/grant check), `repeat_invalid` (a correction that taught nothing — the
+IDENTICAL invalid reply again inside one turn, or a rejection **this run already earned at an
+earlier turn**, which F736 added: `completion.next_action`'s own repeat flag compares the raw
+reply against a per-turn local, so a rejection re-earned 50 turns later was invisible to it, and
+in 76 rows it had fired zero times while ten runs repeated one verbatim rejection across turns —
+`llmsectest-weekday:20261023-040002` was told `(root): 'say' is a required property` at turns 236,
+287, 315, 331, 349, 483, 592, 613, 647, 662 and 683), `attempts_exhausted` (every schema attempt spent,
 no action accepted, the run ends), and `action_repeat` (a schema-VALID action landing for the
 third time in a row — `loop.REPEAT_WARN`, where each action is individually well-formed and the
 run has stopped moving). ONE row per (reason, turn): a turn rejected three times is one wrong
 turn, and the per-attempt record is already in that run's transcript.
 
-It is a **MEASUREMENT and nothing else** — no effort is changed, no model is swapped, no retry is
-added. That is deliberate and is the first increment of R2652: the rate it accumulates, read off
+The EVENT is a **MEASUREMENT** — no effort is changed, no model is swapped, no attempt is added
+by filing it. (What F736 did add, beside it and not in it: a rejection the run has already
+earned gets a correction that names the FIELD in the contract's own words and says which turn
+first earned it, and that one retry sheds the provider grammar — a lever the retry cycle already
+spends on its last attempt. Same model, same effort, same three attempts, and deliberately NOT a
+rule that ends the run: those eleven llmsectest turns each recovered, so ending at the second
+identical rejection would have discarded 396 turns of finished work.) The measurement line is
+deliberate and is the first increment of R2652: the rate it accumulates, read off
 this fold, is what a later effort ladder would have to be justified by, and the rows double as
 the `(turn, effort-that-sufficed)` corpus the token-lab experiments say this instance lacks. Read
 it by `reason` and by `turn`, never as a bare count: a single `schema_rejected` that recovered on

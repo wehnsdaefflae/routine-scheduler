@@ -100,15 +100,15 @@ without the accountability it was traded for.
 wrong_turn_detected: a turn came back WELL-FORMED AND WRONG, and the engine saw it
 (`engine/wrongturn.py`, R2652). Carries `reason` (schema_rejected · repeat_invalid ·
 attempts_exhausted · action_repeat), `turn`, `model` and `effort` as structured fields, plus
-`streak` on a repeat. It exists because `engine/degrade.py` — literally documented as "when a
-turn comes back WRONG" — carries four ordered nets that ALL fire on a turn which failed to
-ARRIVE; a reply that arrives whole and is wrong is, to that ladder, a success recovered on the
-next attempt. The only trace was a transcript `error` event and two per-run counters
-(`schema_retries`, `schema_forcefails`), so the FLEET rate — how often, at which turn, under
-which model and effort — was readable nowhere. ONE row per (reason, turn): a turn rejected three
-times is one wrong turn, and the per-attempt record is already on the transcript. It is a
-MEASUREMENT and changes no effort, model or attempt budget; the rows are also the `(turn,
-effort-that-sufficed)` corpus the later effort-ladder increment must be justified by.
+`streak` on a repeat. `repeat_invalid` is the correction that taught nothing — the identical
+invalid reply inside ONE turn, or a rejection this run already earned at an EARLIER turn (F736,
+`engine/schemamemo.py`, which is also what stops that retry being the identical ask). It exists
+because `engine/degrade.py` — documented as "when a turn comes back WRONG" — carries four nets
+that ALL fire on a turn which failed to ARRIVE; a reply that arrives whole and is wrong is, to
+that ladder, a success recovered on the next attempt, traced only by a transcript `error` event
+and two per-run counters, so the FLEET rate was readable nowhere. ONE row per (reason, turn): a
+turn rejected three times is one wrong turn. The EVENT still changes no effort, model or attempt
+budget; the rows are the `(turn, effort-that-sufficed)` corpus the effort ladder rests on.
 Deliberately NOT in `health_cooldown.REPEAT_COOLDOWN_HOURS`: a rate suppressed by the hour is
 not a rate, and nothing the blocked-fleet fold COUNTS may be cooled down.
 
