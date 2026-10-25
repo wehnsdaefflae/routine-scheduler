@@ -18,7 +18,7 @@ pattern, and a declared relationship to its parent.** That is the whole concept,
 | `parallel` | `spawn` | concurrently — the parent keeps working | the engine |
 | `sequential` | `subtask` | the parent folds its result into the next step | the engine |
 | `branch` | a conversation fork (F325) | forked from a message, alongside the original | the user |
-| `oversight` | no action — the ladder fires it (`engine/ladder.py`) | at a turn boundary, while the parent waits | the engine |
+| `oversight` | no action — the ladder fires it (`engine/ladder.py`), or a person asks for one | at a turn boundary, while the parent waits | the engine, or the operator |
 
 `oversight` is the one mode no action starts: a rung is dispatched BY the engine to supervise the
 run that started it, and its finish summary comes back as a directive binding on that run. So it
@@ -26,6 +26,16 @@ inverts the usual direction — every other child works FOR its parent, a rung r
 tree draws it `↑` for that reason, and its directive reaches the worker on the `oversight` inbox
 channel, recorded as a `user_injection` carrying `via: "oversight"` so a reader can tell a rung
 from the operator.
+
+A PERSON can also ask a live run for a rung — `POST /api/runs/{run_id}/supervise`, the run view's
+`👁 supervise` button (F750). It is a request on the RUN, not a second run of the routine: the
+daemon refuses two concurrent runs of one routine (`Runner.fire_blocker`) because they would race
+its state, which is why pressing run-now on a busy routine answered "routine fau is busy" and why
+supervising a run in flight has to happen inside it. The ask is recorded in the run's
+`control.json`, read at the next turn boundary by `engine.switches.person_asked`, and it does
+**not** require `ladder.enabled` — the knob is off by default, so requiring it would shut the door
+on exactly the run being watched. The ask is the authorization, one ask is one rung, and the rung
+reports `person_requested` as its reason so a reader can tell it from one the ladder produced.
 
 They are modes, **not** three concepts and **not** a fourth action kind. The action names stay,
 because each names a different scheduling intent a run genuinely chooses between; what they share

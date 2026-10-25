@@ -55,6 +55,47 @@ def _fresh(loop, signal: str, last_ts: str) -> dict | None:
     return sw
 
 
+#: What `ladder.rung_is_due` reports when a PERSON asked for this rung — kept distinct from the
+#: three `ladder.PULL_FORWARD` events, which are facts the engine noticed about the run, because a
+#: transcript reader must be able to tell a rung the operator called for from one the mechanism
+#: produced on its own.
+REQUESTED_BY_PERSON = "person_requested"
+
+
+def person_asked(loop) -> str | None:
+    """`REQUESTED_BY_PERSON` when a person has asked THIS run for a supervisory rung since the
+    last ask it honoured, else None — the sixth signal, and the ask is consumed by the read.
+
+    THE DOOR THIS OPENS (F750). A person could not start a supervisory run by hand while the run
+    it would supervise was live: `runner.fire_blocker` refuses a second run of a routine (two UI
+    toasts on 2026-10-16, "routine fau is busy", the operator pressing run-now with the brief
+    "rung" while `fau:20261016-125013` was going), and that refusal is RIGHT — `runner.active` is
+    keyed by slug and two concurrent runs of one routine would race its state. The ladder already
+    supervises a live run the only way that is safe: in-process, at the worker's own turn
+    boundary, as an OVERSIGHT child whose turns are its own (`engine/ladder.escalate`). So the
+    door is a REQUEST ON THE RUN, not a second run of the routine.
+
+    IT NEEDS NO KNOB. `ladder.enabled` is false on every routine by default, so an ask gated on
+    it would be shut on exactly the run the operator is watching. The ask IS the authorization,
+    and `ladder.at_boundary` therefore reads it before it reads the knob or the interval.
+
+    CONSUMED BY THE READ, which is safe only because every path out of `escalate` writes an
+    event — the pattern-missing hard skip, a child the tree cannot start, a supervisor that
+    returns no directive, and the directive itself. One ask is one rung, and the person is never
+    left with silence. It must not become a MODE: an ask that stayed set would put a rung on
+    every boundary for the rest of the run.
+
+    `_last_supervise_ts` is read through `getattr` because a loop stand-in in a test carries only
+    the attributes the mechanism under test needs, and a required attribute here would turn an
+    unrelated test into an AttributeError instead of a missed ask.
+    """
+    seen = str(getattr(loop, "_last_supervise_ts", "") or "")
+    if (ask := _fresh(loop, "supervise_now", seen)) is None:
+        return None
+    loop._last_supervise_ts = str(ask["ts"])
+    return REQUESTED_BY_PERSON
+
+
 def apply_model_switch(loop) -> None:
     """Turn-boundary: honour a mid-run model switch written to control.json by the web layer.
     The switch lands on the NEXT completion, since for_model re-resolves ctx.routine.models
