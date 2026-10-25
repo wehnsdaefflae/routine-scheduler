@@ -48,7 +48,8 @@ def _secret_nodes(cfg: RoutineConfig, needed: dict[str, list[str]],
                              {"kind": "add_secret", "name": name}, src))
         elif decided is False:
             out.append(_node(eid, "denied", BLOCKS, why,
-                             "declined forever — the run no longer asks and the call fails",
+                             "declined forever — the run no longer asks; calls run WITHOUT "
+                             "it (F756), so one that truly needs it fails inside the util",
                              {"kind": "clear_grant", "entity": eid}, src))
         elif decided is True:
             out.append(_node(eid, "exposed", OK, why, source=src))

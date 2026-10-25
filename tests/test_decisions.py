@@ -377,11 +377,12 @@ def test_secret_grant_row_covers_runs_without_asking(make_routine, scripted, mon
     assert ran == [("frob", [])]                                            # ran unprompted
 
 
-def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, scripted,
-                                                                  monkeypatch):
-    """D39: a routine whose `grants:` maps `secret:<NAME>` to false gets a refusing
-    observation — the util never runs and NO question is filed (the mapping is the
-    routine page's to change)."""
+def test_util_secret_gate_recorded_decline_withholds_without_asking(make_routine, scripted,
+                                                                    monkeypatch):
+    """D39 + F756: a routine whose `grants:` maps `secret:<NAME>` to false files NO question
+    (the mapping is the routine page's to change) — and that credential is WITHHELD from the
+    call, which runs without it. Until F756 the whole util was refused, so one declined name
+    disabled every call of it, including a call needing none of it."""
     from rsched import secrets as secrets_mod
 
     ran = []
@@ -407,9 +408,9 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
     assert not any(e["type"] == "question" for e in events)
     obs = next(e for e in events if e["type"] == "observation"
                and e["payload"]["kind"] == "util")
-    assert obs["payload"]["declined_secrets"] == ["FOO_KEY"]
-    assert "routine page" in obs["payload"]["reason"]
-    assert ran == []                                   # the util never executed
+    assert obs["payload"]["withheld_declined"] == 1    # a count, never the name (R17)
+    assert "declined_secrets" not in obs["payload"]    # that key means "did not run"
+    assert ran == [("frob", [])]                       # the util RAN, without the credential
 
 
 def test_a_util_slash_command_passes_the_same_secret_gate(make_routine, scripted, monkeypatch):
@@ -439,8 +440,8 @@ def test_a_util_slash_command_passes_the_same_secret_gate(make_routine, scripted
     assert status == "ok"
     obs = next(e["payload"] for e in transcript_events(run_dir) if e["type"] == "observation"
                and e["payload"].get("user_command"))
-    assert obs["declined_secrets"] == ["FOO_KEY"]
-    assert ran == []                                   # the util never executed
+    assert obs["withheld_declined"] == 1                # F756: withheld, not refused
+    assert ran == ["frob"]                              # the util RAN, without the credential
 
 
 def test_secret_decline_observation_names_no_secrets(make_routine, scripted, monkeypatch):
@@ -470,14 +471,11 @@ def test_secret_decline_observation_names_no_secrets(make_routine, scripted, mon
     assert status == "ok"
     obs = next(e for e in transcript_events(run_dir) if e["type"] == "observation"
                and e["payload"]["kind"] == "util")
-    assert sorted(obs["payload"]["declined_secrets"]) == ["BAR_KEY", "FOO_KEY"]  # audit keeps them
-    assert "FOO_KEY" not in obs["payload"]["reason"]
-    assert "BAR_KEY" not in obs["payload"]["reason"]
-    assert "2 secrets" in obs["payload"]["reason"]
+    assert obs["payload"]["withheld_declined"] == 2        # F756: a count, never the names
     rendered = format_observation(obs["payload"])          # what the MODEL reads
     assert "FOO_KEY" not in rendered and "BAR_KEY" not in rendered
-    assert "declined for 2 secrets" in rendered
-    assert ran == []
+    assert "2 required secrets" in rendered
+    assert ran == ["frob"]                                 # withheld, and the call RAN
 
 
 def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypatch):
@@ -515,11 +513,9 @@ def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypa
     assert status == "ok"
     obs = next(e for e in transcript_events(run_dir) if e["type"] == "observation"
                and e["payload"]["kind"] == "util")
-    assert obs["payload"]["declined_secrets"] == ["FOO_KEY"]   # transcript keeps the audit
-    assert "FOO_KEY" not in obs["payload"]["reason"]
-    assert "1 secret " in obs["payload"]["reason"]
-    assert "declined permanently" in obs["payload"]["reason"]  # the shared phrase, no ids
-    assert "FOO_KEY" not in format_observation(obs["payload"])
+    assert obs["payload"]["withheld_declined"] == 1            # withheld, and the call ran
+    assert obs["payload"]["exit"] == 0
+    assert "FOO_KEY" not in format_observation(obs["payload"])  # R17: no names, ever
 
 
 @pytest.mark.flaky(reruns=2)   # a real driver thread races the ask window; starves under xdist load
