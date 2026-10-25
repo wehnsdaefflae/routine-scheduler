@@ -22,6 +22,69 @@ the same question.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Collection
+
+#: A DISPOSITION VERB standing beside a report id: the one shape that distinguishes "closing
+#: R2313" from "R2313 is why I am writing" (F770). Narrow on purpose — the check says something
+#: the author can act on in the turn he still can, and a predicate that fired on every report
+#: discussing the ledger would be ignored within a week. The verb may lead ("Closing R2313",
+#: "Settled: R900") or follow ("R2313 is closed by this"), with a few words of slack either way
+#: but never across a sentence boundary.
+_VERB = re.compile(r"\b(?:clos(?:e|es|ed|ing)|settl(?:e|es|ed|ing)|dispos(?:e|es|ed|ing))\b",
+                   re.IGNORECASE)
+#: The slack between the verb and the id it governs — enough for "Disposing of R12 and R13",
+#: "Closing, as agreed, R44" or "R2313 is closed by this", and short enough that the verb and
+#: the id have to belong to one clause. A sentence boundary ends the window whatever its width.
+_SLACK = 40
+_ID = re.compile(r"\bR\d+\b")
+
+
+def _opening_sentence(text: str) -> str:
+    """The first sentence of `text` — where a report states what it is doing.
+
+    The cheap version this check wants (F770): a report's BODY argues about rows for paragraphs
+    ("F324 closed without naming it", "R2313 was closed in error"), so reading all of it would
+    flag the evidence of every report that discusses the ledger at all.
+    """
+    return re.split(r"(?<=[.!?])\s|\n", (text or "").strip(), maxsplit=1)[0]
+
+
+def undisposed_claims(*, title: str, detail: str, disposed: Collection[str]) -> list[str]:
+    """Report ids this report's OPENING WORDS claim to have closed, while no field disposes of
+    them — in the order they are claimed.
+
+    `disposed` is every id the same report really disposes of (`answers`, `settles`,
+    `supersedes`), compared case-insensitively.
+
+    R2886 is the specimen: it opened "Closing R2313. Both halves disposed of" and argued it for
+    paragraphs, while its fields carried `answers: "R2743"` and `closes: true` and no `settles`.
+    So it closed its own chase and left R2313 open — from then on the oldest live row on the
+    instance, reported by every backlog count for a row both its sender and its reader believed
+    was disposed of. The asymmetry is what makes it durable: the sender reads its own prose and
+    is satisfied, while the recipient sees a live row and cannot close it (a row is disposed of
+    only for the routine it was delivered TO, which is correct). Nothing compared the TEXT
+    against the fields, so the gap between "said" and "did" was invisible from both sides at
+    once — the report-ledger twin of a decision answered with no hand-over line.
+    """
+    done = {str(i).strip().upper() for i in (disposed or ())}
+    out: list[str] = []
+    for text in (title, _opening_sentence(detail)):
+        # Per SENTENCE, because a verb governs only its own clause: every id within `_SLACK` of
+        # a disposition verb is claimed, so "Disposing of R12 and R13" names both rather than
+        # only the first, while "Closing R44. R2313 is the evidence" names only R44.
+        for sentence in re.split(r"[.!?\n]", text or ""):
+            for verb in _VERB.finditer(sentence):
+                for match in _ID.finditer(sentence):
+                    if not (verb.start() - _SLACK <= match.start()
+                            and match.end() <= verb.end() + _SLACK):
+                        continue
+                    claimed = match.group(0).upper()
+                    if claimed not in done and claimed not in out:
+                        out.append(claimed)
+    return out
+
+
 #: How many reports one routine may keep OPEN to one owner before the next is refused (D110,
 #: operator 2026-08-31: "at 3+ open to one target, reply to the oldest instead of filing new").
 #: Low on purpose: the rule is about the reflex to open a parallel thread, not about a volume
