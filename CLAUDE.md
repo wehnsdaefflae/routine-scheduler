@@ -197,7 +197,26 @@ one you are about to touch, not all of them.
   `src/` — `_recipe_unlocked` exists only because `engine/loopsetup.py` assigns it), so
   `dir(cls)` is not the surface. Its `MIN_DOUBLES`/`MIN_SURFACE` floors make a detector that
   stops finding doubles red instead of passing vacuously: widen the recognised shapes, never
-  lower a floor.
+  lower a floor. The extraction (the `ast` reader both rules share) is `tests/double_survey.py`;
+  that file is the reader, this one is the rules — the same split as
+  `tests/class_survey.py` / `tests/test_static_class_contract.py`.
+  Its SECOND rule runs the other way and F766 (0.448.0) is why: a `SimpleNamespace` the real
+  dataclass would have CONSTRUCTED from the same keywords is itself the violation
+  (`test_no_namespace_stands_in_for_a_real_dataclass`). The stand-in at
+  `tests/test_util_guard.py:85` assigned `parsed` and `text` — both REAL `Completion` fields, so
+  the assigns-only rule was green — and the release broke on the field it OMITTED
+  (`parsed_rest`, F754), which `engine/completion.py` had just started reading. No check of
+  assigned names can see a field that is not there, so the rule removes the hand-built surface
+  instead of policing it: **a scripted endpoint returns a real `Completion`, never a namespace
+  shaped like one**, and the same goes for any `endpoints/`/`engine/` dataclass with a required
+  field. Recognition is by SHAPE, so it needs no coverage list to maintain — which is the point:
+  measured on this tree, 441 keyworded `SimpleNamespace(...)` sites in `tests/` yield 4 hits, 0
+  false, and it found a site the defect report's own grep had missed. Scope is `endpoints/` +
+  `engine/` and a claimable class needs ≥1 required field: over all 48 dataclasses under
+  `src/rsched` the same rule flags 12 sites of which 8 are false, because a dataclass with no
+  required field (`GrantPolicy`, 20 fields) matches any namespace at all. Its floors are on the
+  scan's MACHINERY (`MIN_SCOPED`, `MIN_NAMESPACE_SITES`), not on its hits — zero hits is the
+  healthy state, so a floor on hits would be a floor on the defect.
 - `uv run ruff check` + `uv run mypy` — the strict quality gates (ruff runs `select = ALL`;
   every ignore in pyproject.toml carries its house-style reason). Both MUST be green in every
   commit; `uv run pre-commit install` wires them into git.
