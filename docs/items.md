@@ -340,6 +340,15 @@ Messages page banners them above the list in two groups, because they are invisi
 filter below it. It SURFACES rather than gates — a human judges the promise, and the fix for a
 false-positive deferral is to write the closure note so it names what it delivered.
 
+Both the banner and this page's `unroutable` count answer one question — can anything ever drain
+this row? — so since F768 they answer it with ONE predicate: the fleet as `registry.scan` keys it
+(`web/api_items._fleet`), handed to `find_undelivered` as `installed` and reported per row as
+`target_installed`. The banner used to probe `<home>/<target>/routine.yaml` by hand instead, which
+keys the fleet by DIRECTORY NAME while `scan` keys it by the slug inside each file: wherever those
+differ — a reported problem rather than a refusal — the banner could call a row deliverable while
+the count beside it called the same row stranded. Two surfaces disagreeing about whether work is
+drainable is the shape of the defect F738 was built to end.
+
 The stream is append-only. The report row is written by the `report` action; the `delivered`,
 `retracted` and `superseded` events are further rows, folded onto it by `reports.read_reports`
 — ONCE per append, behind the read-models' stat fingerprint. The fold is not cheap and it

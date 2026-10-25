@@ -161,9 +161,11 @@ def test_an_addressed_report_with_no_message_in_the_inbox_is_surfaced(tmp_path):
         {"id": "R6", "routine": "self-audit", "ts": "2026-08-30T11:00:00+02:00",
          "title": "unaddressed — there is no delivery to miss"},
     ]
-    found = find_undelivered(rows, tmp_path)
+    # `installed` is the fleet as `registry.scan` keys it — the same fact the `unroutable`
+    # count on this page judges on, shared since F768 so the two cannot disagree on a row.
+    found = find_undelivered(rows, tmp_path, {"radar", "improver"})
     assert [o["id"] for o in found] == ["R3", "R2"]          # newest first
-    assert found[0]["target_exists"] is False and found[1]["target_exists"] is True
+    assert found[0]["target_installed"] is False and found[1]["target_installed"] is True
     assert all(o["kind"] == "undelivered" for o in found)
 
 

@@ -49,11 +49,17 @@ def orphans(request: Request) -> list[dict]:
     its own scope and closed, and the deferred piece became an open item nowhere.
     `kind: "undelivered"` — an ADDRESSED report whose message never reached its target's inbox,
     so the target can never drain it and it sits open forever (D114).
+
+    The banner is judged against the SAME fleet fact as the `unroutable` count on this page
+    (`_fleet`, i.e. `registry.scan`'s keys): one predicate, so the two cannot say opposite
+    things about one row (F768).
     """
     from ..readmodels import orphans as orphans_model
 
     home = request.app.state.server.routines_home
-    return orphans_model.load(_routine_dir(request)) + orphans_model.load_undelivered(home)
+    _, installed = _fleet(request)
+    return (orphans_model.load(_routine_dir(request))
+            + orphans_model.load_undelivered(home, installed))
 
 
 @router.post("/items/orphans/{report_id}/discard")

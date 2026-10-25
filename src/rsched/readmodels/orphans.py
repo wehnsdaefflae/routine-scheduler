@@ -56,6 +56,7 @@ write the closure note so it names what it delivered — the behaviour this want
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from pathlib import Path
 
 CLOSED = ("addressed", "settled", "dropped")
@@ -124,12 +125,22 @@ def find(findings: list[dict], rows: list[dict]) -> list[dict]:
     return out
 
 
-def find_undelivered(reports: list[dict], routines_home: Path) -> list[dict]:
+def find_undelivered(reports: list[dict], routines_home: Path,
+                     installed: Collection[str] = ()) -> list[dict]:
     """Every addressed report whose message never reached its target's inbox, newest first.
 
     `reports` is the folded stream (`rsched.reports.read_reports`). The check is the FILE, not the
     stamp: the stamp says a run has read the message, while the file's absence says no run ever
     can.
+
+    `installed` is every routine the home holds whatever its state — `registry.scan`'s keys, the
+    SAME fleet fact `item_counts.unroutable` judges on, and the authority is shared on purpose
+    (F768). This function used to probe `<home>/<target>/routine.yaml` by hand, which keys the
+    fleet by DIRECTORY NAME while `scan` keys it by the slug inside each file: the two disagree
+    wherever those differ (`registry.py` records that as a reported problem rather than refusing),
+    so the banner could call a row deliverable while the count beside it called the same row
+    stranded. Empty means the caller has not said what the fleet is, so nothing is judged — the
+    same reading `unroutable` gives it.
     """
     out: list[dict] = []
     for row in reports:
@@ -149,7 +160,8 @@ def find_undelivered(reports: list[dict], routines_home: Path) -> list[dict]:
             continue                      # waiting normally for the target's next run
         out.append({
             "kind": "undelivered", "id": item_id, "target": target,
-            "target_exists": (Path(routines_home) / target / "routine.yaml").exists(),
+            # the fleet's own answer, not a path probe — see the docstring (F768)
+            "target_installed": not installed or target in installed,
             "from": str(row.get("routine") or ""), "ts": str(row.get("ts") or ""),
             "title": str(row.get("title") or ""),
         })
@@ -171,8 +183,10 @@ def load(routine_dir: Path) -> list[dict]:
     return rows
 
 
-def load_undelivered(routines_home: Path) -> list[dict]:
-    """`find_undelivered` over the live report stream."""
+def load_undelivered(routines_home: Path, installed: Collection[str] = ()) -> list[dict]:
+    """`find_undelivered` over the live report stream, judged against the fleet the caller
+    knows (`registry.scan`'s keys — the same set the `unroutable` count uses).
+    """
     from ..reports import read_reports, reports_path
 
-    return find_undelivered(read_reports(reports_path(routines_home)), routines_home)
+    return find_undelivered(read_reports(reports_path(routines_home)), routines_home, installed)
