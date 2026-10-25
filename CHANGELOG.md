@@ -15,6 +15,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.455.0] — 2026-10-25
+
+### Six decided items: a decline withholds, a rejected turn is taught, settings are judged at the writer, a run proposes its own recipe, the run-history depth is a real boundary, and an answered decision keeps its card
+
+Six operator-decided items, each built in its own worktree and gated before merge.
+
+**F756 + D213 — a per-secret DECLINE withholds that credential; it does not refuse the util.**
+Measured live by `llmsectest-weekday:20261023-040002` and called a bug by the operator: he granted
+the `GMAIL_*` secrets to `gu mail` and declined the `FAU_*` ones, after which the engine refused
+EVERY call of that util — including `--account default`, which needs no FAU credential. A decline
+protects the credential, not the util: the name is now scrubbed from the child env exactly as a
+`?`-optional one is and the call proceeds (`engine/secretgate.Withheld`,
+`withheld_for_call`/`withheld_for_util`), the observation renders `withheld_declined` as a COUNT
+with the repair route (R17 — a denial enumerates nothing), and the exposure ask's `default` no
+longer promises the util is not run. Forbidding a util is a `util:` grant or a reservation; a
+secret row is not that lever. D213 is the operator's ruling on the asymmetry this exposed:
+*the engine refuses for calls IT chose to make and withholds for calls the RUN chose* —
+`mediaops.vision_describe` (the `view_image` fallback) still refuses, because the run did not
+choose that call and a credential-less attempt would fail inside the util about a call the run
+never wrote. Written into both code sites plus `docs/sandboxing.md`,
+`docs/rules-permissions.md` and `docs/prompt-anatomy.md`, and pinned by a test over one declined
+row so neither site can be "made consistent" alone. The undecided paths do not move.
+
+**F736 — a schema-rejected turn is told WHICH field, and an identical repeat is refused once.**
+`wrong_turn_detected` rows showed runs re-sending one rejection on consecutive turns;
+`llmsectest-weekday:20261023-040002` earned `'say' is a required property` eleven times.
+New `engine/schemamemo.py`: `field_help` quotes the ACTION SCHEMA's own sentence about the field
+a problem line names, and `recall` says the rejection was already earned and at which turn, with
+the provider grammar dropped for that retry. It refuses the identical ASK, never the run — that
+specimen recovered from all eleven, so ending the run at the second would have discarded 396
+turns of finished work. Known limit: the memo is per-process, so a resumed leg starts empty.
+
+**F610 — proposed settings are judged by the WRITER, not at the operator's accept click.**
+Four writers stored unvalidated vocabulary (`patterns/drafts.write`, two `web/api_settings.py`
+routes, and `patterns/store.problems`, the creation-time pattern writer), proven red-first. The
+judge moved into a new `patterns/validate.py` and is re-exported from `recommend.py`, so no
+second copy of the vocabulary exists; a bad value is refused at write time with the key and its
+allowed values named, and the web routes answer 422. Known limit: the 13 `GAP —` fields
+(`capabilities`, `deliberation`, `schedule`, `run_gate`, the fs roots) are still judged only on
+the accept route.
+
+**D200 — every finishing run is asked for its own recipe revisions.** The operator's requirement:
+*"In the future I want recipes to suggest a change in their recipes themselves when they finish"*,
+housed in the engine finish seam, modelled on D195's known-flaw prompt. The ask lives in the
+digest's FINISH block (`engine/recipeproposal.py`) rather than the harness, whose budget is
+exact-equality shrink-only; the lift is in `engine/loopend.py`, the close-out every ending shares,
+so even a budget-spent reserved finish turn proposes. `RECIPE REVISION:` lines land as one
+`recipe-revision` card; approving arms the existing revise unlock and resumes the proposing run
+with its recipe writable, because a scheduled run holds no recipe-writing capability. Two flaws
+named: no repo command re-renders §5.1's prose fence (hand-edited from the composer's own emitted
+string, with a drift test but no byte comparison), and the ask adds ~620 characters to every run's
+digest, which the shrink-only ratchet does not measure.
+
+**D207 — the run-history depth cap is a real boundary, enforced where the jail is composed.**
+`read_file` refused an older `runs/<ts>/gate.json` while `gu json get <the same path>` returned it.
+The sweep ran first, as the operator asked: 9 path-shaped prior-run reach sites across 7 routines,
+and the boundary would newly refuse **0** of them. The bypass was `ownseal.mount_own_dir`'s single
+`ro.append` granting read beneath the whole routine dir; Landlock has no deny, so the routine dir
+is now LIST-ONLY (`landlock.ACCESS_LS`) with its other children mounted `ro` individually and,
+under `runs/`, only the permitted depth plus the current run. New `rundepth.py` is the one
+predicate both enforcers compile from. Both doors are covered — the carve lives inside
+`mount_own_dir`, and the daemon's admission jails fall to a closed `last` floor (their own test
+was red until fixed, which a one-door fix would have missed). Kernel-proven: a jailed `cat` of an
+older run's `status.json` gets EACCES while `ls runs/` still lists every id. Named shortfall: a
+granted root ABOVE the routine dir (`~/routines`, held by 7 routines) is one Landlock hierarchy
+and is not carved, so for those routines the boundary is advisory — and the run is told so via
+`run_depth.not_enforced_under`.
+
+**F529 — freight that arrived mid-run is named at the turn boundary, and an answered decision
+keeps its card.** The operator answered the same decisions twice (*"i answered your questions. for
+the second time btw"*) because a run reads audit feedback once, at boot, so an answer arriving at
+turn 150 could not reach the list built at turn 5. New `engine/freightnote.py` names such a file
+at every turn boundary — "An answer sitting in inbox/ is ANSWERED … do not ask him again" —
+consuming nothing, so the next fresh run still gets everything. And `web/decisions_read.py` no
+longer drops an answered audit decision: it keeps a settled card with his own words, where before
+his card simply vanished with no receipt — the only decision shape that silently emptied.
+
 ## [0.454.0] — 2026-10-25
 
 ### Harness² adopted where it fits: a change is judged by its moment, the order is the one stated, the always-on contract has a budget
