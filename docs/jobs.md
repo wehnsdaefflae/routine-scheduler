@@ -41,7 +41,9 @@ run changes it with the `job` action; the operator through the routine page.
 ## The WORKSPACE is the working directory
 
 While a job is OPEN, the run works in its workspace: relative paths, `script` (the workspace's
-own `scripts/<name>.py`, run from there, with its own `.venv`; the routine's own scripts stay
+own `scripts/<name>.py`, run from there, with its own `scripts/.venv` when it declares PEP 723
+dependencies and on the engine's interpreter when it declares none (`rsched/scriptenv.py`,
+F764); the routine's own scripts stay
 reachable after it), `shell` and util calls, `memory_read` / `memory_write` (the workspace's own
 `.memory/`, its INDEX engine-owned like the routine's) and the `note` channel (the workspace's
 `state/notes.md`) all resolve there (`run_context.work_dir`, `resolve_action_path`). The

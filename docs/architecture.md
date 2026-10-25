@@ -662,10 +662,17 @@ and the capabilities digest's catalog listing):
   co-equal interpreter: the recipe stays the single interpreter of the task and delegates
   judgment-free sub-steps (polling, parsing, calculations, fixed artifacts) so a repeating
   step is written once and re-run for free. Run via the `script` action — a BASE kind every
-  routine holds since 0.369.0, with no capability and no approval dial — in a persistent VENV
-  inside the routine's workdir — `<routine>/.venv`, created on first use, the script's PEP 723
-  deps installed into it (net-open build step, R40's prewarm rationale), gitignored against
-  the `git add -A` autocommit. The jail is the run's fs roots (recipe and script read and
+  routine holds since 0.369.0, with no capability and no approval dial. WHICH INTERPRETER runs it
+  is `rsched/scriptenv.py`'s subject (F764): a script declaring no PEP 723 dependencies runs on
+  the engine's own interpreter — nothing to install, so nothing to build, the precedent
+  `daemon/gate_prepare.py` already set for a dependency-free `admit.py` — and one that declares
+  any gets a persistent venv at `<routine>/scripts/.venv`, its deps installed into it on first
+  use (net-open build step, R40's prewarm rationale), gitignored against the `git add -A`
+  autocommit. The venv is INSIDE `scripts/` because D179's own-dir seal mounts the routine dir
+  read-only and only its EXISTING unsealed children read-write (`ownseal.writable_children` — a
+  Landlock rule needs an inode), so a subprocess could never create `<routine>/.venv` at all:
+  that is why `script` had never worked for a routine without a hand-made venv (R2887, R2891,
+  R2892), and why it was a placement bug and not a missing grant. The jail is the run's fs roots (recipe and script read and
   write the SAME files) PLUS the private stores its declared utils claim on their `fs:`
   lines (`scripts.callee_fs_paths`, 0.329.0 — `sandbox.wrap` subtracts every util's private
   store from the wholesale mount, and a script execing `gu whatsapp` got the session

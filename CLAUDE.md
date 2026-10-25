@@ -295,8 +295,11 @@ one you are about to touch, not all of them.
   interpreter of the routine: the recipe
   stays the single interpreter of the task and delegates only judgment-free sub-steps. A repeating
   deterministic step (poll, parse, compute, render) is written ONCE via `write_file` and called
-  thereafter — versioned by the routine repo, run in a persistent workdir venv (`<routine>/.venv`,
-  PEP 723 deps on demand, gitignored) inside the run's fs jail, with ONLY the granted secrets its
+  thereafter — versioned by the routine repo, run on the engine's own interpreter when it declares
+  no PEP 723 dependencies and otherwise in a persistent venv at `<routine>/scripts/.venv` (deps
+  installed on demand, gitignored; `rsched/scriptenv.py` — F764: the routine dir's ROOT is mounted
+  read-only by D179's own-dir seal, so a subprocess cannot create a new entry there at all)
+  inside the run's fs jail, with ONLY the granted secrets its
   docstring header declares (the util model — `rsched/scripts.py`) PLUS whatever the utils it names
   on its `calls:` line declare: the library is reachable through `gu` exactly as it is for a util's
   own siblings, DECLARED-ONLY (no `calls:` line → no `gu` on PATH at all; an undeclared or unknown

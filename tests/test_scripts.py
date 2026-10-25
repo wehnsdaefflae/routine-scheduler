@@ -14,7 +14,7 @@ from pathlib import Path
 import yaml
 
 from conftest import finish
-from rsched import sandbox, scripts
+from rsched import sandbox, scriptenv, scripts
 from rsched.config import ServerConfig
 from rsched.engine.actions import validate_action
 from rsched.engine.runtime import run_routine
@@ -246,10 +246,10 @@ def test_run_script_declared_env_and_venv(tmp_path, monkeypatch):
     # and no util-library handle reaches the child
     assert data == {"args": ["a", "b"], "token": "t-1", "opt": "o-1", "other": None,
                     "gu_home": None}
-    # the run created a persistent venv in the routine's workdir (gitignored —
-    # autocommit is `git add -A`) and executed with ITS python
-    assert scripts.venv_python(d).exists()
-    assert ".venv/" in (d / ".gitignore").read_text(encoding="utf-8")
+    # it declares no dependencies, so F764 builds it no venv at all: the daemon's own
+    # interpreter ran it, and there is nothing to keep out of the `git add -A` autocommit
+    assert not list(d.glob("**/.venv"))
+    assert not (d / ".gitignore").exists()
     # a secret the caller did not pass is simply absent
     code, out, err = scripts.run_script(d, "probe", [], policy=policy,
                                         libraries_home=lib,
@@ -278,11 +278,11 @@ def test_declared_calls_earn_the_library_handle(tmp_path):
 
 def test_script_deps_parses_pep723(tmp_path):
     d = _routine(tmp_path)
-    assert scripts.script_deps(d, "probe") == []
+    assert scriptenv.script_deps(d, "probe") == []
     withdeps = SCRIPT.replace("# dependencies = []",
                               '# dependencies = ["requests>=2", "lxml"]')
     (d / "scripts" / "fetcher.py").write_text(withdeps, encoding="utf-8")
-    assert scripts.script_deps(d, "fetcher") == ["requests>=2", "lxml"]
+    assert scriptenv.script_deps(d, "fetcher") == ["requests>=2", "lxml"]
 
 
 def test_missing_script_names_the_available_ones(tmp_path):
@@ -398,7 +398,7 @@ def test_script_inherits_its_callees_private_stores(tmp_path, monkeypatch):
         return real_wrap(cmd, **kw)
 
     monkeypatch.setattr(sandbox, "wrap", capture)
-    monkeypatch.setattr(scripts, "venv_python", lambda _d: Path(sys.executable))
+    monkeypatch.setattr(scriptenv, "interpreter", lambda _d, _n: Path(sys.executable))
     policy = sandbox.SandboxPolicy(mode="off", read_roots=(), write_roots=(), own_dir=rd)
     scripts.run_script(rd, "caller", [], policy=policy, libraries_home=home, timeout=30)
     assert seen and seen[-1]["fs_paths"] == (("rw", "$MAIL_STORE"),)

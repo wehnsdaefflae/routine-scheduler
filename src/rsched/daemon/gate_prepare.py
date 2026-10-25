@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .. import gatekit, sandbox, scripts, secrets, utils_header, utils_run
+from .. import gatekit, sandbox, scriptenv, scripts, secrets, utils_header, utils_run
 from ..config import RoutineConfig, ServerConfig
 from ..engine import inbox as inbox_mod
 from ..paths import read_json
@@ -238,11 +238,11 @@ def prepare_script(cfg: RoutineConfig, server: ServerConfig) -> tuple[list[str],
     declared = {v.upper() for v in header["secrets"]}
     injected = _injectable(cfg, declared, {v.upper() for v in header["optional_secrets"]})
     python = sys.executable
-    if scripts.script_deps(root, ADMIT):
-        py = scripts.venv_python(root)
+    if scriptenv.script_deps(root, ADMIT):
+        py = scriptenv.venv_python(root)
         if not py.is_file():
             raise GateError(
-                "gate dependencies require a preprovisioned .venv; no admission-time installs")
+                f"gate deps need a preprovisioned {scriptenv.VENV_DIR}; no admission-time installs")
         python = str(py)
     # Admission must never degrade silently, even on a permissive/off server.
     policy = sandbox.SandboxPolicy(

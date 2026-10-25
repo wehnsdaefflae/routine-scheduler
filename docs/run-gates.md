@@ -121,8 +121,10 @@ entries, advance cursors or perform the routine's work.
 
 Its docstring header reuses `net:`, `secrets:` and validated `fs:` declarations; `calls:` is
 rejected. Required central secrets need persistent grants; scoped secrets belong to their
-routine; ungranted optional secrets are withheld. Dependency-bearing scripts require a
-preprovisioned `.venv/bin/python`; missing packages fail normally.
+routine; ungranted optional secrets are withheld. A gate declaring no dependencies runs on the
+engine's own interpreter; a dependency-bearing one requires a preprovisioned
+`scripts/.venv/bin/python` (`rsched/scriptenv.py`, F764 — admission never installs), and missing
+packages fail normally.
 
 ## Execution and isolation
 
