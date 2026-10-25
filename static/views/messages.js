@@ -133,8 +133,8 @@ export async function render(view, query = {}) {
             style: "justify-content:space-between;gap:8px;align-items:flex-start" },
             el("div", {}, el("strong", {}, o.id), " from ", el("span", { class: "mono" }, o.from),
               " is addressed to ", el("span", { class: "mono" }, o.target),
-              o.target_exists ? ", whose inbox holds no message for it."
-                              : ", which is not a routine on this instance."),
+              o.target_installed ? ", whose inbox holds no message for it."
+                                 : ", which is not a routine on this instance."),
             discard(o)),
           el("div", { class: "prose mt" }, o.title))),
     ].filter(Boolean));
