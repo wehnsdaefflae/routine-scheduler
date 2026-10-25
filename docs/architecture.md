@@ -230,7 +230,9 @@ the limits (single-writer status.json preserved).
   distinguishable from a forced one and the constants can be tuned from what the test did.
 - **Phase is derived, never bookkept**: the stage modules ARE the phases — `statemap.py` builds the
   UI's phase-graph diagram from the routine's own `stages/*.md`,
-  in main.md first-mention order (nothing parsed from prose, so every routine has a diagram), and
+  in the order main.md STATES — its numbered `## Run flow` list or its arrow chain
+  (`statemap.declared_order`; a stage named in neither follows by first mention, so every routine
+  still has a diagram) — and
   the engine tracks the run's live position from its stage-module READS: a `read_file` of
   `stages/<name>.md` stamps `ctx.phase` (executor) → status.json (every turn) → the run tail's `state`
   event, which also fires on phase change (`/phasegraph` endpoints,
@@ -1811,10 +1813,11 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   alone, so reopening costs nothing.
 - **Checking the claims** (`engine/verifier.py`). The accounting proves a run ANSWERED for every
   line; it cannot prove the answer TRUE, so a run could write `d3 met: PDF verified` having never
-  opened the PDF. Each `met` is therefore checked once: deterministically first (a Done-when line
-  whose producing stage this run never entered is challenged with no model — skip detection is
-  imperfect, so the run can overrule it), then by a SECOND model (the `tool_call` role, never the
-  main one) asked whether the run's own transcript tail supports each remaining claim. The design
+  opened the PDF. Each `met` is therefore checked once, by a SECOND model (the `tool_call` role,
+  never the main one) asked whether the run's own transcript tail supports each claim. A line
+  whose producing stage this run never entered carries that as a HINT the judge reads under the
+  claim (`verifier.hinted`, F620) — never a verdict of its own: stage entry is detected from
+  module reads and the run's phase cursor, which a run that did the work in full can lack. The design
   is dominated by the two ways this could be worse than the problem:
   - **False blocks** — a judge that blocks on doubt strands finished jobs over evidence outside
     the tail it was shown. So it is FAIL-OPEN at every level: an unavailable endpoint, an

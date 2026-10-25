@@ -9,9 +9,10 @@ module's filename is one of those older meanings and stays as it is.
 
 A routine's stages/ modules ARE its phases: decompose already maps the abstract workflow
 onto task-specific module names at creation, so there is nothing to infer from prose —
-every routine with stage modules has a diagram, unconditionally. Node order is main.md's
-own routing: modules sort by where main.md first mentions them (its `## Run flow` list
-references each one); unmentioned extras sort last, alphabetically. The CURRENT node is
+every routine with stage modules has a diagram, unconditionally. Node order is the order
+main.md STATES (`declared_order`): its numbered `## Run flow` list or its arrow chain; modules
+it names nowhere in either follow by where main.md first mentions them, unmentioned extras
+last, alphabetically. The CURRENT node is
 the engine's live phase — the stage module the run last read (the executor stamps it into
 ctx.phase → status.json → the run tail's `state` event) — so a recipe owes the diagram
 nothing; its state/phase.json remains a private state file (the digest shows it), not a
@@ -60,6 +61,78 @@ def module_rank(main_md: str, stem: str) -> tuple[int, int]:
     return (2, 0)
 
 
+#: A numbered item (`1.`, `1b.`) or an arrow (`→`, `->`) — the two ways a recipe states its order.
+_ITEM = re.compile(r"^\s*\d+[a-z]?[.)]\s")
+_ARROW = re.compile(r"→|->")
+
+
+def _named(text: str, stems: list[str]) -> list[str]:
+    """The stems `text` names, in the order it first names them."""
+    found = []
+    for stem in stems:
+        esc = re.escape(stem.lower())
+        if m := re.search(rf"(?<![a-z0-9-]){esc}(?![a-z0-9-])", text):
+            found.append((m.start(), stem))
+    return [stem for _pos, stem in sorted(found)]
+
+
+def _sequences(body: str, stems: list[str]) -> list[list[str]]:
+    """Every order the recipe STATES: each numbered list — an item contributes the stages it
+    names in the order it names them, its continuation lines included (an item may walk
+    several: "fetch → extract → rank"); indented and blank lines continue the list, a heading
+    or unindented prose ends it — and each arrow chain outside a list (`orient → build → …`,
+    carried across a line that ends on an arrow). Prose that merely mentions a stage states no
+    order.
+    """
+    out: list[list[str]] = []
+    items: list[str] = []
+    chain = ""
+
+    def close_list() -> None:
+        listed: list[str] = []
+        for item in items:
+            listed += [s for s in _named(item, stems) if s not in listed]
+        if listed:
+            out.append(listed)
+        items.clear()
+
+    for line in [*body.splitlines(), "#"]:
+        if _ITEM.match(line):
+            items.append(line)
+            continue
+        if items and (not line.strip() or line[0].isspace()):
+            items[-1] += " " + line
+            continue
+        close_list()
+        if _ARROW.search(line) or chain.rstrip().endswith(("→", "->")):
+            chain += " " + line
+        elif chain:
+            out.append(_named(chain, stems))
+            chain = ""
+    return out
+
+
+def declared_order(main_md: str, stems: list[str]) -> list[str]:
+    """The stage order main.md STATES (2026-10-25): its numbered `## Run flow` list or
+    its arrow chain, whichever names the most stages (a list on a tie — that is where a recipe
+    lists its stages). Stages it does not name follow by `module_rank`.
+
+    First mention alone mis-ordered 10 of 29 live routines: an intro paragraph naming
+    `stages/build.md` ahead of the flow list put `build` before `orient` for scheduler-builder,
+    so 97% of its runs read as moving BACKWARDS at their first step and its phase graph started
+    in the middle.
+    """
+    body = _FRONTMATTER.sub("", main_md, count=1).lower()
+    best: list[str] = []
+    for seq in _sequences(body, stems):
+        if len(seq) > len(best):
+            best = seq
+    if len(best) < 2:
+        best = []
+    rest = sorted((s for s in stems if s not in best), key=lambda s: (module_rank(main_md, s), s))
+    return [*best, *rest]
+
+
 def _first_heading(path: Path) -> str:
     """The module's leading `# …` heading — the node's tooltip description."""
     try:
@@ -83,8 +156,9 @@ def stage_phases(routine_dir: Path) -> list[dict]:
         main_md = (routine_dir / "main.md").read_text(encoding="utf-8")
     except OSError:
         main_md = ""
-    files = sorted(d.glob("*.md"), key=lambda p: (module_rank(main_md, p.stem), p.stem))
-    return [{"name": p.stem, "desc": _first_heading(p)} for p in files[:MAX_PHASES]]
+    files = {p.stem: p for p in d.glob("*.md")}
+    order = declared_order(main_md, sorted(files))
+    return [{"name": stem, "desc": _first_heading(files[stem])} for stem in order[:MAX_PHASES]]
 
 
 def stage_coverage(routine_dir: Path, entered: list[str],
@@ -146,7 +220,9 @@ def phase_stats(run_dir: Path) -> list[dict]:
     assistant_action event carries the phase that was active while it was produced
     (the engine stamps it); a turn's wall-clock is the gap from the previous event,
     and the tail after the last action (its dispatch) lands on the last phase. The
-    empty-string phase collects turns from before any state/phase.json write.
+    empty-string phase collects turns from before the run first read a stage module — the
+    stamp is `ctx.phase`, which only such a read moves (engine/fileops.py); writing
+    state/phase.json never does.
 
     `first_turn` is WHERE the phase begins — the turn number of its first action, which is
     what the rail's node links to in the transcript (D193). None when the transcript numbers

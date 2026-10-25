@@ -276,7 +276,8 @@ absolute floor, so a 2→3-turn routine never reads as 50% worse).
 A signal compares only runs it was COUNTED the same way in (`change_signals.COUNTED_SINCE`):
 when a release changes what a signal counts — the ruler, not the routine — its entry moves, and
 runs before it have no reading for that signal. 0.369.0 had the claim verifier check every
-Done-when `met`, 0.370.2 on every endpoint, and 0.371.1 stopped a resumed run repeating a hold, an
+Done-when `met`, 0.370.2 on every endpoint, 0.366.10 counted a stage the run wrote into its
+phase cursor as entered (`stages_skipped`), and 0.371.1 stopped a resumed run repeating a hold, an
 assist or a challenge — the fleet's challenged claims went from 0.03 a run to 1.2 overnight on
 2026-09-30, which read as every change of that day making the fleet less correct.
 

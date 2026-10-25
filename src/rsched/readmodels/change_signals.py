@@ -69,7 +69,10 @@ DIMENSIONS = ("correctness", "completeness", "effectiveness")
 #: verifier check every Done-when `met` (before, only stopping conditions), 0.370.2 on every
 #: endpoint, and 0.371.1 stopped a resumed run repeating a hold, an assist or a challenge it had
 #: spent: on 2026-09-30 the fleet's challenged claims went from 0.03 a run to 1.2 overnight.
-COUNTED_SINCE = {"challenged": "0.371.1", "disputed": "0.371.1", "holds": "0.371.1"}
+#: 0.366.10 (F563) counted a stage the run WROTE into its phase cursor as entered, where before
+#: only re-reading the module did — the same work then skipped fewer stages.
+COUNTED_SINCE = {"challenged": "0.371.1", "disputed": "0.371.1", "holds": "0.371.1",
+                 "stages_skipped": "0.366.10"}
 #: The signals for runs POOLED across routines (readmodels/change_fleet.py, change_timeline.py):
 #: a cost signal is first divided by its routine's own median (`normalized`), which leaves its
 #: absolute floor (2 000 000 volume) meaning nothing — the ratio threshold alone decides.
