@@ -725,7 +725,15 @@ by a test, by the engine, or by a past incident.
   (`engine/goalreached.py`) makes it permanent — approving writes `enabled: false` through the
   ordinary PATCH, declining reopens the outcomes (a line the calendar reached is re-dated
   instead; that save withdraws the card). No run writes the finish line; the engine stamps
-  only what a finish reported. Never let the per-run list and the routine's end share one store
+  only what a finish reported. EVERY FINISHING RUN IS ALSO ASKED FOR ITS OWN RECIPE REVISIONS
+  (D200, `engine/recipeproposal.py`) — the ask in the digest's FINISH block, modelled on D195's
+  known-flaw prompt, never in the budget-capped harness contract; the answer one
+  `RECIPE REVISION: <file> — <change>` line per revision in the summary, with no new action
+  field. A scheduled run holds no `write_recipe`, so the lines become ONE `recipe-revision`
+  Decisions card (deduped on the lines), and approving it (`web/api_recipe_revision.py`) ARMS
+  the existing revise unlock (`engine/revise.py`) and resumes the proposing run with its recipe
+  writable rather than writing the recipe from the web. A run that already holds recipe
+  self-write makes the edit and files no card. Never let the per-run list and the routine's end share one store
   again: sticky + per-run had most of the fleet reading "the job is DONE. Finish NOW" at the top
   of every run.
 - **Global chrome is positioned by `base.css` ALONE, and losing that fails silently.** The

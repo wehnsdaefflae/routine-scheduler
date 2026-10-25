@@ -188,6 +188,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_push,
         api_question_decline,
         api_questions,
+        api_recipe_revision,
         api_refusal_flag,
         api_routine_edit,
         api_routine_files,
@@ -221,7 +222,11 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
                    api_patch_applied,   # /questions/{qid}/patch-applied — R2778's record fix
                    api_question_decline,   # /questions/{qid}/decline — R2197's first-class "no"
                    api_audit,
-                   api_items, api_messages, api_pending,
+                   api_items, api_messages,
+                   # before api_pending: /pending-creations/{pid}/revise is D200's own
+                   # approval (it resumes a run, it does not write config) and must be
+                   # matched before that module's sibling {pid} routes
+                   api_recipe_revision, api_pending,
                    api_traces,
                    settings,
                    api_workflows, api_playbooks, api_llm_tasks,

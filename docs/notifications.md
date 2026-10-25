@@ -24,7 +24,8 @@ expires}`). Answering on any surface resolves the record everywhere.
   Push** (opt-in per browser, works with the tab closed). Both push tiers and the header badge
   key off the same two lists the Decisions page reads — the open questions
   (`decisions_read.open_decisions`) and the standing PROPOSALS (`open_proposals`: a queued
-  creation or lane change, a met goal, library drift — `.control/pending-creations/`) — so
+  creation or lane change, a met goal, library drift, a run's proposed revision to its own
+  recipe — `.control/pending-creations/`) — so
   the surfaces can never disagree. Proposals were invisible to the badge and both push tiers
   until 2026-10; a proposal notifies once, keyed by its `pc-` id, and its push is retracted
   when it is decided.

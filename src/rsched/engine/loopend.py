@@ -19,7 +19,7 @@ from __future__ import annotations
 from .. import abortmark
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import archival, background, inbox, jobops
+from . import archival, background, inbox, jobops, recipeproposal
 from .autocommit import autocommit
 from .finish_guard import normalize_escaped_newlines
 from .run_context import RunContext
@@ -170,6 +170,15 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         # what the run owed its JOBS and never checkpointed is carried to the next run, and
         # the summary says so (engine/jobops.py)
         summary += jobops.close_out(ctx, status)
+        # D200: the recipe revisions this run named in its summary become ONE proposal on the
+        # operator's Decisions page. HERE, in the close-out every ending shares, rather than in
+        # the finish gate beside the retirement card — a run that spent its reserved finish turn
+        # is the ending most likely to have learned something about its own recipe, and that
+        # turn never reaches the gate. A run that may write its own recipe files nothing (it
+        # makes the edit instead); `maybe_propose` owns that branch.
+        if card := recipeproposal.maybe_propose(ctx, summary):
+            summary += ("\n[Recipe revision(s) proposed to the operator — he applies them on "
+                        f"the Decisions page ({card}).]")
     finish_payload = {"status": status, "summary": summary, "authored": authored}
     if abort is not None:
         finish_payload.update(abort_fields(abort))
