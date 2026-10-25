@@ -143,17 +143,53 @@ def test_the_default_ceiling_is_the_derived_one():
 # --------------------------------------------------------------- the ceiling at the real seam
 
 
+class _WatchedGate(ioload.StreamGate):
+    """A gate that SAYS when the server took its slot and when it gave it back.
+
+    The server accepts the handshake BEFORE it takes the slot (`streams.serve`: a refusal must
+    reach the browser as a close code, not a bare 1006), so the client's connect returning proves
+    nothing about the slot yet; and TestClient's exit CANCELS the server task right after sending
+    the close, so a task that has not processed the close yet dies with CancelledError. Both were
+    a race these tests lost under a loaded parallel run (2026-10-25, on main as well). Waiting on
+    these events — never on a clock — is what makes them deterministic.
+    """
+
+    def __init__(self, ceiling: int) -> None:
+        super().__init__(ceiling)
+        self.taken = threading.Event()
+        self.freed = threading.Event()
+
+    @contextlib.contextmanager
+    def hold(self):
+        try:
+            with super().hold():
+                self.taken.set()
+                yield
+        finally:
+            self.freed.set()
+
+
+def _close_and_wait(ws, gate: _WatchedGate) -> None:
+    """Close from the client and wait until the server has left its slot — so the session's
+    exit finds a finished task instead of cancelling one mid-close."""
+    gate.freed.clear()
+    ws.close()
+    assert gate.freed.wait(10), "the server never released its slot after the close"
+
+
 def test_a_live_socket_holds_a_slot_for_its_whole_life(api_client):
     """Through the app: an open live stream OCCUPIES one of the server's slots the whole time
     it is open, and gives it back when it closes. That is what makes the ceiling below a bound
     on CONCURRENT sockets rather than on connections per minute."""
     c, _ = api_client
-    gate = ioload.StreamGate(ceiling=2)
+    gate = _WatchedGate(ceiling=2)
     c.app.state.stream_gate = gate
     ticket = c.post("/api/stream-ticket").json()["ticket"]
 
-    with c.websocket_connect(f"/api/events?ticket={ticket}"):
+    with c.websocket_connect(f"/api/events?ticket={ticket}") as ws:
+        assert gate.taken.wait(10), "the server never took a slot for the open socket"
         assert gate.stats() == {"live": 1, "ceiling": 2, "refused": 0}
+        _close_and_wait(ws, gate)
     assert gate.stats() == {"live": 0, "ceiling": 2, "refused": 0}
 
 
@@ -169,7 +205,7 @@ def test_a_socket_past_the_ceiling_is_closed_busy_and_the_slot_is_reusable(api_c
     from rsched.web import streams
 
     c, _ = api_client
-    gate = ioload.StreamGate(ceiling=1)
+    gate = _WatchedGate(ceiling=1)
     c.app.state.stream_gate = gate
 
     def ticket() -> str:
@@ -187,8 +223,11 @@ def test_a_socket_past_the_ceiling_is_closed_busy_and_the_slot_is_reusable(api_c
     assert gate.stats() == {"live": 0, "ceiling": 1, "refused": 1}
 
     # the freed slot is reusable: the next socket is served, not refused
-    with c.websocket_connect(f"/api/events?ticket={ticket()}"):
+    gate.taken.clear()
+    with c.websocket_connect(f"/api/events?ticket={ticket()}") as ws:
+        assert gate.taken.wait(10), "the freed slot was not given to the next socket"
         assert gate.live == 1
+        _close_and_wait(ws, gate)
     assert gate.stats() == {"live": 0, "ceiling": 1, "refused": 1}
 
 
