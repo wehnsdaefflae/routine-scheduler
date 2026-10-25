@@ -32,10 +32,10 @@ So the flag now defers the WORK and never the DECISION, and `_runner` reads the 
 the same routing table the foreground consults.
 
 **The ordering contract is preserved, not weakened.** One action still starts per turn and one
-observation still comes back for it; only the arrival is deferred. What keeps that safe is the
-KIND allowlist, not anything here: `actions.BACKGROUNDABLE_KINDS` admits reads and fetches, whose
-only effect IS the observation, and refuses every mutation — a backgrounded write could be read
-stale by the next synchronous action, which needs a dependency model (the design's phase 3).
+observation still comes back for it; only the arrival is deferred. For a read or a fetch the KIND
+allowlist is what keeps that safe — its only effect IS the observation. A MUTATION defers behind
+`engine/background_order.py`, which holds any later action touching the target it declared until
+that write has landed (phase 3): the ordering is enforced, not entrusted to the caller.
 
 **Cancellation stops the DELIVERY, never the work** (phase 4's last part, decided D176 option
 (a)). `kill handle=bg1` reaches `cancel` below: the Pending leaves the live list at once, so the

@@ -22,30 +22,6 @@ decided in conversation before any finding exists says so and carries none.
 
 ---
 
-## Background actions: phase 3, the one part still undecided (decided 2026-09-04 as D118, phases 1-2+4 shipped)
-
-**D118's phases 1, 2 and 4 are BUILT IN FULL** — the `background: true` flag, the conversation UX,
-budget accounting, and (since D176 answered its surface question with option
-(a)) cancellation via `kill handle=bg1`. There is NO concurrency cap: 0.392.0 shipped one
-(`MAX_CONCURRENT` = 3) built from a decision row that recorded the option the operator did not
-choose, and 0.408.1 removed it (F650) after D166 answered (c), unbounded — the run's own turn
-budget is the practical limit, since every result still has to be read. Their narration now lives where current behaviour belongs:
-`docs/background-tasks.md` ("A single action in the background"), plus `docs/architecture.md` and
-the `engine/background.py` module docstring. Read those for how it works; this entry is only what
-is still unbuilt, kept because deleting the whole D118 entry would have deleted phase 3 with it.
-
-### Phase 3 — mutation ordering (its own decision, never part of D118's build)
-
-Only reads and fetches may be backgrounded (`engine/actions.BACKGROUNDABLE_KINDS`): a mutation
-(`write_file`, `edit_file`, `write_util`, `memory_write`) is refused, because a later synchronous
-action would read state the deferred one has not written yet. Widening the allowlist needs a
-dependency or explicit-barrier model so a backgrounded write cannot be read stale. D118's own text
-called this "its own decision item" and it still is — nothing about it has been decided, and the
-cheap half (leave it refused) is what ships today and works.
-
-
----
-
 ## The outcome label for a rule assist's hold (decided 2026-09-22)
 
 **Decided in the review that shipped 0.365.0; no finding.** The last of the six seams that

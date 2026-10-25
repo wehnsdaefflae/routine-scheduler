@@ -141,12 +141,26 @@ context is unchanged — same run, same budget, same conversation — which is p
 cannot offer.
 
 - **Which kinds.** `engine/actions.BACKGROUNDABLE_KINDS`: `util`, `script`, `shell`, `llm`,
-  `decide`, `read_file`, `view_image`, `memory_read`, `read_rule`. Every one is a read or a fetch
-  whose only effect is its observation. A mutation (`write_file`, `edit_file`, `write_util`, `memory_write`, …)
-  is REFUSED with its reason inside the schema-retry cycle, because a later synchronous action
-  would read what the deferred one has not written yet; widening that needs a dependency/barrier
-  model. A control kind (`finish`, `ask_user`, `report`, `spawn`, `subtask`, `wait`, `kill`) is
-  refused too — it either steers the run or is already asynchronous in its own right.
+  `decide`, `read_file`, `view_image`, `memory_read`, `read_rule` — each a read or a fetch whose
+  only effect is its observation — plus the three mutations `write_file`, `edit_file` and
+  `memory_write`, which defer behind the ordering barrier in the next bullet (D118 phase 3). A
+  control kind (`finish`, `ask_user`, `report`, `spawn`, `subtask`, `wait`, `kill`) is refused —
+  it either steers the run or is already asynchronous in its own right. So are `delete`, `move`
+  and `mkdir` (not slow, and `move` has two ends, not the one target a barrier keys on) and
+  `write_util`/`write_rule`, whose handlers have no `executor.DISPATCH` entry to run in a thread.
+- **A backgrounded MUTATION is ordered by the target it declares, never by trust**
+  (`engine/background_order.py`). The refusal this replaced had one reason — a later action must
+  not read state a deferred write has not performed yet — so the widening makes that impossible
+  rather than unlikely. A deferred mutation's target is the field the action already carries
+  (`path`, or `name` for a memory note); `actionroute.dispatch_action` then asks of EVERY later
+  action, deferred or not, whether it touches a live claim — reads it, writes it, names it in a
+  script's or a util's arguments, hands it to `decide` as evidence, or rides a `then_script` over
+  it — and HOLDS it until that write has landed. The barrier closes on the dependency, so a run
+  that never calls `wait` is still correctly ordered; `wait` remains the explicit form for a run
+  that wants everything quiet. Two DEFERRED writes to one target have no safe order, so the
+  second is refused naming the handle that holds it; a SYNCHRONOUS write to the same target is
+  simply ordered behind the deferred one. Targets are compared as declared strings, so the
+  mechanism errs towards one wait that was not needed — never towards a stale read.
 - **The mechanics** live in `engine/background.py`, shaped on `engine/archival.py` rather than on
   the detached machinery above: `configure` / `start` / `collect` / `settle`. `actionroute.dispatch_action`
   intercepts the flagged action; `loop._turn_boundary` calls `collect`, which appends the real

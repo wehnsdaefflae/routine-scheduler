@@ -856,7 +856,14 @@ and the capabilities digest's catalog listing):
 - **A SINGLE ACTION in the background (`background: true`, D118)** is the third and smallest unit,
   and the one that keeps the SAME context: not a child run and not a detached job, just one slow
   step the run should not sit through. `engine/actions.BACKGROUNDABLE_KINDS` — `util`, `script`,
-  `shell`, `llm`, `read_file`, `view_image`, `memory_read`, `read_rule` — may carry the flag;
+  `shell`, `llm`, `decide`, `read_file`, `view_image`, `memory_read`, `read_rule`, and (D118
+  phase 3) the three mutations `write_file`, `edit_file`, `memory_write` — may carry the flag. A
+  deferred mutation is ORDERED rather than trusted: `engine/background_order.py` records the one
+  target it declared (`path`, or `name` for a memory note) and `actionroute.dispatch_action` holds
+  any later action that touches it until the write has landed, refusing only a SECOND deferred
+  write to the same target, which has no safe order. That barrier is what replaced phase 1's
+  blanket refusal of every mutation, and it closes on the dependency, so a run that never calls
+  `wait` cannot read stale state either.
   `actionroute.dispatch_action` runs the kind's CALL-TIME GATE first and synchronously
   (`_gate_for_background` → the D39 secret gate for `util`/`script`, which a thread cannot run
   because it files a blocking ask and a thread has no turn to block on — F633), then hands the
