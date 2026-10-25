@@ -120,7 +120,9 @@ endpoints, the central Secrets store, GitHub, the library repo.
   settings patterns, global reminders and global utils; every save is lint/selftest-gated.
 - **Settings** — LLM endpoints (live test call + a credential-source indicator: which of
   inline key / secret / env file is in use, warning when an inline key shadows a set
-  secret) and the model catalog (per-model window, output `max_tokens` with an audit flag
+  secret; `PUT /api/settings/endpoints/<name>` with `api_key: null` removes the inline key so
+  the secret takes over, while a blank or absent field keeps it, and a save that would leave
+  an endpoint with no resolvable credential at all is refused) and the model catalog (per-model window, output `max_tokens` with an audit flag
   for unset/implausible values, ordered failover chains with provider cooldowns), the
   write-only Secrets store
   every util reads, GitHub device flow, the source remote (the library repo has no

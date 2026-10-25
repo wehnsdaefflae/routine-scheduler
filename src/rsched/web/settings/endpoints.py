@@ -21,9 +21,9 @@ from ...config import (
     SchemaMode,
 )
 from ...endpoints import cliproxy_mgmt, limits
-from ...endpoints.base import api_key_source
 from ..model_fit import effective_window_pair, fit_fields
 from .common import rewrite_block, server_of
+from .endpoint_keys import key_source, refuse_a_credential_nobody_holds, resolve_inline_key
 
 router = APIRouter()
 
@@ -32,18 +32,6 @@ TEST_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["an
 
 # Below this, an output cap likely truncates a reasoning model's think-and-answer turn.
 MIN_PLAUSIBLE_MAX_TOKENS = 4096
-
-
-def _key_source(ep: EndpointConfig) -> dict:
-    """Which rung of the credential ladder serves this endpoint RIGHT NOW — labels only,
-    never values. Computed by the transport layer itself (endpoints.base),
-    beside the resolvers it mirrors, so the indicator can't drift from what a run does.
-    """
-    src = api_key_source(api_key=ep.api_key, key_var=ep.key_var,
-                         key_env_file=ep.key_env_file)
-    if src["source"] == "none" and ep.kind == "openai":
-        src["keyless_ok"] = True   # local backends (Ollama, vLLM) legitimately run keyless
-    return src
 
 
 def _endpoint_view(name: str, ep: EndpointConfig, server) -> dict:
@@ -65,7 +53,7 @@ def _endpoint_view(name: str, ep: EndpointConfig, server) -> dict:
             "context_tokens": ep.context_tokens,
             "temperature": ep.temperature, "max_tokens": ep.max_tokens,
             "extra_body": ep.extra_body,
-            "has_inline_key": bool(ep.api_key), "key_source": _key_source(ep)}
+            "has_inline_key": bool(ep.api_key), "key_source": key_source(ep)}
 
 
 def _max_tokens_warning(mc: ModelConfig, ep: EndpointConfig | None,
@@ -201,7 +189,10 @@ class EndpointBody(BaseModel):
     name: str
     kind: str
     base_url: str = ""
-    api_key: str = ""
+    # THREE states, and the distinction is the point (D208, settings/endpoint_keys.py):
+    # absent or "" keep a stored inline key (the editor submits the field blank on every
+    # unrelated edit); an explicit null CLEARS it. Read via model_fields_set, never a dump.
+    api_key: str | None = ""
     key_env_file: str = ""
     key_var: str = ""
     quota_source: Literal["", "cliproxy"] | None = None
@@ -232,9 +223,7 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
         spec = {k: v for k, v in body.model_dump().items()
                 if k != "name" and v not in ("", None)}
         prev = endpoints.get(key, {})
-        # keep a previously-saved inline key when the editor submits the key field blank
-        if not spec.get("api_key") and prev.get("api_key"):
-            spec["api_key"] = prev["api_key"]
+        resolve_inline_key(spec, prev, submitted=body.model_fields_set, api_key=body.api_key)
         # A PUT is a full replace, but the credential-save form sends only a subset — preserve
         # every config-only / omitted field so saving a key (or editing base_url) never silently
         # drops one, including a custom key_env_file.
@@ -250,6 +239,10 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
                 spec[field] = getattr(body, field)
             elif field in prev:
                 spec[field] = prev[field]
+        # Last, on the ASSEMBLED spec: every preserved field is in it, so the check reads the
+        # endpoint as it would be loaded. It raises, which aborts the whole read-modify-write
+        # inside the config lock — nothing is written on a refusal.
+        refuse_a_credential_nobody_holds(key, spec, prev)
         endpoints[key] = spec
 
     return _rewrite_endpoints(request, mutate)
