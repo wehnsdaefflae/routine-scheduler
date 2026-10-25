@@ -15,6 +15,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.451.0] — 2026-10-25
+
+### `main` was red on a date, not on a defect — a shared stream is not an exact-equality payload
+
+Every release on this host was blocked this morning by a test no builder had touched.
+`tests/test_lanes.py::test_a_boot_rescan_that_raises_does_not_stop_the_scheduler` asserted the
+WHOLE health stream equals `["scheduler_tick_error"]`, but it drives a real `Scheduler` loop — and
+a real loop runs the standing-condition watches, which file into the same stream.
+`daemon/marker_watch.py` files `migration_due_soon` the moment any live `MIGRATION(expires=)`
+enters its 21-day window, and `migrate_seed_utils.py` / `migrate_enabled.py` declare
+`expires=2026-11-15`: 21 days before that is **2026-10-25**.
+
+Deleting the two converged migrations would not have fixed it — the live markers expire 11-15,
+11-30, 12-15, 12-31 and 2027-01-15, so their warn windows overlap almost continuously into next
+year and the red would merely have moved to 2026-11-09. The assertion now filters to the event it
+is about (`helpers.health_events(home, event=…)`, as the sibling assertions in
+`tests/test_scheduler.py` already do) and keeps both halves of its intent: filed exactly once, and
+the detail still names the boot rescan.
+
+### The double-conformance gate detects a dataclass stand-in by SHAPE, not by name (F766)
+
+R2883's detector matched impersonated classes by NAME and `Completion` — the most impersonated
+class in the suite — was not on the list; the hole reddened a release the same day the detector
+shipped. A fifth literal entry would have been **vacuous**: every `Completion` stand-in is
+`def complete(...): return SimpleNamespace(...)`, never a variable named for the class, so a
+name-keyed entry would have added zero detections. The shipped rule is general — a
+`SimpleNamespace` whose keywords are all fields of exactly ONE dataclass under `endpoints/` or
+`engine/`, supplying every field it requires, is the violation, because `D(**kwargs)` would have
+worked. Measured: **441 namespace sites → 4 hits, all `Completion`, 0 false**; widened to all 48
+dataclasses it gives 12 hits of which 8 are false, every one from a dataclass with no required
+field, which is what the scope exclusions hold out. The predicate found a **fourth** latent site
+the report's own grep missed. New `tests/double_survey.py` is the reader both rules share.
+
+### One predicate answers "can anything drain this row?" on both surfaces (F768)
+
+`readmodels/orphans.find_undelivered` decided a report's target existed by probing
+`<home>/<slug>/` on disk, while `registry.scan` — the authority every other surface uses — keys
+the fleet by the slug declared **inside** `routine.yaml`. The two disagreed for an archived
+routine directory and for any routine whose directory name differs from its slug, which is the
+exact class of defect F738 was built to end. Both surfaces now take the same installed set, the
+per-row field says `target_installed`, and the messages page's banner reads it.
+
+### A report whose words claim a disposal its fields do not carry is told so on filing (F770)
+
+A report can say "this closes R2841" in its prose and close nothing, because disposal travels
+through `answers` / `settles` / `supersedes` — and no surface noticed the difference. The filing
+observation now names the ids the text claims but the fields do not carry, beside the existing
+truncation note, so the author reads it on the turn they filed it.
+
 ## [0.450.2] — 2026-10-25
 
 ### The config dial pointed every reader at a module that has never existed
