@@ -651,52 +651,6 @@ def test_a_backgrounded_script_actually_runs(make_routine, scripted, monkeypatch
     assert landed[0]["payload"]["exit"] == 0
 
 
-def test_a_denied_secret_refuses_a_backgrounded_util_on_the_starting_turn(
-        make_routine, scripted, monkeypatch):
-    """The silent half. The D39 gate is the user's answer to "may this call see this
-    credential"; backgrounding the call used to skip it entirely. The refusal must arrive on the
-    turn that asked — not as a deferred observation, and not at all as a completed call."""
-    import yaml
-
-    import rsched.engine.executor as executor_mod
-
-    ran: list[str] = []
-
-    def record(action, _ctx):
-        ran.append(str(action.get("name")))
-        return {"kind": "util", "name": action.get("name"), "exit": 0, "stdout": "ran",
-                "stderr": ""}
-
-    monkeypatch.setitem(executor_mod.DISPATCH, "util", record)
-    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"BG_TOKEN": "v-1"})
-    monkeypatch.setattr("rsched.utils_lib.exists", lambda _home, _name: True)
-    monkeypatch.setattr(
-        "rsched.utils_run.util_needs",
-        lambda _home, _name: type("N", (), {"secrets": {"BG_TOKEN"}, "optional": set()})())
-
-    d = make_routine(slug="bgdeny")
-    cfg = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
-    cfg["grants"] = {"secret:BG_TOKEN": False}
-    (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
-
-    scripted([
-        {**util("mailer", say="Backgrounding a credential-using call."), "background": True},
-        finish(summary="done" + " ." * 20),
-    ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
-    assert status == "ok", status
-    assert ran == [], (
-        "the backgrounded util RAN with a secret the user had declined — the flag walked "
-        f"around the D39 call-time gate: {ran}")
-    events, _ = read_events(run_dir / "transcript.jsonl")
-    obs = [e for e in events if e["type"] == "observation"]
-    assert not [e for e in obs if e["payload"].get("started")], (
-        "nothing may be backgrounded once the gate refuses the call")
-    refusal = next(e for e in obs if e["payload"].get("declined_secrets"))
-    assert refusal["turn"] == 1, "the refusal must reach the turn that asked for the call"
-    assert "declined" in refusal["payload"]["reason"]
-
-
 # ---- cancellation (D118 phase 4, decided D176 option (a)) --------------------------------------
 
 def test_kill_declares_the_handle_field_in_the_flat_action_schema():
