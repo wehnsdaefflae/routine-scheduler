@@ -46,6 +46,18 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     central one (D103), a not-granted optional secret is withheld (F290), and a secret the
     user DECLINED for this routine is not handed over at all. Before this the util got the
     central store's value whatever the routine's standing said.
+
+    A DECLINED secret REFUSES this call, where the same decline merely WITHHOLDS the
+    credential from a util the run chose (`secretgate.withheld_for_util`, F756). That is the
+    operator's recorded distinction (D213, 2026-10-25): the engine refuses for calls IT chose
+    to make and withholds for calls the RUN chose. It is one rule read from the run's side —
+    a decline never silently degrades work the run did not ask for. The run chose
+    `util vision …`, so withholding hands it a call it can still judge, retry or route
+    around. It did not choose THIS call: it asked to SEE a file, and the fallback is the
+    engine's own way of answering. Running it credential-less would fail inside the vision
+    util, with the util's own message, about a call the run never wrote — so it is refused
+    here instead, where the reason can name the decline and the repair route. Two words, two
+    situations, one principle.
     """
     from .exec_env import _extra_secrets
     from .secretgate import declined_secrets, withheld_optional_secrets
@@ -54,10 +66,18 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     if not utils_lib.exists(home, VISION_UTIL):
         return "error: the `vision` util is not installed, so this file cannot be described"
     if declined := declined_secrets(ctx, VISION_UTIL):
-        # R17: a decline enumerates nothing — a count, never the names it protected
+        # D213: REFUSE here, do not withhold. This call is the engine's (the run asked to see
+        # a file, not to run the vision util), so a credential-less attempt would fail inside
+        # the util about a call the run never wrote. A util the RUN called is withheld from
+        # and proceeds instead (secretgate.withheld_for_util, F756) — the run can judge that
+        # outcome, because it chose the call. R17 holds either way: a decline enumerates
+        # nothing — a count, never the names it protected.
         return (f"error: the user declined exposing {len(declined)} secret"
                 f"{'s' if len(declined) != 1 else ''} the vision fallback needs to this "
-                "routine, so this file cannot be described here")
+                "routine, so this file cannot be described here. The engine chose this call, "
+                "so it is refused rather than run without the credential — a util the run "
+                "calls itself runs with the declined secret withheld instead. The mapping is "
+                "editable on the routine page (secret exposure)")
     args = [abspath, "--prompt", prompt or VIEW_DEFAULT_PROMPT, "--json"]
     code, out, err = utils_run.run_util(
         home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,

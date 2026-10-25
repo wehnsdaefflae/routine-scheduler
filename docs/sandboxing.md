@@ -335,12 +335,25 @@ everything else. An **OPTIONAL** secret
 (declared `NAME?`, D51/F290 — it backs a feature most calls don't use, like page-fetch's
 Basic auth) never files that request: not granted → it is WITHHELD from the child env and
 the util or script observation says so, so a public call runs prompt-free and an auth-needing
-one requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). The two util
+one requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). A **DECLINED**
+REQUIRED name is withheld the same way and the call RUNS without it (F756): a decline protects
+the CREDENTIAL, not the util, and the observation says how many were withheld because the user
+declined them (a count, never the names — R17). A util that truly cannot work without it fails
+INSIDE, visibly, with its own message, which is already what a declared-but-unset secret does.
+Forbidding a util is a `util:` grant or a reservation; a secret row is not that lever, and
+reading it as one refused `gu mail --account default` for a declined FAU credential it never
+touches (the measured specimen). The exposure ask's own `default` says so too, so the question
+no longer offers a decline the engine cannot keep. The two util
 calls the ENGINE makes on a run's behalf file no exposure ask (the run chose neither the util
 nor its arguments). `view_image`'s vision fallback (`mediaops.vision_describe`) is made in the
 run's environment all the same: the routine's own scoped key shadows the central one, a
 not-granted optional secret is withheld, and a secret the user DECLINED for the routine is never
-handed over — the fallback is refused instead. `read_file`'s document conversion
+handed over — the fallback is REFUSED instead, where a util the run called is withheld from and
+proceeds. That asymmetry is the operator's recorded answer to **D213** (2026-10-25): *the engine
+refuses for calls IT chose to make and withholds for calls the RUN chose.* One rule read from
+the run's side — a decline never silently degrades work the run did not ask for: a call the run
+wrote comes back degraded and judgeable, a call the engine made for it comes back refused with
+the reason, instead of failing inside a util the run never invoked. `read_file`'s document conversion
 (`docread.converted`) needs no credential at all, so it withholds every secret its util's tree
 declares, and runs offline (above). Optionality has ONE
 precedence: a `?` on the util the run CALLED wins over a required declaration in a util it

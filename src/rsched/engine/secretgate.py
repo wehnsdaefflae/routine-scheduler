@@ -10,6 +10,20 @@ through the same decision record every other ask uses.
 An OPTIONAL secret a util declares with `?` is never worth blocking a run for: it is withheld
 silently and the run is told what it lost, so a degraded call beats a stalled one.
 
+A DECLINED REQUIRED secret is withheld the same way and the call proceeds (F756): a decline
+protects the credential, not the util — forbidding a util is a `util:` grant's job. That holds
+for every call THIS GATE sees, because this gate only sees calls the RUN chose: `util`, a
+`/util` slash command, and the routine's own `scripts/<name>.py`. The engine's own util calls
+never reach here (the run chose neither the util nor its arguments), and the one that needs a
+credential — `mediaops.vision_describe`, the vision fallback behind `view_image` — REFUSES on a
+declined secret instead. That asymmetry is deliberate and is the operator's recorded answer to
+D213 (2026-10-25): the engine refuses for calls IT chose to make and withholds for calls the RUN
+chose. Read from the run's side it is one rule — a decline never silently degrades work the run
+did not ask for: a call the run wrote comes back degraded and judgeable, a call the engine made
+on its behalf comes back refused with the reason, rather than failing inside a util the run never
+invoked. Before F756 both sites refused, and one declined name disabled every call of a util,
+including calls needing none of it.
+
 `secret_state` answers about ROWS and nothing else — never about an adjacent `util:` grant that
 happens to declare the name. That is deliberate (F562): a granted util used to leave its own
 declared secrets undecided, so the first call filed a SECOND blocking request for the same
@@ -20,8 +34,9 @@ would be fewer lines and would make a util grant silently carry credentials.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from .. import utils_lib, utils_run
-from . import requests
 from .actionschema import PSEUDO_UTILS
 from .askback import still_pending
 from .interact import handle_ask
@@ -90,6 +105,57 @@ def withheld_optional(ctx, optional: set[str]) -> list[str]:
     own = _own_secrets(ctx)
     return sorted(s for s in (optional & set(load_secrets())) - own
                   if secret_state(ctx, s) != "granted")
+
+
+class Withheld(NamedTuple):
+    """What a call that RUNS does not get of the secrets it declares, by the two reasons a
+    declared credential may be absent while the call still proceeds:
+
+    * `optional` — F290/D51: a `?`-declared name the routine may not see. Never blocks, never
+      asks; undecided ones are requestable, so they may be named.
+    * `declined` — F756: a REQUIRED name the user DECLINED. A decline protects the credential,
+      not the util, so it is withheld and the call runs without it. A count only in anything
+      the model reads: a denial enumerates nothing (R17).
+    """
+
+    optional: tuple[str, ...] = ()
+    declined: tuple[str, ...] = ()
+
+    @property
+    def names(self) -> set[str]:
+        """Every name to scrub from the child env — `utils_run.scoped_env`'s `withhold`."""
+        return {*self.optional, *self.declined}
+
+    def note(self, ctx) -> dict:
+        """The observation fields for both reasons; empty when the call got everything."""
+        out: dict = {}
+        if self.optional:
+            undecided = [s for s in self.optional if secret_state(ctx, s) == "undecided"]
+            out["withheld_optional"] = {"undecided": undecided,
+                                        "denied": len(self.optional) - len(undecided)}
+        if self.declined:
+            out["withheld_declined"] = len(self.declined)       # R17: a count, never names
+        return out
+
+
+def withheld_for_call(ctx, needed: set[str], optional: set[str]) -> Withheld:
+    """Both withholdings for one call's transitive declarations. The declined half is the
+    same `secret_state` the gate reads, so a decline recorded in `grants:` and one given at
+    the exposure ask (`requests._seed` writes `ctx.denied_now` before the gate resumes) mean
+    the same thing here — one word, one meaning.
+    """
+    return Withheld(tuple(withheld_optional(ctx, optional)),
+                    tuple(s for s in _exposable(ctx, needed, optional)
+                          if secret_state(ctx, s) == "denied"))
+
+
+def withheld_for_util(ctx, name: str) -> Withheld:
+    """`withheld_for_call` over a UTIL's transitive declarations."""
+    home = ctx.server.libraries_home
+    if not utils_lib.exists(home, name):
+        return Withheld()
+    needs = utils_run.util_needs(home, name)
+    return withheld_for_call(ctx, needs.secrets, needs.optional)
 
 
 def withheld_verb_scoped(ctx, name: str, args: list) -> dict:
@@ -171,18 +237,17 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
     present = _exposable(ctx, needed, optional)
     if not present:
         return None   # nothing exposable — a declared-but-unset secret fails visibly inside
-    denied = [s for s in present if secret_state(ctx, s) == "denied"]
-    if denied:
-        # R17: a DENIAL enumerates nothing — the refusal must not hand back the very
-        # names it refused (the transcript event keeps them for the user's surfaces;
-        # the model-facing reason and rendering carry a count only).
-        n = len(denied)
-        return {"kind": kind, "name": name, "declined_secrets": denied,
-                "reason": f"the user has declined exposing {n} secret"
-                          f"{'s' if n != 1 else ''} this {kind} call declares to this "
-                          f"routine — the {kind} was not run. The mapping is editable on the "
-                          f"routine page (secret exposure); work without this {kind}, or file "
-                          "a deferred ask_user explaining why it is needed."}
+    # F756: a DECLINE withholds the CREDENTIAL; it does not refuse the util. Until this, one
+    # declined name refused EVERY call of the util — including a call needing none of it
+    # (measured live: the GMAIL_* secrets granted and the FAU_* ones declined on `gu mail`,
+    # after which even `--account default` was refused, so the grant UI offered a per-secret
+    # decline the enforcement could not keep). A declined required name is now scrubbed from
+    # the child env exactly as a `?`-declared optional one is (`withheld_from_call`, applied
+    # in executor) and the call proceeds; a util that truly cannot work without it fails
+    # INSIDE, visibly, with its own message — already the accepted outcome for a
+    # declared-but-unset secret (`_exposable`). To forbid a UTIL, withhold its `util:` grant
+    # or reserve it: a secret row is not that lever, and reading it as one overruled the user
+    # in the one direction he cannot see.
     undecided = [s for s in present if secret_state(ctx, s) == "undecided"]
     if not undecided:
         return None
@@ -197,7 +262,13 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
                     f"call '{name}' declares them.",
         "mode": "blocking",
         "request": [f"secret:{s}" for s in undecided],
-        "default": f"the {kind} is NOT run and the secrets stay unexposed until allowed"},
+        # F756: the prose must match the enforcement, or the question offers a decline the
+        # engine cannot keep. A TIMEOUT still refuses the call (nobody decided); DECLINING
+        # withholds just those credentials and lets the call run without them — it does not
+        # disable the util, which is a `util:` grant's job.
+        "default": f"the {kind} is NOT run and the secrets stay unexposed until decided "
+                   f"(declining withholds just these credentials and lets the {kind} run "
+                   "without them; it does not disable it)"},
         poll_s)
     if ask.get("dialog"):
         # an ask-back on the exposure request: the call does not run, the operator's words
@@ -208,16 +279,9 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
         return {"kind": kind, "name": name, "pending_secrets": undecided, **still_pending(ask),
                 "reason": "the secret-exposure request is still open — do other work and "
                           f"retry the {kind} once it is settled."}
-    decision = str(ask.get("decision") or "")
-    if decision.startswith("allow"):
-        return None
-    # R17: the decline reason stays GENERIC — a count and the decision's shared phrase,
-    # never the names (requests.observation_text would enumerate the entity ids, which
-    # is right for entities the model itself requested, and wrong for a refusal).
-    n = len(undecided)
-    phrase = requests.DECISION_PHRASES.get(decision, "declined")
-    return {"kind": kind, "name": name, "declined_secrets": undecided,
-            "decision": ask.get("decision"),
-            "reason": f"the user declined exposing {n} secret{'s' if n != 1 else ''} "
-                      f"this {kind} call declares to this routine — the {kind} was not run "
-                      f"({phrase})."}
+    # F756: a decline given AT THE ASK is the same user intent as a `grants:` false row, so it
+    # takes the same path — `requests.apply_decision` has already put the entity in
+    # `ctx.denied_now`, which makes `secret_state` read "denied" for the executor's
+    # `withheld_from_call`. Two different meanings for one word is the defect, not the fix:
+    # whichever way he says no, the credential is withheld and the call proceeds without it.
+    return None

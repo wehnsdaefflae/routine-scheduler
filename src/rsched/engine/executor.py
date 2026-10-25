@@ -126,20 +126,6 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> dict:
     return fields
 
 
-def _withheld_note(ctx: RunContext, withheld: list[str]) -> dict:
-    """The observation field naming what F290 withheld from a call that RAN: undecided names
-    are requestable and may be enumerated, denied ones are a count only (R17 — a denial
-    enumerates nothing). Empty when nothing was withheld.
-    """
-    if not withheld:
-        return {}
-    from .secretgate import secret_state
-
-    undecided = [s for s in withheld if secret_state(ctx, s) == "undecided"]
-    return {"withheld_optional": {"undecided": undecided,
-                                  "denied": len(withheld) - len(undecided)}}
-
-
 def _dead_root_note(policy) -> dict:
     """The observation field naming a granted fs root the kernel cannot stat (R2260).
 
@@ -280,19 +266,19 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         if script_home(ctx, name) is not None:
             obs["script_match"] = True
         return obs
-    # F290: optional (`?`-declared) secrets the routine may not see are WITHHELD from the
-    # child env instead of blocking the call with an exposure ask — a public call runs
-    # prompt-free; the observation names the withheld undecided ones so an auth-needing
-    # call learns to request exposure explicitly (denied ones stay unenumerated, R17).
-    from .secretgate import withheld_optional_secrets, withheld_verb_scoped
-    withheld = withheld_optional_secrets(ctx, name)
+    # F290 + F756: a declared secret the routine may not see is WITHHELD from the child env
+    # rather than blocking the call — an optional (`?`) one silently, and a REQUIRED one the
+    # user DECLINED, because a decline protects the credential, not the util. The observation
+    # says what was lost (undecided names are requestable; declined is a count — R17).
+    from .secretgate import withheld_for_util, withheld_verb_scoped
+    withheld = withheld_for_util(ctx, name)
     # One policy object, used twice: for the jail itself and for the dead-root note (R2260) —
     # so what the run is told about its roots is what the jail actually decided about them.
     policy = sandbox.policy_for_ctx(ctx)
     code, out, err = utils_run.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
         policy=policy,
-        extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld),
+        extra_secrets=_extra_secrets(ctx), withhold_secrets=withheld.names,
         cwd=work_dir(ctx), aborted=ctx.aborted,
         cancelled=cancelled_for_turn(ctx))
     killed = _note_if_killed(ctx, "util", name, code)
@@ -303,7 +289,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         ctx.count_util(name, "ok" if code == 0
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
-           **command_output(ctx, name, out, err, code), **_withheld_note(ctx, withheld),
+           **command_output(ctx, name, out, err, code), **withheld.note(ctx),
            **withheld_verb_scoped(ctx, name, args), **_dead_root_note(policy), **killed}
     if ended is not None:
         # Not a failure, so no repair route: a resumed run replays this observation, and
@@ -353,7 +339,7 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     """
     from .. import scripts
     from ..secrets import load_secrets
-    from .secretgate import secret_state, withheld_optional
+    from .secretgate import secret_state, withheld_for_call
     name = str(action.get("name") or "")
     args = [str(a) for a in action.get("args") or []]
     home = script_home(ctx, name)
@@ -375,6 +361,9 @@ def do_script(action: dict, ctx: RunContext) -> dict:
                 "sibling would run without them. Fix the header — e.g.\n"
                 "    calls: gmail, ftp\n— then rerun."}
     declared, _net, optional = scripts.needs(home, name, ctx.server.libraries_home)
+    # Only a GRANTED name is injected, so a declined one (F756) never reaches the env here —
+    # the gate was the only thing that refused this call; `withheld` reports what was lost.
+    withheld = withheld_for_call(ctx, declared, optional)
     env_secrets = {k: v for k, v in load_secrets().items()
                    if k in declared and secret_state(ctx, k) == "granted"}
     env_secrets |= {k: v for k, v in _extra_secrets(ctx).items() if k in declared}
@@ -388,8 +377,7 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     killed = _note_if_killed(ctx, "script", name, code)
     obs = {"kind": "script", "name": name, "args": args, "exit": code,
            **command_output(ctx, f"script-{name}", out, err, code),
-           **_withheld_note(ctx, withheld_optional(ctx, optional)),
-           **_dead_root_note(policy), **killed}
+           **withheld.note(ctx), **_dead_root_note(policy), **killed}
     if ended := _ended_by_a_person(ctx, code):
         obs[ended] = True
     return obs
