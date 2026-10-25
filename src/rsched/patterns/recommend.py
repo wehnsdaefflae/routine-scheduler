@@ -11,11 +11,19 @@ change with one "accept changes". It is also never trusted as it arrives: every 
 goes through validation before it is offered; one that does not validate is dropped rather than
 offered — a proposal the accept button would refuse is not a proposal.
 
+That validation is NOT this module's any more (F610): `validate.py` is the one judge, reached by
+every writer of a proposed setting — `drafts.write` refuses an invalid value outright and
+`store.problems` judges a pattern's values, so a call site added later is validated by
+construction rather than by whoever remembers. This module only decides WHAT to propose; the
+names it re-exports (`valid`, `semantic_checks`, `whole_field_checks`, `NO_SEMANTIC_CHECK`,
+`NEEDS_CATALOGS`) are that judge's, kept here because this module's readers have always asked
+the recommender what it checks.
+
 How far that reaches is `NO_SEMANTIC_CHECK`, and it is NOT yet the whole accept route. Every
 proposed field is checked for SHAPE by the patch model; the fields in `semantic_checks()` /
 `whole_field_checks()` are then checked for MEANING with the accept's own validators. The rest
 are offered on their shape alone — and for 13 of them a validator exists on the accept route
-that this module does not consult, so a value the SYSTEM generated can still be refused on a
+that the judge does not consult, so a value the SYSTEM generated can still be refused on a
 page the person never typed into (R2884). Each one is named there with its reason; the accept
 is whole-draft, so one refused field 400s every other change the person kept.
 """
@@ -24,10 +32,9 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
 from pathlib import Path
 
-from . import fields, store
+from . import fields, store, validate
 
 log = logging.getLogger("rsched.patterns.recommend")
 
@@ -35,61 +42,17 @@ log = logging.getLogger("rsched.patterns.recommend")
 #: mints; the name and description are the routine's own.
 _NOT_PROPOSED = ("triggers", "name", "description")
 
-#: The two checks that read an instance CATALOG. Without a server their semantic half is
-#: skipped rather than guessed — a missing catalog is not evidence the value is bad.
-NEEDS_CATALOGS = frozenset({"machines", "models"})
-
-#: Every governable field with NO semantic check in `semantic_checks()` /
-#: `whole_field_checks()`, and the DECISION taken for it. The `runrecord.BEHAVIOUR` /
-#: `NOT_BEHAVIOUR` idiom: each `fields.GOVERNABLE` key is in exactly one of the three, so a new
-#: governable field forces a choice (tests/test_recommend_coverage.py fails on one in none of
-#: them) instead of joining a silent majority that is offered untested.
-#:
-#: A reason opening `GAP —` means the accept route DOES judge this field's meaning and the
-#: recommender does not consult that judgement: the value can be offered and then refused, and
-#: because the accept is whole-draft it takes every other kept change down with it. Those are
-#: measured, named defects awaiting their own increments — not fields that need no check. The
-#: test treats the set as a RATCHET: an entry may be fixed away, a new one may not appear.
-NO_SEMANTIC_CHECK: dict[str, str] = {
-    # --- no semantic check EXISTS: the patch model's shape is the whole judgement ----------
-    "budgets": "`BudgetsPatch`/`_check_budgets` is the whole check — a name `DEFAULT_BUDGETS` "
-               "knows, an integer (-1 = unlimited); the accept adds nothing beyond it",
-    "improve": "a bare bool on `RoutinePatch`, written by the generic merge; no meaning to judge",
-    "permissions": "the accept never refuses one: unknown doc slugs are silently DROPPED "
-                   "(`resolve_permission_layers`), and 'a list of strings' is the patch model's "
-                   "own check. A proposal can land PARTIALLY — that is R2314's other half, and "
-                   "a loudness problem (the dropped-proposal increment), not a validity one",
-    "tags": "`clean_tags` strips and drops blanks and raises nothing — unrefusable by design",
-    "triggers": "never proposed at all: `_NOT_PROPOSED` drops it before validation, because a "
-                "trigger's webhook is a token only the server mints",
-    # --- GAP: a validator exists on the accept route and the recommender never calls it -----
-    "capabilities": "GAP — `grants.normalize_capabilities` (via `write_permission_layers`) 422s "
-                    "an unknown key, a non-list layer or a confirm/runs/reminders level off its "
-                    "ladder; the patch model only checks `dict`. One of the two values the "
-                    "operator actually hit (R2884)",
-    "deliberation": "GAP — `_validate_tuning` 400s a level outside `DELIBERATION_LEVELS`; the "
-                    "patch model types it `str`. The other value the operator actually hit",
-    "fs_read_roots": "GAP — `config_fields.validate_roots` 400s a non-absolute path and a "
-                     "credential store (SEC-1); the patch model checks `list[str]` only",
-    "fs_write_roots": "GAP — the same enforcer, the same unconsulted 400 (R2314: the roots could "
-                      "not be set through the UI at all)",
-    "grants": "GAP — `entities.normalize_grants` 400s an unknown entity id. `ask_first`, so it "
-              "needs the person's click anyway, but a refused row still 400s the whole accept",
-    "keep_runs": "GAP — `_apply_resource_fields` 400s anything but a positive integer, a floor "
-                 "the patch model's `int` does not carry",
-    "ladder": "GAP — `_apply_ladder` 400s an unknown key, a non-bool `enabled` and a "
-              "`rung_height` under 1, judged on the block MERGED with the stored one",
-    "ladder_turn_interval": "GAP — `_validate_tuning` 400s anything under "
-                            "`ladder.MIN_OVERSIGHT_TURNS`",
-    "oversight_turns": "GAP — the same floor, with 0 meaning DERIVE it (never below it)",
-    "reminders": "GAP — `_apply_pattern_fields` 400s a shared-reminder id the library does not "
-                 "hold; nothing checks library membership here",
-    "rules": "GAP — `rules.apply_changes` 400s an unknown rule slug; nothing checks the library",
-    "run_gate": "GAP — `_apply_run_gate` 422s the gate doc MERGED with the stored one, so the "
-                "proposal alone cannot be judged without merging it the same way first",
-    "schedule": "GAP — `schedule.friendly_to_cron` 400s a friendly spec it cannot translate; "
-                "`SchedulePatch` types the mapping without checking the frequency vocabulary",
-}
+#: ONE judge, for every writer of a proposed setting (F610): the vocabulary tables and the
+#: checks live in `validate.py`, which `drafts.write` and `store.create` call too — so the
+#: library, the pending-changes writer and the recommender cannot drift into three answers
+#: about what is proposable. Re-exported here because this module's readers (and
+#: tests/test_recommend_coverage.py, which reads the covered set from the code that does the
+#: checking) have always asked the recommender what it checks.
+NEEDS_CATALOGS = validate.NEEDS_CATALOGS
+NO_SEMANTIC_CHECK = validate.NO_SEMANTIC_CHECK
+semantic_checks = validate.semantic_checks
+whole_field_checks = validate.whole_field_checks
+valid = validate.valid
 
 CHOICE_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["pattern", "why"],
@@ -163,98 +126,6 @@ def recommend(server, *, slug: str, saved: dict, pattern: dict | None,
         out[key] = {"value": fields.canonical(key, value),
                     "reason": str(row.get("reason") or "").strip()[:400]}
     return out
-
-
-def valid(key: str, value: object, server: object | None = None) -> bool:
-    """Would the page's own accept take this value? Checked with the validators it uses.
-
-    The patch model checks a field's SHAPE; the fields in `semantic_checks()` are then checked
-    for MEANING by the accept route's own validators (`web/config_fields.py`, called from
-    `api_routine_patch.apply_updates`), and a value that clears the shape and fails the meaning
-    is the worst kind to offer: the accept is whole-draft, so one refused field 400s every other
-    change the person kept. That is how `connections: {"fau-mail": {"scopes": [...]}}` — a
-    util's name where an OAuth provider belongs — cost ewsan-bohrdaten-steward all nine of its
-    proposed settings. So run those validators here too. `models` and `machines` need the
-    instance catalogs (`NEEDS_CATALOGS`); without a server their semantic half is skipped rather
-    than guessed. A field in `whole_field_checks()` answers for itself INSTEAD of the pair —
-    `finish_line` is not a patch field at all. Every other governable field clears on shape
-    alone: `NO_SEMANTIC_CHECK` says which, and which of them the accept would still refuse.
-    """
-    from pydantic import ValidationError
-
-    if whole := whole_field_checks().get(key):
-        return whole(value)
-    from ..web.api_routine_patch import RoutinePatch
-
-    pkey, pvalue = fields.patch_shape(key, value, lane_managed=False)
-    try:
-        RoutinePatch.model_validate({pkey: pvalue})
-    except (ValidationError, ValueError, TypeError):
-        return False
-    return not _semantic_problem(key, value, server)
-
-
-def semantic_checks(server: object | None = None) -> dict[str, Callable[[object], object]]:
-    """Governable field → the accept route's OWN semantic validator for it, bound to `server`
-    and raising `HTTPException` when the accept would refuse the value.
-
-    THE COVERED SET, AS DATA: `_semantic_problem` dispatches on this table and
-    tests/test_recommend_coverage.py reads its keys, so what the recommender checks is read
-    from the code that does the checking. A hand-kept second list of "the fields we check"
-    would agree with itself while the coverage drifted — which is the defect this table exists
-    to stop (R2884). Called with no server it still names its keys.
-    """
-    from ..web import config_fields
-
-    return {
-        "connections": lambda value: config_fields.validate_connections(
-            value if isinstance(value, dict) else {}),
-        "efforts": lambda value: config_fields.validate_efforts(
-            value if isinstance(value, dict) else {}),
-        "machines": lambda value: config_fields.validate_machines(
-            server, value if isinstance(value, list) else []),
-        "models": lambda value: config_fields.validate_models(
-            server, value if isinstance(value, dict) else {}),
-    }
-
-
-def whole_field_checks() -> dict[str, Callable[[object], bool]]:
-    """Governable field → a check that answers for the WHOLE field, INSTEAD of the shape-then-
-    meaning pair the other fields go through — also part of the covered set, read from code.
-
-    `finish_line` is not a `RoutinePatch` field at all: it is written through its own owner
-    (`engine/finishline.py`), so the patch model would refuse it outright and its own validator
-    is the only one that applies.
-    """
-    from ..engine import finishline
-
-    def finish_line_ok(value: object) -> bool:
-        raw = value if isinstance(value, dict) else {}
-        return not finishline.problems(finishline.normalize(raw)) and all(
-            isinstance(o, dict) and o.get("judge") in finishline.JUDGES
-            for o in raw.get("outcomes") or [])
-
-    return {"finish_line": finish_line_ok}
-
-
-def _semantic_problem(key: str, value: object, server: object | None) -> bool:
-    """True when the accept route's own validator would refuse this shaped-correct value.
-
-    Dispatches on `semantic_checks()`; a field that table does not name is not checked here,
-    and `NO_SEMANTIC_CHECK` holds the decision taken for each one.
-    """
-    from fastapi import HTTPException
-
-    try:
-        check = semantic_checks(server).get(key)
-        if check is not None and not (server is None and key in NEEDS_CATALOGS):
-            check(value)
-    except HTTPException as exc:
-        log.info("recommend: dropping %s — the accept would refuse it (%s)", key, exc.detail)
-        return True
-    except Exception:  # a validator that cannot run is not evidence the value is bad
-        log.warning("recommend: could not semantically check %s", key, exc_info=True)
-    return False
 
 
 def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,

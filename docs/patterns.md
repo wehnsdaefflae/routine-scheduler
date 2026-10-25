@@ -104,17 +104,36 @@ instead of applying if one of its fields was decided elsewhere while it waited �
 lands whole or not at all, and an older click does not overwrite a newer decision; the page
 then says which field moved and the changes are still there to accept again.
 
-A proposed value is validated before it is offered — a proposal the accept button would refuse
-is not a proposal. Every field is checked for SHAPE against the accept's own patch model; a
-field named in `recommend.semantic_checks()` (`connections`, `efforts`, `machines`, `models`)
-or `recommend.whole_field_checks()` (`finish_line`) is then checked for MEANING with the exact
-validator the accept route runs. The remaining 18 governable fields are offered on their shape
-alone, and `recommend.NO_SEMANTIC_CHECK` names each one with the reason: five have no meaning
-to judge, while **13 carry a validator on the accept route that the recommender does not
-consult** — so a value the system generated can still be refused on a page nobody typed into
-(R2884, measured on 0.447.3; `deliberation` and `capabilities` are the two the operator hit).
+A proposed value is validated at the WRITER, before it is stored — a proposal the accept button
+would refuse is not a proposal. `rsched/patterns/validate.py` is the one judge, and
+`drafts.write` calls it on every change: an invalid value is REFUSED there (the `ValueError`
+names the offending key and the vocabulary it wanted; the two settings-page routes turn it into
+a 422), so nothing invalid can reach the operator's click. The same judge validates a pattern's
+VALUES in `store.problems`, because a pattern's settings become a new routine's values and its
+pending changes. That check used to live in the recommender alone, so "follow this pattern" and
+the pattern-diff half of "recommend for this routine" stored values the accept refuses and the
+refusal arrived on the click — whole-draft, taking every other kept change with it (F610;
+`budgets: {max_minutes: …}` and `connections: {"fau-mail": …}` are the measured cases).
+
+Each field is checked for SHAPE against the accept's own patch model; a field named in
+`validate.semantic_checks()` (`connections`, `efforts`, `machines`, `models`) is then checked
+for MEANING with the exact validator the accept route runs. A field in
+`validate.whole_field_checks()` answers for itself instead of that pair: `finish_line` and
+`triggers` are not patch fields at all — the accept routes them to `engine/finishline.py` and
+`api_hooks.reconciled_triggers` — so their own owners are the only judges that apply, and
+judging them by the patch model would refuse every value, including the empty ones all 14
+shipped patterns carry. The remaining 17 governable fields are offered on their shape alone,
+and `validate.NO_SEMANTIC_CHECK` names each one with the reason: four have no meaning to judge,
+while **13 carry a validator on the accept route the judge does not consult** — so a value the
+system generated can still be refused on a page nobody typed into (R2884, measured on 0.447.3;
+`deliberation` and `capabilities` are the two the operator hit).
 `tests/test_recommend_coverage.py` holds that split to a ratchet: a new governable field must
 be checked, and an entry leaves the allowlist only when its check is implemented.
+`tests/test_proposal_validation.py` pins the refusal per seam, and that every shipped pattern
+is still proposable whole. A value needing instance state (a catalog model, a machine) keeps
+its semantic half for the click: a filing check stricter than the accept would refuse a
+proposal that works — the same line `engine/config_bridge.py` draws for a run's `config_patch`,
+which validates its own filing because the engine may not import the web layer.
 
 ## Where patterns meet a routine
 
