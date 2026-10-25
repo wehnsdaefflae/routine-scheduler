@@ -36,7 +36,7 @@ from typing import Any
 from ..paths import read_json
 from ..priorities import SELF_AUDIT_SLUG, priorities_path, read_priorities
 from ..reports import read_reports, reports_path
-from . import memo
+from . import decision_answers, memo
 from .item_counts import owner_of
 from .item_reports import event_stamp, refs, report_row_item, resolved_carriers
 
@@ -61,8 +61,13 @@ def source_paths(routine_dir: Path, routines_home: Path) -> list[Path]:
     source edit.
     """
     audit = _audit_dir(routine_dir)
+    # The audit INBOX rides along because a queued `[AUDIT decision · …] selected: …` message
+    # carries what the user chose (`queued_answer_words`): without it his answer would not
+    # invalidate this memo, and the index would keep serving the decision as unresolved until
+    # some other source changed. `decisions_read._audit_decisions` fingerprints the same dir
+    # for the same reason.
     return [audit / "report.json", audit / "changelog.jsonl",
-            audit / "decisions-answered.json",
+            audit / "decisions-answered.json", routine_dir / "inbox",
             reports_path(routines_home), priorities_path(routines_home)]
 
 
@@ -141,13 +146,23 @@ def _status_from_report(entry: dict) -> str:
 
 
 def _report_item(kind: str, entry: dict, report: dict,
-                 addressed: list[dict], answered: dict) -> dict:
+                 addressed: list[dict], answered: dict,
+                 answer_words: dict | None = None) -> dict:
     item_id = str(entry.get("id") or "").strip().upper()
     title, detail = str(entry.get("title") or ""), str(entry.get("detail") or "")
     since = report.get("since") if isinstance(report.get("since"), dict) else {}
     status = _status_from_report(entry)
-    if status == "unknown" and kind == "decision" and answered.get(item_id):
-        status = "settled"                      # the user answered it — a recorded fact
+    if kind == "decision" and answered.get(item_id) and status in ("unknown", "open"):
+        # The user answered it — a recorded fact, and it outranks `open` in the report.
+        # `open` used to survive here: the report's own status is only rewritten by
+        # self-audit's NEXT run, so between his click and that run every surface reading the
+        # report showed an answered decision as awaiting him. On 2026-10-25 he answered
+        # D210-D215 between 02:07 and 02:17, the 02:40 report still listed all six `open`
+        # with an empty `resolution`, and a routine reported them back to him as outstanding.
+        # His instruction: "also make the report record a resolution for an answer that
+        # arrived mid-run". The marker is written by `web/api_audit.write_feedback` under a
+        # lock on every answer, so it is as durable as the report itself.
+        status = "settled"
     item = {
         "id": item_id, "type": kind, "status": status, "title": title, "detail": detail,
         "origin": {"routine": SELF_AUDIT_SLUG, "run_id": str(report.get("run_id") or ""),
@@ -162,6 +177,13 @@ def _report_item(kind: str, entry: dict, report: dict,
     else:
         item["options"] = [str(o) for o in (entry.get("options") or [])]
         item["resolution"] = str(entry.get("resolution") or "")
+        if not item["resolution"] and (marker := str(answered.get(item_id) or "")):
+            # A settled decision with an EMPTY resolution records nothing — the status says
+            # "answered" and no surface can say what was decided. The report's own
+            # `resolution` always wins (self-audit's considered wording, written by its next
+            # run); this fills the gap before that run happens, from the two records the
+            # answer actually wrote.
+            item["resolution"] = (answer_words or {}).get(item_id) or f"answered {marker}"
     return item
 
 
@@ -216,6 +238,7 @@ def _build(routine_dir: Path, routines_home: Path) -> dict:
     report = report if isinstance(report, dict) else {}
     answered = read_json(audit / "decisions-answered.json")
     answered = answered if isinstance(answered, dict) else {}
+    answer_words = decision_answers.queued_answer_words(routine_dir)
     addressed = _addressed_by_id(read_changelog(audit / "changelog.jsonl"))
 
     items: dict[str, dict] = {}
@@ -226,7 +249,8 @@ def _build(routine_dir: Path, routines_home: Path) -> dict:
             item_id = str(entry.get("id") or "").strip().upper()
             if item_id:
                 items[item_id] = _report_item(kind, entry, report,
-                                              addressed.get(item_id, []), answered)
+                                              addressed.get(item_id, []), answered,
+                                              answer_words)
     rows = read_reports(reports_path(routines_home))
     # A report CLOSES the rows it disposes of — the reply is the closure record, so the map is
     # built over the whole stream before any item is shaped. A RETRACTED reply settles nothing:
