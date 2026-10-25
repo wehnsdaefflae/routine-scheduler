@@ -57,6 +57,20 @@ routine directory and for any routine whose directory name differs from its slug
 exact class of defect F738 was built to end. Both surfaces now take the same installed set, the
 per-row field says `target_installed`, and the messages page's banner reads it.
 
+### An explicit null clears an endpoint's inline key, and stripping the last credential is refused (D208)
+
+`PUT /api/settings/endpoints/{name}` already existed, so the work was the semantics: `api_key`
+now distinguishes three states, read through `model_fields_set` rather than a dump — absent and
+blank both leave the stored key alone (the console's own submit stays non-destructive), while an
+explicit `null` clears it. `model_dump()` cannot tell absent from blank and `exclude_none=True`
+eats the null outright, which is the same trap that made `{"ladder": {"max_depth": null}}`
+unfireable in F759. A save is refused when the endpoint would be left with no credential at all
+AND this save changed the credential triple: reading the RESULT keeps `anthropic metered` and
+every keyless Ollama/vLLM endpoint savable, so only an actual clearing is stopped, and the
+refusal raises inside the config lock so nothing is written. The key-source logic moved to a new
+`web/settings/endpoint_keys.py`, taking `endpoints.py` from 346 to 339 lines rather than raising
+its ceiling. The console has no "remove key" control yet — the clear is API-only.
+
 ### A report whose words claim a disposal its fields do not carry is told so on filing (F770)
 
 A report can say "this closes R2841" in its prose and close nothing, because disposal travels
