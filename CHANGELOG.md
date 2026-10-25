@@ -15,6 +15,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.452.0] — 2026-10-25
+
+### A routine's own `scripts/` can run — the venv goes where the jail can create it
+
+Three reports had one cause (R2887/R2891/R2892, folded as R2907): `uv` put the venv at
+`<routine>/.venv`, and a sandboxed subprocess can never create a new top-level entry in a
+routine dir — D179's own-dir seal mounts the dir read-only and only its EXISTING unsealed
+children read-write, and a Landlock rule needs an inode, so there is nothing to grant. It was
+never a missing grant, and widening one would not have fixed it.
+
+A script whose PEP 723 block declares **no dependencies** now runs on the daemon's interpreter
+and builds nothing, the precedent `daemon/gate_prepare.py` already set for a dep-free
+`admit.py`; one that declares dependencies gets its venv at `<routine>/scripts/.venv`, inside an
+existing unsealed child the jail does mount writable. That alone fixes
+`scheduler-improvement-research`, whose `scripts/outcome.py` declares `dependencies = []` and
+had **never run once** though its recipe requires it every run; run through the fixed runner it
+returns `exit 0, measures={proposals_made: 66, proposals_accepted: 20, handed_to_builder: 12}`.
+The placement was measured rather than assumed — in a strict jail with own_dir only and `/tmp`
+forced read-only, `mkdir <routine>/.venv` reproduces R2892's Errno 13 and
+`mkdir <routine>/scripts/.venv` succeeds, after which a real `uv venv` + `uv pip install` builds
+and runs there (`tests/test_script_venv.py`). New `src/rsched/scriptenv.py`, because `scripts.py`
+sat at 349 of its 350-line ceiling. *Not* proven: the conversation surface's half rests on the
+code path plus the kernel test, not on a reproduction inside a live conversation.
+
+### A person can ask a LIVE run for a supervisory rung
+
+The operator pressed run-now with the brief "rung" twice on 2026-10-16 while `fau` was live and
+got "routine fau is busy" both times — the moment you most want to look at a run is the moment
+that door is shut (F750). The busy rule is **not** exempted: `Runner.active` is keyed by slug,
+so a second concurrent run of one routine has nowhere to live and would race its state. Instead
+the ask is a request **on the run**, which is how the escalation ladder already supervises a live
+run safely: in-process at the worker's own turn boundary, as an oversight child whose turns are
+its own. `POST /api/runs/{run_id}/supervise` (the run view's `👁 supervise`, live runs only)
+records it in `control.json`; `engine.switches.person_asked` reads it as the sixth control.json
+signal, reusing the applied-ts edge trigger so one ask is one rung; `ladder.at_boundary` reads it
+**before** the knob, because `ladder.enabled` is false by default and gating the ask on it would
+shut the door on exactly the run being watched. The rung reports `person_requested`, so a reader
+can tell it from one the mechanism produced. The hard skip is untouched. The rung's turn-cap
+arithmetic moved to `oversight.py` (the ladder's declared pure half) and the rewind control to
+`static/components/runsupervise.js`, since `ladder.py` and `run.js` both sat at their ceilings.
+
+### A whole-model-chain failure reaches the blocked-work fold
+
+`model_chain_exhausted` — every endpoint in the chain refusing, the host effectively mute — was
+emitted and then read by nobody: the only signal was one routine's failed run page (F716). It is
+in `BLOCKED_EVENTS` now, so `/api/health/blocked` folds it like the seventeen events beside it.
+Two prose counts that had already drifted follow the set again: `docs/architecture.md` said "the
+eight events" while naming ten of eighteen, and `docs/run-analytics.md` said "Ten".
+
 ## [0.451.0] — 2026-10-25
 
 ### `main` was red on a date, not on a defect — a shared stream is not an exact-equality payload
