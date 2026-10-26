@@ -210,3 +210,44 @@ def test_homes_are_memoized_apart(tmp_path, make_routine, monkeypatch):
     _pending(conv, "q-conv-2")
     assert "q-conv-2" in {q["qid"] for q in decisions_read.open_decisions(server)}
     assert walks.homes == ["routine", "conversation", "background", "conversation"]
+
+
+def test_an_answer_across_a_dst_change_is_not_re_asked(tmp_path, make_routine, monkeypatch):
+    """F771: the answered-marker gate compared two ISO stamps as TEXT, and text ordering
+    reverses across a DST change.
+
+    Europe/Berlin fell back 03:00 CEST -> 02:00 CET on 2026-10-25. The operator answered
+    D210-D215 between 02:07 and 02:17 CET (+01:00) — 27 to 38 minutes AFTER the 02:40 CEST
+    (+02:00) report that asked them. `marker >= generated` as text is False for every one, so
+    all six came back as open cards after the next daemon boot and he answered them again,
+    two of them with different wording. The markers here are his real stamps.
+    """
+    make_routine(slug="apir")
+    server = _server(tmp_path)
+    _Walks(monkeypatch)
+    audit = tmp_path / "routines" / SELF_AUDIT_SLUG / "audit"
+    real = {"D210": "2026-10-25T02:17:47+01:00", "D211": "2026-10-25T02:14:18+01:00",
+            "D212": "2026-10-25T02:12:24+01:00", "D213": "2026-10-25T02:10:47+01:00",
+            "D214": "2026-10-25T02:08:46+01:00", "D215": "2026-10-25T02:07:19+01:00"}
+    atomic_write_json(audit / "report.json",
+                      {"generated": "2026-10-25T02:40:00+02:00",
+                       "decisions": [{"id": did, "title": "Pick", "options": ["a", "b"],
+                                      "status": "open"} for did in real]})
+    atomic_write_json(audit / "decisions-answered.json", real)
+
+    answered = {q["qid"]: q for q in decisions_read.open_decisions(server)}
+    for did in real:
+        row = answered.get(f"audit:{did}")
+        assert row is not None, f"{did} vanished — the card must stay, badged answered"
+        assert row.get("answered") is True, f"{did} was re-asked after he answered it"
+
+    # an answer that really IS older than the report still re-asks — a newer report
+    # deliberately re-opens a decision, and that must keep working
+    atomic_write_json(audit / "report.json",
+                      {"generated": "2026-10-25T18:00:00+01:00",
+                       "decisions": [{"id": "D216", "title": "Pick", "options": ["a", "b"],
+                                      "status": "open"}]})
+    atomic_write_json(audit / "decisions-answered.json",
+                      {"D216": "2026-10-25T02:07:19+01:00"})
+    reopened = {q["qid"]: q for q in decisions_read.open_decisions(server)}
+    assert reopened["audit:D216"].get("answered") is not True

@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from ..engine import inbox
 from ..ids import now_iso
 from ..paths import atomic_write_json, file_lock, read_json
+from ..readmodels import stamps
 from ..readmodels.items import SELF_AUDIT_SLUG
 from .routines_common import rewrite_queued_message
 
@@ -70,8 +71,11 @@ def answered_decisions(routine_dir: Path, report: object) -> list[str]:
     if not isinstance(answered, dict):
         return []
     generated = str(report.get("generated") or "")
+    # as INSTANTS (F771): a text compare of two offset stamps reverses across a DST change,
+    # and this is the same gate the Decisions page uses — both read answered-ness wrong on
+    # 2026-10-25, so six answered decisions were presented to the operator again.
     return [str(did) for did, marker in answered.items()
-            if (m := str(marker or "")) and m >= generated]
+            if str(marker or "") and stamps.at_or_after(marker, generated)]
 
 
 class Feedback(BaseModel):

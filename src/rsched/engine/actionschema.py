@@ -632,15 +632,15 @@ def canon(action: dict) -> str:
     reminder regex, a rule's relevance trigger, a history-recall keyword overlap — matches against
     this string, and anything showing a person or a model WHAT matched renders the same string.
     That is the entire reason it lives in one place: precision and recall are only tunable if the
-    thing being matched is stable and legible, and before this the same line was derived six
+    thing being matched is stable and legible, and before this the same line was derived five
     different ways (three truncations of the field value, a separate name/path/paths rule in
     `notes.py`, and a richer JS version in the transcript component that had already drifted ten
     kinds behind once).
 
     The forms, and why they differ:
 
-        util:codemap --json           a util call is identified by its name AND its arguments —
-                                      `util:fs-ops` alone cannot tell `mv` from `rm`
+        util:code-search map --json   a util call is identified by its name AND its arguments —
+                                      `util:code-search` alone cannot tell `map` from a search
         script:store stage --note x   the routine's own script, the same way and for the same
                                       reason: `script name=store` cannot tell `stage` from `drop`
         job:checkpoint nanogeofeld   a job turn by its verb and the job it acts on

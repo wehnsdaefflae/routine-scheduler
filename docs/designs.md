@@ -400,8 +400,10 @@ builder.
   left as it was is named there. (The live library's `git`, `remote`, `pytest-run`,
   `reminder-census` and `vision` were brought current by hand on 2026-10-01, library commits
   7d06482 and 92bd051, and 0.372.1 made util-seed's `git` and `remote` the library's files — so
-  seed-utils should report all four utils it carries, `remote`, `vision`, `git` and
-  `reminder-census`, "already current". Anything else there is a real finding.)
+  seed-utils should report the three utils it carries, `remote`, `vision` and `git`, "already
+  current". Anything else there is a real finding. (`reminder-census` was the fourth until the
+  operator deleted it from the library on 2026-10-05; `bootstrap.sync_seed_utils` never
+  resurrects a deleted util, so its seed, its test and its migration row were removed.)
 - Once library-sync has exported after the operator rotated the routine token, confirm the library
   repo's `config/config.yaml` reads `routine_token: REDACTED`.
 - Confirm Opus answers through `claude-proxy` again. 0.372.0 stopped forcing the action tool, and

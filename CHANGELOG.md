@@ -15,6 +15,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.457.0] — 2026-10-26
+
+### An answered decision stays answered across a DST change, and eight stale-prose defects from the deep sweep
+
+**F771 — the operator answered six decisions twice in one night, and a string compare of two
+timestamps is why.** `web/decisions_read.py` and `web/api_audit.py` both decided "has he already
+answered this?" with `marker >= generated` on two ISO stamps **as text**. Europe/Berlin fell back
+03:00 CEST → 02:00 CET on 2026-10-25: the report's `generated` was `02:40+02:00` (00:40 UTC) and
+his answers were stamped `02:07..02:17+01:00` (01:07..01:17 UTC) — **27 to 38 minutes later in
+real time, every one sorting earlier as text**. Measured 6 of 6. After the next daemon boot all
+six cards re-presented as open and he answered them again within five minutes; **two came back
+with different wording**, so work had already been closed against a superseded answer.
+
+- **The fix was already in the tree and neither site used it.** `readmodels/stamps.instant()`
+  exists for exactly this — its own docstring names *"stamps either side of a DST change ordered
+  backwards"* as the reason. New `stamps.at_or_after()` joins it and both gates route through it.
+- **A stamp that names no moment now makes NO claim.** The first draft of the helper fell back to
+  the text compare, and its own test caught what that means: `'zzz' >= '2026-…'` is True, so a
+  corrupt marker would read as *answered* and hide a decision from the operator for good. The two
+  failure modes are not symmetric — re-asking costs a click he can see.
+- Red-first on his real stamps: `test_an_answer_across_a_dst_change_is_not_re_asked` failed
+  `D210 was re-asked after he answered it` before the fix.
+
+**The deep sweep's stale prose, eight items** (read-only child, `artifacts/deep-sweep-20261025.md`):
+
+- **`daemon/pause.py` — the document the file itself calls "the CONTRACT" was wrong about a safety
+  property.** It said the reap's *three* automatic legs are held; `holds_automatic_leg` has **two**
+  callers and `tests/test_global_pause.py` says the sigkill retry is *deliberately* NOT held. A
+  reader auditing "does a paused instance start engines?" was told no by the one document
+  designated as the answer. The retry now sits in the exemption list with the test's own reason.
+- **`daemon/runner_state.py`** attributed the process group's SIGKILL backstop to `KILL_GRACE_S`
+  (this module's own 10 s daemon→engine wait) instead of `procgroup.TERM_GRACE_S + 1` (31 s) —
+  contradicting its own module six lines above.
+- **`migrate_total_turns.py`** hand-rolled a third `subprocess.run(["git", …])` inside the package,
+  getting none of `libgit.git`'s process group, `GIT_OPTIONAL_LOCKS=0` or `procgroup.terminate`
+  treatment — the plumbing F285 centralised. It already imported `libgit`.
+- **`reminder-census` is deleted, not maintained.** The operator removed it from the library on
+  2026-10-05 and `bootstrap.sync_seed_utils` never resurrects a deleted util — yet the repo still
+  shipped its 332-line seed, a test and a boot-migration row that would have reported
+  `not read: [Errno 2]` forever. Seed, test and row removed; `docs/designs.md` corrected from
+  "all four utils" to three. (The lockstep worth keeping — `transcript.js` ↔ Python `BRIEF_FIELD` —
+  is held independently by `tests/test_actions.py`.)
+- **The `own_fields` authority label sold 4 knobs where `configdial.OWN_FIELDS` declares 6** — the
+  one surface where the omission costs the operator a decision.
+- `engine/actionschema.py` documented a `util:codemap` that has never existed (the map comes from
+  `code-search map`), and claimed six prior derivations while enumerating five.
+- `hooks/reminderproj.py` now says in one line that it is called from the tests alone — which is
+  its design, not neglect, and what the codemap's orphan flag keeps finding.
+
+**Not shipped, named instead:** `static/components/transcript.js`'s sub-run fetch swallows its
+error with the comment *"the next poll retries"*, while the poller is armed only for a LIVE run —
+so on a finished run the fold goes silently blank. The fix needs added lines in a 740-line file
+and the size ratchet reds on any growth over the bar, so it is a finding rather than a quiet
+widening of the ceiling.
+
 ## [0.456.0] — 2026-10-25
 
 ### The language a run writes in is stated, once (F544, decided as D214)

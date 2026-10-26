@@ -21,15 +21,19 @@ While the sentinel exists the scheduler fires NOTHING on its own:
     already finished proceeds (it copies artifacts and writes a durable inbox message, which
     starts nothing). Held, not dropped: the request file survives unconsumed and the wake is
     state-driven, so the first tick after the resume makes both good (F721);
-  * the REAP's three automatic legs are held — the single sigkill retry (D99), the
-    post-finish wake for a stranded message, and the boot re-open of a run a daemon RESTART
-    killed (F746, `daemon/reap_resume.py`). None of them is a click or a schedule, and each
-    starts an engine process: `runner.fire_blocker` does not test the
-    pause, and `engine/control.pause_gate` holds only runs MARKED at the pause click
+  * the REAP's two automatic legs are held — the post-finish wake for a stranded message, and
+    the boot re-open of a run a daemon RESTART killed (F746, `daemon/reap_resume.py`). Neither
+    is a click or a schedule, and each starts an engine process: `runner.fire_blocker` does not
+    test the pause, and `engine/control.pause_gate` holds only runs MARKED at the pause click
     (`web/settings/pause.py`), which a freshly resumed leg has no way to carry. Held, not
-    dropped, on the same ground as the detached phases: the retry's marker and recovery note,
-    the stranded message and the restart orphan's own note are durable, so the leg happens
-    after the resume;
+    dropped, on the same ground as the detached phases: the stranded message and the restart
+    orphan's own note are durable, so the leg happens after the resume;
+  * the reap's single SIGKILL RETRY (D99) is NOT held, and that is deliberate: it fires once,
+    when the kernel has killed a run's process, and holding it would consume the one automatic
+    recovery that run is owed (`tests/test_global_pause.py` states this in terms). It calls
+    `holds_automatic_leg` nowhere. Until 2026-10-26 this list said it WAS held, which is the
+    worst shape a contract can take: a reader auditing "does a paused instance start engines?"
+    was told no by the document the file designates as the answer;
   * manual "run now" BYPASSES the pause on purpose: it is the operator's explicit
     override (option A of decision D34).
 
@@ -62,8 +66,8 @@ def paused(server: ServerConfig) -> bool:
 def holds_automatic_leg(server: ServerConfig, what: str, who: str) -> bool:
     """True when a pause holds an AUTOMATIC run leg — and it logs why, once per attempt.
 
-    The three callers are the reap's own (`runner_reap.retry_sigkilled`,
-    `reap_resume.resume_for_stranded`, `reap_resume.resume_after_restart`). No health event is
+    The two callers are both `reap_resume`'s (`resume_for_stranded`, `resume_after_restart`).
+    The sigkill retry is NOT one of them — see the module docstring. No health event is
     filed because nothing is DROPPED — the same
     argument `daemon/detached.py` makes for its two held phases — and DEBUG because the reap
     runs often enough that one standing fact would otherwise be hours of noise.

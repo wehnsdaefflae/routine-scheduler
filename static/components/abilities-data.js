@@ -63,7 +63,8 @@ export const REMIND_CONFIRM_OPTIONS = [
 // at every level: the dial can never hand a routine its own authority.
 export const CONFIG_CONFIRM_OPTIONS = [
   ["always", "on — every config change it proposes is your decision"],
-  ["own_fields", "on — it applies its OWN budgets, efforts, effort level & retention; the rest asks"],
+  ["own_fields", "on — it applies its OWN budgets, efforts, effort level, retention & the "
+    + "ladder's two turn numbers; the rest asks"],
   ["never", "on — it applies any unsealed field of its own config (schedule and outcome included)"],
 ];
 // What a mapping that leaves a setting out holds once saved: the server fills a missing key

@@ -39,8 +39,6 @@ SUPERSEDED: dict[str, tuple[str, str]] = {
     "git": ("b100a0320fefc7f03ff9d8bff15c3ab3748f3cb1230ee41f21da1912793f50bc",
             ("works in a linked worktree or submodule; its commit lock never lands in a "
              "work tree")),
-    "reminder-census": ("bc7b1928affcd52ff7c07decb210421f1b395b102be203acb6764235361197b1",
-                        "reads a multi-image view_image call the way the engine renders it"),
 }
 
 

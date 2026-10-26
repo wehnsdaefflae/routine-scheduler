@@ -11,6 +11,10 @@ not timidity — it is that a reminder's record holds something the stream must 
   remove, not to spread.
 - a **mute's run stamp**, which expires with the run that made it.
 
+Called from the TESTS alone — no `src/` module imports it, and the codemap flags it as an orphan
+for that reason. That is the design, not neglect: this module is the CHECK that the store is a
+derived view, not a step in the write path.
+
 So the DEFINITIONS are derived here and the tallies stay where they are written. `definitions`
 is what makes "derived view" a claim a test can check rather than a sentence in a design:
 fold the stream, read the store, and the definition of every hook must agree. A disagreement

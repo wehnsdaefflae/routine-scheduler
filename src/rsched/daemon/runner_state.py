@@ -208,7 +208,9 @@ async def abort_process(pid: int | None) -> bool:
     a group of its own, which neither signal reaches. The abort flag the SIGTERM raises is what
     ends a util, script or shell command, through the engine's own `utils_run.run_jailed`; a git
     is left to finish (`libgit.git`). An engine SIGKILLed while one of those groups is still
-    ending leaves the group's SIGKILL to `procgroup.terminate`'s backstop (`KILL_GRACE_S`).
+    ending leaves the group's SIGKILL to `procgroup.terminate`'s backstop
+    (`procgroup.TERM_GRACE_S + 1`, 31 s — NOT this module's `KILL_GRACE_S`, which is only the
+    daemon's own 10 s wait on the engine; nothing in `procgroup` reads it).
 
     The pid may come from a status.json (a run the daemon does not track, `rsched abort`), and
     a recorded pid can outlive its process. An engine leads a session of its own, so a pid in

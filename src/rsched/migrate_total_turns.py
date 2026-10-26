@@ -116,9 +116,11 @@ def _not_scaffold_written(path: Path) -> str | None:
     deliberate choices the operator's own wording protects.
     """
     try:
-        proc = subprocess.run(["git", "-C", str(path.parent), "log", "--format=%h",
-                               "-G", "max_total_turns", "--", "routine.yaml"],
-                              capture_output=True, text=True, timeout=30, check=False)
+        # through `libgit.git` (F285), not a hand-rolled subprocess: this was the third copy of
+        # the plumbing that function centralised, and it got none of the process group,
+        # `GIT_OPTIONAL_LOCKS=0` or `procgroup.terminate` treatment the others rely on.
+        proc = libgit.git(path.parent, "log", "--format=%h", "-G", "max_total_turns",
+                          "--", "routine.yaml", timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
         return f"its history could not be read ({type(exc).__name__}), so the -1 stands"
     if proc.returncode != 0:

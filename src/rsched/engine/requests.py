@@ -211,7 +211,7 @@ def spent_notice(spent: set[str], action: dict) -> str:
     NAMES the consuming action — an fs once-grant is received by ANY util invocation
     (the sandbox mounts granted roots wholesale), so an unrelated first util call can be
     the spender, and without attribution that burn read as silent loss (2026-08-16: the
-    run's opening codemap call spent the fs-write grant meant for a later scrub).
+    run's opening `code-search map` call spent the fs-write grant for a later scrub).
     """
     kind = str(action.get("kind") or "")
     what = f"util {action.get('name')!r} call" if kind == "util" else f"{kind} action"

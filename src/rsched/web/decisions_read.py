@@ -28,7 +28,7 @@ from pathlib import Path
 from .. import decline, patchreceipt, registry
 from ..engine import inbox
 from ..paths import read_json
-from ..readmodels import decision_answers, memo
+from ..readmodels import decision_answers, memo, stamps
 
 _DECISION_RE = re.compile(r"\[AUDIT decision · ([^\]]+)\]")
 
@@ -110,7 +110,10 @@ def _audit_decisions_fresh(rdir: Path) -> list[dict]:
         # decision outranks it (self-audit re-asks deliberately). A queued message with no
         # marker has no timestamp to compare, so it reads as answered, as it always did.
         marker = str(answered.get(did) or "")
-        was_answered = marker >= generated if marker else did in queued
+        # as INSTANTS, never as text (F771): both stamps are host-local with their offset, and
+        # text ordering reverses across a DST change — on 2026-10-25 six answers 27-38 minutes
+        # NEWER than the report all sorted below it, so every one was re-asked.
+        was_answered = stamps.at_or_after(marker, generated) if marker else did in queued
         text = str(d.get("title") or did)
         if d.get("detail"):
             text += "\n\n" + str(d["detail"])
