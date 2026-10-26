@@ -294,7 +294,7 @@ the limits (single-writer status.json preserved).
   implemented, naming "a pre-action hook, post action hook, pre finalize hook, and many more".
   Three of those already fired — each at a hard-coded call site, with nothing naming the set, so
   the question could only be answered by reading the turn loop. `POINTS` is that set: per point
-  what it can reach, which payloads it may carry (`remind` / `note` / `hold`), its CARRIER (an
+  what it can reach, which payloads it may carry (`remind` / `note` / `hold` / `action`), its CARRIER (an
   observation tail, an engine note, a held turn, a prompt section), which mechanisms fire there
   today and the engine seam that does it. The rule layer's four moments and the reminder layer's
   eight trigger kinds both MAP onto it (`for_moment`, `for_trigger`, pinned against
@@ -305,10 +305,24 @@ the limits (single-writer status.json preserved).
   one evaluator: it drops a candidate whose payload the point cannot carry, and treats a
   predicate that raises as "did not fire", never as a failed turn. TWO points can change what
   runs, which corrects the hook design's rule 2: `pre-action` prevents an action and
-  `pre-finalize` defers a finish (the rung built after that rule was written). `run` — EXECUTE
-  something at a point, the Claude-Code half — is deliberately absent from the payload
-  vocabulary: it needs the operator's decision on what may run, in whose sandbox, and whether it
-  may veto an action without a model turn.
+  `pre-finalize` defers a finish (the rung built after that rule was written).
+- **A hook can PERFORM an action, not only talk** (`rsched/hooks/perform.py`), which is the
+  Claude-Code half of the same ask. The operator ruled on 2026-10-26: *"Any action. This includes
+  utils and therefore scripts."* He named the ACTION VOCABULARY, so the payload is built on the
+  seam that already runs an authored action with no model turn — `control.run_user_command`'s
+  path, which slash commands have used in production: schema validate → `validate_action` against
+  the run's workflow tools ∩ capabilities → `actionroute.dispatch_action`. Two consequences fall
+  out for free. A hook can never do what the FIRING ROUTINE may not, because `validate_action` is
+  the model's own gate; and it must never reach `executor.dispatch` directly, because that path
+  skips D39's secret-exposure gate (the bug that once let a DECLINED secret reach a util a slash
+  command ran — `tests/test_hooks_perform.py` asserts the import and call graph, not just the
+  behaviour). A performed action's observation is flagged `hook_action` with its point and its
+  author, and increments `executed_actions`, so it grounds a later finish exactly as a command
+  does. `ACTION_POINTS` is DERIVED: a point carries `action` iff it is not in `HOLDING_POINTS`.
+  That line is the one half still needing his decision — whether a performed action's failure may
+  VETO the action the run was about to take. At `pre-action` or `pre-finalize` it silently could,
+  which is the third control path `HOLDING_POINTS` reserves as a decision, so those two points
+  keep `hold` alone until he rules.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →

@@ -48,12 +48,13 @@ from dataclasses import dataclass
 #: `assists.PAYLOADS` already spells it, plus `note` for the points whose carrier is an engine
 #: note rather than an observation tail.
 #:
-#: `run` — execute something — is deliberately ABSENT. It is the Claude-Code half of the
-#: operator's ask and it needs his decision first (what may run, in whose sandbox, and whether
-#: it may veto an action without spending a model turn); an enum value the engine cannot honour
-#: would be a lie in its own registry, which is the reason `assists.PAYLOADS` omits `scaffold`
-#: and `do` as well.
-PAYLOADS = ("remind", "note", "hold")
+#: `action` — PERFORM one of the engine's own actions at the point, with no model turn — is the
+#: Claude-Code half of the operator's ask, and his answer (2026-10-26) was *"Any action. This
+#: includes utils and therefore scripts."* He named the ACTION VOCABULARY, not a sandbox or a
+#: command form, so the payload is built on the seam that already runs an authored action
+#: through the model's own path (`hooks/perform.py`, lifted from `control.run_user_command`).
+#: It is allowed at the points in `ACTION_POINTS` only — see there for the half still unruled.
+PAYLOADS = ("remind", "note", "hold", "action")
 
 #: The CARRIER of a payload at a point — how what fires reaches the model.
 #:
@@ -108,32 +109,35 @@ def _p(name: str, about: str, payloads: tuple[str, ...], carrier: str,
 #: no site either; naming the module that WOULD fire it is a guess, and this table is read as
 #: fact.
 POINTS: dict[str, Point] = dict([
-    _p("run-start", "the run's first turn is about to be composed", ("note",), "engine_note",
-       ("reminder",), "engine/remind.py (trigger kind `turn:first`)"),
+    _p("run-start", "the run's first turn is about to be composed", ("note", "action"),
+       "engine_note", ("reminder",), "engine/remind.py (trigger kind `turn:first`)"),
     _p("pre-action", "an action has been chosen and has NOT run", ("hold",), "held_turn",
        ("reminder", "rule"), "engine/hold.py"),
     _p("post-action", "the action ran and its observation is about to be recorded",
-       ("remind",), "observation_tail", ("reminder", "rule"),
+       ("remind", "action"), "observation_tail", ("reminder", "rule"),
        "engine/loop.py::_observe (assist.at_observation, remind.at_observation)"),
     _p("turn-boundary", "the turn ended and the next prompt is being assembled",
-       ("note", "remind"), "engine_note", ("reminder", "rule", "injection", "runtree"),
+       ("note", "remind", "action"), "engine_note",
+       ("reminder", "rule", "injection", "runtree"),
        "engine/loop.py (assist.at_boundary, control.drain_injections)"),
     _p("pre-finalize", "a finish was emitted and has not been accepted", ("remind",),
        "held_turn", ("reminder", "rule"),
        "engine/finishgate.py (assist.at_finish) + engine/loop.py::_finish (remind.at_finish)"),
-    _p("question", "the run asked a person something", ("remind",), "observation_tail",
-       ("reminder",), "engine/remind.py (trigger kind `turn:question`)"),
-    _p("answer", "a person's reply reached the run", ("remind",), "observation_tail",
-       ("reminder",), "engine/remind.py (trigger kind `turn:answer`)"),
-    _p("error", "an observation came back reporting failure", ("remind",), "observation_tail",
-       ("reminder",), "engine/remind.py (trigger kind `turn:error`)"),
+    _p("question", "the run asked a person something", ("remind", "action"),
+       "observation_tail", ("reminder",), "engine/remind.py (trigger kind `turn:question`)"),
+    _p("answer", "a person's reply reached the run", ("remind", "action"),
+       "observation_tail", ("reminder",), "engine/remind.py (trigger kind `turn:answer`)"),
+    _p("error", "an observation came back reporting failure", ("remind", "action"),
+       "observation_tail", ("reminder",), "engine/remind.py (trigger kind `turn:error`)"),
     # Points nothing fires at yet. Each is a moment the engine already passes through, named
     # here so the gap is readable; the campaign's later steps fire them.
-    _p("spawn", "a child run was started", ("note",), "engine_note"),
-    _p("child-exit", "a child run finished and its hand-back landed", ("note",),
+    _p("spawn", "a child run was started", ("note", "action"), "engine_note"),
+    _p("child-exit", "a child run finished and its hand-back landed", ("note", "action"),
        "engine_note"),
-    _p("run-end", "the run is over and its result is written", ("note",), "prompt_section"),
-    _p("restart", "the daemon is restarting under a live run", ("note",), "prompt_section"),
+    _p("run-end", "the run is over and its result is written", ("note", "action"),
+       "prompt_section"),
+    _p("restart", "the daemon is restarting under a live run", ("note", "action"),
+       "prompt_section"),
 ])
 
 #: The points that exist as of this step — the ordered names, for a surface that lists them.
@@ -155,6 +159,19 @@ LIVE_POINTS = tuple(n for n, p in POINTS.items() if p.live)
 #: They differ in kind and both are deliberate: `pre-action` PREVENTS an action, `pre-finalize`
 #: DEFERS a finish. A THIRD entry appearing here is a decision, not a refactor.
 HOLDING_POINTS = tuple(n for n, p in POINTS.items() if p.holds)
+
+#: The points at which a hook may PERFORM an action (`hooks/perform.py`). Derived, not a second
+#: list: a point carries `action` iff it cannot change control flow, i.e. iff it is not in
+#: `HOLDING_POINTS`.
+#:
+#: Why that line and not "everywhere he said any action": his ruling settles WHAT may run — any
+#: action, utils and scripts included — and `validate_action` bounds it to the firing routine's
+#: own capabilities for free. It does NOT settle whether a performed action's failure may REFUSE
+#: the action the run was about to take, and `pre-action` / `pre-finalize` are exactly the two
+#: points where it could. A performed action there would silently become a third way to change
+#: control flow, which the comment on `HOLDING_POINTS` says is a decision. So those two carry
+#: `hold` as before, and this list is the half that needed no further ruling.
+ACTION_POINTS = tuple(n for n, p in POINTS.items() if "action" in p.payloads)
 
 
 def point(name: str) -> Point | None:
