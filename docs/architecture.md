@@ -318,11 +318,13 @@ the limits (single-writer status.json preserved).
   command ran — `tests/test_hooks_perform.py` asserts the import and call graph, not just the
   behaviour). A performed action's observation is flagged `hook_action` with its point and its
   author, and increments `executed_actions`, so it grounds a later finish exactly as a command
-  does. `ACTION_POINTS` is DERIVED: a point carries `action` iff it is not in `HOLDING_POINTS`.
-  That line is the one half still needing his decision — whether a performed action's failure may
-  VETO the action the run was about to take. At `pre-action` or `pre-finalize` it silently could,
-  which is the third control path `HOLDING_POINTS` reserves as a decision, so those two points
-  keep `hold` alone until he rules.
+  does. `ACTION_POINTS` is DERIVED: a point carries `action` iff it is not in `HOLDING_POINTS` —
+  and that line is his SECOND ruling of the same day, not a conservative first cut: *"No veto
+  ever — a hook performs and reports; only a hold (prose to the model) can stop an action."* A
+  performed action therefore never changes control flow; `perform` returns an observation, never
+  a verdict, and a failing action does not refuse the action the run was about to take. Stopping
+  an action remains a `hold`, which TELLS the model and spends a turn on its decision — so
+  `HOLDING_POINTS`' pin now records a decision rather than an open question.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →

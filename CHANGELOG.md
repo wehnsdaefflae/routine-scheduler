@@ -15,6 +15,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.460.0] — 2026-10-26
+
+### Added
+
+- **A hook can PERFORM an action, not only put prose in front of the model** (new
+  `rsched/hooks/perform.py`) — the Claude-Code half of the operator's hooks ask, and hooks
+  step 2 of D152. He ruled on 2026-10-26: *"Any action. This includes utils and therefore
+  scripts."* He named the ACTION VOCABULARY rather than a sandbox or a command form, so this
+  adds no execution path: `perform(loop, action, point=…, source=…)` runs an authored action at
+  a hook point with NO model turn through the path chat slash commands have used in production
+  since they shipped — `validate(ACTION_SCHEMA)` → `validate_action(allowed_kinds=…, grants=…)`
+  → `actionroute.dispatch_action` (`control.run_user_command`'s core, with a hook's authorship
+  instead of the user's).
+  Two safety properties come free from reusing it, and both are asserted rather than documented:
+  a hook can never do what the FIRING ROUTINE may not, because `validate_action` is the model's
+  own capability gate; and it never reaches `executor.dispatch`, the path that skips D39's
+  secret-exposure gate (a `/util` once went straight to the executor, which injects every
+  REQUIRED secret a util declares, so a secret the operator had DECLINED reached a util the chat
+  ran — `tests/test_hooks_perform.py` checks the module's import and call graph, not its prose).
+  A performed action's observation is flagged `hook_action` with its point and its author, and
+  increments `executed_actions`, so it grounds a later model finish exactly as a command does.
+  Every failure — unknown point, schema, capability, a raising dispatch — becomes the returned
+  observation: a hook layer live in every run must not be able to break one.
+- **`hooks/points.py` gains the `action` payload, and `ACTION_POINTS` derives where it is
+  allowed**: a point carries `action` iff it is NOT in `HOLDING_POINTS`. That is the operator's
+  SECOND ruling of the same day, answering whether a performed action's failure may veto the
+  action the run was about to take: *"No veto ever — a hook performs and reports; only a hold
+  (prose to the model) can stop an action."* So a performed action never changes control flow,
+  `perform` returns an observation and never a verdict, and the two points that do change what
+  runs (`pre-action` prevents an action, `pre-finalize` defers a finish) keep `hold` alone —
+  `HOLDING_POINTS`' by-count pin now records a decision instead of an open question. The four
+  points nothing fires at yet (`spawn`, `child-exit`, `run-end`, `restart`) declare `action`
+  already, so wiring one later is a site change and not a payload-column change.
+  NOTE: `perform` has no production caller yet — its tests are the only ones. The payload is
+  honest in the registry and still unexercised in a live run; giving it a real caller is the
+  campaign's next step.
+
 ## [0.459.0] — 2026-10-26
 
 ### Fixed

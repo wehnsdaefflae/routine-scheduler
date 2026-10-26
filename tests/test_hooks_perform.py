@@ -3,9 +3,9 @@
 The operator, 2026-10-26, asked what a hook may do and answered it: *"Any action. This includes
 utils and therefore scripts."* These pin the two halves of that:
 
-- the REGISTRY half — which points carry `action`, and the one rule that decides it (a point
-  that can change what runs does NOT carry it, because whether a performed action may VETO the
-  held action is still his decision and would otherwise become a silent third control path);
+- the REGISTRY half — which points carry `action`, and the rule that decides it. A point that
+  can change what runs does NOT carry it, which is his second ruling the same day: *"No veto
+  ever — a hook performs and reports; only a hold (prose to the model) can stop an action."*;
 - the PERFORMER half — that `hooks/perform.perform` runs an authored action through the MODEL's
   own path (schema → `validate_action` against the firing routine's capabilities →
   `actionroute.dispatch_action`), never `executor.dispatch`, and that no failure of a hook can
@@ -31,10 +31,11 @@ def test_action_is_in_the_payload_vocabulary():
 def test_no_holding_point_carries_an_action_payload():
     """The rule that decides `ACTION_POINTS`, pinned both ways.
 
-    `pre-action` and `pre-finalize` are the two points that change what runs. A performed
-    action there could refuse the held action by its exit code, which `HOLDING_POINTS`' own
-    comment reserves as a decision, not a refactor. So they carry `hold`/`remind` and never
-    `action` — and every OTHER point carries it.
+    `pre-action` and `pre-finalize` are the two points that change what runs. The operator ruled
+    (2026-10-26): *"No veto ever — a hook performs and reports; only a hold (prose to the model)
+    can stop an action."* So a performed action never changes control flow: those two points
+    carry `hold`/`remind` and never `action`, and every OTHER point carries it. This assertion
+    is that ruling — a future change making it pass would be reversing his decision.
     """
     for name in points.HOLDING_POINTS:
         assert not points.allows(name, "action"), (

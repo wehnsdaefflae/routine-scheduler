@@ -32,9 +32,15 @@ capability change, which is the operator's, not a hook's.
 **The VETO.** Performing an action at a point is one thing; letting its exit code REFUSE the
 action the run was about to take is another, and it is unruled. `points.HOLDING_POINTS` is
 pinned by count precisely so a third way to change control flow is a decision rather than a
-side effect, so `action` is allowed at the points that cannot change control flow and refused at
-the two that can (`points.PAYLOADS`' own comment names the open question). When he rules, the
-change is a payload entry on those two points plus a branch here — not a redesign.
+side effect — and the operator DECIDED this one the same day: *"No veto ever — a hook performs
+and reports; only a hold (prose to the model) can stop an action."*
+
+So this function has no refusal path and must not grow one. Its return value is an OBSERVATION,
+never a verdict: a failing action yields an `error` key the caller may surface, and the action
+the run was about to take still runs. Stopping an action stays what it has always been — a
+`hold`, which TELLS the model and spends a turn on its decision. Hence `action` is allowed only
+at points that cannot change control flow (`points.ACTION_POINTS`, derived), and
+`HOLDING_POINTS` stays pinned by count: it now records his ruling, not an open question.
 """
 
 from __future__ import annotations

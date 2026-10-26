@@ -164,13 +164,19 @@ HOLDING_POINTS = tuple(n for n, p in POINTS.items() if p.holds)
 #: list: a point carries `action` iff it cannot change control flow, i.e. iff it is not in
 #: `HOLDING_POINTS`.
 #:
-#: Why that line and not "everywhere he said any action": his ruling settles WHAT may run — any
-#: action, utils and scripts included — and `validate_action` bounds it to the firing routine's
-#: own capabilities for free. It does NOT settle whether a performed action's failure may REFUSE
-#: the action the run was about to take, and `pre-action` / `pre-finalize` are exactly the two
-#: points where it could. A performed action there would silently become a third way to change
-#: control flow, which the comment on `HOLDING_POINTS` says is a decision. So those two carry
-#: `hold` as before, and this list is the half that needed no further ruling.
+#: Why that line, and not "everywhere, since he said any action": TWO rulings, both his.
+#:
+#: 1. What may RUN — *"Any action. This includes utils and therefore scripts"* (2026-10-26).
+#:    `validate_action` bounds it to the firing routine's own capabilities for free.
+#: 2. What may VETO — *"No veto ever — a hook performs and reports; only a hold (prose to the
+#:    model) can stop an action"* (2026-10-26, answering whether a performed action's FAILURE
+#:    may refuse the action the run was about to take).
+#:
+#: So this is not a conservative first cut awaiting a widening: a performed action NEVER changes
+#: control flow, which is exactly why the two points that do change it (`pre-action`,
+#: `pre-finalize`) carry `hold` and not `action`. `HOLDING_POINTS` stays pinned by count, and
+#: that pin now records his decision rather than an open question. Stopping an action remains the
+#: one thing a hook does by TELLING the model, never by acting behind it.
 ACTION_POINTS = tuple(n for n, p in POINTS.items() if "action" in p.payloads)
 
 
