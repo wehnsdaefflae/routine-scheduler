@@ -80,6 +80,27 @@ def _choice_lists(obs: dict) -> str:
     return "\n" + "\n".join(out) if out else ""
 
 
+def _runtree_line(obs: dict) -> str:
+    """Wording for a RUN-TREE hook — the `report` action with `target: parent` / `child:<label>`
+    (engine/runtree.py). Its own shape: `delivered` and a `hook` id, never `filed` and an `R<n>`.
+
+    It is rendered FIRST, before any branch that assumes a ledger row, because this is the hole
+    R2924 reported: the renderer had no case for it, so a hook that had been DELIVERED fell
+    through to "could NOT write the reports log (I/O error) — the report was not filed", and so
+    did every refusal `resolve` wrote. Measured 2026-10-26: a child believed that line, re-sent,
+    and both copies reached its parent. A false failure costs more than a refusal, because the
+    sender redoes work that already landed.
+    """
+    if not obs.get("delivered"):
+        if refused := obs.get("refused"):
+            return f"OBSERVATION (hook NOT sent — {refused})"
+        return ("OBSERVATION (hook to "
+                f"{obs.get('target')!r} FAILED to be written (I/O error) — it was not "
+                "delivered and nothing is queued. Say it in your finish summary instead.)")
+    return (f"OBSERVATION (hook {obs.get('hook')} sent to {obs.get('addressee')!r} — "
+            f"{obs.get('note')}.)")
+
+
 def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
     """Wording for this module's kinds; None when `kind` is not one of them."""
     if kind in QUEUEABLE_KINDS and obs.get("queued"):
@@ -173,6 +194,8 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 f"now has members {members},{paused} on_failure={lane.get('on_failure')!r}"
                 f"{sched}).")
     if kind == "report":
+        if obs.get("runtree"):
+            return _runtree_line(obs)
         if obs.get("self_target"):
             return ("OBSERVATION (report: a routine cannot address a report to itself — drop "
                     "`target` to send it to triage, or keep the thought in a `note`.)")

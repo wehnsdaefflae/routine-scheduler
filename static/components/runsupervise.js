@@ -12,9 +12,19 @@
 // the run; the engine honours it at the next boundary, whatever the routine's ladder knob says,
 // and consumes it (one ask, one rung).
 
+//
+// F779: both buttons run their action through util.js `act()`, the one place the
+// disable/await/toast/re-enable shape is written. They used to hand-roll it, and the helper's
+// own docstring names both failures that caused: 👁 supervise re-enabled on BOTH paths only
+// because nothing between the await and the re-enable threw — adding a second toast or a
+// refresh call would leave the button permanently dead — and ⟲ rewind re-enabled only in its
+// `catch`, so a failure it did not throw on left it dead. `act()` re-enables in a `finally`,
+// the only way it cannot be forgotten, and it hands focus back, which a disabled button
+// could not hold.
+
 import { api } from "/static/api.js";
 import { promptDialog } from "/static/components/dialog.js";
-import { el, toast, toastError } from "/static/util.js";
+import { act, el, toast } from "/static/util.js";
 
 /** createSuperviseButton(runId) → button
  *  Live runs only — the caller hides it on a terminal run, where there is no turn boundary
@@ -23,12 +33,10 @@ export function createSuperviseButton(runId) {
   const btn = el("button", { class: "btn small", "data-supervise": "1",
     title: "ask for a supervisory rung at this run's next turn boundary" }, "👁 supervise");
   btn.onclick = async () => {
-    btn.disabled = true;
-    try {
-      const r = await api(`/api/runs/${runId}/supervise`, { method: "POST" });
-      toast(r.supervise || "a rung runs at the next turn boundary", 5000);
-    } catch (err) { toastError(err); }
-    btn.disabled = false;
+    // `act`'s own okMsg is not used: the toast has to carry the endpoint's own wording, which
+    // names WHICH boundary the rung was recorded for. A failure is already toasted by `act`.
+    const r = await act(btn, () => api(`/api/runs/${runId}/supervise`, { method: "POST" }));
+    if (r) toast(r.supervise || "a rung runs at the next turn boundary", 5000);
   };
   return btn;
 }
@@ -50,12 +58,12 @@ export function createRewindButton(runId, remountSoon) {
     if (!Number.isInteger(turn) || turn < 1) {
       toast("enter a turn number (1 or higher)", 4000, { error: true }); return;
     }
-    btn.disabled = true;
-    try {
-      const r = await api(`/api/runs/${runId}/rewind`, { method: "POST", body: { turn } });
+    const r = await act(btn, () => api(`/api/runs/${runId}/rewind`,
+                                       { method: "POST", body: { turn } }));
+    if (r) {
       toast(`rewound to turn ${r.kept_through_turn} — reconnecting…`);
       remountSoon();
-    } catch (err) { toastError(err); btn.disabled = false; }
+    }
   };
   return btn;
 }
