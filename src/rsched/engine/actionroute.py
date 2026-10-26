@@ -51,9 +51,14 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
         # pending write's target is simply HELD until that write lands. A run that never calls
         # `wait` is therefore still correctly ordered — which is what let the mutations into
         # `actions.BACKGROUNDABLE_KINDS` at all.
-        if (conflict := background_order.refuse_conflict(loop, action)) is not None:
+        # Targets are compared as the RUN would resolve them — one file reached by a relative
+        # and an absolute path is one target, or the barrier would miss exactly the stale read
+        # it exists to prevent (`background_order.base_for`, i.e. run_context.work_dir).
+        base = background_order.base_for(ctx)
+        conflict = background_order.refuse_conflict(loop, action, base=base)
+        if conflict is not None:
             return conflict
-        if waited := background_order.await_dependencies(loop, action):
+        if waited := background_order.await_dependencies(loop, action, base=base):
             log.info("action %s waited on background %s", action.get("kind"), waited)
         if action.get("background"):
             # D118 phase 1: a read or a fetch the run asked not to wait for. It starts in a
@@ -92,7 +97,7 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
             # every later action can be ordered against it. Recorded here rather than inside
             # `background.start`: that file is at its size-ratchet ceiling (474), and the
             # claim belongs with the barrier that reads it.
-            background_order.claim(loop, action, started)
+            background_order.claim(loop, action, started, base=base)
             return started
         return _route(loop, action, ctx)
     except RunAborted:

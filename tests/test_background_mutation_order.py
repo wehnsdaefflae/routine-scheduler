@@ -5,13 +5,21 @@ read state the deferred one has not written yet. Widening the allowlist is only 
 is made IMPOSSIBLE rather than unlikely, so the contract these tests pin is:
 
 * a backgrounded mutation declares its target in the field the action already carries
-  (`path` for the file kinds, `name` for `write_util`/`memory_write`);
+  (`path` for the file kinds, `name` for `memory_write`);
 * a later action that TOUCHES that target — reads it, writes it, or runs a script/util over
   it — is HELD until the write has landed. The barrier closes on the dependency, so a run
   that forgets to `wait` still cannot read stale state;
+* ONE FILE REACHED BY TWO SPELLINGS IS ONE TARGET: a path is resolved against the directory
+  the run's relative paths resolve in, or a deferred `state/x.json` and an absolute read of it
+  would miss each other — the stale read this whole model exists to prevent. A memory topic is
+  a namespace, not a file, and is not resolved;
 * two backgrounded writes to the SAME target cannot be ordered against each other, so the
   second is REFUSED with a message that teaches the call that works;
-* an action touching nothing a pending write owns is not delayed at all.
+* a `then_script` may not ride a deferred change: the thread performs the change only, so the
+  script would be dropped unrun with its secret gate never asked (F633's shape);
+* an action touching nothing a pending write owns is not delayed at all, and the barrier is
+  asked of EVERY action — including by callers that hold no loop, where it must answer, not
+  raise.
 
 The ordering half is proved with a REAL thread doing a REAL slow write: a mock cannot fail
 the way a racing thread does.
@@ -239,3 +247,84 @@ def test_a_foreground_write_to_a_pending_target_is_ordered_not_refused(tmp_path)
     action = {"kind": "write_file", "path": str(target), "content": "x"}
     assert background_order.refuse_conflict(loop, action) is None
     assert background_order.await_dependencies(loop, action) == ["bg1"]
+
+
+# ---- the barrier is asked about EVERY action, so it must answer for every caller ---------------
+
+def test_the_barrier_is_a_cheap_no_when_no_loop_carries_claims():
+    """`dispatch_action` asks the barrier of every action before routing it, and several
+    callers reach it with no loop at all — a direct dispatch in a test, a slash command. The
+    first cut set the claim registry as an ATTRIBUTE on the loop from the read path, so asking
+    raised `AttributeError: 'NoneType' object has no attribute '_background_targets'` and the
+    whole dispatch became an engine_error (tests/test_vision_steer.py went red on it). Only
+    `claim` may create the registry; reading it never does.
+    """
+    read = {"kind": "read_file", "path": "notes/a.md"}
+    assert background_order.holders(None, read) == []
+    assert background_order.await_dependencies(None, read) == []
+    assert background_order.refuse_conflict(
+        None, {"kind": "write_file", "path": "notes/a.md", "background": True}) is None
+    assert background_order.await_dependencies(SimpleNamespace(), read) == []
+
+
+# ---- one file, two spellings -------------------------------------------------------------------
+
+def test_a_relative_claim_and_an_absolute_read_are_recognised_as_one_file(tmp_path):
+    """A run defers `write_file state/x.json` and reads the file back by its ABSOLUTE path two
+    turns later — one file, two spellings. Compared as declared strings they miss each other,
+    and that miss is precisely the STALE READ this model exists to make impossible. Both are
+    resolved against the directory the run's relative paths resolve in (`run_context.work_dir`,
+    which `actionroute` passes in).
+    """
+    base = str(tmp_path)
+    loop = SimpleNamespace(_background=[])
+    background_order.claim(loop, {"kind": "write_file", "path": "state/x.json"},
+                           {"handle": "bg1"}, base=base)
+    claimed = loop._background_targets["bg1"]
+
+    assert background_order.touches({"kind": "read_file", "path": "state/x.json"},
+                                    claimed, base=base)
+    assert background_order.touches(
+        {"kind": "read_file", "path": str(tmp_path / "state" / "x.json")}, claimed, base=base)
+    assert background_order.touches(
+        {"kind": "edit_file", "path": str(tmp_path / "state" / ".." / "state" / "x.json")},
+        claimed, base=base)
+    assert not background_order.touches({"kind": "read_file", "path": "state/other.json"},
+                                        claimed, base=base)
+
+
+def test_a_memory_note_is_a_namespace_and_not_a_file_under_the_working_directory():
+    """`memory_write` declares a TOPIC, not a path, so its claim is not resolved against the
+    working directory and a file that happens to share the name is a different target."""
+    loop = SimpleNamespace(_background=[])
+    background_order.claim(loop, {"kind": "memory_write", "name": "quirks"},
+                           {"handle": "bg1"}, base="/w")
+    claimed = loop._background_targets["bg1"]
+
+    assert claimed == "quirks"
+    assert background_order.touches({"kind": "memory_read", "name": "quirks"}, claimed, base="/w")
+    assert not background_order.touches({"kind": "read_file", "path": "quirks"},
+                                        claimed, base="/w")
+
+
+# ---- the one fusion this model cannot order ----------------------------------------------------
+
+def test_a_then_script_may_not_ride_a_backgrounded_write():
+    """`then_script` fuses a script onto the change, and the FOREGROUND runs the pair through
+    `thenscript.run` — the change, then that script behind D39's call-time secret gate. The
+    background runner is `executor.dispatch`, which would perform the write and drop the
+    script in silence, with its gate never asked: F633's exact shape, an ergonomics flag
+    walking around a security decision. Refused inside the schema-retry cycle, naming both
+    calls that work.
+    """
+    problems = validate_action(normalize_action(
+        {"say": "x", "kind": "write_file", "path": "a.md", "content": "x",
+         "then_script": ["check", "a.md"], "background": True}))
+    assert any("then_script" in p and "background" in p for p in problems), problems
+    # …and neither field is refused on its own.
+    assert validate_action(normalize_action(
+        {"say": "x", "kind": "write_file", "path": "a.md", "content": "x",
+         "then_script": ["check", "a.md"]})) == []
+    assert validate_action(normalize_action(
+        {"say": "x", "kind": "write_file", "path": "a.md", "content": "x",
+         "background": True})) == []

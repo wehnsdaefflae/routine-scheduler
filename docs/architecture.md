@@ -902,10 +902,14 @@ and the capabilities digest's catalog listing):
   confirmation chooses its namespace: `handle` when the action carried one, `n` otherwise — F723
   was that choice missing, rendering "sub-workflow #undefined terminated" for every cancel. Built on the ARCHIVAL shape, deliberately not on
   `DetachedManager`: a daemon-ticked multi-process unit would not start until the next tick, by
-  which time the reply's process is gone. A MUTATION may not carry the flag (a later synchronous
-  action could read state the deferred one has not written yet — that needs a dependency/barrier
-  model and is its own decision), nor may a control kind; both are refused WITH THE REASON inside
-  the schema-retry cycle. **Three things now share the word "background" and the distinction is
+  which time the reply's process is gone. A CONTROL kind may not carry the flag, nor may a mutation
+  this model cannot order — `delete`/`move`/`mkdir` (nothing slow to win, and `move` has two ends
+  rather than the one target a barrier keys on) or `write_util`/`write_rule` (no
+  `executor.DISPATCH` entry to run in a thread); the three that DECLARE one target may, behind
+  the barrier described above (D118 phase 3). Every refusal is given WITH THE REASON inside the
+  schema-retry cycle. A `then_script` may not ride a deferred change either: the thread
+  dispatches the kind, so the script would be dropped unrun with its secret gate never asked
+  (`engine/thenscript.problems`). **Three things now share the word "background" and the distinction is
   load-bearing**: a within-reply `subtask`/`spawn` thread, a cross-reply `detach` task, and this
   per-action flag. Name the mechanism, never the adjective alone.
 - **ask_user** is `blocking` (poll `inbox/answer-<qid>.json` up to `ask_timeout_min`, then the run

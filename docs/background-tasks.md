@@ -159,8 +159,20 @@ cannot offer.
   that never calls `wait` is still correctly ordered; `wait` remains the explicit form for a run
   that wants everything quiet. Two DEFERRED writes to one target have no safe order, so the
   second is refused naming the handle that holds it; a SYNCHRONOUS write to the same target is
-  simply ordered behind the deferred one. Targets are compared as declared strings, so the
-  mechanism errs towards one wait that was not needed — never towards a stale read.
+  simply ordered behind the deferred one. A path target is RESOLVED against the directory the
+  run's relative paths resolve in (`run_context.work_dir`) before anything is compared, because
+  `state/x.json` and its absolute spelling are one file and comparing them as written would miss
+  exactly the stale read this replaces; a `memory_write` target is a topic in the memory
+  namespace and is deliberately not resolved. Where a target cannot be classified — a word in a
+  script's or a util's argv — both readings are compared, so the mechanism errs towards one wait
+  that was not needed, never towards a stale read.
+- **A `then_script` may NOT ride a deferred change**, and the refusal is the same lesson F633
+  taught. The thread dispatches the KIND (`background._runner` → `executor.dispatch`), while
+  the fusion of a change and the script that checks it lives in `actionroute._route`: a deferred
+  pair would therefore land the write and drop the script in SILENCE, with D39's call-time
+  secret gate never asked — an ergonomics flag walking around a security decision. It is refused
+  inside the schema-retry cycle (`engine/thenscript.problems`), naming both calls that work:
+  keep the pair synchronous, or defer the change alone and run the script once it has landed.
 - **The mechanics** live in `engine/background.py`, shaped on `engine/archival.py` rather than on
   the detached machinery above: `configure` / `start` / `collect` / `settle`. `actionroute.dispatch_action`
   intercepts the flagged action; `loop._turn_boundary` calls `collect`, which appends the real
