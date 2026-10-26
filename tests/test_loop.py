@@ -396,7 +396,7 @@ def test_resume_marks_orphaned_children_dead(make_routine, scripted):
     ep2 = scripted([finish(summary="picked up, re-issued nothing")])
     status, _ = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
     assert status == "ok"
-    assert "did NOT survive the restart" in json.dumps(ep2.calls[0]["messages"])
+    assert all(s in json.dumps(ep2.calls[0]["messages"]) for s in ("died with the leg", "sub/1"))
     # the orphan was closed out in the transcript (aborted) so a re-resume won't re-detect it
     events, _ = read_events(run_dir / "transcript.jsonl")
     end = next(e for e in events if e["type"] == "subrun_end" and e["payload"].get("n") == 1)

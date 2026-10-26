@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.459.0] — 2026-10-26
+
+### Fixed
+
+- **A resumed leg is no longer told its dead children's work is lost (F778).** A run killed
+  mid-flight resumed with the engine note *"these child tasks … did NOT survive the restart
+  (results lost): … Re-issue any you still need"* — the opposite of the truth. Every dead child's
+  work is on disk under `runs/<ts>/sub/<n>/`: its `artifacts/`, its `transcript.jsonl` and the
+  `instruction.md` it was briefed with. The note sent the resumed parent to discard it; measured
+  cost, 2026-10-25: two children holding ~1,400 s of build work each, recovered by hand, and the
+  same kill on 2026-10-26 took a 69-turn child, also recovered by hand.
+  New `engine/subsalvage.resume_note` (with `_orphan_line`, `_turns_reached`), appended by
+  `engine/boot.py` where the old note was. Per dead child it now names the turn it reached (read
+  from the child's own transcript; a 0 is reported as 0, never invented), the directory its work
+  is in, what landed in its `artifacts/`, and — only when the file is really there — the path to
+  its original brief. Then the two options that exist: READ what it left, or RE-BRIEF a fresh
+  child with the original brief PLUS what the dead one produced, with the warning that re-issuing
+  the bare brief is what throws the work away.
+  Re-adoption is ruled out IN the note, with its reason, instead of reading as an omission: a
+  child is an `EngineLoop` on a daemon THREAD inside the parent's process (`subruns._start`), so
+  it dies with the leg that owned it and no process remains to pick up — the decision
+  `docs/child-runs.md` § Process model records, naming "reattach-on-resume" among the costs
+  deliberately not paid.
+  `tests/test_subrun_resume_note.py` (9 cases) pins each claim, including that a brief absent
+  from disk is never promised and that a missing child directory does not crash the boot.
+  `tests/test_loop.py::test_resume_marks_orphaned_children_dead` was updated, not dropped: it
+  asserted the removed sentence verbatim and now pins what the new note promises.
+
 ## [0.458.0] — 2026-10-26
 
 ### Hooks: every moment one can fire at is named in ONE table (D152 step 5)
