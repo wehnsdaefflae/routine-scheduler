@@ -41,6 +41,7 @@ from pathlib import Path
 
 from .. import assists as lib
 from ..assists import Assist
+from ..hooks import dispatch, points
 from . import enginenote
 from . import hold as hold_seam
 from .assist_predicates import PREDICATES, Situation
@@ -140,7 +141,18 @@ def _fire(loop, assist: Assist, situation: Situation) -> bool:
 
 
 def _matching(loop, moment: str, situation: Situation) -> list[Assist]:
-    return [a for a in loop.assists if a.moment == moment and _fire(loop, a, situation)]
+    """The assists that fire at this moment, decided by the ONE hook-point evaluator.
+
+    Routed through `hooks/dispatch.py` rather than filtering here, because the moment IS a hook
+    point (`hooks/points.py`, which names the correspondence) and the rule layer is one of two
+    mechanisms firing at it. The seam owns what is common to both: the point's payload coupling
+    and the discipline that a predicate which raises means "did not fire" and never a failed
+    turn. What stays here is this layer's own: the once-per-run guard and the tally, which a
+    shared budget would let one layer spend on another's behalf.
+    """
+    point = points.for_moment(moment)
+    return dispatch.at(point, [a for a in loop.assists if a.moment == moment],
+                       lambda a: _fire(loop, a, situation), payload=lambda a: a.payload)
 
 
 def _rendered(assist: Assist) -> str:
