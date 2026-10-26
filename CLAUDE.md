@@ -963,6 +963,20 @@ by a test, by the engine, or by a past incident.
   slice carries both halves and a run finishing under 0.5 raises `cache_read_degraded`. Read the
   SLICE as well as the ratio: the four days that burned a weekly subscription limit were ONE
   endpoint going bad beside healthy ones.
+- **The cache gap BETWEEN two fires is a separate bill, and it is the bigger one.** Everything
+  above reads within a run. Between two fires of the same routine the provider's cache expires,
+  so turn 1 re-writes the whole system+recipe+digest prefix at 1.25x instead of reading it at
+  0.1x — measured over this instance's 686 retained run dirs on 2026-10-26: 462 fires started
+  COLD, re-writing 25.2M prompt tokens for **$124.58** above what a cache read would have cost.
+  `readmodels/cache_gap.py` carries it per routine on `/api/stats` (F507/D163); it reads each
+  run's TRANSCRIPT, because the usage stream sums a leg's cache traffic and cannot separate a
+  cold first write from the run's own later re-reads. Two traps it was built around, both found
+  by measuring instead of assuming: turn 1's row sits beyond transcript line 8 in 11.4% of real
+  runs (pre-turn-1 injections push it down, as far as line 34), and an eight-line scan window
+  understated the premium by 22% while every unit test stayed green; and a fire whose turn 1
+  cannot be read must count as UNDETERMINED inside the denominator, because a cold share
+  computed over only the fires it managed to read reads exactly like a complete measurement.
+  See docs/run-analytics.md.
 - **What a run COSTS is its VOLUME, never `tokens`.** `tokens` (fresh input + output) is what a
   token BUDGET meters — adapters keep cache traffic out of it — and a subscription's `cost` is
   0.0 on every call, so ranking by either put freelance-radar (33M cached tokens a run) among the
