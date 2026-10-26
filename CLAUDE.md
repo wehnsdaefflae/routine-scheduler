@@ -571,7 +571,17 @@ one you are about to touch, not all of them.
   renderer's KeyError was a run no resume could recover. **A `background: true` call
   passes that gate on its STARTING turn, before the thread exists** (F633): the gate asks the user
   and a thread has no turn to block on, so a deferral that skipped it would have moved a security
-  decision out of reach — every call-time gate a kind has runs synchronously first. **There is NO
+  decision out of reach — every call-time gate a kind has runs synchronously first. **A deferred
+  MUTATION is ordered by the target it declares, never by trust** (D118 phase 3,
+  `engine/background_order.py`): `write_file`, `edit_file` and `memory_write` may defer because
+  each names the one thing it writes, and `dispatch_action` holds any later action touching that
+  target until the write has landed — so a run that never calls `wait` is still correctly
+  ordered. Compare a path target as the RUN would resolve it (`run_context.work_dir`), or one
+  file reached by a relative and an absolute path counts as two and the barrier misses the stale
+  read it exists to prevent. A kind whose handler is not reached by `background._runner` may not
+  join that list — `write_util`/`write_rule` are gated in `actionroute._route`, and a
+  `then_script` is refused on a deferred change for the same reason: the thread would land the
+  change and drop the script with its gate never asked. **There is NO
   concurrency cap** (D166 answered (c), unbounded: the run's own turn budget is the practical limit).
   0.392.0 read a cap of 3 at that seam; the decision row had recorded the option the operator did
   not choose, so 0.408.1 removed the mechanism rather than widening the number (F650) — the

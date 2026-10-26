@@ -11,7 +11,7 @@ and cost the small-model support the whole design is built around.
 
 from __future__ import annotations
 
-from . import roleswap, schema_remind
+from . import roleswap, schema_background, schema_remind
 
 READ_PATHS_MAX = 8
 
@@ -100,25 +100,10 @@ ACTION_SCHEMA: dict = {
                            "shell: seconds before the command is killed (default 120) · "
                            "wait: max seconds to block (default 600)",
         },
-        "background": {
-            "type": "boolean",
-            "description": ""
-                           "util/script/shell/llm/decide/read_file/view_image/memory_read/read_rule:"
-                           " this call is a READ or a FETCH, so run it in the BACKGROUND and get "
-                           "the turn back at once. The observation you receive names a handle and "
-                           "says the call is running; the REAL observation is appended at a later "
-                           "turn boundary, tagged with that handle. Use it for a call that would "
-                           "make a waiting human sit — a heavy fetch, a long `llm`, a slow test "
-                           "run — and keep working or keep talking meanwhile. NOT available on a "
-                           "WRITING KIND (write_file, edit_file, write_util, memory_write) or one "
-                           "that steers the run (finish, ask_user, report, spawn, subtask, wait, "
-                           "kill): a later action would read state it has not written yet "
-                           "(`shell`/`util` ARE backgroundable and CAN write). Do not background a"
-                           " call whose result your VERY NEXT action needs — you would only have "
-                           "to wait for it anyway. There is no cap on how many may be in flight at"
-                           " once; your own turn budget is the limit, since every result still has"
-                           " to be read",
-        },
+        # D118's flag, in its own module: phase 3 had to GROW this description (the mutations
+        # that may now defer, and the ordering promise that makes them safe) and this file is
+        # over the size bar, so the field followed `remind`/`role_swap` out (schema_background).
+        "background": schema_background.BACKGROUND_FIELD,
         "command": {
             "type": "string",
             "description": "shell: the ONE command line to run, as a single string — it is "

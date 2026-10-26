@@ -52,6 +52,18 @@ def problems(obj: dict, allowed_kinds: set[str] | None, grants) -> list[str]:
     if script is None or not all(isinstance(a, str) for a in argv) or not argv[0].strip():
         return [(f'kind={obj.get("kind")}: {FIELD} is ["<script-name>", ...args] — the name '
                  "of one of your scripts/ first, then its arguments, every item a string")]
+    if obj.get("background"):
+        # D118 phase 3 admitted `write_file`/`edit_file` to BACKGROUNDABLE_KINDS, and the thread
+        # dispatches the KIND (`background._runner` → `executor.dispatch`), not this fusion —
+        # which lives in `actionroute._route`. A deferred pair would therefore land the change
+        # and drop the script in SILENCE, with D39's call-time secret gate never asked: F633's
+        # exact shape, an ergonomics flag walking around a security decision. Refused here,
+        # inside the schema-retry cycle, rather than half-performed in a thread.
+        return [(f'kind={obj.get("kind")}: {FIELD} cannot ride a backgrounded change — the '
+                 "background thread performs the change only, so the script would be dropped "
+                 "without running and its secret gate never asked. Either drop 'background' "
+                 "and keep the pair in one action, or defer the change alone and run the "
+                 "script as its own action once the write has landed")]
     from .actions import validate_action
     return [f"{FIELD}: {p}" for p in validate_action(script, allowed_kinds, grants)]
 

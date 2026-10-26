@@ -66,7 +66,7 @@ def test_a_kind_that_may_not_defer_is_refused_with_the_reason(kind):
         "must never have")
     problems = validate_action(normalized)
     assert any("cannot run in the background" in p for p in problems), problems
-    assert any("only reads and fetches may be deferred" in p for p in problems), problems
+    assert any("declares the one target it writes" in p for p in problems), problems
 
 
 @pytest.mark.parametrize("kind", [k for k in KINDS if k not in BACKGROUNDABLE_KINDS])
@@ -81,11 +81,10 @@ def test_the_refusal_is_said_once(kind):
     assert not any("do not belong to kind=" in p for p in problems), problems
 
 
-def test_a_mutation_is_not_backgroundable():
-    """The safety matrix's whole point: a deferred write could be read stale by the next
-    synchronous action. Phase 3's job, not phase 1's."""
-    for kind in ("write_file", "edit_file", "write_util", "memory_write", "delete", "move"):
-        assert kind not in BACKGROUNDABLE_KINDS
+# Which MUTATIONS may defer, and why the rest may not, is asserted in
+# tests/test_background_mutation_order.py — phase 3's own file, where the barrier that makes it
+# safe is tested beside it. (This file is at its size-ratchet ceiling; the phase-1 test that
+# asserted the blanket refusal moved there rather than being rewritten in place.)
 
 
 def test_the_control_kinds_are_not_backgroundable():

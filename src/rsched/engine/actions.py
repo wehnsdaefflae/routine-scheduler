@@ -129,25 +129,24 @@ KIND_EXAMPLES: dict[str, dict] = {
                "summary": "<short 3-6 line result summary>"},
 }
 
-# The kinds a run may mark `background: true` (D118 phase 1). Every member is a READ or a
-# FETCH whose only effect is the observation it returns, which is what makes deferring it safe:
-# the one-action-per-turn contract exists to keep STATE CHANGES ordered, and these change no
-# state a later action could read stale. Deliberately NOT here:
-#   · the mutations — write_file, edit_file, write_util, remove_util, memory_write, write_rule,
-#     delete, move, mkdir — where a later synchronous action would read what the background
-#     call has not written yet (that needs the dependency/barrier model, D118 phase 3);
+# The kinds a run may mark `background: true` (D118 phases 1 and 3). The reads and fetches defer
+# because their only effect IS the observation. The three MUTATIONS defer because each declares
+# the one target it writes (`path`, or `name` in the memory namespace) and
+# `engine/background_order.py` holds any later action that touches it until that write has
+# landed — phase 3's dependency barrier, which makes the old refusal ("a later action would read
+# state this one has not written yet") impossible rather than merely unlikely. NOT here:
+#   · delete, move, mkdir — not slow enough to be worth deferring, and `move`'s two ends are not
+#     the one target a barrier keys on;
+#   · write_util, write_rule — no `executor.DISPATCH` entry (the capability gate is in
+#     `actionroute._route`), so a backgrounded one would raise KeyError in the thread;
+#     `background_order.TARGET_FIELD` says what admitting them needs;
 #   · the control kinds — finish, ask_user, report, spawn, subtask, wait, kill, detach,
 #     create_routine, manage_lane, schedule_run — which either steer the run (so they must be
 #     synchronous) or are already asynchronous in their own right (the children).
-# `shell` IS here, as the one member worth arguing about: a shell command can obviously write.
-# It is included because the design's motivating example — a ten-minute test run — reaches the
-# host through `shell`/`script`, and because the alternative is a run that backgrounds its
-# reads and still sits for the one call that actually takes minutes. The honest statement of
-# the rule, then: these kinds are backgroundable, and marking a WRITING shell command
-# `background` is the caller's own ordering hazard, the same one it already owns when it runs a
-# write through a util.
+# `shell` declares no target, so a WRITING shell command stays the caller's own ordering hazard.
 BACKGROUNDABLE_KINDS = ("util", "script", "shell", "llm", "decide",
-                        "read_file", "view_image", "memory_read", "read_rule")
+                        "read_file", "view_image", "memory_read", "read_rule",
+                        "write_file", "edit_file", "memory_write")
 
 # kind → (required fields, allowed extra fields beyond say/kind)
 KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
@@ -166,13 +165,14 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "goal": (("verb",), ("id", "goals", "quote", "evidence")),
     "read_file": ((), ("path", "paths", "start_line", "start_char", "max_lines", "background")),
     "view_image": ((), ("path", "paths", "prompt", "background")),
-    "write_file": (("path", "content"), ("append", "then_script")),
+    "write_file": (("path", "content"), ("append", "then_script", "background")),
     "delete": (("path",), ("recursive",)),
     "move": (("src", "dst"), ()),
     "mkdir": (("path",), ("parents",)),
-    "edit_file": (("path", "anchor"), ("replacement", "all", "then_script")),
+    "edit_file": (("path", "anchor"), ("replacement", "all", "then_script", "background")),
     "memory_read": (("name",), ("background",)),
-    "memory_write": (("name",), ("content", "about", "delete", "anchor", "replacement", "all")),
+    "memory_write": (("name",), ("content", "about", "delete", "anchor", "replacement", "all",
+                                 "background")),
     "read_rule": (("name",), ("background",)),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
     "llm": (("prompt",), ("system", "response_schema", "model", "background")),
@@ -532,10 +532,10 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     # not know the rule spends the same turn again.
     if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
         problems.append(
-            f"kind={kind} cannot run in the background: only reads and fetches may be "
-            f"deferred ({', '.join(BACKGROUNDABLE_KINDS)}), because a later action would "
-            f"otherwise read state this one has not finished changing. Drop 'background' and "
-            f"run it synchronously")
+            f"kind={kind} cannot run in the background: only a read, a fetch, or a mutation "
+            f"that declares the one target it writes may be deferred "
+            f"({', '.join(BACKGROUNDABLE_KINDS)}) — anything else would leave a later action "
+            f"reading state it has not changed yet. Drop 'background' and run it synchronously")
     allowed = {"say", "kind", *SIDE_FIELDS, *required, *optional}   # side fields ride ANY kind
     if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
         allowed.add("background")   # the specific refusal above said it; don't say it twice

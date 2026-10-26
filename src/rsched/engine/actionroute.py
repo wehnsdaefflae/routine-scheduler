@@ -8,6 +8,7 @@ from . import (
     admin_handlers,
     authoring,
     background,
+    background_order,
     create_routine,
     detach,
     donothing,
@@ -42,6 +43,23 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
     not a failure, and passes through, as does every BaseException (an interpreter exit).
     """
     try:
+        # D118 phase 3's barrier, and it runs for EVERY action, deferred or not: this is the
+        # single point loop._observe routes through, so it is the only place where "nothing
+        # may read state a deferred write has not performed yet" can be made true rather than
+        # asked for. Two deferred writes to one target have no safe order, so the second is
+        # refused (naming the handle and the call that works); anything else that TOUCHES a
+        # pending write's target is simply HELD until that write lands. A run that never calls
+        # `wait` is therefore still correctly ordered — which is what let the mutations into
+        # `actions.BACKGROUNDABLE_KINDS` at all.
+        # Targets are compared as the RUN would resolve them — one file reached by a relative
+        # and an absolute path is one target, or the barrier would miss exactly the stale read
+        # it exists to prevent (`background_order.base_for`, i.e. run_context.work_dir).
+        base = background_order.base_for(ctx)
+        conflict = background_order.refuse_conflict(loop, action, base=base)
+        if conflict is not None:
+            return conflict
+        if waited := background_order.await_dependencies(loop, action, base=base):
+            log.info("action %s waited on background %s", action.get("kind"), waited)
         if action.get("background"):
             # D118 phase 1: a read or a fetch the run asked not to wait for. It starts in a
             # thread and the turn comes back AT ONCE; the real observation is appended at a
@@ -74,7 +92,13 @@ def dispatch_action(loop, action: dict, ctx) -> dict:
             gated = _gate_for_background(loop, action)
             if gated is not None:
                 return gated
-            return background.start(loop, action, ctx)
+            started = background.start(loop, action, ctx)
+            # What this deferred call will WRITE, keyed by the handle `start` just minted, so
+            # every later action can be ordered against it. Recorded here rather than inside
+            # `background.start`: that file is at its size-ratchet ceiling (474), and the
+            # claim belongs with the barrier that reads it.
+            background_order.claim(loop, action, started, base=base)
+            return started
         return _route(loop, action, ctx)
     except RunAborted:
         raise
