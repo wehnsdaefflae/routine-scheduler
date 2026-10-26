@@ -15,6 +15,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.458.0] — 2026-10-26
+
+### Hooks: every moment one can fire at is named in ONE table (D152 step 5)
+
+The operator asked whether hooks are fully implemented, naming "a pre-action hook, post action
+hook, pre finalize hook, and many more (get inspired by Claude code's hooks)" and that the hook
+system should be the seam extending the harness² features already started. Three of those points
+already fired — each at a hard-coded call site, with nothing naming the set, so the question
+could only be answered by reading the turn loop and a new point cost an edit in five files.
+
+- NEW `hooks/points.py`: twelve points, each with what it reaches, which payloads it may carry
+  (`remind` / `note` / `hold`), its CARRIER (observation tail · engine note · held turn · prompt
+  section), which mechanisms fire there today and the engine seam that does it. The rule layer's
+  four moments and the reminder layer's eight trigger kinds both MAP onto it (`for_moment`,
+  `for_trigger`), pinned against `assists.MOMENT_PAYLOADS` and `reminders.KINDS` so the registry
+  is one vocabulary rather than a second opinion beside them.
+- NEW `hooks/dispatch.py`: the one evaluator. It drops a candidate whose payload the point cannot
+  carry (previously a silent no-op) and treats a predicate that raises as "did not fire", never
+  as a failed turn. `engine/assist.py::_matching` routes through it, so the table has a real
+  reader instead of being a description beside the code.
+- The points NOTHING fires at yet are in the table with an empty `fires` — `spawn`,
+  `child-exit`, `run-end`, `restart` — because a registry listing only what is built cannot say
+  what is missing.
+- **A correction the table forced out:** the hook design's rule 2 said `hold_before_action` is
+  the only delivery that can change what runs. TWO points can — `pre-action` prevents an action
+  and `pre-finalize` DEFERS A FINISH, so the run takes a turn it would not have taken (that rung
+  was built after the rule was written). Pinned by count, so a third is a decision, not a drift.
+- `run` — EXECUTE something at a point — is deliberately absent from the payload vocabulary,
+  with a test pinning the absence. The operator has since ruled ("Any action. This includes utils
+  and therefore scripts"), and that is the next step, built on the path `engine/commands.py`
+  already proves: an action at a turn boundary, through `validate_action` → `actionroute`,
+  costing no model turn.
+
+### A run-tree hook's sender is told what happened (R2924)
+
+`runtree.send` answers with a HOOK's shape — `runtree`/`delivered`/`hook`/`addressee`, never the
+`filed` + `R<n>` of a ledger row — and the report renderer had no branch for it, so every
+run-tree send fell through to the branch's last line: *"could NOT write the reports log (I/O
+error) — the report was not filed"*. Measured: a child of `scheduler-builder` believed that line,
+re-sent, and BOTH copies arrived in its parent's prompt; every refusal `runtree.resolve` writes
+(unknown label, exited child, sibling, top-level run addressing `parent`) was swallowed the same
+way. `obs_admin._runtree_line` renders it first, before any branch assuming a ledger row — and a
+GENUINE write failure still says the hook was not delivered, pinned by its own test, because
+"never report a failure" would be the same defect with its sign flipped.
+
+### The run controls stop hand-rolling `act()` (F779)
+
+`static/components/runsupervise.js` wrote `disabled = true; try { await api() } catch {};
+disabled = false` by hand at both buttons, and `static/util.js:337` documents the shared helper
+plus the two failures the hand copies cause: 👁 supervise re-enabled on both paths only because
+nothing between the await and the re-enable threw, and ⟲ rewind re-enabled only in its `catch`.
+Both run through `act()` now — the re-enable rides a `finally` and focus returns to the button a
+disable could not let it hold. The two new browser tests are RED against the hand-rolled version.
+Measured and NOT swept: 38 more hand copies of the shape remain across `static/`.
+
+### Background mutation ordering, and the feature made reachable (D202 = D118 phase 3)
+
+His decision: *"Widen BACKGROUNDABLE_KINDS to mutations behind a dependency / explicit-barrier
+model"*. Four defects fixed, each with a red-first test:
+
+- **the feature was unreachable by any model** — `BACKGROUNDABLE_KINDS` had been widened while
+  the model-facing `background` description still read "NOT available on a WRITING KIND", so the
+  engine accepted a deferred write every run's own schema told it to refuse;
+- **the barrier crashed every dispatch without a loop** — `_claims()` wrote an attribute from the
+  READ path, and the barrier runs for every action, so an ordinary `util` call became an
+  `engine_error`;
+- **one file reached by two spellings was two targets** — the STALE READ the model is promised is
+  impossible; targets now resolve against `run_context.work_dir`, a memory topic keeping its own
+  namespace;
+- **a `then_script` riding a deferred write was silently dropped** with D39's call-time secret
+  gate never asked (F633's shape) — refused in the schema-retry cycle now.
+
+NEW `engine/schema_background.py` holds the field spec so its description could grow;
+`engine/actionschema.py` 685 → 670 lines with its ceiling TIGHTENED, no ceiling raised.
+`tests/prompt_budget.json` was raised by hand 61821 → 62345 (+524, all in `schema`) — the only
+place a run learns which kinds may be deferred and what the ordering promise is — and that raise
+is **not funded by a cut elsewhere**; the next cut should lock itself in with `--update`.
+`docs/designs.md`'s phase-3 entry is deleted, which closes the item.
+
+### The between-runs prompt-cache gap, measured (D163 increment 1 = F507)
+
+His answer B: *"per-run cost: extend what exists … starting with F507's between-runs prompt-cache
+gap, which is the one part nothing measures today"*. **462 of 686 retained fires across 31
+routines started COLD, re-writing 25,217,105 prompt tokens for $124.58 above a cache read**
+($0.2697 per cold fire; top: `voice-model-trainer` $14.14, `self-audit` $10.71,
+`scheduler-builder` $10.58). The salvaged save point's number was 22% too low because two silent
+DROPS took fires out of the view entirely rather than into an unknown bucket:
+
+- `HEAD_LINES = 8` missed turn 1's usage row in 77 of 676 metered runs (11.4%), as far as line
+  34, pushed there by pre-turn-1 records — biased exactly the wrong way, since the runs pushed
+  furthest down are the inbox-heavy, expensive ones. Now 200, with the measurement in the comment.
+- requiring a `model` dropped 6 more real fires whose turn-1 row carries `cache_write` but no
+  model; metered now means "carries a token key", and such a fire counts as `unpriced`.
+- a fourth state, **`undetermined`**, is counted INSIDE `fires`, so a cold share can never be
+  computed over only the fires the reader managed to read.
+
+Warm fires re-wrote 8.05 M tokens whose premium is deliberately NOT priced (a usage row cannot
+separate lost prefix from new content); the quantity is carried and named on the page instead of
+estimated. `warm_read_share` is 0.3216 over all 211 warm fires.
+
 ## [0.457.0] — 2026-10-26
 
 ### An answered decision stays answered across a DST change, and eight stale-prose defects from the deep sweep
