@@ -289,6 +289,26 @@ the limits (single-writer status.json preserved).
   property of the situation, which IS in the trace: the rule you cannot check, you can time.
   One fire per assist per run (per reply, in a conversation); a predicate that raises is inert.
   Full narration in [rule assists](rule-assists.md).
+- **Every moment a hook can fire at is named in ONE table** (`rsched/hooks/points.py`, evaluated
+  by `rsched/hooks/dispatch.py`). The operator asked on 2026-10-26 whether hooks are fully
+  implemented, naming "a pre-action hook, post action hook, pre finalize hook, and many more".
+  Three of those already fired — each at a hard-coded call site, with nothing naming the set, so
+  the question could only be answered by reading the turn loop. `POINTS` is that set: per point
+  what it can reach, which payloads it may carry (`remind` / `note` / `hold`), its CARRIER (an
+  observation tail, an engine note, a held turn, a prompt section), which mechanisms fire there
+  today and the engine seam that does it. The rule layer's four moments and the reminder layer's
+  eight trigger kinds both MAP onto it (`for_moment`, `for_trigger`, pinned against
+  `assists.MOMENT_PAYLOADS` and `reminders.KINDS` in `tests/test_hooks_points.py`), so the
+  registry is one vocabulary rather than a second opinion beside them. The points nothing fires
+  at yet are IN the table with an empty `fires` — `spawn`, `child-exit`, `run-end`, `restart` —
+  because a registry listing only what is built cannot say what is missing. `dispatch.at` is the
+  one evaluator: it drops a candidate whose payload the point cannot carry, and treats a
+  predicate that raises as "did not fire", never as a failed turn. TWO points can change what
+  runs, which corrects the hook design's rule 2: `pre-action` prevents an action and
+  `pre-finalize` defers a finish (the rung built after that rule was written). `run` — EXECUTE
+  something at a point, the Claude-Code half — is deliberately absent from the payload
+  vocabulary: it needs the operator's decision on what may run, in whose sandbox, and whether it
+  may veto an action without a model turn.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →
