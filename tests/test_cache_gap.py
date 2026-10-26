@@ -95,7 +95,8 @@ def test_unpriced_model_is_counted_never_estimated(tmp_path):
 
 def test_routines_are_ranked_by_premium(tmp_path):
     """The operator's question is which routine costs the most, so rows come back ordered by
-    premium descending — and a run with no metered turn at all is skipped, not counted as a fire.
+    premium descending — and a run with no metered turn at all is still a FIRE, carried as
+    undetermined rather than dropped out of the denominator.
     """
     server = stats_server(tmp_path)
     _prices(server)
@@ -109,9 +110,11 @@ def test_routines_are_ranked_by_premium(tmp_path):
                                             encoding="utf-8")
 
     out = cache_gap(server)
-    assert list(out["by_routine"]) == ["big", "small"]
-    assert "quiet" not in out["by_routine"]
-    assert out["totals"]["fires"] == 2
+    assert list(out["by_routine"])[:2] == ["big", "small"]
+    assert out["by_routine"]["quiet"]["undetermined"] == 1
+    assert out["by_routine"]["quiet"]["cold"] == 0
+    assert out["totals"]["fires"] == 3
+    assert out["totals"]["undetermined"] == 1
 
 
 def test_first_metered_turn_is_found_past_leading_lines(tmp_path):
@@ -123,6 +126,70 @@ def test_first_metered_turn_is_found_past_leading_lines(tmp_path):
 
     row = cache_gap(server)["by_routine"]["alpha"]
     assert (row["cold"], row["cold_tokens"]) == (1, 20000)
+
+
+def test_a_turn_one_pushed_far_down_the_head_is_still_counted(tmp_path):
+    """Measured on this instance 2026-10-26: over 676 retained runs whose first turn was
+    metered, 77 (11.4%) carry that row BEYOND transcript line 8 — pre-turn-1 `user_injection`,
+    `error` and `answer` records push it down, as far as line 34. A head window of 8 lines
+    dropped every one of them from the view: not as unknown, but as never having fired, and
+    biased exactly toward the routines with inbox traffic. The scan window has to clear the
+    real distribution with room to spare.
+    """
+    server = stats_server(tmp_path)
+    _prices(server)
+    _fire(server, "chatty", "20261025-140002",
+          {"in": 2, "out": 258, "cache_write": 53992, "model": "proxy/m"}, lead=40)
+
+    out = cache_gap(server)
+    row = out["by_routine"]["chatty"]
+    assert (row["fires"], row["cold"], row["undetermined"]) == (1, 1, 0)
+    assert row["premium_usd"] == 0.310454
+
+
+def test_an_undeterminable_fire_reads_as_undetermined_never_as_absent(tmp_path):
+    """The one defect class this view must not have: a fire whose turn-1 usage cannot be read
+    counts as UNDETERMINED and stays visible. Silently dropping it makes a partial measurement
+    read as a complete one — and `fires` must still account for it, or the cold SHARE is
+    computed against a denominator that quietly excluded its own failures.
+    """
+    server = stats_server(tmp_path)
+    _prices(server)
+    noise = server.routines_home / "noisy" / "runs" / "20261025-010000"
+    noise.mkdir(parents=True)
+    (noise / "transcript.jsonl").write_text(
+        "".join(json.dumps({"type": "user_injection", "payload": {}}) + "\n"
+                for _ in range(600)), encoding="utf-8")
+    bare = server.routines_home / "noisy" / "runs" / "20261025-020000"
+    bare.mkdir(parents=True)          # a run dir with no transcript at all (1 such on 2026-10-26)
+
+    row = cache_gap(server)["by_routine"]["noisy"]
+    assert (row["fires"], row["undetermined"]) == (2, 2)
+    assert (row["cold"], row["warm"], row["nocache"]) == (0, 0, 0)
+    assert row["premium_usd"] == 0.0
+    assert cache_gap(server)["totals"]["undetermined"] == 2
+
+
+def test_a_turn_one_without_a_model_is_classified_and_left_unpriced(tmp_path):
+    """Six real runs on this instance (newsletter-digest/20260717-040002, token-lab x5) carry a
+    turn-1 row with `cache_write` and NO `model` — the field was added later. The cache state is
+    plainly readable from the token counts, so the fire is classified; the price is not, so it
+    is unpriced. Requiring a model dropped all six.
+    """
+    server = stats_server(tmp_path)
+    _prices(server)
+    d = server.routines_home / "old" / "runs" / "20260717-040002"
+    d.mkdir(parents=True)
+    (d / "transcript.jsonl").write_text(json.dumps(
+        {"ts": "2026-07-17T04:00:02+00:00", "type": "assistant_action", "turn": 1,
+         "payload": {"kind": "read_file"}, "usage": {"in": 2, "out": 153,
+                                                     "cache_write": 19304}}) + "\n",
+        encoding="utf-8")
+
+    row = cache_gap(server)["by_routine"]["old"]
+    assert (row["fires"], row["cold"], row["undetermined"]) == (1, 1, 0)
+    assert row["cold_tokens"] == 19304
+    assert (row["unpriced"], row["premium_usd"]) == (1, 0.0)
 
 
 def test_stats_route_carries_the_cache_gap(api_client, make_routine):

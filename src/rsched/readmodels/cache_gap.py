@@ -20,12 +20,24 @@ figure. Turn 2 of the same run reads those 53,992 tokens back. So, on turn 1:
   `cache_write x (cache_write_rate - cache_read_rate)`.
 - neither — the endpoint reports no cache traffic at all. That is NOT a warm fire (absence is
   not a hit, see `endpoints.usage.cache_read_share`): counted apart and never priced.
+- turn 1 UNREADABLE — no transcript, a head of pure noise, an unreadable file. The gap is
+  UNDETERMINED for that fire, and says so. It still counts as a fire, because a cold share
+  computed against a denominator that dropped its own failures reads as a complete measurement
+  when it is a partial one. 4 of the 686 retained run dirs are undetermined on 2026-10-26.
 
 `premium_usd` is an UPPER BOUND on what keeping the cache warm could save, for one measured
-reason: a warm turn 1 on this instance still writes part of its prefix (read share 0.3704 over
-the 28 warm fires retained on 2026-10-25), so the real counterfactual is cheaper than a cold
-start, not free. The figure is what the cold re-write was BILLED at above a cache read — not a
-saving anyone has banked.
+reason: a warm turn 1 on this instance still writes most of its prefix anyway — measured
+2026-10-26 over all 211 warm fires retained, `warm_read_share` is 0.3216, i.e. two thirds of a
+warm first turn's cache traffic is still a WRITE. So the real counterfactual is cheaper than a
+cold start, not free. The figure is what the cold re-write was BILLED at above a cache read —
+not a saving anyone has banked.
+
+What this view does NOT price, deliberately: the 8.05M tokens that warm fires re-wrote on their
+first turn (2026-10-26). Part of that is prefix the cache lost and part is genuinely new
+content — a recipe edit, a fuller digest, a bigger inbox — and a usage row cannot tell the two
+apart. `warm_write_tokens` carries the quantity so the unpriced remainder is visible; it is
+never folded into the premium, because what is not determinable is not estimated
+(`endpoints.prices`' rule, applied to tokens instead of rates).
 
 ## Why the transcript, and not the usage stream
 
@@ -35,9 +47,11 @@ is the only record of turn 1. Prices come from the engine's own recorded table
 (`endpoints.prices.price_for` over `.control/model-prices.json`) — a sandboxed run cannot read
 the server config, so nothing here depends on a configured model's price being readable.
 
-Only the HEAD of each transcript is parsed (the first metered turn is in its first few lines),
-memoized behind the same (inode, mtime_ns, size) fingerprint the rest of this package uses, so
-a terminal transcript is read once per process rather than per request.
+Only the HEAD of each transcript is parsed — but a GENEROUS head: turn 1 is usually line 2 and
+is sometimes line 34, so `HEAD_LINES` is set from the measured distribution rather than from
+what the shape suggests (see the constant). Memoized behind the same (inode, mtime_ns, size)
+fingerprint the rest of this package uses, so a terminal transcript is read once per process
+rather than per request.
 """
 
 from __future__ import annotations
@@ -50,15 +64,25 @@ from ..config import ServerConfig
 from ..endpoints.prices import price_for
 from . import memo
 
-#: How many lines of a transcript may be read looking for the first metered turn. The first
-#: `assistant_action` carries it; a couple of header lines may precede it.
-HEAD_LINES = 8
+#: How many lines of a transcript's head may be read looking for the first metered turn.
+#: MEASURED over this instance's 676 retained metered runs on 2026-10-26: turn 1's row sits on
+#: line 2 in 259 of them, and BEYOND LINE 8 IN 77 (11.4%) — pre-turn-1 `user_injection` (1479
+#: of them across 675 runs), `error` and `answer` records push it down, as far as line 34. An
+#: eight-line window dropped every one of those 77 fires, and dropped them biased toward the
+#: routines with the most inbox traffic, which are the expensive ones. The window therefore
+#: sits an order of magnitude above the measured worst case: reading 200 short lines of a head
+#: costs nothing beside a silently partial measurement.
+HEAD_LINES = 200
+
+#: The token counts a usage row carries (`endpoints.prices.USAGE_KEYS`). A row holding any of
+#: them is a metered turn — whether or not it also names its model.
+_TOKEN_KEYS = ("in", "out", "cached_in", "cache_write")
 
 
 def _empty() -> dict:
-    return {"fires": 0, "cold": 0, "warm": 0, "nocache": 0, "cold_tokens": 0,
-            "warm_read_tokens": 0, "warm_write_tokens": 0, "premium_usd": 0.0,
-            "unpriced": 0, "last_cold": ""}
+    return {"fires": 0, "cold": 0, "warm": 0, "nocache": 0, "undetermined": 0,
+            "cold_tokens": 0, "warm_read_tokens": 0, "warm_write_tokens": 0,
+            "premium_usd": 0.0, "unpriced": 0, "last_cold": ""}
 
 
 def _open_head(path: Path):
@@ -72,10 +96,17 @@ def _open_head(path: Path):
 
 
 def _read_first_usage(path: Path) -> dict | None:
-    """The first `usage` dict carrying a model in a transcript's head, or None.
+    """The first METERED `usage` dict in a transcript's head, or None.
 
-    Never raises: a run dir being written, a truncated line or a vanished transcript counts as
-    nothing. One unreadable run must not take the whole cost view down.
+    Metered means it carries a token count, NOT that it names a model: six real runs on this
+    instance (newsletter-digest/20260717-040002 and five token-lab runs from 2026-07) carry a
+    turn-1 row with `cache_write` and no `model` — the attribution field was added later. Their
+    cache STATE is plainly readable from the token counts even though their price is not, so
+    requiring a model here dropped six fires to spare one unpriceable premium.
+
+    Never raises: a run dir being written, a truncated line or a vanished transcript returns
+    None, which the caller counts as UNDETERMINED. One unreadable run must not take the whole
+    cost view down, and must not vanish from it either.
     """
     try:
         with _open_head(path) as fh:
@@ -88,7 +119,7 @@ def _read_first_usage(path: Path) -> dict | None:
                 except ValueError:
                     continue
                 usage = rec.get("usage") if isinstance(rec, dict) else None
-                if isinstance(usage, dict) and usage.get("model"):
+                if isinstance(usage, dict) and any(usage.get(k) for k in _TOKEN_KEYS):
                     return usage
     except OSError:
         return None
@@ -113,9 +144,19 @@ def _rates_for(home: Path, model: str) -> tuple[float | None, float | None]:
     return rates[2], rates[3]
 
 
-def _count(acc: dict, home: Path, usage: dict, ts: str) -> None:
-    """Fold one fire's turn-1 usage into a routine's accumulator."""
+def _count(acc: dict, home: Path, usage: dict | None, ts: str) -> None:
+    """Fold one fire's turn-1 usage into a routine's accumulator.
+
+    `usage` is None when the fire's first metered turn could not be read at all — no
+    transcript, a head of pure noise, an unreadable file. That fire is UNDETERMINED: it counts
+    as a fire and is named as undetermined, because the alternative is a view whose cold share
+    is computed against a denominator that silently excluded its own failures. A failed
+    measurement must never read as a pass.
+    """
     acc["fires"] += 1
+    if usage is None:
+        acc["undetermined"] += 1
+        return
     written = int(usage.get("cache_write") or 0)
     read = int(usage.get("cached_in") or 0)
     if not written and not read:
@@ -157,9 +198,13 @@ def _run_dirs(home: Path) -> list[tuple[str, str, Path]]:
 def cache_gap(server: ServerConfig) -> dict:
     """Per-routine between-runs cold-start premium, for the Stats tab's cost story.
 
-    Shape: `{"by_routine": {slug: {fires, cold, warm, nocache, cold_tokens, premium_usd,
-    per_cold_fire, unpriced, last_cold, warm_read_share}}, "totals": {...}, "rows": n}`,
-    routines ordered by `premium_usd` descending — the ranking the operator asked for.
+    Shape: `{"by_routine": {slug: {fires, cold, warm, nocache, undetermined, cold_tokens,
+    warm_read_tokens, warm_write_tokens, premium_usd, per_cold_fire, unpriced, last_cold,
+    warm_read_share}}, "totals": {...}, "rows": n}`, routines ordered by `premium_usd`
+    descending — the ranking the operator asked for.
+
+    `fires` is EVERY retained run dir of the routine, so cold + warm + nocache + undetermined
+    always equals it: a fire this view could not read stays in the denominator it belongs to.
 
     Subruns are left out: a child run's turn 1 inherits its parent's live session, so its first
     write is not a between-FIRES gap — `_run_dirs` enumerates `<slug>/runs/<ts>` only, never the
@@ -174,8 +219,6 @@ def cache_gap(server: ServerConfig) -> dict:
     for home in homes:
         for slug, ts, run in _run_dirs(home):
             usage = first_usage(run / "transcript.jsonl")
-            if usage is None:
-                continue
             _count(by_routine.setdefault(slug, _empty()), Path(server.routines_home), usage, ts)
     totals = _empty()
     for acc in by_routine.values():

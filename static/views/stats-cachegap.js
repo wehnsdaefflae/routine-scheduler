@@ -31,6 +31,10 @@ function rowFor(slug, r, kinds) {
     el("td", { class: "num" }, fmtUsd(r.premium_usd)),
     el("td", { class: "num" }, fmtUsd(r.per_cold_fire)),
     el("td", { class: "num" }, pct(r.warm_read_share)),
+    // a fire whose turn 1 could not be read: shown, never folded into cold — a partial
+    // measurement that reads as a complete one is the one failure this table must not have
+    el("td", { class: r.undetermined ? "num warn" : "num" },
+      r.undetermined ? fmtInt(r.undetermined) : "—"),
     el("td", { class: r.unpriced ? "num warn" : "num" }, r.unpriced ? fmtInt(r.unpriced) : "—"));
 }
 
@@ -52,6 +56,7 @@ export function cacheGapSection(gap, kinds) {
     el("th", { class: "num", title: "what those re-writes were billed ABOVE a cache read, at the model's recorded rates — an upper bound on what keeping the cache warm could save" }, "premium"),
     el("th", { class: "num" }, "per cold fire"),
     el("th", { class: "num", title: "of a WARM first turn's cache traffic, how much was read rather than written — the observed counterfactual, well under 100%, which is why the premium is an upper bound" }, "warm read share"),
+    el("th", { class: "num", title: "fires whose first metered turn could not be read at all (no transcript, an unreadable file): the gap is UNDETERMINED for them, never counted as warm and never as zero" }, "undetermined"),
     el("th", { class: "num", title: "cold fires whose model the recorded price table does not price: counted, never estimated" }, "unpriced"));
   const body = rows.map(([slug, r]) => rowFor(slug, r, kinds));
   return statSection("Between-runs prompt-cache gap",
@@ -59,6 +64,14 @@ export function cacheGapSection(gap, kinds) {
      `re-writing ${fmtNum(t.cold_tokens || 0)} prompt tokens for ${fmtUsd(t.premium_usd || 0)} `,
      `above what a cache read would have cost (${fmtUsd(t.per_cold_fire || 0)} per cold fire). `,
      `A warm first turn still writes ${pct(1 - (t.warm_read_share ?? 0))} of its traffic, so this `,
-     "is an upper bound on the saving, not a banked one — and runs that fell to retention are not in it."],
+     "is an upper bound on the saving, not a banked one — and runs that fell to retention are not in it. ",
+     // the unpriced remainder, named rather than implied: a headline that cites only what it
+     // COULD price reads as the whole bill
+     `A further ${fmtNum(t.warm_write_tokens || 0)} tokens were re-written by WARM first turns and `,
+     "are left unpriced: a usage row cannot say how much of that was expired prefix and how much "
+     + "genuinely new content."
+     + (t.undetermined
+       ? ` ${fmtInt(t.undetermined)} fire(s) could not be read at all and are undetermined, not zero.`
+       : "")],
     head, body);
 }

@@ -625,6 +625,53 @@ An **`attempt`** row (F655) means the call is being RETRIED: `attempt` is the tr
 indistinguishable. In the LLM activity dock the same record shows as the status `retrying` —
 warn ink, the row saying `attempt 2 of 3 — after …` — and it still counts as in flight.
 
+## The BETWEEN-runs prompt-cache gap (Stats tab → Between-runs prompt-cache gap)
+
+Everything above reads cache traffic WITHIN a run. Nothing read the interval BETWEEN two fires
+of the same routine, which is where the provider's cache expires: turn 1 of the next fire
+re-writes the whole system+recipe+digest prefix at the cache-WRITE rate (1.25x input) instead of
+reading it back at the cache-READ rate (0.1x). That difference is billed on every scheduled
+fire. `readmodels/cache_gap.py` measures it per routine and `/api/stats` carries it as
+`cache_gap` (F507/D163).
+
+The source is each retained run's TRANSCRIPT, not the usage stream: `.control/workflow-usage.jsonl`
+carries a leg's SUMMED cache traffic, in which a run's cold first write cannot be separated from
+its own later re-reads. The first metered `assistant_action` row is turn 1 — verified over this
+instance's 676 retained metered runs on 2026-10-26: every one of them is `turn: 1`.
+
+Four states per fire, and the fourth is the one that keeps the number honest:
+
+| turn-1 usage | state | priced |
+|---|---|---|
+| `cached_in` present | WARM — the prefix survived the interval | no premium |
+| `cache_write`, no `cached_in` | COLD — the cache had expired | `cache_write x (write_rate - read_rate)` |
+| neither | the endpoint reports no cache traffic at all (absence is not a hit) | never |
+| turn 1 unreadable | **UNDETERMINED** | never, and never zero |
+
+Three measured constraints the module is built around, all from 2026-10-26 over the live
+instance (`scheduler-builder/scripts/cachegap_probe.py` re-measures any time):
+
+- **The head window has to be generous.** Turn 1's row sits on transcript line 2 in 259 of 676
+  runs, but BEYOND LINE 8 in 77 of them (11.4%), as far as line 34 — pre-turn-1
+  `user_injection` (1479 across 675 runs), `error` and `answer` records push it down. An
+  eight-line window dropped all 77, biased toward the routines with the most inbox traffic,
+  understating the instance premium by 22% ($102.15 against $124.58). `HEAD_LINES` is 200.
+- **A metered row need not name its model.** Six runs (newsletter-digest/20260717-040002 and
+  five token-lab runs) carry a turn-1 row with `cache_write` and no `model`. Their cache state
+  is readable, their price is not: classified, counted as `unpriced`.
+- **A fire that cannot be read stays in the denominator** as `undetermined` (4 of 686 run dirs).
+
+`premium_usd` is an UPPER BOUND, for a measured reason: a warm first turn still writes most of
+its prefix anyway — `warm_read_share` is 0.3216 across all 211 warm fires — so the warm
+counterfactual is cheaper than a cold start, not free. And the 8.05M tokens warm fires re-wrote
+on their own first turns are deliberately NOT priced: part is prefix the cache lost, part is
+genuinely new content, and a usage row cannot tell them apart. `warm_write_tokens` carries the
+quantity so the unpriced remainder is visible on the page rather than implied away.
+
+Subruns are excluded (a child's turn 1 inherits its parent's live session, so its first write is
+not a between-FIRES gap); conversations are rows of their own, as the rest of the tab counts
+them.
+
 ## A cooling primary model (`model_failover`, `model_chain_exhausted`)
 
 The same shape of invisible cost, in the model layer. A catalog model's `fallbacks:` chain
