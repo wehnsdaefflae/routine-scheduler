@@ -135,3 +135,78 @@ def no_such_child(run_dir: Path, n: int) -> str:
                 f"artifacts/ and transcript.jsonl instead of spawning it again.")
     return (f"no sub-workflow {n} — the `subruns` action lists every child this run has "
             "spawned, with its number and state")
+
+
+def _turns_reached(child_dir: Path) -> int:
+    """The highest turn the child's OWN transcript recorded — how much work died with it.
+
+    Zero means the transcript carries no turn stamp (a child killed before its first), never
+    that the child did nothing: the note says what the number is, and inventing one would
+    claim more than the disk knows.
+    """
+    top = 0
+    try:
+        with (child_dir / "transcript.jsonl").open(encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(ev.get("turn"), int):
+                    top = max(top, ev["turn"])
+    except OSError:
+        pass
+    return top
+
+
+def _orphan_line(run_dir: Path, orphan: dict) -> str:
+    """One dead child, as the resumed leg reads it: what it was, how far it got, where its
+    work is — and whether its original brief is still on disk to carry forward.
+
+    The brief clause is CONDITIONAL on the file being there, because a re-brief the note
+    promises and the disk cannot support is worse than no offer: `childrun.materialize_to_disk`
+    writes `instruction.md` for every child, so its absence means this child never got that far.
+    """
+    d = run_dir / "sub" / str(orphan["n"])
+    landed = ", ".join(_artifacts(d)) or "nothing in artifacts/"
+    line = (f"- #{orphan['n']} {str(orphan.get('label') or '')!r} "
+            f"({orphan.get('mode') or 'child'}, workflow {orphan.get('workflow') or '?'}) "
+            f"reached turn {_turns_reached(d)}; its work is at {d} (hand-back: {landed})")
+    brief = d / "instruction.md"
+    if brief.is_file():
+        line += (f"\n  its ORIGINAL BRIEF survived at {brief} — read it and a fresh child can "
+                 "carry it on from where this one stopped")
+    return line
+
+
+def resume_note(run_dir: Path, orphans: list[dict]) -> str:
+    """What a RESUMED leg is told about the children that died with its earlier leg (F778).
+
+    The note this replaces said the opposite of the truth — "did NOT survive the restart
+    (results lost) … Re-issue any you still need" — while every child's work sat on disk under
+    `sub/<n>/`. Measured cost, 2026-10-25: `scheduler-builder`'s run died at turn ~285 with two
+    live children holding ~1,400 s of real build work each, and the resumed parent had to find
+    that work by hand. A salvage nobody is told about is not survivability, which is why this
+    wording is part of the fix rather than a nicety on top of it.
+
+    RE-ADOPTION IS NOT ON THE LIST, and that is a fact about this engine rather than a gap
+    here: a child is an EngineLoop on a daemon THREAD inside the parent's process
+    (`subruns._start`), so it dies with the leg that owned it and there is no process to pick
+    back up. `docs/child-runs.md` § Process model records that decision and names
+    "reattach-on-resume" among the costs deliberately not paid. So the two real options are
+    READ what the dead child left, or RE-BRIEF a fresh one with the original brief plus that
+    work — and the note has to distinguish them, because re-issuing a bare copy of the brief is
+    what throws the 1,400 s away.
+    """
+    if not orphans:
+        return ""
+    return ("these CHILD RUNS were running when this run was interrupted, and they died with "
+            "the leg that owned them — a child is an EngineLoop on a daemon THREAD inside this "
+            "process, so there is no thread left to wait on, to kill, or to RE-ADOPT. What "
+            "they produced is NOT gone: it is on disk, and these are the paths.\n"
+            + "\n".join(_orphan_line(run_dir, o) for o in orphans)
+            + "\n  So, per child: READ what it left (its artifacts/ and transcript.jsonl above "
+              "— the directory IS the deliverable), or RE-BRIEF it — start a fresh child whose "
+              "prompt carries the original brief above PLUS what the dead one already produced, "
+              "so the work is continued instead of redone. Re-issuing the bare brief discards "
+              "that work: do it only where the child left nothing behind.")

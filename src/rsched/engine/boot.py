@@ -19,6 +19,7 @@ from . import (
     mediaops,
     obligations,
     runkind,
+    subsalvage,
 )
 from .composer import join_sections, kickoff_message, state_digest, system_sections
 from .control import inject_user_message, run_user_command
@@ -169,11 +170,14 @@ def boot(loop) -> None:
                 "summary": "did not survive the run's interruption",
                 "turns": 0, "usage": {}})
         if orphans:
-            names = ", ".join(f"#{o['n']} {o['label']!r} ({o['mode']})" for o in orphans)
-            enginenote.append(loop,
-                f"these child tasks were RUNNING when the run was interrupted "
-                f"and did NOT survive the restart (results lost): {names}. Re-issue any you "
-                "still need.", replay=False)
+            # F778: the note used to say "results lost … Re-issue any you still need" while
+            # every dead child's work sat on disk under sub/<n>/ — so a parent was told to
+            # throw away what it still had (2026-10-25: two children, ~1,400 s of build work
+            # each, reconstructed by hand). `subsalvage.resume_note` names each child's
+            # directory, its hand-back, its surviving brief and the two options that really
+            # exist — read it, or RE-BRIEF a fresh child with that work folded in.
+            enginenote.append(loop, subsalvage.resume_note(ctx.run_dir, orphans),
+                              replay=False)
         fin = next((e for e in reversed(events) if e.get("type") == "finish"), None)
         fin_payload = (fin.get("payload") or {}) if fin else {}
         # an authored finish means the model handed the speaker turn back to the user — a
