@@ -30,7 +30,16 @@ ladder rather than the other way round. `engine/schemamemo.py` is what that rate
 correction naming the field in the contract's own words plus the turn that first earned it, and
 that retry sheds the provider grammar instead of re-sending the identical ask — within the same
 three attempts, and never by ending the run, which the measured specimens show would cost more
-than the retries it saves. `engine/control.py` is the
+than the retries it saves. `engine/denialmemo.py` is its sibling for the other half (F762): a
+CAPABILITY refusal is deterministic and permanent for the whole run — only the user switches a
+capability on — yet the refusal is corrected inside the retry cycle and dropped as debris with
+it, so the next turn's prompt held no trace and `vodafone-outage-claims:20261023-024513`
+re-emitted a write to its own `main.md` at turns 17, 18, 19 and 34. The first such refusal now
+posts one ENGINE NOTE (permanence + the gate's text), and a later identical attempt is answered
+as a REPEAT naming the turn it was first refused at. The verdict is re-asked of the LIVE policy
+every time and never replayed from the memo, so an `allow once` folded in mid-run makes the next
+attempt legal; a refusal that could legitimately succeed later (a schema rejection, a file not
+written yet) is not this module's business at all. `engine/control.py` is the
 between-turns control plane (abort, pause gate, injection drain, subrun announcements) and
 `engine/switches.py` its `control.json` switches (model, deliberation, rule bindings, a live
 config change), `engine/loopend.py` how a run ENDS (the engine-authored verdicts and the one

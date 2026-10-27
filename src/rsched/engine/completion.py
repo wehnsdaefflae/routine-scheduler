@@ -20,7 +20,7 @@ import time
 from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.usage import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import overflow, paramsalvage, schemamemo, turndebris, turntakeover, wrongturn
+from . import denialmemo, overflow, paramsalvage, schemamemo, turndebris, turntakeover, wrongturn
 from .actions import KIND_EXAMPLES, normalize_action, validate_action
 from .actionschema import ACTION_SCHEMA
 from .degrade import (
@@ -333,6 +333,7 @@ def judge(loop, action: dict) -> tuple[dict, list]:
                                    grants=loop.grants)
                 or recreate_denial(loop, candidate)
                 or request_denial(loop, candidate))
+    problems = denialmemo.answer(loop, candidate, problems)
     if problems and any(REQUEST_ROUTE_MARK in str(p) for p in problems):
         loop.ctx.last_denial_turn = loop.ctx.turn + 1   # the turn this refusal is costing
     if problems and isinstance(candidate, dict):

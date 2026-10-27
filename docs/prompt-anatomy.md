@@ -448,6 +448,24 @@ Once a retry SUCCEEDS, the failed-attempt/correction pairs are dropped from the 
 message list — they earned their keep eliciting the valid reply and would otherwise be
 re-read on every remaining turn. The transcript's `error` events keep the full record.
 
+**A CAPABILITY refusal outlives that cleanup** (`engine/denialmemo.py`, F762). Dropping the
+micro-dialogue is right for a mistake the next attempt fixes and wrong for a refusal that can
+never succeed: a capability is switched by the USER, so its verdict holds for the whole run —
+and with the correction gone the next turn's prompt held no trace of it, which is how
+`vodafone-outage-claims:20261023-024513` came to re-emit a write to its own `main.md` at turns
+17, 18, 19 and 34 (at turn 18 its `say` denied having attempted one at all). So the FIRST such
+refusal also posts an ENGINE NOTE — the canonical action string, the turn, that the refusal is
+`permanent for this run` because the capability is not held, and the gate's refusal text
+verbatim — and a later identical attempt is answered, inside the same cycle, with a correction
+that opens `REPEAT — …` and says this `is an action this run ALREADY had refused at turn <n>`,
+quoting that refusal whole because it already names the route out. The memo is per run and in
+memory, keyed on (action kind, target, refusal text); the verdict is re-asked of the live
+`GrantPolicy` on every attempt and never replayed, so an `allow once` folded in mid-run makes
+the next attempt legal. Only a refusal the policy itself issued qualifies — a schema rejection
+or a file not written yet can legitimately succeed later and is left to the ordinary cycle
+(`engine/schemamemo.py`, whose remedy is the opposite one: rebuild the object, shed the
+grammar). Neither mechanism ever ends the run: what is refused is the ASK.
+
 **A refusal is PROSE, and only prose is classified.** The refusal classifier
 (`refusal.is_refusal`, a `tool_call` subcall) runs only on a reply carrying no JSON object at
 all (`completion._is_prose_reply`). A JSON object that merely failed VALIDATION is a malformed
