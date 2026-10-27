@@ -109,6 +109,9 @@ export function renderSettings(view, d, settings, { slug, titleH1, chipHost, run
   };
 
   const goal = goalGroup(ctx);
+  // Held above the controls AND held in a variable: it is what answers a refused accept, so
+  // the refusal has to be able to land the reader on it (F761).
+  const heldBanner = heldAccept(form);
   view.append(
     el("h2", { id: "sec-settings" }, "Settings"),
     el("p", { class: "set-desc muted small" },
@@ -119,7 +122,7 @@ export function renderSettings(view, d, settings, { slug, titleH1, chipHost, run
     draftBanner(form),
     // D178: an accept refused mid-run is held and says when it lands — above the controls,
     // because it is the answer to the button at the foot of the page.
-    heldAccept(form),
+    heldBanner,
     patternBar(form),
     el("div", { class: "rgroups", "data-settings-groups": "" },
       scheduleGroup(ctx), goal.node, abilitiesGroup(ctx), accessGroup(ctx), limitsGroup(ctx),
@@ -134,7 +137,14 @@ export function renderSettings(view, d, settings, { slug, titleH1, chipHost, run
       },
       // A refused accept was HELD (D178): re-read the settings document so the banner above
       // says so at once. `reloadSettings` rebases — the person's edits stay exactly as they are.
-      onRefused: reloadSettings,
+      //
+      // F761: this is the WHOLE answer to that click now — the bar sends no error toast with a
+      // 409, because a held accept is a state and not a failure. So the banner is not merely
+      // repainted but BROUGHT to him: he pressed a button fixed at the foot of the viewport,
+      // and a sentence that appears above the controls he cannot see answers nobody. `reveal`
+      // opens the folds on the way, centres it and flashes it — the same landing the setup
+      // strip's remedies and the TOC use.
+      onRefused: async () => { await reloadSettings(); reveal(heldBanner); },
     }));
 
   return {

@@ -72,8 +72,15 @@ def hold_or_refuse(request, info: registry.RoutineInfo, *, changes: dict,
     the routine is idle, so the caller falls through to applying the accept now.
 
     Replaces a bare `guard_not_active` on the settings accept. The status stays 409 — nothing
-    was applied, and the console's error path already renders `detail` — but the detail now
-    names when the accept can land, and the attempt itself survives the click.
+    was applied — and the detail names when the accept can land, while the attempt itself
+    survives the click.
+
+    The console does NOT render this `detail` in its error channel (F761): the settings page
+    answers the 409 with the held-accept banner, a `role="status"` state, because a refusal
+    arriving as a failure reads as a failed click and was clicked again three times in 18
+    seconds. The sentence stays here for the API's own readers — the endpoint's response is
+    read by `tests/test_pending_accepts.py` and by anything driving it directly — and the
+    banner composes its own from the held record (`static/components/held-accept.js`).
     """
     if not _active(request, info):
         return

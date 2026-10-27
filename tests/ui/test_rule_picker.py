@@ -101,5 +101,8 @@ def test_the_rules_section_promises_a_run_in_flight_nothing(ui, ui_page):
     panel = ui_page.locator("#sec-general-rules + .panel")
     panel.locator('.avail-row[data-rule="git-checkpoint"] input[type="checkbox"]').check()
     ui_page.locator(".accept-bar [data-accept]").click()
-    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("a run is active")
+    # The refusal is a HELD state in the banner's own channel, not an error toast (F761):
+    # tests/ui/test_held_accept.py owns that contract, this asserts the rules change rode the
+    # one accept and so got the same answer.
+    expect(ui_page.locator(".held-accept")).to_contain_text("applies when the run ends")
     assert yaml.safe_load(path.read_text(encoding="utf-8")).get("rules") == before
