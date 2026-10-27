@@ -443,16 +443,18 @@ assists:
   - id: after-a-failed-call
     moment: observation        # pre-action | observation | boundary | pre-finish
     predicate: observation-failed   # resolved by NAME from the engine's registry
-    payload: remind            # remind | hold — coupled to the moment
+    payload: remind            # remind | action | hold — coupled to the moment
     line: >-
       Read this failure before reacting to it — the message, the exit code, the usage line.
 ```
 
 The moment and the payload are COUPLED (`assists.MOMENT_PAYLOADS`), not free to combine:
 `pre-action` can only HOLD — at the point an action is chosen but not executed, the only way to
-reach the model is to stop it — and the three free moments can only REMIND, because a hold needs
-an action to stop and none of them has one. `rule-assists.md` carries the table and the worked
-examples; this page does not restate it.
+reach the model is to stop it — and the three free moments can never hold, because a hold needs
+an action to stop and none of them has one. The `boundary` moment may also carry `action`: the
+rule PERFORMS an authored action (an `action:` dict beside the line) at no turn cost, bounded by
+the firing routine's own capabilities and barred from the kinds that steer a run.
+`rule-assists.md` carries the table and the worked examples; this page does not restate it.
 
 The rule does not shrink, it FACTORS: the trigger moves off the model, the operative line
 becomes the surfaced payload, and the rationale stays in the body where `read_rule` reaches

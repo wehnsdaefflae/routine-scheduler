@@ -282,8 +282,13 @@ the limits (single-writer status.json preserved).
   turn-boundary ENGINE NOTE (the middle two free), and a finish-gate deferral (one turn, because
   a line surfaced as a run ends is one nobody can act on). The moment and the payload are coupled
   (`assists.MOMENT_PAYLOADS`): `pre-action` can only hold — the only way to reach a chosen action
-  is to stop it — and the free moments can only remind. A `pre-action` hold goes through the same
-  seam the consequence reminders use (`engine/hold.py`). The curated half of the same relevance-trigger layer the consequence reminders are
+  is to stop it — and the free moments cannot hold, having no action in hand. A `pre-action` hold
+  goes through the same seam the consequence reminders use (`engine/hold.py`). The `boundary`
+  moment can also PERFORM an action (`engine/assist_action.py`, the `action` payload): the rule
+  does the thing its moment calls for, through `hooks/perform.py`, at no turn cost — bounded to
+  the firing routine's own capabilities by the model's own gates, barred from the kinds that
+  STEER a run (`assists.STEERING_KINDS`), and barred from both moments that change control flow,
+  because a hook performs and reports and only a hold can stop an action. The curated half of the same relevance-trigger layer the consequence reminders are
   the self-authored half of. Compliance-CHECKING most rules is impossible — a compliant and a
   violating run leave byte-identical traces differing only in reasoning — but relevance is a
   property of the situation, which IS in the trace: the rule you cannot check, you can time.
@@ -324,7 +329,12 @@ the limits (single-writer status.json preserved).
   performed action therefore never changes control flow; `perform` returns an observation, never
   a verdict, and a failing action does not refuse the action the run was about to take. Stopping
   an action remains a `hold`, which TELLS the model and spends a turn on its decision — so
-  `HOLDING_POINTS`' pin now records a decision rather than an open question.
+  `HOLDING_POINTS`' pin now records a decision rather than an open question. **Its production
+  caller is the rule layer's `action` payload** (`engine/assist_action.py`): a curated rule with
+  that payload performs its action at `turn-boundary` and the run reads what came of it beside
+  the rule's own line. Until that caller existed the payload was honest in the registry and
+  exercised only by its tests, which is the state its own docstring recorded and vulture (at
+  min-confidence 60) was the pressure against.
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →

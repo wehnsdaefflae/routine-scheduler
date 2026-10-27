@@ -71,7 +71,8 @@ one you are about to touch, not all of them.
   `docs/run-gates.md` — the declarative checks that skip a fire with nothing to do; `docs/rule-assists.md` — its curated
   half: a rule's own `assists:` block surfacing its operative line at the moment it applies
   (why timing is possible where compliance-checking is not, the four moments — a pre-action
-  HOLD plus three reminder moments, coupled to their payloads — and the
+  HOLD plus three free ones, coupled to their payloads — the `action` payload, where a rule
+  PERFORMS one authored action at the turn boundary with no model turn, and the
   one-shot migration each batch needs to reach a live library)
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer (each doc's
   `effect:` line — what a routine holding it DOES differently — is what the page labels its
