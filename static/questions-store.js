@@ -35,6 +35,42 @@ let inflight = null;
 let cooldown = null, trailing = false;
 const subscribers = new Set();
 
+// WHAT THIS CONSOLE ITSELF ANSWERED, and when — the mirror of the `at` stamp above.
+//
+// An answer POST and a bus repaint race, and the read the repaint joins may have STARTED
+// before the POST landed: its list then still says the question is open. The Decisions page
+// paints that list over the card it had just settled, so a FRESH ENABLED answer button
+// appears under the cursor a median 1.8 s after the click — and the operator, seeing an
+// un-pressed button, presses it again. MEASURED: 60 doubled click pairs in the client-stamped
+// UI traces, zero of them sub-200ms, i.e. none of them a slip of the hand (F780/F772).
+//
+// Focus could not solve it: the form DISABLES the control it was clicked with, and a disabled
+// button loses focus, so by the time the repaint arrives nothing in the list holds focus and
+// the typing deferral (views/questions.js) legitimately declines to fire.
+//
+// So the store refuses the resurrection for every reader at once — the page, the header
+// badge, the tier-1 notifier and the run view's inline forms: a snapshot older than the
+// answer cannot speak for that question. An entry is dropped as soon as a read that BEGAN
+// after the answer reports on it, so the server stays the authority on everything else
+// (a revision, an expiry, a deletion) and nothing is pinned shut by this map.
+const answeredHere = new Map();        // qid -> { at, text }
+
+/** Record that THIS console answered `qid` — called by the one answer form. An intermediate
+ *  (ask-back) reply must NOT be recorded: that question stays open by design. */
+export function markAnswered(qid, text = "") {
+  if (qid) answeredHere.set(qid, { at: Date.now(), text });
+}
+
+function healed(items, at) {
+  if (!answeredHere.size || !Array.isArray(items)) return items;
+  return items.map((q) => {
+    const mark = answeredHere.get(q.qid);
+    if (!mark) return q;
+    if (at > mark.at) { answeredHere.delete(q.qid); return q; }   // read after the answer: server speaks
+    return q.answered ? q : { ...q, answered: true, answer: q.answer || mark.text };
+  });
+}
+
 function fetchNow() {
   if (inflight) return inflight;
   const at = Date.now();
@@ -43,7 +79,7 @@ function fetchNow() {
     api("/api/pending-creations").catch(() => snapshot?.proposals ?? []),
   ])
     .then(([items, proposals]) => {
-      snapshot = { items, proposals, at };
+      snapshot = { items: healed(items, at), proposals, at };
       for (const fn of [...subscribers]) {
         try { fn(snapshot); } catch { /* one bad reader must not starve the others */ }
       }

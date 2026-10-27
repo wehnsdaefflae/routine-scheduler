@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.467.0] — 2026-10-27
+
+### Fixed
+- **An answer you just sent is never repainted as an open question** (F780, the second half of
+  F772). Answering published a bus event, and the `/api/questions` read the repaint joined could
+  have STARTED before the answer POST landed — so its list still said the question was open and
+  the Decisions page painted it over the card it had just settled, building a FRESH ENABLED
+  answer button under the cursor. Measured on the client-stamped UI traces: **60 doubled click
+  pairs, none of them under 200 ms** — not slips of the hand, but a person seeing an un-pressed
+  button and pressing it again. `static/questions-store.js` now records what THIS console
+  answered and heals any snapshot whose read began before that answer, so the fix reaches every
+  subscriber at once (the Decisions page, the header badge, the tier-1 notifier, the run view's
+  inline forms) and `static/views/questions.js` — at its size ceiling — needed no line.
+  The healing is not a lock: a read that began AFTER the answer is authoritative and drops the
+  mark, so a revision, an expiry or a deletion still gets through. An INTERMEDIATE (ask-back)
+  reply is deliberately not recorded — that question stays open by design. Focus could not have
+  fixed this: the form disables the control it was clicked with, and a disabled button loses
+  focus, so by repaint time nothing in the list holds focus. 0.461.0 had already made the
+  duplicate POST harmless; what is gone now is the page offering an act that is already done.
+  Pinned by `tests/ui/test_answer_not_resurrected.py` (3 browser tests: the race, the
+  authority of a fresh read, the intermediate reply).
+
 ## [0.466.0] — 2026-10-27
 
 - **A supervision rung is never dispatched over a ZERO-WIDTH window** (R2958/R2960;

@@ -8,6 +8,7 @@
 
 import { api } from "/static/api.js";
 import { forgetField } from "/static/formpersist.js";
+import { markAnswered } from "/static/questions-store.js";
 import { md } from "/static/md.js";
 import { el, toast, toastError, when } from "/static/util.js";
 
@@ -83,6 +84,15 @@ export function answerForm(q, {
   const lock = (on) => {
     for (const b of [send, discuss, ...optionBtns, ...decisionBtns]) if (b) b.disabled = on;
   };
+  // A sent answer is recorded in the shared store, so an /api/questions read that STARTED
+  // before the POST cannot repaint this question as open and put a fresh enabled button under
+  // the cursor (F780). It goes through the ONE exit every success path already takes, because
+  // a recording forgotten at one of four call sites is the defect back on that surface alone.
+  // An INTERMEDIATE reply is deliberately not recorded: that question stays open by design.
+  const settled = (text, intermediate) => {
+    if (!intermediate) markAnswered(q.qid, text);
+    onSuccess?.(text, intermediate);
+  };
   const decide = async (decision) => {
     if (sending) return;
     sending = true;
@@ -93,7 +103,7 @@ export function answerForm(q, {
       const phrase = DECISIONS.find(([key]) => key === decision)?.[1] || decision;
       const note = toastText?.(false);
       if (note) toast(note);
-      onSuccess?.(phrase, false);
+      settled(phrase, false);
     } catch (err) {
       if (err.status === 404) {   // already resolved elsewhere (answered on another surface,
         // expired, or the run moved on) — a benign end-state. Settle the card instead of a red
@@ -101,7 +111,7 @@ export function answerForm(q, {
         // only invite a doomed retry (F259).
         toast("already answered elsewhere");
         const phrase = DECISIONS.find(([key]) => key === decision)?.[1] || decision;
-        onSuccess?.(phrase, false);
+        settled(phrase, false);
         return;
       }
       toastError(err);
@@ -133,12 +143,12 @@ export function answerForm(q, {
       forgetField(input);   // submitted — the draft must never refill this field
       const note = toastText?.(intermediate);
       if (note) toast(note);
-      onSuccess?.(text, intermediate);
+      settled(text, intermediate);
     } catch (err) {
       if (err.status === 404) {   // already resolved elsewhere — benign end-state, not an error (F259)
         toast("already answered elsewhere");
         forgetField(input);
-        onSuccess?.(text, intermediate);
+        settled(text, intermediate);
         return;
       }
       toastError(err);

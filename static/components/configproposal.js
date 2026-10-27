@@ -24,6 +24,7 @@
 // panel wants the applied-receipt written into, and `clearWarn` drops its blocking tint.
 
 import { api } from "/static/api.js";
+import { markAnswered } from "/static/questions-store.js";
 import { chip, el, toast, toastError } from "/static/util.js";
 
 // The server patch's routing key, and the one place this client knows it (engine:
@@ -94,9 +95,13 @@ export function configProposal(q, { host, clearWarn, onApplied }) {
       // touches no answer text and re-opens nothing. Without this the run would be told "NOT
       // APPLIED" about a change that IS live — worse than the silence R2778 replaced.
       if (!q.answered) {
+        const text = "approved & applied the proposed config change";
         await api(`/api/questions/${q.qid}/answer`,
-          { method: "POST", body: { text: "approved & applied the proposed config change",
-                                    config_patch_applied: true } });
+          { method: "POST", body: { text, config_patch_applied: true } });
+        // Apply files a real answer, so it has the same race as the answer form: record it in
+        // the shared store or a read that began before this POST repaints the card as open
+        // (F780). The form's own path goes through `settled`; this is the other writer.
+        markAnswered(q.qid, text);
       } else {
         await api(`/api/questions/${q.qid}/patch-applied`, { method: "POST" });
       }
