@@ -15,6 +15,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.465.0] — 2026-10-27
+
+- **One `ask_user` action can ask SEVERAL questions, and every decision record now carries its
+  CLASS** (D212 increment (a); `engine/askbatch.py`, `engine/askclass.py`). The operator's
+  answer, verbatim: *"Both axes: subject decides the default, the run may override it when the
+  work is genuinely blocked"*. `ask_user` takes a `questions:` list — N records sharing a
+  `qb-<ts>-<turn>` batch id, each filed THROUGH the existing single-question seam
+  (`interact.handle_ask`), so a batch's cards are byte-identical to the ones a run has always
+  filed plus the id that says they were asked together. A lone `question` takes exactly the path
+  it always took, pinned byte-for-byte.
+  The CLASS is `blocking` or `closing`: the SUBJECT sets the default (a typed access `request` →
+  blocking, a plain question → closing) and the run may override per question with
+  `blocks_work: true`, whose test is his — *without this answer the run cannot do the work it was
+  fired to do*. The override goes one way only: a run cannot declare its own access request
+  closing, because it asked for the entity precisely because something it meant to do needs it.
+  **CLASS is orthogonal to `mode`** — the class says whether the run could do its work without
+  the answer, `mode` whether its process sat and waited — and `mode: blocking` is REFUSED on a
+  batch: parking a run on the first of five answers is not a thing a run could want.
+  Measured over the 282 question records this instance had filed: `mode: blocking` was used 0
+  times, 0% of answers arrived inside an hour (median 2.97 h), **37% of runs (60 of 163) already
+  asked more than one question** — up to 6, one action and one turn each at a median 430 tokens
+  of prose — and the operator already answers in batches (51% of his sittings dispose of several,
+  a third across routines, median 11 minutes). The asking side was the half that did not match.
+  Room was made by EXTRACTION, with every ceiling re-tightened in the same change: the shared
+  `questions` schema → `engine/schema_questions.py` (actionschema 670→661), the report disposal
+  grammar → `engine/reportfields.py` (actions 545→496), the D85-A newline repair →
+  `engine/askprose.py` (interact was exactly on the 350 bar, now 346).
+  **The cost, stated plainly: the always-on engine contract grew 1382 chars** (62,345 → 63,727 in
+  `tests/prompt_budget.json`, raised by hand with its full reason in the file's own `note`, as
+  that shrink-only gate prescribes and D118 precedent set). A first draft cost +2667 and was cut
+  to this. A run that batches three asks saves two turns of its own context, which is far more
+  than 1382 characters. Increments (b) the summary rendering and (c) the Decisions-page split are
+  NOT built: the class is a recorded fact nothing reads yet, and a record filed before this
+  carries no `class` key, which a reader must read as `closing`.
+- **An orphaned run now says WHETHER its process tree was replaced, instead of "cause
+  unrecorded"** (R2928; `daemon/containerbirth.py`). Three kills in two days closed out as
+  *"orphaned: process gone at daemon boot — cause unrecorded (no deliberate-shutdown mark)"*, and
+  three runs across two routines concluded the killer was unreachable from inside the container.
+  It is not: pid 1's start time (`/proc/stat`'s `btime` plus `/proc/1/stat`'s `starttime`) against
+  the orphaned run's last status write answers it, and on 2026-10-26 pid 1 was measured **54
+  seconds YOUNGER** than the orphan rows — the whole container had been recreated under the run,
+  which is also why no mark existed: nothing in that process tree performed the stop.
+  So the boot reap's `unknown` splits into `container_recreated` (pid 1 younger), `daemon_died`
+  (pid 1 older: the container lived and the daemon alone went, a different investigation that
+  should not wear the container's verdict) and a residual `unknown` that now means /proc itself
+  could not answer. The shutdown MARK still outranks the inference — a mark is a statement of
+  intent by the process that performed the stop — the question is asked per orphan rather than
+  once per boot, and the restart-resume stays keyed on `daemon_restart` alone, because a
+  recreated container is exactly where the daemon knows too little to start anything again. No
+  OOM is ever inferred here: a cgroup at 99% of `memory.max` is not a kill (on 2026-10-26 `anon`
+  was 322 MB of 5.32 GB, the rest reclaimable, `oom_kill` 0), and the reap's own `classify_cause`
+  owns that question from the dead engine's peak RSS. **What recreated the container — a compose
+  restart policy, a healthcheck, a deploy, an auto-updater — is outside the namespace and remains
+  the operator's to find.**
+
 ## [0.464.0] — 2026-10-27
 
 Three fleet defects, each measured on the live instance before it was built.
