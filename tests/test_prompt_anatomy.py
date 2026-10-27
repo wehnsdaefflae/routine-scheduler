@@ -238,6 +238,11 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "which did not run either",
         "one hold per action string per run",
         "[REMINDERS: ",
+        # A CAPABILITY refusal survives the retry cleanup (engine/denialmemo.py): the
+        # permanence phrase the engine note and the repeat answer share, and the repeat's
+        # opening — the prose §3d guards, and the only trace the turn AFTER a refusal reads
+        "permanent for this run",
+        "is an action this run ALREADY had refused at turn",
         "The labels: could_not",
         "fired and is STILL unlabelled",
         # The JOB layer (engine/jobops.py + jobbrief.py, docs/jobs.md): the working-directory
