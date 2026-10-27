@@ -29,6 +29,7 @@ import pytest
 
 from conftest import authed_client, make_test_server
 from helpers import run_context
+from rsched import patchreceipt
 from rsched.engine.composer import state_digest
 from rsched.engine.inbox_questions import collect_deferred_answers
 from rsched.paths import atomic_write_json
@@ -242,3 +243,60 @@ def test_an_open_question_carrying_no_patch_gains_nothing(tmp_path):
     assert "Which folder?" in digest
     assert "approve & apply" not in digest
     assert "config_patch" not in digest
+
+
+# ---------------------------------------------------------------------------
+# R2943 — the receipt named the ASKER, never the target.
+#
+# `engine/config_bridge.patch_target()` POPS `routine` out of the patch body at ask time (so
+# the remaining keys are a clean PATCH body the endpoint's extra="forbid" accepts). `receipt()`
+# then read `patch["routine"]`, which no longer exists, and fell through to `match["routine"]`
+# — the routine that ASKED. Measured on this instance 2026-10-26: two patches applied to `fau`
+# and `steward-hub-maintainer` on 2026-10-09 were re-delivered to config-optimizer as
+# "config_patch NOT APPLIED … (config-optimizer is unchanged)", with an invitation to press a
+# button, about changes that were live at source.
+#
+# The apply BUTTON was never affected: static/components/configproposal.js resolves
+# `q.config_target || q.routine`. So the fix is to read the receipt off the same field the
+# button trusts, which is also the field `engine/inbox_questions` writes on the record.
+
+
+def test_a_cross_routine_receipt_names_the_target_not_the_asker():
+    """The bug, pinned at the function. `routine` is ABSENT from the body (popped at ask time),
+    which is exactly the live shape — so a reader that only consults the body must not silently
+    name whoever asked."""
+    match = {"qid": QID, "routine": "config-optimizer", "config_target": "fau",
+             "config_patch": {"run_gate": {"checks": []}}}
+    fields = patchreceipt.receipt(match, applied=False)
+    assert fields[patchreceipt.TARGET] == "fau"
+    assert "config-optimizer" not in patchreceipt.digest_line(fields)
+
+
+def test_the_digest_sentence_is_true_of_the_target():
+    """The whole point: the sentence a RUN reads mid-turn. Every clause of it was false for a
+    cross-routine patch — wrong routine, and "unchanged" about a routine that was."""
+    for applied in (True, False):
+        line = patchreceipt.digest_line(patchreceipt.receipt(
+            {"qid": QID, "routine": "config-optimizer", "config_target": "fau",
+             "config_patch": {"budgets": {"max_turns": 150}}}, applied=applied))
+        assert "fau" in line
+        assert "config-optimizer" not in line
+
+
+def test_a_self_patch_still_names_the_asker():
+    """The common path, which must not regress into the fix: no `config_target` means the patch
+    is for the asking routine itself (`inbox_questions` omits the key then), and the asker IS
+    the right answer there."""
+    fields = patchreceipt.receipt(
+        {"qid": QID, "routine": "apir", "config_patch": {"budgets": {"max_turns": 600}}},
+        applied=False)
+    assert fields[patchreceipt.TARGET] == "apir"
+
+
+def test_a_body_that_still_carries_routine_wins():
+    """A caller that has NOT popped `routine` (an unresolved patch straight off an action) is
+    still read from the body, so this fix adds a fallback rather than redirecting one."""
+    fields = patchreceipt.receipt(
+        {"qid": QID, "routine": "asker", "config_target": "resolved",
+         "config_patch": {"routine": "in-body", "budgets": {}}}, applied=False)
+    assert fields[patchreceipt.TARGET] == "in-body"

@@ -62,7 +62,15 @@ def receipt(match: dict, *, applied: bool = False) -> dict:
     patch = match.get("config_patch")
     if not isinstance(patch, dict) or not patch:
         return {}
-    target = str(patch.get("routine") or match.get("routine") or "")
+    # R2943: `config_target` FIRST, because `engine/config_bridge.patch_target` POPS `routine`
+    # out of the patch body at ask time — so by the time any receipt is written that key is gone
+    # and `match["routine"]` (the ASKER) was named instead of the target. Measured live: two
+    # applied `fau` / `steward-hub-maintainer` patches were reported to config-optimizer as
+    # "NOT APPLIED (config-optimizer is unchanged)". `config_target` is the same field the apply
+    # button resolves against (static/components/configproposal.js), so the receipt and the
+    # button can no longer disagree.
+    target = str(patch.get("routine") or match.get("config_target")
+                 or match.get("routine") or "")
     return {APPLIED: bool(applied), TARGET: target,
             NOTE: APPLIED_NOTE if applied else NOT_APPLIED_NOTE}
 

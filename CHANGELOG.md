@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.462.0] — 2026-10-27
+
+### Fixed
+- **A cross-routine `config_patch` receipt named the ASKER, so a run was told the wrong
+  routine was unchanged** (R2943, reported by `config-optimizer`). `patchreceipt.receipt()`
+  resolved the target from `patch["routine"]` — but `engine/config_bridge.patch_target()`
+  **pops** that key at ask time (so the remaining keys are a clean PATCH body the endpoint's
+  `extra="forbid"` accepts), so the lookup always fell through to `match["routine"]`. Measured
+  live: two patches applied on 2026-10-09 to `fau` (27 `run_gate` checks) and
+  `steward-hub-maintainer` (`budgets.max_turns: 150`) were re-delivered to `config-optimizer`
+  as *"config_patch NOT APPLIED — … (config-optimizer is unchanged); the operator's 'approve &
+  apply' button is still available"* — wrong routine, and "unchanged" about a routine that was
+  changed, with an invitation to press a button. The receipt now reads `config_target`, the
+  same field the apply button already resolves against
+  (`static/components/configproposal.js`), so the two surfaces can no longer disagree; a
+  self-patch (no `config_target`) still names the asker, and a body that still carries
+  `routine` still wins. Four tests in `tests/test_patch_receipt.py`, two red against the old
+  resolution order.
+
 ## [0.461.0] — 2026-10-27
 
 ### Fixed
