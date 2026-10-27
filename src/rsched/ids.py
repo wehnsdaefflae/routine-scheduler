@@ -55,6 +55,15 @@ def question_id(ts: str, n: int) -> str:
     return f"q-{ts}-{n}"
 
 
+def batch_id(ts: str, n: int) -> str:
+    """The id every decision record filed by ONE `ask_user` action shares (D212).
+
+    Keyed to the TURN, like the question ids it groups: one action is one turn, so the pair
+    is unique per run and a reader of a card can see which turn asked it.
+    """
+    return f"qb-{ts}-{n}"
+
+
 def background_task_id(owner_slug: str) -> str:
     """A unique slug for a detached background task, tagged with its owner conversation for
     readability. Uniqueness (a random suffix) is load-bearing: the DetachedManager keys task

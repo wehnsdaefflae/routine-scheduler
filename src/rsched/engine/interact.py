@@ -32,7 +32,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..ids import question_id
-from . import askback, autoask, availability, config_bridge, grantsecrets, inbox, requests, runkind
+from . import (
+    askback,
+    askprose,
+    autoask,
+    availability,
+    config_bridge,
+    grantsecrets,
+    inbox,
+    requests,
+    runkind,
+)
 from .control import RunAborted
 
 # Natural affirmatives count: approval answers arrive as free text, and "Do it. The mail
@@ -90,25 +100,6 @@ def _held_not_settled(qtype: str, answer: dict) -> bool:
     if qtype == "request":
         return answer.get("decision") not in requests.DECISIONS
     return False
-
-
-def _unescape_newlines(text: str) -> str:
-    r"""Literal backslash-n sequences ("\n") become real newlines — see _normalize_plain."""
-    if "\\n" not in text:
-        return text
-    return text.replace("\\r\\n", "\n").replace("\\n", "\n")
-
-
-def _normalize_plain(qtype: str, question: str, default: str) -> tuple[str, str]:
-    r"""D85-A (F291/R242): some models double-escape newlines in PLAIN question text, so a
-    literal backslash-n reached the UI as "\n" (the renderer and store are correct —
-    mdInline handles real newlines). Normalize question + default at intake, but ONLY for
-    plain questions: util-approvals embed util SOURCE and access requests carry typed ids,
-    where the two-character sequence is intended verbatim.
-    """
-    if qtype != "question":
-        return question, default
-    return _unescape_newlines(question), _unescape_newlines(default)
 
 
 def _free_qid(ctx) -> str:
@@ -195,8 +186,12 @@ def _await_reply(loop, qdir: Path, qid: str, qtype: str, *, deadline: float,
 
 
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
-               subject: str = "") -> dict:
+               subject: str = "", batch: str = "") -> dict:
     """File one decision record and, for a blocking ask, wait for its answer.
+
+    `batch` (D212) is the id the records of ONE `ask_user` action share — set by
+    `askbatch.handle`, which files each of its questions through here, and empty for the
+    single ask every other caller makes.
 
     `subject` is what the decision is ABOUT, beside its type: the util a util-approval would
     write or remove, the rule a rule-approval would change, the curated reminder a
@@ -238,7 +233,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
                                            str(action["question"]))
     if req_ids:
         qtype, subject = "request", " ".join(sorted(req_ids))
-    question, default = _normalize_plain(qtype, question, default)
+    question, default = askprose.normalize_plain(qtype, question, default)
+    blocks = bool(action.get("blocks_work"))   # D212: the run's own CLASS claim (askclass)
     if ctx.depth > 0:
         # The record lands in the ROUTINE's pending dir, where a person reads it — so it has
         # to say who is asking. A child has no page of its own and its label is the only
@@ -259,7 +255,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
         """
         inbox.file_question(qdir, qid, question, options, ctx.run_ts, qtype=qtype,
                             default=default, config_patch=cpatch, config_target=ctarget,
-                            request=req_ids)
+                            request=req_ids, batch=batch, blocks_work=blocks)
         if churn:
             ctx.asks_deferred += 1
 
@@ -285,7 +281,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
     inbox.file_question(qdir, qid, question, options, ctx.run_ts,
                         mode="blocking", qtype=qtype, default=default, expires=expires,
                         config_patch=cpatch, config_target=ctarget,
-                        request=req_ids)
+                        request=req_ids, batch=batch, blocks_work=blocks)
     askback.supersede(loop, qdir, (qtype, subject))
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
