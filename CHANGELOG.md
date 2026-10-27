@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.466.0] — 2026-10-27
+
+- **A supervision rung is never dispatched over a ZERO-WIDTH window** (R2958/R2960;
+  `engine/oversight.worth_a_rung`, consulted by `ladder.rung_is_due`). Two routines reported the
+  same thing from different angles: an oversight rung started with a dispatch carrying no
+  evidence — `since_turn: 0`, `turn: 0` — so the rung's run had nothing to judge and spent a
+  whole run saying so. `rung_is_due` returned a pull-forward reason before the interval was
+  consulted, and a pull-forward fires regardless of the interval, which at turn 0 means a window
+  with no turns in it.
+  The module's own design sentence — *"an EMPTY interval is still a dispatch"* — is RIGHT about
+  the case it defends and silent about this one, so it is amended rather than overturned. A
+  STALLED worker (turns elapsed, nothing to show for them) is a signal precisely BECAUSE the
+  turns elapsed, and a builder returning nothing there would make the stalled run the one case
+  the ladder cannot supervise. A zero-width window is not a stall: the rung is handed empty
+  `says`, an empty histogram, no repetition signals and no worker answers, while its own brief
+  tells it the engine's counts are the evidence.
+  The fix is as narrow as the defect and bounds the PULL-FORWARD path alone. A pull-forward still
+  fires whatever the interval says — that is what makes it one, and an escalation a person or a
+  repeat failure asked for must never be swallowed — and it is DEFERRED rather than lost:
+  `last_rung_turn` is untouched, so the first boundary with a turn in it fires on the same
+  reason. The reporters' second claim, a rung-number mismatch, is NOT a defect (`rung = depth +
+  1`, so a `rung: 3` event inside a rung-2 context is correct arithmetic) and no release was
+  spent on it.
+  **A finding the build turned up, worth more than the fix:** no module in `src/` assigns
+  `loop.repeat_failure_signal` at all. `ladder.pull_forward_reason` reads it through `getattr`,
+  so the `repeat_failure` pull-forward — one of the three in `PULL_FORWARD` — cannot fire in
+  production today; its predicate is reachable only from a test. Recorded where it was found and
+  reported to its owner, not fixed here: giving it a writer is a behaviour change of its own.
+
 ## [0.465.0] — 2026-10-27
 
 - **One `ask_user` action can ask SEVERAL questions, and every decision record now carries its

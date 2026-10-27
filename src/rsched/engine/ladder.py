@@ -152,18 +152,18 @@ def pull_forward_reason(loop) -> str | None:
 def rung_is_due(loop, settings: dict) -> str | None:
     """Why a rung fires now (`interval` or a pull-forward reason), or None.
 
-    The interval is counted from the LAST rung, not from the run's start, so a pulled-forward
-    escalation also resets the clock: a rung reports on the interval it owns, and two rungs must
-    never judge the same turns twice (which is how a ladder becomes m copies of one audit).
+    Counted from the LAST rung, not the run's start, so a pulled-forward escalation resets the
+    clock too: two rungs must never judge the same turns. A pull-forward fires whatever the
+    interval says — never over an empty window (R2958/R2960, `oversight.worth_a_rung`).
     """
     if not settings["enabled"]:
         return None
     ctx = loop.ctx
     if ctx.depth + 1 > min(settings["rung_height"], ctx.budgets.max_subrun_depth):
         return None            # at the ladder's ceiling: the top rung answers to a person
-    if (reason := pull_forward_reason(loop)) is not None:
-        return reason
     since = ctx.turn - int(getattr(ctx, "last_rung_turn", 0))
+    if (reason := pull_forward_reason(loop)) is not None:
+        return reason if oversight.worth_a_rung(since) else None
     return "interval" if since >= int(getattr(ctx, "next_rung_in", 0)
                                       or settings["turn_interval"]) else None
 
