@@ -523,6 +523,13 @@ one you are about to touch, not all of them.
   candidate takes the old routine's lane place, cron and grants through the ordinary writers and
   the old one is switched off (kept); discarding switches the candidate off.
   `.control/candidates.json` says which routine is a candidate for which.
+  `ask_user` asks ONE question or SEVERAL in one action (`questions:`, each entry with its own
+  fields — one decision record per question, sharing one `batch` id, `engine/askbatch.py`; a batch
+  is never `mode: blocking`). Every record carries its CLASS, `blocking` or `closing`
+  (`engine/askclass.py`), which is ORTHOGONAL to `mode`: the class says whether the asking run
+  could do its work without the answer, `mode` whether its process waited for one. The subject
+  sets the default (an access `request` is blocking, a plain question closing); the run overrides
+  per question with `blocks_work: true`.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
   and an optional `request` ("<class>:<name>" entity id, entities.py): a typed ACCESS REQUEST the
   Decisions page settles with one of four decisions (allow/deny × now/forever). A `util:` request

@@ -11,7 +11,7 @@ and cost the small-model support the whole design is built around.
 
 from __future__ import annotations
 
-from . import roleswap, schema_background, schema_remind
+from . import roleswap, schema_background, schema_questions, schema_remind
 
 READ_PATHS_MAX = 8
 
@@ -345,19 +345,7 @@ ACTION_SCHEMA: dict = {
                                        "choice (one of `options`) · score (a position on "
                                        "`options` read as ordered levels, LOWEST first). "
                                        "Default: choice when options are given, else yes_no"},
-        "questions": {
-            "type": "array", "maxItems": 16,
-            "items": {"type": "object", "additionalProperties": False, "properties": {
-                "name": {"type": "string",
-                         "description": "snake_case id the answer is filed under"},
-                "question": {"type": "string", "description": "what to decide"},
-                "answer_type": {"type": "string", "enum": ["yes_no", "choice", "score"]},
-                "options": {"type": "array", "items": {"type": "string"}, "maxItems": 26}}},
-            "description": "decide: SEVERAL independent questions over the same evidence, in "
-                           "one call (instead of question/answer_type/options) — each with "
-                           "its own name, question, answer_type and options. One evidence, "
-                           "many questions is what these models are fastest and cheapest at",
-        },
+        "questions": schema_questions.QUESTIONS_FIELD,   # D212: shared with ask_user
         "evidence": {"type": ["string", "object", "array"],
                      "description": "decide: what the answer depends on — text, or a JSON "
                                     "object/array of the facts. Self-contained: the model "
@@ -485,6 +473,7 @@ ACTION_SCHEMA: dict = {
                            'refused this turn. For the INSTANCE: {"server": {"decision_model": '
                            '"jev"}} — its own field list; the catalogs and auth fields are not.',
         },
+        "blocks_work": schema_questions.BLOCKS_WORK_FIELD,   # D212: the record's CLASS claim
         "request": {
             "type": "string",
             "description": "ask_user: OPTIONAL — a typed ACCESS REQUEST, one grant-entity id "
@@ -606,6 +595,8 @@ def brief_value(action: dict) -> str:
     The widths stay theirs; the derivation is now one function.
     """
     kind = str(action.get("kind") or "")
+    if kind == "ask_user" and action.get("questions"):
+        return schema_questions.batch_brief(action["questions"])
     return str(action.get(BRIEF_FIELD.get(kind, ""), "") or "")
 
 

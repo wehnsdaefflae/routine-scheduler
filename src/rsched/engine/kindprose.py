@@ -260,7 +260,11 @@ outlive you — your finish kills them."""),
 — plan around the missing \
 answer. Mode "blocking" pauses the run until answered; after {ask_timeout_min} minutes without \
 an answer the run CONTINUES on your stated `default` (set it on every blocking ask) and the \
-question stays open for a future run. Ask sparingly; batch what can wait until run end."""),
+question stays open for a future run. Ask sparingly; batch what can wait until run end — and \
+batch it IN ONE ACTION: `questions` takes several, each with its own question/options/default/\
+request/config_patch, filing one record each under one batch id (five asks as five actions cost \
+you five turns and him five cards). Mark one `blocks_work: true` when you cannot do the work \
+you were fired to do without its answer; that records its class and suspends nothing."""),
     (("report",), """- report: raise something that needs doing and is NOT your task — a \
 defect, friction, a
 missing or broken tool, a recipe or config that is wrong. `title` (one line) + `detail` (the \

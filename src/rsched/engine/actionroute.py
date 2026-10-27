@@ -6,6 +6,7 @@ import logging
 
 from . import (
     admin_handlers,
+    askbatch,
     authoring,
     background,
     background_order,
@@ -144,7 +145,12 @@ def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911, C901 — a flat k
                                     # that `actions.validate_action` carries as the action
                                     # contract's single flat per-kind checker.
     if action["kind"] == "ask_user":
-        return interact.handle_ask(loop, action, poll_s=POLL_S)
+        # D212: several questions in ONE action — N records sharing a batch id, filed through
+        # the same single-question seam. A lone `question` takes the path it always took.
+        # Chosen between as an EXPRESSION: this table is already at the repo's branch ratchet,
+        # and which of two handlers owns one kind is not another row of it.
+        ask = askbatch.handle if action.get("questions") else interact.handle_ask
+        return ask(loop, action, poll_s=POLL_S)
     if action["kind"] == "write_util":
         return authoring.handle_write_util(loop, action, poll_s=POLL_S)
     if action["kind"] == "remove_util":

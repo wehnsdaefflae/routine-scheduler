@@ -26,6 +26,7 @@ from pathlib import Path
 from .. import decline, patchreceipt
 from ..ids import now_iso
 from ..paths import read_json
+from . import askclass
 from .inbox import _consume
 
 log = logging.getLogger("rsched.inbox")
@@ -250,7 +251,8 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
                   asked_ts: str, *, mode: str = "deferred", qtype: str = "question",
                   default: str = "", expires: str = "", config_patch: dict | None = None,
                   config_target: str = "", request: list[str] | None = None,
-                  report: str = "", report_target: str = "") -> Path:
+                  report: str = "", report_target: str = "", batch: str = "",
+                  blocks_work: object = False) -> Path:
     """The ONE decision record every kind of required user feedback funnels into —
     plain asks, util approvals and access requests, deferred and blocking alike. Blocking
     records carry `expires` (when the run continues without an answer) and are rewritten
@@ -260,14 +262,24 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
     page renders the four allow/deny × now/forever buttons and the answer carries a
     `decision`. `report`/`report_target` make it a REPORT-BORN decision (F621): the `R<n>` the
     asking run filed and the routine that owns the work, so the answer can be relayed to that
-    owner and every surface can say which report is waiting. Every surface (Decisions page, run
-    view, Discord mirror) renders from this shape.
+    owner and every surface can say which report is waiting. `batch` (D212) is the id every
+    record filed by ONE `ask_user` action shares, so a surface can tell they were asked
+    together; `blocks_work` is the asking run's class override. Every record carries its
+    CLASS — `blocking` or `closing`, derived by `askclass.of` from its subject and that
+    override — which is ORTHOGONAL to `mode`: the class says whether the asking run could do
+    its work without the answer, `mode` whether its process sat and waited for one. Every
+    surface (Decisions page, run view, Discord mirror) renders from this shape.
     """
     from ..paths import atomic_write_json
 
     path = routine_dir / "questions" / "pending" / f"{qid}.json"
     record: dict = {"qid": qid, "question": question, "options": options,
-                    "asked": asked_ts, "mode": mode, "type": qtype}
+                    "asked": asked_ts, "mode": mode, "type": qtype,
+                    "class": askclass.of(request=request, blocks_work=blocks_work)}
+    if batch:
+        # D212: the questions ONE ask_user action asked together. A surface groups them by it;
+        # a lone ask carries no batch, because it was asked together with nothing.
+        record["batch"] = batch
     if default:
         record["default"] = default
     if expires:

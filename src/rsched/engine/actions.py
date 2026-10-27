@@ -12,12 +12,14 @@ prose-outside-JSON failures.
 from __future__ import annotations
 
 from ..ids import is_slug
-from ..reports import REPORT_ID_RE
 from . import thenscript
 from .actionschema import KINDS, PSEUDO_UTILS
+from .askfields import ASK_OPTIONS_MAX
+from .askfields import field_problems as ask_field_problems
 from .decideaction import field_problems as decide_field_problems
 from .goalops import field_problems as goal_field_problems
 from .jobfields import field_problems as job_field_problems
+from .reportfields import field_problems as report_field_problems
 from .sidefields import problems as side_field_problems
 
 # The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine files
@@ -35,9 +37,6 @@ ALWAYS_KINDS = ("finish", "report", "list_models")
 
 
 MEMORY_NOTE_MAX_LINES = 100
-#: ask_user's pick-one list. The shared schema field allows decide's longer lists, so this cap
-#: is held here rather than by the schema.
-ASK_OPTIONS_MAX = 5
 
 
 # kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
@@ -189,7 +188,11 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     # it got and which it needs; requiredness here could only ever demand `n`.
     "kill": ((), ("n", "handle")),
     "wait": ((), ("n", "all", "timeout_s")),
-    "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
+    # D212: `question` is no longer REQUIRED here because a `questions` batch carries none at
+    # the top level — one of the two is demanded by `askfields.field_problems`, which can say
+    # which it got and which it needs; requiredness here could only ever demand `question`.
+    "ask_user": ((), ("question", "questions", "mode", "options", "default", "config_patch",
+                      "request", "blocks_work")),
     # F621: `options` makes a report a DECISION FOR THE OPERATOR as well as work for its
     # target — the handler files it on his Decisions page beside delivering it. Same cap as
     # ask_user's pick-list, for the same reason: a longer list is a question to rephrase.
@@ -336,10 +339,14 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                                 "unless cancel: true")
     if kind == "decide":
         problems += decide_field_problems(obj)
+    # D212: one question or a `questions` batch, each entry carrying its own options/default/
+    # request/config_patch/blocks_work — the whole shape lives in `askfields`.
+    if kind == "ask_user":
+        problems += ask_field_problems(obj)
     # The schema's `options` cap is decide's (26); a pick-list the OPERATOR reads stays a
-    # short one — on an ask_user, and on a report that carries options (F621: those are the
-    # same thing, a decision for him, and they land on the same page).
-    if kind in {"ask_user", "report"} and len(obj.get("options") or []) > ASK_OPTIONS_MAX:
+    # short one — on an ask_user (askfields, per question), and on a report that carries
+    # options (F621: those are the same thing, a decision for him, same page).
+    if kind == "report" and len(obj.get("options") or []) > ASK_OPTIONS_MAX:
         problems.append(f"kind={kind}: at most {ASK_OPTIONS_MAX} 'options' — a longer list "
                         "is a question to rephrase, not a menu")
     if kind == "create_routine" and not is_slug(str(obj.get("target") or "")):
@@ -401,64 +408,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append(f"kind={kind} requires 'path' (one file) or 'paths' (several)")
         elif str(obj.get("path") or "").strip() and paths:
             problems.append(f"kind={kind} takes 'path' OR 'paths', not both")
-    # `closes` is a property OF a disposal — a terminal acknowledgment. `answers` disposes of
-    # ONE exchange, `settles` of several; with neither there is nothing to complete, so a bare
-    # closes is a contradiction, not a no-op. Before D134 only `answers` counted, which is why
-    # a report that asked nothing back could not be born settled at all: it answers no single
-    # row, so `closes` was refused and the carrier stayed open forever (F497).
-    if (kind == "report" and obj.get("closes")
-            and not str(obj.get("answers") or "").strip()
-            and not obj.get("settles")):
-        problems.append("kind=report: 'closes' is valid only together with 'answers' or "
-                        "'settles' — it marks the disposal as completing those exchanges")
-    # `answers` is ONE report id, held to the grammar `settles` and `supersedes` are. The ledger
-    # matches it against ids, so free text there disposed of nothing — while the run, and its
-    # observation, believed the exchange answered (the settled-in-prose, open-in-the-ledger
-    # shape F497 measured).
-    if (kind == "report" and (answered := str(obj.get("answers") or "").strip())
-            and not REPORT_ID_RE.match(answered.upper())):
-        problems.append(f"kind=report: 'answers' takes the ONE report id you received and are "
-                        f"replying to, like R123 — not {answered[:60]!r}")
-    # Settling rows CLAIMS they are finished. It needs no `target` (each settled row already has
-    # its own raiser) but it does need well-formed ids, and a row cannot be both answered and
-    # settled by one reply, nor both settled and folded — those say opposite things about who
-    # holds the work next.
-    if kind == "report" and obj.get("settles"):
-        if bad := [str(i) for i in obj["settles"]
-                   if not REPORT_ID_RE.match(str(i).strip().upper())]:
-            problems.append(f"kind=report: 'settles' takes report ids like R123 — not "
-                            f"{', '.join(bad[:3])}")
-        elif (answered := str(obj.get("answers") or "").strip().upper()) and answered in [
-                str(i).strip().upper() for i in obj["settles"]]:
-            problems.append(f"kind=report: {answered} is already settled by 'answers' — naming "
-                            "it in 'settles' too says the same thing twice. List only the "
-                            "OTHER rows this reply disposes of")
-        elif overlap := sorted({str(i).strip().upper() for i in obj["settles"]}
-                               & {str(i).strip().upper() for i in (obj.get("supersedes") or [])}):
-            # Folding a row makes this report its thread, so it stays live until this one
-            # settles; settling it declares it finished now. Both at once on the same id is a
-            # contradiction the read model would have to break one way or the other.
-            problems.append(f"kind=report: {', '.join(overlap[:3])} cannot be both 'settles' "
-                            "and 'supersedes' — settling DECLARES a row finished, taking it "
-                            "over CONTINUES it here. Pick one")
-    # Taking a row over means becoming its OWNER's thread. Without a target there is no owner
-    # to become, and the folded rows would leave triage for nowhere.
-    if kind == "report" and obj.get("supersedes"):
-        if not str(obj.get("target") or "").strip():
-            problems.append("kind=report: 'supersedes' needs 'target' — folding rows into this "
-                            "report hands them to that owner, so name who is taking them")
-        elif bad := [str(i) for i in obj["supersedes"]
-                     if not REPORT_ID_RE.match(str(i).strip().upper())]:
-            problems.append(f"kind=report: 'supersedes' takes report ids like R123 — not "
-                            f"{', '.join(bad[:3])}")
-        elif (answered := str(obj.get("answers") or "").strip().upper()) and answered in [
-                str(i).strip().upper() for i in obj["supersedes"]]:
-            # Answering a thread ends it; absorbing one continues it here. Both at once on the
-            # same id is a contradiction, and the fold would win silently — leaving the row
-            # reading THIS report's status while the run believed it had closed it.
-            problems.append(f"kind=report: {answered} cannot be both 'answers' and "
-                            "'supersedes' — answering ENDS that thread, taking it over "
-                            "CONTINUES it here. Pick one")
+    if kind == "report":
+        problems += report_field_problems(obj)
     # .memory/ is reachable ONLY through the memory actions — the engine owns INDEX.md and
     # enforces the note cap there; generic file access would silently bypass both.
     if kind in ("read_file", "view_image", "write_file", "edit_file",

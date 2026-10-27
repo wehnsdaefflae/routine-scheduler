@@ -731,7 +731,7 @@ never refills, so the call was not at fault. Before this, every node was told th
 run's three children were numbered 5, 7 and 8, each was refused at its own FIRST spawn, and each
 finished `partial` quoting the number it had been promised.
 - kill: terminate child run "n". wait: block until child run "n" / "all": true / any unreported exit (timeout_s, default 600) — it returns AT ONCE when a finished child hasn't been reported to you yet, or when nothing is running. Children never outlive you — your finish kills them.
-- ask_user: mode "deferred" (default) files the question and CONTINUES — plan around the missing answer. Mode "blocking" pauses the run until answered; after 480 minutes without an answer the run CONTINUES on your stated `default` (set it on every blocking ask) and the question stays open for a future run. Ask sparingly; batch what can wait until run end.
+- ask_user: mode "deferred" (default) files the question and CONTINUES — plan around the missing answer. Mode "blocking" pauses the run until answered; after 480 minutes without an answer the run CONTINUES on your stated `default` (set it on every blocking ask) and the question stays open for a future run. Ask sparingly; batch what can wait until run end — and batch it IN ONE ACTION: `questions` takes several, each with its own question/options/default/request/config_patch, filing one record each under one batch id (five asks as five actions cost you five turns and him five cards). Mark one `blocks_work: true` when you cannot do the work you were fired to do without its answer; that records its class and suspends nothing.
 - report: raise something that needs doing and is NOT your task — a defect, friction, a
 missing or broken tool, a recipe or config that is wrong. `title` (one line) + `detail` (the artefact, what is wrong, the evidence — a run id, a `path:line`, an error — and what "done" looks like; whoever picks it up has none of your context). Available to EVERY routine, always.
 Set `target` to the routine that OWNS the problem and the report is delivered into its inbox, which it reads on its NEXT SCHEDULED RUN — nothing is started and nobody is interrupted. Leave `target` out when you cannot name the owner: the report goes to triage and is routed for you. Omitting it is always allowed; guessing wrong sends the work to someone who will bounce it.
@@ -969,6 +969,52 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
    "type": "string",
    "description": "llm: optional system prompt"
   },
+  "questions": {
+   "type": "array",
+   "maxItems": 16,
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "snake_case id the answer is filed under"
+     },
+     "question": {
+      "type": "string",
+      "description": "what to decide"
+     },
+     "answer_type": {
+      "type": "string",
+      "enum": [
+       "yes_no",
+       "choice",
+       "score"
+      ]
+     },
+     "options": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 26
+     },
+     "default": {
+      "type": "string"
+     },
+     "request": {
+      "type": "string"
+     },
+     "config_patch": {
+      "type": "object"
+     },
+     "blocks_work": {
+      "type": "boolean"
+     }
+    }
+   },
+   "description": "ask_user: SEVERAL questions in ONE action, each entry with its own question/options/default/request/config_patch/blocks_work \u2014 one decision record each, sharing a batch id. One turn, not five. Not a waiting mode: a batch is filed and you carry on"
+  },
   "evidence": {
    "type": [
     "string",
@@ -1038,6 +1084,10 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   "config_patch": {
    "type": "object",
    "description": "ask_user: OPTIONAL \u2014 a proposed CONFIG change the user can one-click apply from the Decisions page (a run can never edit its own config): {\"budgets\": {\"max_turns\": 100}} or {\"schedule\": {\"friendly\": {\"frequency\": \"hourly\", \"minute\": 0}}} \u2014 the PATCH /routines body, for a schedule / budget / model / permission / fs-roots change the run cannot make itself. For ANOTHER routine: {\"routine\": \"suedlink-wlf\", \"budgets\": {\"max_turns\": 120}} \u2014 the apply patches that routine, not you, and an uninstalled slug is refused this turn. For the INSTANCE: {\"server\": {\"decision_model\": \"jev\"}} \u2014 its own field list; the catalogs and auth fields are not."
+  },
+  "blocks_work": {
+   "type": "boolean",
+   "description": "ask_user: OPTIONAL \u2014 this question is BLOCKING: without this answer the run cannot do the work it was fired to do. Every record carries that class, set by its subject (an access `request` blocking, a plain question closing \u2014 you finish without it and the answer shapes your next run); this overrides. NOT `mode`, which is the separate thing that makes your process WAIT \u2014 marking a question blocking suspends nothing. On a `questions` batch, set it per question"
   },
   "request": {
    "type": "string",

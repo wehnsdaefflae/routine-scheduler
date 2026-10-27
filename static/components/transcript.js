@@ -459,7 +459,7 @@ export function createTranscript(container, opts = {}) {
         .join("\n\n") || (o.timed_out ? "wait timed out" : "nothing new finished"));
     } else if (o.kind === "ask_user") {
       text = o.dialog ? `dialog reply (question stays open): ${o.user_message}`
-        : o.answered ? `answered: ${o.answer}`
+        : o.answered ? `answered: ${o.answer}` : o.batch ? `${o.count} questions filed as one batch (${o.blocking || 0} blocking)`   // D212: a batch is N records
         : o.timed_out ? "timed out → deferred" : "filed as deferred";
     } else if (o.kind === "reminder_hold") {
       text = `HELD — "${o.action}" did NOT run. It matches a consequence reminder:\n`
