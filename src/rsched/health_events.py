@@ -237,13 +237,13 @@ FIND them). Absent on every other event: only a close-out has a process to repor
 They also carry `cause` (F480), the one word for WHY the process is gone: `user_abort` ·
 `oom_kill` (rc=-9) · `signal_kill` (another signal) · `engine_crash` (non-zero exit) ·
 `no_finish` (clean exit, no finish) · `daemon_restart` (a shutdown mark) · `parent_kill` (a
-parent killed this child) · `unknown` (nothing established one). An ENGINE abort's row carries it
-too, from the door's own record (F751). The live reap derives it from `rc`; the BOOT reap sets
-it explicitly, because it has no rc and the previous code filled that vacuum by asserting one —
-every dead-pid run at boot was written "orphaned by daemon restart" whether a restart had
-happened or not, and that sentence sent three investigations (F480, R1501, R1515) at a working
-drain. `unknown` is therefore the expected majority reading at boot, and a deliberate one: an
-audit filtering for it asks "what killed these runs?", not a defect.
+parent killed this child) · `container_recreated` (pid 1 YOUNGER than the run's last sign of life
+— this tree was replaced under it, R2928) · `daemon_died` (pid 1 older: the container lived, the
+daemon alone went) · `unknown` (nothing established one, not even /proc). An ENGINE abort's row
+carries it too (F751). The live reap derives it from `rc`; the BOOT reap, having no rc, sets it
+explicitly — the previous code filled that vacuum by asserting one, writing "orphaned by daemon
+restart" over every dead-pid run whether a restart had happened or not, which sent three
+investigations (F480, R1501, R1515) at a working drain.
 
 fire_refused: a fire produced no run. run_id empty (no run was created). Makes a routine
 that goes chronically un-fired visible to audit consumers instead of only a log.info line.

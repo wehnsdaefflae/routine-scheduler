@@ -27,7 +27,7 @@ from ..config import RoutineConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import append_jsonl, atomic_write, atomic_write_json, read_json
-from . import reap_resume
+from . import containerbirth, reap_resume
 from .runner_state import (
     ActiveRun,
     _last_vm_hwm_kb,
@@ -306,21 +306,20 @@ def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo],
 
     So the cause is now READ rather than assumed, from the breadcrumb a deliberate shutdown
     leaves (`restart.read_shutdown_mark`), and it rides out as a structured `cause` field:
-    `daemon_restart` when the mark says this exit was asked for, `unknown` when nothing
-    established why the process is gone. `unknown` is the honest majority case and it is
-    meant to be visible — an audit filtering for it is asking "what killed these runs?",
-    which is a question the stream could not previously be asked at all.
+    `daemon_restart` when the mark says this exit was asked for. Where no mark exists, the
+    container's own init still answers a narrower question than "why" — WAS this process tree
+    replaced while the run was alive — so `unknown` is refined into `container_recreated` or
+    `daemon_died` (R2928, `daemon/containerbirth.py`). `unknown` survives only where neither
+    /proc nor the status stamp answers: an inference resting on nothing is worse than silence.
     """
     from . import restart
     # Read the mark LAZILY, at the first orphan. The boot path runs on every daemon start,
     # almost always with nothing to reap, and reading it eagerly would demand `runner.server`
     # from every caller — including the scheduler's runner double, which has no such attribute
-    # and whose boot loop died on it (4 scheduler tests, this run).
-    #
-    # Lazy READING is not lazy EXPIRY, and conflating the two was a defect: a boot that
-    # orphaned nothing never consumed the mark, so it sat there for the next crash to inherit.
-    # `Scheduler.run_forever` expires it once, after its one reap pass over all three homes
-    # has had the chance to read it (restart.clear_shutdown_mark).
+    # and whose boot loop died on it (4 scheduler tests, this run). Lazy READING is not lazy
+    # EXPIRY, and conflating the two was a defect: a boot that orphaned nothing never consumed
+    # the mark, so it sat there for the next crash to inherit. `Scheduler.run_forever` expires
+    # it once, after its one reap pass over all three homes could read it (clear_shutdown_mark).
     cause: str | None = None
     why = ""
 
@@ -341,26 +340,27 @@ def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo],
             if r.state in registry.ACTIVE_STATES \
                     and not _pid_alive(r.pid):
                 _resolve()
+                r_cause, r_why = containerbirth.read_breadcrumb(r, cause, why)   # R2928
                 # ABORTED, not failed (R1512/R1514): the daemon stopped this run by
                 # restarting, so a `failed` here is a failure the routine never had.
                 # Each orphan on its own: one run dir that refuses the write stays open for
                 # the next boot instead of stranding every orphan after it.
                 try:
                     close_out(runner, r.dir, r.run_id,
-                              f"orphaned: process gone at daemon boot — {why}",
-                              status="aborted", cause=cause)
+                              f"orphaned: process gone at daemon boot — {r_why}",
+                              status="aborted", cause=r_cause)
                 except OSError as exc:
                     log.warning("orphan %s could not be closed out: %s", r.run_id, exc)
                     continue
                 fixed += 1
-                log.warning("orphan closed: %s (cause=%s)", r.run_id, cause)
+                log.warning("orphan closed: %s (cause=%s)", r.run_id, r_cause)
                 # F746: a run the daemon's own restart killed is RESUMED, not left aborted
                 # (operator, 2026-10-22: "resume rather than abort"). COLLECTED here and
                 # resumed by the caller: this function is called synchronously — by four
                 # scheduler tests and by the boot pass itself — and starting a task needs a
                 # running loop, so the reap stays pure and the async boot drives the wakes.
-                # Only `daemon_restart`: a crash or an unexplained death is exactly where the
-                # daemon knows too little to start anything again.
-                if resumable is not None and cause == "daemon_restart":
-                    resumable.append((info.cfg, r, why))
+                # Only `daemon_restart`: a crash, a recreated container or an unexplained
+                # death is exactly where the daemon knows too little to start anything again.
+                if resumable is not None and r_cause == "daemon_restart":
+                    resumable.append((info.cfg, r, r_why))
     return fixed

@@ -2035,9 +2035,22 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   specific self-update reason alone), and the boot RE-OPENS a run that mark attributes to a
   restart (`daemon/reap_resume.py`) rather than closing it `aborted`. Capped at
   `RESTART_RESUMES`, held by a global pause, never applied to a parked run (its question is
-  durable) nor to a crash or an OOM — `cause: unknown` means nothing was established, and
-  nothing is restarted on it. Orphaned runs claiming to be alive are still closed out at boot;
-  what changed is that a restart-caused one does not stay closed. What none of that answers is
+  durable) nor to a crash or an OOM — nothing is restarted on a cause nobody established.
+  Orphaned runs claiming to be alive are still closed out at boot;
+  what changed is that a restart-caused one does not stay closed.
+  **Where no mark exists, the boot reap still answers a narrower question than "why"**
+  (`daemon/containerbirth.py`, R2928): WAS this process tree replaced while the run was alive?
+  pid 1's start time (`/proc/stat`'s `btime` plus `/proc/1/stat`'s `starttime`) against the run's
+  last status write decides it — YOUNGER means the whole CONTAINER was recreated, which is why no
+  mark was written, since nothing in this tree performed the stop; OLDER means the container
+  lived and the daemon alone died, a different investigation that should not wear the container's
+  verdict. So `unknown` splits into `container_recreated`, `daemon_died` and a residual `unknown`
+  that now means /proc itself could not answer. The measurement is what three runs across two
+  routines had called unreachable: on 2026-10-26 pid 1 was 54 s YOUNGER than the orphan rows, and
+  three kills in two days were all container recreates. WHAT recreated it — a compose restart
+  policy, a healthcheck, a deploy, an auto-updater — is outside the namespace and is the
+  operator's to find; the inference never overrides a mark, and never claims an OOM (the reap's
+  own `classify_cause` owns that question from the dead engine's peak RSS). What none of that answers is
   whether the instance that came back is HEALTHY and serving the build it was deployed from, and
   until R2428 nothing did: `rsched postdeploy` (`cli_postdeploy.py` over the pure checks in
   `postdeploy.py`) is the operator's own after-half — served version vs the checkout plus
