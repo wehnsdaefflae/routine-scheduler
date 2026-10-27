@@ -42,7 +42,7 @@ from pathlib import Path
 from .. import assists as lib
 from ..assists import Assist
 from ..hooks import dispatch, points
-from . import enginenote
+from . import assist_action, enginenote
 from . import hold as hold_seam
 from .assist_predicates import PREDICATES, Situation
 
@@ -237,7 +237,13 @@ def at_boundary(loop) -> None:
     if loop.assists:
         for assist in _matching(loop, "boundary", Situation(loop=loop)):
             enginenote.append(loop, _rendered(assist), assists=[assist.key])
+            # …and, for an `action`-payload assist, the rule DOES the thing its moment calls
+            # for — one authored action, no model turn (engine/assist_action.py).
+            assist_action.act(loop, assist)
     loop.assist_user_replies = replies
+
+
+
 
 
 def at_finish(loop, action: dict) -> tuple[str, list[str]] | None:

@@ -72,10 +72,16 @@ def is_failure(obs: dict) -> bool:
     rather than a mistake (a grep that found nothing), so it counts here too only because a
     caller asking "did that fail" wants the same answer a reader would give. `lint_ok: False`
     and an empty `problems` list are distinguished: a present-but-empty list is a pass.
+
+    The `*_ok: False` flags are read TOGETHER because they are one shape — a gate that refused
+    before the work started. `header_ok` was missing here until 2026-10-27, found by a
+    rule-performed `write_util` whose doc-standard refusal read to the run as "it completed":
+    every consumer took that refusal for a success (the chain stopper, the exit gate, the
+    `turn:error` trigger). A new `*_ok` flag joins the tuple the day it is written.
     """
     if int(obs.get("exit") or 0) != 0:
         return True
-    if obs.get("lint_ok") is False or obs.get("selftest_ok") is False:
+    if any(obs.get(k) is False for k in ("lint_ok", "selftest_ok", "header_ok")):
         return True
     if any(obs.get(k) for k in _FAILURE_KEYS):
         return True

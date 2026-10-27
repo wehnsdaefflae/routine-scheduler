@@ -46,16 +46,58 @@ from pathlib import Path
 #: moment and the payload are coupled rather than free to combine.
 MOMENTS = ("pre-action", "observation", "boundary", "pre-finish")
 
-#: The payload axis is `remind -> scaffold -> do -> hold`. The two ends exist; `scaffold` and
-#: `do` do not, because each needs a helper channel that is not built — and shipping an enum
-#: value the engine cannot honour would be a lie in the library's own schema.
-PAYLOADS = ("remind", "hold")
+#: The payload axis is `remind -> action -> hold`. The design note spelled the middle rung
+#: `scaffold -> do`, and said neither existed "because each needs a helper channel that is not
+#: built". That channel IS built now — `hooks/perform.py` runs one authored action at a hook
+#: point through the model's own path, with no model turn — so the rung exists, and it is
+#: named `action` rather than `do` for ONE reason: `hooks/points.PAYLOADS` already calls it
+#: that, and a second name for one thing is how two tables come to disagree. The correction is
+#: the design note's, not this module's (`tests/test_hooks_points.py` pins the two together).
+#:
+#: `scaffold` — pre-filling a draft for the model to work from — is still unbuilt, and stays
+#: out of the vocabulary: an enum value the engine cannot honour would be a lie in the
+#: library's own schema.
+PAYLOADS = ("remind", "action", "hold")
 
 #: moment -> the payloads it can carry. `pre-action` can ONLY hold (there is no way to reach a
-#: chosen action without stopping it), and the free moments can only remind (a hold needs an
-#: action to stop, and neither of them has one).
+#: chosen action without stopping it), and the free moments can only remind or ACT (a hold
+#: needs an action to stop, and neither of them has one).
+#:
+#: `action` is barred from the two moments that CHANGE CONTROL FLOW, and that is the operator's
+#: ruling rather than a cautious first cut: *"No veto ever — a hook performs and reports; only a
+#: hold (prose to the model) can stop an action"* (2026-10-26). A performed action never changes
+#: control flow, so it may not live where control flow is decided (`pre-action` prevents an
+#: action, `pre-finish` defers a finish) — the same line `hooks/points.ACTION_POINTS` derives.
+#:
+#: Of the two FREE moments it carries `boundary` only, and the reason is ORDERING, not policy.
+#: The observation-moment assists are asked BEFORE their observation is recorded, so the record
+#: can name what fired on it (`engine/assist.recorded`, which a resumed leg rebuilds its guards
+#: from) — performing there would file the hook's own observation AHEAD of the one that
+#: triggered it, and a transcript that lies about order is worse than a rung that waits. The
+#: turn boundary is where an authored action already runs with no model turn
+#: (`engine/control.run_user_command`, the path `hooks/perform.py` was lifted from), so it is
+#: the seam, not a compromise. `post-action` keeps `action` in the point registry because the
+#: reminder layer — whose author IS the run, and whose fire site is after the record — is the
+#: mechanism that will fire there.
 MOMENT_PAYLOADS = {"pre-action": ("hold",), "observation": ("remind",),
-                   "boundary": ("remind",), "pre-finish": ("remind",)}
+                   "boundary": ("remind", "action"), "pre-finish": ("remind",)}
+
+#: The action kinds an `action` assist may NOT perform: the ones that STEER a run rather than
+#: having an effect in the world. `engine/commands.py` draws this exact line for the user's own
+#: slash commands — *"Loop-control kinds (spawn/subtask/wait/ask_user/finish/…) are deliberately
+#: NOT commands: they steer the model's run; ask the assistant instead"* — and it is sharper
+#: here, for a reason that is about authorship rather than taste: an assist is declared ONCE in
+#: a library rule and fires in every routine that holds it, with no model turn. A `finish` or a
+#: `wait` performed there would change where the run goes without the model ever learning of it,
+#: which is the thing the operator ruled out: *"No veto ever — a hook performs and reports; only
+#: a hold (prose to the model) can stop an action"*.
+#:
+#: This bounds the ASSIST surface, not `hooks/perform.py` — his *"Any action. This includes utils
+#: and therefore scripts"* stands for the seam, and a mechanism whose author IS the run (a
+#: routine's own reminder) is not bound by the reason above. A kind leaving this set is a
+#: decision, which is why the set is named here rather than spelled into a condition.
+STEERING_KINDS = ("finish", "spawn", "subtask", "detach", "wait", "kill", "ask_user",
+                  "goal", "do_nothing", "create_routine", "manage_lane")
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 MAX_LINE_CHARS = 500
@@ -72,6 +114,12 @@ class Assist:
     predicate: str
     payload: str
     line: str
+    #: The action an `action`-payload assist PERFORMS when it fires, as the model's own action
+    #: dict (`hooks/perform.py` runs it through the model's path, so it is validated against the
+    #: firing routine's capabilities at fire time and can never exceed them). Empty for every
+    #: other payload. A frozen mapping is not expressible in a dataclass default, so this is the
+    #: one field a reader must not mutate — `perform` takes a copy.
+    action: dict | None = None
 
     @property
     def key(self) -> str:
@@ -79,6 +127,39 @@ class Assist:
         the transcript, so a resumed leg rebuilds the guard) and of its tally.
         """
         return f"{self.rule}/{self.id}"
+
+
+def _read_action(item: dict, payload: str, where: str) -> tuple[dict | None, str]:
+    """The `action` an assist performs, or the problem with it — `(action, "")` / `(None, why)`.
+
+    Separate from `normalize_assists` so that function keeps one branch per field: this is four
+    checks about one field, and the authoring error has to say which.
+
+    What is NOT checked here: whether the action is valid, and whether the routine may take it.
+    Both are answered at FIRE time by the model's own gates (`hooks/perform.py` →
+    `validate(ACTION_SCHEMA)` → `validate_action(allowed_kinds=…, grants=…)`), and they must be:
+    a library rule is authored once and held by routines with different capabilities, so "may
+    this run do this" has no answer at authoring time. What IS checked is the part that is the
+    same everywhere — that there is an action, that it names a kind, and that the kind is not
+    one that steers a run.
+    """
+    action = item.get("action")
+    if payload != "action":
+        if action is not None:
+            return None, (f"{where}: 'action' belongs to an `action` payload — a {payload!r} "
+                          "assist surfaces its line and performs nothing")
+        return None, ""
+    if not isinstance(action, dict) or not action:
+        return None, (f"{where}: an `action` payload needs an 'action' mapping — the action "
+                      "dict to perform, in the same form the model emits")
+    kind = str(action.get("kind") or "")
+    if not kind:
+        return None, f"{where}: the 'action' names no 'kind'"
+    if kind in STEERING_KINDS:
+        return None, (f"{where}: {kind!r} STEERS the run, so an assist may not perform it — a "
+                      f"hook performs and reports, and only a hold can change what a run does. "
+                      f"The kinds no assist may perform: {list(STEERING_KINDS)}")
+    return dict(action), ""
 
 
 def normalize_assists(raw: object, *, rule: str = "", label: str = "assists",
@@ -103,10 +184,11 @@ def normalize_assists(raw: object, *, rule: str = "", label: str = "assists",
         if not isinstance(item, dict):
             problems.append(f"{where}: each entry must be a mapping")
             continue
-        unknown = set(item) - {"id", "moment", "predicate", "payload", "line"}
+        unknown = set(item) - {"id", "moment", "predicate", "payload", "line", "action"}
         if unknown:
             problems.append(f"{where}: unknown key(s) {sorted(unknown)} — an assist is "
-                            "id / moment / predicate / payload / line")
+                            "id / moment / predicate / payload / line, plus `action` for an "
+                            "`action` payload")
             continue
         aid = str(item.get("id") or "")
         if not ID_RE.match(aid):
@@ -134,7 +216,8 @@ def normalize_assists(raw: object, *, rule: str = "", label: str = "assists",
         payload = str(item.get("payload") or "remind")
         if payload not in PAYLOADS:
             problems.append(f"{where}: 'payload' must be one of {list(PAYLOADS)} — the "
-                            "scaffold/do rungs are not built yet")
+                            "`scaffold` rung (pre-filling a draft) is not built, so it is "
+                            "deliberately not in the vocabulary")
             continue
         if payload not in MOMENT_PAYLOADS[moment]:
             problems.append(f"{where}: the {moment!r} moment carries "
@@ -153,8 +236,12 @@ def normalize_assists(raw: object, *, rule: str = "", label: str = "assists",
                             f"{MAX_LINE_CHARS}. It is read at a moment the run is busy; the "
                             "full rationale stays in the rule, reachable with read_rule")
             continue
+        action, why = _read_action(item, payload, where)
+        if why:
+            problems.append(why)
+            continue
         out.append(Assist(rule=rule, id=aid, moment=moment, predicate=predicate,
-                          payload=payload, line=line))
+                          payload=payload, line=line, action=action))
     return out, problems
 
 

@@ -48,7 +48,7 @@ def test_no_block_is_not_a_problem():
     ({"id": "Not A Slug"}, "kebab-case"),
     ({"moment": "whenever"}, "'moment' must be one of"),
     ({"predicate": "reads-the-models-mind"}, "unknown predicate"),
-    ({"payload": "scaffold"}, "not built yet"),
+    ({"payload": "scaffold"}, "is not built"),
     ({"payload": "hold"}, "carries ['remind'], not 'hold'"),
     ({"moment": "pre-action", "predicate": "uncheckpointed-repo-write"},
      "carries ['hold'], not 'remind'"),
@@ -108,9 +108,9 @@ def test_the_seed_rules_that_declare_assists_are_valid():
     # engine code with no reader
     used = {a.predicate for rule in declared.values() for a in rule}
     assert used == set(PREDICATES)
-    # every moment is exercised by a real rule, and both built payloads with it
+    # every moment, both PROSE payloads (`action`: test_assist_action.py; no shipped rule yet)
     assert {a.moment for rule in declared.values() for a in rule} == set(lib.MOMENTS)
-    assert {a.payload for rule in declared.values() for a in rule} == set(lib.PAYLOADS)
+    assert {a.payload for rule in declared.values() for a in rule} == {"remind", "hold"}
 
 
 
