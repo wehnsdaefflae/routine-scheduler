@@ -15,6 +15,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.464.0] — 2026-10-27
+
+Three fleet defects, each measured on the live instance before it was built.
+
+- **`read_file` can convert a document again** (R2981/R2977, `engine/docread.py`). A PDF, docx,
+  pptx or xlsx **never converted before** failed in EVERY routine directory with `[Errno 13]
+  Permission denied`. The cause was neither ownership nor the util: the engine handed `doc-read`
+  an `--out` path inside `.doc_cache/`, which `ownseal.SEALED_DIRS` withholds from every jailed
+  subprocess (D179) — so the engine's own cache directory was invisible to the process it asked
+  to fill it. DAC permitted the write; Landlock subtracted it, and Landlock has no deny rule to
+  carve an exception with. Pre-creating the file engine-side does not help either: the util
+  atomic-writes a temp file BESIDE its target, so it needs CREATE in the target's PARENT.
+  Now the util is handed a private per-conversion **drop directory** under the system temp dir —
+  the one tree `sandbox._toolchain` already mounts read-write for every util — and the **engine**
+  moves the result into the cache (`_store`), where its own write was legal all along. Not
+  `replace()`: `/tmp` is a tmpfs, so the rename is `EXDEV`; the bytes are copied under a dot-name
+  INSIDE the cache and renamed there, which keeps what the content-hash key promises. `_prune`
+  also sweeps a drop dir a killed conversion left behind. **`.doc_cache` stays sealed and no
+  jail-shape line was touched.**
+  It was silent for as long as it was because a cache HIT returns before the util is reached —
+  only a never-converted document bit — and the suite's own end-to-end conversion test stayed
+  green throughout because its `tmp_path` lives under `/tmp`, which the jail mounts wholesale.
+  The new test refuses that hole explicitly (`assert tempfile.gettempdir() not in spec["rw"]`)
+  and pins the destination against `ownseal.SEALED_DIRS` itself, so re-sealing or adding a sealed
+  dir cannot reintroduce it. Two consequences named rather than buried: a converted document's
+  text now exists briefly in a 0700 dir under `/tmp` where it never left the routine dir before,
+  and the destination changed in every sandbox mode, not only the jailed one.
+- **A capability refusal survives its own turn, and a repeat is answered from it** (F762,
+  `engine/denialmemo.py`, hooked by one line in `completion.judge`). MEASURED:
+  `vodafone-outage-claims:20261023-024513` re-emitted a write to its own `main.md` at turns 17,
+  18, 19 and 34; `moltbook-heartbeat:20261023-172052` at turns 34 and 35. The refusal's wording
+  was never the defect — `grantpolicy`'s text already names the right route. **Nothing of the
+  refusal survived the turn**: a refused action is corrected inside the schema-retry cycle, and
+  that whole micro-dialogue is dropped as debris when the turn recovers (`engine/turndebris.py`),
+  so the next turn's prompt held the run's own reasoning and no refusal at all. The specimen says
+  it in its own voice at turn 18 — *"I have to correct myself … I never attempted one"* — and
+  then attempted it twice more. Now a first capability refusal posts ONE engine note (the
+  canonical action, the turn, the permanence, the gate's text verbatim) and a later identical
+  attempt comes back as `REPEAT — … ALREADY had refused at turn <n>`. Only what
+  `GrantPolicy.deny` refuses qualifies: that gate answers config and ownership, which a run
+  changes about neither itself nor anyone, so it is the one class where "this cannot succeed
+  later" is TRUE — a schema rejection, a missing field, a file not yet written or a lock held
+  elsewhere can all legitimately succeed next attempt. **The verdict is never replayed**: the
+  live policy is re-asked on every call, so an `allow once` folded in mid-run makes the very next
+  attempt legal.
+- **The held-accept refusal is a STATE, not an error** (F761, `static/components/accept-bar.js`).
+  Four of the console's eight UI `error` events on 2026-10-22/23 were not errors but D178's
+  held-accept refusal, and the operator pressed `accept changes` at 03:06:27, 03:06:34 and
+  03:06:43 — three times in 18 seconds. The banner already existed and said the right sentence;
+  the defect was the CHANNEL, because a 409 arriving as an error toast reads as *"your click did
+  not work"*. A 409 now goes to the held banner alone, which is `reveal()`d — with no toast it is
+  the whole answer, and the button he presses is fixed at the foot of the viewport. 422 and
+  anything else keep the error channel, because those ARE failures; a caller that renders no held
+  state keeps the toast, since silence is worse than the wrong channel. Two prose surfaces whose
+  own words this falsified were corrected with it.
+
 ## [0.463.0] — 2026-10-27
 
 - **A curated rule can now DO the thing its moment calls for, not only say it** — the `action`
