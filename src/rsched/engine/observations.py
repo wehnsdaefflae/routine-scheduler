@@ -231,7 +231,8 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
     kind = obs.get("kind")
     if (not_run := _not_executed(obs, str(kind or ""))) is not None:
         return not_run
-    if obs.get("background") and obs.get("started"):
+    if obs.get("background") and (obs.get("started") or obs.get("abandoned")
+                                  or obs.get("cancelled")):
         # D118 phase 1: the call was HANDED to a background thread, so it has produced nothing
         # yet — no exit code, no stdout, none of the fields its kind's own renderer reads. It
         # must be rendered here, ABOVE the per-kind chain, for the same reason `_not_executed`
@@ -239,8 +240,20 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
         # has no output yet, and a KeyError in here kills the engine mid-turn (and every later
         # resume, which re-renders the stored observation). The real observation arrives later
         # and is rendered by its kind's own branch, in the ordinary way.
-        return (f"OBSERVATION ({kind} STARTED IN THE BACKGROUND as "
-                f"`{obs.get('handle')}`): {obs.get('note') or ''}").rstrip()
+        #
+        # The SAME is true of the two background ends that never produce a result, and they
+        # reached the per-kind chain for a year: `background.settle`'s abandoned payload and
+        # `background.kill`'s cancelled one carry `kind`/`handle`/`started_turn`/`note` and no
+        # `name`, no `exit`. A backgrounded `script` or `util` is in `obs_floor.OWN_ERRORS`, so
+        # floor 1 declines it too, and line 305's `obs['name']` raised — measured live in
+        # c-20261026-095411 (R2970), whose resumed leg re-rendered the stored payload and read
+        # a raw dict instead of the sentence naming what it lost.
+        if obs.get("started"):
+            return (f"OBSERVATION ({kind} STARTED IN THE BACKGROUND as "
+                    f"`{obs.get('handle')}`): {obs.get('note') or ''}").rstrip()
+        ended = "CANCELLED" if obs.get("cancelled") else "ABANDONED"
+        return (f"OBSERVATION ({kind} background call `{obs.get('handle')}` {ended}, started "
+                f"on turn {obs.get('started_turn')}): {obs.get('note') or ''}").rstrip()
     if (failed := obs_floor.failed(obs, str(kind or ""))) is not None:
         return failed   # an error result, for a kind whose own renderer words none
     if kind == "do_nothing":

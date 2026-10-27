@@ -139,6 +139,32 @@ def _record_decision_answer(routine_dir, decision_id: str) -> None:
         atomic_write_json(path, data)
 
 
+def _idempotency_stem(fields: dict) -> str:
+    """The inbox stem for ONE piece of feedback — the same feedback twice is the same file.
+
+    F772: answering one audit decision wrote TWO byte-identical inbox messages a second
+    apart, and nothing in this path was idempotent, so the routine read the same answer
+    twice. The cause is upstream and in the console (`static/views/questions.js:436`
+    defers a repaint only while an INPUT/TEXTAREA/SELECT holds focus, so a click on a
+    BUTTON does not: answering publishes a bus event, the list repaints mid-POST, the
+    locked form is replaced by a fresh enabled one, the card still reads unanswered, and
+    the person clicks the same option again — measured over `.ui-traces/`, 60 doubled
+    click pairs across two days, NONE of them under 400 ms, so not one was a double-fire).
+
+    The deterministic stem is the floor under all of that, and it is the mechanism this
+    writer already offers for exactly this purpose (`inbox.file_message`'s `name`: a
+    report delivery is `msg-rep-<id>` so a re-delivery REPLACES the queued one). Keyed on
+    the CONTENT, so a duplicate collapses while a genuinely different answer to the same
+    decision still files as its own message — and a changed answer filed after the first
+    was consumed is a revision, which it has always been.
+    """
+    import hashlib
+
+    key = "\u0000".join(str(fields.get(k) or "") for k in ("kind", "target", "choice", "raw"))
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+    return f"audit-{fields.get('kind') or 'feedback'}-{digest}"
+
+
 def write_feedback(routine_dir, body: Feedback) -> str:
     """Format + drop one feedback message into the self-audit inbox (shared with the
     Decisions page, which answers audit decisions through the same channel). Returns the
@@ -152,6 +178,7 @@ def write_feedback(routine_dir, body: Feedback) -> str:
     """
     fields = _message_payload(body, "")
     path = inbox.file_message(routine_dir, fields["text"], via="web-audit",
+                              name=_idempotency_stem(fields),
                               extra={k: v for k, v in fields.items()
                                      if k not in ("text", "ts", "via")})
     if body.kind == "decision" and (body.target or "").strip():

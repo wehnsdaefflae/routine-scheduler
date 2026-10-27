@@ -15,6 +15,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.461.0] — 2026-10-27
+
+### Fixed
+
+- **A background action that ENDS without a result told the run a raw dict instead of what it
+  lost** (`engine/observations.py`, new `tests/test_background_no_result_obs.py`). D118 phase 1
+  renders a background observation above the per-kind chain only when it carries `started`. The
+  two background ENDS carry no result either: `background.settle`'s abandoned payload and
+  `background.kill`'s cancelled one hold `kind`/`handle`/`started_turn`/`note` and no `name`, no
+  `exit`. A backgrounded `script` or `util` is in `obs_floor.OWN_ERRORS`, so floor 1 declined
+  them too, and `obs['name']` raised. Floor 2 then did its job — the run survived and read the
+  JSON — which is why this lived for a year behind a message nobody could act on. Measured live
+  (**R2970**): conversation `c-20261026-095411` lost a 25-minute background `script` to the
+  container restart, and its RESUMED leg (a resume re-renders the stored observation) read
+  `KeyError: 'name' at engine/observations.py:305` instead of the sentence naming the loss.
+  Both ends now render their own sentence — which of the two it was, the handle, the starting
+  turn and the note. `render_guard` could not have caught this class: it renders what the two
+  dispatch seams RETURN, and these payloads are written straight to the transcript, through no
+  seam — so the pin is four cases of its own, red-first proven against HEAD (4 assertions).
+- **Answering one audit decision filed the answer twice** (`web/api_audit.py`, F772). Nothing
+  in the audit-feedback path was idempotent, so one answer became two byte-identical inbox
+  messages a second apart and the next self-audit run read it twice. The console race behind it
+  is now named rather than guessed at: `static/views/questions.js:436` defers a repaint only
+  while an `INPUT`/`TEXTAREA`/`SELECT` holds focus, never for a BUTTON, so answering publishes
+  its bus event, the list repaints mid-POST, the locked form (`answerform.js:82-85`) is replaced
+  by a fresh enabled one, the card still reads unanswered, and the person clicks the same option
+  again. Measured over `.ui-traces/` for 2026-10-25/26: **60 adjacent same-target click pairs,
+  not one under 400 ms** (so not one was a double-fire), and on the Decisions page every option
+  click and every `answer` click is followed by an identical click 1.3–2.8 s later. The floor is
+  the mechanism this writer already offers for the purpose — `inbox.file_message`'s
+  deterministic `name` stem, as a report delivery uses so a re-delivery REPLACES its queued
+  message. Keyed on the feedback's CONTENT, so a duplicate collapses while a genuinely changed
+  answer still files: he re-answered all six decisions on 2026-10-25 and two answers differed,
+  which a per-decision key would have hidden. The repaint race itself is **F780** — the file is
+  at its size-ratchet ceiling, so it is a separate change and not a line smuggled in here.
+
 ## [0.460.0] — 2026-10-26
 
 ### Added
