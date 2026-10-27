@@ -197,6 +197,27 @@ def repetition_signals(actions: list[dict], failed: dict[int, bool]) -> list[str
     return out
 
 
+def worth_a_rung(turns_in_window: int) -> bool:
+    """Is a window of this WIDTH worth a rung at all? (R2958/R2960.)
+
+    One judgement, in the ladder's pure half because that is what it is: a window with no turns
+    in it hands the rung empty `says`, an empty histogram, no repetition signals and no worker
+    answers, so every verdict it could give is uninformed — while the rung's own brief tells it
+    the engine's counts are the evidence. Two routines each spent a whole run reporting exactly
+    that, after a pull-forward fired at turn 0.
+
+    It bounds the PULL-FORWARD path alone, and bounds it as little as possible. A pull-forward
+    fires whatever the interval says — an escalation a person or a repeat failure asked for must
+    never be swallowed — and this does not swallow one either: the trigger leaves
+    `last_rung_turn` untouched, so the first boundary with a turn in it fires on the same reason.
+
+    `build_dispatch`'s rule below — "an EMPTY interval is still a dispatch" — is untouched and
+    is about something else: a STALLED worker, which is a signal precisely BECAUSE turns elapsed
+    and nothing came of them. Zero turns is not a stall; it is nothing to look at yet.
+    """
+    return turns_in_window > 0
+
+
 def build_dispatch(transcript: Path, *, goal: str, since_turn: int, turn: int,
                    budget: dict | None = None, stopping: Any = None) -> dict:
     """What a rung is shown. Pure extraction from what is already on disk or in the meters.
@@ -204,6 +225,12 @@ def build_dispatch(transcript: Path, *, goal: str, since_turn: int, turn: int,
     An EMPTY interval is still a dispatch — a worker that emitted nothing since the last rung is
     itself the signal, and a builder that returned None there would make the stalled run the one
     case the ladder cannot supervise.
+
+    That is about a window with TURNS in it and nothing to show for them. A ZERO-WIDTH window is
+    a different thing and never reaches here: `ladder.rung_is_due` refuses to dispatch one
+    (R2958/R2960, where a pull-forward fired at turn 0 and the rung spent a run saying its
+    dispatch was empty). This builder stays total — it describes whatever window it is handed —
+    and the judgement about which windows are worth a rung belongs to the trigger.
     """
     actions, failed = read_actions(Path(transcript), since_turn=since_turn)
     payloads = [a["payload"] for a in actions]
