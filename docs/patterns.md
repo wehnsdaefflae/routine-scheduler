@@ -97,9 +97,12 @@ the person keeps or drops each, edits any other value, and presses ONE **accept 
 validated write — the routine.yaml fields through the PATCH writer, the triggers and the finish
 line through their own owners — and the draft is cleared. `DELETE …/settings/draft` discards
 the whole proposal. Accepting is refused while a run is active: a live run keeps the
-configuration it booted with. The attempt is not lost, though — it is HELD (D178): the refusal
-names when the run is expected to end, the settings page shows the accept waiting with its
-changes, and when the run ends it is replayed through the same accept endpoint. It EXPIRES
+configuration it booted with. The attempt is not lost, though — it is HELD (D178): the settings
+page shows the accept waiting with its changes and when the run is expected to end, and at run
+end it is replayed through the same accept endpoint. That banner is the WHOLE answer to the
+click — a held accept is a state, not a failure, so no error toast goes with it (F761): the
+same refusal rendered through the error channel read as a failed click, and the traces show
+three presses in 18 seconds. It EXPIRES
 instead of applying if one of its fields was decided elsewhere while it waited — an accept
 lands whole or not at all, and an older click does not overwrite a newer decision; the page
 then says which field moved and the changes are still there to accept again.

@@ -17,7 +17,9 @@
 
 import { el, when } from "/static/util.js";
 
-/** The one sentence this banner is for — also what the refusal toast says. */
+/** The one sentence this banner is for — and, since F761, the ONLY place it is said. The
+ *  refusal toast carried the same words through the console's ERROR channel, where a 409 reads
+ *  as a failed click; the words were never the defect, the channel was. */
 export function heldLine(held) {
   const n = Object.keys(held?.changes || {}).length;
   const count = `${n} change${n === 1 ? "" : "s"}`;

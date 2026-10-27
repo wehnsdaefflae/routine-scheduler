@@ -11,8 +11,11 @@ import { reveal } from "/static/components/settings-field.js";
 import { el, toast, toastError } from "/static/util.js";
 
 /** acceptBar(form, { onAccepted(next), onRefused(err), describeSwitch() }) → node
- *  `onRefused` runs after a 409: the accept was HELD (D178) and the page re-reads so the
- *  waiting accept is on screen before the toast is gone. */
+ *  `onRefused` runs after a 409: the accept was HELD (D178), and it is the WHOLE answer to
+ *  that click — the bar sends no error toast with it (F761), because a held accept is a state
+ *  rather than a failure. It must therefore both re-read the document AND bring the held state
+ *  to the reader, who pressed a button at the foot of the viewport. A caller that passes no
+ *  `onRefused` has nowhere to render it and keeps the toast. */
 export function acceptBar(form, { onAccepted, onRefused, describeSwitch } = {}) {
   const count = el("span", { class: "ab-count", "data-accept-count": "" });
   const what = el("span", { class: "ab-what" });
@@ -47,12 +50,24 @@ export function acceptBar(form, { onAccepted, onRefused, describeSwitch } = {}) 
       toast(applied.length ? `accepted — ${applied.join(", ")} saved` : `accepted ${n} change${n === 1 ? "" : "s"}`);
       onAccepted?.(next);
     } catch (err) {
-      // a live run keeps the settings it booted with (409), an invalid value is named (422):
-      // either way the draft stays exactly as it was, ready to accept again
-      toastError(err, 6000);
-      // D178: a 409 HELD the accept — re-read the document so the page shows it waiting now,
-      // rather than at the next visit. A toast that scrolls away was the whole of F668.
-      if (err?.status === 409) await onRefused?.(err);
+      // Either way the draft stays exactly as it was, ready to accept again — but the two
+      // refusals are not the same KIND of answer, so they do not share a channel.
+      //
+      // 409: a live run keeps the settings it booted with, so the accept was HELD (D178) and
+      // `onRefused` renders that state where the page keeps it. F761: it used to toast through
+      // the ERROR channel as well, and a 409 arriving as a failure reads as "your click did not
+      // work" — on 2026-10-23 he pressed this button at 03:06:27, 03:06:34 and 03:06:43, and
+      // four of the console's eight `error` events those two days were this one refusal.
+      // A held accept is a state, not a failure; nothing here says otherwise.
+      //
+      // 422: an invalid value IS a failure — the accept wrote nothing and will not until the
+      // value changes — so it keeps the error channel, as does anything else that lands here.
+      //
+      // The fallback is deliberate: a caller that renders no held state has no channel for the
+      // refusal at all, and SILENCE is worse than the wrong channel — so one without
+      // `onRefused` keeps the toast.
+      if (err?.status === 409 && onRefused) await onRefused(err);
+      else toastError(err, 6000);
     } finally {
       for (const b of [accept, discard]) b.disabled = false;
       accept.textContent = "accept changes";

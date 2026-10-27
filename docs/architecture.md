@@ -1504,8 +1504,9 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   engine's per-repo commit lock. The routine page's accept keeps that 409 (it writes three
   owners at once, so half of it is neither the old settings nor the new) but no longer DROPS the
   attempt: it is held as one record per routine carrying the active run's expected end — its
-  start plus `max_wall_clock_min` — the 409 says when it can land, the settings page renders it
-  as waiting, and at run end a background drain replays it through the accept endpoint itself or
+  start plus `max_wall_clock_min` — the settings page renders it as waiting and says when it can
+  land (in the banner's own `role="status"`, never the error toast: a held accept is a state and
+  not a failure, F761), and at run end a background drain replays it through the accept endpoint itself or
   EXPIRES it because one of its fields was decided elsewhere meanwhile (D178/F668,
   `pending_accepts.py` + `web/held_accepts.py`).
 - The daemon (`scheduler.py` + `runner.py`) fires cron through **`rsched/firetimes.py`** — croniter
