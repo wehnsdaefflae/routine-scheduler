@@ -406,8 +406,15 @@ one you are about to touch, not all of them.
   decode — the refusal names the size. A DOCUMENT — a PDF or an OOXML docx/pptx/xlsx, known by
   the MAGIC BYTES in that same head, never by its name — is CONVERTED instead
   (`engine/docread.py`): the engine runs the library's `doc-read` util in the run's own jail,
-  `offline` and with no secret, which streams Markdown into the content-hash cache
-  `.doc_cache/<sha256>.md` (engine-owned, gitignored, pruned), and read_file pages THAT file like
+  `offline` and with no secret, which streams Markdown into a private DROP DIRECTORY under
+  `tempfile.gettempdir()` (`docread.DROP_PREFIX`) that the ENGINE then moves into the
+  content-hash cache `.doc_cache/<sha256>.md` (engine-owned, gitignored, pruned). The two steps
+  are not a nicety: `.doc_cache/` is one of `ownseal.SEALED_DIRS`, so the util has no right to
+  create a name in the engine's own cache, Landlock has no deny rule to except it with, and
+  pre-creating the file does not help because the util atomic-writes BESIDE its `--out` target.
+  Handing it the cache path killed every FIRST conversion in a routine dir with `[Errno 13]
+  Permission denied` — invisible until 0.462.0 because a cache HIT returns before the util runs.
+  read_file pages the cache file like
   any text — `start_line`/`max_lines`/`start_char` address the converted text, at most
   `docread.MAX_PAGES` (200) pages per conversion, and the observation says it is a conversion and
   names every page with no text layer (a scan is reported, never silently OCR'd). The engine

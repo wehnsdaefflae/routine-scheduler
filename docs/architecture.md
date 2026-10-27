@@ -775,8 +775,21 @@ and the capabilities digest's catalog listing):
   `[Content_Types].xml`) is no longer refused as a binary: the engine runs the library's
   `doc-read` util on it — in the run's own jail, `offline` (TCP denied although its `calls:
   vision` makes the tree outbound) and with no secret — which writes layout-aware Markdown
-  (pymupdf4llm for a PDF, one `<!-- page N of M -->` line per page; markitdown for Office) straight
-  into this cache, and `read_file` pages that file exactly like a text file. The observation says
+  (pymupdf4llm for a PDF, one `<!-- page N of M -->` line per page; markitdown for Office), and
+  `read_file` pages that file exactly like a text file. The util does NOT write into this cache
+  and cannot: the cache is inside the routine dir and `ownseal.SEALED_DIRS` withholds
+  `.doc_cache/` from every jailed subprocess (D179), so the engine's own cache directory is
+  invisible to the process it asks to fill it — and Landlock has no deny rule to make an
+  exception with, nor does creating the file engine-side first help, because the util
+  atomic-writes a temp file BESIDE its `--out` target and so needs CREATE in the target's
+  PARENT. The util is therefore handed a private drop directory in the system temp dir (the one
+  tree `sandbox._toolchain` mounts read-write for every util on every run,
+  `docread.DROP_PREFIX`) and the ENGINE moves the result into the cache, where its own write
+  was always legal; the drop dir goes in the call's `finally`, and one a killed conversion left
+  behind is swept by the same `_prune` that sweeps a half-written cache dotfile. Until 0.462.0
+  the util was handed the cache path itself, so every FIRST conversion of a document in a
+  routine dir died with `[Errno 13] Permission denied` on a `.<digest>.part` sibling — silent
+  for as long as it was because a cache HIT returns before the util is reached. The observation says
   it is a conversion, names the pages converted (at most `docread.MAX_PAGES`, 200, per conversion —
   the rest are named with the util call that reaches them) and the pages with NO TEXT LAYER (a scan
   is reported, never silently OCR'd; the util's `--ocr` sends only those pages to `vision`). The

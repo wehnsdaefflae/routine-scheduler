@@ -16,9 +16,20 @@ never its name. Anything else keeps read_file's text path and its two refusals.
 THE CONVERSION IS THE ENGINE'S CALL, made on the run's behalf inside the run's own jail: the
 run's fs roots, the util's `fs: roots`, no secret at all (the call never OCRs, so the vision
 key the util's tree declares is withheld), and `offline` — TCP denied although the util's
-`calls: vision` makes its tree `net: outbound`. The util writes the Markdown straight into the
-cache file and prints only a summary, so the engine never holds the document, nor its
-conversion, as one string: read_file streams the cache file line by line like any text.
+`calls: vision` makes its tree `net: outbound`. The util writes the Markdown to a file and
+prints only a summary, so the engine never holds the document, nor its conversion, as one
+string: read_file streams the cache file line by line like any text.
+
+WHERE IT WRITES IS NOT THE CACHE, and cannot be. The cache lives inside the routine dir, and
+`ownseal.SEALED_DIRS` withholds `.doc_cache/` from every jailed subprocess (D179) — so the
+engine's own cache directory is invisible to the process it asks to fill it, and Landlock has
+no deny rule to carve an exception with. Creating the file engine-side first does not help:
+the util atomic-writes a temp file BESIDE its `--out` target, which needs CREATE in the
+target's PARENT. So the util is handed a private directory in the system temp dir — which
+`sandbox._toolchain` mounts read-write for every util on every run — and the engine moves the
+result into the cache afterwards (`_store`), where its own write was legal all along. The
+failure was silent for as long as it was because a cache HIT returns before the util is
+reached: only a document never converted in that routine bit.
 
 A DOCUMENT OVER `fileops.READ_MAX_BYTES` IS STILL CONVERTED. That cap exists because a read
 decoded the file it read; here what is read is the converted text, streamed from disk, and
@@ -39,6 +50,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import time
 import zipfile
@@ -55,6 +67,11 @@ if TYPE_CHECKING:
 
 DOC_UTIL = "doc-read"
 CACHE_DIR = ".doc_cache"
+#: Prefix of the per-conversion DROP DIRECTORY the util writes into — in the system temp dir,
+#: the one tree `sandbox._toolchain` mounts read-write for every util on every run, because
+#: the cache itself is sealed against jailed subprocesses (`ownseal.SEALED_DIRS`). Named, not
+#: anonymous, so `_prune` can recognise and remove one a killed conversion left behind.
+DROP_PREFIX = "rsched-docread-"
 MAX_PAGES = 200
 CONVERT_TIMEOUT_S = 300
 KEEP_DOCS = 32
@@ -112,6 +129,28 @@ def _run_util(ctx: RunContext, src: Path, out: Path) -> tuple[int, str, str]:
         cwd=work_dir(ctx), aborted=ctx.aborted)
 
 
+def _store(part: Path, text: Path) -> None:
+    """Move the util's Markdown from its drop directory into the cache — the half of the
+    conversion the ENGINE performs, because only the engine may write there.
+
+    Not `part.replace(text)`: the drop dir is in the system temp dir and the cache inside the
+    routine dir, normally different filesystems (`/tmp` is a tmpfs), and a rename across them
+    is `EXDEV`. So the bytes are copied into the cache under a dot-name first and renamed
+    INSIDE it, which keeps what the content-hash key promises — a reader sees the whole
+    conversion or no file at all, never a half-written one. The dot-name is also what
+    `_prune` sweeps if this is interrupted.
+    """
+    fd, tmp_name = tempfile.mkstemp(dir=text.parent, prefix=f".{text.name}.", suffix=".part")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        shutil.copyfile(part, tmp)
+        tmp.replace(text)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _summary(out: str) -> dict | None:
     """The util's JSON summary, or None when it printed something else."""
     try:
@@ -123,19 +162,27 @@ def _summary(out: str) -> dict | None:
 
 def _prune(base: Path) -> None:
     """Keep the KEEP_DOCS most recently READ conversions (a hit refreshes its mtime), and drop
-    the half-written temp files a conversion ended mid-write left behind (dotfiles older than
-    two conversion deadlines — a live one is younger). Best effort: two runs pruning one
-    routine's cache at once may each find a file already gone.
+    what a conversion ended mid-write left behind (older than two conversion deadlines — a
+    live one is younger): a half-written dotfile in the cache, and the util's own DROP
+    DIRECTORY in the system temp dir, which `converted` removes in its `finally` but a killed
+    process cannot. Best effort: two runs pruning one routine's cache at once may each find a
+    file already gone.
     """
+    stale = time.time() - 2 * CONVERT_TIMEOUT_S
     try:
         docs = sorted(base.glob("*.md"), key=lambda p: p.stat().st_mtime_ns)
         for old in docs[:-KEEP_DOCS]:
             old.unlink(missing_ok=True)
             old.with_suffix(".json").unlink(missing_ok=True)
-        stale = time.time() - 2 * CONVERT_TIMEOUT_S
         for leftover in base.glob(".*"):
             if leftover.is_file() and leftover.stat().st_mtime < stale:
                 leftover.unlink(missing_ok=True)
+    except OSError:
+        pass
+    try:
+        for drop in Path(tempfile.gettempdir()).glob(f"{DROP_PREFIX}*"):
+            if drop.is_dir() and drop.stat().st_mtime < stale:
+                shutil.rmtree(drop, ignore_errors=True)
     except OSError:
         return
 
@@ -163,11 +210,10 @@ def converted(ctx: RunContext, path: Path, kind: str) -> Conversion | str:
         ensure_gitignored(ctx.routine.dir, CACHE_DIR,
                           "documents read_file converted to Markdown (engine-owned, pruned)")
         base.mkdir(parents=True, exist_ok=True)
-        fd, part_name = tempfile.mkstemp(dir=base, prefix=f".{digest}.", suffix=".part")
-        os.close(fd)
+        drop = Path(tempfile.mkdtemp(prefix=f"{DROP_PREFIX}{digest[:12]}."))
     except OSError as exc:
         return f"the conversion cache could not be prepared: {exc}"
-    part = Path(part_name)
+    part = drop / f"{digest}.md"
     try:
         code, out, err = _run_util(ctx, path, part)
         summary = _summary(out) if code == 0 else None
@@ -175,12 +221,14 @@ def converted(ctx: RunContext, path: Path, kind: str) -> Conversion | str:
             said = " ".join((err or out or "").split())[-600:]
             return (f"the {DOC_UTIL} util failed (exit {code}): {said or 'no output'}"
                     if code != 0 else f"the {DOC_UTIL} util returned no summary: {said}")
-        part.replace(text)
-        atomic_write_json(meta_file, summary)
+        _store(part, text)
+        # The util reported the drop path it was given, which this call removes on its way
+        # out; the cached summary must name where the conversion actually lives.
+        atomic_write_json(meta_file, {**summary, "out": str(text)})
     except OSError as exc:
         return f"the converted text could not be stored: {exc}"
     finally:
-        part.unlink(missing_ok=True)
+        shutil.rmtree(drop, ignore_errors=True)
     _prune(base)
     return Conversion(text, summary)
 
