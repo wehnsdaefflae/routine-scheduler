@@ -15,6 +15,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.463.0] — 2026-10-27
+
+- **A curated rule can now DO the thing its moment calls for, not only say it** — the `action`
+  payload on a rule assist (`rsched/assists.py`, `engine/assist_action.py`), which is
+  `hooks/perform.py`'s first PRODUCTION caller. Until now the executable payload shipped in
+  0.460.0 had only its own tests as callers: a hook could perform any action at a point, and
+  nothing did, so the capability was honest in the registry and unexercised in a live run.
+  A rule declares `payload: action` with an `action:` dict beside its line; when its predicate
+  fires at the turn boundary, the engine performs that action through the model's own path
+  (schema → workflow tools ∩ capabilities → the routing table) at NO model turn, and appends
+  what came of it as an ENGINE NOTE beside the rule's own line.
+  The design note spelled the payload axis `remind → scaffold → do → hold` and recorded both
+  middle rungs as unbuilt "because each needs a helper channel that is not built". The channel
+  exists now, so the rung does — spelled **`action`**, the name `hooks/points.PAYLOADS` already
+  uses, because `tests/test_hooks_points.py` pins `points.PAYLOADS ⊇ assists.PAYLOADS` and two
+  names for one concept is how two tables come to disagree. `scaffold` stays out of the
+  vocabulary: the engine still cannot honour it.
+  **Four bounds, three of them the operator's own rulings.** *"Any action. This includes utils
+  and therefore scripts"* is what may run. *"No veto ever — a hook performs and reports; only a
+  hold (prose to the model) can stop an action"* is why `MOMENT_PAYLOADS` bars `action` from
+  both moments that change control flow — the same line `points.ACTION_POINTS` derives — and
+  why there is no branch on success anywhere in the rung: a failed action is reported and
+  changes nothing about what the run does next. `assists.STEERING_KINDS` refuses the eleven
+  kinds that steer a run (finish, spawn, wait, ask_user, goal, create_routine …), the line
+  `engine/commands.py` already draws for the user's own slash commands and a sharper one here,
+  because an assist is authored ONCE in a library rule and fires in every routine that holds
+  it. And the action can never exceed the FIRING routine: the capability gate is at fire time,
+  deliberately unchecked at authoring time, because one rule is held by routines with different
+  capabilities so "may this run do this" has no answer until it fires.
+  Of the two free moments it carries `boundary` only, and the reason is ORDERING rather than
+  policy: the observation-moment assists are asked BEFORE their observation is recorded so the
+  record can name what fired on it (which a resumed leg rebuilds its guards from), so
+  performing there would file the hook's own observation ahead of the one that triggered it.
+- **A gate's refusal no longer reads as a success to every consumer of an observation**
+  (`engine/observations.is_failure`). It checked `lint_ok` and `selftest_ok` but not
+  `header_ok`, so a `write_util` the doc-standard gate REFUSED — nothing written, five
+  problems listed — was classed as a successful action by the chain stopper
+  (`engine/chain.py`), the exit gate, the `turn:error` reminder trigger and the new rung's own
+  note, which told the run "it completed". Found by the rung's first live fire. The `*_ok`
+  flags are now read together, with the specimen in the docstring, and a new one joins the
+  tuple the day it is written.
+
 ## [0.462.0] — 2026-10-27
 
 ### Fixed
