@@ -261,6 +261,20 @@ exists only where the jail engages — under `sandbox: off`, or on a kernel with
 `ungated_write` is again the whole mechanism. Paths OUTSIDE the routine dir are unaffected: a
 granted write root is a grant, and the accountability marker remains the record there.
 
+**A call the ENGINE makes into the jail is bound by the same seal** — including when the engine
+is the one that wants the output written. `read_file`'s document conversion
+(`engine/docread.py`) caches converted Markdown under `.doc_cache/`, which is sealed, so the
+util it runs may not create a name there: handing it `--out <cache path>` failed every FIRST
+conversion of a document in a routine dir with a bare `[Errno 13] Permission denied` (silent
+until then, because a cache HIT returns before the util is reached). There is no deny rule to
+except it with, and creating the file engine-side first does not help either — the util
+atomic-writes a temp file BESIDE its target, so it needs CREATE in the target's PARENT. The
+shape that works is to hand the util a destination its own jail already has: a private drop
+directory under `tempfile.gettempdir()`, which the toolchain mounts read-write for every util,
+and then MOVE the result into the sealed store from the engine side, where the write was legal
+all along. An engine-side call that wants a file written inside a sealed directory needs that
+same two-step; nothing about the seal is relaxed for it.
+
 ### The run-history depth is a kernel boundary, not prompt economy (D207)
 
 `capabilities.runs` (none | last | all) says how far back a run may read its own previous runs.
