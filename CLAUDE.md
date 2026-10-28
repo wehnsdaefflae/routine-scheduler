@@ -107,7 +107,8 @@ one you are about to touch, not all of them.
   page; the two own-body pages left (deficit-coach, birthday-admin) still publish under
   `steward-publishing`, on the kit whose `CONTRACT.md` says how
 - `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
-  item shape, the status vocabulary and its precedence, and the changelog join;
+  item shape, the status vocabulary and its precedence, the `first_seen` age stamp and the
+  changelog join;
   `docs/messages.md` — a routine's four message folders (the Messages page/D74), the
   per-folder write surface, and the outbox-retraction decision
 - `docs/sandboxing.md`, `docs/endpoints.md`, `docs/decision-models.md`, `docs/oauth-connections.md`,

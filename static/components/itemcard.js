@@ -11,6 +11,7 @@
 import { md, mdInline } from "/static/md.js";
 import { chip, el, when } from "/static/util.js";
 import { refHref } from "/static/components/reflinks.js";
+import { itemAge } from "/static/components/item-age.js";
 
 const STATUS_TONE = {
   open: "waiting_user", in_progress: "partial", addressed: "ok",
@@ -239,6 +240,9 @@ export function itemCard(item, { queued, onSave, onWithdraw, answered, onPriorit
     routingLine(item),
     refsLine(item),
     originLine(item),
+    // beside the origin, not inside it: origin says where the item came from and when its
+    // SOURCE was written (a rewrite date for a finding), age says how long it has been here
+    itemAge(item),
     addressedSection(item),
     item.type === "finding" && onSave ? commentBox(item, queued, { onSave, onWithdraw }) : null);
 }

@@ -22,7 +22,8 @@ did, and an absent status is NEVER recovered from title prose.
 
 Read-model discipline: nothing here writes, and the merge is memoized behind the stat
 fingerprint of the four files plus the ⚑ priorities store (`priorities.py`), whose flags float
-an item to the top of the list.
+an item to the top of the list. An item's AGE is NOT from here (`origin.ts` is its source's own
+date): `firstseen.py` stamps the served rows, off a store it writes, so not a memo source (F753).
 """
 
 from __future__ import annotations
