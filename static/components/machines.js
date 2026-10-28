@@ -16,12 +16,14 @@ export function machinesCard(catalog, bound, { onSave, onChange }) {
   const current = () => Object.entries(checks).filter(([, cb]) => cb.checked).map(([n]) => n);
   const tick = (cb) => { if (onChange) cb.addEventListener("change", () => onChange(current())); };
   const box = el("div", {},
-    // This card owns the section's ONE explanation: the routine page and the conversation
-    // composer both mount it.
+    // This card owns the section's ONE explanation. Its mounts are the routine page's limits
+    // section and the conversation HEADER's capabilities panel — not the composer, which
+    // offers no machines card at all (corrected 2026-10-27: the comment named it for a year).
     el("div", { class: "muted small", style: "margin-bottom:8px" },
       "Which boxes from the instance's catalog this may reach over SSH, through the ",
       el("code", {}, "remote"), " util. A binding is a RESOURCE: the machines it names are the "
-      + "only ones a run can act on. Takes effect at the next run. Add machines in ",
+      + "only ones a run can act on. Takes effect at the next run — for a conversation, its "
+      + "next reply. Add machines in ",
       el("a", { href: "#/settings?section=machines" }, "Settings → Machines"), "."));
   const boundSet = new Set(bound || []);
   if (!(catalog || []).length && !boundSet.size) {

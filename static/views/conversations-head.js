@@ -60,8 +60,20 @@ function modelControl(detail, slug, isLive) {
     const mainName = mainSel.value, uncName = uncSel.value;
     // wholesale-replace semantics (blank clears a role) — send the FULL role set so
     // switching one role never drops the other; main seeds tool_call, as the composer does.
+    //
+    // But a seeded tool_call and a CHOSEN one are not the same thing (F784). The composer
+    // exists to let a conversation run a different tool-call model (conversations-new.js:
+    // it seeds tool_call from main, then overrides it when its own picker is set), and this
+    // header overwrote that choice on every model apply — so switching the chat model once
+    // silently undid the whole point of the composer's picker. There is no flag saying which
+    // it was, but the seed makes them equal: a stored tool_call that EQUALS main was seeded
+    // and keeps tracking main; one that DIFFERS was chosen here and is carried through, the
+    // same way the efforts below carry tool_call's level untouched.
     const models = {};
-    if (mainName) { models.main = mainName; models.tool_call = mainName; }
+    const storedTool = detail.models?.tool_call;
+    const ownTool = storedTool && storedTool !== detail.models?.main ? storedTool : null;
+    if (mainName) { models.main = mainName; models.tool_call = ownTool || mainName; }
+    else if (ownTool) models.tool_call = ownTool;   // clearing main keeps a chosen tool role
     if (uncName) models.uncensored = uncName;
     const decName = decSel ? decSel.value : detail.models?.decision;
     if (decName) models.decision = decName;

@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.469.0] — 2026-10-28
+
+### Fixed
+- **A conversation's deliberately chosen tool-call model survives a chat-model switch** (F784).
+  The composer exists to let a conversation run a different tool-call model from its chat model
+  (`static/views/conversations-new.js` seeds `tool_call` from the main picker, then overrides it
+  when its own picker is set) — and the conversation header's model `apply` sent
+  `models.tool_call = <main>` on EVERY save, so the first time the operator switched the chat
+  model that choice was silently undone by the surface beside it. Nothing records which role was
+  seeded and which was chosen, and nothing needs to: the seed makes a seeded `tool_call` equal to
+  `main`, so one that DIFFERS can only have been chosen. It is now carried through untouched,
+  exactly as the same handler already carries `efforts.tool_call`; a seeded role still follows
+  main, and clearing main to the system default no longer drops a chosen tool role either.
+  Pinned by `tests/ui/test_conversation_tool_role_kept.py` (3 browser tests; 2 of them fail
+  against the previous line, the third pins the seeding that must not change).
+- **Two stale comments on the machines card corrected** (same report): it claimed the
+  conversation COMPOSER mounts it (the mounts are the routine page's limits section and the
+  conversation header's capabilities panel), and its one explanation said "Takes effect at the
+  next run" while sitting in a conversation whose own surrounding text says "applies from the
+  next reply".
+
 ## [0.468.0] — 2026-10-28
 
 ### Fixed
