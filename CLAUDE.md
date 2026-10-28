@@ -104,8 +104,8 @@ one you are about to touch, not all of them.
   don't "fix" a conversation by giving it a compiled workflow
 - `docs/status-pages.md` — the RETIRED Steward hub (2026-10-28): a run's two-part finish
   summary (`**Process:**` then `**Work:**`) and its blocking/closing asks replace a published
-  page; the two own-body pages left (deficit-coach, birthday-admin) still publish under
-  `steward-publishing`, on the kit whose `CONTRACT.md` says how
+  page; the two own-body pages left (deficit-coach, birthday-admin) carry their publishing
+  conduct in their own recipes, on the kit whose `CONTRACT.md` says how
 - `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
   item shape, the status vocabulary and its precedence, the `first_seen` age stamp and the
   changelog join;

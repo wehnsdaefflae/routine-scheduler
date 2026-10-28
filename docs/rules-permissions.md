@@ -76,9 +76,12 @@ floor keeps them on. `expects:` is the optional counterpart — entities the ins
 *presume* but nothing enforces. It grants nothing, blocks nothing, and never fails a save.
 
 It exists because the necessary edge was the only one the system could see. Publishing to the
-Steward host presumes READ access to the shared kit — the contract lives there; `read_file`
-is confined to granted roots — which no capability can express. So `steward-publishing` says
-`expects: {fs-read: ["~/…/web/steward"]}` and the setup surface shows the gap before the run.
+Steward host presumed READ access to the shared kit — the contract lives there; `read_file`
+is confined to granted roots — which no capability can express. So the `steward-publishing`
+permission said `expects: {fs-read: ["~/…/web/steward"]}` and the setup surface showed the gap
+before the run. That permission is gone (2026-10-28: its two remaining holders carry the conduct
+in their own recipes and the root in their own config), so no library doc declares `expects:`
+today; the mechanism stays for the next presumption that meets the bar below.
 A filesystem name is read in its canonical spelling, `~` expanded (`grants.normalize_expects`),
 because it is compared with the routine's own roots, which are stored that way — and a doc
 shipped to every instance can name a home no other way.
@@ -101,7 +104,7 @@ Two rules keep it from turning into a second `requires:`:
   directory, which the sandbox always permits. Checked and dropped 2026-09-02.
 
   What survives the bar states a need the holder cannot route around: `steward-publishing`
-  expects READ access to the shared kit, because `read_file` is confined to granted roots and a
+  expected READ access to the shared kit, because `read_file` is confined to granted roots and a
   routine that cannot read the contract cannot build to it. The test is not "would this be useful" — it is
   "can a holder without it do anything this doc describes".
 
@@ -588,7 +591,6 @@ routine shares, a reach outside the routine's own world.
 | `routine-rebuild` | the `rebuild_routine` capability — `create_routine` with `replaces` creates a REPLACEMENT CANDIDATE at once (the old routine's settings without its secrets, unscheduled) and files the one swap decision (engine/candidate.py) | opt-in |
 | `shell` | the `shell` action — one host command per turn, in the run's own jail with no secret injected | opt-in |
 | `outbound-mail` | `gmail:send`, `fau-mail:send` — send email from the user's own mailboxes | opt-in |
-| `steward-publishing` | nothing; expects READ access to the shared kit — publish this routine's OWN page or app on the Steward host; the hub's status pages are retired (see [status pages](status-pages.md)) | opt-in |
 | `browser-sessions` | `browser-session` — drive the shared browser that is already signed in (see [browser sessions](browser-sessions.md)) | opt-in |
 | `desktop-sessions` | `desktop` — drive this routine's OWN desktop VM the way a person would, its granted folders mounted inside (see [desktop sessions](desktop-sessions.md)) | opt-in |
 | `darknet` | `darknet` — read Tor hidden services (see [darknet](darknet.md)) | opt-in |

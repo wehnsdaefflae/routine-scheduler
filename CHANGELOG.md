@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.472.0] — 2026-10-28
+
+### Removed
+- **The `steward-publishing` permission.** After the Steward hub's retirement (0.470.0) it had two
+  holders, both publishing their OWN page or app (deficit-coach, birthday-admin): a library
+  document standing in for two recipe paragraphs. Each of those routines now carries the conduct
+  (where the kit's contract lives, the kit check before a publish, the three proofs) in its own
+  recipe and the kit's read root in its own `fs_read_roots`; the seed and the live library copy
+  are deleted. No library document declares `expects:` any more — the mechanism stays, documented
+  with this permission as its past example (docs/rules-permissions.md).
+
 ## [0.471.0] — 2026-10-28
 
 ### Added

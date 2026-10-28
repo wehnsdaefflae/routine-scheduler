@@ -227,7 +227,7 @@ def test_expects_is_advisory_and_never_blocks(tmp_path):
 def test_an_expected_root_written_with_a_tilde_is_met_by_the_routines_own_root(tmp_path):
     """A doc shipped to every instance cannot name one account's home, so it writes `~/…`; a
     routine's roots are stored expanded. Compared as written, the expectation read as unmet on
-    every holder — which is why the seed steward-publishing doc hard-coded `/home/mark`."""
+    every holder — which is why the retired steward-publishing doc once hard-coded `/home/mark`."""
     server = _server(tmp_path)
     _doc(server, "permissions", "kit",
          "---\ntags: [a]\nrequires: {}\nexpects:\n  fs-read: ['~/kit']\n---\n"

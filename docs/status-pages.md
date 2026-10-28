@@ -19,13 +19,14 @@ used to carry now has two homes inside the scheduler:
 
 The engine pieces that existed only for the hub went with it: the `hub_tab` identity field (and
 its `HUB TAB:` contract line) and the `hub_feedback` run-gate check. The `steward-a-project`
-workflow and the steward, radar and watcher settings patterns no longer grant
-`steward-publishing`; the routine `steward-hub-maintainer` that kept the kit was archived.
+workflow and the steward, radar and watcher settings patterns stopped granting
+`steward-publishing`, and the permission itself was then removed; the routine
+`steward-hub-maintainer` that kept the kit was archived.
 
 **Two pages remain, and they are not status pages.** `deficit-coach`'s page IS its app, and
-`birthday-admin` owns a hand-written page; both still hold `steward-publishing`, which now means
-exactly that — publishing a routine's OWN page or app on the Steward host — and the kit below
-still serves them. Nothing maintains the kit on a schedule any more: it changes when the operator
+`birthday-admin` owns a hand-written page. Each carries its publishing conduct in its OWN recipe
+(where the contract lives, the kit check before a publish, the three proofs) and the kit's read
+root in its own `fs_read_roots`, and the kit below still serves them. Nothing maintains the kit on a schedule any more: it changes when the operator
 changes it ("Nobody deploys for anybody" below). The old hub's index and the retired projects'
 stores on the host are the operator's to remove by hand; no routine and no kit operation can
 delete a project store (`web/api_routine_edit.EXTERNAL_SURFACES`).
@@ -130,11 +131,11 @@ to this contract has to see `_shared/steward.js`, `_shared/steward.css`, `_share
 `read_file` resolves against the routine's granted fs roots; a publisher's roots are usually
 nothing but its own directory. The consequence was not a failed run — it was a duplicated one:
 routines wrote themselves a private helper script to `open()` those same files directly, once per
-project, each copy free to rot (R1160). So the `steward-publishing` permission carries
-`expects: fs-read: ["/home/mark/.local/share/routine-scheduler-libraries/web/steward"]` — the SOFT
-edge, reported by the setup surface for every holder — and every routine holding it now carries
-that read root. `steward-hub-maintainer` had it while it owned the master in both
-directions (archived 2026-10-28).
+project, each copy free to rot (R1160). So every publisher carries that read root,
+`/home/mark/.local/share/routine-scheduler-libraries/web/steward`, in its own `fs_read_roots`
+(once declared as the `steward-publishing` permission's `expects:`; the permission is gone).
+`steward-hub-maintainer` had it while it owned the master in both directions (archived
+2026-10-28).
 
 **What makes that true is a mechanism, not a sentence.** For a while it was only the sentence and
 the two copies drifted: the feedback-cursor default in `api.php` and the 16 MiB `MAX_BODY` in
@@ -741,8 +742,7 @@ path with no credential, opening a listed deliverable. Each of them had been pas
 the routines' own words, because a routine verifies while signed in and therefore never sees what a
 stranger sees.
 
-So the `steward-publishing` permission states three proofs, each named after the failure it
-catches — a
+So a publishing recipe states three proofs, each named after the failure it catches — a
 write refused for a misspelled key, twelve loose files world-readable behind a removed blanket,
 and a page whose every document link 404'd for five hours because the run that corrected them
 re-sent its state document and not the collection those links live in.
@@ -840,13 +840,13 @@ notice, which is why five compiled PDFs read to their author as missing rather t
 
 ## What binds a routine to this
 
-Publishing a page is opt-in per routine: the **`steward-publishing`** permission, held today by
-the two routines whose page is their own (above). Holding it puts its conduct in the run's
-capability notes — where the contract lives and the three proofs a publish owes before it counts
-as finished — and its `expects:` reports the kit's read root on the setup surface of every holder
-that lacks it. It requires no capability: gating `ftp` behind it would move that util into the
-engine's gated set for EVERY routine and silently break the ones that publish to other hosts; the
-access that matters is already a per-routine decision, the four-state `secret:FTP_SOURCES` grant.
+Nothing in the engine. Publishing a page is part of the two remaining routines' own recipes: each
+says where the contract lives, runs the kit check before a publish and owes the three proofs above
+before it counts a publish as finished, and each holds the kit's read root in its own config. A
+permission used to inject that conduct (`steward-publishing`); with two holders, both publishing
+their own work, it was a library document standing in for two recipe paragraphs, and it was
+removed on 2026-10-28. Access is still a per-routine decision where it always was: the four-state
+`secret:FTP_SOURCES` grant.
 
 How the kit works — keys, endpoints, the payload the store accepts, documents and links, the
 publish sequence — is ONE file, `web/steward/CONTRACT.md` in the library, read by a publishing
