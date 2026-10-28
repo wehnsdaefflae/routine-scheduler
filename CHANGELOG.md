@@ -15,6 +15,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.471.0] — 2026-10-28
+
+### Added
+- **A hook can fire when a CHILD RUN hands back** — `child-exit` is the first of the point
+  registry's four dead points to acquire a mechanism (D152 step 6). A curated rule may declare
+  `moment: child-exit`; it fires in `engine/control.announce_finished_subruns` AFTER the
+  hand-back message is appended, so the line reads as commentary on something the model can see,
+  and it costs no turn. It carries the free payloads only — `remind` and `action`, never `hold`:
+  it changes no control flow, the same line `hooks/points.ACTION_POINTS` derives and the
+  operator's *"No veto ever"* ruling draws. `engine/assist_child.py` brings the first predicate,
+  `child-fell-short` — a child that exited with anything but `ok`, which is the one case where
+  folding its summary onward would carry a claim the child itself declined to make — declared by
+  the `evidence-discipline` rule. The registry's gap list is now three (`spawn`, `run-end`,
+  `restart`) and `assists.MOMENTS` is five. Pinned by `tests/test_assist_child_exit.py` (14
+  tests, incl. that four children spend the once-per-run assist once). Wiring a dead point also
+  reddened a pin in a file the change never opened — `test_hooks_perform.py` asserted all four
+  points were still dead — which is the registry doing its job: the gap list is pinned, so
+  closing a gap is an act with a test to change rather than a silent drift.
+- **Every item carries a first-seen stamp, so item age is readable** (F753). `/api/items` rows
+  gain `first_seen` and `first_seen_or_earlier`; the store is one small JSON map under
+  `.control/` (`rsched/firstseen.py`), on the ⚑ precedent and for its documented reason — the
+  self-audit routine rewrites `audit/report.json` wholesale every run, so a stamp kept there
+  would be clobbered. The serve path is the sole writer and only ever `setdefault`s under a file
+  lock, so a recorded date is never moved. Items that predate the store read as a FLOOR (*"14d
+  old or more · since … or earlier"*), never as a fabricated date: the creating pass records an
+  epoch plus the backfilled id set by NAME, because `now_iso` is second-resolution and an epoch
+  comparison would read an item stamped in that same second as a sighting it never was. A report
+  and a run summary read their own true filing time instead. Rendered by the new
+  `static/components/item-age.js`; `static/views/messages.js` is byte-identical.
+- **A proposed recipe revision can be EDITED before it is approved** (F790) — the operator's
+  third control: *"we need an edit option for the proposed revisions to a routine's own recipe at
+  the end of its run"*. The card offers `apply it`, `edit` (a prefilled textarea whose
+  `apply edited` posts the operator's lines) and a `discard` that now asks WHICH true reason —
+  *not wanted* or *I made this change myself* — and quotes that to the routine, instead of always
+  telling it the revision "was not wanted". `POST /pending-creations/{pid}/revise` takes an
+  optional `Edited` body, caps the lines at `recipeproposal.MAX_LINES` server-side (a cap the card
+  enforces is not a cap) and refuses an emptied edit with a 400. The resumed leg is told whose
+  words these are — *"THE LINES BELOW ARE HIS"* — because a leg told the operator's sentence is
+  its own would implement and defend wording it never chose.
+
+### Security
+- **The console sends a Content-Security-Policy** (D219, decided in `docs/designs.md`):
+  `object-src 'none'; frame-ancestors 'self'` on every http response including the 401/403
+  refusals (`web/security_headers.py`, a pure-ASGI middleware added outermost). Two directives and
+  no more, deliberately: a `blob:` document inherits the policy of the page that made it and the
+  console renders every artifact from a blob, so a `script-src` would stop the inline scripts of
+  every HTML artifact a run writes — those are safe because the frame is `sandbox="allow-scripts"`
+  with an opaque origin, not because a policy stops them running. The decision's precondition was
+  re-verified before shipping: nothing in `static/` or `src/` builds an `<embed>` or `<object>`,
+  and a PDF artifact renders in an `<iframe>`, which `object-src` does not govern. The wider
+  policy waits on artifacts being served from their own route.
+
+### Changed
+- **`util.js`'s `act()` is the shape for NEW console controls, and the ~36 hand-rolled
+  disable/re-enable copies stay** (F786) — the operator's ruling, recorded in CLAUDE.md with the
+  measurement behind it so nobody re-proposes the sweep: of the 36 sites, only **4** can be
+  converted mechanically (the criterion being "ignores `act()`'s return value and has no
+  post-success remount"); 10 both read the response and remount, 8 read it, 14 remount, and the
+  rest are judgements with reasons in their own code.
+
+### Known gaps in this release
+- F790's guard that stops `apply it` staying live while the edit box is open is green-only, not
+  red-first: three attempts to see that assertion fail died on the shared gate lock.
+- F753's store is written only when the items index is SERVED, so a stamp can lag until someone
+  opens the page; there is no `sort=age` parameter yet, and the self-audit routine's own
+  `items_compact.py` still computes its age column from the rewrite date (filed as R3028).
+- D219 ships no browser test asserting the header VALUE inside a loaded page, and
+  `frame-ancestors 'self'` is a claim about the outside world: nothing here embeds the console
+  elsewhere, but an operator framing it from another host would see it blank.
+
 ## [0.470.0] — 2026-10-28
 
 ### Changed

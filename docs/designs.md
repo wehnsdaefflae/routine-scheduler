@@ -321,22 +321,6 @@ differently from another zone.
 
 ---
 
-## Console: a Content-Security-Policy (S4)
-
-**Problem.** The console sends no CSP. Verified in the review: a blob iframe INHERITS the console's
-policy, so a strict `script-src` would break every HTML artifact's inline scripts (they open
-sandboxed through `components/blobtab.js`); `index.html` has one inline theme script; `el()` sets
-`style=` everywhere.
-
-**Shape.** Now: `Content-Security-Policy: object-src 'none'; frame-ancestors 'self'` — after
-checking that no artifact viewer uses `<embed>`/`<object>` (PDFs). Once artifacts are served from
-their own route: a full policy, the theme script hashed, `style-src 'unsafe-inline'`, `frame-src`
-allowing the browser-view relay.
-
-**First increment.** The narrow header as middleware, with a test.
-
----
-
 ## Deploy leftovers (SD2.5–6) and a pinned claude CLI
 
 - `deploy/` chrome entrypoint: supervise Xvfb and Chrome with `wait -n`, so one dying ends the
