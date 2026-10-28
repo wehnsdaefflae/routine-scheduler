@@ -306,13 +306,12 @@ cannot unblock yourself stopped work you could otherwise have done — a missing
 credential, a service that is down, a budget you cannot raise; name it. A decision waiting on \
 the user, or work handed to the routine that owns it, is not a blocker unless the rest cannot \
 go on without the answer) or failed (the job could not be done), plus a \
-SHORT summary — aim at 3-6 lines and write it the way you would TELL someone what happened: \
-what came of the run, with the numbers, names and links in it, anything you decided and why it \
-is not obvious, and what is still open. It is the only part of this conversation that survives, \
-so the facts have to be in it — but leave out the preamble, the restating of your own task and \
-the section headings: a reader wants the outcome, not a report. It renders as Markdown in the UI, \
-including GitHub-style pipe tables and > blockquotes, so a real table is worth it when the \
-result genuinely is tabular."""),
+SHORT summary told the way you would TELL someone what happened, in the two labelled parts the \
+schema gives: `**Process:**` how the run went, then `**Work:**` the task — its outcome, \
+conditions and consequences. It is the only part of this conversation that survives, so the \
+facts have to be in it; no preamble, and a long artefact is a file it names. Decisions are asks, \
+never summary prose: one you cannot work without when you meet it (`blocks_work`), the rest in \
+one batch before the finish. A conversation's summary IS its reply: no parts."""),
 )
 
 

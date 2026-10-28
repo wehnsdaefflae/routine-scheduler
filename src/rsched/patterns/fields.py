@@ -67,7 +67,6 @@ FIELDS: tuple[Field, ...] = (
     Field("tags", "identity", "Tags", "set"),
     Field("name", "identity", "Name", "scalar", governable=False),
     Field("description", "identity", "Description", "scalar", governable=False),
-    Field("hub_tab", "identity", "Hub tab", "scalar", governable=False),
 )
 BY_KEY = {f.key: f for f in FIELDS}
 GOVERNABLE = tuple(f.key for f in FIELDS if f.governable)
@@ -195,7 +194,6 @@ def snapshot(cfg) -> dict:
         "tags": list(cfg.tags or []),
         "name": cfg.name,
         "description": cfg.description,
-        "hub_tab": cfg.hub_tab,
     }
     return {k: canonical(k, v) for k, v in values.items()}
 

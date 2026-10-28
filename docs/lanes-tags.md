@@ -111,8 +111,6 @@ contract says who shares each store.
 ## Tags
 
 `tags:` says what a routine is about: any number, no behaviour, matched by the dashboard's search.
-The Steward-hub heading a routine's card sits under is not a grouping either — it is the
-routine's own `hub_tab` identity field (docs/status-pages.md).
 
 ## Where each is edited
 

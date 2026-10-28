@@ -14,7 +14,7 @@ from typing import Literal
 
 from croniter import croniter
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic import BaseModel, ConfigDict, StrictBool, field_validator
 
 from .. import rules as rules_mod
 from .. import schedule
@@ -41,10 +41,6 @@ from .routines_common import (
 )
 
 router = APIRouter(tags=["routine-patch"])
-
-#: The longest Steward-hub heading a routine may name — a heading, not a sentence.
-HUB_TAB_MAX = 60
-
 
 class SchedulePatch(BaseModel):
     """The `schedule` a PATCH may carry, typed for the same reason `BudgetsPatch` is (R102).
@@ -107,8 +103,6 @@ class RoutinePatch(BaseModel):
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
-    hub_tab: str | None = Field(default=None, max_length=HUB_TAB_MAX)  # Steward-hub heading —
-    #                                          trimmed; `""` names none (docs/status-pages.md)
     permissions: list[str] | None = None    # held conduct-doc slugs — REPLACE wholesale, routed
     #                                          to the canonical two-layer resolve (D132/F482)
     capabilities: dict | None = None        # the capabilities mapping under those permissions —
@@ -134,12 +128,6 @@ class RoutinePatch(BaseModel):
     keep_runs: int | None = None            # retention.keep_runs — how many run dirs to keep
     fs_read_roots: list[str] | None = None  # dirs the run may READ beyond its own
     fs_write_roots: list[str] | None = None  # dirs the run may WRITE (one covering the routine
-
-    @field_validator("hub_tab", mode="before")
-    @classmethod
-    def _trim_hub_tab(cls, v: object) -> object:
-        # trimmed BEFORE the length check, so surrounding whitespace never costs a 422
-        return v.strip() if isinstance(v, str) else v
 
 
 #: The RECIPE-classed keys a settings patch may carry — they land in `tuning.yaml`, never in
@@ -404,9 +392,6 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
         repaired += apply_ladder(raw, updates)
     if "tags" in updates:
         raw["tags"] = clean_tags(updates.pop("tags"))
-    if "hub_tab" in updates and not updates["hub_tab"]:
-        updates.pop("hub_tab")
-        raw.pop("hub_tab", None)    # `""` names no heading; absence is its one spelling
     # Rules bind/unbind through the ONE canonical path (rules.apply_changes) — F392: a
     # config_patch carrying `rules` now applies through the generic PATCH, not only the
     # dedicated /routines/{slug}/rules picker. LAST of the appliers, because it is the one

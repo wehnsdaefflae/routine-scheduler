@@ -1,6 +1,6 @@
 title: Radar
-summary: Ingests many listings, verifies them, keeps a board you pick from and acts on a pick only after
-  your sign-off.
+summary: Ingests many listings, verifies them, ranks them in each run's summary, asks you which to pursue
+  and acts on a pick only after your sign-off.
 workflow: curate-and-act
 when: The job is to find opportunities among many listings — jobs, calls, funding programmes — rank them
   for you, and apply or reply once you say yes.
@@ -25,7 +25,6 @@ settings:
   permissions:
   - browser-sessions
   - outbound-mail
-  - steward-publishing
   - util-authoring
   capabilities:
     actions:
@@ -68,8 +67,7 @@ settings:
     max_turns: 200
     max_wall_clock_min: 180
   keep_runs: 30
-  fs_read_roots:
-  - ~/.local/share/routine-scheduler-libraries/web/steward
+  fs_read_roots: []
   fs_write_roots: []
   connections: {}
   machines: []

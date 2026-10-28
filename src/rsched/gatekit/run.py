@@ -28,7 +28,6 @@ MAX_REASON = 1000
 
 CHECKS = {
     "mail": kit_net.mail,
-    "hub_feedback": kit_net.hub_feedback,
     "url_changed": kit_net.url_changed,
     "files_changed": kit_local.files_changed,
     "unpaired_files": kit_local.unpaired_files,

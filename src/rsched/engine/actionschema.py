@@ -528,12 +528,12 @@ ACTION_SCHEMA: dict = {
             "type": "string",
             "description": "job checkpoint: what this run did for the job and what the next "
                            "run should pick up — the job's whole memory of this run · "
-                           "finish: a SHORT result summary, 3-6 lines, in the register you "
-                           "would use TELLING someone what happened — the outcome with its "
-                           "numbers, names and links, what you decided and why, what is still "
-                           "open. No preamble, no headings (becomes result.md, the dashboard's "
-                           "last-outcome, and the next run's context; Markdown — bold, lists, "
-                           "`code`, links, pipe tables, > quotes — renders in the UI)",
+                           "finish: a SHORT summary in TWO labelled parts — `**Process:**` 1-2 "
+                           "lines on HOW the run went (sources, checks, failures, what was out "
+                           "of reach), then `**Work:**` 2-5 lines on the task: the outcome with "
+                           "its numbers, names and links, its conditions and consequences, what "
+                           "you decided and why, what is still open. No preamble (it becomes "
+                           "result.md and the next run's context). A reply in a chat: no parts",
         },
         "accounting": {
             "type": "array", "items": {"type": "string"},

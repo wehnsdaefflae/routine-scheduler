@@ -23,7 +23,6 @@ settings:
   triggers: []
   improve: true
   permissions:
-  - steward-publishing
   - util-authoring
   capabilities:
     actions:
@@ -60,8 +59,7 @@ settings:
     max_turns: 100
     max_wall_clock_min: 60
   keep_runs: 30
-  fs_read_roots:
-  - ~/.local/share/routine-scheduler-libraries/web/steward
+  fs_read_roots: []
   fs_write_roots: []
   connections: {}
   machines: []

@@ -82,7 +82,7 @@ def test_when_a_routine_runs_is_not_how_it_behaves(make_routine):
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     (d / "routine.yaml").write_text(yaml.safe_dump({
         **raw, "schedule": {"cron": "17 3 * * 2", "tz": "Etc/UTC"},
-        "retention": {"keep_runs": 7}, "hub_tab": "Elsewhere", "improve": False}))
+        "retention": {"keep_runs": 7}, "improve": False}))
     assert runrecord.config_hash(load_routine(d)[0]) == before
 
 

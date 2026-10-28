@@ -1,16 +1,19 @@
 ---
 effect:
-  with: publishes a page on your Steward hub that you can check between runs, its links proven to open
-  without: leaves its state in run summaries you have to go and read
-  when: it works on something over weeks and you want one place to look
-tags: [steward, web, publishing, reporting]
+  with: publishes its own hand-written page or app on the Steward host, its links proven to open
+  without: has no page of its own — its runs' summaries say what it did and its asks carry what it needs from you
+  when: the routine's work IS a page or app of its own that you or others use, never a status page about its runs
+tags: [steward, web, publishing, app]
 requires: {}
 expects:
   fs-read: ["~/.local/share/routine-scheduler-libraries/web/steward"]
 ---
-# permission: steward-publishing — publish this routine's page on the Steward hub
+# permission: steward-publishing — publish this routine's own page or app on the Steward host
 
-How the hub works — keys, endpoints, credentials, the publish sequence — is
+The hub is retired: this covers only a page that IS the routine's own work (an app, a
+hand-written page), never a status page about its runs.
+
+How the host works — keys, endpoints, credentials, the publish sequence — is
 `web/steward/CONTRACT.md` in the library, read through the kit root this permission expects
 (`~/.local/share/routine-scheduler-libraries/web/steward/CONTRACT.md`). Read the section
 you need when you publish; never copy it into memory.

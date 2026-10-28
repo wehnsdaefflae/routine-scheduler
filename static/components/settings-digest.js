@@ -131,7 +131,6 @@ export function describe(key, v) {
     // would read as a knob nobody set rather than one the engine computes.
     case "oversight_turns": return v ? `${v} turns per rung` : "rung budget derived from the interval";
     case "tags": return list(v, "no tags");
-    case "hub_tab": return v ? String(v) : "no hub tab";
     default: return v === null || v === undefined || v === "" ? "—" : String(v);
   }
 }

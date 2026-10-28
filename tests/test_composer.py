@@ -417,18 +417,6 @@ def test_shared_store_notes_reach_the_prompt_and_drain_once(make_routine, tmp_pa
     assert drain(ctx.server.routines_home, "steward", [store]) == []
 
 
-def test_harness_contract_names_the_hub_tab_only_when_set(make_routine, tmp_path):
-    """The Steward hub heading is identity config, so the run learns it from the contract —
-    and a routine without one reads no line about a hub it has no card on."""
-    from rsched.engine.harness import harness_contract
-
-    ctx = _ctx(make_routine, tmp_path, slug="hubbed")
-    assert "HUB TAB" not in harness_contract(ctx)
-    ctx.routine.hub_tab = "FAU"
-    assert ("HUB TAB: FAU — the heading your card sits under on the Steward hub; publish it "
-            "as your card's `tab`.") in harness_contract(ctx)
-
-
 def test_capabilities_digest_reports_actual_share_state_not_config(make_routine, tmp_path):
     """R514. The machine row must state what this run HAS, not what the catalog asked for.
 

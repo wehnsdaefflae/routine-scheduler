@@ -55,7 +55,7 @@ BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "grants",
 #: would split the runs after a finished trial from the identical runs before it — and `outcome`,
 #: the operator's declaration of what the routine is FOR: it measures a run, it changes nothing
 #: the run may do.
-NOT_BEHAVIOUR = frozenset({"slug", "dir", "name", "description", "tags", "hub_tab", "kind",
+NOT_BEHAVIOUR = frozenset({"slug", "dir", "name", "description", "tags", "kind",
                            "owner", "workflow_slug", "workflow_commit", "playbook_slug",
                            "pattern", "enabled", "cron", "tz", "catchup", "triggers", "run_gate",
                            "keep_runs", "improve", "deliberation", "rules", "tuning", "trial",

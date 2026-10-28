@@ -15,7 +15,7 @@ import { api } from "/static/api.js";
 import { slugColor } from "/static/components/charts.js";
 import { heartbeat } from "/static/components/heartbeat.js";
 import { laneControls, laneProgress, openLaneEditor } from "/static/components/lanemanage.js";
-import { summaryLine } from "/static/md.js";
+import { outcomeLine } from "/static/md.js";
 import { asButton, chip, el, fmtCost, fmtDur, fmtNum, storage, tagChip, toast, toastError,
          when } from "/static/util.js";
 import { WORKING as RUNNING } from "/static/states.js";
@@ -157,7 +157,7 @@ export function routineRows(ctx) {
             stats ? el("span", { class: "muted small", title: "last run: turns · duration · tokens · cost" },
               stats) : null),
           el("div", { class: "lr-sum", title: last.summary || "" },
-            summaryLine(last.summary, "(no summary)")))
+            outcomeLine(last.summary, "(no summary)")))
         : el("div", { class: "lastrun" }, el("div", { class: "lr-sum faint" }, "never ran")),
       c.problems?.length ? el("div", { class: "problem" }, `⚠ ${c.problems[0]}`) : null,
       el("div", { class: "actions" },

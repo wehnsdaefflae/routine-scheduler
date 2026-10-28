@@ -16,7 +16,7 @@ import { routineHero } from "/static/views/routine-overview.js";
 import { trialChip } from "/static/components/trialchip.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { devLine } from "/static/components/dev-line.js";
-import { summaryLine } from "/static/md.js";
+import { outcomeLine, summaryLine } from "/static/md.js";
 import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, toast, toastError, when } from "/static/util.js";
 
 export async function render(view, slug, query = {}) {
@@ -292,11 +292,11 @@ function runsTable(runsBox, d) {
     el("td", { class: "num muted inline" }, r.elapsed_s != null ? fmtDur(r.elapsed_s) : "—"),
     el("td", { class: "muted inline" }, fmtTokens(r.usage)),
     // The summary is MODEL PROSE, and four surfaces show this one field — so ONE helper
-    // reduces it (md.summaryLine): first non-empty line, its heading marker dropped, rendered.
+    // reduces it (md.outcomeLine): the Work part, else the first non-empty line, rendered.
     // Spelled out per surface it drifted, and `**One application went out…**` reached this
     // cell with its asterisks.
     el("td", { class: "muted prose", style: "max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
-      summaryLine(r.summary))));
+      outcomeLine(r.summary))));
   const heads = ["when", "state", ...(gated ? ["gate"] : []),
     "turns", "duration", "tokens", "summary"];
   runsBox.append(el("div", { class: "panel", style: "padding:0" },

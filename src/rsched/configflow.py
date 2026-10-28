@@ -89,7 +89,6 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "name": (NEXT_RUN, "a label, not behaviour"),
     "description": (NEXT_RUN, "a label, not behaviour"),
     "tags": (NEXT_RUN, "a label, not behaviour"),
-    "hub_tab": (NEXT_RUN, "the harness contract names the hub heading once, at boot"),
     "title": (NEXT_RUN, "a label, not behaviour"),
     "workdir": (NEXT_RUN, "it is the first write root, computed at boot with the other roots"),
     "outcome": (NEXT_RUN, ("the outcome contract is read when a run ENDS, to measure it; a run "
@@ -108,7 +107,7 @@ ADOPTABLE = tuple(f for f, (half, _) in CLASSIFICATION.items() if half == LIVE)
 #: are spelled out here; `tests/test_configflow.py` pins each one to its model.
 ROUTINE_PATCH_FIELDS = frozenset({
     "enabled", "run_gate", "schedule", "budgets", "models", "efforts", "trial", "connections",
-    "grants", "machines", "name", "description", "tags", "pattern", "hub_tab", "permissions",
+    "grants", "machines", "name", "description", "tags", "pattern", "permissions",
     "capabilities", "rules", "shared_reminders", "improve", "chain_actions", "deliberation",
     "keep_runs",
     "fs_read_roots", "fs_write_roots", "outcome",

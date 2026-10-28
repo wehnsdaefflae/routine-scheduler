@@ -56,9 +56,6 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     from ..sharedstores import contract_section
 
     extra += contract_section(ctx.server.routines_home, r.slug, r.fs_write_roots)
-    if r.hub_tab:
-        extra += (f"\nHUB TAB: {r.hub_tab} — the heading your card sits under on the Steward "
-                  "hub; publish it as your card's `tab`.")
     # write_util is a user-set capability; the confirm level is its approval policy.
     # ctx.grants None (direct construction) = ungated.
     g = ctx.grants

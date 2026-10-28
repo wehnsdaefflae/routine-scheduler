@@ -66,7 +66,7 @@ META = {
                    "kit, keep a set of repositories or a deployed site healthy, run a funded "
                    "software project's engineering. Changes are test-gated and pushed by the "
                    "routine; claims about the principal wait for him. Work that spans runs is a "
-                   "campaign. Not for one project with a counterparty and a status page "
+                   "campaign. Not for one project with a counterparty and a finish line "
                    "(steward-a-project), nor for a shared library of rules or utils curated from "
                    "usage (curate-a-library).",
     "version": 2,

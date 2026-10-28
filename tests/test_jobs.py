@@ -1,6 +1,6 @@
 """The job STORE and the due computation (rsched/jobs.py), the setting that switches the layer
-on (grants), and the gate pieces that feed it: a check's `job:` tag, the hub-feedback label and
-the kit's `admit_reason` (gatekit), and the job clock admitting a fire (daemon/gate_prepare).
+on (grants), and the gate pieces that feed it: a check's `job:` tag and the kit's
+`admit_reason` (gatekit), and the job clock admitting a fire (daemon/gate_prepare).
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def _doc(*ts):
 
 
 CHECKS = [{"id": "a-mail", "kind": "mail", "job": "a"},
-          {"id": "b-feedback", "kind": "hub_feedback", "job": "b"},
+          {"id": "b-page", "kind": "url_changed", "job": "b"},
           {"id": "routine-wide", "kind": "url_changed"}]
 
 
@@ -175,24 +175,6 @@ def test_an_admit_reason_runs_whatever_the_checks_say_and_keeps_their_answers(tm
     out = kit.evaluate(ctx)
     assert out["decision"] == "run" and out["reason"].startswith("pending inbox")
     assert out["checks"][0]["id"] == "w" and out["checks"][0]["work"] is False
-
-
-def test_hub_feedback_with_a_label_counts_only_that_sections_rows(monkeypatch):
-    from rsched.gatekit import kit_net  # after `run`, which puts the kit's siblings on the path
-
-    answer = {"ok": True, "count": 4, "pending": [{"id": "fau · ards · direction"},
-                                                  {"id": "fau · nanogeofeld/question/x"},
-                                                  {"id": "fau · ards/doc/report"},
-                                                  {"id": "fau · nanogeofeld/doc/standards"}]}
-    monkeypatch.setattr(kit_net, "web_login", lambda *_a: {"host": "h", "user": "u"})
-    monkeypatch.setattr(kit_net, "_hub_token", lambda _ctx: "t")
-    monkeypatch.setattr(kit_net, "_get", lambda *_a: __import__("json").dumps(answer).encode())
-    work, reason, _ = kit_net.hub_feedback({"project": "fau", "label": "ards"}, {})
-    assert work and reason == "2 feedback entries in the 'ards' section of the hub page"
-    work, reason, _ = kit_net.hub_feedback({"project": "fau", "label": "suedlink-wlf"}, {})
-    assert not work and "section" in reason
-    work, reason, _ = kit_net.hub_feedback({"project": "fau"}, {})
-    assert work and reason == "4 feedback entries on the hub page"
 
 
 # ── admission ─────────────────────────────────────────────────────────────────────────────

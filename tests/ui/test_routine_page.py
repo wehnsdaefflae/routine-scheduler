@@ -365,29 +365,6 @@ def test_weekly_schedule_day_set_roundtrips(ui, ui_page, make_routine):
             expect(chips.nth(i)).not_to_be_checked()
 
 
-def test_the_hub_tab_saves_as_identity(ui, ui_page):
-    """The Steward-hub heading lives in the identity group beside the name: the accept writes
-    it through the ordinary PATCH, trimmed. An empty field removes the key again."""
-    ui_page.goto(f"{ui.url}#/routine/uir")
-    unfold(ui_page)
-    group = ui_page.locator(".rgroup", has=ui_page.locator(
-        ".rgroup-title", has_text="Identity & recipe"))
-    expect(group.locator("h2", has_text="Hub tab")).to_have_count(1)
-
-    field = ui_page.locator("[data-hub-tab]")
-    field.fill("  FAU ")
-    ui_page.locator(".accept-bar [data-accept]").click()
-    expect(visible_toast(ui_page)).to_contain_text("accepted")
-    path = ui.routine_dir("uir") / "routine.yaml"
-    until(lambda: yaml.safe_load(path.read_text(encoding="utf-8")).get("hub_tab") == "FAU",
-          what="the hub tab save")
-
-    ui_page.locator("[data-hub-tab]").fill("")
-    ui_page.locator(".accept-bar [data-accept]").click()
-    until(lambda: "hub_tab" not in yaml.safe_load(path.read_text(encoding="utf-8")),
-          what="the hub tab removal")
-
-
 def test_every_settings_section_sits_in_a_named_group(ui, ui_page):
     """Every section the settings emit belongs to one of the seven groups — a heading outside
     them is a control nobody looks for. The rarely needed ones sit in a group's "more" menu,
@@ -404,7 +381,7 @@ def test_every_settings_section_sits_in_a_named_group(ui, ui_page):
     for heading in ("Run gate", "Permissions & capabilities", "General rules",
                     "Shared reminders", "Effective surface", "Finish line",
                     "What a finished run delivers", "Budgets", "Own secrets", "Models",
-                    "Machines", "Recipe", "State & memory", "Hub tab", "Origin"):
+                    "Machines", "Recipe", "State & memory", "Origin"):
         expect(ui_page.locator(".rgroup-body h2", has_text=heading).first).to_have_count(1)
 
 

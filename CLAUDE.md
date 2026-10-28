@@ -101,9 +101,10 @@ one you are about to touch, not all of them.
   conversation's spine is EMERGENT: it writes its own `state/plan.md` (inlined at the top of every
   reply by `state_digest`) where a routine gets `stages/` + `phase.json` compiled at creation —
   don't "fix" a conversation by giving it a compiled workflow
-- `docs/status-pages.md` — the shared web UI routines publish to (one shell, one
-  append-only feedback contract, the `steward-publishing` permission that makes it opt-in and
-  the kit's `CONTRACT.md` that says how)
+- `docs/status-pages.md` — the RETIRED Steward hub (2026-10-28): a run's two-part finish
+  summary (`**Process:**` then `**Work:**`) and its blocking/closing asks replace a published
+  page; the two own-body pages left (deficit-coach, birthday-admin) still publish under
+  `steward-publishing`, on the kit whose `CONTRACT.md` says how
 - `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
   item shape, the status vocabulary and its precedence, and the changelog join;
   `docs/messages.md` — a routine's four message folders (the Messages page/D74), the

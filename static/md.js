@@ -178,6 +178,18 @@ export function summaryLine(text, fallback = "") {
   return mdInline(first.trim().replace(/^#{1,6}\s+/, "") || fallback);
 }
 
+// A run's finish summary in ONE line. The summary comes in two labelled parts — `**Process:**`
+// (how the run went) then `**Work:**` (the task's outcome, its conditions and consequences;
+// engine/actionschema.py) — and a one-line slot is for the outcome, so it shows the Work part
+// when there is one and the first line otherwise (a reply, an engine-written ending).
+const WORK_LABEL = /^\s*\*\*Work:\*\*\s*/;
+
+export function outcomeLine(text, fallback = "") {
+  const work = String(text ?? "").split("\n").find((l) => WORK_LABEL.test(l));
+  return work && work.replace(WORK_LABEL, "").trim() ? mdInline(work.replace(WORK_LABEL, "").trim())
+    : summaryLine(text, fallback);
+}
+
 // A model- or operator-written body inside a LIST row: rendered inline, clamped to two lines,
 // with the button that opens it — or no button at all when it is already short.
 //

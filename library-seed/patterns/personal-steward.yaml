@@ -1,12 +1,12 @@
 title: Personal steward
-summary: Carries one personal project — an occasion, a plan — on a page you answer and does the outward
-  steps once you say go.
+summary: Carries one personal project — an occasion, a plan — through the decisions it asks you and
+  does the outward steps once you say go.
 workflow: steward-a-project
 when: The job is a project of your own with an end — an event, a purchase, a move — rather than a client's
-  or a funder's; you steer it through a page.
+  or a funder's; you steer it by answering what it asks.
 asks:
 - field: schedule
-  question: How often do you want the page refreshed?
+  question: How often should it check on the project and tell you where it stands?
 - field: finish_line
   question: Does it end — on a date, with an outcome the run can check, or with one only you can judge?
 settings:
@@ -23,7 +23,6 @@ settings:
   improve: true
   permissions:
   - outbound-mail
-  - steward-publishing
   - util-authoring
   capabilities:
     actions:
@@ -65,8 +64,7 @@ settings:
     max_turns: 150
     max_wall_clock_min: 90
   keep_runs: 30
-  fs_read_roots:
-  - ~/.local/share/routine-scheduler-libraries/web/steward
+  fs_read_roots: []
   fs_write_roots: []
   connections: {}
   machines: []

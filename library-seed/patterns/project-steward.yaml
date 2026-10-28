@@ -1,6 +1,6 @@
 title: Project steward
-summary: 'Carries one project over weeks: your feedback first, then the backlog or the people and dates
-  it waits on; publishes a page and reads it back.'
+summary: 'Carries one project over weeks: your answers first, then the backlog or the people and dates
+  it waits on; says in each run''s summary where it stands and asks you what only you can decide.'
 workflow: steward-a-project
 when: The job is a project with a finish line — an application, a report, a deliverable — that moves through
   correspondence, documents and your feedback.
@@ -26,7 +26,6 @@ settings:
   improve: true
   permissions:
   - outbound-mail
-  - steward-publishing
   - util-authoring
   capabilities:
     actions:
@@ -69,8 +68,7 @@ settings:
     max_turns: 150
     max_wall_clock_min: 90
   keep_runs: 30
-  fs_read_roots:
-  - ~/.local/share/routine-scheduler-libraries/web/steward
+  fs_read_roots: []
   fs_write_roots: []
   connections: {}
   machines: []

@@ -195,7 +195,7 @@ learning your taste run over run.
 
 | setting | pick | why |
 |---|---|---|
-| pattern | `personal-steward` | one personal project steered through a page you answer |
+| pattern | `personal-steward` | one personal project steered through the asks you answer |
 | changes you accept | **ask_timeout_min 1440**; Tuesdays + Fridays 18:00 | taste questions ride browser push to your phone and can wait a day — the run continues on its stated default and folds your late answer into the next one; often enough to converge, rare enough to have news |
 | never | contact anyone — venues, guests, vendors | a line of its recipe's `## Never`: it prepares, you do the outreach |
 | finish line | `run:` the weekend took place and the plan was delivered; `until 2027-03-14` | the birthday is the end of the job |

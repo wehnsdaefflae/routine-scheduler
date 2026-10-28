@@ -3,8 +3,7 @@
 The mechanism: every run reads each source in SOURCES in full, finds what is new since the marker
 the last run left, judges each new item (extract and categorize it, test it against a criterion,
 match it against a watch rule) and delivers ONE output the principal consumes: a digest, a
-published board, a ranked watchlist, a message, or a one-shot run of a worker routine armed for an
-item's date. Days with nothing new are real for this mechanism. The run records the fingerprint of
+ranked watchlist, a message, or a one-shot run of a worker routine armed for an item's date. Days with nothing new are real for this mechanism. The run records the fingerprint of
 every source as it read it, so the routine's run gate can skip a fire whose sources still match
 and a quiet day costs no run at all.
 
@@ -20,8 +19,9 @@ records in its own memory which one worked):
 - read access to each source: a mailbox read without marking anything, a provider's listing
   endpoint with its key, a feed or page fetch;
 - where judging an item means testing it, a way to exercise it (a model endpoint, a sandbox);
-- ONE delivery channel: a publisher for the principal's own web host, a message to the principal,
-  or the scheduling capability that arms a one-shot run of another routine;
+- ONE delivery channel: the run's finish summary (its Work part carries the output, a long one
+  stays a file the summary names), a message to the principal, or the scheduling capability that
+  arms a one-shot run of another routine;
 - where readers vote on or answer the output, a read of that feedback.
 
 This file is a PATTERN, not a program: the orchestrator never executes it — it ACTS IT OUT, one
@@ -37,7 +37,7 @@ from routine.params import (
     SOURCES,        # list[dict] — each source: what it is, how it is read, and how "new" is recognized there (an unread flag from a known sender list, an id set, a timestamp)
     MARKERS,        # str        — the state file holding each source's processed marker
     JUDGEMENT,      # str        — what judging one new item means here (extract + deduplicate, test against a criterion, match a watch rule) and the verdicts it can return
-    OUTPUT,         # dict       — the one output a run delivers: its form (digest, board, watchlist, message), where it lives, the channel that carries it to the principal
+    OUTPUT,         # dict       — the one output a run delivers: its form (digest, watchlist, message), where it lives, the channel that carries it to the principal
     DISPATCH,       # dict       — optional: for items that carry a date, the worker routine to arm and how long before the date it fires ({} when the output is a report only)
     RECHECK_AFTER,  # str        — the interval after which a run is due even when no source the gate can read changed (the floor for sources the gate cannot see)
 )
@@ -52,7 +52,7 @@ META = {
     "name": "Watch and report",
     "slug": "watch-and-report",
     "description": "Read a fixed set of sources in full every run, judge what is new since the "
-                   "last processed marker, deliver one output (a digest, a board, a watchlist, a "
+                   "last processed marker, deliver one output (a digest, a watchlist, a "
                    "message or an armed one-shot run) and leave the fingerprints a run gate "
                    "compares.",
     "when_to_use": "A recurring 'keep an eye on X and tell me' instruction: newsletters arriving "
@@ -244,24 +244,23 @@ def build_output(verdicts, feedback):
 
     Assign categories in ONE scoped judgment over the whole batch — categories are chosen against
     each other, so one call per item makes a worse decision with less context. Rank with the
-    feedback. A page keeps a fixed shell and changes only its data, so what a run writes is the
-    data document, not the markup."""
+    feedback."""
 
 
 def deliver(output):
     """Deliver the output through the ONE channel OUTPUT names; put its link before the principal.
 
-    Publishing a page is not the principal learning it changed: when OUTPUT says the link reaches
-    him by message, sending that message is part of this step. An output that cannot be delivered
+    Writing a file is not the principal learning it changed: the summary names it, and when
+    OUTPUT says it reaches him by message, sending that message is part of this step. An output that cannot be delivered
     makes the run partial, with the undelivered output named."""
 
 
 def read_back(output):
     """Read the delivered output back as its reader gets it before calling it delivered.
 
-    For a page: fetch it rendered and look at it with view_image, then check its counts per
-    category against this run's verdicts. For a message: the channel's acceptance of the send.
-    An upload that returned no error is not a delivered page."""
+    For a file: read it back and check its counts per category against this run's verdicts. For
+    a message: the channel's acceptance of the send. A write that returned no error is not a
+    delivered output."""
 
 
 def dispatch(verdicts):

@@ -1,13 +1,38 @@
-# Status pages — the shared web UI routines publish to
+# Status pages — retired, and the two pages that remain
 
-A routine that works on something over weeks needs a surface the user can look at between runs:
-what happened, what is waiting, and one control per decision. That surface is a page on
-`steward.markwernsdorfer.com` and every routine that publishes one publishes into the **same**
-shell.
+**The Steward hub is retired (operator, 2026-10-28).** Routines no longer publish a status page
+to `steward.markwernsdorfer.com`, and nothing reads feedback or controls back from one. What a page
+used to carry now has two homes inside the scheduler:
 
-This is not engine code. The engine neither serves these pages nor knows they exist — a routine
-uploads them with the file-transfer capability like any other artifact. What the engine owns is
-the general rule that governs how; the doc you are reading is the map.
+- **What happened** is the run's own finish summary, in two labelled parts: `**Process:**` — how
+  the run went, the mechanics behind it (what it read and checked, what failed, what was out of
+  reach) — then `**Work:**` — the task: its outcome with numbers, names and links, its conditions
+  and consequences, what is still open. A long artefact (a draft, a digest, a packet) stays a
+  FILE in the routine's directory and the summary names its path. The schema and the finish
+  gloss ask for exactly this (docs/prompt-anatomy.md §5), and the dashboard's one-line slot shows
+  the Work part (`static/md.js` `outcomeLine`).
+- **What waits on the operator** is an `ask_user` decision, in the class the engine already
+  defines (`engine/askclass.py`): a BLOCKING one (`blocks_work`) the moment a run cannot do the
+  work it was fired to do without the answer, every other one CLOSING — batched into one ask just
+  before the finish, its answer shaping the next run. A page's sign-off, hold control or go/no-go
+  is one of those two now; its free-text feedback is an answer or an inbox message.
+
+The engine pieces that existed only for the hub went with it: the `hub_tab` identity field (and
+its `HUB TAB:` contract line) and the `hub_feedback` run-gate check. The `steward-a-project`
+workflow and the steward, radar and watcher settings patterns no longer grant
+`steward-publishing`; the routine `steward-hub-maintainer` that kept the kit was archived.
+
+**Two pages remain, and they are not status pages.** `deficit-coach`'s page IS its app, and
+`birthday-admin` owns a hand-written page; both still hold `steward-publishing`, which now means
+exactly that — publishing a routine's OWN page or app on the Steward host — and the kit below
+still serves them. Nothing maintains the kit on a schedule any more: it changes when the operator
+changes it ("Nobody deploys for anybody" below). The old hub's index and the retired projects'
+stores on the host are the operator's to remove by hand; no routine and no kit operation can
+delete a project store (`web/api_routine_edit.EXTERNAL_SURFACES`).
+
+The rest of this page is the KIT's reference — the host layout, the interface, the gate and the
+store — kept because the two remaining pages are built on it. Read its hub- and radar-specific
+sections (the hub's cards, the radars, a project registering itself) as history.
 
 ## Why one shell
 
@@ -108,8 +133,8 @@ routines wrote themselves a private helper script to `open()` those same files d
 project, each copy free to rot (R1160). So the `steward-publishing` permission carries
 `expects: fs-read: ["/home/mark/.local/share/routine-scheduler-libraries/web/steward"]` — the SOFT
 edge, reported by the setup surface for every holder — and every routine holding it now carries
-that read root. `steward-hub-maintainer` already had it: it owns the master in both
-directions.
+that read root. `steward-hub-maintainer` had it while it owned the master in both
+directions (archived 2026-10-28).
 
 **What makes that true is a mechanism, not a sentence.** For a while it was only the sentence and
 the two copies drifted: the feedback-cursor default in `api.php` and the 16 MiB `MAX_BODY` in
@@ -165,15 +190,6 @@ rest, so "what needs me today" cost seven clicks to answer and a second list wit
 waiting stayed invisible behind the one that opened. Every list is on the page; one with nothing
 waiting starts collapsed, the summary carries the counts so a collapsed list still tells you
 whether to open it, and the choice is remembered.
-
-**A heading is one card's `tab`, spelled by the publisher.** It comes from the routine's own
-`hub_tab` — an identity field like its name, set in the routine page's identity group — which
-the run's harness contract names as `HUB TAB: <value>`; the publisher republishes that string
-as its card's `tab`. The hub therefore shows the operator's own grouping rather than a second one
-invented for the web: the routines that sit under one heading are exactly the routines whose
-`hub_tab` says so, so four siblings land under one heading instead of four near-misses and a card
-moves when its routine's field changes. A routine with no `hub_tab` publishes no `tab` at all and
-the hub files it under its own default heading with the other unattached projects.
 
 `what=hub` is DERIVED from every project's own state document. There is no shared registry file,
 which removes a class of bug rather than documenting it: the old `projects.json` was one file
@@ -824,17 +840,14 @@ notice, which is why five compiled PDFs read to their author as missing rather t
 
 ## What binds a routine to this
 
-Publishing a page is opt-in per routine: the **`steward-publishing`** permission. Holding it puts
-its conduct in the run's capability notes — where the contract lives and the three proofs a
-publish owes before it counts as finished — and its `expects:` reports the kit's read root on the
-setup surface of every holder that lacks it. It requires no capability: gating `ftp` behind it
-would move that util into the engine's gated set for EVERY routine and silently break the ones
-that publish to other hosts; the access that matters is already a per-routine decision, the
-four-state `secret:FTP_SOURCES` grant.
+Publishing a page is opt-in per routine: the **`steward-publishing`** permission, held today by
+the two routines whose page is their own (above). Holding it puts its conduct in the run's
+capability notes — where the contract lives and the three proofs a publish owes before it counts
+as finished — and its `expects:` reports the kit's read root on the setup surface of every holder
+that lacks it. It requires no capability: gating `ftp` behind it would move that util into the
+engine's gated set for EVERY routine and silently break the ones that publish to other hosts; the
+access that matters is already a per-routine decision, the four-state `secret:FTP_SOURCES` grant.
 
-How the hub works — keys, endpoints, the payload the store accepts, documents and links, the
-publish sequence — is ONE file, `web/steward/CONTRACT.md` in the library, maintained by
-steward-hub-maintainer beside the code it describes and read by a publishing run when it needs a
-section rather than copied into its memory. What a run owes the person who answers its page — act
-on each piece of feedback in the run that reads it, say so once when what it publishes goes unused
-— is the general rule `feedback-loop`; writing as the operator is `write-as-the-principal`.
+How the kit works — keys, endpoints, the payload the store accepts, documents and links, the
+publish sequence — is ONE file, `web/steward/CONTRACT.md` in the library, read by a publishing
+run when it needs a section rather than copied into its memory.

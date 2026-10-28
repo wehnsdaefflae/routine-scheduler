@@ -21,7 +21,7 @@ asks:                             # what creation must ask when the task does no
 settings:                         # every governed value (rsched/patterns/fields.py)
   schedule: {friendly: {frequency: daily, time: "07:00"}, catchup: run_once}
   run_gate: {enabled: false, timeout_s: 30, checks: []}
-  permissions: [steward-publishing, util-authoring]
+  permissions: [util-authoring]
   capabilities: {actions: [revise_util, write_util], confirm: creations, reminders: local, …}
   rules: [ask-policy, audit-coverage, decision-record, evidence-discipline, …]
   reminders: []                   # curated reminders listed for this kind of work
@@ -39,8 +39,8 @@ of work is a new pattern. The library ships fourteen, each built on one abstract
 |---|---|---|
 | `watcher` | `watch-and-report` | keeping an eye on sources and reporting what is new |
 | `radar` | `curate-and-act` | a board of listings to pick from, acted on after sign-off |
-| `project-steward` | `steward-a-project` | a project over weeks: feedback, backlog, a published page |
-| `personal-steward` | `steward-a-project` | a personal project steered through a page |
+| `project-steward` | `steward-a-project` | a project over weeks: backlog, obligations, steered through asks |
+| `personal-steward` | `steward-a-project` | a personal project steered through asks |
 | `mailbox-service` | `answer-a-mailbox` | classifying and answering one mailbox |
 | `daily-operator` | `run-daily-operations` | the day's outward operations, verified and logged |
 | `code-maintainer` | `maintain-a-codebase` | sweeping, fixing and shipping a codebase |
@@ -77,8 +77,8 @@ reference the routine page reads it against:
 - an **override** is a governed field whose value differs from the pattern's
   (`fields.overrides`); the page marks each one. A routine in a scheduled lane runs on the
   lane's clock, so its own schedule is neither an override nor compared.
-- **Identity** fields are the routine's alone and never governed: name, description, the
-  Steward hub tab, a webhook trigger's token. Tags are the routine's too, though a pattern may
+- **Identity** fields are the routine's alone and never governed: name, description, a
+  webhook trigger's token. Tags are the routine's too, though a pattern may
   carry a starting set.
 
 `GET /api/routines/{slug}/settings` returns the routine's values (`fields`), the field

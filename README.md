@@ -294,7 +294,7 @@ user-facing here.
   checkout named by Settings → Source)
 - `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
   ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/`, `patterns/`,
-  `reminders/`, `web/` (the shared steward kit status pages are built on) and `utils/` (with
+  `reminders/`, `web/` (the Steward kit the two remaining own-body pages are built on) and `utils/` (with
   the `gu` dispatcher at the root). Routines are never seeded from the repo — they are authored
   on the instance
 - Routine dirs: `routine.yaml`, `main.md` (the workflow, materialized) + `stages/` modules

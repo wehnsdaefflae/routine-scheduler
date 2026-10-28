@@ -1330,31 +1330,6 @@ def test_routine_detail_reports_lane_managed_state(client):
     assert managed == {"id": lane["id"], "name": "Morning"}
 
 
-def test_hub_tab_is_identity_saved_through_the_ordinary_config_patch(client):
-    """The Steward-hub heading is identity like the name: the routine page's Hub tab input
-    saves through the SAME PATCH as every other setting, trimmed and capped — a heading, not a
-    sentence. `""` removes the key, so "no heading" keeps its one spelling.
-
-    This is also the field-behind-a-classification guard from the endpoint's side:
-    `tests/test_configflow.py` checks that every PATCH field declares a half; this checks
-    the field the half is declared for is one the model and the detail payload actually carry.
-    """
-    c, tmp = client
-    path = tmp / "routines" / "apir" / "routine.yaml"
-    assert c.get("/api/routines/apir").json()["hub_tab"] == ""
-
-    r = c.patch("/api/routines/apir", json={"hub_tab": "  FAU  "})
-    assert r.status_code == 200 and r.json()["updated"] == ["hub_tab"]
-    assert c.get("/api/routines/apir").json()["hub_tab"] == "FAU"
-    assert yaml.safe_load(path.read_text(encoding="utf-8"))["hub_tab"] == "FAU"
-
-    assert c.patch("/api/routines/apir", json={"hub_tab": "x" * 61}).status_code == 422
-    assert c.get("/api/routines/apir").json()["hub_tab"] == "FAU"      # nothing was saved
-
-    assert c.patch("/api/routines/apir", json={"hub_tab": ""}).status_code == 200
-    assert "hub_tab" not in yaml.safe_load(path.read_text(encoding="utf-8"))
-
-
 def test_allow_once_gates_on_once_grantable_classes_at_the_endpoint(client):
     """D65/D76: allow_once settles a once-grantable request like allow_now (nothing
     persists) — turn-action classes AND, since D76, secret/fs (spent at the next util

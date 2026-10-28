@@ -200,9 +200,6 @@ def routine_detail(request: Request, slug: str) -> dict:
         "trial": trial,
         "problems": [*info.problems, *([trial["problem"]] if trial and trial["problem"] else [])],
         "referrals_total": referrals_total,
-        # the heading this routine's card sits under on the Steward hub — identity, edited in
-        # the page's identity section and named to the run in its harness contract
-        "hub_tab": info.cfg.hub_tab,
         "schedule_friendly": (schedule.cron_to_friendly(info.cfg.cron) if info.cfg.enabled
                               else {"frequency": "disabled"}),
         "server_tz": schedule.server_tz(),

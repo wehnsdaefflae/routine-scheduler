@@ -101,10 +101,8 @@ WHICH jobs have work instead of making all of them due (`gate_prepare.keeps_jobs
 by its own clock admits a fire its checks would skip — nothing else would bring the routine back
 for it (`gate_prepare.jobs_clock_reason`).
 
-Two check details exist for jobs (docs/run-gates.md): `job:` on any check except the routine's
-own `max_quiet` backstop (a job's rest is its `quiet_days`), and `label` on `hub_feedback`, which
-counts only the rows whose control id names it as a whole segment (`fau · ards/doc/x` names `fau`,
-`ards`, `doc` and `x`, never `standards` for `ards`) — one job's section of a page several share.
+One check detail exists for jobs (docs/run-gates.md): `job:` on any check except the routine's
+own `max_quiet` backstop (a job's rest is its `quiet_days`).
 
 ## On the routine page
 

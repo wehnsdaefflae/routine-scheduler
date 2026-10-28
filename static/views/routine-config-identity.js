@@ -1,5 +1,5 @@
 // Routine settings — IDENTITY & RECIPE: what the routine is called and how it is found — name,
-// description, tags, the Steward-hub heading its card sits under. Behind "more": where it came
+// description, tags. Behind "more": where it came
 // from (read-only), its recipe files, and its state and ledger.
 //
 // The recipe editor is an ACTION on files the routine owns, not a setting: it takes effect at
@@ -13,9 +13,6 @@ import { fieldBlock, settingsGroup } from "/static/components/settings-field.js"
 import { tagsEditor } from "/static/components/tags.js";
 import { wireRecipeNav } from "/static/resizable.js";
 import { mountRecipe } from "/static/views/routine-recipe.js";
-
-/** The longest hub heading the PATCH accepts (api_routine_patch.HUB_TAB_MAX). */
-const HUB_TAB_MAX = 60;
 
 /** A text field that keeps an empty value out of the draft — a routine needs a name and a
  *  description — and says so under the field instead. */
@@ -46,11 +43,6 @@ export function identityGroup(ctx, { titleH1, recipeFile = "" }) {
   const tags = fieldBlock(form, "tags", (value, set) =>
     tagsEditor(value || [], async (next) => set(next)));
 
-  const hub = fieldBlock(form, "hub_tab", (value, set) => textField(
-    el("input", { type: "text", value: value || "", maxlength: String(HUB_TAB_MAX), "data-nopersist": true,
-      placeholder: "e.g. FAU", "data-hub-tab": "", style: "width:100%;max-width:320px" }),
-    { required: false, set, hint: "" }));
-
   // -- origin: the library workflow this routine was generated from (provenance only)
   const wf = d.workflow_ref || {};
   const origin = el("div", {},
@@ -73,8 +65,8 @@ export function identityGroup(ctx, { titleH1, recipeFile = "" }) {
 
   const stateFiles = (d.files?.state) || [];
   const node = settingsGroup({
-    form, title: "Identity & recipe", hint: "name · description · tags · hub tab · the recipe",
-    keys: ["name", "description", "tags", "hub_tab"],
+    form, title: "Identity & recipe", hint: "name · description · tags · the recipe",
+    keys: ["name", "description", "tags"],
     digest: () => `origin ${wf.slug || "hand-authored"} · the recipe · state & memory`,
     sections: [
       ...settingsSection({ title: "Name", id: "name" },
@@ -87,10 +79,6 @@ export function identityGroup(ctx, { titleH1, recipeFile = "" }) {
         ["freeform labels for filtering on the dashboard (e.g. meta tucks a routine away by ",
          "default)"],
         tags.node),
-      ...settingsSection({ title: "Hub tab", id: "hub-tab" },
-        "the heading this routine's card sits under on the Steward hub — its runs are told to "
-        + "publish the card there; leave empty for none",
-        hub.node),
     ],
     more: [
       ...settingsSection({ title: "Origin", id: "origin" },

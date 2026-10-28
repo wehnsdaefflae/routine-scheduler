@@ -115,9 +115,6 @@ class RoutineConfig(_Config):
     # delivers the result back to. None elsewhere (declared, so extra="ignore" keeps it).
     owner: dict | None = None
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
-    # The heading this routine's card sits under on the Steward hub (docs/status-pages.md):
-    # identity like `name`, named to the run in its harness contract. Empty = none named.
-    hub_tab: BlankableStr = ""
     # What this dir IS when not an ordinary routine: "conversation" (under conversations_home).
     kind: BlankableStr = ""
     # Role → catalog model NAME (main/tool_call/uncensored/supervisor — the last resolving
@@ -225,7 +222,7 @@ class RoutineConfig(_Config):
 
     _tz_known = field_validator("tz")(_known_tz)
 
-    @field_validator("description", "hub_tab")
+    @field_validator("description")
     @classmethod
     def _stripped(cls, v: str) -> str:
         return v.strip()

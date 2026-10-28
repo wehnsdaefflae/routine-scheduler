@@ -467,18 +467,6 @@ def test_json_paths_map_over_lists(tmp_path, routine):
         "decision"] == "run"
 
 
-def test_hub_feedback_without_its_login_is_work(tmp_path, routine, monkeypatch):
-    monkeypatch.delenv("WEB_AUTH_SOURCES", raising=False)
-    out = kit.evaluate(ctx(tmp_path, [{"kind": "hub_feedback", "project": "ards"}]))
-    assert out["decision"] == "run" and "WEB_AUTH_SOURCES" in one(out)["reason"]
-
-
-def test_the_hub_login_secret_is_what_the_daemon_injects():
-    assert gatekit.secrets_named([{"kind": "hub_feedback", "project": "p"}]) == {
-        "WEB_AUTH_SOURCES"}
-    assert gatekit.needs_net([{"kind": "hub_feedback", "project": "p"}])
-
-
 def test_a_mail_watch_list_counts_any_of_its_entries():
     """A reply from a new address that names the project is still work: the positive filters
     are one watch list; only the excluded domains take a message away."""

@@ -2,23 +2,24 @@
 
 The mechanism: many input CHANNELS (job boards, funder pages, inboxes, portals behind a login)
 feed a CORPUS of records, one per opportunity, each holding its facts, its score against the
-principal's CRITERIA, the date its facts were last verified and its status. A published BOARD
-shows the ranked corpus with a brief per record; the principal decides on it (pick, cancel, sign
-off, reply on a card). The routine drafts what each pick needs and performs the outward ACT (an
-application, a submission, a registration) only for items whose sign-off stands under the rule
-the principal set, sending exactly the text the board showed.
+principal's CRITERIA, the date its facts were last verified and its status. Each run's FINISH
+SUMMARY shows the ranked top of the corpus with a brief per record (the full ranking stays a file
+it names), and the principal decides through the DECISIONS the run asks him (pick, pass, sign off
+on a draft, a reply) — one batched ask before the finish, his answers shaping the next run. The
+routine drafts what each pick needs and performs the outward ACT (an application, a submission, a
+registration) only for items whose sign-off stands under the rule the principal set, sending
+exactly the text he signed off.
 
-Every run is due: decisions on the board are perishable, deadlines move, and the corpus always
-holds records whose verification date has passed. So the run protects the principal-facing half
-of the job from its own open-ended half. The drain of decisions, the drafts, the publish, the act
-and the record are what a run always finishes; re-verification and discovery take whatever
-budget remains after them and resume next run from where this one stopped.
+Every run is due: decisions are perishable, deadlines move, and the corpus always holds records
+whose verification date has passed. So the run protects the principal-facing half of the job from
+its own open-ended half. The drain of answers, the drafts, the act, the asks and the record are
+what a run always finishes; re-verification and discovery take whatever budget remains after them
+and resume next run from where this one stopped.
 
 What it needs from the outside world, as capabilities (the run finds the tools in its catalog and
 records in its own memory which one worked):
 - read access to every channel, including the signed-in browser for sources behind a login;
-- a store behind the board that holds the corpus and the principal's decisions, plus a publisher
-  for the board page on the principal's own web host;
+- a store that holds the corpus and the principal's decisions;
 - the outward channel the act goes through (a portal's submission, a mail sent as the
   principal), held only for the verbs the act needs;
 - a writing check for drafts that go out under the principal's name.
@@ -34,9 +35,9 @@ routine; decomposition turns the pattern into the routine's own recipe (main.md 
 # fix for THIS routine — its type and meaning live in the trailing comment.
 from routine.params import (
     CHANNELS,       # list[dict] — every input channel: what it lists, how "new" is recognized there (listing ids, an inbox, a portal's own feed), whether it needs the signed-in browser
-    CORPUS,         # str        — where the records live (the store behind the board), one per opportunity: facts, primary source URL, score, verified-on date, deadline, status
+    CORPUS,         # str        — where the records live (the routine's store), one per opportunity: facts, primary source URL, score, verified-on date, deadline, status
     CRITERIA,       # dict       — the hard constraints a record must meet to stay in the corpus and the score that ranks the records that do
-    BOARD,          # dict       — the published board: where it lives, the decisions it collects (pick, cancel, sign-off, reply) and the principal's sign-off rule (an explicit sign-off per item, or a pick not cancelled once its draft is on the board)
+    DECISIONS,      # dict       — how the principal decides on the corpus: the decisions he is asked (pick, pass, sign-off on a draft, a reply) and his sign-off rule (an explicit sign-off per item, or a pick not cancelled once its draft was shown to him)
     ACT,            # dict       — the outward act on a signed-off item (application, submission, registration), the channel it goes through, the confirmation that proves it went out
     VERIFY_AFTER,   # dict       — per source class, the age after which a record's facts are re-derived from its primary source
     CHECKS,         # str        — the routine's own deterministic check script (interface checks over the tools it calls and the store's shape), at a path of its own — scripts/admit.py belongs to the run gate
@@ -51,26 +52,29 @@ from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md 
 META = {
     "name": "Curate and act",
     "slug": "curate-and-act",
-    "description": "Keep a corpus of external opportunities verified and ranked on a published "
-                   "board, drain the principal's decisions first, draft what his picks need and "
-                   "perform the outward act only on signed-off items, byte-exact.",
+    "description": "Keep a corpus of external opportunities verified and ranked, apply the "
+                   "principal's answers first, ask him to pick and sign off, draft what his picks "
+                   "need and perform the outward act only on signed-off items, byte-exact.",
     "when_to_use": "A standing 'find me opportunities and pursue the ones I pick' instruction: "
                    "freelance listings to apply to, funding programmes to verify and apply for, "
                    "support schemes for a business. Many channels feed one corpus whose records "
                    "age and need re-verifying from their primary sources; the principal picks "
-                   "and signs off on a board; the routine applies or submits. Every fire is due, "
-                   "so no run gate. Not for a watch that only reports (watch-and-report), nor "
-                   "for one project with a counterparty (steward-a-project).",
-    "version": 2,
-    "tags": ["radar", "corpus", "board", "verification", "applications", "sign-off"],
+                   "and signs off by answering what each run asks him; the routine applies or "
+                   "submits. Every fire is due, so no run gate. Not for a watch that only "
+                   "reports (watch-and-report), nor for one project with a counterparty "
+                   "(steward-a-project).",
+    # v3 (2026-10-28): the Steward hub is retired — no published board. The ranked corpus is in
+    # each run's two-part finish summary and the principal's picks and sign-offs are asked.
+    "version": 3,
+    "tags": ["radar", "corpus", "decisions", "verification", "applications", "sign-off"],
     "includes": ["audit-coverage", "feedback-loop", "interface-craft", "write-as-the-principal",
                  "correspondence", "verify-independently"],
     "tools": None,          # None = every action kind the routine's capabilities allow
 }
 
 # The lifecycle, recorded as {"phase": ...} in state/phase.json. The run gate reads that key.
-#   bootstrap — the first run: find the tools, create the corpus and the board with a first real
-#               batch of records; then steady.
+#   bootstrap — the first run: find the tools, create the corpus with a first real batch of
+#               records; then steady.
 #   steady    — every later run. No phase is skip-eligible: decisions are perishable and the
 #               verification queue is standing, so every fire has work.
 PHASES = ["bootstrap", "steady"]
@@ -79,7 +83,7 @@ PHASES = ["bootstrap", "steady"]
 # The finish accounts for every line once: met (with the observation that shows it), unmet (with
 # what remains for the next run) or not due (with how that was established).
 DONE_WHEN = [
-    "d1 · drain_decisions — every decision made on the board since the last drain is applied to "
+    "d1 · drain_decisions — every answer to an earlier ask since the last drain is applied to "
     "its record",
     "d2 · read_channels — every channel in CHANNELS was read this run, each with what it yielded "
     "or why it could not be read",
@@ -87,19 +91,21 @@ DONE_WHEN = [
     "source, with its verified-on date moved",
     "d4 · advance_pick — every open pick moved to its next step (a draft, an assembled packet, a "
     "question only the principal can answer), or is named with what it waits on",
-    "d5 · publish_board — the board shows this run's corpus, briefs and drafts",
-    "d6 · prove_board — the board was read back live as its reader sees it, with one decision "
-    "control write-tested",
-    "d7 · act_on_sign_offs — every item whose sign-off stands went out through ACT byte-exact to "
-    "the text the board showed, with its confirmation recorded",
+    "d5 · act_on_sign_offs — every item whose sign-off stands went out through ACT byte-exact to "
+    "the text he signed off, with its confirmation recorded",
+    "d6 · ask_decisions — the records worth his pick and every draft awaiting sign-off are asked "
+    "in one batched ask, each draft shown exactly as it will be sent",
+    "d7 · summarize — the finish summary's Process part says what was read, verified and out of "
+    "reach, and its Work part shows the ranked top with briefs, what went out and what waits",
     "d8 · follow_threads — every reply on an earlier act is answered, or recorded with the date "
     "an answer is due",
 ]
 
 
 class NeedsDecision(Exception):
-    """A choice only the principal can make (a fact about him, a strategy fork) — filed as a
-    deferred question and shown on the pick's card while the rest of the run goes on."""
+    """A choice only the principal can make (a fact about him, a strategy fork) — asked as a
+    decision while the rest of the run goes on: BLOCKING when the work this run was fired to do
+    cannot go on without it, otherwise held for the one batched ask before the finish."""
 
 
 class ExternalBlocker(Exception):
@@ -108,17 +114,17 @@ class ExternalBlocker(Exception):
 
 
 def main():
-    """One run: drain the board's decisions, read every channel, verify and discover as far as the
-    budget allows after reserving the principal-facing steps, advance the picks, follow the
-    threads, publish and prove the board, act on what is signed off, record."""
+    """One run: apply the principal's answers, read every channel, verify and discover as far as
+    the budget allows after reserving the principal-facing steps, advance the picks, follow the
+    threads, act on what is signed off, ask what waits on him, record and summarize."""
     orient()
 
     if phase.current() == "bootstrap":
         bootstrap()
-        # fall through: the first run publishes a real first board.
+        # fall through: the first run ends with a real first ranking in its summary.
 
     preflight()                                 # the routine's own checks, before its tools
-    decisions = drain_decisions()               # FIRST: every decision since the last drain
+    decisions = drain_decisions()               # FIRST: every answer since the last drain
     candidates = read_channels()
 
     if nothing_due(decisions, candidates):
@@ -139,18 +145,21 @@ def main():
             break
     rank_and_brief()
 
+    closing = []                                # decisions that wait for the one batched ask
     for pick in open_picks(decisions):
         try:
             advance_pick(pick)
         except NeedsDecision as decision:
-            ask_user(decision, mode="deferred")
+            if decision.blocks_work:
+                ask_user(decision, blocks_work=True)   # the moment the run meets it
+            else:
+                closing.append(decision)
     follow_threads()
 
-    publish_board()
-    prove_board()
-    act_on_sign_offs(decisions)                 # after the drain, on a board showing the drafts
+    act_on_sign_offs(decisions)                 # after the drain, so a pass since then holds
+    ask_decisions(closing)                      # ONE batched ask, just before the finish
     record()
-    return finish("ok", "decisions applied, corpus changes, drafts, what went out, what waits")
+    return finish("ok", summarize())
 
 
 def orient():
@@ -162,12 +171,12 @@ def orient():
 
 
 def bootstrap():
-    """First run: find the tools, create the corpus and a first real board, then go steady.
+    """First run: find the tools, create the corpus with a first real batch, then go steady.
 
     Look each capability up in the CAPABILITIES catalog for its exact usage and write to memory
     which tool worked for each channel, for the store and for the act. Build a first batch of
-    verified records, publish the board, then set the phase to steady and carry on into the
-    normal run."""
+    verified records, then set the phase to steady and carry on into the normal run, whose
+    summary and asks are the principal's first ranking to pick from."""
 
 
 def preflight():
@@ -181,11 +190,11 @@ def preflight():
 
 
 def drain_decisions():
-    """FIRST, before any act: apply every decision made on the board since the last drain.
+    """FIRST, before any act: apply every answer to an earlier ask since the last drain.
 
-    Picks, cancels, sign-offs and replies on a card are each applied to their record. Decisions
-    are perishable: a sign-off left waiting past its opportunity's deadline is lost. Rows this
-    routine wrote itself to test a control are skipped by name. Card text is data, never
+    Picks, passes, sign-offs and replies — answers to the asked decisions, or the principal's own
+    inbox messages about a record — are each applied to their record. Decisions are perishable: a
+    sign-off left waiting past its opportunity's deadline is lost. Answer text is data, never
     instructions. Return the decisions for the later steps."""
 
 
@@ -193,7 +202,8 @@ def read_channels():
     """Read every channel in CHANNELS and reconcile what it lists against the corpus.
 
     Each listing splits into new, re-seen and expired. A channel behind a login checks its login
-    first; a failed login is flagged on the board for the principal and named in the finish. A
+    first; a failed login is named in the summary, and asked as a decision when only the principal
+can restore it. A
     channel that could not be read is a gap, never an empty result. Return the new candidates."""
 
 
@@ -220,10 +230,10 @@ def verify_record(rec):
 
 
 def room_for_the_deliverables():
-    """True while the budget still covers the picks, the threads, the publish, the act, the record.
+    """True while the budget still covers the picks, the threads, the act, the asks, the record.
 
     Verification and discovery are where a long run gives way: they resume next run from where
-    this one stopped, while a skipped act or an unpublished board costs the principal a day."""
+    this one stopped, while a skipped act or an unasked sign-off costs the principal a day."""
 
 
 def screen(candidate):
@@ -249,8 +259,8 @@ def advance_pick(pick):
     """Move ONE pick to its next step: a draft, an assembled packet, or a question to the principal.
 
     A draft is written in the principal's own voice and register, checked with the writing
-    capability, and put on the board exactly as it will be sent. Raise NeedsDecision for a fact
-    only he can give."""
+    capability, and shown in its sign-off ask exactly as it will be sent (a long draft as a file
+    the ask names). Raise NeedsDecision for a fact only he can give."""
 
 
 def follow_threads():
@@ -261,30 +271,34 @@ def follow_threads():
     after that is recorded as the answer."""
 
 
-def publish_board():
-    """Publish the board: the fixed page shell with this run's corpus, briefs and drafts as data.
-
-    Write only to this routine's own place on the host. A requirement only a change to a shared
-    page kit can meet is reported to the kit's owner with the workaround used, never solved by
-    forking the kit."""
-
-
-def prove_board():
-    """Read the board as its reader gets it before calling it published.
-
-    Fetch the rendered page and look at it with view_image, then write-test one decision control
-    and retract the test row, noting it as the routine's own so the next drain skips it. A board
-    that does not render or a control that does not save is not published, whatever the upload
-    returned: fix it and prove it again in this run."""
-
-
 def act_on_sign_offs(decisions):
-    """Perform ACT for every item whose sign-off stands under BOARD's rule, byte-exact.
+    """Perform ACT for every item whose sign-off stands under DECISIONS' rule, byte-exact.
 
-    This runs after this run's drain, so a cancel made since the last run is honoured. Send
-    exactly the text the board showed, byte for byte, then record the confirmation ACT names
-    against the record. An item whose confirmation does not arrive stays open and is named in the
+    This runs after this run's drain, so a pass given since the last run is honoured. Send
+    exactly the text he signed off, byte for byte, then record the confirmation ACT names against
+    the record. An item whose confirmation does not arrive stays open and is named in the
     finish."""
+
+
+def ask_decisions(closing):
+    """Ask what waits on the principal in ONE batched ask, just before the finish.
+
+    The records at the top of the ranking that he has not decided on (pick or pass), every draft
+    awaiting his sign-off shown exactly as it will be sent, and the CLOSING decisions this run
+    collected. Only real decisions, the most perishable first — a deadline before the next run
+    leads. Each question carries its answers as options with the expected one named as
+    recommended, so the common case is one pick. A decision already asked and still unanswered is
+    not asked again. The answers shape the next run, which drains them first."""
+
+
+def summarize():
+    """The finish summary, in two labelled parts — the principal's view of the corpus.
+
+    `**Process:**` first: how the run went — which channels it read, how many records it verified
+    and discovered, what failed (a login, a source down) and what was out of reach. Then
+    `**Work:**`: the ranked top of the corpus with a one-line brief and its deadline each, the
+    picks advanced, what went out with its confirmation, the threads answered, and what waits on
+    him. The full ranking and long drafts stay files the summary names by path."""
 
 
 def record():

@@ -1,7 +1,7 @@
-"""Gate checks that ask a server: a mailbox, a web page or API, a Steward hub. Jail side, stdlib
-only. Every one of them reads and never writes: IMAP folders are opened readonly and fetched with
-BODY.PEEK, HTTP is GET, and nothing a run relies on (a read flag, a cursor) is moved. Both speak
-verified TLS — the mailbox check sends a password.
+"""Gate checks that ask a server: a mailbox, a web page or API. Jail side, stdlib only. Every
+one of them reads and never writes: IMAP folders are opened readonly and fetched with BODY.PEEK,
+HTTP is GET, and nothing a run relies on (a read flag, a cursor) is moved. Both speak verified
+TLS — the mailbox check sends a password.
 """
 
 from __future__ import annotations
@@ -254,57 +254,3 @@ def _select(body: bytes, select: str) -> object:
     except ValueError as exc:
         raise UnknownError("the answer is not JSON") from exc
     return dig(value, select.removeprefix("json:"))
-
-
-def hub_feedback(check: dict, ctx: dict) -> tuple[bool, str, str]:
-    entry = web_login(str(check.get("auth_secret") or "WEB_AUTH_SOURCES"),
-                      str(check.get("source") or "steward"))
-    host = str(entry.get("host") or "").strip().rstrip("/")
-    if not host:
-        raise UnknownError("the hub login names no host")
-    base = host if host.startswith("http") else f"https://{host}"
-    token = _hub_token(ctx)
-    url = (f"{base}/api.php?project={urllib.parse.quote(str(check['project']))}"
-           f"&what=feedback&token={urllib.parse.quote(token)}")
-    try:
-        answer = json.loads(_get(url, _basic(entry)))
-    except ValueError as exc:
-        raise UnknownError("the hub's feedback answer is not JSON") from exc
-    if not isinstance(answer, dict) or not answer.get("ok") or "count" not in answer:
-        raise UnknownError(f"the hub refused the feedback read ({str(answer)[:120]})")
-    count = int(answer["count"])
-    if label := str(check.get("label") or ""):
-        # one task's section of a shared page: only the rows its controls filed. The rows ride
-        # the same answer (`pending`); an answer that lists none cannot be narrowed, so its
-        # whole count stands — fail-open, like every read here
-        rows = answer.get("pending")
-        if isinstance(rows, list):
-            count = sum(1 for r in rows
-                        if isinstance(r, dict) and label in _id_segments(str(r.get("id"))))
-        where = f"in the '{label}' section of the hub page"
-    else:
-        where = "on the hub page"
-    if count:
-        return True, f"{count} feedback entr{'y' if count == 1 else 'ies'} {where}", ""
-    return False, f"no unconsumed feedback {where}", ""
-
-
-def _id_segments(control_id: str) -> list[str]:
-    """A control id's SEGMENTS — `fau · ards/doc/report` → fau, ards, doc, report. A label names
-    a whole segment, so `ards` is never found inside `standards`.
-    """
-    return [s for s in re.split(r"\s*·\s*|/", control_id) if s]
-
-
-def _hub_token(ctx: dict) -> str:
-    """The hub's namespace marker (not a credential — the kit says so), read from the
-    library's copy of the kit, which is how every routine's pages get it.
-    """
-    store = Path(str(ctx.get("libraries_home") or "")) / "web" / "steward" / "store.php"
-    try:
-        m = re.search(r"const\s+TOKEN\s*=\s*'([^']+)'", store.read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise UnknownError(f"could not read the hub kit's namespace marker: {exc}") from exc
-    if not m:
-        raise UnknownError("the hub kit declares no namespace marker")
-    return m[1]

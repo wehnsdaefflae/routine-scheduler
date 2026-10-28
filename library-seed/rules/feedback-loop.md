@@ -2,7 +2,7 @@
 effect:
   with: acts on each piece of your feedback in the run that reads it or hands it back visibly for you to order; judges itself by whether what it publishes is used and says so once when it is not
   without: files feedback for a later run; keeps publishing to an empty room
-  when: it publishes something you or others respond to — a hub page, a digest, a vote list
+  when: it publishes something you or others respond to — a digest, a vote list, its own page — or asks you decisions whose answers steer it
 tags: [feedback, publishing, accountability]
 ---
 # rule: feedback-loop — act on what readers say; notice when nobody responds

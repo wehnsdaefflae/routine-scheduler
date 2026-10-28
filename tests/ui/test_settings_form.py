@@ -100,19 +100,20 @@ def test_revert_and_discard_put_the_saved_value_back(ui, ui_page):
     """Every change can be taken back where it sits — all of them at once from the bar."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _open_group(ui_page, "Identity & recipe")
-    hub = ui_page.locator("[data-hub-tab]")
-    hub.fill("FAU")
-    field = _field(ui_page, "hub_tab")
+    name = ui_page.locator("[data-name]")
+    before = name.input_value()
+    name.fill("Renamed")
+    field = _field(ui_page, "name")
     expect(field).to_have_class(CHANGED)
     field.locator("[data-revert]").click()
-    expect(ui_page.locator("[data-hub-tab]")).to_have_value("")
+    expect(ui_page.locator("[data-name]")).to_have_value(before)
     expect(_accept_bar(ui_page)).to_be_hidden()
 
-    ui_page.locator("[data-hub-tab]").fill("FAU")
+    ui_page.locator("[data-name]").fill("Renamed")
     _accept_bar(ui_page).locator("[data-discard]").click()
     expect(_accept_bar(ui_page)).to_be_hidden()
-    expect(ui_page.locator("[data-hub-tab]")).to_have_value("")
-    assert "hub_tab" not in stored_config(ui)
+    expect(ui_page.locator("[data-name]")).to_have_value(before)
+    assert stored_config(ui).get("name") != "Renamed"
 
 
 def test_a_proposal_opens_the_settings_with_its_message_and_its_values(ui, ui_page):
@@ -196,7 +197,7 @@ def test_save_as_new_pattern_is_offered_only_for_values_no_pattern_carries(ui, u
     expect(save).to_be_enabled()                          # these values are no pattern yet
 
     _open_group(ui_page, "Identity & recipe")
-    ui_page.locator("[data-hub-tab]").fill("FAU")
+    ui_page.locator("[data-name]").fill("Renamed")
     expect(save).to_be_disabled()                         # pending: accept or discard first
     assert "accept or discard" in (save.get_attribute("title") or "")
     _accept_bar(ui_page).locator("[data-discard]").click()
@@ -271,7 +272,8 @@ def test_recommend_works_in_the_background_and_lands_as_a_proposal(ui, ui_page, 
     expect(ui_page.locator("[data-recommend]")).to_be_disabled()
     # the rest of the page does not wait for it
     _open_group(ui_page, "Identity & recipe")
-    ui_page.locator("[data-hub-tab]").fill("")
+    name = ui_page.locator("[data-name]")
+    name.fill(name.input_value())
 
     banner = ui_page.locator("[data-draft-banner]")
     expect(banner.locator(".db-message")).to_have_text(DRAFT, timeout=20_000)

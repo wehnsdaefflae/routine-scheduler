@@ -18,7 +18,7 @@
 // daemon used to collect a new batch of requests every poll, answered in whatever order.
 
 import { api } from "/static/api.js";
-import { summaryLine } from "/static/md.js";
+import { outcomeLine } from "/static/md.js";
 import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
@@ -204,7 +204,7 @@ export function activityFeed({ isOpen = () => true } = {}) {
       // The summary is MODEL PROSE. Assigned to `textContent` it kept its markers, so the
       // feed's one-line preview read "**Two applications w…" while the routine page and the
       // dashboard rendered the same field. One helper reduces it for all three.
-      sumEl.replaceChildren(summaryLine(r.summary,
+      sumEl.replaceChildren(outcomeLine(r.summary,
         isActive(r.state) ? "…in progress" : "(no summary)"));
       sumEl.title = r.summary || "";
     }

@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.470.0] — 2026-10-28
+
+### Changed
+- **The Steward hub is retired; a run's summary and its asks replace the page** (operator,
+  2026-10-28). Routines no longer publish a status page or read feedback from one. The finish
+  summary now comes in TWO labelled parts — `**Process:**` (how the run went: what it read and
+  checked, what failed, what was out of reach) then `**Work:**` (the task: its outcome with
+  numbers, names and links, its conditions and consequences, what is still open) — asked for by
+  the schema, the finish gloss and the example. The finish gloss also says where a decision goes
+  instead of a page control: a BLOCKING ask (`blocks_work`) the moment the run cannot work
+  without the answer, every other one in a CLOSING batch before the finish (`engine/askclass.py`).
+  A conversation's reply has no parts. The dashboard, the activity feed and the routine page's
+  runs table show the Work part in their one-line slot (`static/md.js` `outcomeLine`). The
+  always-on contract shrank by 9 chars (`tests/prompt_budget.json`).
+- The library's `steward-a-project` workflow and the `project-steward`, `personal-steward`,
+  `radar` and `watcher` patterns no longer grant `steward-publishing`; the permission now covers
+  only a routine's OWN page or app on the Steward host (deficit-coach, birthday-admin).
+  `docs/status-pages.md` says what replaced the hub and keeps the kit reference for those two.
+
+### Removed
+- **`hub_tab`** — the routine identity field, its `HUB TAB:` harness line, its PATCH field, its
+  settings-pattern row and the routine page's Hub tab control. The live routines carrying it
+  were migrated in the same change.
+- **The `hub_feedback` run-gate check** (`gatekit`), whose only source was the hub; the live
+  checks of that kind were removed from their routines' gates in the same change.
+
 ## [0.469.0] — 2026-10-28
 
 ### Fixed

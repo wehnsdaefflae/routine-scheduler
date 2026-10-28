@@ -18,7 +18,6 @@ answered "no work".
 | kind | work when | key parameters |
 |---|---|---|
 | `mail` | mail waits in a mailbox — unread, or new since the last ok run | `host`, the login secrets (or `accounts_secret` + `account`), `folders` (a special-use flag such as `\All` names a folder whatever the server calls it), a WATCH LIST (`senders_file`, `from_any`, `subject_any` — a message counts when it meets any of them), `from_domains_not` |
-| `hub_feedback` | feedback waits on the routine's Steward hub page that its last publish has not consumed | `project`, `label` (only rows whose control id names it as a whole segment — one task's section of a shared page), `source` |
 | `url_changed` | a page, feed or API answers differently than at the last ok run | `url`, `select` (`body`, `feed`, `json:<dotted.path>`) |
 | `files_changed` | a file under a folder is new or changed since the last ok run | `paths`, `glob`, `nonempty` (an intake folder the routine empties) |
 | `unpaired_files` | a source file still has no output beside it | `path`, `match`, `output` (`{stem}`/`{suffix}`), `exclude` |
@@ -131,7 +130,7 @@ packages fail normally.
 The accepted run id is reserved first. Gate execution holds the normal concurrency slot, before
 any engine process. The declarative checks run as `gatekit/run.py` — standard library only —
 inside a Landlock jail built from what the listed kinds need and nothing else (network only for
-`mail`, `url_changed` and `hub_feedback`; only the secrets their parameters name; the paths they
+`mail` and `url_changed`; only the secrets their parameters name; the paths they
 read). The custom predicate gets its own jail, built from its header. Admission requires the
 strict shared sandbox even if the server permits degradation for ordinary utilities: `fs: roots`
 includes configured roots and the shared stores among them; `fs: none` or an absent header

@@ -113,11 +113,10 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "lead with what the last observation taught you",
         # the note channel (ACTION_SCHEMA description + composer contract sentence)
         "worth keeping beyond this context window",
-        # the finish-summary rendering contract (composer finish gloss + ACTION_SCHEMA
-        # summary description) — md.js renders these on block surfaces, so the model is
-        # told tables/quotes are worth emitting
-        "pipe tables and > blockquotes",
-        "pipe tables, > quotes",
+        # the finish summary's two labelled parts (kindprose finish bullet + ACTION_SCHEMA
+        # summary description) — static/md.js `outcomeLine` reads the Work label back
+        "`**Process:**` how the run went",
+        "`**Work:**` the task",
         # the util-output spill pointer (outputs.pointer_line) + its digest section
         # (outputs.digest) — the only route to output the observation could not carry
         "instead of re-running the util",
@@ -162,9 +161,8 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # A kill that has not landed yet must not read as a termination (obs_children)
         "still winding down",
         # SHARED STORES: the harness contract of a run whose write roots include a shared store
-        # names each store, who else shares it and its collision contract — and the hub line
+        # names each store, who else shares it and its collision contract
         "SHARED STORES (read+write roots you share with other routines",
-        "the heading your card sits under on the Steward hub",
         # The goal model: the FINISH block the digest says once at boot (finish_digest), the
         # run's GOALS that stand in for a briefed run's Done when and bound a conversation's
         # final reply (engine/goals.py, goalops, finishgate._undeclared), the accounting rung
@@ -302,7 +300,8 @@ def test_doc_names_every_action_kind_and_the_finish_example_matches():
     for kind in KINDS:
         assert kind in DOC, f"action kind {kind!r} missing from docs/prompt-anatomy.md"
     # the finish guidance shown in the doc must track the example's altitude
-    # D187 (operator, 2026-10-16: "condense them considerably"): the demand is 3-6 lines in a
-    # conversational register, not a DETAILED 8-20. The doc and the example must agree on it.
-    assert KIND_EXAMPLES["finish"]["summary"].strip("<>") == "short 3-6 line result summary"
-    assert "3-6 line" in DOC
+    # D187 (operator, 2026-10-16: "condense them considerably"): the demand is SHORT, in a
+    # conversational register — and since the Steward hub's retirement (operator, 2026-10-28)
+    # it comes in two labelled parts, process then work. The doc and the example must agree.
+    assert KIND_EXAMPLES["finish"]["summary"] == "<**Process:** … **Work:** …>"
+    assert "**Process:**" in DOC and "**Work:**" in DOC

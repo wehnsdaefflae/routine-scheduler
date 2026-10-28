@@ -64,17 +64,6 @@ KINDS: dict[str, tuple[str, dict[str, tuple[str, bool, str]]]] = {
                                          "message counts)")),
          "from_domains_not": ("list", False,
                               "never count mail from these domains (and their subdomains)")}),
-    "hub_feedback": (
-        ("feedback waits on the routine's Steward hub page that its last publish has not "
-         "consumed"),
-        {"project": ("str", True, "the hub project slug the routine publishes"),
-         "label": ("str", False, ("only feedback whose control id names this label as a whole "
-                                  "segment counts (`fau · ards/doc/x` names fau, ards, doc, x) "
-                                  "— one job's section of a page several jobs share")),
-         "source": ("str", False, ("which entry of the web-auth secret holds the hub login "
-                                   "(default `steward`)")),
-         "auth_secret": ("secret", False, ("the secret holding the web logins (default "
-                                           "WEB_AUTH_SOURCES)"))}),
     "url_changed": (
         "a web page, feed or API answers differently than it did at the last ok run",
         {"url": ("str", True, "the address to fetch (GET)"),
@@ -144,7 +133,7 @@ KINDS: dict[str, tuple[str, dict[str, tuple[str, bool, str]]]] = {
 
 #: Checks that need the network, plus the parameters whose values name secrets. The daemon
 #: builds the jail from these, so a check can never reach further than its kind needs.
-NET_KINDS = frozenset({"mail", "url_changed", "hub_feedback"})
+NET_KINDS = frozenset({"mail", "url_changed"})
 SECRET_PARAMS = frozenset({"user_secret", "password_secret", "accounts_secret", "token_secret",
                            "auth_secret"})
 DEFAULT_AUTH_SECRET = "WEB_AUTH_SOURCES"   # noqa: S105 — the secret's NAME, never its value
@@ -252,7 +241,7 @@ def secrets_named(checks: list[dict]) -> set[str]:
     """Every secret a check list names — what the daemon must be allowed to inject."""
     named = {str(c[p]) for c in checks for p in SECRET_PARAMS if c.get(p)}
     for c in checks:
-        if (c.get("kind") == "hub_feedback" or c.get("auth_source")) and not c.get("auth_secret"):
+        if c.get("auth_source") and not c.get("auth_secret"):
             named.add(DEFAULT_AUTH_SECRET)
     return named
 
