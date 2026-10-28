@@ -3,6 +3,15 @@ effect:
   with: claims only what an observation in this run showed — "sent", "published", "fixed" and "nothing new" each need their observation; a blocked or unreadable step is reported as a gap
   without: may report intentions, stale records or unread sources as facts
   when: always — every run reports its work to you and to the next run
+assists:
+  - id: on-a-child-that-fell-short
+    moment: child-exit
+    predicate: child-fell-short
+    payload: remind
+    line: >-
+      This child did not finish `ok`, so its summary is the only account of work you cannot
+      see. Read what it says is unfinished before you fold it onward, and carry that shortfall
+      into your own summary — a hand-back repeated as a result makes its gap invisible.
 tags: [reporting, verification, self-management]
 ---
 # rule: evidence-discipline — every claim traced to an observation in this run

@@ -90,14 +90,24 @@ Validation runs in `lint_rule_text`, which means one call covers all four author
 the `write_rule` action (before its approval ask), the Library tab's PUT, `rsched lint`, and
 the per-rule `problems` the Library page shows.
 
-## The four moments
+## The five moments
 
 | moment | fires | delivery | payload | cost |
 |---|---|---|---|---|
 | `pre-action` | on the action about to run | the action is HELD | `hold` | one turn |
 | `observation` | on the observation that just came back | a tail on that observation | `remind` | none |
 | `boundary` | at a turn boundary | an appended `ENGINE NOTE` | `remind`, `action` | none |
+| `child-exit` | on a child run's hand-back | an appended `ENGINE NOTE` | `remind`, `action` | none |
 | `pre-finish` | as the run tries to end | a finish-gate deferral | `remind` | one turn |
+
+**`child-exit` is a RUN-TREE moment, not a turn moment.** It fires where the engine delivers a
+child's hand-back to its parent (`engine/control.announce_finished_subruns`) and it is the first
+of the hook registry's four dead points to acquire a mechanism — the operator's brief named that
+traffic first: *"Messages between runs, their children, and the user should implement hooks"*.
+The note lands AFTER the hand-back message, never before: a rule commenting on a hand-back the
+model cannot yet see would read as a claim about something absent. It carries the same
+once-per-run budget as every other moment, which is what keeps a parent of four children from
+reading one line four times.
 
 **The moment and the payload are coupled, not free to combine**, and the linter enforces it.
 A chosen action can only be reached by STOPPING it — "remind and let it run" is not

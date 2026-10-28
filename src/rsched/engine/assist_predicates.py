@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from .assist_child import child_fell_short
 from .assist_outcome import outcome_questioned
 
 
@@ -30,6 +31,7 @@ class Situation:
     loop: Any
     action: dict | None = None      # the action just emitted (observation, pre-finish)
     obs: dict | None = None         # the observation just returned (observation)
+    child: dict | None = None       # the child run that just exited (child-exit)
 
     @property
     def ctx(self):
@@ -343,4 +345,6 @@ PREDICATES: dict[str, Predicate] = {
     "outcome-questioned": Predicate(
         moment="boundary", check=outcome_questioned,
         describes="the person's words question what this routine PRODUCES"),
+    "child-fell-short": Predicate(moment="child-exit", check=child_fell_short,
+        describes="a child run you started just exited without finishing ok"),
 }

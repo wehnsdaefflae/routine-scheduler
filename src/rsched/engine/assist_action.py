@@ -34,12 +34,19 @@ from . import enginenote
 from .observations import is_failure
 
 
-def act(loop, assist: Assist) -> None:
-    """Perform an `action`-payload assist's action, and tell the run what came of it."""
+def act(loop, assist: Assist, *, point: str = "turn-boundary") -> None:
+    """Perform an `action`-payload assist's action, and tell the run what came of it.
+
+    `point` is the hook point the fire belongs to — `turn-boundary` for the turn moment and
+    `child-exit` for the run-tree one. It is passed through to `perform` rather than assumed,
+    because `perform` validates the payload against that point's own table: a point which does
+    not carry `action` performs nothing and says so, which is how a future moment cannot
+    silently acquire the rung by calling this function.
+    """
     if assist.payload != "action" or not assist.action:
         return
     from ..hooks import perform as perform_mod
-    obs = perform_mod.perform(loop, dict(assist.action), point="turn-boundary",
+    obs = perform_mod.perform(loop, dict(assist.action), point=point,
                               source=f"rule:{assist.key}")
     enginenote.append(loop, outcome(assist, obs), assists=[assist.key])
 

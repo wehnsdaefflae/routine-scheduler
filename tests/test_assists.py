@@ -103,7 +103,8 @@ def test_the_seed_rules_that_declare_assists_are_valid():
         if got:
             declared[path.stem] = got
     assert set(declared) == {"ask-policy", "fix-the-cause", "problem-routing", "decision-record",
-                             "interface-craft", "git-checkpoint", "outcome-first"}
+                             "interface-craft", "git-checkpoint", "outcome-first",
+                             "evidence-discipline"}
     # every registered predicate is used by a shipped rule — a predicate nothing declares is
     # engine code with no reader
     used = {a.predicate for rule in declared.values() for a in rule}
@@ -111,7 +112,6 @@ def test_the_seed_rules_that_declare_assists_are_valid():
     # every moment, both PROSE payloads (`action`: test_assist_action.py; no shipped rule yet)
     assert {a.moment for rule in declared.values() for a in rule} == set(lib.MOMENTS)
     assert {a.payload for rule in declared.values() for a in rule} == {"remind", "hold"}
-
 
 
 def test_a_hand_broken_fire_count_never_fails_the_turn(tmp_path):

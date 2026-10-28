@@ -290,9 +290,10 @@ the limits (single-writer status.json preserved).
 - **A curated rule surfaces itself at the moment it applies** (`rsched/assists.py` +
   `engine/assist.py`, `engine/assist_predicates.py`). A rule declares `assists:` in its own
   frontmatter — a deterministic predicate over the SITUATION plus the operative line to surface
-  when it fires. FOUR moments (`assists.MOMENTS`): a pre-action HOLD, an observation tail, a
-  turn-boundary ENGINE NOTE (the middle two free), and a finish-gate deferral (one turn, because
-  a line surfaced as a run ends is one nobody can act on). The moment and the payload are coupled
+  when it fires. FIVE moments (`assists.MOMENTS`): a pre-action HOLD, an observation tail, a
+  turn-boundary ENGINE NOTE, a child-exit ENGINE NOTE on a child run's hand-back (those three
+  free), and a finish-gate deferral (one turn, because a line surfaced as a run ends is one
+  nobody can act on). The moment and the payload are coupled
   (`assists.MOMENT_PAYLOADS`): `pre-action` can only hold — the only way to reach a chosen action
   is to stop it — and the free moments cannot hold, having no action in hand. A `pre-action` hold
   goes through the same seam the consequence reminders use (`engine/hold.py`). The `boundary`
@@ -313,12 +314,14 @@ the limits (single-writer status.json preserved).
   the question could only be answered by reading the turn loop. `POINTS` is that set: per point
   what it can reach, which payloads it may carry (`remind` / `note` / `hold` / `action`), its CARRIER (an
   observation tail, an engine note, a held turn, a prompt section), which mechanisms fire there
-  today and the engine seam that does it. The rule layer's four moments and the reminder layer's
+  today and the engine seam that does it. The rule layer's five moments and the reminder layer's
   eight trigger kinds both MAP onto it (`for_moment`, `for_trigger`, pinned against
   `assists.MOMENT_PAYLOADS` and `reminders.KINDS` in `tests/test_hooks_points.py`), so the
   registry is one vocabulary rather than a second opinion beside them. The points nothing fires
-  at yet are IN the table with an empty `fires` — `spawn`, `child-exit`, `run-end`, `restart` —
-  because a registry listing only what is built cannot say what is missing. `dispatch.at` is the
+  at yet are IN the table with an empty `fires` — `spawn`, `run-end`, `restart` — because a
+  registry listing only what is built cannot say what is missing. `child-exit` was the fourth
+  and now fires: the rule layer reaches it where a child's hand-back is delivered, which is the
+  first of those gaps to be closed by a mechanism rather than renamed. `dispatch.at` is the
   one evaluator: it drops a candidate whose payload the point cannot carry, and treats a
   predicate that raises as "did not fire", never as a failed turn. TWO points can change what
   runs, which corrects the hook design's rule 2: `pre-action` prevents an action and

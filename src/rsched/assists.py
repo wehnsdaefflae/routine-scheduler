@@ -44,7 +44,14 @@ from pathlib import Path
 #: but not executed, the only way to reach the model is to stop the action — "remind and let
 #: it run" is not expressible there, because the action is already emitted. That is why the
 #: moment and the payload are coupled rather than free to combine.
-MOMENTS = ("pre-action", "observation", "boundary", "pre-finish")
+#:
+#: `child-exit` is the fifth, and it is a RUN-TREE moment rather than a turn moment: a child
+#: this run started has exited and its hand-back is being delivered. It was one of the four
+#: points `hooks/points.py` carried with an empty `fires` since the registry shipped, and the
+#: operator's brief names that traffic first — *"Messages between runs, their children, and the
+#: user should implement hooks"*. It costs no turn: the note rides the same boundary the
+#: hand-back does.
+MOMENTS = ("pre-action", "observation", "boundary", "pre-finish", "child-exit")
 
 #: The payload axis is `remind -> action -> hold`. The design note spelled the middle rung
 #: `scaffold -> do`, and said neither existed "because each needs a helper channel that is not
@@ -79,8 +86,13 @@ PAYLOADS = ("remind", "action", "hold")
 #: the seam, not a compromise. `post-action` keeps `action` in the point registry because the
 #: reminder layer — whose author IS the run, and whose fire site is after the record — is the
 #: mechanism that will fire there.
+#: `child-exit` carries both free payloads for the same reason `boundary` does, and it is the
+#: one moment where the ORDERING objection above does not arise: the hand-back has already been
+#: appended to the prompt when the point fires, so a performed action's own observation lands
+#: after the message that triggered it, which is the true order.
 MOMENT_PAYLOADS = {"pre-action": ("hold",), "observation": ("remind",),
-                   "boundary": ("remind", "action"), "pre-finish": ("remind",)}
+                   "boundary": ("remind", "action"), "pre-finish": ("remind",),
+                   "child-exit": ("remind", "action")}
 
 #: The action kinds an `action` assist may NOT perform: the ones that STEER a run rather than
 #: having an effect in the world. `engine/commands.py` draws this exact line for the user's own
