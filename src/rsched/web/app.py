@@ -83,9 +83,9 @@ ROUTINE_TOKEN_MUTATIONS: tuple[tuple[str, str], ...] = ()
 # the operator's for the same reason: their sockets already need a pass only the primary token
 # mints, and their assets have no reader a run needs.
 ROUTINE_TOKEN_DENIED_READS: tuple[str, ...] = ("/api/fs", "/api/debug", "/api/settings",
-                                               "/api/search", "/api/routines/*/secrets",
-                                               "/api/desktops", "/browser-view",
-                                               "/desktop-view")
+                                               "/api/search", "/api/desktops",
+                                               "/api/routines/*/secrets", "/browser-view",
+                                               "/api/conversations/*/secrets", "/desktop-view")
 
 
 def _in_subtree(path: str, prefix: str) -> bool:

@@ -168,6 +168,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_conversation_config,
         api_conversation_create,
         api_conversation_playbooks,
+        api_conversation_secrets,
         api_conversations,
         api_credential_names,
         api_debug,
@@ -213,6 +214,8 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
                    api_conversations,
                    api_conversation_config,
                    api_conversation_playbooks,
+                   api_conversation_secrets,   # D216 rank 1: the write surface the scoped
+                   # store always served for a conversation but no route could reach
                    api_background, api_branches, api_browser, api_desktops, api_runs,
                    api_run_control,
                    api_refusal_flag,
