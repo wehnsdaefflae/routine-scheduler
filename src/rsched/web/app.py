@@ -25,6 +25,7 @@ from . import assetskew
 from .appwiring import _include_api_routers, _make_lifespan
 from .ioload import attach_state
 from .screen_proxy import screen_for_path
+from .security_headers import SecurityHeaders
 
 log = logging.getLogger("rsched.web")
 
@@ -344,4 +345,5 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
     app.mount("/docs", StaticFiles(directory=docs_out_dir(), check_dir=False, html=True),
               name="docs")
+    app.add_middleware(SecurityHeaders)   # the CSP on every response, refusals too (D219)
     return app

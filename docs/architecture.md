@@ -2033,6 +2033,20 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   as OPENED (`web/artifacts.open_within`, the kernel's `/proc/self/fd` name for the descriptor),
   because a check made on a path before the open can be raced — a util swapping a directory of
   its own for a symlink between the two had the console read, for it, a file its jail forbids.
+  **Every http response carries `Content-Security-Policy: object-src 'none'; frame-ancestors
+  'self'`** (`web/security_headers.py`, added outermost in `create_app` so the 401/403 refusals
+  carry it too; a WebSocket scope never reaches an http middleware, like the timing one). Two
+  directives and no more, deliberately: a `blob:` document INHERITS the policy of the page that
+  made it, and the console renders every artifact from a blob, so a `script-src` would stop the
+  inline scripts of every HTML artifact a run writes — those are safe because the frame is
+  `sandbox="allow-scripts"` with an opaque origin (`components/blobtab.js`), not because a policy
+  stops them running. `index.html` has one inline theme script and `el()` sets `style=` all over
+  the frontend, so `default-src`/`style-src` need that script hashed and `'unsafe-inline'` first.
+  The wider policy (hashed theme script, `style-src`, a `frame-src` naming the browser-view
+  relay) waits on artifacts being served from their own route. `object-src` costs nothing: no
+  viewer builds an `<embed>` or `<object>`, and a PDF renders in an `<iframe>`. `frame-ancestors
+  'self'` costs nothing either: every frame the console builds is this origin or a blob of it,
+  which is exactly why the noVNC screens are RELAYED through `web/screen_proxy.py`.
 - **Search** (`rsched/search/`, `web/api_search.py`, the console's
   `components/searchbox.js`, focused by `/` or Ctrl-K): SQLite FTS5 over both homes' PROSE —
   transcript say/note/finish/questions/answers/user messages (gz + subrun trees included),
