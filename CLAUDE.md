@@ -765,7 +765,13 @@ by a test, by the engine, or by a past incident.
   Decisions card (deduped on the lines), and approving it (`web/api_recipe_revision.py`) ARMS
   the existing revise unlock (`engine/revise.py`) and resumes the proposing run with its recipe
   writable rather than writing the recipe from the web. A run that already holds recipe
-  self-write makes the edit and files no card. Never let the per-run list and the routine's end share one store
+  self-write makes the edit and files no card. THE OPERATOR MAY REWORD THE LINES BEFORE
+  APPROVING (F790): prose has no patch to adjust, so his wording rides the approval as an
+  optional body, capped server-side at `MAX_LINES`, and `_instruction()` has a second framing
+  saying THE LINES ARE HIS — never tell a leg that an edited sentence is its own, because it
+  cannot see where the two differ and will defend wording it never chose. Discarding picks WHICH
+  true thing happened (not wanted / already made by hand): the reason is quoted verbatim to the
+  routine, so one hardcoded reason for both was a lie its next run reasoned from. Never let the per-run list and the routine's end share one store
   again: sticky + per-run had most of the fleet reading "the job is DONE. Finish NOW" at the top
   of every run.
 - **Global chrome is positioned by `base.css` ALONE, and losing that fails silently.** The

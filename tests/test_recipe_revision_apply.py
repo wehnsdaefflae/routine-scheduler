@@ -149,3 +149,64 @@ def test_the_card_has_its_own_band_rather_than_the_generic_create_it_row():
     assert "/revise" in card and "apply it" in card
     band = (root / "pending.js").read_text(encoding="utf-8")
     assert "RECIPE, recipeRow" in band and "RECIPE]" in band
+
+
+async def _resumed(cfg, ts=None, *, reason=""):
+    return f"{cfg.slug}:{ts}"
+
+
+def test_the_operators_edited_lines_replace_the_runs_own(web, monkeypatch):
+    """F790, the operator's half of "edit the proposed revision": the card may post HIS wording,
+    and that is what the resumed leg is told to implement — the proposal is prose, so rewording
+    it is the whole of editing it. The one thing that must not happen is the leg reading his
+    words as its own: it would have no way to notice where the two differ, and would defend a
+    sentence it never wrote.
+    """
+    from rsched.engine.revise import REVISE_MARKER
+
+    c, tmp = web
+    run_dir = mk_run(tmp / "routines" / "rev", "20260709-170000", "finished")
+    rec = _queued(tmp / "routines", "rev", "20260709-170000", ["main.md — tighten step 2"])
+    monkeypatch.setattr(c.app.state.runner, "resume_terminal", _resumed)
+    r = c.post(f"/api/pending-creations/{rec['id']}/revise",
+               json={"lines": ["main.md — delete step 2 entirely", "   "]})
+    assert r.status_code == 200, r.text
+    assert r.json()["lines"] == ["main.md — delete step 2 entirely"]   # blank lines dropped
+    assert r.json()["edited"] is True
+    instruction = read_json(run_dir / REVISE_MARKER)["instruction"]
+    assert "main.md — delete step 2 entirely" in instruction
+    assert "tighten step 2" not in instruction          # his version replaces it, not joins it
+    assert "THE LINES BELOW ARE HIS" in instruction     # …and is not passed off as the run's
+    assert "writable to you on THIS leg only" in instruction
+    msg = next((tmp / "routines" / "rev" / "inbox").glob("msg-*.json"))
+    assert "delete step 2 entirely" in read_json(msg)["text"]
+
+
+def test_edited_lines_are_capped_at_max_lines_server_side(web, monkeypatch):
+    """A client-side cap is not a cap. The proposal's own ceiling is `recipeproposal.MAX_LINES`,
+    so the operator's rewrite is held to the same one where the lines are read.
+    """
+    from rsched.engine.revise import REVISE_MARKER
+
+    c, tmp = web
+    run_dir = mk_run(tmp / "routines" / "rev", "20260709-171000", "finished")
+    rec = _queued(tmp / "routines", "rev", "20260709-171000", ["main.md — x"])
+    monkeypatch.setattr(c.app.state.runner, "resume_terminal", _resumed)
+    over = [f"main.md — change {i}" for i in range(recipeproposal.MAX_LINES + 3)]
+    r = c.post(f"/api/pending-creations/{rec['id']}/revise", json={"lines": over})
+    assert r.status_code == 200, r.text
+    assert r.json()["lines"] == over[:recipeproposal.MAX_LINES]
+    instruction = read_json(run_dir / REVISE_MARKER)["instruction"]
+    assert over[recipeproposal.MAX_LINES] not in instruction
+
+
+def test_an_empty_edit_is_refused_instead_of_applying_the_runs_words(web):
+    """An operator who cleared the box did not ask for the run's original wording — answering a
+    blank edit with the very lines he deleted would resume the leg on text he rejected.
+    """
+    c, tmp = web
+    mk_run(tmp / "routines" / "rev", "20260709-172000", "finished")
+    rec = _queued(tmp / "routines", "rev", "20260709-172000", ["main.md — x"])
+    r = c.post(f"/api/pending-creations/{rec['id']}/revise", json={"lines": ["  ", ""]})
+    assert r.status_code == 400 and "empty" in r.json()["detail"]
+    assert len(pending.load_all(tmp / "routines")) == 1       # still the operator's to decide
