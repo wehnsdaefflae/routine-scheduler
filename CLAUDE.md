@@ -105,7 +105,8 @@ one you are about to touch, not all of them.
   append-only feedback contract, the `steward-publishing` permission that makes it opt-in and
   the kit's `CONTRACT.md` that says how)
 - `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
-  item shape, the status vocabulary and its precedence, and the changelog join;
+  item shape, the status vocabulary and its precedence, the `first_seen` age stamp and the
+  changelog join;
   `docs/messages.md` — a routine's four message folders (the Messages page/D74), the
   per-folder write surface, and the outbox-retraction decision
 - `docs/sandboxing.md`, `docs/endpoints.md`, `docs/decision-models.md`, `docs/oauth-connections.md`,

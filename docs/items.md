@@ -10,10 +10,9 @@ maintenance record a message may carry or answer.
 An **item** is one unit of maintenance work on the scheduler itself: a self-audit
 **finding** (`F<n>`), a self-audit **decision** (`D<n>`), or a **report** (`R<n>`) filed by
 any run through the ungated `report` action — addressed to the routine that owns the problem,
-or left unaddressed for triage. The Messages page (`#/messages`) is the one
-place where every item is listed with its status, what it is for, where it came from, and
-when it was addressed. It replaced the old Log and Audit pages in 0.106.0 (as Items, renamed
-in D74).
+or left unaddressed for triage. The Messages page (`#/messages`) is the one place where every
+item is listed with its status, what it is for, where it came from, how old it is and when it
+was addressed. It replaced the old Log and Audit pages in 0.106.0 (as Items, renamed in D74).
 
 A fourth type joined them in 0.294.0 (operator order 2026-09-05): a **summary** — a routine's
 latest finish message, the one text a run writes for a person to read. It had a page of its own
@@ -48,9 +47,8 @@ that run considered, not every item that ever existed. The changelog and the ans
 markers are what keep older items visible; an item known only from those is *archive-only*
 and says so.
 
-`findings.json` / `decisions.json` sit in the same directory and are NOT item stores despite
-their names — they are per-run scratch from the routine's first runs (keyed by run id, with
-arbitrary payload keys). Nothing reads them.
+`findings.json` / `decisions.json` there are NOT item stores despite their names: per-run
+scratch from the routine's first runs (keyed by run id, arbitrary payloads), which nothing reads.
 
 ## The item shape
 
@@ -63,6 +61,7 @@ arbitrary payload keys). Nothing reads them.
   "detail": "…the item's own prose…",
   "origin":   {"routine": "self-audit", "run_id": "self-audit:20260725-000002",
                "ts": "2026-07-25T00:38:00+00:00", "commit": "5854843551"},
+  "first_seen": "2026-07-22T10:00:00+00:00", "first_seen_or_earlier": true,
   "addressed": [{"ts": "…", "commit": "d0ab60d…", "run_id": "self-audit:20260725-000002",
                  "summary": "0.103.0 — F202 run messages carry file attachments…",
                  "title": "", "link": "explicit"}],
@@ -76,9 +75,8 @@ arbitrary payload keys). Nothing reads them.
 - **`id`** — `F<n>` finding, `D<n>` decision, `R<n>` report. The prefix is the type, and the
   three namespaces never collide. `R` was chosen over `B` because the user's own
   reviewer-backlog items are written `B<n>` in prose and would mislink. A SUMMARY's id is the
-  RUN id it came from (`<slug>:<ts>`) — there is no `S<n>` namespace and no counter to own one;
-  an `S1` would read like the ids a finish's accounting carries (`d1 met: …`,
-  `g1 distance: …`).
+  RUN id it came from (`<slug>:<ts>`): there is no `S<n>` namespace and no counter to own one,
+  and an `S1` would read like the ids a finish's accounting carries (`d1 met: …`).
 - **`type`** — `summary` | `finding` | `decision` | `report`.
 - **`status`** — see below. The key is `status`, never `state`: decisions already carried
   `status` on disk and a synonym would fork the vocabulary.
@@ -87,8 +85,13 @@ arbitrary payload keys). Nothing reads them.
   instead, labelled as coming from the changelog.
 - **`origin`** — where the item entered the system: `routine`, `run_id`, `ts`, `commit`.
   For findings and decisions that is the audit report that raised them; for reports the run
-  that filed it. An archive-only item takes its origin from the EARLIEST changelog row
-  linked to it — that is the first trace of it, not necessarily the moment it was raised.
+  that filed it; for an archive-only item the EARLIEST changelog row linked to it, the first
+  trace of it rather than the moment it was raised. `origin.ts` is NOT an age — a finding's
+  reads as the last wholesale rewrite of report.json.
+- **`first_seen`** + **`first_seen_or_earlier`** — when this instance first saw the item, so an
+  age is computable and "the ten oldest" answerable (F753). Spec and only writer:
+  `rsched/firstseen.py` over `<routines>/.control/item-first-seen.json`. An item predating that
+  store's epoch carries a FLOOR, rendered "or earlier"; a report and a summary read exactly.
 - **`addressed[]`** — every changelog row linked to this item, newest first: `ts`, `commit`,
   `run_id`, `summary`, `title`, and `link`. This is the "when was it addressed" history, and it
   carries the FULL prose: a reader looking an item up wants the whole entry.
@@ -182,9 +185,9 @@ id; **`in_progress`** once an ADDRESSED report's target drained the message from
 the engine stamped a `delivered` event onto the row; otherwise **`open`**.
 
 That progression is the whole reason the ledger exists: it distinguishes a hand-off that
-carried from one that silently never arrived. An addressed report's card shows the routing line
-(`sender → target`, whether it was picked up, and which reply closed it); an unaddressed one
-has no routing and simply waits in triage. Delivery itself never starts a run; a target that
+carried from one that silently never arrived. An addressed report's card shows that routing;
+an unaddressed one has no routing and simply waits in triage. Delivery never starts a run; a
+target that
 wants to be WOKEN by deliveries declares a `report` trigger on its own Triggers card
 (docs/triggers.md) — bursts coalesce into one run per cooldown window.
 
@@ -193,8 +196,7 @@ characters) **in the DELIVERED message only**: the ledger row keeps it whole, an
 message carries a marker naming its own `R<n>` as the row holding the rest (`reports.clip_detail`,
 implemented in `rsched/report_detail.py` — the bound belongs to the DELIVERY, not to the ledger;
 D177, the operator 2026-10-11: *"the ledger is cheap disk, the prompt is the scarce resource, and
-R2436's lost question would have been recoverable"*). The cap exists because a delivered report
-rides in the target's prompt, where length is what is scarce; the archive has no such constraint.
+R2436's lost question would have been recoverable"*).
 The filer is told in its own observation how many characters did not reach the reader, while it
 can still lead with what matters (F660 — before that, the cut was silent and a truncated report
 read exactly like a complete one: 273 rows of the live ledger end mid-word at exactly 4000
@@ -385,12 +387,11 @@ parser silently drops every multi-line row.
 `GET /api/items` returns the merged index plus the header the page needs:
 
 ```
-items[]              the matching items, newest origin first (`total` = matches before `limit`).
-                     A FOLDED row is left out unless `folded=1` or a `search` names it: it is
-                     not a peer item (it cannot be answered and settles with its carrier,
-                     whose card lists it), and counting it would put this page 14 apart from
-                     self-audit's own vitals line over the same ledger. Hidden from BROWSING,
-                     never from LOOKING SOMETHING UP — a `?focus=` reflink turns it on.
+items[]              the matching items, newest origin first (`total` = matches before `limit`),
+                     each with its `first_seen` age stamp. A FOLDED row is left out unless
+                     `folded=1` or a `search` names it (see the filter below, and a `?focus=`
+                     reflink turns it on): counting one would put this page 14 apart from
+                     self-audit's own vitals line over the same ledger.
 counts{type,status,  totals across the UNFILTERED set, for the filter chips
        active}       (`readmodels/item_counts.py`). `active` cross-tabulates the other two
                      into five parts that never overlap: `worklist` (non-summary, non-folded
@@ -454,13 +455,12 @@ still happens on the Decisions page, through the same inbox.
 The user's "work this first" (D75) on any `F`/`D`/`R` item: `POST /api/items/{id}/priority
 {"on": true|false}` writes `<routines>/.control/item-priorities.json` (`rsched/priorities.py`,
 the web layer's store — never `report.json`, which self-audit rewrites whole every run, and
-never the append-only ledger, which records what runs SAID rather than UI state). A flagged
-item carries `priority: true` and sorts above everything else on the page — the unflagged
-maintenance items and the run summaries alike — each band keeping its own order; its OWNING
-routine's next run reads it in a "PRIORITY items" state-digest
-section (an `R<n>` belongs to its `target`; every `F`/`D`, and an untargeted report, to
-self-audit). The store is the read model's fifth fingerprinted input, so a toggle invalidates the
-memo like any source edit.
+never the append-only ledger, which records what runs SAID rather than UI state; the age store
+above is the second built on that reasoning). A flagged item sorts above everything else —
+unflagged maintenance items and run summaries alike — each band keeping its own order, and
+its OWNING routine's next run reads it in a "PRIORITY items" state-digest section (an `R<n>`
+belongs to its `target`; every `F`/`D`, and an untargeted report, to self-audit). The store is
+the read model's fifth fingerprinted input, so a toggle invalidates the memo.
 
 ## Report ids
 
@@ -468,6 +468,6 @@ The `report` action stamps a monotonic `R<n>` on every report as it is appended
 (`rsched/reports.py`), under the same advisory file lock the append takes, so two runs filing
 at once cannot collide; a filing that cannot take the lock (a holder stalled past the lock's
 timeout) is refused and says so, rather than numbered without it. The id comes back in the
-action's observation, so the filing run can
-name it in its own summary, and it is how a later report CLOSES this one (`answers`). Every
+action's observation, so the filing run can name it in its own summary, and it is how a later
+report CLOSES this one (`answers`). Every
 row in `reports.jsonl` carries an `id`; there is no id-less form to handle.

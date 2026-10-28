@@ -3,9 +3,12 @@ with its status, purpose, origin and the changelog rows that addressed it (docs/
 the page rename is D74 — the ids and the endpoint keep the item vocabulary).
 
 Mostly the READ half; `api_audit` keeps the page's structured write channel (reviewer
-feedback into the self-audit routine's inbox) and `api_messages` the free-form one, while
-the one write that lives HERE is the ⚑ priority toggle — UI state about an item, not a
-message to a run (priorities.py). The GET also carries the report header the page shows —
+feedback into the self-audit routine's inbox) and `api_messages` the free-form one, while the
+writes that live HERE are about an item rather than addressed to a run: the ⚑ priority toggle
+(priorities.py) and, as a side effect of SERVING the index, each item's origin stamp
+(firstseen.py — this handler is the one place holding the whole merged id set, so it is that
+store's only writer; it adds an id it has never seen and never moves one it has, F753). The
+GET also carries the report header the page shows —
 the current window, the summary, the last self-audit run — which is why the old
 `GET /api/audit` is gone rather than kept beside it.
 """
@@ -18,7 +21,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 
-from .. import priorities, registry
+from .. import firstseen, priorities, registry
 from ..paths import read_json
 from ..readmodels import item_counts, memo, summaries
 from ..readmodels import items as items_model
@@ -116,8 +119,12 @@ def items(request: Request,
         only = items_model.filter_items(summary_rows, type_=type_, status=status,
                                         routine=routine, target=target, owner=owner,
                                         search=search, folded=folded)
+        # No maintenance record, so nothing to stamp (F753): a summary's own origin IS its run
+        # and is never rewritten, so it reads exactly, and the store stays unwritten here.
+        page = only[:max(1, limit)]
+        firstseen.annotate(page, firstseen.read_first_seen(server.routines_home))
         return {"exists": False, "routine": SELF_AUDIT_SLUG,
-                "items": only[:max(1, limit)], "total": len(only),
+                "items": page, "total": len(only),
                 "counts": item_counts.counts(summary_rows), "report": None, "last_run": None,
                 "queued": [], "answered_decisions": []}
 
@@ -143,8 +150,17 @@ def items(request: Request,
         f"changelog:{changelog_path}", [changelog_path],
         lambda: items_model.read_changelog(changelog_path))
     readers, installed = _fleet(request)
+    # The ORIGIN STAMP (F753, firstseen.py). This handler is the one place that holds the whole
+    # merged id set, so it is the store's only writer: `stamp` adds an id it has never seen and
+    # never moves one it has. The stamps ride on the rows being served rather than on the
+    # memoized index — the set is only known after the merge, so a stamp written during a
+    # request could not appear in that request's cached value, and a brand-new item would be
+    # served undated on exactly the day it was born.
+    store = firstseen.stamp(server.routines_home, (i["id"] for i in all_items))
+    page = shown[:max(1, limit)]
+    firstseen.annotate(page, store)
     return {"exists": True, "routine": SELF_AUDIT_SLUG,
-            "items": shown[:max(1, limit)], "total": len(shown),
+            "items": page, "total": len(shown),
             # recomputed over the MERGED set: `counts` is documented as always being over the
             # unfiltered whole, so it has to include the summaries the page can now filter to.
             # `readers` are the routines that will run: only a report addressed to one of them
