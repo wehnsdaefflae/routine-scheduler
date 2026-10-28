@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.468.0] — 2026-10-28
+
+### Fixed
+- **The batched-ask schema offered a sub-field its own grammar refuses** (F787). `questions` is
+  one item schema shared by `decide` and `ask_user` (D212) because `ACTION_SCHEMA` is flat and
+  `additionalProperties: False` would strip an undeclared sub-field silently. Two of its
+  properties are `decide`'s alone and `askfields._DECIDE_ONLY` refuses them for `ask_user` — but
+  `name` was described as plain prose (*"snake_case id the answer is filed under"*) with no
+  `decide:` lead, and `answer_type` carried no description at all. So the prompt advertised both
+  unconditionally while the engine rejected them: `folder-reorg:20261027-170451` turn 48 lost a
+  turn to exactly that, on D212's first live use by a routine other than its builder
+  (`wrong_turn_detected` on the health stream). Both now lead with the kind that accepts them
+  and say in the same breath how an `ask_user` question is identified and answered instead.
+  `docs/prompt-anatomy.md` §5.1's schema dump re-rendered from `schema_for_kinds`, which is what
+  `tests/test_prompt_anatomy_example.py` pins byte-for-byte (red first against this edit).
+
+- **`tests/test_prompt_budget.py --update` destroyed the budget's own `note` while reporting
+  success** (F791, found by running it). It wrote `{"total": total, **now}`, so every key it does
+  not compute was silently dropped — and `note` is the only record of what the always-on contract
+  was permitted to grow FOR: one `--update` erased D212's +1382 and D118's +524 justifications
+  (2,818 characters of reasoning) and printed the new ceiling as if nothing had happened. The
+  updater now carries every key it does not compute, the note is restored from `HEAD`, and a
+  round trip is proven to preserve it. Same class as this routine's own measurement defects:
+  a tool that silently narrows its own input while returning success.
+
+### Changed
+- **`CLAUDE.md` said the own-dir seal was action-layer only** (R2996, reported by
+  `scheduler-builder`). It described the pre-D179 world: *"The jail cannot carve `routine.yaml`
+  out of the routine's own directory — Landlock unmasks access UP the path."* `ownseal.py:46`
+  has `SEALED_FILES = (CONFIG_FILE,)` and `mount_own_dir` grants read-write only to
+  `writable_children`, which subtracts `sealed_names` — so the jail does carve it out, by never
+  granting write to the parent. The working tier a maintainer reads first now states both layers
+  and keeps the one true residual: where the jail does not engage (`sandbox: off`, no Landlock),
+  `ungated_write` plus the runner's report is again the whole mechanism.
+
 ## [0.467.0] — 2026-10-27
 
 ### Fixed

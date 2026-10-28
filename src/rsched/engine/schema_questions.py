@@ -33,9 +33,10 @@ QUESTIONS_FIELD = {
     "type": "array", "maxItems": 16,
     "items": {"type": "object", "additionalProperties": False, "properties": {
         "name": {"type": "string",
-                 "description": "snake_case id the answer is filed under"},
+                 "description": "decide ONLY: snake_case id the answer is filed under"},
         "question": {"type": "string", "description": "what to decide"},
-        "answer_type": {"type": "string", "enum": ["yes_no", "choice", "score"]},
+        "answer_type": {"type": "string", "enum": ["yes_no", "choice", "score"],
+                        "description": "decide ONLY: how it is answered"},
         "options": {"type": "array", "items": {"type": "string"}, "maxItems": 26},
         # ask_user's per-question fields: each means for ITS question exactly what the
         # same-named top-level field means for a single ask, so they are not re-described
@@ -46,13 +47,12 @@ QUESTIONS_FIELD = {
         "config_patch": {"type": "object"},
         "blocks_work": {"type": "boolean"}}},
     "description": "decide: SEVERAL independent questions over the same evidence, in "
-                   "one call (instead of question/answer_type/options) — each with "
-                   "its own name, question, answer_type and options. One evidence, "
+                   "one call (instead of question/answer_type/options) — one evidence, "
                    "many questions is what these models are fastest and cheapest at · "
-                   "ask_user: SEVERAL questions in ONE action, each entry with its own "
-                   "question/options/default/request/config_patch/blocks_work — one decision "
-                   "record each, sharing a batch id. One turn, not five. Not a waiting mode: "
-                   "a batch is filed and you carry on",
+                   "ask_user: SEVERAL questions in ONE action, each entry carrying for "
+                   "itself what a single ask carries — one decision record each, sharing "
+                   "a batch id. One turn, not five. Not a waiting mode: a batch is filed "
+                   "and you carry on",
 }
 
 def batch_brief(batch: list) -> str:

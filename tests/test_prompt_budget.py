@@ -72,8 +72,15 @@ if __name__ == "__main__" and "--update" in sys.argv:
     with tempfile.TemporaryDirectory() as tmp:
         now = contract_chars(Path(tmp))
     total = sum(now.values())
-    old = json.loads(BUDGET.read_text(encoding="utf-8"))["total"] if BUDGET.exists() else None
+    prior = json.loads(BUDGET.read_text(encoding="utf-8")) if BUDGET.exists() else {}
+    old = prior.get("total")
     if old is not None and total > old:
         sys.exit(f"refusing to raise the ceiling {old} → {total}: edit prompt_budget.json by hand")
-    BUDGET.write_text(json.dumps({"total": total, **now}, indent=1) + "\n", encoding="utf-8")
+    # Carry every key this does NOT compute — `note` holds the reason each past raise was
+    # allowed, which is the only record of what the contract was permitted to grow for. The
+    # first version wrote `{"total": total, **now}` and silently dropped it: one `--update`
+    # erased D212's +1382 and D118's +524 justifications while reporting success.
+    carried = {k: v for k, v in prior.items() if k not in {"total", *now}}
+    BUDGET.write_text(json.dumps({"total": total, **now, **carried}, indent=1) + "\n",
+                      encoding="utf-8")
     sys.stdout.write(f"engine contract ceiling: {total} chars {now}\n")

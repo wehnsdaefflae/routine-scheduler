@@ -17,10 +17,14 @@ runs in the same jail on the widest of those terms — the run's granted roots, 
 (`utils_run.run_jailed`): its own process group ended SIGTERM-first (`procgroup.terminate`) at
 the deadline or the moment its run is aborted (`RunContext.aborted`, polled — no abort signal
 reaches the group's own session), tempfile capture read through a capped reader, and what was
-printed before the group ended is kept. The jail cannot carve `routine.yaml` out of the
-routine's own directory — Landlock unmasks access UP the path — so the "a run never writes
-routine.yaml" seal is ACTION-LAYER only and the runner REPORTS a change it sees rather than
-preventing it. The instruction contains only the task; cross-cutting conduct is
+printed before the group ended is kept. The "a run never writes `routine.yaml`" seal holds in BOTH layers (D179): the action gate, and
+the jail itself — Landlock has no deny rule, so `ownseal.mount_own_dir` mounts the routine's own
+directory LIST-ONLY and grants read-write only to its unsealed children, and
+`ownseal.sealed_names` subtracts `routine.yaml`, `.memory/`, `runs/`, `.util_outputs/`,
+`.doc_cache/` and (without the recipe-authoring permission) the recipe from that set, so no
+subprocess can write them however it writes (docs/sandboxing.md). The residual is where the jail
+does not engage at all — `sandbox: off`, or a kernel without Landlock — and there `ungated_write`
+plus the runner REPORTING a change it sees is again the whole mechanism. The instruction contains only the task; cross-cutting conduct is
 a set of GENERAL RULES with ONE library copy each (`rules:` in routine.yaml holds slugs — the run
 reads the prose with `read_rule` and applies the principle to its own case); schedule, PERMISSIONS,
 workdir, budgets, and model roles are routine config (`routine.yaml` / UI) — the routine's OWN

@@ -978,7 +978,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
     "properties": {
      "name": {
       "type": "string",
-      "description": "snake_case id the answer is filed under"
+      "description": "decide ONLY: snake_case id the answer is filed under"
      },
      "question": {
       "type": "string",
@@ -990,7 +990,8 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
        "yes_no",
        "choice",
        "score"
-      ]
+      ],
+      "description": "decide ONLY: how it is answered"
      },
      "options": {
       "type": "array",
@@ -1013,7 +1014,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
      }
     }
    },
-   "description": "ask_user: SEVERAL questions in ONE action, each entry with its own question/options/default/request/config_patch/blocks_work \u2014 one decision record each, sharing a batch id. One turn, not five. Not a waiting mode: a batch is filed and you carry on"
+   "description": "ask_user: SEVERAL questions in ONE action, each entry carrying for itself what a single ask carries \u2014 one decision record each, sharing a batch id. One turn, not five. Not a waiting mode: a batch is filed and you carry on"
   },
   "evidence": {
    "type": [
@@ -1131,7 +1132,6 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   }
  }
 }
-
 # EXAMPLE of a valid reply
 {
  "say": "Digest puts this run at the scan stage \u2014 reading its module before acting.",
