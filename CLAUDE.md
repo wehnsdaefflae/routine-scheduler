@@ -74,8 +74,9 @@ one you are about to touch, not all of them.
   pattern); `docs/patterns.md` — settings patterns, pending changes and the one accept;
   `docs/run-gates.md` — the declarative checks that skip a fire with nothing to do; `docs/rule-assists.md` — its curated
   half: a rule's own `assists:` block surfacing its operative line at the moment it applies
-  (why timing is possible where compliance-checking is not, the four moments — a pre-action
-  HOLD plus three free ones, coupled to their payloads — the `action` payload, where a rule
+  (why timing is possible where compliance-checking is not, the five moments — a pre-action
+  HOLD plus four free ones, including `child-exit` on a child run's hand-back, coupled to their
+  payloads — the `action` payload, where a rule
   PERFORMS one authored action at the turn boundary with no model turn, and the
   one-shot migration each batch needs to reach a live library)
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer (each doc's
@@ -1122,7 +1123,21 @@ by a test, by the engine, or by a past incident.
   and skip a torn or non-object row without hiding the rest. The engine's own transcript writer
   and the gate kit (a standalone script that cannot import the package) keep their own.
 - `static/` is no-build vanilla-JS ES modules (no bundler, no node, no external assets). Keep it
-  that way. The design system is `base.css` ("watchfloor"): colour is STATE, and the palette turns
+  that way. **A NEW button's action goes through `util.js`'s `act()`** — it disables the control,
+  awaits the call, toasts the outcome and re-enables in a `finally`, which is the only way the
+  re-enable cannot be forgotten. The ~36 hand-rolled copies that predate it **STAY**, and this is
+  a ruling rather than debt nobody got to (operator, 2026-10-28, answering F786): *"act() is for
+  NEW controls only: the 32 judgement sites stay, the 4 mechanical ones ride along the next change
+  that opens those files"*. The measurement behind it, so nobody re-proposes the sweep: of the 36,
+  only **4** could be converted mechanically (the criterion is "ignores `act()`'s return value AND
+  has no post-success remount") — 10 both read the response and remount, 8 read it, 14 remount.
+  The rest are judgements with reasons in their own code, e.g. `configproposal.js` throws after
+  comparing `res.updated` against every patch key (the R102 honesty gate, which an
+  undefined-on-failure return would erase) and `skewbanner.js` deliberately leaves its button dead
+  on success. Convert an old site only while you are in that file for another reason; the four
+  that qualify are `decision-lifecycle.js`, `swap-card.js`, `unowned-card.js` and
+  `conversations.js` — and that last one is shrink-only, so a conversion there must tighten its
+  ratchet ceiling in the same change. The design system is `base.css` ("watchfloor"): colour is STATE, and the palette turns
   on one distinction — SIGNAL (cyan) is the machine working and is the interactive colour, SUMMONS
   (coral) is what waits on a PERSON, IRIS (violet) is structure. Type says who wrote the words:
   system-ui for the console's own voice, mono for anything a counter emitted, a reading sans at

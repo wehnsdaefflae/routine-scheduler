@@ -50,9 +50,14 @@ def test_action_points_include_the_points_that_fire_nothing_yet():
     the campaign's later steps would have to edit the payload column as well as wire the site,
     and the table would stop being readable as 'what is possible here'.
     """
-    for name in ("spawn", "child-exit", "run-end", "restart"):
+    for name in ("spawn", "run-end", "restart"):
         assert points.allows(name, "action")
         assert not points.point(name).live
+    # `child-exit` was the fourth until step 6 wired it (the rule layer fires there now). It
+    # KEEPS the `action` payload it declared while dead, which is the property this test is
+    # really about: wiring a site must not have to edit the payload column as well.
+    assert points.allows("child-exit", "action")
+    assert points.point("child-exit").live
 
 
 class _Transcript:

@@ -246,6 +246,26 @@ def at_boundary(loop) -> None:
 
 
 
+def at_child_exit(loop, child_row: dict) -> None:
+    """Child-exit assists, appended as ENGINE NOTEs beside the hand-back. Costs no turn.
+
+    The run-tree moment: a child this run started has exited and its hand-back has just been
+    put in front of the parent (`control.announce_finished_subruns`). Fired AFTER that message
+    is appended, so the note the rule adds reads as commentary on a hand-back the model can
+    see — the opposite order would comment on something not yet in the prompt.
+
+    Shaped exactly like `at_boundary`, including the `action` rung, and guarded by the same
+    once-per-run budget: a parent with four children would otherwise read the same line four
+    times, which is the livelock the guard exists to prevent. One child's hand-back is the
+    situation; the first one that satisfies the predicate spends the assist.
+    """
+    if not loop.assists:
+        return
+    for assist in _matching(loop, "child-exit", Situation(loop=loop, child=child_row)):
+        enginenote.append(loop, _rendered(assist), assists=[assist.key])
+        assist_action.act(loop, assist, point="child-exit")
+
+
 def at_finish(loop, action: dict) -> tuple[str, list[str]] | None:
     """The pre-finish rung: the deferral message and the keys of the assists behind it, or
     None to let the finish stand.

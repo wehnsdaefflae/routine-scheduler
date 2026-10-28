@@ -21,6 +21,7 @@ from .. import reports
 from ..paths import read_json
 from ..schema_guard import validate
 from . import (
+    assist,
     cancelcall,
     channels,
     child,
@@ -318,3 +319,8 @@ def announce_finished_subruns(loop) -> None:
             mode=sub.mode, n=sub.n, label=sub.label, workflow=sub.workflow,
             status=sub.status, turns=sub.ctx.turn, summary=sub.summary,
             collected=sub.collected_paths)})
+        # …and the `child-exit` hook point (hooks/points.py), fired AFTER the hand-back is in
+        # the prompt so a rule's line reads as commentary on something the model can see.
+        assist.at_child_exit(loop, {"mode": sub.mode, "n": sub.n, "label": sub.label,
+                                    "workflow": sub.workflow, "status": sub.status,
+                                    "turns": sub.ctx.turn, "summary": sub.summary})
