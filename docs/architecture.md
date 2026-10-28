@@ -1932,7 +1932,19 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   (`engine/revise.py`) and resumes the proposing run with its recipe writable — the "grant the
   capability at that moment" half of the same constraint, through one unlock path rather than a
   second that can drift. A run that ALREADY holds recipe self-write is asked the same question
-  and files no card: it makes the edit, and the autocommit carries it.
+  and files no card: it makes the edit, and the autocommit carries it. The card's lines are
+  EDITABLE before approval (F790, operator requirement 2026-10-27: *"we need an edit option for
+  the proposed revisions to a routine's own recipe at the end of its run"*) — prose has no patch
+  to adjust, so rewording the lines IS editing the proposal, and the reworded lines ride the
+  approval as a body (`Edited`, the optional-body shape of `api_pending.materialize`'s `Choice`),
+  capped server-side at `MAX_LINES` because a cap the card enforces is not a cap, and an edit
+  cleared to nothing is refused rather than falling back to wording the operator deleted. The
+  instruction has a SECOND framing for that branch: a leg told his sentence is its own cannot see
+  where the two differ, so it would implement and defend wording it never chose. Discarding asks
+  WHICH of two true things happened — not wanted, or *already made by hand* — because
+  `pending.notify_proposer` quotes the reason verbatim to the routine, and the single old reason
+  ("the revision was not wanted") was a lie in the second case, from which its next run then
+  reasoned.
 - **Checking the claims** (`engine/verifier.py`). The accounting proves a run ANSWERED for every
   line; it cannot prove the answer TRUE, so a run could write `d3 met: PDF verified` having never
   opened the PDF. Each `met` is therefore checked once, by a second call on the `tool_call` role —

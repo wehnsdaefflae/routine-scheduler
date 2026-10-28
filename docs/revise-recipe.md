@@ -18,6 +18,23 @@ happened) and edits its OWN recipe files — `main.md`, the `stages/` modules, a
 notes it in `LEDGER.md`, and finishes. The engine commits the change; it takes effect on the
 routine's **next run**.
 
+## When the run proposes it first
+
+Every finishing run is asked whether its own recipe should change, and what it answers becomes one
+**recipe revision** card on the **Decisions** page — in the run's own words, at most eight lines.
+You have three dispositions there, and the proposing routine is told which one you picked, because
+its next run reasons from that:
+
+- **apply it** — resume that run with its recipe writable, to make the edit it proposed.
+- **edit** — reword the lines first. The proposal is prose, not a patch, so editing it *is*
+  rewording what the resumed run is told to do: the box is prefilled with the run's own lines (one
+  per line), and `apply edited` sends yours instead. The run is told plainly that the wording is
+  **yours**, so it implements your version rather than restoring its own phrasing.
+- **discard** — pick why: *the change is not wanted*, or *I have made this change myself*. The
+  second exists because the first was once sent for both, and a routine told its revision "was not
+  wanted" after you implemented it by hand will propose it again, or reason from a recipe it thinks
+  it never got.
+
 ## What it can and can't change
 
 - **Recipe** (main.md / stages / tuning.yaml) — edited directly. This is the routine's
