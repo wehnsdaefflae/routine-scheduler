@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.473.2] — 2026-10-29
+
+### Fixed
+- **The failed-backup push could never be delivered.** `deploy/rsched-backup-failed.service`
+  wrote bash's `${NTFY_URL%/}` straight into ExecStart, which systemd expands itself before bash
+  runs; it could not parse the name, substituted an empty string, and curl exited 3 on a URL with
+  no host. Its first real firing (2026-10-29 20:51, once the unit was finally installed) is how it
+  was found. Every `$` and `%` bash must see is now doubled, which also keeps the topic out of the
+  process's argv; a test holds the command to it.
+
 ## [0.473.1] — 2026-10-29
 
 ### Fixed

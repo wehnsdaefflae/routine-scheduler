@@ -172,3 +172,13 @@ def test_the_failure_unit_exists_and_the_backup_unit_starts_it():
     assert "NTFY_URL" in unit and "NTFY_TOPIC" in unit
     assert "exit 0" in unit            # no topic set → says so, does not fail
     assert "ntfy.sh" not in unit       # the URL comes from the store, never hardcoded
+
+
+def test_the_push_commands_dollars_reach_bash_not_systemd():
+    """systemd expands `${VAR}` in ExecStart itself and could not parse `${NTFY_URL%/}`: curl got an
+    empty host and exited 3, so the push never once arrived (first real firing, 2026-10-29). Every
+    `$` and `%` in the command must be doubled, so bash is what reads them."""
+    unit = (DEPLOY / "rsched-backup-failed.service").read_text(encoding="utf-8")
+    command = unit[unit.index("ExecStart="):].split("\n\n", 1)[0]
+    assert "$" not in command.replace("$$", ""), command
+    assert "%" not in command.replace("%%", ""), command

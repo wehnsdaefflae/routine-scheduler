@@ -22,17 +22,22 @@ EnvironmentFile=-%h/.config/routine-scheduler/secrets.env
 # a report. `--fail` so a 4xx/5xx is a non-zero exit visible in this unit's own journal instead of a
 # silent success, and short timeouts because a wedged NAS is the likeliest cause of the failure being
 # reported.
+# Every `$` bash must see is written `$$`, and the `%` of `%/` as `%%`: systemd expands `${VAR}`
+# in ExecStart ITSELF before bash runs, and it cannot parse `${NTFY_URL%/}` — it substituted an
+# empty string, so curl got no host and exited 3. The push had never once been delivered: its first
+# real firing (2026-10-29 20:51) is how that was found. Escaped, bash reads the variables from the
+# environment EnvironmentFile= set, which also keeps the topic out of the process's argv.
 ExecStart=/bin/bash -c '\
-  if [ -z "${NTFY_URL}" ] || [ -z "${NTFY_TOPIC}" ]; then \
+  if [ -z "$${NTFY_URL}" ] || [ -z "$${NTFY_TOPIC}" ]; then \
     echo "NTFY_URL/NTFY_TOPIC not set in ~/.config/routine-scheduler/secrets.env — no push sent" >&2; \
     exit 0; \
   fi; \
   curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
-       -H "Title: rsched backup FAILED on $(hostname)" \
+       -H "Title: rsched backup FAILED on $$(hostname)" \
        -H "Priority: high" \
        -H "Tags: warning,floppy_disk" \
        -d "The nightly state snapshot did not complete. Read it with: journalctl --user -u rsched-backup -n 80" \
-       "${NTFY_URL%/}/${NTFY_TOPIC}"'
+       "$${NTFY_URL%%/}/$${NTFY_TOPIC}"'
 
 # A push that cannot be delivered is its own row in `systemctl --user status`; the backup unit's own
 # failed state is untouched either way.
