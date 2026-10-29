@@ -549,9 +549,13 @@ value of the same name (it rides `exec_env._extra_secrets`, which wins the `_chi
 merge). The exposure gate therefore subtracts a routine's own names before deciding anything
 (`secretgate._own_secrets`), and CAPABILITIES lists the two sets apart so a run never spends a
 turn requesting what it already holds. Both scopes stay under the declared-only rule. Write
-surface: Settings → Secrets for the central store, the routine page's *Own secrets* section
-(`web/api_routine_secrets.py`) for the scoped one — values write-only in both, names only on
-the way out. Scoped stores live under the CONFIG dir, never in the routine dir, which is
+surface: Settings → Secrets for the central store, the *Own secrets* section for the scoped
+one — on the routine page (`web/api_routine_secrets.py`) and, since D216 rank 1, in a
+conversation's capabilities panel (`web/api_conversation_secrets.py`); values write-only in
+both scopes, names only on the way out. A conversation's slug keys the scoped store exactly
+as a routine's does, so the engine always injected `secrets.d/<conversation-slug>.env` — the
+parity that was missing was the write surface, a parallel router rather than a widening of
+`routines_common._info` across homes. Scoped stores live under the CONFIG dir, never in the routine dir, which is
 `git add -A` autocommitted and auto-pushed; archiving a routine drops its store, so a
 credential never outlives its owner or is inherited by a slug's reuse.
 

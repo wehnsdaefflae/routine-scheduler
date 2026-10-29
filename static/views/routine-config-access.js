@@ -14,7 +14,7 @@ import { api } from "/static/api.js";
 import { el, skeleton } from "/static/util.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { fieldBlock, settingsGroup } from "/static/components/settings-field.js";
-import { routineSecretsCard } from "/static/components/routine-secrets.js";
+import { ownSecretsCard } from "/static/components/routine-secrets.js";
 
 const SECRET = "secret:";
 
@@ -103,7 +103,7 @@ export function accessGroup(ctx) {
         ["the private half of the two-scope store: credentials belonging to THIS routine, as ",
          "opposed to the shared-store names it is exposed to above. Setting or removing one takes ",
          "effect at once — it is a credential, not a setting."],
-        routineSecretsCard(slug)),
+        ownSecretsCard(slug)),
     ],
     more: [
       ...settingsSection({ title: "Declined access", id: "declined-access" },

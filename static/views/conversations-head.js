@@ -12,6 +12,7 @@ import { rootsEditor } from "/static/components/fsroots.js";
 import { abilitiesPanel } from "/static/components/abilities.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { rulePicker } from "/static/components/rulepicker.js";
+import { ownSecretsCard } from "/static/components/routine-secrets.js";
 import { navigate } from "/static/router.js";
 import { act, el, modelOption, toast, toastError } from "/static/util.js";
 
@@ -219,6 +220,15 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
       onSave: (machines) => api(`/api/conversations/${slug}`,
         { method: "PATCH", body: { machines } }),
     }));
+  // Own secrets (D216 rank 1): credentials belonging to THIS conversation. The engine has
+  // always injected `secrets.d/<slug>.env` into a conversation's util calls — the slug keys
+  // the scoped store whichever home it lives in — but there was no way to PUT one there, so
+  // the only credentials a conversation could use were the central store's, exposure gate and
+  // all. The same card the routine page mounts, pointed at the conversation router.
+  capBody.append(el("div", { class: "faint small mt" }, "own secrets — credentials belonging to "
+    + "THIS conversation; they need no exposure decision and override a central name of the "
+    + "same value for its runs"),
+    ownSecretsCard(slug, { base: "/api/conversations", subject: "conversation" }));
   // General rules: a conversation shifts topic mid-thread, so a newly bound rule is pushed
   // to the reply in flight as well as saved for every reply after it (the server does both).
   const ruleHost = el("div", { class: "mt" });
