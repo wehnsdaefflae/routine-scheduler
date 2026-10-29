@@ -90,24 +90,32 @@ Validation runs in `lint_rule_text`, which means one call covers all four author
 the `write_rule` action (before its approval ask), the Library tab's PUT, `rsched lint`, and
 the per-rule `problems` the Library page shows.
 
-## The five moments
+## The six moments
 
 | moment | fires | delivery | payload | cost |
 |---|---|---|---|---|
 | `pre-action` | on the action about to run | the action is HELD | `hold` | one turn |
 | `observation` | on the observation that just came back | a tail on that observation | `remind` | none |
 | `boundary` | at a turn boundary | an appended `ENGINE NOTE` | `remind`, `action` | none |
+| `spawn` | on a child run just started | an appended `ENGINE NOTE` | `remind`, `action` | none |
 | `child-exit` | on a child run's hand-back | an appended `ENGINE NOTE` | `remind`, `action` | none |
 | `pre-finish` | as the run tries to end | a finish-gate deferral | `remind` | one turn |
 
-**`child-exit` is a RUN-TREE moment, not a turn moment.** It fires where the engine delivers a
-child's hand-back to its parent (`engine/control.announce_finished_subruns`) and it is the first
-of the hook registry's four dead points to acquire a mechanism — the operator's brief named that
-traffic first: *"Messages between runs, their children, and the user should implement hooks"*.
-The note lands AFTER the hand-back message, never before: a rule commenting on a hand-back the
-model cannot yet see would read as a claim about something absent. It carries the same
-once-per-run budget as every other moment, which is what keeps a parent of four children from
-reading one line four times.
+**`spawn` and `child-exit` are RUN-TREE moments, not turn moments** — one for each end of a
+child's life. They fire where the engine delivers the child's row to its parent
+(`engine/control.announce_started_subruns` and `announce_finished_subruns`), and they were the
+first two of the hook registry's four dead points to acquire a mechanism, because the operator's
+brief named that traffic first: *"Messages between runs, their children, and the user should
+implement hooks"*. Each note lands AFTER the row it is about, never before: a rule commenting on
+a hand-back — or a brief — the model cannot yet see would read as a claim about something
+absent. Both carry the same once-per-run budget as every other moment, which is what keeps a
+parent of four children from reading one line four times.
+
+`spawn` is the one run-tree moment where something can still be CHANGED: a running child cannot
+be re-briefed, only killed and started again, so a rule there reads the brief back while that
+is still worth doing. `child-exit` can only shape how its hand-back is used. `spawn` fires once
+per child, at the first boundary after it started — the boundary itself runs every turn, and the
+child keeps running for many of them.
 
 **The moment and the payload are coupled, not free to combine**, and the linter enforces it.
 A chosen action can only be reached by STOPPING it — "remind and let it run" is not

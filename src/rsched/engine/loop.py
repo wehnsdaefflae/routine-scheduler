@@ -48,6 +48,7 @@ from .control import (
     _ABORT,
     RunAborted,
     announce_finished_subruns,
+    announce_started_subruns,
     drain_injections,
     pause_gate,
 )
@@ -157,7 +158,6 @@ class EngineLoop:
         loopsetup.configure(self, ctx, workflow_body, instruction, abort_event,
                             allowed_tools, resume)
 
-
     def _aborted(self) -> bool:
         return _ABORT["flag"] or self.abort_event.is_set()
 
@@ -218,8 +218,8 @@ class EngineLoop:
 
     def _turn_boundary(self) -> None:
         """Everything that happens BETWEEN two turns: the pause gate, the control.json
-        switches, the user's messages, finished children, rule assists and a landed archive.
-        Each only appends to the message list — the boundary never rewrites it.
+        switches, the user's messages, started and finished children, rule assists and a
+        landed archive. Each only appends to the message list — it never rewrites it.
         """
         pause_gate(self, poll_s=POLL_S)
         # The escalation ladder's trigger, after the pause gate and before the inbox drain:
@@ -234,12 +234,12 @@ class EngineLoop:
         apply_config_change(self)
         drain_injections(self)
         announce_finished_subruns(self)
+        announce_started_subruns(self)   # the `spawn` point: once per child, its row in hand
         # Rule ASSISTS at the turn boundary: a rule whose moment has arrived says its
         # operative line as an appended ENGINE NOTE. Append-only and turn-free, the
         # same carrier a mid-run rule binding already uses.
         assist.at_boundary(self)
-        # …and a background archival that finished since the last turn
-        # announces itself here, where the message list is appended to.
+        # …as does a background archival that finished since the last turn.
         archival.collect(self)
         # …as does a BACKGROUNDED ACTION whose real observation has landed (D118 phase 1):
         # the run marked a read or a fetch `background`, got its turn back at once, and this

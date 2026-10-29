@@ -98,7 +98,7 @@ def test_child_exit_is_a_live_point_that_names_its_seam():
     assert "announce_finished_subruns" in point.site
     assert dispatch.live("child-exit") is True
     gaps = {n for n in points.POINT_NAMES if not points.point(n).live}
-    assert gaps == {"spawn", "run-end", "restart"}
+    assert gaps == {"run-end", "restart"}      # step 7 wired `spawn`, this point's twin
 
 
 def test_child_exit_cannot_hold_and_carries_both_free_payloads():

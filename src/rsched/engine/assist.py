@@ -266,6 +266,26 @@ def at_child_exit(loop, child_row: dict) -> None:
         assist_action.act(loop, assist, point="child-exit")
 
 
+def at_spawn(loop, start_row: dict) -> None:
+    """Spawn assists, appended as ENGINE NOTEs beside the start row. Costs no turn.
+
+    `child-exit`'s twin at the other end of a child's life, and the one of the pair that can
+    still change something: a child cannot be re-briefed, only killed and started again, so
+    the boundary right after a spawn is the moment a rule can usefully read the brief back.
+    Fired AFTER the start row is in the prompt (`control.announce_started_subruns`), for the
+    reason every engine_note moment is: a line about something the model cannot see yet reads
+    as a claim about an absence.
+
+    Guarded by the same once-per-run budget as every other rung — a run that spawns a batch of
+    three would otherwise read one rule's line three times.
+    """
+    if not loop.assists:
+        return
+    for assist in _matching(loop, "spawn", Situation(loop=loop, child=start_row)):
+        enginenote.append(loop, _rendered(assist), assists=[assist.key])
+        assist_action.act(loop, assist, point="spawn")
+
+
 def at_finish(loop, action: dict) -> tuple[str, list[str]] | None:
     """The pre-finish rung: the deferral message and the keys of the assists behind it, or
     None to let the finish stand.

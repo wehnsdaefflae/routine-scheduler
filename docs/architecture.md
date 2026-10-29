@@ -321,10 +321,13 @@ the limits (single-writer status.json preserved).
   eight trigger kinds both MAP onto it (`for_moment`, `for_trigger`, pinned against
   `assists.MOMENT_PAYLOADS` and `reminders.KINDS` in `tests/test_hooks_points.py`), so the
   registry is one vocabulary rather than a second opinion beside them. The points nothing fires
-  at yet are IN the table with an empty `fires` — `spawn`, `run-end`, `restart` — because a
-  registry listing only what is built cannot say what is missing. `child-exit` was the fourth
-  and now fires: the rule layer reaches it where a child's hand-back is delivered, which is the
-  first of those gaps to be closed by a mechanism rather than renamed. `dispatch.at` is the
+  at yet are IN the table with an empty `fires` — `run-end`, `restart` — because a
+  registry listing only what is built cannot say what is missing. The registry shipped with FOUR
+  such gaps; the two RUN-TREE ones now fire, the rule layer reaching each where the engine
+  delivers a child's row to its parent (`child-exit` on its hand-back, `spawn` on its start) —
+  gaps closed by a mechanism rather than renamed. The two that remain carry `prompt_section`:
+  they reach the NEXT run, not this one, which is a delivery the assist layer has no precedent
+  for yet. `dispatch.at` is the
   one evaluator: it drops a candidate whose payload the point cannot carry, and treats a
   predicate that raises as "did not fire", never as a failed turn. TWO points can change what
   runs, which corrects the hook design's rule 2: `pre-action` prevents an action and

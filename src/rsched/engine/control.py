@@ -324,3 +324,27 @@ def announce_finished_subruns(loop) -> None:
         assist.at_child_exit(loop, {"mode": sub.mode, "n": sub.n, "label": sub.label,
                                     "workflow": sub.workflow, "status": sub.status,
                                     "turns": sub.ctx.turn, "summary": sub.summary})
+
+
+def announce_started_subruns(loop) -> None:
+    """The `spawn` hook point (hooks/points.py) — `child-exit`'s twin at the other end of a
+    child's life, fired once per child at the first boundary after it started.
+
+    No message of its own: the run already has the spawn OBSERVATION in its prompt, which is
+    what the point is about, and a second engine-authored copy of a row the model just read
+    would be noise. So this is the fire site only — the rule layer appends a note when one of
+    its predicates says something about the child that was just started, and nothing happens at
+    all when no rule has that moment.
+
+    The `brief` is the child's own instruction (`loop.instruction`, the prompt the parent
+    wrote): the one thing about a child that the parent can still act on, since a running child
+    cannot be re-briefed. It is read off the child's loop rather than copied into the Subrun,
+    because the child IS the record of what it was asked.
+    """
+    for sub in loop.subruns.subruns.values():
+        if sub.announced_start:
+            continue
+        sub.announced_start = True
+        assist.at_spawn(loop, {"mode": sub.mode, "n": sub.n, "label": sub.label,
+                               "workflow": sub.workflow,
+                               "brief": getattr(sub.loop, "instruction", "")})
