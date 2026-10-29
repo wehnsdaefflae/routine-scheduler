@@ -583,13 +583,14 @@ is a `docker compose up -d`, not a rebuild. The states:
 
 ## HTTPS for the console (Web Push needs a secure context)
 
-The console serves plain HTTP on `:8321`. Everything works that way — the API, the live streams, the
-browser screen — with ONE exception: **Web Push needs a secure context**, which is a
-property of the URL, not of the network. A VPN gives you REACH, not a secure context, so
-`http://<lan-ip>:8321` over a VPN still cannot subscribe a device to push. That is the
-state this host is in; the rest of the console is unaffected and no deploy step is pending.
+The console serves plain HTTP on `:8321`. Most of it works that way — the API, the live streams,
+the browser screen — with TWO exceptions, both properties of the URL rather than of the network:
+**Web Push needs a secure context**, and **OAuth providers refuse a redirect to a plain or
+private-IP address** (Google answers `device_id and device_name are required for private IP` for
+`http://<lan-ip>:8321/oauth/callback`, which blocks every Google connect). A VPN gives you REACH,
+not a secure context, so neither works over `http://<lan-ip>:8321`.
 
-To get push working, terminate TLS in front of the port and point the instance at the
+To get push and OAuth working, terminate TLS in front of the port and point the instance at the
 result:
 
 1. A DNS name for the instance — a DynDNS name is enough; a public IPv4 is not
@@ -605,6 +606,15 @@ result:
 Whatever terminates TLS must pass `X-Forwarded-Proto`: the app reads it to decide the
 `secure` flag on the browser-screen cookie (`web/api_browser_view.py`), because behind a
 proxy the request it sees is plain `http`.
+
+**This host** (since 2026-10-29): `https://rsched.markwernsdorfer.com`, a CNAME to the router's
+DDNS name, served by the `send-caddy` container that already owns ports 80/443 (`~/send/Caddyfile`,
+Let's Encrypt), proxying to `192.168.0.128:8321`. It answers the home network and VPN only — any
+other source gets a 404. A LAN or VPN client reaches it through the router's hairpin NAT, which
+rewrites its source to the WAN IP, so the allow-list is `192.168.0.0/24` plus the WAN IP, and the
+`rsched-wan-allow` user timer (`~/send/wan-allow.sh`, every 5 min) rewrites that IP when the DDNS
+name moves. `private_ranges` is deliberately not used: docker's userland proxy hands requests over
+from a 172.x bridge address.
 
 ## The agent desktops
 
