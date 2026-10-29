@@ -12,6 +12,15 @@ assists:
       This child did not finish `ok`, so its summary is the only account of work you cannot
       see. Read what it says is unfinished before you fold it onward, and carry that shortfall
       into your own summary — a hand-back repeated as a result makes its gap invisible.
+  - id: on-a-brief-that-may-not-stand-alone
+    moment: spawn
+    predicate: thin-child-brief
+    payload: remind
+    line: >-
+      This child sees nothing of your context — only the brief you just sent. Read it back as
+      the child will: does it name the task, the absolute paths to read and write, and what to
+      hand back? If it points at anything only you can see, kill it and start it again with
+      that spelled out; a child's whole budget is spent before a thin brief shows.
 tags: [reporting, verification, self-management]
 ---
 # rule: evidence-discipline — every claim traced to an observation in this run

@@ -86,6 +86,7 @@ class Subrun:
     summary: str = ""
     ended_mono: float | None = None    # when its thread finished — freezes `elapsed_s`
     announced: bool = False            # parent notified of exit?
+    announced_start: bool = False      # the `spawn` hook point fired for it? (one boundary only)
     collected: bool = False            # usage folded into the parent?
     done: threading.Event = field(default_factory=threading.Event)
 
