@@ -93,7 +93,7 @@
     "tests/ui/test_flows.py": 2127,
     "tests/ui/test_lanes.py": 358,
     "tests/ui/test_routine_page.py": 492,
-    "tests/ui/test_surface_fix.py": 861,
+    "tests/ui/test_surface_fix.py": 849,
     "tests/ui/test_weekgrid.py": 361
   }
 }

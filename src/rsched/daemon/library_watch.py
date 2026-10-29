@@ -154,7 +154,15 @@ class LibraryWatch:
         if not home.is_dir():
             return
         gaps, resolved = self._resolve()
+        # His answers as they stand BEFORE the withdrawal — the only place a re-ask can be
+        # explained from (F609). A gap whose stated reason WIDENS retires its own settlement in
+        # `_withdraw_closed`: the fingerprint that answer was keyed on is no longer live, which
+        # is exactly what makes the widened gap a new question. So by the time the question is
+        # queued, the answer it supersedes is already gone from the store.
+        answered = library_drift.load(home)
         self._withdraw_closed(gaps, resolved)
+        # The SKIP still reads the store AFTER the withdrawal: a settlement that was retired
+        # because its gap closed must not silence the gap opening again.
         settled = library_drift.load(home)
         already = {library_drift.of_record(rec)
                    for rec in pending.load_all(home) if rec.get("kind") == "library-drift"}
@@ -166,11 +174,18 @@ class LibraryWatch:
             # while its card is still OPEN updates nothing and keeps the one card — the card
             # the operator has not read yet already points at this entity.
             trigger = library_drift.trigger(head, node, self._opened_by(prev, head, node))
+            # A gap he has answered BEFORE, in another form: the fingerprint says this is a new
+            # question, and the record has to say WHY (F609) — otherwise a re-ask he was right to
+            # receive reads exactly like the defect of being asked twice.
+            reask = library_drift.reask_reason(answered, slug, node)
+            fields = {"entity": key, "gap": gap, "node": node, "head": head,
+                      "trigger": trigger}
+            if reask:
+                fields["reask"] = reask
             pending.queue(
-                home, kind="library-drift", routine=slug, run_id="",
-                fields={"entity": key, "gap": gap, "node": node, "head": head,
-                        "trigger": trigger},
-                summary=f"{slug}: {node['id']} — {node['why']}. {trigger}")
+                home, kind="library-drift", routine=slug, run_id="", fields=fields,
+                summary=f"{slug}: {node['id']} — {node['why']}. {trigger}"
+                        + (f" {reask}" if reask else ""))
             log.info("library drift: %s — %s", key, trigger)
 
     def _opened_by(self, prev: str, head: str, node: dict) -> list[tuple[str, str]]:

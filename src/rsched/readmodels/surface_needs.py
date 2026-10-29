@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .surface_nodes import BLOCKS, INTERRUPTS, OK, _covered, _node
+from .surface_nodes import BLOCKS, INTERRUPTS, NOTE, OK, _covered, _node
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..config.routine import RoutineConfig
@@ -22,7 +22,28 @@ def _secret_nodes(cfg: RoutineConfig, needed: dict[str, list[str]],
                   store_keys: set[str]) -> list[dict]:
     """A declared secret is a dependency of whoever declares it. Four outcomes, whose
     distinction is the whole point: absent from the store BLOCKS, undecided INTERRUPTS (one
-    blocking access request at the first call), denied forever BLOCKS.
+    blocking access request at the first call), denied forever is a settled NOTE.
+
+    F609: `denied` read as `blocks` with a `clear_grant` fix, and that one row produced a defect
+    on three surfaces at once. The operator had answered — he declined `secret:FAU_PASSWORD` and
+    `secret:FAU_USER` on `freelance-radar` and his settings were accepted (2026-10-01) — so the
+    row reported his own decision as blocked work, offered to REVERT it, and `library_watch`,
+    which collects exactly the `blocks` rows, filed it as library drift on every library commit.
+    His answer came back as a question for five weeks
+    (`.control/pending-creations/pc-20261002-223218-c0137c.json`, status null).
+
+    Nothing there is unmet. A decline protects the CREDENTIAL, not the util: since F756 the name
+    is withheld and the call proceeds, and the run is told so at the call it makes
+    (`engine/obs_secrets.withheld_declined`) — which is the channel a run can actually act on.
+    So this row states a decision, and the rule the surface already keeps decides the rest: a row
+    reporting a deliberate act carries no `fix`, because the only "fix" for one is to undo it and
+    offering that reads as a defect report on a routine set up exactly as intended (`_node`,
+    docs/rules-permissions.md). It joins `action:write_recipe` "on" and `schedule:goal` "retired"
+    as the third such row, and `clear_grant` — emitted here and nowhere else — retires with it.
+
+    What is NOT given up: the row still SAYS what the decision costs, on the routine page and in
+    `rsched validate`. It leaves the BOOT note only, which exists for gaps a run would otherwise
+    discover the hard way, and this one it is told about at the call instead.
 
     Two families are NOT store secrets and must not be reported as missing from it: the machine
     vars the engine injects from a binding, plus a connection's `<PROVIDER>_ACCESS_TOKEN`. Their
@@ -47,10 +68,10 @@ def _secret_nodes(cfg: RoutineConfig, needed: dict[str, list[str]],
                              "not in the secrets store — the call runs without it",
                              {"kind": "add_secret", "name": name}, src))
         elif decided is False:
-            out.append(_node(eid, "denied", BLOCKS, why,
-                             "declined forever — the run no longer asks; calls run WITHOUT "
-                             "it (F756), so one that truly needs it fails inside the util",
-                             {"kind": "clear_grant", "entity": eid}, src))
+            out.append(_node(eid, "denied", NOTE, why,
+                             "you declined it forever — the run no longer asks; calls run "
+                             "WITHOUT it (F756), so one that truly needs it fails inside the "
+                             "util, which that call is told", source=src))
         elif decided is True:
             out.append(_node(eid, "exposed", OK, why, source=src))
         else:

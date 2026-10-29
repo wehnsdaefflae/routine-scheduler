@@ -40,8 +40,9 @@ REMEDIES: dict[str, str] = {
     "switch_on": "switch on {missing} in this routine's capabilities",
     "cover_or_drop": "hold a conduct doc that requires it, or drop it from this routine's "
                      "capabilities",
+    # No `clear_grant` (F609): a refusal the operator RECORDED is a settled decision, not a gap,
+    # so its row carries no fix at all — the only act it could name is undoing his own answer.
     "grant": "record an exposure decision in this routine's grants",
-    "clear_grant": "clear the refusal recorded in this routine's grants",
     "add_secret": "add {name} to the secrets store",
     "add_root": "grant a {mode} root covering {path}",
     "add_root:any": "grant this routine a {mode} root",

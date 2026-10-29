@@ -309,12 +309,6 @@ def _seed_grant(ui, mp) -> None:
     _configure(ui, capabilities={"utils": ["poster"]})
 
 
-def _seed_clear_grant(ui, mp) -> None:
-    secrets.set_secret("UI_FIX_TOKEN", "v")
-    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
-    _configure(ui, capabilities={"utils": ["poster"]}, grants={"secret:UI_FIX_TOKEN": False})
-
-
 def _seed_add_secret(ui, mp) -> None:
     write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]})
@@ -380,9 +374,6 @@ CASES = (
          landing=_orphan_row("util:poster"),
          control=lambda p: _drop_control(p, "util:poster")),
     Case("grant", "secret:UI_FIX_TOKEN", _seed_grant,
-         landing='[data-secret-row="UI_FIX_TOKEN"]',
-         control=lambda p: p.locator('[data-secret-row="UI_FIX_TOKEN"] select')),
-    Case("clear_grant", "secret:UI_FIX_TOKEN", _seed_clear_grant,
          landing='[data-secret-row="UI_FIX_TOKEN"]',
          control=lambda p: p.locator('[data-secret-row="UI_FIX_TOKEN"] select')),
     Case("add_secret", "secret:UI_FIX_TOKEN", _seed_add_secret,
@@ -689,15 +680,20 @@ def test_an_offer_for_one_of_a_class_never_prints_the_asterisk(ui, ui_page):
     _lands_on(ui_page, row.locator(CONTROL), MACHINES)
 
 
-def test_a_withheld_secret_lands_where_its_control_actually_is(ui, ui_page):
-    """`clear_grant` is only ever emitted for a `secret:` entity; a denied secret renders in
-    SECRET EXPOSURE as a withhold select. Routing it to Declined access — a list built from every
-    grant that is NOT a secret — fired the link, flashed a panel and put the reader in front of a
-    control that structurally could not be there: the exact silent failure the affordance exists
-    to remove.
+def test_a_withheld_secret_is_a_statement_with_nothing_to_press(ui, ui_page):
+    """F609: a secret the operator DECLINED is his settled decision, so its row says so and
+    offers nothing.
 
-    So the landing is asserted together with the thing landed on. A link that arrives somewhere
-    is not the claim; a link that arrives at the control is.
+    It used to read `fails` and carry a `clear_grant` offer — the surface asking him to undo the
+    answer he had just given. That is the same rule `action:write_recipe` "on" is decided by: a
+    row reporting a deliberate act carries no fix, because the only act it could name is the
+    reversal. The dial that would perform it is still in Secret exposure, because changing his
+    mind is his to start.
+
+    Worse than cosmetic, which is why the assertion is here rather than only on the read model:
+    `daemon/library_watch` files every `blocks` row as library drift, so this row put his own
+    decision back on the Decisions page as blocked work on every library commit for five weeks
+    (`pc-20261002-223218-c0137c.json`, status null).
     """
     secrets.set_secret("UI_FIX_TOKEN", "v")
     write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
@@ -705,23 +701,15 @@ def test_a_withheld_secret_lands_where_its_control_actually_is(ui, ui_page):
                grants={"secret:UI_FIX_TOKEN": False})
 
     row = _row(ui_page, ui, "secret:UI_FIX_TOKEN")
-    expect(row.locator(".setup-sev")).to_have_text("fails")
-    offer = row.locator(FIX)
-    expect(offer).to_have_attribute("data-fix", "clear_grant")
-    control = row.locator(CONTROL)
-    expect(control).to_have_attribute("data-fix-section", "sec-secret-exposure")
+    expect(row.locator(".setup-sev")).to_have_text("note")
+    expect(row.locator(FIX)).to_have_count(0)
+    expect(row.locator(CONTROL)).to_have_count(0)
+    # the row still SAYS what his decision costs — demoting it is not silencing it
+    assert "declined" in row.inner_text().lower()
 
-    # the control the row is talking about, waited for before the press: the exposure select for
-    # this very secret, sitting at "withhold"
+    # …and the dial he would use to change his own mind is where it always was, at "withhold"
     dial = ui_page.locator('[data-secret-row="UI_FIX_TOKEN"] select')
     expect(dial).to_have_value("false")
-    # …and the panel the link used to aim at cannot show it at all, which is why aiming there
-    # produced a flash over nothing
-    expect(ui_page.locator('[data-declined-row="secret:UI_FIX_TOKEN"]')).to_have_count(0)
-
-    flash = _lands_on(ui_page, control, '[data-secret-row="UI_FIX_TOKEN"]')
-    assert flash["on"] or flash["around"], (
-        f"the flash landed away from the exposure row: {flash['classes']}")
     expect(ui_page.locator(SECRET_EXPOSURE)).to_have_count(1)
 
 

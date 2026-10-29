@@ -137,6 +137,48 @@ def trigger(head: str, node: dict, commits: list[tuple[str, str]]) -> str:
             f"{sha[:8]} ({subject})")
 
 
+def reask_reason(settled: dict[str, dict], routine: str, node: dict) -> str:
+    """Why this gap is being asked AGAIN — the part of it that moved since the answer that does
+    not cover it. Empty when there is nothing to explain.
+
+    F609, the third criterion: a re-ask needs a reason the previous answer stopped applying. The
+    fingerprint decides WHETHER to ask (`fingerprint`, F604) and that half works — but the card
+    it produces says only what the card he already answered said, so a question he was RIGHT to
+    receive is indistinguishable from the defect of being asked twice. From where he reads it,
+    the same routine and the same entity are back; the thing that makes it a new question is
+    precisely what the record never carried.
+
+    Read off the fingerprint itself rather than the values stored beside it: the key IS the
+    identity, so the answer and the gap are compared on the same four parts the rule is written
+    over, and no second copy can drift from it. `maxsplit=3` keeps a `why` containing a pipe
+    whole, since only the first three fields are fixed-shape.
+
+    Three cases, and only one of them says anything:
+
+    - the answer IS this gap — never asked at all, so nothing to explain (the watcher skips it);
+    - no answer about this routine and this entity — a first ask, which needs no history;
+    - an answer about this routine and this entity that is not this gap — the STATE changed
+      ("you declined it" and "it is missing from the store" are different questions), or the
+      stated REASON widened (a claim he never read). That difference is the reason.
+    """
+    if fingerprint(routine, node) in settled:
+        return ""
+    nid = str(node.get("id") or "")
+    state, why = str(node.get("state") or ""), str(node.get("why") or "")
+    for key in sorted(settled):
+        parts = key.split("|", 3)
+        if len(parts) != 4 or parts[0] != routine or parts[1] != nid:
+            continue
+        was_state, was_why = parts[2], parts[3]
+        if was_state != state:
+            return (f"You answered this when it read {was_state}; it now reads {state}, which is "
+                    "a different question")
+        if was_why != why:
+            return (f"You answered this when the stated reason was {was_why!r}; it is now "
+                    f"{why!r}")
+    return ""
+
+
 def _path(routines_home: Path) -> Path:
     return routines_home / STORE
 
