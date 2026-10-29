@@ -125,3 +125,53 @@ def test_a_double_clicked_connections_save_patches_once(ui, ui_page):
     expect(save).to_be_disabled()
     ui_page.unroute(detail)                            # releases the held PATCH
     expect(save).to_be_enabled()
+
+
+def test_reconnect_re_consents_in_place_and_never_disconnects(ui, ui_page, monkeypatch):
+    """Re-consent (a widened GOOGLE_OAUTH_SCOPES, a flagged needs_reauth) used to mean
+    disconnect-then-connect, so a connect that failed — a broken redirect, 2026-10-29 — left the
+    account with no token at all. Reconnect starts the SAME authorize flow for the row's own
+    provider:account and sends no DELETE: the callback overwrites that one key only on success."""
+    monkeypatch.setattr(store, "connections_path", lambda: ui.tmp / "connections.json")
+    secrets.set_secret("NOTION_OAUTH_CLIENT_ID", "cid-ui")
+    store.set_connection(Connection(provider="notion", account="acme", access_token="AT"))
+    store.set_connection(Connection(provider="notion", account="stale", access_token="OLD",
+                                    needs_reauth=True))
+
+    ui_page.goto(f"{ui.url}/#/settings?section=connections")
+    ui_page.wait_for_selector("#sec-connections")
+    url_row = ui_page.locator("[data-conn-url]")
+    url_row.locator("input").fill("https://host.ts.net")
+    url_row.get_by_role("button", name="save").click()
+    expect(ui_page.locator("[data-conn-callback]")).to_have_text("https://host.ts.net/oauth/callback")
+
+    # a flagged row says what to do and makes reconnect its primary control
+    stale = ui_page.locator('[data-conn="notion:stale"]')
+    expect(stale).to_contain_text("needs re-auth — reconnect")
+    expect(stale.locator("[data-conn-reconnect]")).to_have_class(re.compile(r"\bprimary\b"))
+
+    calls = []
+
+    def oauth(route):
+        req = route.request
+        calls.append((req.method, req.url, req.post_data_json if req.method == "POST" else None))
+        if req.url.endswith("/authorize-start"):
+            route.fulfill(json={"authorize_url": "about:blank", "flow_id": "f-ui"})
+        elif "/oauth/flow/" in req.url:
+            route.fulfill(json={"status": "pending"})
+        else:
+            route.fallback()
+
+    ui_page.route(re.compile(r"/api/settings/oauth/"), oauth)
+    ui_page.evaluate("window.open = () => null")     # no consent tab in the shared browser
+    ui_page.locator('[data-conn="notion:acme"] [data-conn-reconnect]').click()
+    until(lambda: any(u.endswith("/authorize-start") for _, u, _ in calls),
+          what="the authorize-start POST", page=ui_page)
+    ui_page.wait_for_timeout(300)
+    ui_page.unroute(re.compile(r"/api/settings/oauth/"))
+
+    starts = [(m, u, b) for m, u, b in calls if u.endswith("/authorize-start")]
+    assert starts == [("POST", f"{ui.url}/api/settings/oauth/notion/authorize-start",
+                       {"account": "acme"})]
+    assert not [c for c in calls if c[0] == "DELETE"], calls
+    assert store.get_connection("notion", "acme").access_token == "AT"

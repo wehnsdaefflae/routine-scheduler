@@ -173,7 +173,7 @@ once every home copied, so a failed or interrupted run never leaves a half snaps
 restore could pick or a later run could link against, and `latest` stays where it was. The next
 run **carries on** in that folder rather than deleting it: what it already holds is kept, and
 `--delete --delete-excluded` makes the result exactly what the home holds. On the sshfs share a
-delete costs one round trip per file, and until 0.472.1 the leftover was deleted first, inside
+delete costs one round trip per file, and until 0.473.1 the leftover was deleted first, inside
 the unit's time limit — 13 to 73 minutes of it — so one timed-out night caused the next, and from
 2026-10-24 none completed. Every delete (retention, a same-day rerun's old copy, an interrupted
 run's discards in `snapshots/.discard/`) now happens after the snapshot took its date. After a
@@ -254,7 +254,7 @@ jitter, `Persistent=true` so a night the host was down runs once it is back, and
 `TimeoutStartSec` so a wedged NAS fails the unit instead of blocking every later firing on the
 lock. The bound is a wedge guard, not a target: on sshfs a run costs one round trip per FILE, so
 its length follows the homes' file count (~270k on the reference host) — 49 minutes on
-2026-10-07, 1h47 by 10-22 — and the 2-hour bound it had until 0.472.1 killed every night from
+2026-10-07, 1h47 by 10-22 — and the 2-hour bound it had until 0.473.1 killed every night from
 10-24. `daemon/backup_watch.ATTEMPT_BOUND_HOURS` must equal it (a test holds them together). The
 structural cure is rsync speaking to an rsync on the NAS over ssh, where a hard link is a local
 call there; that needs a key the host user may use on the NAS, which this host does not have.

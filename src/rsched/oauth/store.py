@@ -141,7 +141,8 @@ def tokens_for_routine(connections: dict[str, str]) -> tuple[dict[str, str], lis
         if conn is None:
             warnings.append(f"{provider}:{account} is not connected")
         elif conn.needs_reauth or not conn.access_token:
-            warnings.append(f"{provider}:{account} needs re-authorization")
+            warnings.append(f"{provider}:{account} needs re-authorization "
+                            "(Settings → Connections → reconnect)")
         else:
             env[access_token_var(provider)] = conn.access_token
     return env, warnings

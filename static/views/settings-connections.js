@@ -24,6 +24,20 @@ export function renderConnections(view) {
       return b;
     }
 
+    // Re-consent IN PLACE: the same flow as connect, for the row's own provider:account. The
+    // callback overwrites that one key only once a new consent has SUCCEEDED, so the working
+    // token stays bound until then — disconnect-then-connect lost it whenever the redirect broke.
+    function reconnectBtn(provider, account, needsReauth) {
+      const p = d.providers.find((x) => x.id === provider);
+      const b = el("button", { class: needsReauth ? "btn small primary" : "btn small",
+        "data-conn-reconnect": "" }, "reconnect");
+      b.disabled = !(p?.configured && d.public_url_set);
+      b.title = b.disabled ? "set the redirect URL and the provider's app credentials first"
+        : "re-consent this account — the current token stays until the new one arrives";
+      b.onclick = () => act(b, () => startConnect(provider, account));
+      return b;
+    }
+
     // Auth-code + PKCE: authorize opens in a NEW tab (the provider redirects it to /oauth/callback);
     // this tab polls the flow until the callback reports connected.
     async function startConnect(providerId, account) {
@@ -110,7 +124,8 @@ export function renderConnections(view) {
         el("td", {}, `${c.provider}:${c.account}`),
         el("td", { class: "muted small" }, c.label || ""),
         el("td", { class: "small", style: `color:${c.needs_reauth ? "var(--warn)" : "var(--ok)"}` },
-          c.needs_reauth ? "needs re-auth" : "ok"),
-        el("td", {}, disconnectBtn(c.provider, c.account))))))));
+          c.needs_reauth ? "needs re-auth — reconnect" : "ok"),
+        el("td", {}, reconnectBtn(c.provider, c.account, c.needs_reauth), " ",
+          disconnectBtn(c.provider, c.account))))))));
   });
 }

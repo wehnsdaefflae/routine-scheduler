@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
-## [0.472.1] — 2026-10-29
+## [0.473.1] — 2026-10-29
 
 ### Fixed
 - **The nightly backup no longer fails every night after one timeout.** From 2026-10-24 no
@@ -37,6 +37,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **deploy/DOCKER.md installs the backup units by `systemctl --user link`, never a copy.** The
   reference host's copied unit predated 0.374.3's `OnFailure=`, so the ntfy push for a failed
   backup never existed there and the six failed nights sent nothing.
+## [0.473.0] — 2026-10-29
+
+### Added
+- **Reconnect on every connected account** (Settings → Connections). Re-consenting an OAuth
+  connection — after widening `GOOGLE_OAUTH_SCOPES`, or on a `needs_reauth` flag — used to mean
+  *disconnect* then *connect*, so a connect that failed left the account with no token at all: on
+  2026-10-29 that happened to google:personal while its redirect was broken (an http private-IP
+  `public_url` Google rejects), and the nine routines bound to it lost their token. *reconnect*
+  starts the same authorize flow for the row's own `provider:account` and sends no DELETE; the
+  callback overwrites that one key only once the new consent has succeeded, so the working token
+  stays bound until then. A `needs_reauth` row now reads "needs re-auth — reconnect" with
+  reconnect as its primary control. docs/oauth-connections.md says to reconnect, not disconnect.
 
 ## [0.472.0] — 2026-10-28
 

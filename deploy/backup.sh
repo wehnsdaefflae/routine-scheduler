@@ -137,7 +137,7 @@ discard() {
 
 # The delete itself, and the only one in the script: it runs after the night's snapshot took its
 # date and the stamp was written, because on the sshfs share an `rm -rf` is one SFTP round trip per
-# file — 10 to 30 minutes for one snapshot, measured. Before 0.472.1 the leftovers of a run cut
+# file — 10 to 30 minutes for one snapshot, measured. Before 0.473.1 the leftovers of a run cut
 # short were deleted FIRST, inside the unit's time limit: one timeout left a half-built folder whose
 # delete cost the next run 13-73 minutes of that limit, so it timed out too, and the backup failed
 # every night from 2026-10-24 on. Cut short here, it costs nothing — the next run carries on.
