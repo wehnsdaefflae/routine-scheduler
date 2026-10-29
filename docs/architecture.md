@@ -131,7 +131,10 @@ the limits (single-writer status.json preserved).
   reminder is ONE-SHOT on the kickoff/resume note, the history pointer re-appears only every 10th turn,
   and a turn's retry debris — schema-retry pairs, a refused finish and its re-drive note, a failover
   notice — is dropped from the live prompt once the turn's action is accepted (the transcript keeps
-  the error events). The debris is remembered by identity, not as the tail past a length
+  the error events). A failover's DURABLE half is a separate, appended ENGINE NOTE and is not debris:
+  a substitute with a SMALLER context window falsifies the CAPABILITIES line composed at boot, which
+  the run plans every read against (`engine/substitution.py`, F539). The debris is remembered by
+  identity, not as the tail past a length
   (`engine/turndebris.py`): a model switch mid-turn re-fits the prompt to the new window, and a
   compaction there moves it. Cache traffic reports as usage `cached_in`/`cache_write` (kept OUT of `in`, so
   token budgets keep their meaning). A provider's cache is earned by a BYTE-STABLE prefix and by
@@ -318,10 +321,13 @@ the limits (single-writer status.json preserved).
   eight trigger kinds both MAP onto it (`for_moment`, `for_trigger`, pinned against
   `assists.MOMENT_PAYLOADS` and `reminders.KINDS` in `tests/test_hooks_points.py`), so the
   registry is one vocabulary rather than a second opinion beside them. The points nothing fires
-  at yet are IN the table with an empty `fires` — `spawn`, `run-end`, `restart` — because a
-  registry listing only what is built cannot say what is missing. `child-exit` was the fourth
-  and now fires: the rule layer reaches it where a child's hand-back is delivered, which is the
-  first of those gaps to be closed by a mechanism rather than renamed. `dispatch.at` is the
+  at yet are IN the table with an empty `fires` — `run-end`, `restart` — because a
+  registry listing only what is built cannot say what is missing. The registry shipped with FOUR
+  such gaps; the two RUN-TREE ones now fire, the rule layer reaching each where the engine
+  delivers a child's row to its parent (`child-exit` on its hand-back, `spawn` on its start) —
+  gaps closed by a mechanism rather than renamed. The two that remain carry `prompt_section`:
+  they reach the NEXT run, not this one, which is a delivery the assist layer has no precedent
+  for yet. `dispatch.at` is the
   one evaluator: it drops a candidate whose payload the point cannot carry, and treats a
   predicate that raises as "did not fire", never as a failed turn. TWO points can change what
   runs, which corrects the hook design's rule 2: `pre-action` prevents an action and
@@ -549,9 +555,13 @@ value of the same name (it rides `exec_env._extra_secrets`, which wins the `_chi
 merge). The exposure gate therefore subtracts a routine's own names before deciding anything
 (`secretgate._own_secrets`), and CAPABILITIES lists the two sets apart so a run never spends a
 turn requesting what it already holds. Both scopes stay under the declared-only rule. Write
-surface: Settings → Secrets for the central store, the routine page's *Own secrets* section
-(`web/api_routine_secrets.py`) for the scoped one — values write-only in both, names only on
-the way out. Scoped stores live under the CONFIG dir, never in the routine dir, which is
+surface: Settings → Secrets for the central store, the *Own secrets* section for the scoped
+one — on the routine page (`web/api_routine_secrets.py`) and, since D216 rank 1, in a
+conversation's capabilities panel (`web/api_conversation_secrets.py`); values write-only in
+both scopes, names only on the way out. A conversation's slug keys the scoped store exactly
+as a routine's does, so the engine always injected `secrets.d/<conversation-slug>.env` — the
+parity that was missing was the write surface, a parallel router rather than a widening of
+`routines_common._info` across homes. Scoped stores live under the CONFIG dir, never in the routine dir, which is
 `git add -A` autocommitted and auto-pushed; archiving a routine drops its store, so a
 credential never outlives its owner or is inherited by a slug's reuse.
 

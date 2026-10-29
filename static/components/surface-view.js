@@ -91,13 +91,10 @@ const FIX = {
     act: `expose or withhold ${plain(f.entity)}`,
     where: "Secret exposure", section: "sec-secret-exposure",
     focus: byAttr("data-secret-row", plain(f.entity)) }),
-  // A denied SECRET is a `withhold` row in Secret exposure, which is the only class this kind is
-  // ever emitted for. Declined access holds every OTHER class, so a link there would flash a
-  // list this row can never appear in.
-  clear_grant: (f) => ({
-    act: `clear the withhold on ${plain(f.entity)}`,
-    where: "Secret exposure", section: "sec-secret-exposure",
-    focus: byAttr("data-secret-row", plain(f.entity)) }),
+  // No `clear_grant` (F609): a secret the operator DECLINED is a settled decision, and its row
+  // carries no fix — the only act an offer there could name is reverting his own answer, which
+  // reads as a defect report on a routine set up exactly as intended. The withhold select is
+  // still in Secret exposure for him to change his mind; the surface no longer asks him to.
   add_secret: (f) => ({
     act: `add ${f.name}`,
     where: "Settings → Secrets", href: "#/settings?section=secrets" }),

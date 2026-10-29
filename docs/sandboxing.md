@@ -383,7 +383,8 @@ RESERVED UTIL carries those rows with it (F562): an access request for `util:<na
 `secret:<NAME>` for each secret that util declares, so one decision makes the granted util
 usable instead of the call running straight into a second blocking request — verb-bounded, so a
 `NAME@verb` secret rides only with a grant reaching that verb (`engine/grantsecrets.py`). A
-ROUTINE-SCOPED secret (`secrets.d/<slug>.env`, the routine page's *Own secrets* section) has
+ROUTINE-SCOPED secret (`secrets.d/<slug>.env`, the *Own secrets* section on the routine page
+or in a conversation's capabilities panel) has
 no such decision: it is the routine's own, implicitly exposed to its runs and to no other
 routine, and it SHADOWS a central value of the same name — so those engine extras winning
 the merge is the shadowing rule, not an accident. It stays under the declared-only gate like

@@ -1060,6 +1060,17 @@ by a test, by the engine, or by a past incident.
   `input + requested_output <= window` and a 943k-token output limit — or a flat 32k on a 32k
   window — would starve the prompt. The per-provider catalog readers live in
   `endpoints/catalogs.py`; `limits.py` keeps the policy and the cache.
+  **And a window the RUN was told must stay true.** The `CAPABILITIES` line states
+  `context window ≈ N tokens` once, at boot, from the BOUND model's figure, and the run plans
+  every read against it — while the fallback chain's fit test is a preference, not a veto
+  (`endpoints/failover.fits`), so a substitute may serve a run six times smaller. A switch that
+  steps DOWN in window therefore appends a durable `ENGINE NOTE: CONTEXT WINDOW REDUCED …`
+  naming both models and both windows (`engine/substitution.py`, F539) — measured against the
+  chain HEAD, not the previous rung, and latched at the smallest window already announced. The
+  prompt is append-only under the caching contract, so a note is the only correction there is;
+  the one-turn `[MODEL FAILOVER …]` notice beside it is the turn's debris and steers only the
+  inherited reply. `llmsectest-weekday:20260922-060001` spent $1.03 over 106 turns on a run that
+  was unrunnable from turn 0 for want of this.
 - **A config field must declare whether it reaches a LIVE run.** `configflow.CLASSIFICATION`
   (F337) maps every `RoutinePatch`/`ConversationPatch` field to LIVE (adopted at a turn boundary
   — budgets, deliberation, grants) or NEXT_RUN, with the reason the operator is shown;

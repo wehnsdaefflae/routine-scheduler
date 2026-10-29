@@ -14,7 +14,7 @@ import json
 from ..endpoints import failover
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import refusal, turndebris
+from . import refusal, substitution, turndebris
 from .compaction import estimate_input_tokens
 from .overflow import _recover_oversize_prompt, _shrink_window_to_provider
 from .window import apply_media_fallback
@@ -252,6 +252,11 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     `failover` payload names both models — so the run records which model serves from here
     (status.json follows via ctx.main_model). None = chain exhausted.
 
+    Those records are for readers AFTER the fact; what the SUBSTITUTED model is told about its
+    own situation — that it is the fallback, and what context window it has lost — is
+    `engine/substitution.py` (F539/D146-B), which is also why `chain` travels there: the bound
+    model's window is the chain HEAD's.
+
     The abandoned model is marked cooling HERE — the engine's own judgment that it failed
     a real turn. (InstrumentedEndpoint only cools retryable-class transport failures; a
     deterministic error or an empty-reply pattern is visible only at this seam.)
@@ -278,48 +283,8 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
         "failover": {"from": failed_ref.name, "to": n_ref.name,
                      "cooldown_s": failover.COOLDOWN_S}})
     _log_failover(loop, chain, failed_ref, n_ref, exc)
-    _tell_the_run(loop, failed_ref, n_ref, exc)
+    substitution.announce(loop, chain, failed_ref, n_ref, exc)
     return nxt
-
-
-def _tell_the_run(loop, failed_ref, new_ref, exc: EndpointError) -> None:
-    """Tell the MODEL that is now serving that it is the fallback (D146-B).
-
-    Everything else this function's callers write is for a reader AFTER the fact: a transcript
-    event and a fleet health event. The run itself was never told, and
-    completion.py drops the failed-attempt debris from the live prompt on success — so the
-    new model inherited the turn with no trace of the switch and no way to know its own
-    situation.
-
-    weightloss:20260923-220004 is what that costs. Configured on Opus high, served two rungs
-    down after a 503 and a 402, it read its own schema-invalid output and concluded "the model
-    cannot reliably hold the action schema; pick a stronger model" — a diagnosis about itself
-    that was false, and which it had no information to correct. $1.01 over 193 turns.
-
-    One appended line, at the switch, never re-rendered per turn: the message list is
-    appended-to and never mutated (CLAUDE.md), and a failover has already invalidated the
-    provider cache by changing model, so the append costs nothing extra. It is the turn's
-    debris like the retries around it (`turndebris`): it informs the reply it was written for,
-    and the transcript's failover event is the durable record.
-    """
-    rungs = loop.ctx.failover_rungs
-    step = "one rung" if rungs == 1 else f"{rungs} rungs"
-    # One naming convention for all three models in the sentence. `ctx.configured_model` is
-    # "<endpoint>/<model>" while a ModelRef's `name` is its catalog alias, and mixing them put
-    # three spellings of the same kind of thing in one paragraph.
-    failed = f"{failed_ref.endpoint}/{failed_ref.model}"
-    serving = f"{new_ref.endpoint}/{new_ref.model}"
-    configured = loop.ctx.configured_model or failed
-    turndebris.append(loop, {"role": "user", "content": (
-        f"[MODEL FAILOVER — you are no longer the model this routine was configured with]\n"
-        f"{failed} failed hard ({str(exc)[:200]}), so this turn "
-        f"and the rest of the run are served by {serving} — {step} down "
-        f"the fallback chain from {configured}.\n"
-        f"This is a transport failure, not a judgment about the work. Two things follow for "
-        f"you: hold the action schema exactly (a fallback model's most common failure is a "
-        f"field-shifted action that is schema-valid but wrong), and if you cannot carry the "
-        f"task at this rung, say so in a finish summary naming this switch — do not diagnose "
-        f"the routine's own model, which is not what failed.")})
 
 
 def _log_failover(loop, chain, failed_ref, new_ref, exc: EndpointError) -> None:

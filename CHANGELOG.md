@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
-## [0.473.2] — 2026-10-29
+## [0.474.1] — 2026-10-29
 
 ### Fixed
 - **The failed-backup push could never be delivered.** `deploy/rsched-backup-failed.service`
@@ -24,6 +24,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no host. Its first real firing (2026-10-29 20:51, once the unit was finally installed) is how it
   was found. Every `$` and `%` bash must see is now doubled, which also keeps the topic out of the
   process's argv; a test holds the command to it.
+## [0.474.0] — 2026-10-29
+
+### Added
+- **Both ends of a child's life are hook points now** (D152 step 7, b4). `spawn` FIRES — the twin
+  of step 6's `child-exit` — so a rule reaches the one run-tree moment where something can still
+  be changed: a running child cannot be re-briefed, only killed and started again, so a rule
+  reads the BRIEF back at the first boundary after it was sent. New
+  `engine/control.announce_started_subruns` (called from the turn boundary; it appends no message
+  of its own, because the run already has the spawn observation in its prompt),
+  `Subrun.announced_start` so the point fires once per child however many boundaries pass, and
+  `assist_child.py` becomes the RUN-TREE predicates module with `thin-child-brief` — a brief
+  under 400 characters, or long enough while naming nothing the child can open — declared by the
+  seed rule `evidence-discipline`. The registry's dead-point list is down from four to **two**
+  (`run-end`, `restart`, both of which carry `prompt_section` and so reach the NEXT run).
+- **A conversation can be given its own scoped secrets, from its own page** (D216 rank 1, F782).
+  The engine always injected `secrets.d/<conversation-slug>.env` into a conversation's util calls
+  — the scoped store is keyed by the RUN's slug — but there was no way to PUT one there. The
+  write surface shipped as `web/api_conversation_secrets.py`; this adds the CARD, by making the
+  routine page's own-secrets component serve either subject (`ownSecretsCard(slug, {base,
+  subject})`) and mounting it in the conversation's capabilities panel. One card over one store,
+  because two cards would drift apart from the shadowing label they share.
+- **A run served by a SMALLER model is told what window it now has** (F539). `capabilities.py`
+  states the context window once, at boot, under the model the routine was BOUND to, and a
+  fallback chain may step DOWN in window — so after a downward switch the only standing figure a
+  run holds about itself is false, by as much as a factor of six, and the prompt can only be
+  appended to. New `engine/substitution.py` adds a durable `ENGINE NOTE: CONTEXT WINDOW REDUCED`
+  naming both models and both windows as numbers, measured against the chain HEAD (so
+  200k→200k→32k is caught), latched at the smallest window announced and rebuilt on resume from
+  the note's own record. Two runs paid for this: `llmsectest-weekday:20260922-060001`, dead at
+  turn 106 having spent $1.03 on a run unrunnable from turn 0, and
+  `weightloss:20260923-220004`, which read its own field-shifted output and wrongly concluded
+  "the model cannot reliably hold the action schema".
+
+### Changed
+- **`static/components/transcript.js` is split** (F776, the operator's own answer: *"split
+  transcript.js so the line fits where it belongs"*). 740 → 462, with `obs-text.js` (243),
+  `obs-records.js` (129) and `obs-attachments.js` (73) carved out, all three under the bar and so
+  with no ratchet entry. The documentation that could not fit is now ~25 lines in `obs-text.js`
+  on the batched `ask_user` row — what the count means, where `o.batch`/`o.count`/`o.blocking`
+  come from, and that "blocking" there is a filed question's CLASS and not `mode`. The size
+  ratchet stands unchanged: no doc-only exemption, no redirect to a file with slack. `chat.js` is
+  at its own ceiling with zero slack, so `transcript.js` re-exports `attachmentRow` and
+  `revokeBlobs` and its importer is untouched.
+
+### Fixed
+- **The operator's own recorded decline is no longer reported as blocked work** (F609). One
+  branch of `readmodels/surface_needs.py` emitted a `denied` secret as `BLOCKS` carrying a
+  `clear_grant` fix — a proposal to undo him — and `daemon/library_watch._resolve` harvests
+  exactly the `blocks` rows, re-filing a drift row on whichever commit had moved the library
+  HEAD. A denied node is now a `NOTE` with no fix: the third row that reports a STATE, beside
+  `action:write_recipe` "on" and `schedule:goal` "retired". The regeneration stops at its source,
+  and `clear_grant` retires from all four registrations the repo holds equal. The run loses
+  nothing — F756 tells it at the call it makes, which is the channel a run can act on. New
+  `library_drift.reask_reason` names what changed since an answer, read off the fingerprint the
+  answer was keyed on, and must be read from a snapshot taken BEFORE `_withdraw_closed`, since a
+  widened reason retires its own settlement. Consequence, deliberately not special-cased: a util
+  that newly declares a secret a routine has DECLINED no longer appears in the authoring
+  approval's break list, because `library_impact` reads the same function ("one function, read
+  forwards, twice") — widening it is one line and the operator's call.
 
 ## [0.473.1] — 2026-10-29
 

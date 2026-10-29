@@ -88,7 +88,7 @@ def test_the_registry_says_which_points_nothing_fires_at_yet():
     table with an empty `fires` — and they are readable as such.
     """
     gaps = [n for n in points.POINT_NAMES if not points.point(n).live]
-    assert set(gaps) == {"spawn", "run-end", "restart"}
+    assert set(gaps) == {"run-end", "restart"}
     for name in gaps:
         assert dispatch.live(name) is False
         assert points.point(name).fires == ()

@@ -129,10 +129,12 @@ POINTS: dict[str, Point] = dict([
        "observation_tail", ("reminder",), "engine/remind.py (trigger kind `turn:answer`)"),
     _p("error", "an observation came back reporting failure", ("remind", "action"),
        "observation_tail", ("reminder",), "engine/remind.py (trigger kind `turn:error`)"),
-    # The RUN-TREE and lifecycle points. `child-exit` fires (the rule layer reaches it at the
-    # boundary that delivers a child's hand-back); the three below it are still moments the
-    # engine passes through with nothing firing, named here so the gap stays readable.
-    _p("spawn", "a child run was started", ("note", "action"), "engine_note"),
+    # The RUN-TREE and lifecycle points. Both ENDS of a child's life fire (the rule layer
+    # reaches each at the boundary that delivers its row); the two below them are still
+    # moments the engine passes through with nothing firing, named here so the gap stays
+    # readable.
+    _p("spawn", "a child run was started", ("note", "remind", "action"), "engine_note",
+       ("rule",), "engine/control.py::announce_started_subruns (assist.at_spawn)"),
     _p("child-exit", "a child run finished and its hand-back landed",
        ("note", "remind", "action"), "engine_note", ("rule",),
        "engine/control.py::announce_finished_subruns (assist.at_child_exit)"),
@@ -208,7 +210,7 @@ def allows(name: str, payload: str) -> bool:
 #: subsumes `assists.MOMENTS` instead of being a second vocabulary beside it.
 ASSIST_MOMENTS = {"pre-action": "pre-action", "observation": "post-action",
                   "boundary": "turn-boundary", "pre-finish": "pre-finalize",
-                  "child-exit": "child-exit"}
+                  "child-exit": "child-exit", "spawn": "spawn"}
 
 #: reminder trigger kind -> point name. `action` is tested before dispatch (so it holds) and
 #: `result`/`prose` after it; the `turn:*` kinds are the run's own moments.

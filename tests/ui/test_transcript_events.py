@@ -88,6 +88,24 @@ EVENTS = [
     # worth anything: the channel DISTINGUISHES, it does not relabel every injection
     {"type": "user_injection", "turn": 12,
      "payload": {"text": "ignore the first half, the second one is what I meant"}},
+    # A BATCH ask (D212): one action, one dispatch, N decision records. The row has to COUNT
+    # them — rendered as the singular "filed as deferred" it would tell the operator one card
+    # is waiting on his Decisions page while three are. The payload is the engine's own
+    # (engine/askbatch.py `handle`: the batch id, `count` = len(filed), `blocking` = how many
+    # of the filed records are classed blocking).
+    {"type": "assistant_action", "turn": 13,
+     "payload": {"kind": "ask_user", "say": "three things I cannot settle myself",
+                 "questions": [{"question": "Which folder do the invoices live in?"},
+                               {"question": "Keep the Tuesday slot?"},
+                               {"question": "May I read the project folder?",
+                                "request": "fs-read:~/project"}]}},
+    {"type": "observation", "turn": 13,
+     "payload": {"kind": "ask_user", "batch": "qb-20260905-120000-13", "mode": "deferred",
+                 "count": 3, "blocking": 1, "filed": []}},
+    # the SINGULAR ask, for the contrast: one question really is one record
+    {"type": "assistant_action", "turn": 14,
+     "payload": {"kind": "ask_user", "say": "one thing", "question": "Ship it?"}},
+    {"type": "observation", "turn": 14, "payload": {"kind": "ask_user"}},
 ]
 
 
@@ -153,6 +171,37 @@ def test_the_transcript_renders_every_event_shape_in_words(ui, ui_page):
     assert "next look: whether the gate verdict was read back" in body
     assert "oversight rung 2 skipped: the supervise-a-run pattern is not in the library" in body
     assert "rung 2 handed back no directive (child failed)" in body
+
+
+def test_a_batch_ask_row_counts_its_records_instead_of_reading_as_one(ui, ui_page):
+    """F776 — the batched `ask_user` row, in the real browser.
+
+    A batch is N RECORDS (D212, engine/askbatch.py): one action files one decision card per
+    question, all sharing a batch id. The row therefore has to COUNT them, and must never fall
+    through to the singular "filed as deferred" — which would tell the operator ONE card is
+    waiting on his Decisions page while three are, the one thing this row exists to say.
+
+    The branch was unexercised by the browser suite until this test: the only coverage was
+    engine-side, over the admin line the MODEL reads (tests/test_ask_batch.py), and nothing
+    loaded what a PERSON sees. Asserted against the page both ways round — the counted row
+    present, and the singular wording absent from it — because a fallthrough is silent: it
+    produces a plausible sentence, not an error, so neither the js_errors collector nor a class
+    assertion would notice.
+    """
+    ts = _seed(ui)
+    ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
+    expect(ui_page.locator(".turn").first).to_be_visible()
+
+    rows = ui_page.locator(".turn", has=ui_page.locator(".act >> text=ask_user"))
+    batch = rows.nth(0)
+    # the counted row: how many records, and how many of them are classed blocking
+    assert "3 questions filed as one batch (1 blocking)" in batch.text_content()
+    # …and NOT the singular line, the fallthrough this row must never reach
+    assert "filed as deferred" not in batch.text_content(), batch.text_content()
+    assert "undefined" not in batch.text_content()
+
+    # the contrast: a single question really is the singular line
+    assert "filed as deferred" in rows.nth(1).text_content()
 
 
 def test_an_oversight_directive_is_not_shown_as_the_operator_speaking(ui, ui_page):

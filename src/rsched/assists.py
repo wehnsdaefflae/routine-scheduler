@@ -51,7 +51,7 @@ from pathlib import Path
 #: operator's brief names that traffic first — *"Messages between runs, their children, and the
 #: user should implement hooks"*. It costs no turn: the note rides the same boundary the
 #: hand-back does.
-MOMENTS = ("pre-action", "observation", "boundary", "pre-finish", "child-exit")
+MOMENTS = ("pre-action", "observation", "boundary", "pre-finish", "child-exit", "spawn")
 
 #: The payload axis is `remind -> action -> hold`. The design note spelled the middle rung
 #: `scaffold -> do`, and said neither existed "because each needs a helper channel that is not
@@ -89,10 +89,13 @@ PAYLOADS = ("remind", "action", "hold")
 #: `child-exit` carries both free payloads for the same reason `boundary` does, and it is the
 #: one moment where the ORDERING objection above does not arise: the hand-back has already been
 #: appended to the prompt when the point fires, so a performed action's own observation lands
-#: after the message that triggered it, which is the true order.
+#: after the message that triggered it, which is the true order. `spawn` is its twin at the
+#: other end of a child's life and fires at the same boundary, after the start row is in the
+#: prompt — so the same reasoning admits the same two payloads, and `hold` is barred there for
+#: the plainest reason of all: the child is already running.
 MOMENT_PAYLOADS = {"pre-action": ("hold",), "observation": ("remind",),
                    "boundary": ("remind", "action"), "pre-finish": ("remind",),
-                   "child-exit": ("remind", "action")}
+                   "child-exit": ("remind", "action"), "spawn": ("remind", "action")}
 
 #: The action kinds an `action` assist may NOT perform: the ones that STEER a run rather than
 #: having an effect in the world. `engine/commands.py` draws this exact line for the user's own
