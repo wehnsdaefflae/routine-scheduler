@@ -88,8 +88,8 @@ BLOCKED_EVENTS: dict[str, str] = {
     "trigger_capped": "a trigger hit its daily cap: the routine is dark until the cap resets",
     "commit_failed": "a commit into a versioned repo did not land — the files are on disk and "
                      "out of its history until a later commit takes them",
-    "backup_stale": "the nightly state snapshot has not completed for days — the instance is "
-                    "running unbacked",
+    "backup_stale": "the nightly state snapshot is not current — the last attempt did not "
+                    "complete, or none has for days — so the instance is running unbacked",
     "migration_expired": "a MIGRATION marker is past its expiry, so the release gate is red on "
                          "files nobody touched: no release can ship until the converged "
                          "migration code is deleted",

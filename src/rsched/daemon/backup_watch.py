@@ -32,6 +32,15 @@ STALE_AFTER_DAYS is 3 rather than 1: the nightly timer has a 15-minute jitter, a
 a night, and a watchdog that cries after one missed night is one nobody reads by the second week.
 Three nights is still three weeks early.
 
+That window is for a night that never STARTED. A night that started and did not finish is evidence,
+not jitter, and waiting three days for it is how 2026-10-24 to 10-29 went: every run was killed at
+the unit's time limit, `rsched postdeploy` on 10-25 read a 29-hour-old stamp as PASS with two
+failed runs already in the journal, and the first `backup_stale` came on day three. So `backup.sh`
+also stamps the ATTEMPT (`.rsched-backup-started`) as its first act, and an attempt that began
+after the last completion and longer ago than any run may last (ATTEMPT_BOUND_HOURS — the unit's
+`TimeoutStartSec`) is stale at once. A killed run writes nothing on its way out, so this inference
+is the one record of a failed night that needs no trap to have run.
+
 The event is filed AT MOST ONCE A DAY while the condition holds (`_last_filed`): the daemon ticks
 every 5 s, and a row per tick would bury the stream it is meant to make legible — the same rule
 `tickguard` applies to a failing item. A stamp that becomes fresh again clears the memory, so the
@@ -57,6 +66,14 @@ STALE_AFTER_DAYS = 3
 #: The stamp `deploy/backup.sh` writes as its last act on a complete snapshot.
 COMPLETED_STAMP = ".rsched-backup-completed"
 
+#: The stamp it writes as its first act, once it has the lock and the share: the attempt.
+STARTED_STAMP = ".rsched-backup-started"
+
+#: How long one attempt may run before the unit kills it — `TimeoutStartSec` in
+#: deploy/rsched-backup.service, which a test holds this to. An attempt older than this with no
+#: completion after it did not complete.
+ATTEMPT_BOUND_HOURS = 4
+
 #: The backup root the shipped unit uses. A host that moved it with a drop-in sets `RSCHED_MIRROR`,
 #: which `backup_roots` reads first. A root this process cannot see at all (the share is not mounted
 #: where the daemon runs) reports UNKNOWN, never stale: claiming a backup failed because we cannot
@@ -74,14 +91,15 @@ def backup_roots(env: dict[str, str] | None = None) -> list[Path]:
     return seen
 
 
-def last_completed(roots: list[Path] | None = None) -> tuple[datetime | None, Path | None]:
-    """When the newest snapshot completed, and which stamp said so — (None, None) when no candidate
-    root holds a readable stamp (an unmounted share, a host that never ran a backup).
+def newest_stamp(name: str, roots: list[Path]) -> tuple[datetime | None, Path | None]:
+    """The newest instant any root's `name` stamp holds, and which stamp said so — (None, None)
+    when no candidate root holds a readable one (an unmounted share, a host that never ran a
+    backup, or — for the attempt stamp — a backup.sh older than it).
     """
     newest: datetime | None = None
     which: Path | None = None
-    for root in roots if roots is not None else backup_roots():
-        stamp = Path(root) / COMPLETED_STAMP
+    for root in roots:
+        stamp = Path(root) / name
         try:
             text = stamp.read_text(encoding="utf-8").strip()
         except OSError:
@@ -96,13 +114,24 @@ def staleness(now: datetime | None = None, roots: list[Path] | None = None) -> t
     """The instance's backup state as (state, detail) — ONE judgement, so this check and any later
     surface read the same verdict.
 
-    `state` is `ok` (a snapshot completed inside the window), `stale` (one completed, too long ago)
-    or `unknown` (no readable stamp — nothing is claimed about the backup).
+    `state` is `ok` (a snapshot completed inside the window and no attempt since has failed),
+    `stale` (the last one completed too long ago, OR an attempt after it did not complete) or
+    `unknown` (no stamp of either kind can be read — nothing is claimed about the backup).
     """
-    when, stamp = last_completed(roots)
+    candidates = roots if roots is not None else backup_roots()
+    when, stamp = newest_stamp(COMPLETED_STAMP, candidates)
+    began, _ = newest_stamp(STARTED_STAMP, candidates)
     moment = now or datetime.now(UTC)
+    unfinished = (began is not None and (when is None or began > when)
+                  and moment - began > timedelta(hours=ATTEMPT_BOUND_HOURS))
+    if unfinished and began is not None:
+        last = (f"the last COMPLETE one finished {when.isoformat()} ({stamp})" if when is not None
+                else "no snapshot has ever completed")
+        return "stale", (f"the state snapshot attempt that started {began.isoformat()} did not "
+                         f"complete within {ATTEMPT_BOUND_HOURS}h, and {last}. Read it with "
+                         "`journalctl --user -u rsched-backup`")
     if when is None:
-        looked = ", ".join(str(r) for r in (roots if roots is not None else backup_roots()))
+        looked = ", ".join(str(r) for r in candidates)
         return "unknown", (f"no readable {COMPLETED_STAMP} under any backup root "
                            f"({looked or 'none'}) — the share may not be mounted where this "
                            "process can see it")

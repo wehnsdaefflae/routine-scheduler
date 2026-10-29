@@ -25,7 +25,9 @@ a RECORD, so the session leaves a trace instead of living in the operator's head
 * `build-skew`        — the version the daemon SERVES against the checkout it was deployed from.
                         A deploy that did not actually relaunch is the commonest silent failure,
                         and `docker compose up -d` NEVER reloads code (CLAUDE.md, "Deploy").
-* `backup-freshness`  — how long since `rsched-backup.service` last COMPLETED (F602's 19 nights).
+* `backup-freshness`  — how long since `rsched-backup.service` last COMPLETED (F602's 19 nights),
+                        and whether an attempt since then failed (2026-10-25's deploy read a
+                        29-hour-old stamp as PASS while two nights had already been killed).
 * `state-path-ownership` — the homes the daemon must write, owned by a uid it can write as (the
                         root-owned-proxy-file specimen: one root 0600 file fails its whole home,
                         and a failed home keeps no snapshot that night).

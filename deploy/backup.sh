@@ -47,7 +47,8 @@ Every run writes BACKUP_ROOT/snapshots/<YYYY-MM-DD> (this host's local date; a s
 same day refreshes that day's): a complete copy of every data home deploy/state-paths.sh lists,
 in which each file unchanged since the newest earlier snapshot is a hard link, not a copy. It is
 built under a temporary name and takes its date only once every home copied, so a failed run
-leaves no snapshot behind. BACKUP_ROOT/latest points at the newest complete one.
+leaves no snapshot behind — the next run carries on in that folder rather than starting over.
+BACKUP_ROOT/latest points at the newest complete one.
 After a successful run it keeps the ${KEEP_DAILY} newest snapshots, plus the newest of each of the
 ${KEEP_WEEKLY} most recent older ISO weeks that have one, and deletes the rest.
 
@@ -126,11 +127,29 @@ migrate_single_mirror() {
   echo "migrated: the single mirror in ${ROOT} is now snapshots/${day} (moved, not copied)"
 }
 
+# Take a dated snapshot out of every reader's sight NOW — a rename, instant at any size — and leave
+# the delete to `empty_discard`. DISCARD is a holding folder rather than one name, so a second
+# discard (a same-day rerun, then retention) never has to wait for the first to be deleted.
+discard() {
+  mkdir -p "${DISCARD}"
+  mv -T "${SNAPS}/$1" "${DISCARD}/$1.$$"
+}
+
+# The delete itself, and the only one in the script: it runs after the night's snapshot took its
+# date and the stamp was written, because on the sshfs share an `rm -rf` is one SFTP round trip per
+# file — 10 to 30 minutes for one snapshot, measured. Before 0.472.1 the leftovers of a run cut
+# short were deleted FIRST, inside the unit's time limit: one timeout left a half-built folder whose
+# delete cost the next run 13-73 minutes of that limit, so it timed out too, and the backup failed
+# every night from 2026-10-24 on. Cut short here, it costs nothing — the next run carries on.
+empty_discard() {
+  rm -rf "${DISCARD}"
+}
+
 # Keep the KEEP_DAILY newest snapshots, plus the newest snapshot of each of the KEEP_WEEKLY most
 # recent ISO weeks among the older ones — weeks that HAVE a snapshot, so the nights a host was
 # down cost no depth — and delete the rest. Called only once a snapshot completed, and it never
 # deletes the one this run wrote, whatever a clock set back makes of the order. Each goes by
-# renaming to DISCARD first, so a delete cut short leaves no dated half a restore could pick.
+# `discard` first, so a delete cut short leaves no dated half a restore could pick.
 prune_snapshots() {
   local name week seen="" daily=0 weekly=0 pruned=()
   while read -r name; do
@@ -142,8 +161,7 @@ prune_snapshots() {
       if [ "${weekly}" -lt "${KEEP_WEEKLY}" ]; then weekly=$((weekly + 1)); continue; fi
     fi
     [ "${name}" != "${TODAY}" ] || continue
-    mv -T "${SNAPS}/${name}" "${DISCARD}"
-    rm -rf "${DISCARD}"
+    discard "${name}"
     pruned+=("${name}")
   done < <(snapshot_names | tac)
   echo "retention: ${daily} daily + ${weekly} weekly kept, ${#pruned[@]} pruned${pruned[*]:+: ${pruned[*]}}"
@@ -187,17 +205,37 @@ chmod 700 "${ROOT}" 2>/dev/null || true
 
 SNAPS="${ROOT}/snapshots"
 WORK="${SNAPS}/.in-progress"   # the snapshot being built — no date, so nothing links to or keeps it
-DISCARD="${SNAPS}/.discard"    # a snapshot on its way out
+DISCARD="${SNAPS}/.discard"    # snapshots on their way out, deleted only after the stamp
 TODAY="$(date +%F)"
+
+# The ATTEMPT, beside the completion stamp it is compared with. A run the unit's time limit kills
+# writes nothing on its way out, so "started after the last completion, and longer ago than any run
+# may last" is the one record of a failed night that needs no trap to have run — which is what lets
+# the daemon's backup-watch and `rsched postdeploy` say so the morning after (daemon/backup_watch.py)
+# instead of three days later.
+date -Iseconds > "${ROOT}/.rsched-backup-started"
 
 rsched_collect_state_paths
 migrate_single_mirror
 mkdir -p "${SNAPS}"
-# What an interrupted run left behind is never a snapshot and never a base to link against.
-rm -rf "${WORK}" "${DISCARD}"
 
 RSYNC_EXCLUDES=()
 for x in "${STATE_EXCLUDES[@]}"; do RSYNC_EXCLUDES+=("--exclude=${x}"); done
+
+# What an interrupted run left behind is never a snapshot and never a base to link against — but
+# it is WORK DONE, and on the sshfs share deleting it costs as long as building it did. So a run
+# carries on in it rather than starting over, and makes the result exactly what the home holds
+# with --delete: a file the home lost since, rsync's own half-written temp files and anything an
+# exclude names (--delete-excluded) all go. Only when resuming — a fresh folder holds nothing to
+# delete, and listing every new directory again would cost one more round trip each.
+# A file the leftover already holds is not transferred again: a link into the base stays one, and
+# a file the killed run transferred (it changed since the base) is kept as it stands — the work
+# resuming saves. (A plain copy of an UNCHANGED file is swapped for a link into the base; a killed
+# run leaves none, since it linked those itself.) An attribute-only change on a linked file
+# (a chmod) is applied to the shared inode and so reaches the older snapshot too; a CONTENT change
+# never does, because rsync writes a new file and renames it over the old name (never --inplace).
+RESUME=()
+if [ -d "${WORK}" ]; then RESUME=(--delete --delete-excluded); fi
 
 # Unchanged files link to the newest COMPLETE snapshot — on a rerun, this morning's own.
 base="$(snapshot_names | tail -1)"
@@ -212,9 +250,12 @@ if [ -n "${base}" ]; then
 else
   echo "  no earlier snapshot — this one is a full copy"
 fi
+if [ "${#RESUME[@]}" -gt 0 ]; then
+  echo "  carrying on in the folder an interrupted run left — what it already holds is not copied again"
+fi
 echo
 
-mkdir "${WORK}"
+mkdir -p "${WORK}"
 started=$(date +%s)
 share_used_before="$(share_used_kb)"   # the other half of the snapshot's cost report (F603)
 transferred_kb=0                       # summed from each home's rsync --stats, the honest cost
@@ -226,10 +267,11 @@ for p in "${STATE_PATHS[@]}"; do
   # home at that path in the snapshot. That is what makes STATE_EXCLUDES mean the same thing to
   # both consumers. Synced from INSIDE each home, rsync saw only `apps/…`, so every exclude
   # anchored to a workspace matched nothing and the copy carried the bulk the tarball leaves out.
-  # No --delete: every snapshot starts EMPTY, so a file an exclude names never reaches it — not
-  # even one an older snapshot still holds from before the exclude existed. The single mirror
-  # needed --delete-excluded for that (rsync protects excluded files on the receiver, which is how
-  # a stale Chrome SingletonLock survived being excluded); a fresh folder makes it structural.
+  # No --delete on a fresh folder: it starts EMPTY, so a file an exclude names never reaches it —
+  # not even one an older snapshot still holds from before the exclude existed. A folder carried
+  # on from an interrupted run is not empty, so there ${RESUME[@]} adds --delete-excluded (rsync
+  # protects excluded files on the receiver otherwise, which is how a stale Chrome SingletonLock
+  # once survived being excluded from the single mirror).
   # Owner and group are dropped: we are not root, and a NAS export usually cannot represent them
   # anyway — and --link-dest links a file only when every PRESERVED attribute matches, so they
   # could only cost links.
@@ -248,7 +290,7 @@ for p in "${STATE_PATHS[@]}"; do
   # link is still hard-linked to the night before.
   rc=0
   out=$(rsync -a -R -x --no-owner --no-group --omit-link-times --stats "${LINK_DEST[@]}" \
-             "${RSYNC_EXCLUDES[@]}" "${HOME}/./${p}/" "${WORK}/" 2>&1) || rc=$?
+             "${RESUME[@]}" "${RSYNC_EXCLUDES[@]}" "${HOME}/./${p}/" "${WORK}/" 2>&1) || rc=$?
   # 24 is "some files vanished before they could be transferred": a file deleted between rsync's
   # listing and its copy — an atomic write's tmp, a LevelDB compaction in chrome-profile. It is
   # the one non-zero exit that still leaves a complete copy of everything that existed throughout,
@@ -285,8 +327,9 @@ done
 elapsed=$(( $(date +%s) - started ))
 echo
 
+# A failed home keeps the folder under its temporary name — it is never a snapshot, and the next
+# run carries on in it instead of copying every home that DID succeed over again.
 if [ ${#failed[@]} -gt 0 ]; then
-  rm -rf "${WORK}"
   echo "INCOMPLETE — these homes did not copy: ${failed[*]}" >&2
   echo "             no snapshot was kept and latest is unchanged   elapsed: ${elapsed}s" >&2
   exit 1
@@ -305,12 +348,11 @@ fi
 
 # Complete — only now does the folder take a date for a name. On a rerun the same day the
 # earlier snapshot steps aside first (a directory cannot be renamed over a non-empty one) and
-# is deleted once the new one holds the name.
-if [ -e "${SNAPS}/${TODAY}" ]; then mv -T "${SNAPS}/${TODAY}" "${DISCARD}"; fi
+# is deleted with the rest of DISCARD at the very end.
+if [ -e "${SNAPS}/${TODAY}" ]; then discard "${TODAY}"; fi
 mv -T "${WORK}" "${SNAPS}/${TODAY}"
 point_latest_at "${TODAY}"
 date -Iseconds > "${ROOT}/.rsched-backup-completed"
-rm -rf "${DISCARD}"
 
 # What the snapshot cost the share — rsync's OWN figure, and the share's used space as the check
 # on it. This used to be a `du -sh prev today`, counting a hard-linked file once per invocation so
@@ -344,4 +386,5 @@ if [ -n "${share_used_before}" ] && [ -n "${share_used_after}" ]; then
 fi
 
 prune_snapshots
+empty_discard
 echo "done."

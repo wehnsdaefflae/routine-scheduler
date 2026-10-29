@@ -50,7 +50,7 @@
     "tests/test_api_hooks.py": 435,
     "tests/test_assists.py": 857,
     "tests/test_background_actions.py": 1016,
-    "tests/test_backup_snapshots.py": 422,
+    "tests/test_backup_snapshots.py": 411,
     "tests/test_composer.py": 1079,
     "tests/test_config.py": 458,
     "tests/test_conversations.py": 1214,

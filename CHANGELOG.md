@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.472.1] — 2026-10-29
+
+### Fixed
+- **The nightly backup no longer fails every night after one timeout.** From 2026-10-24 no
+  snapshot completed: `rsched-backup.service` was killed at its 2-hour `TimeoutStartSec` six
+  nights running. On the sshfs share a run costs one round trip per file (~270k files here), so it
+  had grown from 49 min (10-07) to 1h47 (10-22); the first kill left `snapshots/.in-progress`
+  behind, and `backup.sh` deleted that FIRST, inside the next run's two hours — 13 to 73 minutes of
+  `rm -rf` over SFTP — so every later night was killed too. `deploy/backup.sh` now carries on in
+  an interrupted run's folder (`--delete --delete-excluded` make the result exactly the home) and
+  keeps a failed home's folder for the next run; every delete (retention, a same-day rerun, old
+  discards, now gathered in `snapshots/.discard/`) runs after the snapshot took its date and the
+  stamp was written. The unit's bound is 4h — a wedge guard, not a target.
+- **A killed night is reported the morning after, not on day three.** `backup.sh` stamps its
+  attempt first (`.rsched-backup-started`); `daemon/backup_watch.staleness` reads an attempt that
+  began after the last completion and outlived the unit (`ATTEMPT_BOUND_HOURS`, held equal to
+  `TimeoutStartSec` by a test) as `stale`. So `backup_stale` and `rsched postdeploy`'s
+  `backup-freshness` now see a failed night at once — 10-25's postdeploy read a 29-hour-old stamp
+  as PASS while two nights had already been killed, and the first `backup_stale` came on 10-27.
+- **deploy/DOCKER.md installs the backup units by `systemctl --user link`, never a copy.** The
+  reference host's copied unit predated 0.374.3's `OnFailure=`, so the ntfy push for a failed
+  backup never existed there and the six failed nights sent nothing.
+
 ## [0.472.0] — 2026-10-28
 
 ### Removed

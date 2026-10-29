@@ -56,15 +56,13 @@ takes them, so nothing is lost; what is lost until then is the history. Before t
 stale lock made EVERY later commit in that repo fail the same silent way: on 2026-09-30 the
 migration record said 0 failed while two routines' edits sat staged under one.
 
-backup_stale: the nightly state snapshot has not COMPLETED for longer than
-`daemon/backup_watch.STALE_AFTER_DAYS` (3) — read from the `.rsched-backup-completed` stamp
-`deploy/backup.sh` writes as its last act. routine and run_id are empty: it is an instance fact,
-not a routine's. Filed at most once a day while the condition holds, and nothing is claimed when
-the stamp cannot be read at all (an unmounted share reads as unknown, never as stale).
-`rsched-backup.service` failed every night from 2026-09-12 to 2026-10-01 and nothing anywhere in
-this product read backup state, so three weeks of no backup passed with zero signal (F602). The
-other half of that fix is the unit's own `OnFailure=` push, which still works when this daemon is
-down — a single mechanism would have had to be the one that was up.
+backup_stale: no snapshot has COMPLETED for `daemon/backup_watch.STALE_AFTER_DAYS` (3), or an
+attempt begun after the last completion (`deploy/backup.sh` stamps start and finish on the share)
+outlived `ATTEMPT_BOUND_HOURS`, so a killed night is reported the morning after. routine and run_id
+are empty: an instance fact. Filed at most once a day while it holds; no readable stamp claims
+nothing (an unmounted share reads as unknown, never as stale). F602: the unit failed every night
+2026-09-12 to 10-01 and nothing in this product read backup state. The other half of that fix is
+the unit's own `OnFailure=` push, which still works when this daemon is down.
 
 endpoint_needs_reauth: every proxy account that could serve a model ENDPOINT is unavailable with no
 retry expected — the credential is dead and a run whose model resolves there fails at turn 0

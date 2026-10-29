@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -39,9 +40,11 @@ def home(tmp_path) -> Path:
     return _home(tmp_path)
 
 
-@pytest.fixture
-def root(tmp_path) -> Iterator[Path]:
-    """The backup root, on a filesystem apart from tmp_path (where the HOME lives)."""
+@contextmanager
+def share_root(tmp_path: Path) -> Iterator[Path]:
+    """The backup root, on a filesystem apart from tmp_path (where the HOME lives). A builder
+    rather than the fixture itself: `tests/test_backup_resume.py` needs the same root, and
+    IMPORTING a fixture makes every test taking it read as a redefinition (ruff F811)."""
     if REAL_RSYNC is None:
         pytest.skip("backup.sh copies with rsync, which this host does not have")
     if not SHM.is_dir() or not os.access(SHM, os.W_OK) \
@@ -52,6 +55,12 @@ def root(tmp_path) -> Iterator[Path]:
         yield share / "rsched-backup"
     finally:
         shutil.rmtree(share, ignore_errors=True)
+
+
+@pytest.fixture
+def root(tmp_path) -> Iterator[Path]:
+    with share_root(tmp_path) as built:
+        yield built
 
 
 def _backup(home: Path, root: Path, today: str, rsync: str | None = None,
@@ -153,7 +162,8 @@ def test_a_second_run_the_same_day_refreshes_that_days_snapshot(home, root):
 def test_a_failed_run_keeps_no_half_snapshot_moves_no_latest_and_prunes_nothing(home, root):
     """The temporary name is the whole guarantee: a run that could not copy every home never
     gives its folder a date, so no restore can pick it and no later run links against it. And
-    retention is the success path's last step — a failed night deletes nothing at all."""
+    retention is the success path's last step — a failed night deletes nothing at all, not even
+    its own half folder, which the next run carries on in (tests/test_backup_resume.py)."""
     _ok(_backup(home, root, "2026-09-30"))
     older = _days(date(2026, 8, 1), date(2026, 8, 31))   # retention would prune most of these
     _plant(root, *older)
@@ -166,11 +176,12 @@ def test_a_failed_run_keeps_no_half_snapshot_moves_no_latest_and_prunes_nothing(
     assert "INCOMPLETE" in proc.stderr and "conversations" in proc.stderr
     assert "simulated" in proc.stdout                    # the reason, not the byte counts
     assert _snapshots(root) == sorted([*older, "2026-09-30"])
-    assert _leftovers(root) == []
+    assert _leftovers(root) == [".in-progress"]          # kept for the next run, never dated
     assert _latest(root) == "snapshots/2026-09-30"
 
-    _ok(_backup(home, root, "2026-10-01"))               # the next good run is unaffected
+    _ok(_backup(home, root, "2026-10-01"))               # the next good run carries on in it
     assert _latest(root) == "snapshots/2026-10-01"
+    assert _leftovers(root) == []
 
 
 def test_a_home_holding_symlinks_is_carried_on_a_share_that_cannot_time_them(home, root):
@@ -193,29 +204,6 @@ def test_a_home_holding_symlinks_is_carried_on_a_share_that_cannot_time_them(hom
     _ok(_backup(home, root, "2026-10-01", rsync=times_symlinks_like_sshfs))
     link = root / "snapshots/2026-10-01/conversations/c1/_bin/tool"
     assert link.is_symlink() and str(link.readlink()) == "../real-tool"
-
-
-def test_a_run_never_builds_on_what_an_interrupted_one_left(home, root):
-    """A run killed mid-copy (the unit's two-hour timeout, a reboot) leaves its half-built folder
-    under the temporary name, rsync's own temp files included. The next run deletes it and
-    starts from an empty folder: copying INTO the leftover — there is no --delete — would carry
-    whatever it held, a file the home has since lost among them, into a snapshot that then
-    looks complete."""
-    _ok(_backup(home, root, "2026-09-30"))
-    half = root / "snapshots/.in-progress/routines"
-    half.mkdir(parents=True)
-    (half / "deleted-since.txt").write_text("the home no longer has this", encoding="utf-8")
-    (half / ".data.txt.k3Xq9Z").write_text("half a transfer", encoding="utf-8")
-    (root / "snapshots/.discard/routines").mkdir(parents=True)
-
-    _ok(_backup(home, root, "2026-10-01"))
-    assert _leftovers(root) == []
-    assert _snapshots(root) == ["2026-09-30", "2026-10-01"]
-    tonight = root / "snapshots/2026-10-01/routines"
-    assert not (tonight / "deleted-since.txt").exists()
-    assert not (tonight / ".data.txt.k3Xq9Z").exists()
-    assert (tonight / "data.txt").stat().st_ino == \
-        (root / "snapshots/2026-09-30/routines/data.txt").stat().st_ino
 
 
 def test_a_host_without_key_files_is_backed_up(home, root):
@@ -299,7 +287,8 @@ def test_the_old_single_mirror_is_moved_into_the_first_snapshot(home, root, comp
     assert _leftovers(root) == []
     assert _latest(root) == "snapshots/2026-10-01"
     assert sorted(p.name for p in root.iterdir()) == \
-        [".rsched-backup-completed", "latest", "lost+found", "snapshots"]
+        [".rsched-backup-completed", ".rsched-backup-started", "latest", "lost+found",
+         "snapshots"]
     # moved, not copied — and the night's snapshot links to it rather than copying it again
     assert (root / "snapshots" / snapshots[0] / "routines/data.txt").stat().st_ino \
         == mirrored_inode
@@ -324,7 +313,7 @@ def test_a_migration_cut_short_resumes_instead_of_stranding_half(home, root, mov
     assert _leftovers(root) == []
     assert sorted(p.name for p in (root / "snapshots/2026-09-29").iterdir()) == tops
     assert sorted(p.name for p in root.iterdir()) == \
-        [".rsched-backup-completed", "latest", "snapshots"]
+        [".rsched-backup-completed", ".rsched-backup-started", "latest", "snapshots"]
 
 
 def test_the_tarball_and_the_snapshot_carry_the_same_files(home, root, tmp_path):

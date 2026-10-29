@@ -170,7 +170,13 @@ about seven minutes of network stat calls to get there.
 
 A snapshot is built under a temporary name (`snapshots/.in-progress`) and takes its date only
 once every home copied, so a failed or interrupted run never leaves a half snapshot that a
-restore could pick or a later run could build on, and `latest` stays where it was. After a
+restore could pick or a later run could link against, and `latest` stays where it was. The next
+run **carries on** in that folder rather than deleting it: what it already holds is kept, and
+`--delete --delete-excluded` makes the result exactly what the home holds. On the sshfs share a
+delete costs one round trip per file, and until 0.472.1 the leftover was deleted first, inside
+the unit's time limit — 13 to 73 minutes of it — so one timed-out night caused the next, and from
+2026-10-24 none completed. Every delete (retention, a same-day rerun's old copy, an interrupted
+run's discards in `snapshots/.discard/`) now happens after the snapshot took its date. After a
 **successful** run, retention keeps the **14 newest snapshots plus the newest of each of the 8
 most recent older ISO weeks** — weeks that hold one, so nights the host was down cost no depth —
 and deletes the rest: about ten weeks of history. A failed run deletes nothing, and no run
@@ -209,9 +215,10 @@ otherwise copy another host's filesystem into the snapshot.
 Each home is copied with `--relative`, so rsync matches the exclude list against the same
 HOME-relative names tar does: an exclude anchored to a workspace (`git-repos/LLMSecTest_agentic/apps`)
 cuts the same files from both, which `tests/test_backup_snapshots.py` checks by running the two
-side by side. Every snapshot starts **empty**, so an exclude takes effect the very next night,
-even for a file an older snapshot still holds — the single mirror needed `--delete-excluded` for
-that, after a stale Chrome `SingletonLock` survived being excluded on its first live run. A
+side by side. Every snapshot starts **empty** — or, carried on from an interrupted run, is given
+`--delete-excluded` — so an exclude takes effect the very next night, even for a file an older
+snapshot still holds; the single mirror needed that flag after a stale Chrome `SingletonLock`
+survived being excluded on its first live run. A
 `flock` keeps two scheduled runs from racing, and the root is created mode 700 because it
 carries `config.yaml`'s bearer tokens and the Secrets store beside it — check the mode the
 script reports, since a network share may not honour it. `chrome-profile` carries the same
@@ -243,19 +250,27 @@ that holds it.
 ### Running it nightly
 
 `deploy/rsched-backup.{service,timer}` are systemd **user** units — 03:30 with a 15-minute
-jitter, `Persistent=true` so a night the host was down runs once it is back, and a 2-hour
+jitter, `Persistent=true` so a night the host was down runs once it is back, and a 4-hour
 `TimeoutStartSec` so a wedged NAS fails the unit instead of blocking every later firing on the
-lock. They are NOT installed by `deploy/install.sh`, deliberately: the backup root is
-host-specific, and a default install has nowhere correct to point. The service runs the
-checkout's `backup.sh`, so an update reaches the next firing by itself; re-copy the two units
-only when they change.
+lock. The bound is a wedge guard, not a target: on sshfs a run costs one round trip per FILE, so
+its length follows the homes' file count (~270k on the reference host) — 49 minutes on
+2026-10-07, 1h47 by 10-22 — and the 2-hour bound it had until 0.472.1 killed every night from
+10-24. `daemon/backup_watch.ATTEMPT_BOUND_HOURS` must equal it (a test holds them together). The
+structural cure is rsync speaking to an rsync on the NAS over ssh, where a hard link is a local
+call there; that needs a key the host user may use on the NAS, which this host does not have.
+They are NOT installed by `deploy/install.sh`, deliberately: the backup root is host-specific,
+and a default install has nowhere correct to point. **Link them, never copy them.** The service
+runs the checkout's `backup.sh`, so a script change reaches the next firing by itself — and a
+copied unit does not: the reference host's copy predated 0.374.3's `OnFailure=`, so the failure
+push below never existed there and six failed nights (2026-10-24 → 10-29) sent nothing. A
+linked unit is the checkout's file; after a release that changes one, `daemon-reload` (systemd
+names the stale unit in `systemctl --user status` until you do).
 
 ```bash
-install -m 0644 deploy/rsched-backup.service        ~/.config/systemd/user/
-install -m 0644 deploy/rsched-backup-failed.service ~/.config/systemd/user/
-install -m 0644 deploy/rsched-backup.timer          ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now rsched-backup.timer
+cd ~/git-repos/routine-scheduler
+rm -f ~/.config/systemd/user/rsched-backup{,-failed}.service ~/.config/systemd/user/rsched-backup.timer
+systemctl --user link "$PWD/deploy/rsched-backup.service" "$PWD/deploy/rsched-backup-failed.service"
+systemctl --user enable --now "$PWD/deploy/rsched-backup.timer"   # links it, then enables it
 systemctl --user start rsched-backup.service     # prove it once, then read the journal
 journalctl --user -u rsched-backup.service -n 30
 ```
@@ -268,7 +283,9 @@ reads, so there is no second credential path and no secret in the unit; with nei
 and exits 0, because failing to REPORT a failure must not look like a different fault. That half is
 systemd's deliberately: it still works when the scheduler daemon is down, which is exactly when a
 backup failure matters. Separately the daemon reads the `.rsched-backup-completed` stamp and files a
-`backup_stale` health event when the last COMPLETE snapshot is more than three days old
+`backup_stale` health event when the last COMPLETE snapshot is more than three days old — or at
+once when an attempt (`.rsched-backup-started`, the script's first act) began after it and is
+older than the unit's time limit, so a killed night is reported the next morning
 (`src/rsched/daemon/backup_watch.py`), which the console's blocked-work surface renders. Before
 0.374.3 neither existed: this unit failed every night from 2026-09-12 to 2026-10-01, nothing in the
 product read backup state at all, and nineteen unbacked nights passed in silence until someone
@@ -533,7 +550,7 @@ information and keeps the exit code green, so this is safe to chain after the de
 | --- | --- | --- |
 | `served-identity` | `/api/status` at `--url` (default `http://127.0.0.1:<config port>`) | nothing answered — you may be on the wrong host, or the container is down. Nothing below it is a verdict then. **The address and where it came from are printed with every run**, because 0.374.0 was a deploy script driving the wrong host's Docker daemon (~5.2 GB built locally) |
 | `build-skew` | the version `/api/status` serves vs `__version__` in the checkout, plus the daemon's own `build_skew` | the deploy did NOT relaunch the process. `docker compose up -d` compares the CONFIG, finds no drift because the source is bind-mounted, and no-ops — a green `compose config` and `Container rsched Running` both look like success |
-| `backup-freshness` | `.rsched-backup-completed` under `$RSCHED_MIRROR` / the default root, via `daemon/backup_watch.staleness` | no COMPLETE snapshot inside the window — **or no readable record at all**, which is equally a FAIL here: `rsched-backup.service` failed 19 nights (2026-09-12 → 10-01) and the defect was the ABSENCE of an indicator, not a broken one |
+| `backup-freshness` | `.rsched-backup-completed` under `$RSCHED_MIRROR` / the default root, via `daemon/backup_watch.staleness` | no COMPLETE snapshot inside the window, or an attempt since then that did not complete — **or no readable record at all**, which is equally a FAIL here: `rsched-backup.service` failed 19 nights (2026-09-12 → 10-01) and the defect was the ABSENCE of an indicator, not a broken one |
 | `state-path-ownership` | every home the daemon writes (`routines`, `conversations`, `background`, the library, `.config/routine-scheduler`) and the files under them | a path is owned by a uid the daemon cannot write as. One root-owned 0600 file fails its whole home for `backup.sh`, which reads every home as the host user — and a failed home keeps **no snapshot that night** (0.373.1, the root-run cliproxy sidecar, every night from 2026-09-14) |
 
 The reference uid is **whoever owns `routines_home`**, never `id -u`: an `exec` without `-u mark`
