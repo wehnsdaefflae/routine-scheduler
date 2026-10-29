@@ -131,7 +131,10 @@ the limits (single-writer status.json preserved).
   reminder is ONE-SHOT on the kickoff/resume note, the history pointer re-appears only every 10th turn,
   and a turn's retry debris — schema-retry pairs, a refused finish and its re-drive note, a failover
   notice — is dropped from the live prompt once the turn's action is accepted (the transcript keeps
-  the error events). The debris is remembered by identity, not as the tail past a length
+  the error events). A failover's DURABLE half is a separate, appended ENGINE NOTE and is not debris:
+  a substitute with a SMALLER context window falsifies the CAPABILITIES line composed at boot, which
+  the run plans every read against (`engine/substitution.py`, F539). The debris is remembered by
+  identity, not as the tail past a length
   (`engine/turndebris.py`): a model switch mid-turn re-fits the prompt to the new window, and a
   compaction there moves it. Cache traffic reports as usage `cached_in`/`cache_write` (kept OUT of `in`, so
   token budgets keep their meaning). A provider's cache is earned by a BYTE-STABLE prefix and by

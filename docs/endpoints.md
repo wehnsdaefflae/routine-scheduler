@@ -322,6 +322,22 @@ engine instead **fails over**:
   remaining member fits, the next one is taken anyway and the engine repairs what it can
   (images become `vision`-util text, an oversize prompt is compacted into the new member's
   window).
+- **A substituted run is told what it lost** (`engine/substitution.py`). Two messages, with
+  deliberately different lifetimes. WHO is serving goes to the turn's debris — it exists to
+  steer the inherited reply (`[MODEL FAILOVER — you are no longer the model this routine was
+  configured with] …`, D146-B) and is dropped with the rest of the debris once that reply is
+  accepted. WHAT THE RUN MUST NOW BUDGET AGAINST is durable, an appended `ENGINE NOTE:
+  CONTEXT WINDOW REDUCED …` naming both models and both windows as numbers: because the
+  preference above is not a veto, a chain may step DOWN in window, and a run's only standing
+  statement about its own window is the `CAPABILITIES` line composed at boot under the BOUND
+  model's figure — which the prompt's append-only caching contract forbids rewriting. Emitted
+  only when the window actually shrank against the chain HEAD (so a two-rung descent
+  200k → 200k → 32k is announced, which measuring each step against the previous rung would
+  miss), and latched at the smallest window already announced, so a note is never the layer
+  talking about itself. `llmsectest-weekday:20260922-060001` spent $1.03 over 106 turns on a
+  run that was unrunnable from turn 0 — a 32,768-token substitute under a 200k-class prompt —
+  and `weightloss:20260923-220004` $1.01 over 193 turns diagnosing its own field-shifted
+  output as "the model cannot reliably hold the action schema", two rungs down and never told.
 - **Every switch reaches the health stream** as a `model_failover` event carrying the chain
   head, both model names and a reason (`rate_limit` · `auth` · `server` · `refusal` ·
   `empty` · `other`) — a run that fails over finishes `ok`, so without it a fleet running
