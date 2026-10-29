@@ -7,7 +7,8 @@ them, with the repos found clean remembered beside them (engine/assist.py), one 
 claimed line (`loop._challenged`, engine/finishgate.py), one label per reminder hold and one
 application of a re-driven finish's reminder payload (engine/remind.py, read back by
 engine/remind_ledger.py), one warning before the window's middle is archived
-(engine/window.py). Each is an in-memory ledger the loop
+(engine/window.py), one context-window correction per window a failover has substituted DOWN to
+(engine/substitution.py). Each is an in-memory ledger the loop
 builds at construction — so every resumed leg used to start them EMPTY: a hold the run had
 already confirmed stopped the same action again after a restart, a finish deferral recurred,
 the verifier argued a line it had already conceded, and a repo the run had found clean read
@@ -36,7 +37,8 @@ transcript could contradict. Where an event did not record the decision, it now 
 payload EXTENSION on the event that carried the intervention, never a new event type: a hold's
 observation names its source by its kind; `assists` names the rule assists whose line an
 event carried; `undo_point` the repo a write's pre-action check found clean; `evict_warning`
-marks the eviction warning's engine note.
+marks the eviction warning's engine note, and `substitution_floor` the window a
+substitution note has already corrected the run down to.
 
 Each layer rebuilds its OWN fields (`rebuild(loop, events)`, the counterpart of the
 `configure(loop)` that built them — the reminder layer's in `remind_ledger`, beside the live
@@ -70,8 +72,8 @@ def rebuild(loop, events: list[dict]) -> None:
     """Seed every once-only ledger from the events inside this leg's scope. Called by `boot`
     on a resumed leg, after `configure` built them empty — a fresh run has nothing to read.
     """
-    from . import assist, finishgate, hold, remind_ledger, window
+    from . import assist, finishgate, hold, remind_ledger, substitution, window
 
     scoped = in_scope(loop.ctx, events)
-    for layer in (hold, remind_ledger, assist, finishgate, window):
+    for layer in (hold, remind_ledger, assist, finishgate, window, substitution):
         layer.rebuild(loop, scoped)
