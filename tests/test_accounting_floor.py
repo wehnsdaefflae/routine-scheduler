@@ -215,18 +215,30 @@ def test_the_transcript_reads_the_accounting_renderers_from_their_own_module():
     """The extraction the ratchet forced (static/components/transcript.js was at its ceiling):
     the renderers moved out, so the import has to come back in — a no-build ES module that
     calls a function it does not import is a ReferenceError in the browser and nowhere else.
+
+    The import follows the CALLER, which is the whole property worth pinning: F776 split the
+    per-kind observation chain out of transcript.js into `obs-text.js`, taking the
+    `accountingGaps` call (the finish-gate rung that names an incomplete accounting) with it,
+    while `accountingLine` stayed with the `stopping_update` row that renders it. Each module
+    must import what IT calls and nothing it does not — so this reads the caller of each
+    renderer rather than assuming both live in one file.
     """
     from pathlib import Path
 
     components = Path(__file__).resolve().parents[1] / "static" / "components"
-    transcript = (components / "transcript.js").read_text(encoding="utf-8")
     module = (components / "obs-accounting.js").read_text(encoding="utf-8")
-    assert ("import { accountingGaps, accountingLine } "
-            'from "/static/components/obs-accounting.js";') in transcript
-    for fn in ("accountingGaps", "accountingLine"):
+    callers = {"accountingGaps": "obs-text.js", "accountingLine": "transcript.js"}
+    for fn, caller in callers.items():
+        source = (components / caller).read_text(encoding="utf-8")
         assert f"export function {fn}(" in module      # defined there…
-        assert f"function {fn}(" not in transcript     # …and nowhere else
-        assert f"{fn}(" in transcript                  # …but still called here
+        assert f"function {fn}(" not in source         # …and nowhere else
+        assert f"{fn}(" in source                      # …but still called here
+        imports = [line for line in source.splitlines()
+                   if "/static/components/obs-accounting.js" in line or (
+                       line.startswith("import {") and fn in line)]
+        assert any(fn in line for line in imports), (
+            f"{caller} calls {fn}() without importing it from obs-accounting.js — a "
+            "ReferenceError in the browser and nowhere else")
 
 
 # ---- what the console COUNTS -------------------------------------------------------------------

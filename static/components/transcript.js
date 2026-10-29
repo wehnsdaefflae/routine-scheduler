@@ -19,18 +19,40 @@
 //                        (a nested subrun transcript shares its parent's, so one destroy()
 //                        frees the tree). Omitted = this transcript owns its own.
 
-import { apiBlobUrl } from "/static/api.js";
 import { actionTime } from "/static/components/actiontime.js";
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
-import { newTabHref } from "/static/components/blobtab.js";
 import { highlightJson } from "/static/components/code.js";
 import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
-import { accountingGaps, accountingLine } from "/static/components/obs-accounting.js";
-import { backgroundState, backgroundText, killBrief, killText }
-  from "/static/components/obs-background.js";
+import { accountingLine } from "/static/components/obs-accounting.js";
+import { attachmentRow, revokeBlobs } from "/static/components/obs-attachments.js";
+// …and re-exported, because this file is still their public entry: components/chat.js imports
+// both from here, and that file is AT its own ratchet ceiling with zero slack, so it cannot
+// afford the second import line a direct dependency would cost it. A re-export is also the
+// honest shape — nothing about an attachment row is the transcript's, and a later change may
+// repoint chat.js at the module itself without touching this one.
+export { attachmentRow, revokeBlobs };
+import { killBrief } from "/static/components/obs-background.js";
+import { OVERSIGHT_TEXT, actionCancelledText, compactionText, headerText, stagesSkippedText }
+  from "/static/components/obs-records.js";
+import { obsState, observationText } from "/static/components/obs-text.js";
 import { turnUsage } from "/static/components/turn-model.js";
-import { el, fmtTime, fmtTokens, fullOutput, compressionInfo, toast } from "/static/util.js";
+import { el, fmtTime, fmtTokens } from "/static/util.js";
+
+// WHAT THIS FILE OWNS, and what it does not. The transcript is the console's largest renderer
+// and it is over the house bar, so its vocabulary lives in modules beside it and this file
+// keeps what needs the live PAGE — the turn boxes, the collapsing folds, the inline answer
+// forms, the subrun unfolding, the clocks:
+//   obs-text.js         what an observation SAYS (the per-kind chain) and what it MEANS (the
+//                       row's state word) — pure payload-in, string-out
+//   obs-attachments.js  the attachment thumbnails and the object URLs they hold open
+//   obs-background.js   a backgrounded call's four endings, and the kill confirmation
+//   obs-accounting.js   the finish accounting's two renderers
+//   turn-model.js       which model served a turn, and what it cost
+// Two things stay HERE because a source-level guard reads them from this file by name:
+// `BRIEF_FIELD` (tests/test_actions.py holds it in lockstep with engine/actionschema.py) and
+// the `SIMPLE` renderer table (tests/test_static_transcript.py proves every EVENT_TYPES member
+// has a renderer in it).
 
 // Mirror of engine/actionschema.py BRIEF_FIELD (the source of truth; static/ is no-build and
 // cannot import it) — a kind missing here renders its turn line with an EMPTY brief, which is
@@ -72,58 +94,6 @@ export function referButton(onRefer, label, snippet) {
       snippet: String(snippet || "").replace(/\s+/g, " ").trim().slice(0, 160) }) }, "↩");
 }
 
-// Inline rendering for a user message's file attachments (user_injection
-// payload.attachments): images become thumbnails loaded through the authenticated
-// blob route (a bare <img src> cannot carry the Authorization header — the artifact
-// panel's pattern), everything else a fetch-and-open chip. Shared by the transcript's
-// injection renderer and the conversation chat's user bubbles.
-//
-// `blobs` is the OWNER's array of object URLs (api.js: "the caller owns the URL's lifetime",
-// the shape artifacts.js already holds). Every thumbnail holds its decoded image in memory
-// until its URL is revoked, and a long conversation re-renders its whole history — so the
-// component that mounted the row revokes them in its destroy(), exactly once.
-const ATT_IMG = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
-
-// A blob URL carries THIS console's origin, so an attachment opened from one as a page of its
-// own would run as the console (an SVG's script read the operator token). New tabs therefore go
-// through components/blobtab.js, the console's ONE rule for it: a passive type opens as itself,
-// anything that can carry script inside a sandboxed frame. A thumbnail still SHOWS an SVG — an
-// <img> runs no script.
-function openInTab({ url, type }, name, blobs) {
-  const tab = newTabHref(url, type, name);
-  if (tab.href !== url) blobs?.push(tab.href);
-  window.open(tab.href, "_blank");
-}
-
-export function attachmentRow(rels, fileUrl, blobs) {
-  if (!rels?.length || !fileUrl) return null;
-  const row = el("div", { class: "att-row" });
-  for (const rel of rels) {
-    const name = String(rel).split("/").pop();
-    const ext = (name.split(".").pop() || "").toLowerCase();
-    if (ATT_IMG.has(ext)) {
-      const img = el("img", { class: "att-thumb", alt: name, title: `${name} — click to open` });
-      let file = null;   // {url, type} once the thumbnail has loaded
-      img.onclick = () => { if (file) openInTab(file, name, blobs); };
-      apiBlobUrl(fileUrl(rel)).then((f) => { blobs?.push(f.url); file = f; img.src = f.url; })
-        .catch(() => img.replaceWith(
-          el("span", { class: "faint small" }, `🖼 ${name} (unavailable)`)));
-      row.append(img);
-    } else {
-      const btn = el("button", { class: "btn small att-file", title: rel }, `📎 ${name}`);
-      btn.onclick = () => apiBlobUrl(fileUrl(rel))
-        .then((f) => { blobs?.push(f.url); openInTab(f, name, blobs); })
-        .catch((err) => toast(`could not load ${name}: ${err.message}`, 4000, { error: true }));
-      row.append(btn);
-    }
-  }
-  return row;
-}
-
-/** Revoke and forget every object URL in an owner's array. */
-export function revokeBlobs(blobs) {
-  for (const url of blobs.splice(0)) URL.revokeObjectURL(url);
-}
 
 export function createTranscript(container, opts = {}) {
   const root = el("div", { class: "transcript" });
@@ -315,52 +285,6 @@ export function createTranscript(container, opts = {}) {
   // Tool/observation return values are collapsed by default (expandable). The summary carries the
   // first line, so short one-line results stay fully readable without expanding. `rich` renders
   // the body as simple markdown (model-authored prose — llm replies); program output stays literal.
-  // What an observation MEANS, as one word, for the row's appearance. Operator, 2026-09-28:
-  // "different util exit codes should change the color of the response in the ui. also if tool
-  // calls are held because of a reminder, this also needs some visual sprucing up."
-  //
-  // The vocabulary is by MEANING, not by exit code, and the distinction is the whole point:
-  //   held    — the action did NOT run and is waiting for the run to decide again. A decision
-  //             point rendered as history, and the one row a reader must not scroll past.
-  //   refused — the engine declined it (no such util, a declined approval, a rejected finish).
-  //   usage   — exit 2: the CALL was malformed. The util never did its job and the repair is in
-  //             the arguments. 3.8% of fleet util calls, and the reason `usage` is its own state.
-  //   timeout — exit 124: the deadline killed it. Nothing is known about what it would have
-  //             done, which is different from knowing it failed.
-  //   error   — it ran and reported failure.
-  //   ok      — it ran and reported success.
-  //
-  // A NONZERO EXIT IS NOT AUTOMATICALLY AN ERROR, and this is the F506/F523 lesson twice
-  // learned: `grep -q`, `test -f` and `diff` all answer with exit 1, and a shell action
-  // documents a nonzero exit as often being the answer. So `shell` gets no error state from its
-  // code alone — only the two codes that mean something specific.
-  const TIMEOUT_EXIT = 124, USAGE_EXIT = 2;
-
-  function obsState(o) {
-    if (!o) return "";
-    //   running / lost / cancelled — the three states only a BACKGROUND call can be in, worded
-    //   and decided by components/obs-background.js beside the rows themselves (D118/D176), so
-    //   the state and the sentence can never disagree about what the row is.
-    const bg = backgroundState(o);
-    if (bg) return bg;
-    if (o.kind === "reminder_hold" || o.kind === "assist_hold") return "held";
-    if (o.missing || o.declined || o.rejected || o.callers) return "refused";
-    // A write or edit that carried a script (engine/thenscript.py) LANDED — so what the row
-    // means is what the script said about it. A change that did not land carries an error
-    // and no script, and reads as the error below.
-    if (o.then_script) return obsState(o.then_script);
-    if (o.kind === "util" || o.kind === "script" || o.kind === "shell") {
-      if (o.exit == null) return "";
-      if (o.exit === TIMEOUT_EXIT) return "timeout";
-      if (o.exit === USAGE_EXIT) return "usage";
-      if (o.exit === 0) return "ok";
-      // A nonzero that is neither: an error for the two kinds whose contract says so, and
-      // merely a result for `shell`, whose own documentation says a nonzero is often the answer.
-      return o.kind === "shell" ? "" : "error";
-    }
-    if (o.selftest_ok === false || o.lint_ok === false || o.error || o.edit_failed) return "error";
-    return "";
-  }
 
   function obsBody(text, rich = false, state = "") {
     const firstLine = (text.split("\n")[0] || "").slice(0, 120);
@@ -370,144 +294,17 @@ export function createTranscript(container, opts = {}) {
       rich ? md(text, "obs md") : el("div", { class: "obs" }, text));
   }
 
-  // The script a write or edit carried (`then_script`, engine/thenscript.py), worded as the
-  // script's own row would be, under the change's line — or why it never ran.
-  function thenScriptText(o) {
-    if (o.then_script_skipped) return `\n[then_script NOT run] ${o.then_script_skipped}`;
-    const s = o.then_script;
-    if (!s) return "";
-    if (s.pending_secrets || s.declined_secrets) {
-      return `\nthen_script ${s.name} NOT run — secret exposure `
-        + (s.declined_secrets ? "declined" : `pending for ${s.pending_secrets.join(", ")}`);
-    }
-    if (s.missing) return `\nthen_script: script "${s.name}" does not exist`;
-    if (s.exit == null) return `\nthen_script ${s.name} NOT run: ${s.error || ""}`;
-    return `\nthen_script ${s.name} → exit ${s.exit}\n${s.stdout || ""}`
-      + (s.stderr ? `\n[stderr] ${s.stderr}` : "") + fullOutput(s.full_output);
-  }
-
   function addObservation(ev) {
     const o = ev.payload;
-    let text;
-    // Every ending a BACKGROUND call can have — started, cancelled, unread, abandoned — is
-    // worded by components/obs-background.js, which owns that vocabulary (D118/D176). It must
-    // come before the per-kind branches: none of those rows has an exit code, and the util
-    // branch below would print "exit undefined" — the misrender the secret-gate branch exists
-    // to prevent for the other callable-with-no-exit case. A LANDED background result returns
-    // null and falls through, rendered exactly as a synchronous call of its kind would be.
-    const bgText = backgroundText(o);
-    if (bgText !== null) {
-      text = bgText;
-    } else if ((o.kind === "util" || o.kind === "script") && (o.pending_secrets || o.declined_secrets)) {
-      // The secret gate stopped the call before it ran — no exit code exists, and rendering one
-      // read as "exit undefined". Names only for a PENDING request (the run's own ask); a
-      // declined one is counted, as the model is told (observations._secret_gate).
-      const declined = o.declined_secrets || [];
-      text = `${o.name} NOT run — secret exposure `
-        + (declined.length ? `declined for ${declined.length} secret${declined.length === 1 ? "" : "s"}`
-          : `pending for ${o.pending_secrets.join(", ")}`)
-        + (o.dialog ? `\nthe user replied without deciding: ${o.user_message}` : "");
-    } else if (o.kind === "util" || (o.kind === "script" && o.exit != null)) {
-      text = o.missing ? `util "${o.target || o.name}" does not exist (available: ${(o.available || []).join(", ")})`
-        : o.listing != null ? `util catalog\n${o.listing}`
-        : o.source != null ? `source of "${o.target}"\n${o.source}`
-        : `${o.name} → exit ${o.exit}\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`
-          + fullOutput(o.full_output) + compressionInfo(o.compression)
-          + (o.usage ? `\n[usage] ${o.usage}` : "") + (o.hint ? `\n[hint] ${o.hint}` : "");
-    } else if (o.kind === "shell") {
-      text = `exit ${o.exit}${o.cwd ? ` (in ${o.cwd})` : ""}\n${o.stdout || ""}`
-        + (o.stderr ? `\n[stderr] ${o.stderr}` : "") + fullOutput(o.full_output) + compressionInfo(o.compression);
-    } else if (o.kind === "write_util") {
-      text = o.pending_approval ? `write_util "${o.name}": awaiting user approval`
-        : o.declined ? `write_util "${o.name}": declined`
-        : o.selftest_ok ? `write_util "${o.name}": selftest passed, committed`
-        : `write_util "${o.name}": selftest FAILED\n${o.output || ""}`;
-    } else if (o.kind === "read_file") {
-      text = o.files  // batched multi-path read: one section per file
-        ? o.files.map((f) => f.error ? `--- ${f.path} FAILED: ${f.error}`
-                                     : `--- ${f.path} (${f.directory ? "directory listing, entries" : "lines"} ${f.start_line}-${f.end_line} of ${f.total_lines}) ---\n${f.content}`)
-            .join("\n\n")
-        : o.error || o.content || "";
-    } else if (o.kind === "llm") {
-      text = o.error || o.reply || "";
-    } else if (o.kind === "write_file") {
-      text = (o.error || `wrote ${o.bytes} bytes → ${o.path}`) + thenScriptText(o);
-    } else if (o.kind === "edit_file") {
-      text = (o.error || `replaced ${o.replacements} occurrence(s) in ${o.path}`)
-        + thenScriptText(o);
-    } else if (o.kind === "memory_read") {
-      text = o.missing ? `no note "${o.name}" (topics: ${(o.topics || []).join(", ") || "none yet"})`
-        : o.content || "";
-    } else if (o.kind === "memory_write") {
-      text = o.deleted ? `note "${o.name}.md" ${o.existed ? "deleted, INDEX updated" : "did not exist"}`
-        : `note "${o.name}.md" ${o.created ? "created" : "revised"} (${o.lines} lines), INDEX updated`;
-    } else if (o.kind === "spawn") {
-      text = o.rejected ? `spawn REJECTED: ${o.reason}` :
-        `sub-workflow #${o.n} "${o.label}" started (${o.workflow}) — running in parallel`;
-    } else if (o.kind === "subruns") {
-      text = (o.rows || []).map((r) =>
-        `#${r.n} "${r.label}" [${r.workflow}] ${r.state} · ${r.turns} turns · ${r.elapsed_s}s`)
-        .join("\n") || "no sub-workflows";
-    } else if (o.kind === "kill") {
-      // Two namespaces, one action (D176 option (a)): `n` a sub-workflow, `handle` a background
-      // call. Reading the number from both is what made `kill handle=bg1` render
-      // "sub-workflow #undefined terminated" — see components/obs-background.js killText.
-      text = killText(o);
-    } else if (o.kind === "wait") {
-      text = o.error || ((o.finished || []).map((f) =>
-        `#${f.n} "${f.label}" finished (${f.status}, ${f.turns} turns):\n${f.summary}`)
-        .join("\n\n") || (o.timed_out ? "wait timed out" : "nothing new finished"));
-    } else if (o.kind === "ask_user") {
-      text = o.dialog ? `dialog reply (question stays open): ${o.user_message}`
-        : o.answered ? `answered: ${o.answer}` : o.batch ? `${o.count} questions filed as one batch (${o.blocking || 0} blocking)`   // D212: a batch is N records
-        : o.timed_out ? "timed out → deferred" : "filed as deferred";
-    } else if (o.kind === "reminder_hold") {
-      text = `HELD — "${o.action}" did NOT run. It matches a consequence reminder:\n`
-        + (o.reminders || []).map((r) => `· [${r.id} · ${r.scope}] ${r.description}`).join("\n")
-        + "\nEmitting the same action again runs it (one hold per action string per run — per "
-        + "reply, in a conversation).";
-    } else if (o.kind === "assist_hold") {
-      text = `HELD — "${o.action}" did NOT run. A general rule this routine practises `
-        + `governs this moment:\n`
-        + (o.lines || []).map((l) => `· ${l}`).join("\n")
-        + "\nEmitting the same action again runs it (one hold per action string per run — per "
-        + "reply, in a conversation).";
-    } else if (o.kind === "finish" && o.rejected) {
-      // SIX rungs reach this observation and each hands the turn back for its own reason, so
-      // each is named — a run deferred for its accounting is not a hallucinated completion,
-      // which is the opposite diagnosis.
-      text = o.pending_user_input
-          ? "finish DEFERRED — a user message arrived mid-finish; it is delivered instead"
-        : o.accounting
-          ? `finish DEFERRED — the accounting is incomplete: ${accountingGaps(o.accounting)}`
-        : o.assist
-          ? "finish DEFERRED — a general rule this routine practises governs the ending itself"
-        : o.unbacked_claims
-          ? `finish REJECTED — the summary claims ${o.unbacked_claims.join(", ")}, `
-            + "which this run never did"
-        : o.claims_unsupported
-          ? "finish DEFERRED — the run's own transcript does not support the \"met\" claim on "
-            + o.claims_unsupported.join(", ")
-        : "finish REJECTED — no action had been executed yet (fabrication guard)";
-    } else {
-      text = JSON.stringify(o, null, 1);
-    }
-    // F559 (operator 2026-10-01: "i still want images that the system looks at previewed in the
-    // message as thumbnail"). view_image had no case above, so it fell through to the JSON dump
-    // and the person reading the transcript saw a path where the MODEL was shown the picture.
-    // The image is the evidence for everything the run says next, so it renders as a real
-    // thumbnail — through attachmentRow, the same authenticated blob route the user's own
-    // attachments use, because an <img src> cannot carry the Authorization header.
-    let thumbs = null;
-    if (o.kind === "view_image") {
-      const files = o.files || [];
-      // `text` is the vision util's description where a text-only model got one — that IS what
-      // the run reasoned about, so it is kept; an unreadable file reports its error instead.
-      text = files.map((f) => f.error ? `${f.path}: ${f.error}`
-        : f.text ? `${f.path}:\n${f.text}` : f.path).join("\n\n") || "no image";
-      thumbs = attachmentRow(files.filter((f) => !f.error).map((f) => f.path),
-                             opts.fileUrl, blobs);
-    }
+    // The WORDS and the row's state word come from components/obs-text.js, which owns the
+    // per-kind vocabulary; what is left here is the page — the collapsing fold, the clocks,
+    // and a `view_image`'s real thumbnails, which need the authenticated blob route an
+    // <img src> cannot carry an Authorization header for (F559).
+    const text = observationText(o);
+    const thumbs = o.kind === "view_image"
+      ? attachmentRow((o.files || []).filter((f) => !f.error).map((f) => f.path),
+                      opts.fileUrl, blobs)
+      : null;
     const obs = obsBody(text, (o.kind === "llm" && !o.error)
       || (o.kind === "memory_read" && !o.missing), obsState(o));
     if (thumbs) obs.append(thumbs);
@@ -581,53 +378,8 @@ export function createTranscript(container, opts = {}) {
           el("summary", {}, "harness reply (diagnostic — not an answer)"),
           el("pre", {}, p.harness_reply)) : null);
     },
-    compaction: (ev) => {
-      // Three payload shapes, one line each (never "undefined → undefined"): the LLM
-      // archive / deterministic digest (flat before/after), the hard window clamp
-      // ({clamp}), and the provider-window correction ({window_guard}, optional clamp).
-      const p = ev.payload || {};
-      const c = p.clamp || p.window_guard?.clamp || null;
-      const span = (o) => o.before_estimated_tokens != null
-        ? `${o.before_estimated_tokens} → ${o.after_estimated_tokens} estimated tokens`
-        : `${o.before_chars} → ${o.after_chars} chars`;
-      let text;
-      if (p.window_guard) {
-        const g = p.window_guard;
-        text = `— window corrected: ${g.model} really holds ${g.corrected_tokens != null ? `${g.corrected_tokens} tokens` : `${g.corrected_chars} chars`}` +
-               `${c ? `; clamped ${c.clamped_messages} oversized, ${span(c)}` : ""} —`;
-      } else if (c) {
-        text = `— window clamp: ${c.clamped_messages} oversized ` +
-               `${c.clamped_messages === 1 ? "body" : "bodies"} trimmed in place, ${span(c)} —`;
-      } else if (p.archival_abandoned) {
-        // the run ended before the thread did — a designed outcome, not a loss
-        text = `— background archive abandoned: the run ended before the ${p.elided_messages} `
-             + `elided messages finished archiving; the digest and the full transcript stand —`;
-      } else if (p.background) {
-        // The archive that landed OFF the hot path (0.308.0). It carries no before/after
-        // chars — the digest already took the pass and did the shrinking — so it must not
-        // reach the branches that print a span, which is how it once read "undefined →
-        // undefined chars".
-        text = p.archival_degraded
-          ? "— background archive did not land —"
-          : `— background archive landed: ${p.elided_messages} messages → history/ `
-            + `(${p.history_files} files, browsable in the rail's files card) —`;
-      } else if (p.mode === "llm-history") {
-        text = `— context archived: ${p.elided_messages} messages → history/ ` +
-               `(${p.history_files} files, browsable in the rail's files card), ${span(p)} —`;
-      } else if (p.before_estimated_tokens != null || p.before_chars != null) {
-        text = `— context compacted: ` +
-               `${p.elided_messages ? `${p.elided_messages} messages digested, ` : ""}${span(p)} —`;
-      } else {
-        // archival failed AND the digest had nothing to elide — reason-only record
-        text = `— compaction: nothing elided this pass —`;
-      }
-      if (p.archival_degraded) {
-        // a failed LLM archival is a designed degrade (the digest took the pass), not a
-        // run error (F376) — note it on the neutral line instead of a red error card
-        text += ` (history archival degraded: ${p.archival_degraded})`;
-      }
-      return el("div", { class: "ev compaction" }, text);
-    },
+    compaction: (ev) => el("div", { class: "ev compaction" },
+      compactionText(ev.payload)),
     subrun_start: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
       `${ev.payload.mode === "sequential" ? "→ subtask" : "↳ subrun"} ${ev.payload.n} "${ev.payload.label}" started (${ev.payload.workflow}, depth ${ev.payload.depth})`)),
     subrun_end: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
@@ -638,57 +390,27 @@ export function createTranscript(container, opts = {}) {
     // needs to see in place, not an action the model took.
     stopping_update: (ev) => el("div", { class: "ev compaction", "data-accounting-event": "" },
       accountingLine(ev.payload || {})),
-    // A finish that STOOD while declared stages went unentered (engine/finishgate.py, F521) —
-    // a notice, not a refusal: skipping a stage is often right, and the gap is on the record.
+    // The neutral RECORDS below are worded by components/obs-records.js; what stays here is
+    // each row's class and data-attribute, which the stylesheet and the browser suite key off.
+    // The PALETTE is the decision this table keeps: `oversight_failed` draws in the error
+    // palette because the mechanism itself broke, while `oversight_skipped` is the ordinary
+    // ceiling case, and `action_cancelled` draws in the injection palette because somebody
+    // outside the run reached in and nothing failed.
     stages_skipped: (ev) => el("div", { class: "ev compaction", "data-stages-skipped": "" },
-      `— stages skipped: ${(ev.payload?.skipped || []).join(", ")} `
-      + `(entered: ${(ev.payload?.entered || []).join(", ") || "none"}) —`),
-    // The escalation ladder's four records (engine/ladder.py). An event type with no renderer
-    // here is DROPPED by add() below, so a rung that fired left no trace a reader could find —
-    // which for an oversight mechanism is the one failure that must never be silent.
-    // A rung STARTING: why it fired, the interval it judges, and the budget it was given — the
-    // reader's only way to see that supervision cost turns and over what.
+      stagesSkippedText(ev.payload)),
     oversight_dispatch: (ev) => el("div", { class: "ev oversight", "data-oversight-dispatch": "" },
-      `— ↑ rung ${ev.payload?.rung ?? "?"} fired at turn ${ev.payload?.turn ?? "?"}`
-      + ` (${ev.payload?.reason || "interval"}), judging turns `
-      + `${ev.payload?.since_turn ?? "?"}–${ev.payload?.turn ?? "?"}`
-      + ` on ${ev.payload?.oversight_turns ?? "?"} turns of its own —`),
-    // The VERDICT; the directive's prose arrives as the `user_injection` above.
+      OVERSIGHT_TEXT.dispatch(ev.payload)),
     oversight_directive: (ev) => el("div", { class: "ev oversight", "data-oversight-verdict": "" },
-      `— ↑ rung ${ev.payload?.rung ?? "?"}: ${ev.payload?.verdict ?? "?"}`
-      + ` · ${ev.payload?.disposition ?? "?"} · next rung in ${ev.payload?.next_rung_in ?? "?"} turns`
-      + `${ev.payload?.next_look ? ` · next look: ${ev.payload.next_look}` : ""} —`),
-    // Not an error: the ordinary case on a tree at its depth ceiling or out of child budget,
-    // and the hard skip when the supervisor's workflow pattern is absent. The REASON is the
-    // whole point of the record.
+      OVERSIGHT_TEXT.directive(ev.payload)),
     oversight_skipped: (ev) => el("div", { class: "ev compaction", "data-oversight-skipped": "" },
-      `— ↑ oversight${ev.payload?.rung ? ` rung ${ev.payload.rung}` : ""} skipped: `
-      + `${ev.payload?.reason || "no reason recorded"} —`),
-    // The mechanism RAISED — not a rung declining to run. Its own renderer in the ERROR palette
-    // for the reason the event exists: until R2348/R2352 this was filed as `oversight_skipped`,
-    // so a total failure (`loop.subs`, an attribute that never existed, on EVERY run) rendered
-    // as the ordinary ceiling case and nobody reading a transcript could tell.
+      OVERSIGHT_TEXT.skipped(ev.payload)),
     oversight_failed: (ev) => el("div", { class: "ev error", "data-oversight-failed": "" },
-      `— ↑ oversight${ev.payload?.rung ? ` rung ${ev.payload.rung}` : ""} FAILED: `
-      + `${ev.payload?.error || "no error recorded"} —`),
-    // A rung that ran and handed back no usable directive — supervision that cost turns and
-    // said nothing. Visible, because it reads like `continue` and is not.
+      OVERSIGHT_TEXT.failed(ev.payload)),
     oversight_no_directive: (ev) => el("div", { class: "ev compaction", "data-oversight-none": "" },
-      `— ↑ rung ${ev.payload?.rung ?? "?"} handed back no directive`
-      + `${ev.payload?.status ? ` (child ${ev.payload.status})` : ""} —`),
-    // A person stopped ONE call (F586 / D160-C). The INJECTION palette (views.css .ev.cancelled),
-    // because that is what it is — somebody outside the run reaching in — and not the error one:
-    // nothing failed. The record exists precisely so a reader afterwards can tell this apart
-    // from a call that died on its own, which a transcript of outcomes alone cannot show.
+      OVERSIGHT_TEXT.none(ev.payload)),
     action_cancelled: (ev) => el("div", { class: "ev cancelled", "data-action-cancelled": "" },
-      `— ✕ cancelled by the user: ${ev.payload?.kind ?? "?"}`
-      + `${ev.payload?.brief ? ` · ${ev.payload.brief}` : ""} —`),
-    header: (ev) => el("div", { class: "ev system" },
-      // every half falls back — the workflow one always did, and the model one printed a
-      // literal "undefined:undefined" on any header without an orchestrator block (a
-      // transcript from before the field, or one cut short before the run resolved a model)
-      `run ${ev.run_id} · ${ev.orchestrator?.endpoint || "?"}:${ev.orchestrator?.model || "?"}`
-      + ` · workflow ${ev.workflow?.slug || "?"}`),
+      actionCancelledText(ev.payload)),
+    header: (ev) => el("div", { class: "ev system" }, headerText(ev)),
   };
 
   // What a "refer to" on a simple event means to the model reading the quote later —
