@@ -32,7 +32,12 @@ OAuth has two halves that live in different places, because a routine run is hea
   secret is unset — there is no hardcoded fallback, so a connection can never silently consent to a
   narrower set than intended. `scoped=False` (Notion) sends no scope param and needs no secret, as
   its scopes are fixed on the integration. Widen or narrow a Google connection by editing
-  `GOOGLE_OAUTH_SCOPES` and re-authorizing; the same secret is what any Google util reads.
+  `GOOGLE_OAUTH_SCOPES` and clicking *reconnect* on its row in Settings → Connections — never
+  *disconnect* then *connect*: reconnect runs the same consent for the same `provider:account`
+  and the callback overwrites that key only once the new consent has SUCCEEDED, so the working
+  token stays bound to its routines until then (a disconnect first lost google:personal's token
+  for nine routines on 2026-10-29, when the redirect was broken and the connect failed). The
+  same secret is what any Google util reads.
 - **`oauth/store.py`** — the connection store: one `connections.json` next to `config.yaml`, keyed
   `"<provider>:<account>"`, written atomically at mode 0600 (modeled on the Secrets store). Values
   are write-only over the API (`list_connections` returns metadata only, never tokens). The
@@ -49,7 +54,8 @@ OAuth has two halves that live in different places, because a routine run is hea
   any *expiring*-provider connection within ~5 min of expiry, persists a rotated `refresh_token`, and
   on a provider REFUSAL (HTTP 400/401/403, RFC 6749 §5.2 — a 5xx, 429 or timeout is retried
   next tick like a network error) flags the connection `needs_reauth`, which badges it in Settings →
-  Connections — the console record IS the notification, and no implicit outbound send exists. A
+  Connections ("needs re-auth — reconnect", the row's *reconnect* promoted to its primary
+  control; a successful re-consent writes a fresh record, flag cleared) — the console record IS the notification, and no implicit outbound send exists. A
   no-op for non-expiring providers (Notion), so a Notion-only instance never touches it.
 - **Engine injection** — `executor.do_util` resolves the routine's bound connections to
   `{<PROVIDER>_ACCESS_TOKEN: token}` and passes them to `utils_run.run_util` as `extra_secrets`.
@@ -73,7 +79,9 @@ OAuth has two halves that live in different places, because a routine run is hea
    "HTTPS for the console". The card then shows the exact callback (`<that>/oauth/callback`) to register as the
    integration's redirect URI. This base is persisted as `public_url` in config.yaml.
 4. **Connect**: enter an account label (e.g. `personal`), click *connect*, consent in the new tab.
-   The connection appears under "Connected accounts".
+   The connection appears under "Connected accounts". To re-consent later (changed scopes, a
+   `needs_reauth` flag) click that row's *reconnect*: the old token stays until the new consent
+   lands.
 5. **Bind it**: on a routine's page, *Limits & reach* → *more* → *Connections* → pick the account
    for the provider → *accept changes*. The routine's utils that declare `NOTION_ACCESS_TOKEN` (the
    `notion` util does) now receive the token.
