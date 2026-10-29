@@ -129,7 +129,7 @@ def test_an_unset_env_var_in_a_declaration_is_not_a_gap(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize(("grant", "severity", "needle"), [
     (None, INTERRUPTS, "stops the run to ask"),
-    (False, BLOCKS, "declined forever"),
+    (False, NOTE, "declined it forever"),       # his own settled answer, F609
     (True, "ok", ""),
 ])
 def test_a_declared_secret_reports_what_its_state_will_cost(tmp_path, monkeypatch, grant,

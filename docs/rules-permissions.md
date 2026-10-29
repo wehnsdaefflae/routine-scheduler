@@ -199,12 +199,24 @@ instead of describing the symptom it hit.
 
 **Only an UNMET row carries one** — the severities do not decide it. A `note` reporting a GAP
 gets one: the cron its lane suppresses, a phase file keyed wrong, a capability switched on that
-no held doc requires (`cover_or_drop` — hold a doc that requires it, or drop it). Exactly two
+no held doc requires (`cover_or_drop` — hold a doc that requires it, or drop it). Exactly three
 rows report a STATE and carry none. `action:write_recipe` "on" is a routine deliberately allowed
 to rewrite its own instructions; `schedule:goal` "retired" is a routine whose every goal-scoped
-condition is met. The only "fix" for a deliberate act is to undo it; offering that reads as a
-defect report on a routine set up exactly as intended — the retired row worst of all, since what
-it would undo is a finished job. An absent `fix` therefore means one thing, which is what makes
+condition is met; `secret:<NAME>` "denied" is a credential YOU declined forever. The only "fix"
+for a deliberate act is to undo it; offering that reads as a defect report on a routine set up
+exactly as intended — the retired row worst of all, since what it would undo is a finished job.
+
+The denied secret is the row where that cost was measured rather than argued (**F609**). It read
+`blocks` and carried `clear_grant` ("clear the refusal recorded in this routine's grants"), and
+because `daemon/library_watch.py` files every `blocks` row as library drift, one accepted settings
+decision — `secret:FAU_PASSWORD` and `secret:FAU_USER` declined on `freelance-radar`, 2026-10-01 —
+came back on the Decisions page as blocked work on every library commit, proposing the revert, and
+blaming whichever commit had moved the library HEAD. Nothing there was unmet: since F756 a decline
+withholds the NAME and the call proceeds, and the run is told so at the call it makes
+(`engine/obs_secrets.withheld_declined`), which is the channel a run can act on. So the row states
+the decision, leaves the boot note, and `clear_grant` retired with it — the kind was emitted at
+that one call site and nowhere else. A routine the operator deliberately keeps away from a
+credential now reads `ready`. An absent `fix` therefore means one thing, which is what makes
 the rows that carry one worth reading.
 
 `action:write_recipe` is the row where that rule is decided rather than observed: two checks
@@ -284,6 +296,15 @@ Three writers, and each gets what it can carry:
   reason) is a new question and is asked. A settlement lives exactly as long as its gap, like
   the records: once the gap closes the answer is forgotten, so the same gap opening again later
   is a new question rather than a silence nobody chose.
+  A re-ask **says why the previous answer stopped applying** (`library_drift.reask_reason`,
+  F609) — "you answered this when the stated reason was 'needed by sig'; it is now 'needed by
+  sig, sig2'", or that it read `absent` then and reads `denied` now. The fingerprint decides
+  WHETHER to ask and that half was already right; what it never carried was the difference, so
+  from where the operator reads it a question he was RIGHT to receive looked exactly like the
+  defect of being asked twice — same routine, same entity, asked again. The reason is read off
+  the fingerprint the answer was keyed on, and from the store as it stood BEFORE the
+  withdrawal: a widened reason retires its own settlement (that is what makes it a new
+  question), so by the time the record is queued the answer it supersedes is already gone.
   The record names **what opened the gap**, not what arrived with it: the watcher compares
   HEADs, so the commit a gap is noticed at is merely the newer of the two. It reads the commits
   in the range it missed that touched the gap's own library files (the util directory, the doc)

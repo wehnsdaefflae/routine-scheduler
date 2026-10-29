@@ -92,6 +92,10 @@ function details(rec, openDrift = true) {
       node.effect ? el("div", { class: "faint mt" }, node.effect) : null,
       el("div", { class: "faint mt" }, f.trigger
         || `found at library commit ${String(f.head || "").slice(0, 8)}`),
+      // Why it is back after an answer (F609, `library_drift.reask_reason`). Without it a
+      // re-ask he was RIGHT to receive reads as the defect of being asked twice: same routine,
+      // same entity. Only a re-ask carries one, so its presence is the signal.
+      f.reask ? el("div", { class: "mt", "data-reask": "" }, f.reask) : null,
     ].filter(Boolean));
     return el("details", { class: "small mt", open: openDrift || null },
       el("summary", { style: "cursor:pointer;color:var(--ink-2)" },

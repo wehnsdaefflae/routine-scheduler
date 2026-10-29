@@ -78,8 +78,21 @@ def test_holders_reaches_through_the_calls_tree(tmp_path):
 
 @pytest.mark.usefixtures("empty_store")
 def test_a_new_secret_declaration_names_who_it_breaks(tmp_path, monkeypatch):
-    """The headline case: routine-improver revises a util, adds a secret, and two routines that
-    nobody touched stop working at their next run."""
+    """The headline case: routine-improver revises a util, adds a secret, and a routine nobody
+    touched stops working at its next run.
+
+    The holder who ALREADY ANSWERED about that entity is not among them (F609). This module's
+    whole promise is that the approval question and the routine page cannot disagree about what a
+    gap means — "one function, read forwards, twice" — so when the surface stopped reading a
+    recorded decline as a gap, this reading stopped too, by construction rather than by a second
+    rule. It is the right answer here as well: there is nothing in a holder he has already
+    decided about for him to approve, and since F756 the name is withheld and the call proceeds.
+
+    The cost is named rather than hidden: a util newly declaring a secret this routine is
+    declined does not appear in the approval's break list, and a call inside it that truly needs
+    the credential still fails — which the RUN is told at that call
+    (`engine/obs_secrets.withheld_declined`), and the routine page still states as a note.
+    """
     monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"NEW_PIN": "x"})
     server = _server(tmp_path)
     write_util(server, "signal")
@@ -92,10 +105,11 @@ def test_a_new_secret_declaration_names_who_it_breaks(tmp_path, monkeypatch):
     result = impact(server, "util", "signal", util_src("signal", secrets="NEW_PIN"))
     assert sorted(result["holders"]) == ["declined", "granted", "undecided"]
     broken = {b["slug"] for b in result["breaks"]}
-    assert broken == {"undecided", "declined"}
-    assert result["unaffected"] == ["granted"]
+    assert broken == {"undecided"}
+    assert sorted(result["unaffected"]) == ["declined", "granted"]
     lines = impact_lines(result)
     assert any("BREAKS undecided" in ln and "NEW_PIN" in ln for ln in lines)
+    assert not any("declined" in ln for ln in lines if ln.startswith("BREAKS"))
 
 
 @pytest.mark.usefixtures("empty_store")
