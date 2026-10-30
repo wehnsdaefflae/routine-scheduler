@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.476.0] — 2026-10-30
+
+### Fixed
+- **An engine note told a live run to stop trying something that worked** (F802, from R3057).
+  When the operator granted `machine:omen` mid-run, the grant-applied note said *"Saved, but it
+  takes effect at your NEXT RUN … machines: the machine bindings and share mounts are resolved at
+  boot"* — and the very next action in the same process ran `gu remote list --json`, got omen
+  back with `"ready": true`, and `gu remote test omen` succeeded. The claim came from one table
+  entry, `configflow.CLASSIFICATION["machines"]`, whose `why` is what the operator reads.
+  It is wrong for the EXEC half: `engine/exec_env._machine_env` composes the machine env per util
+  call from `ctx.routine.machines` **plus `ctx.granted_now`**, the run's own grant overlay that
+  `engine/requests.apply_decision` writes the moment an access request is answered. The half that
+  really waits is the sshfs SHARE MOUNT, which the daemon makes at binding time —
+  `_machine_env`'s own docstring already draws that line ("A one-time grant covers EXEC only").
+  The entry stays `NEXT_RUN` (a config edit does not reach a live run) and its reason now names
+  both halves, the way the `fs_read_roots` entry has always done.
+  New `tests/test_configflow_machines.py` pins the prose to the behaviour from both sides: a
+  grant-only `granted_now` really does produce the machine env, and the reason may not deny it.
+  Red-first proven by restoring the pre-fix string: the prose test fails on
+  `assert 'mid-run' in 'the machine bindings and share mounts are resolved at boot'`.
+  `tests/test_configflow.py` could not have caught this — it asserts that every field declares a
+  half and a non-empty reason, never that the reason is true.
+
 ## [0.475.0] — 2026-10-30
 
 ### Fixed

@@ -50,7 +50,11 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
                          "named to the engine at launch, so a run already going finishes on the "
                          "model it booted with and the trial starts with the next fire")),
     "connections": (NEXT_RUN, "OAuth tokens are injected into the util environment at boot"),
-    "machines": (NEXT_RUN, "the machine bindings and share mounts are resolved at boot"),
+    "machines": (NEXT_RUN, ("the share mounts are made by the daemon at binding time, so they "
+                            "reach the NEXT run; an access-REQUEST for `machine:<name>` decided "
+                            "mid-run DOES reach this one — `remote` resolves the catalog per "
+                            "call from the run's own grant overlay — while a config edit does "
+                            "not")),
     "permissions": (NEXT_RUN, ("the held conduct docs are read at boot: their prose is composed "
                                "into the prompt and their capabilities projected into the action "
                                "schema, so widening or narrowing authority reaches the NEXT run")),
