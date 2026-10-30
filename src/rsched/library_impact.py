@@ -13,8 +13,10 @@ util→routine. This is the join between them.
 
 The break analysis is deliberately NOT a per-kind diff of headers and frontmatter. It computes
 each holder's setup surface against the CURRENT library and against the PROPOSED one, and
-reports whoever gains a blocking or interrupting row. So the approval question and the routine
-page can never disagree about what a gap means: it is one function, read forwards, twice.
+reports whoever gains a blocking or interrupting row — plus, since D222, whoever has DECLINED
+the entity the change newly needs, whose line says what the decline costs instead of calling it
+broken. So the approval question and the routine page can never disagree about what a gap means:
+it is one function, read forwards, twice.
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
+from .readmodels.surface_nodes import BLOCKS, INTERRUPTS, NOTE
 
 # Which library subdirectory each writable kind lives in.
 _KIND_DIR = {"util": "utils", "rule": "rules", "permission": "permissions"}
@@ -82,9 +86,24 @@ def _server_at(server: Any, libraries_home: Path) -> Any:
                            machines=getattr(server, "machines", {}) or {})
 
 
+#: The severities a GAP carries, plus the one settled state that is not a gap and still changes
+#: what a holder gets. D222 (operator, 2026-10-30): F609 rightly stopped a recorded decline
+#: reading as a gap — the surface no longer offers to revert his own decision — but `_unmet`
+#: collects exactly the gap severities, so a routine that DECLINED a secret a util newly declares
+#: stopped appearing in the authoring question's break list, while genuinely not getting that
+#: credential. His answer was (b): *"Widen library_impact._unmet to include the `denied` note, so
+#: the routine appears — worded as 'declined, so this util will not work there' rather than as
+#: broken, which informs you without proposing to revert your decline"*. The distinction lives in
+#: the WORDING (`impact_lines`), not in a second rule about when a decline counts: this module's
+#: promise is one function read forwards twice, and a second rule here would recreate exactly the
+#: divergence between the question and the routine page that it exists to prevent.
+_GAP_SEVERITIES = (BLOCKS, INTERRUPTS)
+_DECLINED_STATE = "denied"
+
+
 def _unmet(surface: dict) -> set[str]:
     return {f"{n['severity']}:{n['id']}" for n in surface["nodes"]
-            if n["severity"] in ("blocks", "interrupts")}
+            if n["severity"] in _GAP_SEVERITIES or n.get("state") == _DECLINED_STATE}
 
 
 def _holds(server: Any, cfg: Any, kind: str, name: str) -> bool:
@@ -186,10 +205,18 @@ def impact_lines(result: dict) -> list[str]:
     if not result["holders"]:
         return ["binds no routine yet"]
     out = [f"binds: {', '.join(result['holders'])}"]
+    broke = False
     for b in result["breaks"]:
         for gained in b["gains"]:
             severity, _, eid = gained.partition(":")
-            out.append(f"BREAKS {b['slug']}: {eid} ({severity})")
-    if not result["breaks"]:
+            if severity == NOTE:
+                # D222: a holder that DECLINED this entity appears, and its line says what the
+                # decline costs rather than calling it broken — the operator decided this, and a
+                # break list that proposed reverting his own decision is the F609 defect.
+                out.append(f"{b['slug']}: {eid} declined, so this util will not work there")
+            else:
+                broke = True
+                out.append(f"BREAKS {b['slug']}: {eid} ({severity})")
+    if not broke:
         out.append("breaks none of them")
     return out
