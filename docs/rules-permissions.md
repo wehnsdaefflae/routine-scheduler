@@ -729,8 +729,16 @@ separate feature; this request grammar does not implement it.
 - **denied forever** — a `grants: {<entity-id>: false}` tombstone. The run stops asking:
   denials switch to "the user has PERMANENTLY declined … do not request it again", the
   request itself is corrected in-cycle, and the catalog badges a tombstoned reserved
-  util `[reserved — declined by the user]`. The routine page's *Declined access* panel
-  removes a row (back to undecided).
+  util `[reserved — declined by the user]`. Removing a row returns the entity to
+  undecided, and EVERY subject has that undo: the routine page's *Declined access*
+  panel (a settings draft, accepted like any other edit) and, since F783, a
+  conversation's capabilities panel, whose press clears ONE named row through
+  `web/api_conversation_grants.py` — a conversation has no draft to accept, and a
+  wholesale rewrite of `grants:` from a page that cannot re-read it first would drop a
+  row (including a `secret:` allow-forever) that landed in between. Clearing only ever
+  LOOSENS a denial, so it carries no grant decision of its own; it is operator-only all
+  the same (`app.ROUTINE_TOKEN_MUTATIONS` is empty), because a run that could clear the
+  denial set on it would make every tombstone advisory.
 - **allowed now / denied now** — this run only, in-memory on the RunContext (a resumed
   leg starts empty and re-asks). An allow-now folds into the live policy at the turn
   boundary — the transport schema is re-projected, so a granted kind becomes generatable

@@ -15,6 +15,7 @@ import { el, skeleton } from "/static/util.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { fieldBlock, settingsGroup } from "/static/components/settings-field.js";
 import { ownSecretsCard } from "/static/components/routine-secrets.js";
+import { declinedIds, declinedRows } from "/static/components/declined-access.js";
 
 const SECRET = "secret:";
 
@@ -54,20 +55,18 @@ export function accessGroup(ctx) {
     return host;
   }, { noWas: true });
 
+  // The rows themselves come from components/declined-access.js, which a CONVERSATION's
+  // capabilities panel also mounts (F783 — before it, this block was the only editor in the
+  // instance that could clear a deny-forever tombstone, and conversations had no equivalent).
+  // Only the WRITE differs: here the press moves the settings DRAFT the operator then accepts,
+  // which is why a wholesale `grants` replace is safe on this page and not on that one.
   const declined = fieldBlock(form, "grants", (value, set) => {
     const grants = value || {};
-    const rows = Object.keys(grants).filter((k) => !k.startsWith(SECRET) && grants[k] === false)
-      .sort();
-    if (!rows.length) return el("div", { class: "muted small" }, "nothing declined");
-    return el("div", {}, ...rows.map((eid) =>
-      el("div", { class: "row", style: "margin:5px 0", "data-declined-row": eid },
-        el("code", { class: "small", style: "min-width:240px" }, eid),
-        el("button", { type: "button", class: "btn small", title: "make it requestable again",
-          onclick: () => {
-            const next = { ...grants };
-            delete next[eid];
-            set(next);
-          } }, "remove"))));
+    return declinedRows(declinedIds(grants), (eid) => {
+      const next = { ...grants };
+      delete next[eid];
+      set(next);
+    });
   }, { noWas: true });
 
   // F193: a grant decided elsewhere (a Decisions-page approval) lands in routine.yaml while this
@@ -88,8 +87,7 @@ export function accessGroup(ctx) {
     form, title: "Secrets & access", hint: "shared-store exposure · its own credentials · settled denials",
     keys: ["grants"],
     digest: () => {
-      const g = form.get("grants") || {};
-      const n = Object.keys(g).filter((k) => !k.startsWith(SECRET) && g[k] === false).length;
+      const n = declinedIds(form.get("grants")).length;
       return n ? `${n} declined forever` : "nothing declined";
     },
     sections: [
