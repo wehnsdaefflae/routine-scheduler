@@ -229,7 +229,7 @@ below state the conduct for each.
 Budgets for this run: {b.max_turns if b.max_turns >= 0 else "unlimited"} turns, \
 {b.max_wall_clock_min if b.max_wall_clock_min >= 0 else "unlimited"} minutes, \
 {b.max_total_tokens if b.max_total_tokens >= 0 else "unlimited"} total tokens, \
-{f"a ${b.max_cost} cost cap, " if b.max_cost >= 0 else ""}{_subrun_allowance(ctx)} \
+{f"a ${b.max_cost} notional-cost cap, " if b.max_cost >= 0 else ""}{_subrun_allowance(ctx)} \
 (depth ≤ {b.max_subrun_depth}). These are a CEILING and a runaway \
 BACKSTOP — never a pace, and never a ration. Two opposite failures live here and you must \
 avoid both: stopping SHORT because turns have been spent, and spreading a job THIN because \

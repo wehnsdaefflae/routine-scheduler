@@ -50,7 +50,9 @@ class Budgets:
     max_subruns: int
     max_subrun_depth: int
     ask_timeout_min: int
-    max_cost: int = -1        # -1 = unlimited: whole-dollar ceiling on real provider $ spend
+    max_cost: int = -1        # -1 = unlimited: whole-$ ceiling on NOTIONAL spend (F758) —
+                              # endpoints/usage.dollars_spent, which is the billed figure
+                              # wherever a provider reports one and list price everywhere else
     max_total_turns: int = -1  # the RESOLVED cumulative cap across ALL resume windows
                                # (max_turns bounds ONE window). -1 = unlimited; the config's
                                # `0` means DERIVE and is resolved in from_config, never here —

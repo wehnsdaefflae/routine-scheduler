@@ -28,8 +28,13 @@ DEFAULT_BUDGETS = {
     # 500k then 1.5M, eventually cut off legitimate work). max_wall_clock_min and max_cost
     # also honor -1 = unlimited, so an operator can lift the time, token, and dollar ceilings
     # independently and let max_turns be the sole backstop. Set a positive number to bound
-    # spend on a specific routine. max_cost is a whole-dollar ceiling on real provider spend
-    # (usage["cost"], reported today only by metered endpoints like OpenRouter); -1 = no cap.
+    # spend on a specific routine. max_cost is a whole-dollar ceiling on NOTIONAL spend
+    # (endpoints/usage.dollars_spent): `usage["notional"]`, which endpoints/prices.py stamps on
+    # every completion whatever transport carried it, and which IS the provider's own billed
+    # figure wherever one is reported. It used to read `usage["cost"]` alone — written by one
+    # adapter (OpenRouter) and by no `anthropic` endpoint — so the ceiling bounded nothing on
+    # the route most routines inherit through system_model (F758). On a subscription route the
+    # cap therefore bounds list-price dollars, not an invoice; -1 = no cap.
     "max_total_tokens": -1,
     "max_cost": -1,
     "max_subruns": 8,

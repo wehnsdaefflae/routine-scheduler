@@ -5,6 +5,11 @@ A `Completion.usage` reading uses these keys: "in" (fresh input) and "out" alway
 known; "notional" ($ at list price, stamped by endpoints/prices.py). Adapters keep cache traffic
 OUT of "in", so a token budget keeps its meaning.
 
+`dollars_spent` is the one reading of those keys AS MONEY — what a cost budget meters
+(`budgets.max_cost`, engine/run_context.meter) and what any dollar figure derived from a live
+run reads. It lives here, beside the vocabulary, because "what did this cost" is one question
+with one answer and the budget check is not a second definition of it.
+
 This is a separate module beside `base.py` for the reason `media_types.py` is: it is pure —
 dict arithmetic, no transport, no HTTP — and `base.py` is over the house size bar and may only
 shrink.
@@ -31,6 +36,31 @@ def fold_usage(total: dict, delta: dict) -> None:
     for key in ("cost", "notional"):
         if delta.get(key):
             total[key] = round(total.get(key, 0.0) + float(delta[key]), 6)
+
+
+def dollars_spent(usage: dict | None) -> float:
+    """What one usage reading (or a run's fold of them) COST in dollars — the figure a cost
+    budget meters. 0.0 when the completion was neither billed nor priced.
+
+    `notional` first, `cost` only as a fallback (F758). A cost ceiling used to read `cost`
+    alone, which exactly ONE adapter writes — OpenRouter's credit accounting in
+    `endpoints/openai_compat.py`. Every `anthropic` endpoint reports no cost at all, so
+    `max_cost` bounded NOTHING on the route 17 of 30 enabled routines had just inherited
+    through `system_model`: a ceiling an operator believed held. `notional` is stamped on
+    EVERY completion at the one instrumentation seam (`prices.price_usage`) whatever transport
+    carried it, and it IS the provider's own reported figure wherever one is reported, because
+    that writer takes a reported `cost` at its word before it prices anything. So this is not
+    a second number competing with `cost` — it is the same number where one exists, and the
+    only one that exists anywhere else.
+
+    The fallback matters for a reading that never passed the pricing seam (a replayed leg, a
+    directly-dispatched adapter in a test): metering it at 0.0 would make a billed call free.
+    """
+    usage = usage or {}
+    for key in ("notional", "cost"):
+        if usage.get(key):
+            return float(usage[key])
+    return 0.0
 
 
 def cache_read_share(usage: dict | None) -> float | None:

@@ -526,6 +526,16 @@ stale (`prices.missing`), so a new model — or a deploy that brings the price c
 the next tick rather than at the next daily expiry. docs/run-analytics.md ("What a run costs") is
 where the figure is read.
 
+That figure is also what a **cost BUDGET** meters: `budgets.max_cost` is checked against
+`endpoints/usage.dollars_spent` — `notional` first, a provider's reported `cost` only as the
+fallback (F758). This matters when you point `system_model` at a metered `anthropic` endpoint:
+until F758 the ceiling read `usage["cost"]`, which NO `anthropic` adapter writes, so a cap set on
+such a route bounded nothing while reading as a real one. It now binds — in LIST-PRICE dollars on
+a subscription route (not an invoice: a run there can trip a dollar cap having been billed
+nothing) and in real spend on a metered one, where the provider's own reported figure IS the
+notional one. A model the refresh lists as `unpriced` still carries no figure, so a cap on it
+meters 0.0 and cannot trip: a ceiling cannot be enforced against a price nobody publishes.
+
 ## Windows and output caps are DISCOVERED — leave them blank
 
 You do not size a model's context window by hand. At boot and every 24 hours the daemon asks each
