@@ -130,8 +130,8 @@ def pending_suffix(question: dict) -> str:
     where = str(patch.get("routine") or question.get("routine") or "").strip()
     return ("\n  carries a config_patch, NOT yet applied"
             + (f" ({where} still holds the old value)" if where else "")
-            + " — answering never applies it; only the Decisions page's "
-              '"approve & apply" button does.')
+            + ' — answering never applies it; only the "approve & apply" button does, on the '
+              "Decisions page or on the question card itself (F807).")
 
 
 def digest_suffix(pair: dict) -> str:

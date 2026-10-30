@@ -1648,6 +1648,18 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   digest's open-questions line) — the operator's ruling of 2026-10-23: a prose answer never
   applies, but what the run reads names the one-click action that would. Deliberately not a
   verdict: APPLIED/NOT APPLIED judge an answer that exists and a pending patch is neither.
+  **That control is rendered wherever the question is**, from one factory
+  (`static/components/configproposal.js`): the Decisions page's two card shapes, and the pinned
+  blocking-question panel (`components/answerform.js` `questionPanel` — the conversation above
+  the composer, the run page). Which takes a LIVE question that describes itself: the smaller
+  copy `interact.handle_ask` publishes into `status.json` now carries
+  `config_bridge.live_fields` (the patch, the resolved target, the home), because everything
+  rendered while a run BLOCKS is built from that copy — the panels through `web/streams`, and
+  this read model's own live row, built from `active.question` with the durable pending record
+  skipped by qid. Before F807/R3060 the patch rode only the durable record, so while the run
+  waited NO surface could offer the apply — the operator read a blocking question in the
+  conversation the run was waiting in, answered it there, and had to go to another page to take
+  the change it proposed.
   Answering still never applies a patch (R2189);
   R2778 is only about the asking run being TOLD which happened, after one read an affirmative
   prose answer as approval and planned 600 turns against a live 400-turn ceiling. A row for a

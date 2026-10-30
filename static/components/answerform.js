@@ -7,6 +7,7 @@
 // so a host can manage focus order, `setSettled` so a bus event can close the form.
 
 import { api } from "/static/api.js";
+import { configProposal } from "/static/components/configproposal.js";
 import { forgetField } from "/static/formpersist.js";
 import { markAnswered } from "/static/questions-store.js";
 import { md } from "/static/md.js";
@@ -176,8 +177,17 @@ export function answerForm(q, {
 
 /** The blocking-question panel (run view + conversation — the same decision-record shape):
  * the ❓ prompt, the util-approval tag when the record is one, the timeout/Decisions line
- * when it expires, and the shared answer form. Renders into `box` (cleared first); a null
- * question just clears it.
+ * when it expires, the CONFIG PROPOSAL with its apply control when the record carries one,
+ * and the shared answer form. Renders into `box` (cleared first); a null question just
+ * clears it.
+ *
+ * F807/R3060: a blocking question carrying a `config_patch` used to render here as prose with
+ * no proposal and no control, because the live question published into status.json carried no
+ * patch (`engine/interact.py` now publishes `config_bridge.live_fields`). The operator — who
+ * is READING the conversation the run is waiting in — could answer here and apply only on the
+ * Decisions page, and nothing on this card said so. The apply control sits ABOVE the form
+ * because answering is not applying (R2189, the operator's ruling of 2026-10-05): the patch
+ * has to be taken before the answer resumes the run and the engine clears this card.
  */
 export function questionPanel(box, q, { onAnswered } = {}) {
   box.replaceChildren();
@@ -189,6 +199,21 @@ export function questionPanel(box, q, { onAnswered } = {}) {
     toastText: (i) => (i ? "sent — the model will reply and re-ask" : "answer sent"),
     onSuccess: () => { box.replaceChildren(); onAnswered?.(); },
   });
+  // The config bridge, from the ONE factory the Decisions page mounts (components/
+  // configproposal.js): the proposal body, the surface routing and the honesty gate that
+  // verifies every key landed. `host` is the panel's own slot, so the applied receipt
+  // replaces the proposal here rather than landing beside it.
+  const configSlot = el("div", {});
+  const configBar = configProposal(q, {
+    host: configSlot,
+    clearWarn: () => configSlot.closest(".panel")?.classList.remove("warn"),
+    onApplied: () => {},
+  });
+  if (configBar) {
+    configSlot.append(configBar, el("div", { class: "small faint mt" },
+      "answering never applies it — take the change here first; afterwards the proposal "
+      + "waits on the Decisions page"));
+  }
   // Label on its own line, body as a BLOCK: a question is prose the user has to read before
   // deciding; a run that lays out a table of counts or a numbered list before asking gets it
   // rendered rather than shown as literal pipes. The label cannot share a line with a block.
@@ -199,6 +224,8 @@ export function questionPanel(box, q, { onAnswered } = {}) {
     md(q.question || "", "md prose"),
     q.expires ? el("div", { class: "faint small" },
       "the run continues without you ", when(q.expires, { mode: "rel" }),
+      configBar ? " — the proposed change stays unapplied unless you take it" : "",
       " — also answerable on the Decisions page") : null,
+    configSlot,
     form.node));
 }

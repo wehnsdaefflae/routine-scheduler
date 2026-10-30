@@ -30,6 +30,31 @@ def resolve(ctx, cpatch: dict | None) -> tuple[str, str]:
                     or patch_nested(cpatch) or trial_value(ctx.server, cpatch))
 
 
+def live_fields(ctx, cpatch: dict | None, target: str = "") -> dict:
+    """What a LIVE blocking question must carry so the surface the operator is READING can
+    offer the patch's one apply control — or `{}` when the ask carries no patch.
+
+    F807/R3060: the durable record holds the patch (`inbox.file_question`), but everything
+    rendered while the run WAITS is built from the smaller copy `interact.handle_ask` publishes
+    into status.json: the conversation's pinned panel and the run page's panel
+    (`static/components/answerform.js` `questionPanel`, fed by the state stream), and the
+    Decisions page's own row for a live blocking question — `web/decisions_read` builds that
+    from `active.question` and skips the durable pending file by qid. A patch missing here
+    therefore reached NO surface at all while the run blocked: the operator read a blocking
+    question where the run was waiting for him and had no way to apply what it proposed.
+
+    The fields are the ones `static/components/configproposal.js` routes on: the PATCH body,
+    the resolved target (absent = the asker itself, D123/F458) and the home that decides which
+    endpoint applies it. Absent for an ordinary ask, so no reader learns to expect them and no
+    card grows a control over a proposal that is not there.
+    """
+    if not cpatch:
+        return {}
+    return {"config_patch": cpatch, "routine": ctx.routine.slug,
+            **({"config_target": target} if target else {}),
+            **({"conversation": True} if runkind.lands_in_conversation(ctx) else {})}
+
+
 #: What a model trial looks like, said in the refusal so the next filing gets it right.
 TRIAL_SHAPE = ('{"trial": {"id": "t-<yyyymmdd>-<model>", "models": {"main": "<catalog model '
                'name>"}, "efforts": {"main": "<low|medium|high|xhigh|max>"} (optional), '
