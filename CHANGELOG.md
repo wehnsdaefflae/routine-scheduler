@@ -15,6 +15,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.479.0] — 2026-10-30
+
+### A blocking question carrying a config patch is answerable where it was asked (F807)
+- The operator reported he could only answer such a question on the Decisions page, not in the
+  conversation he was in. **Established: by OMISSION, and worse than reported.** `configProposal`
+  is imported by exactly one module, and `interact.py` published the live `status.json` question
+  WITHOUT the patch — while everything shown during a block is built from that copy. Meanwhile
+  `web/decisions_read.py` builds a live blocking row from `active.question` and skips the durable
+  pending record by qid, so while the run waited **no surface at all** could offer *approve &
+  apply*.
+- **The full apply control, not a link**: new `config_bridge.live_fields` publishes
+  patch/target/home into the live question (one line in `interact.py`, which was at 346/350), and
+  `answerform.js`'s question panel mounts the factory above the form with *"answering never
+  applies it — take the change here first"*. The same line restores the Decisions page's live-row
+  button with no edit to `decisions_read.py` (350 lines, zero slack).
+- **Left open deliberately and stated:** a blocking question with a patch can still TIME OUT on
+  its stated default, and the observation the model then reads names neither the patch nor that it
+  stayed unapplied. That is a separate one-line `obs_admin` fix, not scope creep here.
+
+### A finish rejection says ABSENT when the field never arrived (F805), and the outcome check agrees with the schema (F806)
+- `birthday-admin:20261022-080004` burned ~10 turns: nine consecutive finishes carrying
+  `accounting: null` were each told *"your accounting is incomplete: no entry for d1 … g1"*, a
+  verdict about CONTENT for a field that arrived absent. New `accounting.arrived()` and an
+  exclusive `absent` category through `finishgate._unanswered` (read from the RAW action) and both
+  console renderers: such a finish now reads *"no `accounting` field arrived with this finish — it
+  was ABSENT, so this is not a verdict on what your entries say"*.
+- **F805's second defect does not exist, and no fix was invented for it:** the schema-retry path
+  CANNOT drop a list field — every attempt is a fresh `endpoint.complete()`, `normalize_action`
+  only drops already-empty values, and the real dropper (a provider's pseudo-XML swallow) is
+  already repaired in main via `engine/paramsalvage.py`.
+- F806: the finish schema prescribes two labelled parts while the outcome-first check demanded the
+  numbers above them, so two routines paid a turn a week apart. Fixed on the CHECK side only —
+  `outcome_words.done_when_line` now says *"opens its `**Work:**` part with the outcome"* and the
+  judge prompt says where the outcome belongs. The schema and the `outcome-first` rule are
+  untouched. **12 live routines still carry the old clause verbatim**; the judge-prompt change is
+  what protects them, and migrating those recipes is routine-improver's call.
+
+### A conversation can clear its own access denials (F783)
+- A Decisions-page deny_forever writes a `{entity: false}` tombstone into the conversation's own
+  `routine.yaml`, and the only editor that removed one was the ROUTINE page's — which no
+  conversation has. **Built the editor, not the documented exclusion:** no code, comment, doc or
+  test anywhere states a reason conversations are excluded, while `grants` is already classified
+  LIVE and a conversation's false rows are already enforced. An omission, not a decision.
+- Parallel router `web/api_conversation_grants.py` plus a shared `declined-access.js` card, with
+  the routine page refactored onto the same renderer. One deliberate divergence: the conversation
+  panel clears ONE named row rather than replacing the `grants` map, because that panel writes on
+  click while the routine page is a draft the operator accepts — a replace would drop an
+  allow-forever row arriving in between.
+
+### A run whose prompt floor already exceeds its window is recorded at boot (D223 = F539's second half)
+- `engine/boot.py` had no window/floor comparison, so a run that could complete no turn from turn
+  0 still started and died mid-run — `llmsectest-weekday:20260922-060001`, dead at turn 106 having
+  spent $1.03. New `engine/promptfloor.py` files `prompt_floor_over_window` with `floor_tokens`,
+  `window_tokens` and the model as FIELDS.
+- It RECORDS and never refuses, which is the operator's decision and not timidity: the window read
+  is the CATALOG figure that an F278 run-local correction can make smaller than the real clamp, so
+  a veto would rest on an approximation while turning a degraded run into no run.
+
+### A holder that DECLINED what a change needs is named in the impact (D222)
+- F609 rightly stopped a recorded decline reading as a GAP, but `library_impact._unmet` collects
+  exactly the gap severities — so an authoring approval's break list stopped naming a routine that
+  genuinely will not get the credential a util newly declares. `_unmet` now keeps the `denied`
+  state too, and `impact_lines` words it *"declined, so this util will not work there"*, never
+  `BREAKS`. The Library save's 409 says "affects" and renders those lines, so one wording serves
+  both surfaces. `library_watch` is unaffected: it collects `blocks` rows only.
+
 ## [0.478.0] — 2026-10-30
 
 ### The browser suite no longer OOM-kills the daemon: its own container, and runs rank above the daemon
