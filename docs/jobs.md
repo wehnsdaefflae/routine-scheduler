@@ -115,7 +115,8 @@ used to be a routine says so on its row (`formerly the routine <slug>`).
 
 ## On the run page
 
-The run's rail carries a **jobs** section: which of the routine's jobs THIS run has to do with —
+The run's RIGHT rail carries a **jobs** section (the page's left rail is the routine list, F619):
+which of the routine's jobs THIS run has to do with —
 the one it is working on right now, what is still due, and what it checkpointed, with the
 outcome. The run page is where a run is actually watched, and the routine page's panel shows the
 STORE rather than this run (operator order: *"routines with tasks … need to display the task

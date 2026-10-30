@@ -224,13 +224,16 @@ def test_the_run_view_rail_is_a_resizable_column_at_every_wide_width(ui, ui_page
 
     ui_page.locator(".run-view > .sb-grip.runrail-r").click()  # hide → the transcript widens
     assert _root_var(ui_page, "--runrail-r-w") == "0px"
-    expect(ui_page.locator(".run-view > .run-rail")).to_be_hidden()
+    # `:not(.left)` throughout: the run page has TWO rails since F619 (the routine list rides a
+    # left one, components/routine-rail.js) and this test is the RIGHT rail's contract — the left
+    # one's own grip and folding are pinned in tests/ui/test_run_routine_rail.py.
+    expect(ui_page.locator(".run-view > .run-rail:not(.left)")).to_be_hidden()
     assert main_width() > before
     ui_page.locator(".run-view > .sb-grip.runrail-r").click()  # and comes back
-    expect(ui_page.locator(".run-view > .run-rail")).to_be_visible()
+    expect(ui_page.locator(".run-view > .run-rail:not(.left)")).to_be_visible()
 
     ui_page.set_viewport_size({"width": 900, "height": 900})   # still a column mid-width
     expect(ui_page.locator(".run-view > .sb-grip.runrail-r")).to_be_visible()
     ui_page.set_viewport_size({"width": 700, "height": 900})   # stacked on a phone, no grip
     expect(ui_page.locator(".run-view > .sb-grip.runrail-r")).to_be_hidden()
-    expect(ui_page.locator(".run-view > .run-rail")).to_be_visible()
+    expect(ui_page.locator(".run-view > .run-rail:not(.left)")).to_be_visible()

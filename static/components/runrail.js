@@ -13,9 +13,15 @@
 // state is remembered per browser, so a reader who wants the goal first keeps it open and
 // everything else shut. Two further sections are added LAZILY by their own owners, only for a
 // run that has one: `oversight` (components/ladderstrip.js) and `jobs` (components/runjob.js).
+//
+// The run page has a SECOND rail since F619 (operator, 2026-10-04): the routine list on the
+// LEFT, every routine expandable to its previous runs — the counterpart of the conversation list
+// beside a chat. It is `components/routine-rail.js`, mounted from here with everything else the
+// run page's rails are, and it drops itself for a run whose slug is no routine's.
 
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createRail } from "/static/components/rail.js";
+import { createRoutineRail } from "/static/components/routine-rail.js";
 import { createSubRunTree } from "/static/components/subruntree.js";
 import { wireTurnLinks } from "/static/components/turnlink.js";
 import { el } from "/static/util.js";
@@ -31,6 +37,11 @@ import { wireRunRail } from "/static/resizable.js";
  * pollers it must refresh and stop.
  */
 export function createRunRail(view, { runId, isLive }) {
+  // F619, the operator's order of 2026-10-04: the routine list beside the run, the counterpart
+  // of the conversation list beside a chat. It is the LEFT rail and prepends its own host, so it
+  // is mounted here — "which rails the run page has" is this module's responsibility, and
+  // views/run.js (583 lines) is frozen at its ratchet ceiling.
+  const routineRail = createRoutineRail(view, { runId });
   const railHost = el("details", { class: "run-rail", open: true },
     el("summary", { class: "small" }, "phases & artifacts"));
   view.append(railHost);
@@ -48,5 +59,6 @@ export function createRunRail(view, { runId, isLive }) {
   const subRunTree = createSubRunTree(treeBody, {
     treeUrl: `/api/runs/${runId}/tree`, isLive, turnHref });
   const fileActivity = createFileActivity(filesBody, { url: `/api/runs/${runId}/files` });
-  return { rail, artBody, filesBody, graphBody, goalBody, subRunTree, fileActivity, turnHref };
+  return { rail, artBody, filesBody, graphBody, goalBody, subRunTree, fileActivity, turnHref,
+           routineRail };
 }

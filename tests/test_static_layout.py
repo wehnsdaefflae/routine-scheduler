@@ -8,6 +8,11 @@ below that (the view escapes the reading column), stacked only on a narrow scree
 The old three-pane grid (conv-layout + drag handles + fold rails) must stay gone,
 and views.css must style BOTH rail positions the views mount.
 
+Since F619 the traffic runs the other way too: the RUN view carries the conversation
+list's counterpart, a routine list in a left rail (components/routine-rail.js), and
+its left column is styled in `rail.css` because views.css is frozen at its ratchet
+ceiling and scopes the rules it has to `.conv-view`.
+
 The WIDTHS moved with the 0.277.0 console rework and are read from the stylesheet
 rather than pinned here: the navigation rail now takes 212px of the viewport, so the
 free margin a fixed rail parks in starts much later, and pinning the old numbers
@@ -59,6 +64,25 @@ def test_css_styles_both_rail_positions():
         "the left rail variant must be styled (fixed left margin)"
     for gone in (".conv-layout", ".pane-handle", ".pane-fold", ".pane-rail"):
         assert not _selects(rules, gone), f"stale CSS for the removed grid: {gone}"
+
+
+def test_the_run_view_has_a_left_column_for_its_routine_rail():
+    """F619 (operator, 2026-10-04): the run page carries the conversation list's counterpart —
+    the routine list in a LEFT rail. views.css scopes its left-column rules to `.conv-view` and
+    is frozen at its ratchet ceiling, so the run view's own column is defined in `rail.css`
+    (loaded after it). Without those rules a third grid child is auto-placed into a second ROW,
+    which is the layout falling over — and that is invisible to a test that only reads the JS.
+    """
+    src = (STATIC / "components" / "routine-rail.js").read_text(encoding="utf-8")
+    assert 'class: "run-rail left"' in src, "the routine list must ride a left run-rail"
+    rules = _rules((STATIC / "rail.css").read_text(encoding="utf-8"))
+    assert _selects(rules, ".run-view > .run-rail.left"), \
+        "the run view's left rail must be styled where it is mounted"
+    # the column itself, and the grip that resizes it — both conditional on the rail being there
+    assert ".run-view:has(> .run-rail.left)" in rules, \
+        "the run view needs a left grid column, only when the rail is mounted"
+    assert _selects(rules, ".run-view > .sb-grip.runrail-l"), \
+        "the left rail's grip must have a place in the run view's grid"
 
 
 def test_rails_persist_at_mid_widths():
