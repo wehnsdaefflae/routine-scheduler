@@ -166,7 +166,10 @@ def _prompt(claims: list[dict], summary: str, tail: str, actions: str = "") -> s
         "and teaches the agent that conceding is cheaper than being right; a wrong `true` "
         "costs nothing but a stale mark a human can correct. Be generous.\n\n"
         f"OUTCOMES THE AGENT CLAIMS ARE MET:\n{lines}\n\n"
-        f"ITS FINISH SUMMARY:\n{summary.strip()[:4000]}\n\n"
+        "ITS FINISH SUMMARY — a two-part summary by contract, `**Process:**` (how the run "
+        "went) then `**Work:**` (the task: the outcome with its numbers, its conditions and "
+        "consequences). A claim about what the summary SAYS is met wherever the summary says "
+        f"it, and the outcome's place is the `**Work:**` part:\n{summary.strip()[:4000]}\n\n"
         + (f"WHAT IT DID — one line per turn, its own action record:\n{actions}\n\n"
            if actions else "")
         + f"ITS TRANSCRIPT (tail):\n{tail}")

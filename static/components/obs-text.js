@@ -215,7 +215,9 @@ export function observationText(o) {
     text = o.pending_user_input
         ? "finish DEFERRED — a user message arrived mid-finish; it is delivered instead"
       : o.accounting
-        ? `finish DEFERRED — the accounting is incomplete: ${accountingGaps(o.accounting)}`
+        ? `finish DEFERRED — the accounting `
+          + `${(o.accounting.absent || []).length ? "was absent" : "is incomplete"}: `
+          + accountingGaps(o.accounting)
       : o.assist
         ? "finish DEFERRED — a general rule this routine practises governs the ending itself"
       : o.unbacked_claims

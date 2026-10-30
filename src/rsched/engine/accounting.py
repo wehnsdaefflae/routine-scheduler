@@ -58,6 +58,25 @@ def parse(entries: object) -> dict[str, tuple[str, str]]:
     return out
 
 
+def arrived(entries: object) -> bool:
+    """Whether an `accounting` FIELD reached the engine at all — the distinction that cost
+    `birthday-admin:20261022-080004` ten turns (F805).
+
+    `parse` cannot answer it: a missing key, a `null`, an empty list and a list of blanks all
+    flatten to `{}`, so every owed id reads as `missing` and the refusal speaks about CONTENT a
+    run can still see in its own reply. That run re-sent the same nine entries nine times
+    ("re-submitting identically") and escaped only by rebuilding the list one entry at a time.
+    A field that arrived and says nothing is a content question; a field that never arrived is
+    not, and the two refusals have to differ.
+
+    The transport is the known author of the absence (`engine/paramsalvage.py`: a parameter
+    whose closing tag the provider mis-reads swallows the ones written after it, measured on
+    that same run and repaired where the three conditions hold) — which is why the refusal
+    names the shape rather than the model's diligence.
+    """
+    return any(str(e).strip() for e in entries) if isinstance(entries, list) else False
+
+
 def is_placeholder(evidence: str) -> bool:
     """True when an evidence clause answers for NOTHING — the content floor, two tests deep.
 
@@ -83,8 +102,11 @@ def owed(done: list[dict], outcomes: list[dict]) -> list[str]:
 
 
 def problems(verdicts: dict[str, tuple[str, str]], done: list[dict],
-             outcomes: list[dict], *, final: bool = False) -> dict[str, list[str]]:
-    """What is wrong with an accounting: `missing` ids, `bare` entries whose verdict needs a note
+             outcomes: list[dict], *, final: bool = False,
+             arrived: bool = True) -> dict[str, list[str]]:
+    """What is wrong with an accounting: `absent` ids no field was received for at all
+    (`arrived=False`, F805 — exclusive with `missing`, because an entry nobody received is not
+    an entry that is wrong), `missing` ids, `bare` entries whose verdict needs a note
     and has none, `placeholder` entries whose note answers for nothing (`is_placeholder` —
     named as whole ENTRIES, not ids, because the refusal has to show the model what it wrote),
     and `refused` entries that claim what their line cannot be (a `met` on an outcome only the
@@ -98,7 +120,9 @@ def problems(verdicts: dict[str, tuple[str, str]], done: list[dict],
     """
     judges = {o["id"]: o["judge"] for o in outcomes}
     ids = set(owed(done, outcomes))
-    missing = [i for i in owed(done, outcomes) if i not in verdicts]
+    unseen = [i for i in owed(done, outcomes) if i not in verdicts]
+    absent = [] if arrived else unseen
+    missing = unseen if arrived else []
     bare = [i for i, (_v, note) in verdicts.items() if i in ids and not note]
     placeholder = [f"{i} {v}: {note}" for i, (v, note) in verdicts.items()
                    if i in ids and note and is_placeholder(note)]
@@ -117,7 +141,8 @@ def problems(verdicts: dict[str, tuple[str, str]], done: list[dict],
             refused.append(f"{i}: a FINAL reply meets every open goal — do the work, drop the "
                            "goal on the person's word (goal verb=drop), or reply with "
                            "final: false")
-    return {"missing": missing, "bare": bare, "placeholder": placeholder, "refused": refused}
+    return {"absent": absent, "missing": missing, "bare": bare, "placeholder": placeholder,
+            "refused": refused}
 
 
 def gaps(found: dict[str, list[str]]) -> str:
@@ -125,6 +150,8 @@ def gaps(found: dict[str, list[str]]) -> str:
     checkpoint's refusal (engine/jobops.py), which account for Done-when lines alike.
     """
     parts = []
+    if found.get("absent"):
+        parts.append(f"nothing was received for {', '.join(found['absent'])}")
     if found["missing"]:
         parts.append(f"no entry for {', '.join(found['missing'])}")
     if found["bare"]:
@@ -140,14 +167,36 @@ def gaps(found: dict[str, list[str]]) -> str:
     return "; ".join(parts)
 
 
+#: What every accounting deferral ends with: the entries the finish owes, in their forms. Both
+#: heads of `deferral` share it — the absent one and the incomplete one differ in the DIAGNOSIS,
+#: never in what the run has to carry.
+_OWED_TAIL = ("Carry one entry per line you owe — each line of your recipe's Done when, each "
+              "open goal (`b<n>`) and each open outcome of the finish line: `d<n> met: "
+              "<evidence>`, `d<n> unmet: <what remains>`, `d<n> not due: <how established>`, "
+              "`b<n> met: <evidence>`, `g<n> distance: <what remains>` — then finish again.")
+
+
 def deferral(found: dict[str, list[str]]) -> str:
-    """The one observation a finish is set aside with when its accounting is incomplete."""
+    """The one observation a finish is set aside with when its accounting does not answer.
+
+    Two heads, because the two cases need opposite moves (F805). A field that ARRIVED and falls
+    short is a verdict about its CONTENT, and the run fixes the entries. A field that never
+    arrived is not: `birthday-admin:20261022-080004` read nine "incomplete" verdicts about nine
+    entries it could see in its own reply, re-sent them identically, and burned ten turns
+    bisecting them. So the absent head says the field was absent, says what eats one (the
+    transport, `engine/paramsalvage.py`) and names the move that works — a shorter summary —
+    instead of leaving the run to invent one.
+    """
+    if found.get("absent"):
+        return ("OBSERVATION (finish deferred): no `accounting` field arrived with this "
+                "finish — it was ABSENT, so this is not a verdict on what your entries say: "
+                + gaps(found) + ". If you did write them, they were lost on the way "
+                "here (a parameter whose closing tag is mis-read swallows the fields written "
+                "after it), so re-sending the same payload will fail the same way: finish "
+                "again with a SHORTER summary and `accounting` as a plain list of strings. "
+                + _OWED_TAIL)
     return ("OBSERVATION (finish deferred): your `accounting` is incomplete: "
-            + gaps(found) + ". Carry one entry per line you owe — each line of your "
-            "recipe's Done when, each open goal (`b<n>`) and each open outcome of the finish "
-            "line: `d<n> met: <evidence>`, `d<n> unmet: <what remains>`, `d<n> not due: <how "
-            "established>`, `b<n> met: <evidence>`, `g<n> distance: <what remains>` — then "
-            "finish again.")
+            + gaps(found) + ". " + _OWED_TAIL)
 
 
 def unmet_residuals(accounting: object) -> list[str]:

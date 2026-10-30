@@ -132,7 +132,10 @@ def test_a_checkpoint_accounts_for_the_job_recipes_done_when(make_routine, scrip
     opened = next(o for o in obs if o.get("verb") == "open")
     assert "ITS RECIPE" in opened["message"] and "accounting: one entry per Done-when line (d1)" \
         in opened["message"]
-    assert any("no entry for d1" in o.get("reason", "") for o in obs if o.get("rejected"))
+    # that checkpoint carried no `accounting` field AT ALL, so the refusal names the absence
+    # rather than judging entries nobody received (F805)
+    assert any("nothing was received for d1" in o.get("reason", "")
+               for o in obs if o.get("rejected"))
     assert jobs.find(jobs.load(d), "alpha")["last"]["accounting"] == [
         "d1 met: republished rev 4"]
 

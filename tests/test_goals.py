@@ -151,7 +151,9 @@ def test_a_final_reply_meets_every_goal_the_first_message_asked_for(make_routine
     status, run_dir = run_routine(d, server, run_ts=TS)
     assert status == "ok"
     deferred = [p for p in _observations(run_dir, "finish") if p.get("rejected")]
-    assert [p["accounting"]["missing"] for p in deferred] == [["b2"]]
+    # that reply carried no `accounting` field at all, so b2 is ABSENT, not missing (F805)
+    assert [p["accounting"]["absent"] for p in deferred] == [["b2"]]
+    assert [p["accounting"]["missing"] for p in deferred] == [[]]
     fin = next(e for e in transcript_events(run_dir) if e["type"] == "finish")
     assert fin["payload"]["final"] is True
     doc = _status(run_dir)
@@ -281,6 +283,7 @@ def test_a_routine_run_owes_what_the_operator_asked_mid_run_not_its_own_recipe(
     recipe, added = _observations(run_dir, "goal")
     assert recipe["rejected"] and added["ledger"][0]["quote"] == "archive last week's digest"
     deferred = [p for p in _observations(run_dir, "finish") if p.get("rejected")]
-    assert [p["accounting"]["missing"] for p in deferred] == [["b1"]]
+    # the bare `finish()` carried no `accounting` field, so b1 is ABSENT, not missing (F805)
+    assert [p["accounting"]["absent"] for p in deferred] == [["b1"]]
     upd = next(e for e in transcript_events(run_dir) if e["type"] == "stopping_update")
     assert upd["payload"]["goals"][0]["status"] == "met"

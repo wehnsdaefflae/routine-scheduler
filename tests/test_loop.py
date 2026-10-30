@@ -810,8 +810,8 @@ def test_finish_gate_rejects_an_incomplete_accounting(make_routine, scripted, mo
     assert status == "ok"
     rejected = [e["payload"]["accounting"] for e in events if e["type"] == "observation"
                 and e["payload"].get("accounting")]
-    assert rejected == [{"missing": ["d1", "d2"], "bare": [], "placeholder": [], "refused": []},
-                        {"missing": [], "bare": ["d2"], "placeholder": [], "refused": []}]
+    sound = {"absent": [], "missing": [], "bare": [], "placeholder": [], "refused": []}
+    assert rejected == [{**sound, "absent": ["d1", "d2"]}, {**sound, "bare": ["d2"]}]
     # the accounting lands in the run's status, where the next run's digest reads it
     status_doc = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
     assert status_doc["accounting"][1].startswith("d2 unmet: Reuters returns 403")
@@ -841,7 +841,7 @@ def test_a_briefed_run_answers_for_its_brief_not_the_recipe(make_routine, script
     assert status == "ok"
     rejected = [e["payload"]["accounting"] for e in events if e["type"] == "observation"
                 and e["payload"].get("accounting")]
-    assert rejected == [{"missing": ["b1"], "bare": [], "placeholder": [], "refused": []}]
+    assert [r["missing"] for r in rejected] == [["b1"]] and not rejected[0]["absent"]
     header = next(e for e in events if e["type"] == "header")
     assert header["brief"] == "re-check the Q3 figures"
     assert json.loads((run_dir / "status.json").read_text())["brief"] == \

@@ -240,7 +240,7 @@ def test_a_complete_accounting_has_no_problems():
     verdicts = accounting.parse(["d1 met: the ledger matches", "d2 unmet: waits on Kai",
                                  "g1 met: portal receipt", "g2 distance: the review"])
     assert accounting.problems(verdicts, DONE, OUTCOMES) == \
-        {"missing": [], "bare": [], "placeholder": [], "refused": []}
+        {"absent": [], "missing": [], "bare": [], "placeholder": [], "refused": []}
 
 
 def test_missing_and_bare_entries_are_named():
@@ -385,7 +385,7 @@ def test_a_brief_stands_in_for_the_done_when_list(tmp_path):
     assert found["refused"] == ["b1: a Done-when line or a goal is met, unmet or not due"]
     assert accounting.problems(accounting.parse(["b1 met: the figures match"]),
                                goals.owed(ledger), []) == {
-        "missing": [], "bare": [], "placeholder": [], "refused": []}
+        "absent": [], "missing": [], "bare": [], "placeholder": [], "refused": []}
 
 
 def test_a_brief_round_trips_through_the_run_dir(tmp_path):

@@ -13,11 +13,18 @@
 // this file renders as NOTHING — a finish deferred for a reason the operator cannot see — so a
 // new category in the engine is a change here too.
 
-// A finish deferred for its ACCOUNTING (engine/accounting.problems): the ids it left out, the
-// entries with a verdict and no note, the entries whose note is a PLACEHOLDER (named in full, as
-// the engine names them), and the verdicts it claimed that its line cannot carry.
+// A finish deferred for its ACCOUNTING (engine/accounting.problems): the ids no field arrived
+// for at all, the ids it left out, the entries with a verdict and no note, the entries whose note
+// is a PLACEHOLDER (named in full, as the engine names them), and the verdicts it claimed that
+// its line cannot carry.
 export function accountingGaps(found) {
   const parts = [];
+  // ABSENT is not MISSING (F805): no `accounting` field arrived at all, so the ids are what the
+  // finish owed rather than what it got wrong — one run read nine "incomplete" verdicts about
+  // entries it could see in its own reply and spent ten turns bisecting them.
+  if ((found.absent || []).length) {
+    parts.push(`no accounting field arrived — nothing received for ${found.absent.join(", ")}`);
+  }
   if ((found.missing || []).length) parts.push(`no verdict for ${found.missing.join(", ")}`);
   if ((found.bare || []).length) parts.push(`no note behind ${found.bare.join(", ")}`);
   if ((found.placeholder || []).length) {

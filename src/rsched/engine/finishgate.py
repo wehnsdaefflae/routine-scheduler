@@ -115,7 +115,8 @@ def _undeclared(loop, ctx, action: dict) -> tuple[str, dict] | None:
 
 
 def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
-                verdicts: dict, *, final: bool) -> tuple[str, dict] | None:
+                verdicts: dict, *, final: bool,
+                arrived: bool = True) -> tuple[str, dict] | None:
     """`(message, keys)` for a finish that still owes work, or None.
 
     GATED PROCESSING first (engine/jobops.py): a routine that keeps jobs may not end while a
@@ -130,6 +131,11 @@ def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
     `d1 met: test`, on which a run finished `ok` (F748) — and names the entry. The main finish
     only: a follow-up after the run ended answers the person, not the recipe.
 
+    PRESENCE is read from the raw field, not from the parsed verdicts (`arrived`, F805): a
+    field that never arrived parses to exactly what a field full of unparseable entries parses
+    to, and one run read nine "incomplete" verdicts about entries it could see in its own
+    reply before bisecting them one at a time. Absence gets its own head.
+
     A FINAL conversation reply may not leave a goal unmet: `final` is the claim that what the
     person asked for is delivered, so `accounting.problems` refuses an unmet goal there.
 
@@ -138,7 +144,7 @@ def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
     if (jobs_owed := jobops.finish_owed(loop)) is not None:
         return jobs_owed, {"jobs_owed": True}
     if owed is not None and not loop._finish_reserved:
-        found = accounting.problems(verdicts, *owed, final=final)
+        found = accounting.problems(verdicts, *owed, final=final, arrived=arrived)
         if any(found.values()):
             return accounting.deferral(found), {"accounting": found}
     return None
@@ -198,7 +204,8 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     owed = _owed(loop, ctx, action)
     verdicts = accounting.parse(action.get("accounting"))
     if (unanswered := (_undeclared(loop, ctx, action) if conversation else None)
-            or _unanswered(loop, owed, verdicts, final=conversation)) is not None:
+            or _unanswered(loop, owed, verdicts, final=conversation,
+                           arrived=accounting.arrived(action.get("accounting")))) is not None:
         message, why = unanswered
         _defer(loop, ctx, message, **why)
         return None   # deferred — the loop goes round again
