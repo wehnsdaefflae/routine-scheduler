@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..config import RoutineConfig, ServerConfig
 from ..endpoints import EndpointRegistry
-from ..endpoints.usage import fold_usage
+from ..endpoints.usage import dollars_spent, fold_usage
 from ..ids import now_iso
 from ..ids import run_id as make_run_id
 from ..paths import atomic_write_json, read_json, resolve_rel
@@ -443,14 +443,14 @@ class RunContext:
         """A snapshot of live consumption per budgeted resource, in each limit's own unit —
         the input to every ledger check. Consumption lives HERE (single writer), never in the
         ledger. `turns` is window-scoped (a resume gets a fresh window via budget_base_turn);
-        `total_turns` is the cumulative whole-conversation count.
+        `total_turns` is cumulative; `cost` is NOTIONAL $ (endpoints/usage.dollars_spent, F758).
         """
         return {
             "turns": self.turn - self.budget_base_turn,
             "total_turns": self.turn,
             "wall_clock": self.elapsed_s() / 60.0,
             "tokens": self.usage["in"] + self.usage["out"],
-            "cost": self.usage.get("cost", 0.0),
+            "cost": dollars_spent(self.usage),
         }
 
     def budget_spent(self) -> dict | None:

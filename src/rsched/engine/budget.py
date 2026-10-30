@@ -21,7 +21,13 @@ Resources (each value in its limit's own unit; limit -1 = unlimited, which lifts
                                                    engine/turnwindow)
   wall_clock   MINUTES elapsed                     (limit = max_wall_clock_min)
   tokens       in+out tokens                       (limit = max_total_tokens)
-  cost         real provider $ spend               (limit = max_cost)
+  cost         NOTIONAL $ spend (F758)             (limit = max_cost)
+
+`cost` is metered off `endpoints/usage.dollars_spent`, NOT off a provider's reported figure
+alone: exactly one adapter writes `usage["cost"]` (OpenRouter's credit accounting), so a ceiling
+that read it bounded nothing on any `anthropic` route — and 17 of 30 enabled routines had just
+inherited one. `notional` is stamped on every completion at the pricing seam whatever transport
+carried it, and it IS the billed figure wherever one is reported.
 
 The warning/violation wording is kept byte-identical to the pre-refactor strings (finish
 summaries and the loop's BUDGET tail quote them); `_fmt_exhausted` / `_fmt_left` are the one

@@ -583,6 +583,30 @@ borrowed. Rows from before 2026-10-17 carry `notional_cost: null` (what those to
 prices of the day was never recorded), and their `volume` was backfilled from what each run
 itself recorded (`migrate_usage_volume.py`), `null` where nothing did.
 
+### …and what a cost BUDGET meters (`budgets.max_cost`)
+
+The same figure, live: `max_cost` is checked against `endpoints/usage.dollars_spent(ctx.usage)` —
+`notional` first, a reported `cost` only as the fallback for a reading that never passed the
+pricing seam (F758). It read `usage["cost"]` alone until then, and that key is written by exactly
+ONE adapter (`endpoints/openai_compat.py`, OpenRouter's credit accounting): no `anthropic`
+endpoint reports a cost, so a ceiling set on a routine whose model resolved there bounded nothing
+at all — documented as "a whole-dollar ceiling on real provider spend" while 17 of 30 enabled
+routines inherited such an endpoint through `system_model`. Three consequences worth stating
+plainly:
+
+- On a **metered** route the cap is real spend: `prices.price_usage` takes the provider's own
+  reported figure as the notional one, so the two numbers are the same number.
+- On a **subscription** route it is LIST-PRICE dollars — what those tokens would have cost bought.
+  That is not an invoice, and a run can trip a dollar ceiling having been billed nothing. It is
+  the only dollar figure that exists on such a route, and the alternative was a ceiling that
+  bounded nothing.
+- An **unpriced** model (nothing published for it, or a token class whose rate is not published)
+  still gets no figure, so a cap on it meters 0.0 and never trips. The cache's `unpriced` list is
+  where that shows; a ceiling cannot be enforced against a price nobody publishes.
+
+A child's slice of a cost budget is derived from the parent's remainder, so that allocation was
+wrong in the same way and is fixed by the same change.
+
 ## Prompt-cache health (Stats tab → the `prompt cache` card and the `cache` column)
 
 Every slice carries BOTH halves of the cache traffic — reads (`tokens_cached`, ~0.1x

@@ -645,7 +645,12 @@ and the capabilities digest's catalog listing):
   is NOT a ceiling on a run / max_total_turns — the RUN-SPANNING cap over every window, which
   defaults to 3x max_turns (`engine/turnwindow`) rather than unlimited, an explicit value
   winning, `-1` included / wall_clock_min /
-  total_tokens / max_cost (whole-$ ceiling) — the last four honor -1 = unlimited — / subruns /
+  total_tokens / max_cost (whole-$ ceiling on NOTIONAL spend — `endpoints/usage.dollars_spent`:
+  `usage["notional"]`, stamped on every completion at the pricing seam whatever transport carried
+  it, and the provider's own billed figure wherever one is reported. It read `usage["cost"]`
+  alone until F758, which exactly one adapter writes and no `anthropic` endpoint does, so the
+  ceiling bounded nothing on the route most routines inherit through `system_model`) — the last
+  four honor -1 = unlimited — / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, creation flow + routine page), `fs_read_roots` / `fs_write_roots`, retention —
   budgets/fs-roots/schedules are resources, never capabilities; `improve: false` opts the routine
   out of the routine-improver's passes (default: included); `triggers:` — event-driven fires

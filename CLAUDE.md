@@ -1025,7 +1025,14 @@ by a test, by the engine, or by a past incident.
   reported bill or its own published price for that exact id, a subscription route's list price
   from the public catalog — re-read daily; what no source publishes stays UNPRICED (no figure,
   named in `model-prices.json`'s `unpriced`). No static price table, no guessed rate: a fallback
-  is a frozen guess that looks like a measurement (operator, 2026-10-17).
+  is a frozen guess that looks like a measurement (operator, 2026-10-17). And a cost BUDGET
+  meters that same priced figure: `budgets.max_cost` is checked against
+  `endpoints/usage.dollars_spent` — `notional` first, a reported `cost` only as the fallback for a
+  reading that never passed the pricing seam. It read `usage["cost"]` alone until F758, which ONE
+  adapter writes and no `anthropic` endpoint does, so the documented "ceiling on real provider
+  spend" bounded nothing on the route 17 of 30 enabled routines inherit through `system_model`. On
+  a subscription route the cap is therefore LIST-PRICE dollars, not an invoice — the only dollar
+  figure that exists there — and an UNPRICED model still meters 0.0, so no ceiling binds it.
 - **A dead model CREDENTIAL is noticed before a run spends a turn.** `daemon/endpoint_watch.py`
   (R2195) is to endpoints what `daemon/oauth_refresh.py` is to connections: every
   `CHECK_EVERY_S` (10 min, never the 5 s tick, `_off_tick` like every other manager) it asks each

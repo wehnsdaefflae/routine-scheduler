@@ -2276,12 +2276,12 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
     assert "wall-clock budget exhausted" in ctx.budget_spent()["message"]
 
-    # a finite cost cap still trips once real $ spend reaches it
+    # a finite cost cap still trips once dollars reach it (F758: `cost` is the fallback leg of
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=-1, max_total_tokens=-1,
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=5)
     ctx._started_mono = _t.monotonic()             # reset elapsed so only cost can trip
     assert "cost budget exhausted" in ctx.budget_spent()["message"]
-    ctx.usage = {"in": 0, "out": 0, "cost": 4.5}   # under the cap but past 85%
+    ctx.usage = {"in": 0, "out": 0, "cost": 4.5}   # endpoints/usage.dollars_spent; past 85%
     assert ctx.budget_spent() is None
     assert "of budget left" in (ctx.budget_warning() or "")
 

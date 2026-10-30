@@ -18,7 +18,7 @@ export const BUDGET_FIELDS = [
   ["max_total_tokens", "tokens per run",
    "cumulative input+output tokens; -1 = unlimited (the default — turns bound the run)"],
   ["max_cost", "cost cap per run ($)",
-   "whole-dollar ceiling on real provider spend (reported by metered endpoints like OpenRouter); -1 = unlimited (the default)"],
+   "whole-dollar ceiling on NOTIONAL spend — what this run's tokens cost at the model's price, billed or not (a subscription route bills nothing per token); -1 = unlimited (the default)"],
   ["max_subruns", "sub-workflows per run",
    "how many parallel children a run may spawn in total"],
   ["max_subrun_depth", "sub-workflow depth",
