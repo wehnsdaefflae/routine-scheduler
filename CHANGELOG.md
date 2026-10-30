@@ -15,6 +15,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.477.0] — 2026-10-30
+
+### Hooks: the `run-end` point fires, and a rule's assists finally reach the live library (D152 step 8)
+- **`run-end` is live** — the first hook point whose carrier reaches the NEXT run rather than
+  this one. It fires in `engine/loopend.finish_run`, after `result.md` is written (the point's
+  own words) and before the autocommit, so a line written for the next run is committed with the
+  run that learned it; a rewind rewrites `result.md` without going through `finish_run`, so it
+  cannot re-fire. The dead-point list is now **one**: `restart`.
+- **The carrier is not a new store.** `state/notes.md` is already the channel every state digest
+  renders, so a hook writes one stamped line there through the same writer the `note` field uses
+  (`engine/notes.append_line`, factored out of `capture` so the two cannot drift apart).
+- New payload **`note`** — `remind`'s counterpart at a moment with no model left to remind — and
+  a new predicate `children-killed-at-end` (`engine/assist_runend.py`): the run ended while
+  children were still working, so they were terminated; their output is on disk in `sub/<n>/` and
+  nothing in the next prompt said so.
+- **The declarations were never reaching this instance.** `evidence-discipline` has declared
+  assists in `library-seed/` since 0.471.0 and the live library's copy declared none, because
+  `sync_seed_library_docs` is add-only — so the points steps 6 and 7 wired (`child-exit`,
+  `spawn`) were firing against zero candidates, a wired point indistinguishable from a dead one.
+  New one-shot boot migration `migrate_rule_assists.py` inserts the seed's block into the live
+  frontmatter and leaves every other byte alone (the live prose has been revised since seeding),
+  refusing a rule whose live copy already declares assists.
+
+### The run page has a routine rail (F619, the operator's ask of 2026-10-04)
+- *"i want a list of all routines next to a routine run page just like there's a list of all
+  conversations next to a conversation. the only difference is that the routines can be expanded
+  to the previous runs"* — built whole: the run's own routine is marked and arrives expanded to
+  its previous runs; any other routine expands on click and only then reads its runs.
+- A NEW component (`static/components/routine-rail.js`), because `run.js` and `conversations.js`
+  are both over the one-responsibility budget and shrink-only. Rendering it found a defect four
+  green tests could not: previous-run dates wrapped at the 218 px default width — fixed in CSS
+  and pinned by a fifth browser test. The rail does not poll: the list is as it was on arrival.
+
+### A cost ceiling binds on an anthropic route (F758)
+- `budgets.max_cost` metered `usage["cost"]`, which only `endpoints/openai_compat.py` ever wrote
+  — so the ceiling documented as "a whole-dollar ceiling on real provider spend" bounded nothing
+  on `https://api.anthropic.com`, while 17 of 30 enabled routines inherit one. It now meters
+  `endpoints/usage.dollars_spent` (notional first, a provider's reported cost as fallback), which
+  is stamped on every completion whatever transport carried it. `child_budgets()` is repaired by
+  the same line: its slice was derived from spend a cost-blind parent never saw.
+- **Disclosed:** on a subscription route the cap now binds LIST-PRICE dollars, not an invoice —
+  a run can trip a $5 cap having been billed nothing. Nothing changes behaviour today (no routine
+  sets a finite `max_cost`), and a cap on an unpriced model still bounds nothing, which
+  `prices.py` refuses to estimate. Said in all four doc surfaces rather than hidden.
+
 ## [0.476.0] — 2026-10-30
 
 ### Fixed
