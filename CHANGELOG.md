@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.480.0] — 2026-10-30
+
+### A turn's side fields and a fired rule NAME what they point at, and link it (F591)
+
+The operator, 2026-09-30: *"also if reminders or rules fire it needs to be nicely highlighted,
+formatted, and link to the specific rule or reminder"*.
+
+Until now a `remind` / `remind_feedback` side field left no trace in the transcript outside the
+action's collapsed JSON fold, and a rule fire was prose inside a collapsed observation with the
+rule slug as dead text. Both now render as their own rows:
+
+- **side-field rows** — `note`, a reminder written or revised this turn (with its pattern and
+  description), and the label a run put on a hold — each linking the reminder's row in that
+  routine's Recipe health;
+- **a rule-fire strip** OUTSIDE the fold, speaking the row-state vocabulary, so a `pre-action`
+  assist that HELD an action is the loudest row on the page and cannot be scrolled past; each
+  fired rule links its prose, and a declaration id rides along faintly so a rule with several
+  declarations says which one fired.
+
+New `static/components/concept-rows.js` rather than growth in `static/components/transcript.js`,
+which is held at its ratchet ceiling. Links come **only** from structured fields the payload
+already carries (`a.remind.id`, `a.remind_feedback.id`, `o.assists`) and never from scanning
+prose — a slug like `work-order` would match ordinary English in every say line on the instance.
+`slug` is a new optional transcript option: without it an id renders as the plain code it names,
+because a link with no routine to point at is worse than dead text. 147 lines of browser tests
+cover the positive and the negative case.
+
 ## [0.479.0] — 2026-10-30
 
 ### A blocking question carrying a config patch is answerable where it was asked (F807)
