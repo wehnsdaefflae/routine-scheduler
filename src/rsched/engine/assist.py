@@ -42,7 +42,7 @@ from pathlib import Path
 from .. import assists as lib
 from ..assists import Assist
 from ..hooks import dispatch, points
-from . import assist_action, enginenote
+from . import assist_action, enginenote, notes
 from . import hold as hold_seam
 from .assist_predicates import PREDICATES, Situation
 
@@ -284,6 +284,30 @@ def at_spawn(loop, start_row: dict) -> None:
     for assist in _matching(loop, "spawn", Situation(loop=loop, child=start_row)):
         enginenote.append(loop, _rendered(assist), assists=[assist.key])
         assist_action.act(loop, assist, point="spawn")
+
+
+def at_run_end(loop, ending: dict) -> None:
+    """Run-end assists, appended to `state/notes.md` for the NEXT run. Costs no turn, ever.
+
+    The first rung whose line is not for the run that fires it. `engine/loopend.finish_run`
+    calls it after `result.md` is written and before the autocommit, so the note is committed
+    with the run that learned it — and `engine/rewind.py` rewrites `result.md` without going
+    through `finish_run`, so a rewind cannot re-fire it.
+
+    The carrier is the channel that already exists: `state/notes.md`, whose tail every state
+    digest renders (`engine/composer.py`). A new store would have needed a new reader in the
+    prompt; this one the next run reads whether or not it knows a hook wrote the line. The
+    stamp says a rule wrote it, not a turn — the file's other lines all carry an action's
+    name, and a reader must be able to tell a hook's line from the run's own.
+
+    Never raises: the run is already over, and an exception here would surface as a failed
+    run that had in fact succeeded. `_fire` swallows a raising predicate; this guards the
+    write (`notes.append_line` is itself best-effort).
+    """
+    if not loop.assists:
+        return
+    for assist in _matching(loop, "run-end", Situation(loop=loop, ending=ending)):
+        notes.append_line(loop.ctx, _rendered(assist), source="hook run-end")
 
 
 def at_finish(loop, action: dict) -> tuple[str, list[str]] | None:

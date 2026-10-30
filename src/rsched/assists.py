@@ -51,7 +51,16 @@ from pathlib import Path
 #: operator's brief names that traffic first — *"Messages between runs, their children, and the
 #: user should implement hooks"*. It costs no turn: the note rides the same boundary the
 #: hand-back does.
-MOMENTS = ("pre-action", "observation", "boundary", "pre-finish", "child-exit", "spawn")
+#:
+#: `run-end` is the LAST moment and the only one whose line is not for the run that fires it.
+#: The run is over — its result is written — so a `remind` would name something that cannot
+#: happen, and the payload is `note`: the line goes to `state/notes.md`, whose tail the NEXT
+#: run's state digest renders (`engine/composer.py`). That is what the registry calls the
+#: `prompt_section` carrier, and the reason this moment is worth having at all: the things a
+#: run learns at its close-out — that children were killed mid-work, that something was left
+#: half-done — are exactly what no summary reliably carries and what the next run pays for.
+MOMENTS = ("pre-action", "observation", "boundary", "pre-finish", "child-exit", "spawn",
+           "run-end")
 
 #: The payload axis is `remind -> action -> hold`. The design note spelled the middle rung
 #: `scaffold -> do`, and said neither existed "because each needs a helper channel that is not
@@ -64,7 +73,12 @@ MOMENTS = ("pre-action", "observation", "boundary", "pre-finish", "child-exit", 
 #: `scaffold` — pre-filling a draft for the model to work from — is still unbuilt, and stays
 #: out of the vocabulary: an enum value the engine cannot honour would be a lie in the
 #: library's own schema.
-PAYLOADS = ("remind", "action", "hold")
+#:
+#: `note` is the fourth, and it is `remind`'s counterpart at a moment with no model to remind:
+#: the same prose, carried to the next run's prompt instead of to this one's. It is the name
+#: `hooks/points.PAYLOADS` already gives that carrier, for the same reason `action` is not
+#: called `do` — a second name for one thing is how two tables come to disagree.
+PAYLOADS = ("remind", "note", "action", "hold")
 
 #: moment -> the payloads it can carry. `pre-action` can ONLY hold (there is no way to reach a
 #: chosen action without stopping it), and the free moments can only remind or ACT (a hold
@@ -95,7 +109,8 @@ PAYLOADS = ("remind", "action", "hold")
 #: the plainest reason of all: the child is already running.
 MOMENT_PAYLOADS = {"pre-action": ("hold",), "observation": ("remind",),
                    "boundary": ("remind", "action"), "pre-finish": ("remind",),
-                   "child-exit": ("remind", "action"), "spawn": ("remind", "action")}
+                   "child-exit": ("remind", "action"), "spawn": ("remind", "action"),
+                   "run-end": ("note",)}
 
 #: The action kinds an `action` assist may NOT perform: the ones that STEER a run rather than
 #: having an effect in the world. `engine/commands.py` draws this exact line for the user's own

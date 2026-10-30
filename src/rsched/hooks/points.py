@@ -130,16 +130,18 @@ POINTS: dict[str, Point] = dict([
     _p("error", "an observation came back reporting failure", ("remind", "action"),
        "observation_tail", ("reminder",), "engine/remind.py (trigger kind `turn:error`)"),
     # The RUN-TREE and lifecycle points. Both ENDS of a child's life fire (the rule layer
-    # reaches each at the boundary that delivers its row); the two below them are still
-    # moments the engine passes through with nothing firing, named here so the gap stays
-    # readable.
+    # reaches each at the boundary that delivers its row), and so does the run's own end —
+    # the first point whose carrier reaches the NEXT run rather than this one, through
+    # `state/notes.md`, which the next state digest renders. `restart` is the last moment the
+    # engine passes through with nothing firing, named here so the gap stays readable.
     _p("spawn", "a child run was started", ("note", "remind", "action"), "engine_note",
        ("rule",), "engine/control.py::announce_started_subruns (assist.at_spawn)"),
     _p("child-exit", "a child run finished and its hand-back landed",
        ("note", "remind", "action"), "engine_note", ("rule",),
        "engine/control.py::announce_finished_subruns (assist.at_child_exit)"),
     _p("run-end", "the run is over and its result is written", ("note", "action"),
-       "prompt_section"),
+       "prompt_section", ("rule",),
+       "engine/loopend.py::finish_run (assist.at_run_end) → state/notes.md"),
     _p("restart", "the daemon is restarting under a live run", ("note", "action"),
        "prompt_section"),
 ])
@@ -210,7 +212,7 @@ def allows(name: str, payload: str) -> bool:
 #: subsumes `assists.MOMENTS` instead of being a second vocabulary beside it.
 ASSIST_MOMENTS = {"pre-action": "pre-action", "observation": "post-action",
                   "boundary": "turn-boundary", "pre-finish": "pre-finalize",
-                  "child-exit": "child-exit", "spawn": "spawn"}
+                  "child-exit": "child-exit", "spawn": "spawn", "run-end": "run-end"}
 
 #: reminder trigger kind -> point name. `action` is tested before dispatch (so it holds) and
 #: `result`/`prose` after it; the `turn:*` kinds are the run's own moments.

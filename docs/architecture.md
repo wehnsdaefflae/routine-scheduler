@@ -293,10 +293,11 @@ the limits (single-writer status.json preserved).
 - **A curated rule surfaces itself at the moment it applies** (`rsched/assists.py` +
   `engine/assist.py`, `engine/assist_predicates.py`). A rule declares `assists:` in its own
   frontmatter — a deterministic predicate over the SITUATION plus the operative line to surface
-  when it fires. FIVE moments (`assists.MOMENTS`): a pre-action HOLD, an observation tail, a
-  turn-boundary ENGINE NOTE, a child-exit ENGINE NOTE on a child run's hand-back (those three
-  free), and a finish-gate deferral (one turn, because a line surfaced as a run ends is one
-  nobody can act on). The moment and the payload are coupled
+  when it fires. SEVEN moments (`assists.MOMENTS`): a pre-action HOLD, an observation tail, a
+  turn-boundary ENGINE NOTE, a spawn and a child-exit ENGINE NOTE at the two ends of a child
+  run's life (those four free), a finish-gate deferral (one turn, because a line surfaced as a
+  run ends is one nobody can act on), and `run-end` — a line in `state/notes.md` addressed to
+  the NEXT run, which is why its payload is `note` rather than `remind`: the run is over. The moment and the payload are coupled
   (`assists.MOMENT_PAYLOADS`): `pre-action` can only hold — the only way to reach a chosen action
   is to stop it — and the free moments cannot hold, having no action in hand. A `pre-action` hold
   goes through the same seam the consequence reminders use (`engine/hold.py`). The `boundary`
@@ -321,13 +322,16 @@ the limits (single-writer status.json preserved).
   eight trigger kinds both MAP onto it (`for_moment`, `for_trigger`, pinned against
   `assists.MOMENT_PAYLOADS` and `reminders.KINDS` in `tests/test_hooks_points.py`), so the
   registry is one vocabulary rather than a second opinion beside them. The points nothing fires
-  at yet are IN the table with an empty `fires` — `run-end`, `restart` — because a
+  at yet are IN the table with an empty `fires` — `restart` — because a
   registry listing only what is built cannot say what is missing. The registry shipped with FOUR
   such gaps; the two RUN-TREE ones now fire, the rule layer reaching each where the engine
   delivers a child's row to its parent (`child-exit` on its hand-back, `spawn` on its start) —
-  gaps closed by a mechanism rather than renamed. The two that remain carry `prompt_section`:
-  they reach the NEXT run, not this one, which is a delivery the assist layer has no precedent
-  for yet. `dispatch.at` is the
+  gaps closed by a mechanism rather than renamed. `run-end` fires too, and it is the first point
+  whose carrier is `prompt_section`: it reaches the NEXT run rather than this one, through
+  `state/notes.md`, whose tail the next state digest renders — the channel that already existed,
+  rather than a new store needing a new reader in the prompt. It fires in
+  `engine/loopend.finish_run` after `result.md` and before the autocommit, so the line is
+  committed with the run that learned it. `restart` is the one gap left. `dispatch.at` is the
   one evaluator: it drops a candidate whose payload the point cannot carry, and treats a
   predicate that raises as "did not fire", never as a failed turn. TWO points can change what
   runs, which corrects the hook design's rule 2: `pre-action` prevents an action and

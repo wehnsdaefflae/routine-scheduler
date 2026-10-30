@@ -66,6 +66,11 @@ def cmd_daemon(_args) -> int:
     # sync above only adds missing patterns
     from .migrate_converse_goals import run_migration as carry_converse_goals
     carry_converse_goals(server)
+    # MIGRATION(expires=2026-12-31): the seed rules' `assists:` declarations — the add-only sync
+    # cannot carry a block into a rule the live library already has, so every hook point the
+    # campaign wired was firing against no candidates at all
+    from .migrate_rule_assists import run_migration as carry_rule_assists
+    carry_rule_assists(server)
     adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
     # MIGRATION(expires=2026-11-30): every past run's record gains the fingerprint and quality
     # the change measurement reads, rebuilt from git and the runs' own files — after the library

@@ -22,6 +22,7 @@ from typing import Any
 
 from .assist_child import child_fell_short, spawned_a_thin_brief
 from .assist_outcome import outcome_questioned
+from .assist_runend import children_killed_at_end
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class Situation:
     action: dict | None = None      # the action just emitted (observation, pre-finish)
     obs: dict | None = None         # the observation just returned (observation)
     child: dict | None = None       # the child run that just exited (child-exit)
+    ending: dict | None = None      # how the run closed out, as recorded (run-end)
 
     @property
     def ctx(self):
@@ -315,17 +317,13 @@ _LOOK_UTILS = frozenset({"browser-session", "vision", "video-extract"})
 #: name removed here turns every rule that declares it into a lint error rather than a
 #: silently dead assist.
 PREDICATES: dict[str, Predicate] = {
-    "repeated-failure": Predicate(
-        moment="observation", check=_repeated_failure,
+    "repeated-failure": Predicate(moment="observation", check=_repeated_failure,
         describes="the same call has now failed twice this run"),
-    "capability-denied": Predicate(
-        moment="observation", check=_capability_denied,
+    "capability-denied": Predicate(moment="observation", check=_capability_denied,
         describes="a permission refused something this run wanted"),
-    "user-corrected": Predicate(
-        moment="boundary", check=_user_corrected,
+    "user-corrected": Predicate(moment="boundary", check=_user_corrected,
         describes="the user just said something to this run"),
-    "ledger-untouched": Predicate(
-        moment="pre-finish", check=_ledger_untouched,
+    "ledger-untouched": Predicate(moment="pre-finish", check=_ledger_untouched,
         describes="this run changed things and has not written to LEDGER.md"),
     "uncheckpointed-repo-write": Predicate(
         moment="pre-action", check=_uncheckpointed_repo_write,
@@ -347,4 +345,6 @@ PREDICATES: dict[str, Predicate] = {
         describes="a child run you started just exited without finishing ok"),
     "thin-child-brief": Predicate(moment="spawn", check=spawned_a_thin_brief,
         describes="you just started a child on a brief that may not stand on its own"),
+    "children-killed-at-end": Predicate(moment="run-end", check=children_killed_at_end,
+        describes="children were still working when this run ended, so they were terminated"),
 }

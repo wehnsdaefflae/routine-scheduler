@@ -74,8 +74,9 @@ one you are about to touch, not all of them.
   pattern); `docs/patterns.md` — settings patterns, pending changes and the one accept;
   `docs/run-gates.md` — the declarative checks that skip a fire with nothing to do; `docs/rule-assists.md` — its curated
   half: a rule's own `assists:` block surfacing its operative line at the moment it applies
-  (why timing is possible where compliance-checking is not, the five moments — a pre-action
-  HOLD plus four free ones, including `child-exit` on a child run's hand-back, coupled to their
+  (why timing is possible where compliance-checking is not, the seven moments — a pre-action
+  HOLD plus six free ones, including both ends of a child run's life and `run-end`, whose
+  `note` reaches the NEXT run through `state/notes.md`, coupled to their
   payloads — the `action` payload, where a rule
   PERFORMS one authored action at the turn boundary with no model turn, and the
   one-shot migration each batch needs to reach a live library)

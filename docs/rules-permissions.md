@@ -465,7 +465,8 @@ being the model's job.
 ```yaml
 assists:
   - id: after-a-failed-call
-    moment: observation        # pre-action | observation | boundary | child-exit | pre-finish
+    moment: observation        # pre-action | observation | boundary | spawn | child-exit |
+                               # pre-finish | run-end (the last one is for the NEXT run)
     predicate: observation-failed   # resolved by NAME from the engine's registry
     payload: remind            # remind | action | hold — coupled to the moment
     line: >-

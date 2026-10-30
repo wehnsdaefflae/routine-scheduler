@@ -123,7 +123,7 @@ def test_spawn_is_a_live_point_that_names_its_seam():
     assert "announce_started_subruns" in point.site
     assert dispatch.live("spawn") is True
     gaps = {n for n in points.POINT_NAMES if not points.point(n).live}
-    assert gaps == {"run-end", "restart"}
+    assert gaps == {"restart"}      # step 8 wired `run-end`; `restart` is the last
 
 
 def test_spawn_cannot_hold_and_carries_both_free_payloads():

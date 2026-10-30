@@ -111,7 +111,7 @@ def test_the_seed_rules_that_declare_assists_are_valid():
     assert used == set(PREDICATES)
     # every moment, both PROSE payloads (`action`: test_assist_action.py; no shipped rule yet)
     assert {a.moment for rule in declared.values() for a in rule} == set(lib.MOMENTS)
-    assert {a.payload for rule in declared.values() for a in rule} == {"remind", "hold"}
+    assert {a.payload for rule in declared.values() for a in rule} == {"remind", "note", "hold"}
 
 
 def test_a_hand_broken_fire_count_never_fails_the_turn(tmp_path):

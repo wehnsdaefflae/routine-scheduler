@@ -55,7 +55,21 @@ def capture(ctx: RunContext, action: dict) -> None:
         return
     if len(note) > NOTE_MAX_CHARS:
         note = note[:NOTE_MAX_CHARS] + " …[truncated]"
-    stamp = f"[{ctx.run_ts} · turn {ctx.turn} · {ctx.phase or '—'} · {_brief(action)}]"
+    append_line(ctx, note, source=_brief(action))
+
+
+def append_line(ctx, text: str, *, source: str) -> None:
+    """Append ONE stamped line to `state/notes.md` — the channel the next run's digest reads.
+
+    Shared by the two writers: the model's own `note` field (`capture`, whose `source` is the
+    action that carried it) and a hook firing at the `run-end` point (`engine/assist.py`,
+    whose `source` says a rule wrote it). They must agree on the file's shape, and a second
+    hand-rolled append is how a file acquires two formats and the tail stops parsing.
+
+    Never raises — a failed capture must not fail the turn, and at `run-end` there is no turn
+    left to fail: the run has already succeeded by the time this is called.
+    """
+    stamp = f"[{ctx.run_ts} · turn {ctx.turn} · {getattr(ctx, 'phase', None) or '—'} · {source}]"
     from .run_context import work_dir
 
     # an open TASK's notes go to its own workspace (engine/jobops.py), where its next
@@ -66,7 +80,7 @@ def capture(ctx: RunContext, action: dict) -> None:
         with path.open("a", encoding="utf-8") as fh:
             if fh.tell() == 0:
                 fh.write(_HEADER)
-            fh.write(f"- {stamp} {note}\n")
+            fh.write(f"- {stamp} {text}\n")
     except (OSError, ValueError):
         # best-effort: a degenerate path raises ValueError before it ever reaches the
         # OS — either way the turn must not fail; the transcript already has the note

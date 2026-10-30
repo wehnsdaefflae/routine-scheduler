@@ -100,6 +100,7 @@ the per-rule `problems` the Library page shows.
 | `spawn` | on a child run just started | an appended `ENGINE NOTE` | `remind`, `action` | none |
 | `child-exit` | on a child run's hand-back | an appended `ENGINE NOTE` | `remind`, `action` | none |
 | `pre-finish` | as the run tries to end | a finish-gate deferral | `remind` | one turn |
+| `run-end` | once the run's result is written | a line in `state/notes.md`, for the NEXT run | `note` | none |
 
 **`spawn` and `child-exit` are RUN-TREE moments, not turn moments** — one for each end of a
 child's life. They fire where the engine delivers the child's row to its parent
@@ -110,6 +111,17 @@ implement hooks"*. Each note lands AFTER the row it is about, never before: a ru
 a hand-back — or a brief — the model cannot yet see would read as a claim about something
 absent. Both carry the same once-per-run budget as every other moment, which is what keeps a
 parent of four children from reading one line four times.
+
+**`run-end` is the only moment whose line is not for the run that fires it.** The run is over and
+its result is written, so there is no model left to remind — which is why its payload is `note`
+and not `remind`. The line is appended to `state/notes.md`, the channel whose tail every state
+digest already renders, so the NEXT run reads it in its opening prompt without anything new
+having to be composed. It fires in `engine/loopend.finish_run`, after `result.md` and before the
+autocommit, so a note written for the next run is committed with the run that learned it; a
+rewind rewrites `result.md` without going through `finish_run`, so it cannot re-fire. The
+question a predicate here answers is therefore narrow: *what does the next run need that this
+run's summary will not carry?* — a child terminated mid-work being the first such thing, since
+its output is on disk and nothing in the next prompt says so.
 
 `spawn` is the one run-tree moment where something can still be CHANGED: a running child cannot
 be re-briefed, only killed and started again, so a rule there reads the brief back while that

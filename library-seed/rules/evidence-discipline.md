@@ -12,6 +12,15 @@ assists:
       This child did not finish `ok`, so its summary is the only account of work you cannot
       see. Read what it says is unfinished before you fold it onward, and carry that shortfall
       into your own summary — a hand-back repeated as a result makes its gap invisible.
+  - id: on-children-killed-at-run-end
+    moment: run-end
+    predicate: children-killed-at-end
+    payload: note
+    line: >-
+      Children were still working when this run ended, so the engine terminated them. Their
+      work is NOT lost — it is on disk in this run's `sub/<n>/` directory and in whatever tree
+      they were building. Read what is there before re-issuing any of those briefs; a
+      re-issued brief throws finished work away and reports it as new.
   - id: on-a-brief-that-may-not-stand-alone
     moment: spawn
     predicate: thin-child-brief
