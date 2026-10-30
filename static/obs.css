@@ -23,3 +23,26 @@
 }
 .obs-cancelled > summary::before { content: "✕ "; color: var(--signal); }
 .obs-cancelled[open] > summary::before { content: "✕ "; }
+
+/* A RULE FIRE (F591) — a general rule the routine practises governed this moment, said OUTSIDE
+   the collapsed result fold so the reader sees it without expanding anything, with the rule
+   linked to its own prose (components/concept-rows.js `ruleFireStrip`).
+
+   SIGNAL, for `.obs-held`'s reason stated at that rule in views.css: this is the machine at
+   work and nothing waits on a person — and a fire is the same mechanism as a hold, one moment
+   earlier, so wearing a second palette would say it was a different kind of thing. The HELD
+   variant takes the full weight and the ⦿ marker the held row has, because there the action did
+   not run and the run is deciding again; a fire on a result the run was getting anyway is
+   history, so it stays quiet and borrows only the colour. */
+.rule-fire {
+  margin: 4px 0 0; padding: 3px 8px; border-left: 3px solid var(--signal);
+  color: var(--signal); font-size: var(--t-s);
+  background: color-mix(in srgb, var(--signal-dim) 40%, var(--deck));
+}
+.rule-fire.held {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--signal-dim) 75%, var(--deck));
+}
+/* The rule's slug and the declaration that fired read as one token, so a wrap does not split
+   `<rule>/<id>` across two lines in a narrow turn box. */
+.rule-fire-one { white-space: nowrap; }

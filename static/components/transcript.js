@@ -15,6 +15,10 @@
 //   fileUrl(rel)       — maps a message attachment's rel path (e.g. "attachments/x.png") to
 //                        this mount's serving route, enabling inline thumbnails on injected
 //                        user messages; omitted = the text block's plain list stands alone.
+//   slug               — the ROUTINE whose transcript this is; makes a reminder id in a side
+//                        field a link to its row in that routine's Recipe health (F591).
+//                        Omitted = the id renders as the plain code it names, because a link
+//                        with no routine to point at is worse than dead text.
 //   blobs              — an object-URL array to register thumbnails in instead of owning one
 //                        (a nested subrun transcript shares its parent's, so one destroy()
 //                        frees the tree). Omitted = this transcript owns its own.
@@ -23,6 +27,7 @@ import { actionTime } from "/static/components/actiontime.js";
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
 import { highlightJson } from "/static/components/code.js";
+import { ruleFireStrip, sideFieldRows } from "/static/components/concept-rows.js";
 import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
 import { accountingLine } from "/static/components/obs-accounting.js";
 import { attachmentRow, revokeBlobs } from "/static/components/obs-attachments.js";
@@ -48,6 +53,7 @@ import { el, fmtTime, fmtTokens } from "/static/util.js";
 //   obs-attachments.js  the attachment thumbnails and the object URLs they hold open
 //   obs-background.js   a backgrounded call's four endings, and the kill confirmation
 //   obs-accounting.js   the finish accounting's two renderers
+//   concept-rows.js     the side-field rows + the RULE-fired strip, each linking what it names
 //   turn-model.js       which model served a turn, and what it cost
 // Two things stay HERE because a source-level guard reads them from this file by name:
 // `BRIEF_FIELD` (tests/test_actions.py holds it in lockstep with engine/actionschema.py) and
@@ -177,7 +183,7 @@ export function createTranscript(container, opts = {}) {
       details.append(box);
       const sub = createTranscript(box, {
         loadSub: (m, o) => opts.loadSub(`${p.n}/${m}`, o), isLive: opts.isLive,
-        fileUrl: opts.fileUrl, blobs });
+        fileUrl: opts.fileUrl, blobs, slug: opts.slug });   // a child's reminders are the same routine's
       let off = 0, pulling = false;
       const pull = async () => {
         if (pulling) return;
@@ -231,21 +237,11 @@ export function createTranscript(container, opts = {}) {
           el("span", { class: "n" }, `turn ${ev.turn ?? "?"}${ev.chained ? ` · ${ev.chained}` : ""}`),   // `· n` = D203's chained action, same turn
           ev.ts ? el("span", { class: "ts", title: ev.ts }, fmtTime(ev.ts)) : null),
         el("span", { class: "saytext" }, mdInline(a.say || ""))),
-      a.note ? el("div", { class: "note", title: "captured to state/notes.md" },
-        "📌 ", mdInline(a.note)) : null,
-      // The other two side fields. They ride ANY action exactly as `note` does and cost the
-      // same nothing, so they render the same way — without this the only trace of a run
-      // writing itself a caution, or labelling how one turned out, was inside the action
-      // json fold, which is where a reader goes to check a suspicion rather than to have one.
-      a.remind ? el("div", { class: "note", title: "consequence reminder written this turn" },
-        "⚑ ", mdInline(a.remind.op === "delete"
-          ? `reminder ${a.remind.id} deleted`
-          : `${a.remind.op === "revise" ? `revised ${a.remind.id}` : "new reminder"}`
-            + `${a.remind.scope === "global" ? " (shared — needs approval)" : ""}: `
-            + `\`${a.remind.regex || ""}\` → ${a.remind.description || ""}`)) : null,
-      a.remind_feedback ? el("div", { class: "note", title: "how a hold turned out" },
-        "⚐ ", mdInline(`${a.remind_feedback.id || "?"} → **${a.remind_feedback.label || "?"}**`))
-        : null,
+      // The SIDE FIELDS — `note`, `remind`, `remind_feedback` — ride ANY action and cost the
+      // same nothing, so they render as rows beside the say rather than hiding in the json
+      // fold. components/concept-rows.js words them and links the reminder each one NAMES,
+      // which needs the routine whose state that reminder is: `opts.slug` (F591).
+      sideFieldRows(a, opts.slug),
       el("div", { class: "act" },
         el("span", {}, a.kind),
         // A util's NAME is a concept with a page of its own, so it links there (operator,
@@ -308,10 +304,14 @@ export function createTranscript(container, opts = {}) {
     const obs = obsBody(text, (o.kind === "llm" && !o.error)
       || (o.kind === "memory_read" && !o.missing), obsState(o));
     if (thumbs) obs.append(thumbs);
+    // A rule FIRE is not an ordinary result: its strip rides the turn OUTSIDE the collapsed
+    // fold, so a reader sees that a rule governed this moment without expanding anything
+    // (F591; components/concept-rows.js words it and links the rule from `o.assists`).
+    const fire = ruleFireStrip(o);
     openClock?.stop(ev.ts);
     openClock = null;
-    if (openTurn) { openTurn.append(obs); openTurn = null; }
-    else root.append(el("div", { class: "turn" }, obs));
+    if (openTurn) { openTurn.append(...[fire, obs].filter(Boolean)); openTurn = null; }
+    else root.append(el("div", { class: "turn" }, fire, obs));
   }
 
   // Human-authored message bodies (injections, answers) are prose exactly like the model's

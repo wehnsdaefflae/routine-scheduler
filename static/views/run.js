@@ -298,7 +298,7 @@ export async function render(view, runId, query = {}) {
     subBox.replaceChildren();
     subTranscript = createTranscript(subBox, {
       loadSub: (m, o) => api(`/api/runs/${runId}/transcript?sub=${n}/${m}&offset=${o}`),
-      isLive: runLive,
+      isLive: runLive, slug,      // F591: a reminder id in a side field links to its own row
       onRefer: setRef,
       fileUrl: (rel) => `/api/runs/${runId}/file?path=${encodeURIComponent(rel)}`,
     });
@@ -459,7 +459,7 @@ export async function render(view, runId, query = {}) {
       api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),
     // …and subrun lines unfold into the child's own conversation, in place.
     loadSub: (n, o) => api(`/api/runs/${runId}/transcript?sub=${n}&offset=${o}`),
-    isLive: runLive,
+    isLive: runLive, slug,       // F591: a reminder id in a side field links to its own row
     onRefer: setRef,
     // …and the running call gets its ✕ (F586, decided as D160-C). The TURN is what travels, so
     // a cancel can never land on the call after the one the operator was looking at.

@@ -211,6 +211,7 @@ export function activityFeed({ isOpen = () => true } = {}) {
 
     async function build() {
       const mine = createTranscript(body, {
+        slug: r0.routine,   // F591: a reminder id in a side field links to its Recipe health row
         fileUrl: (rel) => `/api/runs/${r0.run_id}/file?path=${encodeURIComponent(rel)}` });
       transcript = mine;
       if (isActive(cur.state)) {

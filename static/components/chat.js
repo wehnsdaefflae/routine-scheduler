@@ -6,7 +6,7 @@
 //   answer(qid, text, decision) — inline answering for question events (same contract as
 //                       transcript.js: deferred → full form, blocking → one-click strip)
 //   loadSub(n, off)   — subrun expansion inside the work fold
-//   isLive()          — live-run predicate for subrun polling
+//   isLive()          — live-run predicate for subrun polling · slug — this conversation's routine, so a reminder id in a side field links to its row (F591)
 //   onArtifact(path)  — a write/edit landed in a deliverable dir — artifacts/, reports/ or
 //                       output/, the panel's own rows (artifacts.js isDeliverable) — so
 //                       the panel refreshes while the reply is still working
@@ -185,7 +185,7 @@ export function createChat(container, opts = {}) {
     const details = el("details", { class: "work-fold" }, summary, box);
     const transcript = createTranscript(box, {
       answer: opts.answer, loadSub: opts.loadSub, isLive: opts.isLive, onRefer: opts.onRefer,
-      fileUrl: opts.fileUrl, blobs });
+      fileUrl: opts.fileUrl, blobs, slug: opts.slug });   // F591: a reminder id links to its row
     root.append(details);
     fold = { details, summary, transcript, steps: 0, briefs: [] };
     return fold;

@@ -137,6 +137,19 @@ can PERFORM an action (see "The payload axis" below): a moment that changes cont
 never, and of the two free ones only the boundary records its own observation in order. A rule that pairs them wrongly is
 refused at authoring time rather than silently never firing.
 
+**What a fire LOOKS LIKE in the console** (F591). A fire used to be invisible to a person: a
+`pre-action` hold rendered as an ordinary collapsed result fold, so the one row whose whole job
+is to be re-read sat behind a click, and the rule's slug was dead text in the middle of its
+prose. The transcript now draws a STRIP on every row whose payload names a rule, outside the
+fold — `static/components/concept-rows.js` `ruleFireStrip`, styled in `static/obs.css` in the
+same SIGNAL palette the held row wears, with the held variant carrying its full weight and ⦿
+marker. The strip reads `<rule>/<id>`, the rule linking to its own prose at
+`#/library/rule/<slug>`, so the full text is one click away rather than one `read_rule` away for
+the person watching. The slug comes from `assists` — the field every carrying event already
+names for the resume rebuild (see Guards) — and from nowhere else: linking a concept by
+pattern-matching prose would make a rule called `work-order` a false positive in every say line
+on the instance, which is why `components/conceptlinks.js` links only from structured fields.
+
 `observation` and `boundary` are free: they append to a message the run was getting anyway.
 `boundary` uses the same carrier a mid-run rule binding already does — `enginenote.append`,
 the ONE seam that puts an engine-authored message into a live run, which writes the live

@@ -331,7 +331,7 @@ export async function render(view, slug, _query = {}) {
     const chat = createChat(chatBox, {
       answer: (qid, text, decision) => api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),
       loadSub: (n, o) => api(`/api/runs/${detail.run_id}/transcript?sub=${n}&offset=${o}`),
-      isLive: () => !TERMINAL.has(curState),
+      isLive: () => !TERMINAL.has(curState), slug,   // F591: a reminder id links to its row
       onArtifact: () => artifacts.refresh(),
       onFork: (_title, lastUserText) => {
         prefillComposer(lastUserText);
