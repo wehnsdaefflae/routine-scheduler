@@ -1123,6 +1123,18 @@ by a test, by the engine, or by a past incident.
   2026-10-05: only the button), so the verdict is the APPLY CONTROL's to declare:
   `config_patch_applied` on the answer POST the button sends, or
   `POST /api/questions/{qid}/patch-applied` when it applies a patch on an already-answered card.
+  **The apply control belongs on EVERY surface that renders the question** — one factory
+  (`static/components/configproposal.js`), mounted by the Decisions page's two card shapes AND
+  by the pinned blocking-question panel (`components/answerform.js` `questionPanel`: the
+  conversation above the composer, the run page). A blocking question is answered where the run
+  is waiting, so a proposal the operator can read there and not take is the one state a decision
+  surface must never be in (F807/R3060: he could only apply on the Decisions page and asked
+  why). That needs the LIVE question to be self-describing: `interact.handle_ask` publishes
+  `config_bridge.live_fields` (patch, resolved target, home) into status.json, because
+  everything shown while a run blocks is built from that copy — the panels through the state
+  stream, and the Decisions page's own live row, which `web/decisions_read` builds from
+  `active.question` and not from the durable record. A field added to the record alone reaches
+  no waiting operator at all.
   A flag that is only ever `false` is worse than silence — a run was told "Ok" to its own
   budget-raise proposal, recorded the raise as applied and planned 600 turns against a live
   400-turn ceiling (R2778), and a run told "NOT APPLIED" about a patch that IS live would plan

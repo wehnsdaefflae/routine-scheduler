@@ -286,6 +286,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
                                "asked": ctx.run_ts, "expires": expires, **extra,
+                               **config_bridge.live_fields(ctx, cpatch, ctarget),
                                **({"request": req_ids} if req_ids else {})})
     started = time.monotonic()
     try:

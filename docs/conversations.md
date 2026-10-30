@@ -129,9 +129,15 @@ once, answers, and asks again, and its new question replaces the open one. Nothi
 or granted by an ask-back.
 
 A proposed CONFIG change rides a decision the same way (`ask_user` with `config_patch`), and
-**approve & apply** on the Decisions page lands it where the engine resolved it: on this
-conversation when the patch names no target, on a routine when it names one
-(`"routine": "<slug>"`, checked against the installed routines when the agent asks).
+**approve & apply** lands it where the engine resolved it: on this conversation when the patch
+names no target, on a routine when it names one (`"routine": "<slug>"`, checked against the
+installed routines when the agent asks). That button sits on the **pinned question card** as
+well as on the Decisions page — a blocking question is answered where the run is waiting, so
+its proposal has to be appliable there too (F807: it used to render as prose with no control,
+and the operator was sent to another page to take a change he was being asked about here).
+**Answering is not applying**, on either surface: the answer lands your words and the patch
+waits for the button, so take the change first if you want it — the card tells you so, and the
+waiting run is told the same.
 
 ## The working plan
 
