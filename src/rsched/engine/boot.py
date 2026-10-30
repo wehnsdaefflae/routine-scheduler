@@ -18,6 +18,7 @@ from . import (
     jobops,
     mediaops,
     obligations,
+    promptfloor,
     runkind,
     subsalvage,
 )
@@ -232,6 +233,12 @@ def boot(loop) -> None:
                 vias=inbox.LIVE_MESSAGE_VIAS if resuming else None):
             _ingest(loop, extra, resuming=True)
         _setup_gap_note(loop)     # fresh boot AND resume: the library may have moved between
+        # D223: the prompt is composed, so its floor is now knowable — if it already exceeds the
+        # resolved model's window this run can complete no turn. RECORDED, never refused: the
+        # operator chose the health event alone, because the window figure is the catalog's and
+        # an F278 run-local correction can make the real clamp smaller than it (engine/
+        # promptfloor.py). Best-effort, so a diagnostic can never be why a run fails to start.
+        promptfloor.check(loop)
     ctx.write_status("running")
 
 
