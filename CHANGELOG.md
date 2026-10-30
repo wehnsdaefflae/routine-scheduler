@@ -15,6 +15,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.478.0] — 2026-10-30
+
+### The browser suite no longer OOM-kills the daemon: its own container, and runs rank above the daemon
+- **What was happening.** Every "orphaned: process gone at daemon boot" burst from 2026-10-22
+  to 2026-10-30 (eight of eight) followed, by one to two minutes, a kernel record on the host:
+  `Memory cgroup out of memory: Killed process … (rsched)` in the ENGINE container's cgroup,
+  during a release gate's browser stage. Since 0.440.1 that stage launches a Chromium per xdist
+  worker, so the 5 GiB cgroup held the daemon, four test workers, four Playwright drivers and
+  ~25 Chromium processes; the kernel chose the daemon (largest resident size plus swap, every
+  adjustment 0), the container's main process died, and `restart: unless-stopped` started a
+  fresh one that reaped every live run. Three runs had concluded "not an OOM" from
+  `memory.events` reading `oom_kill 0` — read after the restart, from a cgroup that did not
+  exist when the kill happened.
+- **The browser stage runs in a container of its own** — new compose service `uitest`: the
+  engine image (`uv run --frozen`, production's interpreter and lock), mounting the checkout and
+  a read-only browser cache and nothing live, with a memory ceiling of its own in the host's
+  override. Its only process, `deploy/uitest/runner.py`, runs the jobs a caller drops into
+  `<checkout>/.uitest-jobs`; `deploy/uitest/submit.py` writes one and streams it back as if it
+  ran in place — output into the caller's log, the job's exit code, a SIGTERM ending the job —
+  so the gate's `flock`, log parsing and deadline kill are unchanged. The job's environment is
+  allow-listed (no injected credential is written to disk), a module outside the checkout rides
+  along with `--carry`, and no answering runner is exit 77, which the gate already reads as
+  `unavailable`. Whoever can write the spool can already write the code the daemon imports, so
+  the spool grants nothing (`deploy/uitest/protocol.py`). By hand: `docker compose exec uitest
+  /opt/rsched-venv/bin/python -m pytest -q -m ui`.
+- **Under memory pressure the kernel now takes a run, never the daemon** (`rsched/oomrank.py`):
+  `engine-run` raises its own `oom_score_adj` to 1000 before anything else, and every util,
+  script, `shell` command and test suite it spawns inherits it; the daemon keeps 0. A killed run
+  costs one run; a killed daemon cost all of them. Set by the engine because a jailed process
+  cannot set its own — `/proc` is read-only in the sandbox.
+- **The orphan row stops sending people outside the box.** `daemon/containerbirth.py`'s
+  sentence named "a compose restart policy, a healthcheck, a deploy or an auto-updater" (a
+  healthcheck restarts nothing here) and its docstring argued against an OOM from the
+  post-restart counter; it now names the OOM killer first with the host command that confirms or
+  rules it out, and the docstring records why the counter could not see it.
+- The test harness's two "how to run the browser suite" messages, CLAUDE.md, README and
+  deploy/DOCKER.md ("The browser test container", and the OOM rank) say `uitest`; the
+  instructions to run the suite in the engine container over the sidecar were stale since
+  0.440.1 and now describe only the opt-in WATCH mode. `tests/test_deploy_image.py`'s pinned-pull
+  rule no longer counts an image another service in the same file builds.
+
 ## [0.477.0] — 2026-10-30
 
 ### Hooks: the `run-end` point fires, and a rule's assists finally reach the live library (D152 step 8)

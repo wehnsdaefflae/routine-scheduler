@@ -164,16 +164,19 @@ one you are about to touch, not all of them.
   is the thirty that decides whether the inner loop gets used. Three selections:
   `uv run pytest -q` (fast), `-m ui` (browsers), `-m ""`
   (everything — **what ships a release**).
-  **No browser is installed or launched locally**: the suite attaches over CDP to the compose
-  `chrome` sidecar and serves its fixture console back at the engine container's own address on
-  that network, so the two selections that include it run INSIDE the container and must be given
-  both addresses — `docker compose exec -u 1000:1000 rsched env
-  RSCHED_TEST_CDP=http://172.30.7.10:9222 RSCHED_TEST_BIND=172.30.7.2 BROWSER_CDP_TOKEN=… uv run
-  pytest -q -m ui` (both addresses pinned in docker-compose.yml; the token is the one the compose
-  `chrome` service's auth proxy checks, from secrets.env; the conftest refuses with this exact
-  command when any is missing). Off that network, a local headless Chromium started with
-  `--remote-debugging-port=9222` serves too: `RSCHED_TEST_CDP=http://127.0.0.1:9222
-  RSCHED_TEST_BIND=127.0.0.1` (any token; CDP itself checks none). Whenever browser tests are in the selection, `tests/conftest.py::pytest_configure`
+  **The browser selections run in the `uitest` container, never beside the daemon**: the
+  suite launches a Chromium per xdist worker (`tests/browsersource.py`), and run in the engine
+  container it shared the daemon's 5 GiB memory cgroup — the kernel's OOM killer took the DAEMON
+  eight times between 2026-10-22 and 2026-10-30, each time ending the container and orphaning
+  every live run. `uitest` is the engine image in a cgroup of its own, mounting the checkout and
+  a read-only browser cache and nothing live: `docker compose exec uitest
+  /opt/rsched-venv/bin/python -m pytest -q -m ui`. The release gate reaches it from INSIDE the
+  engine container through a spool (`deploy/uitest/`: the runner is the service's only process,
+  `submit.py` streams a job back as if it ran in place, under the caller's own `flock`); a
+  caller that can write that spool can already write the code the daemon imports, so it grants
+  nothing. To WATCH the suite, attach it to the `chrome` sidecar instead — engine container,
+  `RSCHED_TEST_CDP=http://172.30.7.10:9222 RSCHED_TEST_BIND=172.30.7.2 BROWSER_CDP_TOKEN=…`, one
+  worker, so its memory stays small. Whenever browser tests are in the selection, `tests/conftest.py::pytest_configure`
   switches xdist to `--dist loadgroup`, so that one group runs on ONE worker while the fast suite
   keeps spreading — three workers rendering into one headful Chrome is what the rerun shield had
   been absorbing. Still serialize any browser run under
@@ -812,6 +815,16 @@ by a test, by the engine, or by a past incident.
   and a tmp-homed test once spent real money and real ledger rows there. A model trial's run
   is told its models and efforts the same way (`--model role=name`, `--effort role=level`, from
   the run dir's own `trial.json`).
+- **Under memory pressure the kernel takes a RUN, never the daemon.** `engine-run` raises its
+  own `oom_score_adj` to 1000 before anything else (`rsched/oomrank.py`), and every util, script,
+  `shell` command and test suite it starts inherits that; the daemon keeps 0. The daemon is the
+  container's main process, so a kill there ends the CONTAINER and orphans every live run — eight
+  times in eight days before 0.478.0 — while a killed run costs one run. Never lower the value or
+  make it per-kind: a jailed process cannot raise its own (`/proc` is read-only in the sandbox),
+  so the engine is the only place it can be set. And read an OOM from the HOST (`journalctl -k`):
+  a restart starts the container in a fresh memory cgroup, so `memory.events` inside it says
+  `oom_kill 0` about the kill that caused that very restart — three runs concluded "not an OOM"
+  from exactly that.
 - **A model trial ends by COUNTING, never by a write.** `trial:` in routine.yaml
   (`rsched/trials.py`) is active while fewer than `runs` depth-0 usage runs carry its id in
   `fingerprint.trial`; every fire while it is active is armed (`trial.json` in the run dir,

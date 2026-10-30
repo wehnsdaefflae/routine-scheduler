@@ -204,6 +204,41 @@ services:
     depends_on:
       - tor
 
+  # The BROWSER TEST STAGE's own memory cgroup. The browser suite launches a Chromium per xdist
+  # worker, and inside the engine container it shared the daemon's 5 GiB cgroup: the kernel's
+  # OOM killer took the DAEMON eight times between 2026-10-22 and 2026-10-30, each time ending
+  # the container and orphaning every live run. Here a suite that runs out of memory loses a
+  # test worker, and only its own gate hears about it.
+  #
+  # The engine image, NOT a second one: the suite must run on the interpreter and the packages
+  # production runs (`uv run --frozen` syncs the baked venv to the committed lock without ever
+  # rewriting the lock in the shared checkout). Its only process is deploy/uitest/runner.py,
+  # which runs the jobs a caller puts in `<checkout>/.uitest-jobs` — the release gate, from
+  # inside the engine container, through deploy/uitest/submit.py; a person can simply exec:
+  #   docker compose exec uitest /opt/rsched-venv/bin/python -m pytest -q -m ui
+  #
+  # It mounts the checkout and a READ-ONLY browser cache and nothing else — no config, no
+  # secrets, no routine homes — so a test that reaches for live state finds nothing to break.
+  # A memory ceiling for it belongs in the host's docker-compose.override.yml with the others.
+  uitest:
+    image: rsched:latest
+    container_name: rsched-uitest
+    init: true                       # the suite's Chromium children are reaped, as in the engine
+    restart: unless-stopped
+    user: "${RSCHED_UID:-1000}:${RSCHED_GID:-1000}"
+    entrypoint: ["uv", "run", "--frozen", "--extra", "headroom",
+                 "python", "deploy/uitest/runner.py"]
+    command: []
+    environment:
+      HOME: /home/mark
+      # The fixture console and the browser that drives it share this container's loopback.
+      RSCHED_TEST_BIND: "127.0.0.1"
+    volumes:
+      - ${RSCHED_HOME:-/home/mark}/git-repos/routine-scheduler:/home/mark/git-repos/routine-scheduler
+      - ${RSCHED_HOME:-/home/mark}/.cache/ms-playwright:/home/mark/.cache/ms-playwright:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
   # Headful Chrome on a virtual display — the LOGGED-IN browser behind every `--cdp` util
   # (job-scrape / job-inbox / job-apply, browser-session). See docs/browser-sessions.md.
   #

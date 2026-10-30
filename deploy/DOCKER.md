@@ -340,6 +340,9 @@ systemctl --user disable --now routine-scheduler.service
 - **models:** anything bound to a host-local Ollama endpoint must be repointed to a reachable
   provider in the model catalog (Settings → Models), since Ollama doesn't come along into the
   container. An unused endpoint definition can stay in `config.yaml` if you re-add Ollama later.
+- **OOM rank:** every engine process raises its own `oom_score_adj` to 1000 at start, inherited by
+  everything a run spawns, so when the engine container's memory cgroup runs out the kernel takes
+  a run rather than the daemon, whose death ends the container (`rsched/oomrank.py`).
 - **restart:** `restart: unless-stopped` + `stop_grace_period: 20s` reproduce the old
   `Restart=always` / `TimeoutStopSec=20`. Self-audit's drain-and-exit restart just exits 0 and Docker
   relaunches it — same as before.
@@ -632,6 +635,40 @@ rewrites its source to the WAN IP, so the allow-list is `192.168.0.0/24` plus th
 `rsched-wan-allow` user timer (`~/send/wan-allow.sh`, every 5 min) rewrites that IP when the DDNS
 name moves. `private_ranges` is deliberately not used: docker's userland proxy hands requests over
 from a 172.x bridge address.
+
+## The browser test container
+
+The browser suite (`-m ui`, and the release gate's browser stage) runs in the `uitest` service,
+never in the engine container. It launches a Chromium per xdist worker, and beside the daemon
+that meant one memory cgroup holding the daemon, four test workers, four Playwright drivers and
+~25 Chromium processes: the kernel's OOM killer took the DAEMON eight times between 2026-10-22
+and 2026-10-30, and since the daemon is the container's main process each kill ended the
+container and orphaned every live run (`journalctl -k | grep 'Memory cgroup out of memory'`
+shows them). In `uitest` a suite that runs out of memory loses a test worker and its gate says
+so.
+
+It is the engine image (`rsched:latest`, built by the `rsched` service — so build that first)
+with one process, `deploy/uitest/runner.py`, which runs the jobs the gate drops into
+`<checkout>/.uitest-jobs` from inside the engine container. It mounts the checkout and a
+read-only browser cache, nothing else. Give it its own ceiling in the host's
+`docker-compose.override.yml` — four browser workers peaked at ~4.8 GB of anonymous memory in
+the 5 GiB engine cgroup:
+
+```yaml
+  uitest:
+    mem_limit: 4g
+    memswap_limit: 5g
+```
+
+```bash
+cd ~/git-repos/routine-scheduler
+docker compose up -d uitest
+docker logs rsched-uitest | tail     # "uitest runner: serving …/.uitest-jobs"
+docker compose exec uitest /opt/rsched-venv/bin/python -m pytest -q -m ui   # by hand
+```
+
+With the container down, a release gate reports its browser stage `unavailable` and names the
+`up -d` above — never `red`.
 
 ## The agent desktops
 

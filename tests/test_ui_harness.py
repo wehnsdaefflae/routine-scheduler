@@ -175,7 +175,7 @@ def test_a_skipped_browser_suite_says_so(markexpr, expected):
     said = any("the browser suite did not run" in line for line in reporter.lines)
     assert said is expected, reporter.lines
     if expected:   # and it names an invocation that actually works
-        assert any("RSCHED_TEST_CDP" in line for line in reporter.lines), reporter.lines
+        assert any("docker compose exec uitest" in line for line in reporter.lines), reporter.lines
 
 
 def test_addopts_name_reruns_and_deselect_the_browser_suite():

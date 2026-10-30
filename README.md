@@ -274,9 +274,10 @@ adds live endpoint smoke tests). Quality gates are strict and enforced:
 - `uv run pytest --cov` — coverage report (branch coverage on; `fail_under` is a ratchet
   nothing runs today — re-measure it before wiring any gate to the number).
 - `-m ui` — Playwright browser tests that drive the real console against fixture state and a
-  stub runner (no LLM). No local browser: the suite attaches over CDP to the compose `chrome`
-  sidecar, so it runs INSIDE the engine container with `RSCHED_TEST_CDP` and `RSCHED_TEST_BIND`
-  set — the conftest's refusal prints the full command. `uv run pytest -q` is the fast suite
+  stub runner (no LLM). It launches a Chromium per worker, so it runs in the compose `uitest`
+  container, in a memory cgroup of its own: `docker compose exec uitest
+  /opt/rsched-venv/bin/python -m pytest -q -m ui` — never in the engine container, where it once
+  got the daemon OOM-killed. `uv run pytest -q` is the fast suite
   and says so at the end; `-m ""` runs everything, which is what ships a release.
 
 Working conventions, the action/transcript contracts, and the module standards live in

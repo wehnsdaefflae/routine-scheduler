@@ -31,3 +31,6 @@ docker-compose.override.yml
 # …and the replacement deploy/nat64.sh writes beside it before renaming it over `.env`: killed in
 # between, the script leaves that copy behind, token included.
 /.env.*
+
+# The browser-stage container's job spool (deploy/uitest/protocol.py) — jobs, logs, exit codes
+.uitest-jobs/

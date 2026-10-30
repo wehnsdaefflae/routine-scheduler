@@ -89,9 +89,14 @@ def cmd_engine_run(args) -> int:
     no logger name — and the daemon's re-emit of a cleanly finishing run's warnings (F97,
     `runner_state._notable_stderr`) matches on the level name: it could never fire. WARNING,
     because the daemon re-emits nothing below it and the stderr pipe is held in its memory.
+
+    The OOM rank is raised SECOND, before anything this process spawns can inherit the old one:
+    under memory pressure the kernel then takes a run, never the daemon (rsched/oomrank.py).
     """
     logging.basicConfig(level=logging.WARNING, format=LOG_FORMAT)
-    from . import abortmark
+    from . import abortmark, oomrank
+    if problem := oomrank.mark_run_expendable():
+        logging.getLogger("rsched.engine").warning(problem)
     from .endpoints.instrument import FileSink, set_sink
     from .engine.runtime import run_routine
     from .registry import homes_fingerprint

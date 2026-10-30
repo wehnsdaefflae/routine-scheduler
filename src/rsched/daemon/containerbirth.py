@@ -23,19 +23,25 @@ one word: `unknown`.
 
 It reads as *nobody can know*, and it is the sentence that sent three runs looking outside the
 box. The honest record is narrower and more useful: WHAT happened to the process tree is
-knowable; WHO did it (a compose `restart:` policy, a healthcheck, a deploy, an auto-updater) is
-outside the namespace and is the operator's to find — filed as R2966, answered by him on
+knowable; WHO did it (the kernel's OOM killer, a deploy, a manual restart) is outside the
+namespace and is the operator's to find — filed as R2966, answered by him on
 2026-10-26: *"Both: find the restarter AND add the breadcrumb."* This is the breadcrumb half.
 
-## What is deliberately NOT inferred here
+## What is deliberately NOT inferred here — and what the host showed it to be
 
-Not an OOM. A cgroup at 99% of `memory.max` looks like a smoking gun and is not: on 2026-10-26
-`memory.current` was 5.32 of 5.37 GB while `anon` was only 322 MB (the rest `slab_reclaimable` +
-`inactive_file`, which are SUPPOSED to fill a cgroup), `memory.pressure` read `full avg10=0.00`,
-and `memory.events` showed `oom 0, oom_kill 0` — `max` counts RECLAIM events, not kills. The
-reap's own `classify_cause` already answers the OOM question from the dead engine's peak RSS
-(F348/F569) and this module never touches it: a plausible number that gets believed is worse
-than no number.
+Not an OOM, from inside: this module cannot see one and claims none. But the reasoning that once
+stood here — `memory.events` reading `oom_kill 0`, so the OOM theory was dead — was WRONG, and
+three runs repeated it. A restart puts the container in a FRESH memory cgroup, so every counter
+read after the restart describes only the time since it; the kill that caused it is recorded in
+the cgroup that died. The host's kernel log is the record (`journalctl -k`): every recreate behind
+an orphan burst from 2026-10-22 to 2026-10-30 was "Memory cgroup out of memory: Killed process …
+(rsched)" in THIS container's cgroup, one to two minutes before the boot that reaped the runs —
+eight of eight, each during a release gate's browser stage. The daemon is the container's main
+process, so killing it ends the container, and `restart: unless-stopped` starts a new one.
+Fixed twice over in 0.478.0: the browser stage runs in a container of its own (compose
+`uitest`), and every run now ranks itself above the daemon for the OOM killer (rsched/oomrank.py).
+The sentence below therefore names the OOM killer FIRST among the outside causes, with the one
+command that confirms or rules it out — and still claims nothing it did not see.
 
 And not the HOST's uptime: `/proc/uptime` read 19.9 days through all three kills, so the host
 never rebooted. Only the container's own pid 1 answers this question.
@@ -177,5 +183,7 @@ def recreated_under(last_sign_of_life: datetime | None,
                   f"sign of life at {last_sign_of_life.isoformat(timespec='seconds')}. The run "
                   f"could not have survived it and wrote no shutdown mark because nothing in "
                   f"this process tree performed the stop. WHAT recreated the container is "
-                  f"outside this namespace — a compose restart policy, a healthcheck, a deploy "
-                  f"or an auto-updater — and only the host can say which")
+                  f"outside this namespace — most often the kernel's OOM killer taking the daemon "
+                  f"in this container's own memory cgroup (on the host: journalctl -k | grep "
+                  f"'Memory cgroup out of memory'), otherwise a deploy or a manual restart — "
+                  f"and only the host can say which")

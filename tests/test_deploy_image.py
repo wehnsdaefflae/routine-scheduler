@@ -128,8 +128,11 @@ def test_copy_from_names_a_stage_never_an_image(dockerfile):
 
 def test_every_image_compose_pulls_is_pinned():
     services = _compose()["services"]
+    # An image ANOTHER service builds here is not pulled: `uitest` runs the engine's own
+    # `rsched:latest` on purpose (the suite must test production's interpreter and packages).
+    built = {spec["image"] for spec in services.values() if "build" in spec and "image" in spec}
     pulled = {name: spec["image"] for name, spec in services.items()
-              if "image" in spec and "build" not in spec}
+              if "image" in spec and "build" not in spec and spec["image"] not in built}
     assert pulled, "compose pulls no image — the cliproxy pin this checks has moved"
     loose = {name: image for name, image in pulled.items() if not PINNED.match(image)}
     assert not loose, f"pulled by a tag that moves: {loose}"

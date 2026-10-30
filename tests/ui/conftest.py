@@ -44,16 +44,13 @@ _UI_DIR = Path(__file__).parent
 # refusal on any other box into a CDP timeout and a bind error on an address it does not have.
 SIDECAR_CDP = "http://172.30.7.10:9222"
 SIDECAR_BIND = "172.30.7.2"
-HOW_TO_RUN = (f"Run the browser suite inside the engine container, where the compose `browser` "
-              f"network exists:\n"
-              f"    docker compose exec -u 1000:1000 rsched \\\n"
-              f"      env RSCHED_TEST_CDP={SIDECAR_CDP} RSCHED_TEST_BIND={SIDECAR_BIND} \\\n"
-              f"          BROWSER_CDP_TOKEN=\"$(grep -oP '(?<=^BROWSER_CDP_TOKEN=).*' "
-              '~/.config/routine-scheduler/secrets.env)" \\\n'
-              f"      uv run pytest -q -m ui\n"
-              f"No browser is installed locally: the suite attaches over CDP to the `chrome` "
-              f"sidecar and serves its fixture console back at the engine's own address on that "
-              f"network.")
+HOW_TO_RUN = ("Run the browser suite in the `uitest` container, which has a Chromium, binds the "
+              "fixture console on its own loopback (RSCHED_TEST_BIND=127.0.0.1 is set there) and "
+              "keeps the suite out of the daemon's memory cgroup:\n"
+              "    docker compose exec uitest /opt/rsched-venv/bin/python -m pytest -q -m ui\n"
+              "To WATCH it in the `chrome` sidecar instead, run it in the engine container with "
+              f"RSCHED_TEST_CDP={SIDECAR_CDP} RSCHED_TEST_BIND={SIDECAR_BIND} and the sidecar's "
+              "BROWSER_CDP_TOKEN — one worker, so the memory it needs stays small.")
 
 # One xdist work unit for the whole directory. Three workers rendering into ONE headful Chrome
 # is what the rerun shield below was absorbing: measured over the release gate's own ledger,
@@ -152,7 +149,8 @@ def browser_context_args(browser_context_args):
 def _test_bind_host() -> str:
     host = os.environ.get("RSCHED_TEST_BIND")
     if not host:
-        pytest.fail(f"RSCHED_TEST_BIND must name the interface the sidecar can reach back on.\n"
+        pytest.fail(f"RSCHED_TEST_BIND must name the interface the browser reaches the fixture "
+                    f"console on.\n"
                     f"{HOW_TO_RUN}")
     return host
 
