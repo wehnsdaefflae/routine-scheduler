@@ -61,11 +61,18 @@ def test_a_carried_file_is_importable_by_the_job(spool, tmp_path):
     assert "carried carried_plugin.py" in note
 
 
-def test_the_job_file_carries_no_credential(spool, monkeypatch):
+def test_the_job_file_carries_no_credential(spool, monkeypatch, tmp_path):
     monkeypatch.setenv("BROWSER_CDP_TOKEN", "do-not-write-me")
     monkeypatch.setenv("RSCHED_API_TOKEN", "nor-me")
     monkeypatch.setenv("RSCHED_TEST_BIND", "127.0.0.1")
-    monkeypatch.setenv("AUDIT_GATE_PROGRESS", "/x/progress.jsonl")
+    # A WRITABLE path, and that is not cosmetic: the release gate's own progress plugin
+    # (self-audit's scripts/gate_progress.py) reads AUDIT_GATE_PROGRESS on every runtest hook —
+    # including the logreport for THIS test, fired while the monkeypatch is still in effect. A
+    # non-existent destination made its os.open raise inside the hook, which pytest turns into
+    # an INTERNALERROR that kills the whole session: every release gate over main died here,
+    # at this node, with no recorded failure (verdict `timeout`). The var's NAME is what this
+    # test is about; its value only has to be somewhere the plugin may write.
+    monkeypatch.setenv("AUDIT_GATE_PROGRESS", str(tmp_path / "progress.jsonl"))
     job, _ = submit.submit(spool, _py("pass"), [])
     text = (job / "job.json").read_text()
     assert "do-not-write-me" not in text and "nor-me" not in text
