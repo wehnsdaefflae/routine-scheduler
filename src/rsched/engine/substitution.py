@@ -44,8 +44,11 @@ engine notes (`window._warn_before_eviction` is once per run for the same reason
 
 NOT a refusal. Nothing here vetoes a rung, refuses a boot or aborts a run: this module only ever
 appends prose. Whether a run whose incompressible floor exceeds the resolved window should be
-stopped BEFORE it starts is a separate, behaviour-changing question (a run that previously
-produced something would produce nothing) and belongs to the operator, not here.
+stopped BEFORE it starts was a separate, behaviour-changing question, and the operator answered
+it as D223: a HEALTH EVENT only, and the run starts anyway (`engine/promptfloor.py`, fired from
+`boot`). So that half is a count now rather than a veto — and for the reason this module's own
+figures give: the window stated here is the CATALOG window, which an F278 run-local correction
+can make smaller than the real clamp, so refusing a run on it would rest on an approximation.
 """
 
 from __future__ import annotations

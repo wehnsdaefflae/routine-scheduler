@@ -338,6 +338,15 @@ engine instead **fails over**:
   run that was unrunnable from turn 0 — a 32,768-token substitute under a 200k-class prompt —
   and `weightloss:20260923-220004` $1.01 over 193 turns diagnosing its own field-shifted
   output as "the model cannot reliably hold the action schema", two rungs down and never told.
+- **A floor already over the window is RECORDED at boot, and the run still starts** — a
+  `prompt_floor_over_window` health event carrying `floor_tokens`, `window_tokens` and the model
+  (`engine/promptfloor.py`, fired from `boot` once the prompt is composed). The first specimen
+  above could complete no turn from turn 0, and the floor was computable before the first model
+  call. It is a count and not a veto by the operator's decision (D223): the figure compared is
+  the CATALOG window, and an F278 run-local correction can already make the real clamp smaller
+  than it, so a refusal would rest on an approximation — while a run that previously produced
+  something would produce nothing. The stream is what makes refusing a later decision on
+  evidence instead of arithmetic.
 - **Every switch reaches the health stream** as a `model_failover` event carrying the chain
   head, both model names and a reason (`rate_limit` · `auth` · `server` · `refusal` ·
   `empty` · `other`) — a run that fails over finishes `ok`, so without it a fleet running

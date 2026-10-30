@@ -11,7 +11,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"fire_paused"|"fire_catchup"|"routine_catchup_declined"|"scheduler_tick_error"
         |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
         |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"
-        |"wrong_turn_detected"|"run_corrected",
+        |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -128,9 +128,11 @@ trigger_capped: a report trigger hit its daily cap; one event per day at the tra
 a capped trigger is a dark routine and dark must be visible (F276).
 
 prompt_oversize_shrunk: a composed prompt exceeded the model's window and the window guard shrank
-the run's local view to fit (engine/window.py). The turn survives, so nothing fails — what it
-marks is a run whose context is silently truncated, which an audit reads as a routine that has
-outgrown its model or its state files.
+the run's local view to fit (engine/window.py). The turn survives — what it marks is a run whose
+context is silently truncated: a routine that has outgrown its model or its state files.
+
+prompt_floor_over_window: the same condition at BOOT, before any provider rejection — the floor
+already exceeds the window; the run starts anyway (D223, engine/promptfloor.py).
 
 lane_fire_catchup: at daemon boot a SCHEDULED lane's most recent due fire had not been armed and
 the lane's catchup policy is run_once, so ONE make-up chain was armed (routine = the lane id,
