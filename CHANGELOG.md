@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.481.0] — 2026-10-30
+
+### The browser screen has a clipboard-sync switch, under the frame (D221)
+
+The operator: *"can you make the novnc browser share the clipboard with my host machine?"* — he
+chose the full two-way clipboard over the recommended one-way paste, and then, shown that the
+channel was already open: *"add a checkox if we want the clipboard to sync or not. under the
+novnc iframe"*.
+
+This is a switch on an existing channel, not a new one. What gates the clipboard is the iframe's
+**permission grant**: the embedded noVNC page can reach the host clipboard exactly while the
+embedder permits it. `x11vnc` already runs with no `-nosel`/`-noclipboard`, so the RFB side
+relays the X CLIPBOARD selection both ways, and the full-screen page already drops `view_only`.
+So the control is the `allow` attribute — and OFF means the attribute is **absent**, not merely
+different.
+
+Default on. The choice is remembered in this browser's own storage, because it is a property of
+the machine the operator is sitting at rather than of the instance. Flipping it re-mounts the
+frame (Permissions Policy is evaluated when a document loads, so changing `allow` on a live frame
+would do nothing), and the control's title says so rather than silently reconnecting the session.
+
+The right rail's read-only mirror is untouched: it keeps `view_only=1` and `pointer-events: none`.
+
 ## [0.480.0] — 2026-10-30
 
 ### A turn's side fields and a fired rule NAME what they point at, and link it (F591)
