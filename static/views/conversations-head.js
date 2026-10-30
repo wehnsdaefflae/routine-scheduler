@@ -5,6 +5,7 @@
 import { api } from "/static/api.js";
 import { branchControls } from "/static/components/branches.js";
 import { connectionsCard } from "/static/components/connections.js";
+import { declinedAccessCard } from "/static/components/declined-access.js";
 import { machinesCard } from "/static/components/machines.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -229,6 +230,15 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     + "THIS conversation; they need no exposure decision and override a central name of the "
     + "same value for its runs"),
     ownSecretsCard(slug, { base: "/api/conversations", subject: "conversation" }));
+  // Declined access (F783): the deny-forever tombstones this conversation carries. A
+  // Decisions-page deny writes the row into its own routine.yaml and the engine then refuses
+  // the entity and stops asking — and the only editor that removed such a row was the ROUTINE
+  // page's, which no conversation has, so one mis-click denied a capability for the life of
+  // the thread. Clearing a row only ever loosens a denial (back to undecided/requestable).
+  capBody.append(el("div", { class: "faint small mt" }, "declined access — what this "
+    + "conversation's requests were declined FOREVER; it no longer asks and the engine refuses "
+    + "them. Removing a row returns the entity to undecided (requestable again)"),
+    declinedAccessCard(slug));
   // General rules: a conversation shifts topic mid-thread, so a newly bound rule is pushed
   // to the reply in flight as well as saved for every reply after it (the server does both).
   const ruleHost = el("div", { class: "mt" });

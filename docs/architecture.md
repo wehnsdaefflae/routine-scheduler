@@ -839,7 +839,10 @@ and the capabilities digest's catalog listing):
   because `paths.atomic_write` creates its temp file IN the target directory)
   (the ONE decision-record shape: {mode, type, default, expires, request?} — asks, util approvals
   and access requests alike; `routine.yaml` additionally carries the `grants:` decision rows:
-  deny-forever tombstones for any entity + secret exposure, written only by the web),
+  deny-forever tombstones for any entity + secret exposure, written only by the web — and
+  CLEARABLE from the subject's own surface either way: the routine page's *Declined access*
+  draft, or a conversation's capabilities panel through `web/api_conversation_grants.py`,
+  which clears one named row (F783)),
   `runs/<ts>/` (transcripts + status.json incl. usage/turns/elapsed_s + the finish `outcome` —
   `state` folds a partial finish into "finished", the outcome field keeps it distinguishable —
   the dashboard's sortable per-routine stats AND its run-history **heartbeat strip**

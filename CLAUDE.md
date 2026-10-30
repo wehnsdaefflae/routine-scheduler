@@ -550,6 +550,10 @@ one you are about to touch, not all of them.
   are written to routine.yaml by the WEB at click time (`grants:` rows = deny tombstones + secret
   exposure; the engine NEVER writes config); now-decisions live in-memory on the run and reach all
   three enforcers (validate_action, the util sandbox's roots, declared-only env injection).
+  A deny tombstone is UNDOABLE from the subject's own surface, both homes (F783): the routine
+  page's *Declined access* draft replaces the whole mapping, a conversation's capabilities panel
+  clears ONE named row (`api_conversation_grants.py`) because it has no draft to accept — rows
+  (`secret:` allow-forever among them) arrive there from Decisions clicks while the page is open.
   `memory_*` are the ONLY way into `.memory/` for a RUN (generic file actions are rejected
   there); the engine owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line
   note cap. The operator's file endpoint agrees about the files the engine owns:
