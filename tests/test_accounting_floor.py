@@ -66,7 +66,7 @@ def test_the_placeholder_shapes_the_specimen_landed_are_all_refused():
 def test_the_shortest_real_entries_the_fleet_carries_are_accepted():
     """The six vodafone-outage-claims shapes a character floor would have refused."""
     found = accounting.problems(accounting.parse(REAL_SHORT), DONE, OUTCOMES)
-    assert found == {"missing": [], "bare": [], "placeholder": [], "refused": []}
+    assert found == {"absent": [], "missing": [], "bare": [], "placeholder": [], "refused": []}
 
 
 @pytest.mark.parametrize("clause", ["test", "TBD", "tbd.", "n/a", "N/A", "na", "none",

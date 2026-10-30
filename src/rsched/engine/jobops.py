@@ -244,10 +244,11 @@ def _checkpoint(ctx: RunContext, action: dict) -> dict:
         owed = donewhen.parse(recipe_text(jobs.workspace(ctx.routine.dir, job)))
         verdicts = accounting.parse(action.get("accounting"))
         if owed and outcome != "deferred":
-            found = accounting.problems(verdicts, owed, [])
+            found = accounting.problems(
+                verdicts, owed, [], arrived=accounting.arrived(action.get("accounting")))
             if any(found.values()):
                 return _refuse("checkpoint", (
-                    f"the checkpoint's `accounting` is incomplete: {accounting.gaps(found)}. "
+                    f"the checkpoint's `accounting` did not answer: {accounting.gaps(found)}. "
                     "Carry one entry per line of the job recipe's Done when — `d<n> met: "
                     "<evidence>`, `d<n> unmet: <what remains>`, `d<n> not due: <how "
                     "established>` — then checkpoint again (outcome deferred needs none)."))

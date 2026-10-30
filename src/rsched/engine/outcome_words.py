@@ -68,6 +68,19 @@ def refusal(slug: str, why: str) -> dict:
 def done_when_line(cfg: OutcomeConfig) -> str:
     """The recipe's Done-when line for the contract: it names every measure as a word, which
     is what the setup surface checks (readmodels/surface_outcome.names_a_measure).
+
+    It names `**Work:**` because that is where the action schema puts the outcome — "a SHORT
+    summary in TWO labelled parts: `**Process:**` … then `**Work:**` … the outcome with its
+    numbers" (`engine/actionschema.py`), which `static/md.js`'s `outcomeLine` reads back as the
+    one-line outcome every console row shows. It used to say "leads with the outcome", and a run
+    that followed the schema literally failed this line while a run that passed it deviated from
+    the schema: `library-sync:20261028-233002` turn 24 was objected to for opening with
+    `**Process:**` and re-finished with the counts on a line above it, `bahnbonus-seat-position:
+    20261022-193955` turn 18 the same a week earlier (F806). The two-part format is the
+    operator's (2026-10-28) and is pinned in four places, so this sentence is the one that
+    moved. The `outcome-first` RULE is untouched: the outcome still leads the part a reader of
+    one line is shown.
     """
     ids = ", ".join(m.id for m in cfg.measures)
-    return f"the run's summary leads with the outcome as scripts/outcome.py counts it: {ids}"
+    return ("the run's summary opens its `**Work:**` part with the outcome as "
+            f"scripts/outcome.py counts it: {ids}")

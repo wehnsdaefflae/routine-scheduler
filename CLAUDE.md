@@ -756,7 +756,9 @@ by a test, by the engine, or by a past incident.
   presence, shape and a CONTENT FLOOR, never semantics: an evidence clause under two words, or
   made only of words a real account never consists of alone (`test`, `tbd`, `n/a`, `ok`, …), is
   a placeholder and the deferral names the entry verbatim (F748 — a run finished `ok` on
-  `d1 met: test`). A `met` is checked once against the run's own
+  `d1 met: test`). A field that never ARRIVED is deferred as absent, not as incomplete
+  (F805 — nine "incomplete" verdicts about nine entries one run could see in its own reply
+  cost it ten turns). A `met` is checked once against the run's own
   transcript (`engine/verifier.py`: FAIL-OPEN everywhere, AT MOST ONE challenge per line per
   run, a re-asserted verdict STANDS and is recorded `disputed`). Budgets stay a runaway
   BACKSTOP. Reaching the finish line RETIRES the routine without writing config:
