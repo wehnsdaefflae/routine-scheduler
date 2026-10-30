@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.475.0] — 2026-10-30
+
+### Fixed
+- **A supervisor rung was never told what the run it judges is FOR** (F803). `ladder._goal`
+  probed `ctx.routine` for `instruction`, `task` then `name`, and `ladder._stopping` probed it
+  for `done_when` and `finish_line` — but `RoutineConfig` declares **none of those four** and
+  `config/base._Config` sets `extra="ignore"`, so an undeclared key cannot survive as an
+  attribute either. Measured on 0.474.1 against a real config: `_goal` returned the two-word
+  DISPLAY NAME (`"Self audit"`) via its `name` fallback and `_stopping` returned `[]`, on every
+  rung ever dispatched — while `_goal`'s own docstring promised "the instruction it was started
+  with, never a paraphrase: a supervisor judging drift against a summary of the goal cannot see
+  drift INTO that summary". A display name is the most extreme summary available.
+  The two readers move to a new `engine/laddergoal.py` and read the sources that actually hold
+  the answer, the same three `engine/finishgate.py` composes: `loop.instruction` for a child run
+  or conversation (where the prompt really lives — `instruction.md` is a compile seed a real
+  routine never persists, so it is `""` for a scheduled run), then `donewhen.read()` for the
+  recipe's `## Done when`, `finishline.open_outcomes()` for the routine's finish line and
+  `goals.owed()` for the open goals a person asked. Each stopping line keeps its id, so a
+  directive can name `d2` or `b1` instead of paraphrasing it. The `getattr` defaults that
+  absorbed the mismatch are gone.
+  This survived a green suite because `tests/test_ladder_trigger._Routine` defined exactly the
+  three attributes the real config forbids, so the readers were proved against a shape
+  production never produces — the same class as R2348/R2352 in this same module, where the fake
+  said `subs`, so did `ladder.py`, and every rung died of an `AttributeError` for months behind
+  green tests. The fake is stripped of all three, and the new `tests/test_ladder_goal.py` pins
+  the invariant against `RoutineConfig` itself (`test_the_reader_cannot_be_fooled_by_a_fake_again`)
+  so no fake can hide it a third time. Found by this run's deep cruft sweep.
+
 ## [0.474.1] — 2026-10-29
 
 ### Fixed

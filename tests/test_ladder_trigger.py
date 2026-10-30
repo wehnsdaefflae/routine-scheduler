@@ -37,13 +37,12 @@ class _Transcript:
 
 
 class _Routine:
+    """RoutineConfig's slice — no instruction/done_when/finish_line (F803, test_ladder_goal)."""
+
     def __init__(self, tmp_path, **attrs):
         self.dir = tmp_path
         self.slug = "worker"
         self.name = "Worker"
-        self.instruction = "Ship the thing the operator decided."
-        self.done_when = ["d1 the thing is shipped"]
-        self.finish_line = []
         for key, value in attrs.items():
             setattr(self, key, value)
 
@@ -117,10 +116,11 @@ class _Loop:
     attribute disagree with `engine/loop.py` again, fix the production code, never this line.
     """
 
-    def __init__(self, ctx, subs, says=()):
+    def __init__(self, ctx, subs, says=(), instruction=""):
         self.ctx = ctx
         self.subruns = subs
         self.turn_records = [{"say": s} for s in says]
+        self.instruction = instruction   # where a child's/conversation's goal text lives (F803)
 
 
 def _directive(**over):
@@ -263,10 +263,10 @@ def test_the_dispatch_carries_the_goal_verbatim_and_the_workers_own_words(tmp_pa
     summary, and the worker's words sit beside the engine's counts, never merged into them."""
     ctx = _Ctx(tmp_path, ladder={"enabled": True})
     subs = _Subs(_Sub(summary=json.dumps(_directive())))
-    loop = _Loop(ctx, subs, says=["Reading the queue.", "Building item one."])
+    loop = _Loop(ctx, subs, ["Reading the queue.", "Building item one."], "Ship the thing.")
     ladder.escalate(loop, "interval", ladder.ladder_settings(ctx) | {"enabled": True})
     prompt = subs.calls[0]["action"]["prompt"]
-    assert "Ship the thing the operator decided." in prompt
+    assert "Ship the thing." in prompt
     assert "Building item one." in prompt
     assert "worker_says" in prompt
 

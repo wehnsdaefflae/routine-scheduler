@@ -40,7 +40,7 @@ from __future__ import annotations
 import logging
 
 from ..config.base import DEFAULT_LADDER, DEFAULT_TURN_INTERVAL
-from . import child, inbox, oversight, switches
+from . import child, inbox, laddergoal, oversight, switches
 
 log = logging.getLogger("rsched.engine.ladder")
 
@@ -258,8 +258,8 @@ def escalate(loop, reason: str, settings: dict) -> None:
         return
     since = int(getattr(ctx, "last_rung_turn", 0))
     dispatch = oversight.build_dispatch(
-        _transcript_path(ctx), goal=_goal(ctx), since_turn=since, turn=ctx.turn,
-        stopping=_stopping(ctx), budget=_meter(ctx))
+        _transcript_path(ctx), goal=laddergoal.goal(loop), since_turn=since, turn=ctx.turn,
+        stopping=laddergoal.stopping(loop), budget=_meter(ctx))
     # The worker's own half, beside the engine's counts and never merged into them: the
     # supervisor must always be able to tell which lines the run SAID from what the engine
     # COUNTED, because the discrepancy between the two is the finding.
@@ -336,23 +336,6 @@ def _rung_deadline(settings: dict) -> float:
     losing one directive is far cheaper than losing the rest of the worker's budget.
     """
     return float(min(60 * settings["oversight_turns"], 900))
-
-
-def _goal(ctx) -> str:
-    """The run's goal VERBATIM — the instruction it was started with, never a paraphrase: a
-    supervisor judging drift against a summary of the goal cannot see drift INTO that summary.
-    """
-    for attr in ("instruction", "task", "name"):
-        if value := str(getattr(ctx.routine, attr, "") or ""):
-            return value
-    return ""
-
-
-def _stopping(ctx) -> list[str]:
-    """The recipe's Done-when lines plus the finish line — the dispatch's `stopping` half."""
-    done = getattr(ctx.routine, "done_when", None) or []
-    finish = getattr(ctx.routine, "finish_line", None) or []
-    return [str(x) for x in (*done, *finish)]
 
 
 def _meter(ctx) -> dict:
