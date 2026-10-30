@@ -213,7 +213,10 @@ def test_the_run_rail_does_not_come_before_the_run_on_a_phone(ui, ui_page):
     ui.seed_run("uir", "20260904-000353", "finished", summary="it worked")
     ui_page.set_viewport_size(PHONE)
     ui_page.goto(f"{ui.url}/#/run/uir:20260904-000353")
-    rail = ui_page.locator(".run-view > .run-rail")
+    # `:not(.left)` — the run page has TWO rails since F619 (the routine list rides the left one,
+    # components/routine-rail.js); this claim is about the phases & artifacts rail. The left one's
+    # own copy of it is tests/ui/test_run_routine_rail.py.
+    rail = ui_page.locator(".run-view > .run-rail:not(.left)")
     expect(rail).to_be_visible()
     assert rail.evaluate("e => e.open") is False, "the run rail opens over the run on a phone"
 
