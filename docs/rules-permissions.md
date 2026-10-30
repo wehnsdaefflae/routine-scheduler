@@ -270,6 +270,16 @@ library of symlinks, so the real one is never touched — and reports whoever ga
 interrupting row. The approval question and the routine page therefore cannot disagree about
 what a gap means: one function, read forwards, twice.
 
+**A holder that DECLINED what the change newly needs is reported too, in the decline's own
+words** (D222, operator 2026-10-30). F609 had rightly stopped a recorded decline reading as a
+GAP — the routine page must not offer to revert his own decision — but the reverse reading
+collects exactly the gap severities, so the break list stopped naming a routine that genuinely
+will not get the credential a util newly declares. His answer widened the join back and put the
+distinction in the WORDING: that row reads *"declined, so this util will not work there"*, never
+`BREAKS`, and carries no remedy. The alternative — a second rule deciding when a decline counts
+as a break — would have recreated the very divergence between the two readings that the single
+function exists to prevent.
+
 Three writers, and each gets what it can carry:
 
 - **the engine's authoring actions** — `write_util` and `write_rule` fold the blast radius into

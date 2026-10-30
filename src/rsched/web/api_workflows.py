@@ -141,14 +141,18 @@ def _require_digest(request: Request, kind: str, slug: str, content: str | None,
     digest always passes and only a MISSING or STALE one stops. A save with no holders at all
     needs no token — there is nothing to have been shown.
     """
+    from ..library_impact import impact_lines
+
     result = _impact_for(request, kind, slug, content)
     if not result["breaks"]:
         return
     if supplied == result["digest"]:
         return
-    raise HTTPException(409, "this change breaks routines that hold it: "
-                        + "; ".join(f"{b['slug']} ({', '.join(b['gains'])})"
-                                    for b in result["breaks"])
+    # D222: a row can also be a holder that DECLINED what this change newly needs. That is not
+    # a break and must not be worded as one — the operator decided it — so the headline says
+    # "affects" and `impact_lines` carries each row in its own words.
+    raise HTTPException(409, "this change affects routines that hold it: "
+                        + "; ".join(ln for ln in impact_lines(result)[1:])
                         + f" — re-request the preview and save with impact_digest="
                           f"{result['digest']} to confirm")
 
