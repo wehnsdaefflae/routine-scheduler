@@ -17,8 +17,9 @@ The shape, from OpenAI's guide (developers.openai.com, "Decisions", public beta 
                    | {"type": "refusal", "name"}], "usage": {…}}
 
 Images must be INLINE data URLs — hosted URLs and file ids are refused by the API — so each one
-is read and encoded here, at send time, and never stored. deploy/decision-server serves this
-same protocol over the model measured on predator, which is why one adapter covers both.
+is read and encoded here, at send time, and never stored. local-model-server
+(github.com/wehnsdaefflae/local-model-server) serves this same protocol over the model measured
+on predator, which is why one adapter covers both.
 """
 
 from __future__ import annotations

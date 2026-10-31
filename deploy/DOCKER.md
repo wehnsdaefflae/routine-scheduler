@@ -7,8 +7,8 @@ and the container itself stays disposable. Every data home is a bind for that re
 isn't dies in the container's writable layer on the next recreate.
 
 Compose defines three **sidecar services**, for the same reason each time: the engine image stays
-engine-only and the daemon supervises no second process. `docker compose build` builds the three
-images of this repository (the engine, `tor`, `chrome`); `cliproxy` is a pinned upstream image.
+engine-only and the daemon supervises no second process. `docker compose build` builds every image
+(the engine, `tor`, `chrome`, and `desktop` on a host that runs it); compose pulls none.
 
 - **`tor`** (`deploy/Dockerfile.tor`) — the SOCKS proxy the `darknet` util egresses through,
   reachable only from the compose network. Its state is the one named volume (`tor-data`,
@@ -28,13 +28,13 @@ images of this repository (the engine, `tor`, `chrome`); `cliproxy` is a pinned 
   `DESKTOP_OPERATOR_TOKEN` (the console's, in front of every screen). Its disks under
   `${RSCHED_HOME}/desktop-vm` are deliberately NOT carried — see
   [The agent desktops](#the-agent-desktops) and `docs/desktop-sessions.md`.
-- **`cliproxy`** (behind the `claude-proxy` profile, which `.env` names on a host that runs it —
-  [one compose selection per host](#one-compose-selection-per-host)) — the CLIProxyAPI
-  transport a Claude or Codex subscription is billed through. Its
-  state lives in `.config/routine-scheduler/cliproxy/`, inside the inventory below, and holds
-  the subscription logins only a person's OAuth consent re-mints. Being a pulled image it would
-  run as its own root, so compose runs it as the instance's uid (`user:`), which keeps every
-  file it writes readable to the backup. See [proxy setup](../docs/claude-proxy-cutover.md).
+
+**No model transport runs here.** Every model call leaves through a separate gateway stack,
+[llm-interfaces](https://github.com/wehnsdaefflae/llm-interfaces) — Otari on the docker host's
+`:4000`, with the CLIProxyAPI that holds the subscription logins beside it on `:8318` — which the
+engine reaches on the bridge address `172.17.0.1`. Its state, logins included, is that stack's to
+carry and back up. Until 0.483.0 this file ran its own CLIProxyAPI as the `cliproxy` service
+behind a `claude-proxy` profile; see [model gateway setup](../docs/model-gateway.md).
 
 Container paths are always `/home/mark/...` (routines and config bake absolute paths, so they must
 not change). Host paths are `${RSCHED_HOME}`-relative (default `/home/mark`).
@@ -81,7 +81,7 @@ migration instead of on the recreate, which is the same loss one host later, so
 | Path (`${RSCHED_HOME}`-relative) | Why it must travel |
 | --- | --- |
 | `git-repos/routine-scheduler` | the source tree self-audit edits and the daemon runs from |
-| `.config/routine-scheduler` | **secrets**: `config.yaml` (tokens, endpoints, homes, `source_repo`), the Secrets store beside it, the cliproxy keys and its subscription logins |
+| `.config/routine-scheduler` | **secrets**: `config.yaml` (tokens, endpoints, homes, `source_repo`), the Secrets store beside it, the model gateway's keys among them |
 | `routines` | the routine repos, their runs, state and ledgers |
 | `conversations` | interactive sessions — routine-shaped, un-versioned, irreplaceable |
 | `background` | detached background runs a conversation launched, possibly mid-flight |
@@ -187,13 +187,13 @@ keeps none.
 That includes a file the backup may not read: it runs as the host user, so one file a container
 wrote as root with mode 0600 fails its home and the whole night with it. Every container that
 writes a carried home therefore writes as the instance's uid (`RSCHED_UID`, 1000 by default).
-The engine and `chrome` images drop to `mark` in their entrypoints, and the pulled `cliproxy`
-image gets compose's `user:`. `tests/test_deploy_state.py` fails on a writer that does neither.
+The engine and `chrome` images drop to `mark` in their entrypoints, and a pulled image would get
+compose's `user:`. `tests/test_deploy_state.py` fails on a writer that does neither.
 A `docker compose exec -u root` that writes into a home brings the failure back. On a
 `Permission denied` in the backup's journal, list the offenders with
 `find ~/<home> ! -readable`, then find out which writer made them before you chown them.
-Until 0.373.1 the proxy ran as root, and its 0600 files failed `.config/routine-scheduler` from
-2026-09-14 on ([the one-shot move](../docs/claude-proxy-cutover.md#deployment)).
+Until 0.373.1 the subscription proxy this file then carried ran as root, and its 0600 files
+failed `.config/routine-scheduler` from 2026-09-14 on.
 
 Symlinks are copied as links, but **not their times** (`--omit-link-times`). The default share
 is sshfs, and SFTP sets a path's times by following it on the NAS, so rsync could not time a
@@ -357,7 +357,7 @@ command's flags:
 
 | Line in `.env` | Written by | Present while |
 | --- | --- | --- |
-| `COMPOSE_PROFILES=claude-proxy` | you, once, when the subscription proxy is set up ([proxy setup](../docs/claude-proxy-cutover.md#deployment)) | the host runs `cliproxy` |
+| `COMPOSE_PROFILES=desktop` | you, once, when the agent desktops are set up ([The agent desktops](#the-agent-desktops)) | the host runs `desktop` |
 | `COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:compose.nat64.yml` | `deploy/nat64.sh on`, naming the override only when it exists; `off` deletes the line | NAT64 is on ([Caveats](#caveats)) |
 
 So `build`, `up -d`, `exec`, `logs`, `stop` and `start` take no file flag and no profile flag —
@@ -381,8 +381,8 @@ any tracked file that gives a compose command a selection of its own.
 
 - **Credentials are set in the UI**, not on the host — see [SETUP.md](SETUP.md). All keys, tokens,
   and util secrets go in **Settings → Secrets** (one store, injected at run time). The Claude
-  subscription uses the pinned CLIProxyAPI sidecar; see
-  [proxy setup](../docs/claude-proxy-cutover.md). The CLI installation is retained for
+  subscription is reached through the separate model gateway; see
+  [model gateway setup](../docs/model-gateway.md). The CLI installation is retained for
   independent library utilities, not scheduler model transport.
 - **Headless browsing works out of the box.** The image carries Chromium's system libraries;
   the `page-fetch` util downloads Playwright's Chromium itself on first use (once — the
@@ -399,10 +399,11 @@ any tracked file that gives a compose command a selection of its own.
   ([one compose selection per host](#one-compose-selection-per-host)) and runs
   `docker compose up -d`, which recreates `rsched` and `chrome` with its public DNS64 resolvers:
   IPv4-only hosts (GitHub) are reached through a translating gateway while dual-stack hosts still
-  go direct. The Claude proxy is deliberately left out. Every later compose command reads the
-  same line, so a rebuild keeps the resolvers. The script refuses, changing nothing, while a
-  service that has a container here is outside the selection — on this host, while `.env` lacks
-  `COMPOSE_PROFILES=claude-proxy`. `deploy/nat64.sh status` shows the selection and each
+  go direct. The model gateway is another repository's stack and is not touched. Every later
+  compose command reads the same line, so a rebuild keeps the resolvers. The script refuses,
+  changing nothing, while a service that has a container here is outside the selection — on a
+  host running the agent desktops, while `.env` lacks `desktop` in `COMPOSE_PROFILES`.
+  `deploy/nat64.sh status` shows the selection and each
   container's resolvers. Turn it `off` the day IPv4 returns: a third party's gateway then sees
   the destination of every IPv4-only call for no benefit.
 - **Host mounts (`/mnt`, `/srv`, `/tmp`) are bind-mounted with `rslave` propagation** so the
@@ -424,9 +425,10 @@ any tracked file that gives a compose command a selection of its own.
 
 ## The image
 
-Three images are built here — `Dockerfile` (the engine), `deploy/Dockerfile.chrome` and
-`deploy/Dockerfile.tor` — and one is pulled as is. **Every image any of them reads is pinned by
-digest, its tag kept beside it** (resolved 2026-10-01; the full digests live in the files):
+Every image is built here — `Dockerfile` (the engine), `deploy/Dockerfile.chrome`,
+`deploy/Dockerfile.tor` and `deploy/Dockerfile.desktop` — and none is pulled as is. **Every image
+any of them reads is pinned by digest, its tag kept beside it** (resolved 2026-10-01; the full
+digests live in the files):
 
 | Pin | What it is | Used for |
 | --- | --- | --- |
@@ -434,7 +436,6 @@ digest, its tag kept beside it** (resolved 2026-10-01; the full digests live in 
 | `node:24-bookworm-slim@sha256:0e0ff40c…` | Node 24.21.0, npm 11.19.0 | the engine copies `node`, npm, npx, corepack and the headers out of it |
 | `ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65…` | uv 0.12.13 | the engine copies `uv` and `uvx` out of it |
 | `debian:bookworm-slim@sha256:3783cc01…` | Debian 12 | the `chrome` and `tor` bases |
-| `eceasy/cli-proxy-api:v7.2.156@sha256:7f434559…` | CLIProxyAPI | the `cliproxy` service (in `docker-compose.yml`) |
 
 A tag moves — `python:3.12-slim-bookworm` is re-pushed for every Debian point release and Python
 patch — so a rebuild used to start from whatever had been pushed that day, and two builds of one
@@ -443,7 +444,7 @@ Docker reads only the digest when both are given; the tag records what it was re
 digest is the image INDEX, which covers every platform, so the same line still builds on amd64
 and arm64. The two images the engine only copies from are build stages of their own, so they are
 pinned on FROM lines like the base, and `tests/test_deploy_image.py` holds every FROM, every
-`COPY --from` (a stage name, never an image) and every pulled image to that shape.
+`COPY --from` (a stage name, never an image) and any image compose would pull to that shape.
 
 Deliberately NOT pinned: the apt packages (installed from the live Debian mirror at build time,
 so they carry that day's security fixes), Google Chrome (the stable channel — the sites the
@@ -484,7 +485,7 @@ docker buildx imagetools inspect node:24-bookworm-slim | sed -n 's/^Digest: *//p
 
 That prints the INDEX digest — the one to pin. The per-platform digests listed under `Manifests:`
 are not: pinning one of those ties the build to a single architecture. Replace what follows
-`@sha256:` on the FROM line (or the compose `image:` line, for cliproxy), keep the tag, then
+`@sha256:` on the FROM line, keep the tag, then
 [rebuild and verify](#rebuilding). To see every pin beside what its tag resolves to today:
 
 ```bash
@@ -511,7 +512,8 @@ docker compose exec -u mark rsched rsched postdeploy   # the live instance, chec
 
 Both run bare, from the checkout's root: they read this host's files and profiles from `.env`
 ([one compose selection per host](#one-compose-selection-per-host)), so the rebuilt fleet keeps
-the override's memory ceilings, the NAT64 resolvers while they are on, and `cliproxy`. A file
+the override's memory ceilings, the NAT64 resolvers while they are on, and `desktop` on a host
+that runs it. A file
 flag or a profile flag here would replace that selection for the one command.
 
 For a NEW IMAGE, `up -d` replaces the running `rsched` process — unlike a code change, which it
@@ -554,7 +556,7 @@ information and keeps the exit code green, so this is safe to chain after the de
 | `served-identity` | `/api/status` at `--url` (default `http://127.0.0.1:<config port>`) | nothing answered — you may be on the wrong host, or the container is down. Nothing below it is a verdict then. **The address and where it came from are printed with every run**, because 0.374.0 was a deploy script driving the wrong host's Docker daemon (~5.2 GB built locally) |
 | `build-skew` | the version `/api/status` serves vs `__version__` in the checkout, plus the daemon's own `build_skew` | the deploy did NOT relaunch the process. `docker compose up -d` compares the CONFIG, finds no drift because the source is bind-mounted, and no-ops — a green `compose config` and `Container rsched Running` both look like success |
 | `backup-freshness` | `.rsched-backup-completed` under `$RSCHED_MIRROR` / the default root, via `daemon/backup_watch.staleness` | no COMPLETE snapshot inside the window, or an attempt since then that did not complete — **or no readable record at all**, which is equally a FAIL here: `rsched-backup.service` failed 19 nights (2026-09-12 → 10-01) and the defect was the ABSENCE of an indicator, not a broken one |
-| `state-path-ownership` | every home the daemon writes (`routines`, `conversations`, `background`, the library, `.config/routine-scheduler`) and the files under them | a path is owned by a uid the daemon cannot write as. One root-owned 0600 file fails its whole home for `backup.sh`, which reads every home as the host user — and a failed home keeps **no snapshot that night** (0.373.1, the root-run cliproxy sidecar, every night from 2026-09-14) |
+| `state-path-ownership` | every home the daemon writes (`routines`, `conversations`, `background`, the library, `.config/routine-scheduler`) and the files under them | a path is owned by a uid the daemon cannot write as. One root-owned 0600 file fails its whole home for `backup.sh`, which reads every home as the host user — and a failed home keeps **no snapshot that night** (0.373.1, the root-run subscription-proxy sidecar this file then carried, every night from 2026-09-14) |
 
 The reference uid is **whoever owns `routines_home`**, never `id -u`: an `exec` without `-u mark`
 runs as root, and then every root-owned file would compare equal and the check would pass on
@@ -683,7 +685,8 @@ cd ~/git-repos/routine-scheduler
 grep -q '^DESKTOP_VM_TOKEN=' .env || printf 'DESKTOP_VM_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
 grep -q '^DESKTOP_OPERATOR_TOKEN=' .env || printf 'DESKTOP_OPERATOR_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
 # add `desktop` to the host's profile list (keep whatever is there)
-sed -i 's/^COMPOSE_PROFILES=\(.*\)$/COMPOSE_PROFILES=\1,desktop/' .env
+if grep -q '^COMPOSE_PROFILES=' .env; then sed -i 's/^COMPOSE_PROFILES=\(.*\)$/COMPOSE_PROFILES=\1,desktop/' .env
+else echo 'COMPOSE_PROFILES=desktop' >> .env; fi
 docker compose build desktop          # ~3 min: the guest OS, its disk image, the VMM
 docker compose up -d desktop
 docker logs rsched-desktop | tail     # "[broker] listening on … — 2 slot(s)"

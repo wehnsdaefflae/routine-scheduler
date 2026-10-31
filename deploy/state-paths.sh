@@ -15,17 +15,17 @@
 # Both consumers run as the HOST user and read every file here as that user, so every container
 # that writes one of these homes writes as the same uid (RSCHED_UID) — a pulled image through
 # compose's `user:`, an image built here by dropping to it in its entrypoint. One file written
-# as root 0600 fails its home, and a failed home keeps no snapshot at all; the root-run cliproxy
-# sidecar did exactly that from its 2026-09-14 login on. tests/test_deploy_state.py holds the
-# compose file to it.
+# as root 0600 fails its home, and a failed home keeps no snapshot at all; the root-run
+# subscription-proxy sidecar this file carried until 0.483.0 did exactly that from its 2026-09-14
+# login on. tests/test_deploy_state.py holds the compose file to it.
 
 # Core data. Absent = a broken install, so a consumer refuses rather than quietly skipping.
 STATE_PATHS_REQUIRED=(
   git-repos/routine-scheduler          # the source tree self-audit edits + the daemon runs from
   .config/routine-scheduler            # SECRETS: config.yaml's tokens, the Secrets store
-                                       # (secrets.env), the cliproxy keys and its subscription
-                                       # LOGINS (cliproxy/auth — only a person's OAuth consent
-                                       # re-mints one); endpoints, source_repo
+                                       # (secrets.env) — the gateway's keys among them;
+                                       # endpoints, source_repo. The subscription LOGINS live
+                                       # with the gateway's own stack (docs/model-gateway.md)
   routines                             # the routine repos, their runs, state, ledgers
   conversations                        # interactive sessions: routine-shaped, un-versioned, irreplaceable
   background                           # detached background runs a conversation launched, mid-flight

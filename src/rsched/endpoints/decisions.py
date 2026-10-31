@@ -7,9 +7,10 @@ levels. There is no text to parse, so there is no empty reply, no refusal hiding
 malformed JSON — the failure modes `engine/llmaction.py` spends most of its length on.
 
 Two wire protocols, one adapter each, both normalised to the dataclasses below so nothing above
-this layer knows which one answered: `openai` (decisions_openai.py — OpenAI's Decisions API and
-the predator server in deploy/decision-server, the one that carries images) and `systemone`
-(decisions_systemone.py — TypeSafe's Jev, direct or through OpenRouter, text only).
+this layer knows which one answered: `openai` (decisions_openai.py — OpenAI's Decisions API) and
+`systemone` (decisions_systemone.py — TypeSafe's Jev, direct, through OpenRouter or through an
+Otari gateway). Both carry images, and github.com/wehnsdaefflae/local-model-server serves both
+over a local vision model; whether a MODEL is sent images is its catalog `multimodal` flag.
 
 Transports, never a harness: one stateless request per call, no retries beyond the shared
 `with_retries`, and the call recorded through the same instrumentation seam every chat

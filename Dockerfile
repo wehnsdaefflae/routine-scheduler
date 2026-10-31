@@ -95,7 +95,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   the claude CLI — `@anthropic-ai/claude-code` is a NATIVE binary now, placed by its npm
 #     postinstall (`node install.cjs`), and the package declares `engines.node >=22`, which the
 #     Node 20 this replaced was already below. The library's `claude` util runs it (`frame-fill`
-#     through `gu claude`); scheduler models use CLIProxyAPI, not this CLI.
+#     through `gu claude`); scheduler models go through the model gateway, not this CLI.
 #   `node --check` — the JS syntax gates of library utils: code-search's `sym check` (self-audit's
 #     pre-gate over the console's ES modules) and `html js-check` (inline scripts)
 #   what a run starts itself: a routine's own JS test harnesses, and npm builds of projects whose

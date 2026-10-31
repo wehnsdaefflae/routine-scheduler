@@ -42,7 +42,8 @@ def test_the_catalog_round_trips(api_client):
     eps = {e["name"]: e for e in view["endpoints"]}
     assert eps["predator"]["key_source"]["source"] == "inline"
     assert "api_key" not in eps["predator"]                      # never the value
-    assert eps["or-jev"]["images"] is False
+    assert eps["or-jev"]["images_default"] is False      # systemone carries them; Jev reads none
+    assert eps["predator"]["images_default"] is True
     assert eps["or-jev"]["default_base_url"] == "https://api.typesafe.ai/v1"
     models = {m["name"]: m for m in view["models"]}
     assert models["vl8b"]["images"] is True
@@ -68,9 +69,13 @@ def test_guards_keep_the_catalog_loadable(api_client):
     r = c.post("/api/settings/decision-models", json={"name": "y", "endpoint": "nope",
                                                        "model": "m"})
     assert r.status_code == 400
+    # a vision model behind a System One server (a gateway, llama-server) is switched on by
+    # its own flag: the protocol carries images, so the flag is no longer refused
     r = c.post("/api/settings/decision-models", json={"name": "y", "endpoint": "or-jev",
                                                        "model": "m", "multimodal": True})
-    assert "text only" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    assert {m["name"]: m for m in c.get("/api/settings/decisions").json()["models"]}[
+        "y"]["images"] is True
     r = c.put("/api/settings/decision-defaults", json={"decision_media_model": "jev"})
     assert "does not take images" in r.json()["detail"]
     assert c.delete("/api/settings/decision-endpoints/or-jev").status_code == 400
@@ -78,6 +83,7 @@ def test_guards_keep_the_catalog_loadable(api_client):
     c.put("/api/settings/decision-defaults", json={"decision_model": "",
                                                    "decision_media_model": "vl8b"})
     assert c.delete("/api/settings/decision-models/jev").json()["ok"]
+    assert c.delete("/api/settings/decision-models/y").json()["ok"]
     assert c.delete("/api/settings/decision-endpoints/or-jev").json()["ok"]
     assert [e["name"] for e in c.get("/api/settings/decisions").json()["endpoints"]] == [
         "predator"]

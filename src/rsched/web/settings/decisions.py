@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ...config.decisionconf import (
-    DECISION_MEDIA_PROTOCOLS,
+    DECISION_MEDIA_DEFAULT,
     DECISION_PROTOCOLS,
     DEFAULT_DECISION_TIMEOUT_S,
     DecisionEndpointConfig,
@@ -49,7 +49,7 @@ def _endpoint_view(name: str, ep: DecisionEndpointConfig) -> dict:
     return {"name": name, "protocol": ep.protocol, "base_url": ep.base_url,
             "default_base_url": DEFAULT_BASE_URLS[ep.protocol], "key_var": ep.key_var,
             "key_env_file": ep.key_env_file, "timeout_s": ep.timeout_s,
-            "images": ep.protocol in DECISION_MEDIA_PROTOCOLS,
+            "images_default": DECISION_MEDIA_DEFAULT[ep.protocol],
             "has_inline_key": bool(ep.api_key), "key_source": src}
 
 
@@ -139,9 +139,6 @@ def upsert_decision_model(request: Request, body: DecisionModelBody,
     ep = server.decision_endpoints.get(body.endpoint)
     if ep is None:
         raise HTTPException(400, f"unknown decision endpoint {body.endpoint!r} — add it first")
-    if body.multimodal and ep.protocol not in DECISION_MEDIA_PROTOCOLS:
-        raise HTTPException(400, f"the {ep.protocol} protocol carries text only — a model on "
-                                 f"{body.endpoint!r} cannot take images")
     key = name or body.name.strip()
 
     def mutate(block: dict) -> None:

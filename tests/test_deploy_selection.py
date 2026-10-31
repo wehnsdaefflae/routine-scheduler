@@ -38,7 +38,7 @@ NAT64 = [*DEFAULT, "compose.nat64.yml"]
 OVERRIDE = """services:
   rsched: {mem_limit: 5g, memswap_limit: 6g}
   chrome: {mem_limit: 2g, memswap_limit: 2g}
-  cliproxy: {mem_limit: 384m, memswap_limit: 384m}
+  desktop: {mem_limit: 8g, memswap_limit: 8g}
   tor: {mem_limit: 256m, memswap_limit: 256m}
 """
 ENV = "# Compose environment. Not tracked — see .gitignore.\nBROWSER_CDP_TOKEN=t0k3n\n"
@@ -46,8 +46,7 @@ ENV = "# Compose environment. Not tracked — see .gitignore.\nBROWSER_CDP_TOKEN
 FLEET = {"rsched": {"service": "rsched", "dns": "[2a00:1098:2b::1]", "mem": 5368709120},
          "rsched-chrome": {"service": "chrome", "dns": "[2a00:1098:2b::1]", "mem": 2147483648},
          "rsched-tor": {"service": "tor", "dns": "(default)", "mem": 268435456},
-         "routine-scheduler-cliproxy-1": {"service": "cliproxy", "dns": "(default)",
-                                          "mem": 402653184}}
+         "rsched-desktop": {"service": "desktop", "dns": "(default)", "mem": 8589934592}}
 
 #: `docker`, resolving the compose selection the way Compose does and logging it per command.
 STUB = """#!@PYTHON@
@@ -110,7 +109,7 @@ elif args[:1] == ["ps"]:
 """
 
 
-def _checkout(tmp_path: Path, *, override: bool = True, profiles: str | None = "claude-proxy",
+def _checkout(tmp_path: Path, *, override: bool = True, profiles: str | None = "desktop",
               ) -> Path:
     """The checkout's root as nat64.sh sees it: the real script and compose files, a host
     override when asked for, and a 0600 `.env` carrying the token (and the profile line)."""
@@ -178,11 +177,11 @@ def test_on_gives_every_command_the_override_the_nat64_file_and_the_profile(tmp_
     root = _checkout(tmp_path)
     proc, calls = _nat64(root, "on")
     assert proc.returncode == 0, proc.stderr
-    assert _selection(calls) == {(tuple(NAT64), ("claude-proxy",))}, calls
+    assert _selection(calls) == {(tuple(NAT64), ("desktop",))}, calls
     assert calls[-1]["argv"] == ["compose", "up", "-d"], calls
     for later in (["build"], ["up", "-d"], ["exec", "-u", "mark", "rsched", "node", "--version"]):
         _compose(root, *later)
-        assert _selection(_calls(root)) == {(tuple(NAT64), ("claude-proxy",))}, later
+        assert _selection(_calls(root)) == {(tuple(NAT64), ("desktop",))}, later
 
 
 def test_on_adds_its_line_and_leaves_the_rest_of_env_as_it_was(tmp_path):
@@ -209,7 +208,7 @@ def test_off_hands_the_file_list_back_to_composes_default(tmp_path):
     proc, calls = _nat64(root, "off")
     assert proc.returncode == 0, proc.stderr
     assert (root / ".env").read_bytes() == before
-    assert _selection(calls) == {(tuple(DEFAULT), ("claude-proxy",))}, calls
+    assert _selection(calls) == {(tuple(DEFAULT), ("desktop",))}, calls
     assert calls[-1]["argv"] == ["compose", "up", "-d"], calls
 
 
@@ -218,24 +217,25 @@ def test_a_host_without_an_override_gets_a_list_without_one(tmp_path):
     root = _checkout(tmp_path, override=False)
     proc, calls = _nat64(root, "on")
     assert proc.returncode == 0, proc.stderr
-    assert _selection(calls) == {(("docker-compose.yml", "compose.nat64.yml"), ("claude-proxy",))}
+    assert _selection(calls) == {(("docker-compose.yml", "compose.nat64.yml"), ("desktop",))}
 
 
 def test_a_selection_that_leaves_a_running_service_out_changes_nothing(tmp_path):
     """An `up` that leaves out a service with a container here cannot settle the project's
-    networks and strands it — cliproxy, 2026-09-27. The script used to hard-code that one profile;
-    it now refuses, leaving `.env` untouched, until `.env` names whatever profile a running service
-    needs. A host that runs no proxy needs no profile at all."""
+    networks and strands it — the subscription proxy's sidecar, 2026-09-27; the agent desktop is
+    the service behind a profile now. The script used to hard-code that one profile; it now
+    refuses, leaving `.env` untouched, until `.env` names whatever profile a running service
+    needs. A host that runs no desktop needs no profile at all."""
     root = _checkout(tmp_path, profiles=None)
     before = (root / ".env").read_bytes()
     proc, calls = _nat64(root, "on")
     assert proc.returncode == 3, proc.stdout + proc.stderr
-    assert "cliproxy" in proc.stderr and "COMPOSE_PROFILES" in proc.stderr, proc.stderr
+    assert "desktop" in proc.stderr and "COMPOSE_PROFILES" in proc.stderr, proc.stderr
     assert "NAT64 on" not in proc.stdout, "announced a switch it then refused"
     assert not [c for c in calls if c["argv"][1:2] == ["up"]], calls
     assert (root / ".env").read_bytes() == before
-    no_proxy = {name: c for name, c in FLEET.items() if c["service"] != "cliproxy"}
-    proc, calls = _nat64(root, "on", fleet=no_proxy)
+    no_desktop = {name: c for name, c in FLEET.items() if c["service"] != "desktop"}
+    proc, calls = _nat64(root, "on", fleet=no_desktop)
     assert proc.returncode == 0, proc.stderr
     assert _selection(calls) == {(tuple(NAT64), ())}, calls
 
@@ -273,12 +273,12 @@ def test_status_shows_the_selection_and_which_containers_it_would_recreate(tmp_p
     assert proc.returncode == 0, proc.stderr
     lines = {line.split()[0]: line for line in proc.stdout.splitlines()}
     assert ":".join(NAT64) in lines["COMPOSE_FILE"] and "NAT64 on" in lines["COMPOSE_FILE"]
-    assert "claude-proxy" in lines["COMPOSE_PROFILES"]
+    assert "desktop" in lines["COMPOSE_PROFILES"]
     assert "mem=none" in lines["rsched"] and "config differs" in lines["rsched"], lines
     assert "mem=2.0G" in lines["rsched-chrome"] and "matches" in lines["rsched-chrome"], lines
     assert "dns=[2a00:1098:2b::1]" in lines["rsched-chrome"], lines
     assert "matches" in lines["rsched-tor"], lines
-    assert "config differs" in lines["routine-scheduler-cliproxy-1"], lines
+    assert "config differs" in lines["rsched-desktop"], lines
 
 
 #: Global flags that select files or profiles for ONE command — what `.env` holds for all of them.
@@ -310,7 +310,7 @@ def test_no_tracked_file_hands_compose_a_selection_of_its_own():
     a session copies reads the host's `.env`. CHANGELOG.md is history: it quotes what it retired."""
     cmd = "docker compose"   # a quote follows it here, so this line is no command to the scan
     assert _bypasses(f"{cmd} -f a.yml -f b.yml up -d") == ["-f", "-f"]
-    assert _bypasses(f"`{cmd} --profile=claude-proxy exec cliproxy`") == ["--profile"]
+    assert _bypasses(f"`{cmd} --profile=desktop exec desktop`") == ["--profile"]
     assert _bypasses(f"COMPOSE_FILE=a.yml {cmd} up -d") == [
         "COMPOSE_FILE/COMPOSE_PROFILES set for one command"]
     assert not _bypasses(f"RSCHED_PORT=8322 {cmd} up -d; {cmd} logs -f tor; {cmd} exec -u mark rsched")

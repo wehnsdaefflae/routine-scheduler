@@ -47,8 +47,8 @@ tinted band, in the palette's violet — is how the system is changing and wheth
 
 - **Endpoints** (Settings) are model *transports*, and there are two kinds: OpenAI-compatible
   APIs (OpenRouter, vLLM, Ollama) and the Anthropic Messages API — which is also how a Claude or
-  Codex SUBSCRIPTION is billed, through CLIProxyAPI on the `anthropic` kind (see *The Claude
-  proxy cutover*). A
+  Codex SUBSCRIPTION is billed, through a gateway in front of CLIProxyAPI on the `anthropic` kind
+  (see *Model gateway setup*). A
   **model** is a named catalog entry bound to an endpoint, carrying its own context window,
   vision support, temperature, output limit (`max_tokens` — Settings flags models
   where it's unset or implausible), and an optional ordered **fallback chain** — other
@@ -195,5 +195,6 @@ boundary.
 - **Notifications** — the one way agents reach you, and which channels you switch on.
 - **Playbooks** — save a conversation as a reusable one-shot brief, and reuse it to seed new ones.
 - **Prompt anatomy** — exactly what the orchestrator model sees, message by message.
-- **Endpoints** — configuring the model transports.
+- **Endpoints** — configuring the model transports; **Model gateway setup** — how this instance
+  reaches them all through one gateway, subscription logins included.
 - **API reference** — the generated reference for the `rsched` package itself.

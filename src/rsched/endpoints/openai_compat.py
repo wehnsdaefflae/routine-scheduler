@@ -45,7 +45,9 @@ from .openai_media import render_media
 
 log = logging.getLogger("rsched.endpoints.openai")
 
-_RF_ERROR_HINTS = ("response_format", "json_schema", "structured")
+# A 400 naming the structured-output field earns one retry without it. Otari rewords a provider's
+# refusal as "…does not support the requested response format." — the field's name with a space.
+_RF_ERROR_HINTS = ("response_format", "response format", "json_schema", "structured")
 
 # F362: a credit-metered provider (OpenRouter) answers 402 when the REQUESTED max_tokens
 # costs more than the remaining balance, and the message names the number that would fit:

@@ -3,7 +3,7 @@
 The scheduler's engine IS the harness. Endpoints are model TRANSPORTS only: two raw
 chat-completion wires (OpenAI-compatible, Anthropic Messages) — a completion function, never
 an agent loop. A Claude subscription is the Anthropic wire pointed at a proxy that owns the
-login (docs/claude-proxy-cutover.md).
+login (docs/model-gateway.md).
 """
 
 from __future__ import annotations

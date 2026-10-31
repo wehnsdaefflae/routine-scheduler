@@ -121,10 +121,11 @@ GUIDE_ORDER = ["getting-started", "examples", "authoring", "conversations", "pla
                "run-gates", "lanes-tags", "patterns", "rules-permissions", "curated-rules",
                "rule-assists",
                "reminders", "items", "messages", "status-pages", "run-analytics", "search",
-               "notifications", "sandboxing", "admin", "endpoints", "decision-models",
+               "notifications", "sandboxing", "admin", "endpoints", "model-gateway",
+               "decision-models",
                "oauth-connections", "remote-machines", "browser-sessions", "desktop-sessions",
                "darknet", "usenet",
-               "output-compression", "revise-recipe", "claude-proxy-cutover",
+               "output-compression", "revise-recipe",
                "prompt-anatomy", "architecture", "designs"]
 
 

@@ -6,8 +6,8 @@
 # rewrote the server's `.env` through the mount, then talked to the LAPTOP's Docker Desktop. The
 # laptop had no containers, so nat64.sh's only safety check — "does the selection leave out a
 # service that has a container here?" — passed trivially on an empty list. `docker compose up -d`
-# then built rsched, rsched-tor and rsched-chrome on the laptop (~5.2 GB), pulled cliproxy, and
-# created the routine-scheduler_browser network there. It stopped only because the default
+# then built rsched, rsched-tor and rsched-chrome on the laptop (~5.2 GB), pulled the proxy image
+# compose then carried, and created the routine-scheduler_browser network there. It stopped only because the default
 # network's address pool happened to overlap a laptop network; with a free subnet the laptop would
 # have started a SECOND scheduler daemon bound to its stale July copy of ~/routines. Meanwhile the
 # server stayed on NAT64 while the script printed "NAT64 off".

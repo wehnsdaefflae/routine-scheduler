@@ -21,10 +21,10 @@
 # It reads the SAME inventory as bundle.sh (deploy/state-paths.sh), so the two cannot drift.
 #
 # WARNING: the snapshots carry SECRETS — the bearer tokens in config.yaml and the Secrets store
-# beside it in ~/.config/routine-scheduler/, the subscription proxy's OAuth logins under its
-# cliproxy/auth, the messenger session stores, plus ~/.credentials when that optional
-# file-based mechanism is used at all. The root is created mode 700, but a network share may
-# not honour that; the script prints the mode it actually got, so read it.
+# beside it in ~/.config/routine-scheduler/ (the model gateway's keys among them), the messenger
+# session stores, plus ~/.credentials when that optional file-based mechanism is used at all.
+# The root is created mode 700, but a network share may not honour that; the script prints the
+# mode it actually got, so read it.
 #
 # It reads every home as the user it runs as, so a file it may not read fails that home, and
 # then the whole night (below). Every container that writes a home writes as that same uid

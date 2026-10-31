@@ -83,14 +83,16 @@ def test_catalog_mistakes_are_reported(tmp_path):
     _, problems = _load(tmp_path, {
         "decision_endpoints": {"ts": {"protocol": "systemone", "colour": "red"}},
         "decision_models": {"x": {"endpoint": "nope", "model": "m"},
-                            "y": {"endpoint": "ts", "model": "jev", "multimodal": True}},
+                            "y": {"endpoint": "ts", "model": "jev"},
+                            "z": {"endpoint": "ts", "model": "vl", "multimodal": True}},
         "decision_model": "ghost", "decision_media_model": "y"})
     text = "\n".join(problems)
     assert "decision_endpoints.ts.colour: unknown key" in text
     assert "decision_models.x: decision endpoint 'nope' is not configured" in text
-    assert "decision_models.y: multimodal is on, but the systemone protocol" in text
     assert "decision_model: 'ghost' is not a decision model" in text
+    # systemone CARRIES images, off by default (Jev reads none): `y` takes none, `z` is let be
     assert "decision_media_model: 'y' does not take images" in text
+    assert "decision_models.z" not in text
 
 
 # --- picking a model ---------------------------------------------------------------------------
@@ -207,12 +209,35 @@ def test_systemone_sends_and_reads_jevs_shape(monkeypatch):
     assert (out.model, out.provider) == ("typesafe/jev-1.13-20260917", "TypeSafe")
 
 
-def test_systemone_refuses_images_and_needs_a_key(monkeypatch, tmp_path):
+def test_systemone_sends_images_as_data_urls(monkeypatch, tmp_path):
+    """An Otari gateway's `/systemone` (and llama-server's) reads an optional `images` list of
+    data URLs; a text-only call sends no such key, so Jev itself never meets one."""
+    img = tmp_path / "a.png"
+    img.write_bytes(b"\x89PNG")
+    seen: list = []
+    _respond(monkeypatch, decisions_systemone,
+             {"answers": {"is_bug": {"type": "noul", "noul": 0.9}}}, seen=seen)
+    s = _server()
+    s.decision_endpoints["otari"] = DecisionEndpointConfig(
+        name="otari", protocol="systemone", base_url="http://172.17.0.1:4000/api/v1", api_key="k")
+    s.decision_models["vl"] = DecisionModelConfig(name="vl", endpoint="otari", model="vl",
+                                                  multimodal=True)
+    endpoint, ref = pick_decision_model(s, "vl", images=True)
+    out = endpoint.decide("photo", [DecisionImage(img, "image/png")], QS[:1], model=ref.model,
+                          timeout=30)
+    assert seen[0]["url"] == "http://172.17.0.1:4000/api/v1/systemone"
+    assert seen[0]["body"]["images"] == ["data:image/png;base64,iVBORw=="]
+    assert out.answers[0].probability == 0.9
+    assert "images" not in endpoint.body("x", [], QS[:1], "m")
+    too_many = [DecisionImage(img, "image/png")] * (decisions_systemone.MAX_IMAGES + 1)
+    with pytest.raises(EndpointError, match="at most 16 images"):
+        endpoint.decide("x", too_many, QS[:1], model=ref.model, timeout=30)
+    assert len(seen) == 1, "an over-long request reached the wire"
+
+
+def test_systemone_needs_a_key(monkeypatch):
     monkeypatch.setattr("rsched.secrets.load_secrets", dict)
     endpoint, ref = pick_decision_model(_server(), "jev", images=False)
-    with pytest.raises(EndpointError, match="takes text only"):
-        endpoint.decide("x", [DecisionImage(tmp_path / "a.png", "image/png")], QS,
-                        model=ref.model, timeout=30)
     with pytest.raises(EndpointError, match="no API key") as err:
         endpoint.decide("x", [], QS, model=ref.model, timeout=30)
     assert err.value.auth

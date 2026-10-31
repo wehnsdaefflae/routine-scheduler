@@ -10,7 +10,7 @@ background tasks, triggers, schedule-once, run gates, lanes & tags, conversation
 playbooks, rules & permissions, curated rules, rule assists, reminders, items, messages,
 status pages, sandboxing, admin, OAuth connections, remote machines, browser sessions,
 darknet, usenet, notifications, search, run analytics, output compression, revise recipe,
-the Claude-proxy cutover, prompt anatomy, endpoints, authoring — and `designs.md`, which is
+the model gateway, prompt anatomy, endpoints, authoring — and `designs.md`, which is
 the only one that describes work NOT built.
 
 ## How a run works (engine/)
@@ -400,7 +400,8 @@ Two kinds:
   / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400, and without
   `response_format` on a 503 that hides a schema-incapable backend). Caching
   is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
-- **anthropic** — Messages API, direct or through CLIProxyAPI for subscription authentication. Schema via a single tool
+- **anthropic** — Messages API, direct or through a gateway (Otari, with CLIProxyAPI behind it for subscription
+  authentication — docs/model-gateway.md). Schema via a single tool
   on `auto` held to one call — a FORCED `tool_choice` makes the configured effort meaningless
   (thinking is allowed only on `auto`, and the proxy strips thinking and effort from a forced
   call; measured 2026-10-08), so forcing is an endpoint's `tool_choice: forced` only, for a route

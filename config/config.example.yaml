@@ -37,8 +37,8 @@ sandbox: permissive
 # kind: openai | anthropic
 #   openai     — any OpenAI-compatible API (OpenRouter, Featherless, vLLM, Ollama, …).
 #                Needs an API key (Ollama: none).
-#   anthropic  — Messages API: direct API key or subscription proxy client key.
-#                For CLIProxyAPI setup, see docs/claude-proxy-cutover.md.
+#   anthropic  — Messages API: a direct API key, or a gateway's key (an Otari gateway in front
+#                of CLIProxyAPI subscription logins — docs/model-gateway.md).
 # Models are a CATALOG over those endpoints, each entry named once and picked by that name. Each
 # ROUTINE picks its own (main / tool_call, plus an optional uncensored one) in the UI or its
 # routine.yaml. The only server-level model is system_model below: the ONE fallback for machine
@@ -50,10 +50,11 @@ sandbox: permissive
 # system_model: ""       # a catalog model NAME — set from the UI once the catalog has one
 
 # DECISION models — typed classifiers that answer with probabilities, never text (TypeSafe's
-# Jev, OpenAI's Decisions API, a self-hosted deploy/decision-server). Their own catalog, behind
+# Jev, OpenAI's Decisions API, a self-hosted github.com/wehnsdaefflae/local-model-server). Their own catalog, behind
 # the `decide` action; with none configured no run is shown that action. Settings → Decision
 # endpoints, or docs/decision-models.md.
-# protocol: openai (POST {base}/decisions — text + images) | systemone (POST {base}/systemone — Jev, text)
+# protocol: openai (POST {base}/decisions — text + images) | systemone (POST {base}/systemone — Jev;
+#           images as an `images` list where the server reads them: a gateway, local-model-server)
 #
 # decision_endpoints: {}     # e.g. openrouter-jev: {protocol: systemone, base_url: https://openrouter.ai/api/v1, key_var: OPENROUTER_API_KEY}
 # decision_models: {}        # e.g. jev: {endpoint: openrouter-jev, model: typesafe/jev-1.13}

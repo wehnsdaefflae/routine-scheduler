@@ -136,10 +136,10 @@ one you are about to touch, not all of them.
   changelog rows — and an item finished WITHOUT a release (config, a recipe edit) as a
   `"commit": null` row there, or nothing ever closes it. An entry there is an ORDER, not a note
 - `docs/admin.md`, `docs/run-gates.md`, `docs/revise-recipe.md`, `docs/output-compression.md`,
-  `docs/claude-proxy-cutover.md` — the admin conversation tier, the pre-engine admission gate,
+  `docs/model-gateway.md` — the admin conversation tier, the pre-engine admission gate,
   in-place recipe revision, stdout compression (LOSSLESS stdlib encodings only — grep headings,
   path folding, JSON minified with tables — engine behaviour rather than a setting, no optional
-  dependency), and the subscription transport
+  dependency), and the model gateway every call leaves through (a separate repo's Otari stack)
 - `.codemap/` — the derived module/route/contract map `self-audit` works from
   (gitignored; regenerate with the repo-wide code-search util's `map` verb, never hand-edit)
 
@@ -1070,8 +1070,8 @@ by a test, by the engine, or by a past incident.
   06:18) failed eight routines at turn 0 within two minutes and nothing detected it.
 - **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
   what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
-  metadata APIs; a listing that carries NO figures — every `anthropic` endpoint here is a
-  subscription proxy, whose `/v1/models` is ids only — falls back to a built-in Claude table,
+  metadata APIs; a listing that carries NO figures — a gateway or subscription proxy whose
+  `/v1/models` is ids only — falls back to a built-in Claude table,
   then to OpenRouter's public catalog under the name vendors share: `source: reference`),
   caches it under
   `<routines>/.control/model-limits.json` — derived state, never config — and refreshes on a 24h
@@ -1263,9 +1263,12 @@ bind-mounted, so the
 whole system migrates as a tarball of those dirs — EVERY data home must be a bind, or it dies with
 the container layer on recreate. And every container that WRITES one writes as the instance's uid
 (`RSCHED_UID`): both consumers below read the homes as the host user, and one root-written 0600
-file fails its home, which keeps no snapshot that night — the root-run `cliproxy` sidecar failed
-one every night from 2026-09-14 until 0.373.1 gave it compose's `user:` (`tests/test_deploy_state.py`
-holds the compose file to this). That inventory has ONE copy, `deploy/state-paths.sh`, read by both
+file fails its home, which keeps no snapshot that night — the root-run subscription-proxy sidecar
+this compose file carried until 0.483.0 failed one every night from 2026-09-14 until 0.373.1 gave
+it compose's `user:` (`tests/test_deploy_state.py` holds the compose file to this). No model
+transport runs in this compose project any more: every model call leaves through the separate
+llm-interfaces gateway stack (Otari, with the subscription logins' CLIProxyAPI beside it), reached
+on the docker host's bridge address (`docs/model-gateway.md`). That inventory has ONE copy, `deploy/state-paths.sh`, read by both
 consumers: `bundle.sh` writes the one-shot migration tarball (DOCKER.md's flow ends by
 decommissioning the source, which is why a frozen snapshot is fine there) and `backup.sh` keeps
 DATED SNAPSHOTS of the same homes (nightly via the `rsched-backup` user timer, which `install.sh`
@@ -1279,7 +1282,8 @@ a linked file is ONE file every snapshot shares. **The tarball is not a backup**
 moves gigabytes to capture megabytes. Keep the two lists in the one file: a second copy is how five
 data homes went unbundled for a release. **Every compose command runs bare, from the checkout's
 root**: the host's file set and profiles live in `.env` (`COMPOSE_FILE`, which `deploy/nat64.sh`
-writes while NAT64 is on; `COMPOSE_PROFILES=claude-proxy`), which Compose reads on every command.
+writes while NAT64 is on; `COMPOSE_PROFILES=desktop` on a host running the agent desktops), which
+Compose reads on every command.
 A file flag or a profile flag REPLACES that selection for the one command — and any file list
 drops the gitignored `docker-compose.override.yml` with this host's memory ceilings, which is how
 every container ran unlimited from 2026-09-27 until the 0.372.1 deploy (deploy/DOCKER.md, "One

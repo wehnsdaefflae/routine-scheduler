@@ -15,11 +15,11 @@
 # While NAT64 is on, the list is fixed when it is written: run `on` again after creating or
 # deleting the override.
 #
-# The profiles are the host's, not this script's: a host that runs the subscription proxy keeps
-# COMPOSE_PROFILES=claude-proxy in `.env` (docs/claude-proxy-cutover.md). They are checked rather
-# than assumed, because an `up` whose selection leaves out a service that has a container here
-# cannot settle the project's networks — it stops the rest and strands that one, which on
-# 2026-09-27 was the model transport. A refusal leaves `.env` exactly as it was.
+# The profiles are the host's, not this script's: a host that runs the agent desktops keeps
+# COMPOSE_PROFILES=desktop in `.env` (deploy/DOCKER.md, "The agent desktops"). They are checked
+# rather than assumed, because an `up` whose selection leaves out a service that has a container
+# here cannot settle the project's networks — it stops the rest and strands that one, which on
+# 2026-09-27 was the model transport's sidecar. A refusal leaves `.env` exactly as it was.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

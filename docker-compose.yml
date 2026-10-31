@@ -8,41 +8,6 @@
 #   RSCHED_HOME=/srv/rsched-data    docker compose up -d      # …or anywhere else
 
 services:
-  cliproxy:
-    image: eceasy/cli-proxy-api:v7.2.156@sha256:7f434559781aa011bbfa1061757fb5fbb4d44190e453f5bb1cb20076d9c6581e
-    profiles: ["claude-proxy"]
-    restart: unless-stopped
-    # The INSTANCE'S uid, never the image's root. Everything the proxy writes lands in a carried
-    # home — the logins a person's OAuth consent minted, the OAuth callback files, its error
-    # logs — and backup.sh reads those homes as the host user. As root, a new login or callback
-    # file came out root:root 0600, unreadable to the backup; one such file fails its home, and a
-    # failed home keeps no snapshot that night at all (deploy/DOCKER.md, "Backups"). `docker
-    # compose exec` runs as this user too, so the terminal login writes the same way — never
-    # exec it as root.
-    # tests/test_deploy_state.py holds every container that writes a carried home to this.
-    user: "${RSCHED_UID:-1000}:${RSCHED_GID:-1000}"
-    # Host access is loopback only; rsched uses http://cliproxy:8317 internally.
-    ports:
-      - "127.0.0.1:8317:8317"
-      - "127.0.0.1:54545:54545"  # Claude OAuth callback, tunnel for remote login
-      - "127.0.0.1:1455:1455"    # Codex OAuth callback, tunnel for remote login
-      - "127.0.0.1:51121:51121"  # Antigravity (Google) OAuth callback, tunnel for remote login
-    volumes:
-      - type: bind
-        source: ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy/config.yaml
-        target: /CLIProxyAPI/config.yaml
-        bind: { create_host_path: false }
-      # The logins, at the path the proxy's own config names as `auth-dir` — it reads that, not
-      # this file, so the two must agree. Not the image's default under /root: the image keeps
-      # /root at 0700, which a non-root uid cannot cross. `create_host_path: false` because
-      # Docker would create a missing source root-owned, where this uid could store no login;
-      # deploy/cliproxy-init.sh creates it, as the host user.
-      - type: bind
-        source: ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy/auth
-        target: /CLIProxyAPI/auth
-        bind: { create_host_path: false }
-    # This entire state directory is already in the required backup inventory.
-
   rsched:
     build:
       context: .
@@ -91,7 +56,9 @@ services:
     environment:
       HOME: /home/mark
       RSCHED_BIND: "0.0.0.0"         # bind the LAN inside the container without editing the mounted config
-      # Subscription model authentication lives in the cliproxy sidecar.
+      # Model traffic leaves through a separate gateway stack (Otari, with the subscription
+      # logins' CLIProxyAPI beside it), reached on the docker host's bridge address — not a
+      # service of this file (docs/model-gateway.md).
     volumes:
       - ${RSCHED_HOME:-/home/mark}/git-repos/routine-scheduler:/home/mark/git-repos/routine-scheduler
       - ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler:/home/mark/.config/routine-scheduler
@@ -432,15 +399,15 @@ networks:
   # container addressing scheme that changes when the prefix does is one that breaks on a lease
   # renewal. The IPv4 subnets are pinned to what they already were, so no address moves.
   #
-  # CHANGING ANYTHING HERE NEEDS `cliproxy` IN THE SELECTION. A network can only be recreated
-  # once every container is off it, and `cliproxy` sits behind the `claude-proxy` profile, so an
-  # `up` that leaves the profile out stops the other three, fails to drop the network cliproxy
-  # still holds, and leaves the fleet down with the model transport still on the old network. A
-  # host that runs the proxy keeps COMPOSE_PROFILES=claude-proxy in `.env`, which every command
-  # from the checkout's root reads (deploy/DOCKER.md, "One compose selection per host"):
+  # CHANGING ANYTHING HERE NEEDS EVERY SERVICE WITH A CONTAINER IN THE SELECTION. A network can
+  # only be recreated once every container is off it, so an `up` that leaves a profiled service
+  # out (`desktop`, on a host that runs it) stops the others, fails to drop the network that one
+  # still holds, and leaves the fleet down. A host keeps its profiles in COMPOSE_PROFILES in
+  # `.env`, which every command from the checkout's root reads (deploy/DOCKER.md, "One compose
+  # selection per host"):
   #   docker compose up -d --force-recreate
-  # `--force-recreate` matters for cliproxy specifically — compose will otherwise try to START
-  # the existing container, which still references the deleted network by id and cannot boot.
+  # `--force-recreate` matters for a container compose would otherwise try to START as it is:
+  # it still references the deleted network by id and cannot boot.
   default:
     enable_ipv6: true
     ipam:

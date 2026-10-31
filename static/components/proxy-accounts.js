@@ -13,7 +13,7 @@ import { act, el, toast } from "/static/util.js";
 //: dies. The proxy owns the OAuth flow; the console only ferries the consent link out and the
 //: code back. The consent page redirects to localhost on the OPERATOR'S device, where nothing
 //: listens, so that page fails to load — its address still carries the code, and pasting it
-//: here finishes the sign-in (docs/claude-proxy-cutover.md). The rows and the sign-in
+//: here finishes the sign-in (docs/model-gateway.md). The rows and the sign-in
 //: controls come filtered from the server by the provider of the models bound to this
 //: endpoint: the Claude card shows the Claude account, the Codex card the Codex one, a card serving
 //: Gemini ids the Antigravity (Google) one. The sign-in is the same three steps for all of them;

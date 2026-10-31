@@ -22,8 +22,9 @@
 # through a volunteer's gateway instead of straight out your own line: slower, and someone else
 # sees the destination.
 #
-# cliproxy is deliberately absent. Anthropic is dual-stack, so the model transport never needs
-# translation and its traffic should not touch a third party.
+# The model gateway is deliberately absent: it is another repo's stack (docs/model-gateway.md),
+# and Anthropic is dual-stack, so model traffic never needs translation and should not touch a
+# third party.
 services:
   rsched:
     dns:

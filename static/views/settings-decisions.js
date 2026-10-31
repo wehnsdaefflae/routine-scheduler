@@ -1,6 +1,6 @@
 // Settings → Decision endpoints: the catalog behind the `decide` action (docs/decision-models.md).
 //
-// A decision model (TypeSafe's Jev, OpenAI's Decisions API, the predator server) answers a typed
+// A decision model (TypeSafe's Jev, OpenAI's Decisions API, local-model-server) answers a typed
 // question with probabilities over the answers it was offered — never text — so it has its own
 // endpoints and models beside the LLM ones, and no chat role can pick one. Two wire PROTOCOLS
 // cover every provider; the add form's presets fill in the protocol, base URL and key name for
@@ -13,7 +13,7 @@ import { act, el, skeleton, toast } from "/static/util.js";
 
 const PROTOCOL = {
   openai: "OpenAI Decisions protocol — POST {base}/decisions, text and images",
-  systemone: "System One protocol (Jev) — POST {base}/systemone, text only",
+  systemone: "System One protocol (Jev) — POST {base}/systemone, text; images where the server reads them",
 };
 // Known providers: picking one fills the form. `key_var` names the Secrets entry the key is
 // read from, so an OpenRouter key already stored for the LLM endpoint serves Jev as well.
@@ -25,8 +25,10 @@ const PRESETS = [
     model: "typesafe/jev-1.13" },
   { id: "typesafe", label: "Jev direct from TypeSafe (jev-latest)", protocol: "systemone",
     base_url: "https://api.typesafe.ai/v1", key_var: "TYPESAFE_API_KEY", model: "jev-latest" },
-  { id: "self", label: "Self-hosted, OpenAI-shaped (e.g. deploy/decision-server)",
+  { id: "self", label: "Self-hosted, OpenAI-shaped (e.g. local-model-server)",
     protocol: "openai", base_url: "http://host:8790/v1", key_var: "", model: "" },
+  { id: "gateway", label: "System One through a gateway or local-model-server (Otari, llama-server)",
+    protocol: "systemone", base_url: "http://host:4000/api/v1", key_var: "", model: "" },
 ];
 
 function credLine(ep) {
@@ -201,12 +203,15 @@ function addModelForm(d, reload) {
   const nameIn = el("input", { type: "text", placeholder: "name (e.g. jev)" });
   const epSel = el("select", {}, d.endpoints.map((ep) => el("option", {}, ep.name)));
   const modelIn = el("input", { type: "text", placeholder: "provider model id" });
-  const imgSel = el("select", {}, el("option", { value: "" }, "protocol default"),
+  const protoDefault = el("option", { value: "" }, "protocol default");
+  const imgSel = el("select", {}, protoDefault,
     el("option", { value: "true" }, "yes"), el("option", { value: "false" }, "no"));
   const prefill = () => {
     const ep = d.endpoints.find((e) => e.name === epSel.value);
     const preset = PRESETS.find((p) => ep && p.base_url === ep.base_url);
     if (preset?.model && !modelIn.value) modelIn.value = preset.model;
+    // Both protocols carry images; the default says whether this one's usual model reads them.
+    protoDefault.textContent = ep ? `protocol default (${ep.images_default ? "yes" : "no"})` : "protocol default";
   };
   epSel.onchange = prefill; prefill();
   const save = el("button", { class: "btn primary" }, "add decision model");

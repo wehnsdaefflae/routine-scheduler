@@ -15,6 +15,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.483.0] — 2026-10-31
+
+### Model traffic leaves through the separate gateway; the compose proxy and the decision server move out
+
+Every model call on this instance already goes through **Otari**, the gateway in the separate
+[llm-interfaces](https://github.com/wehnsdaefflae/llm-interfaces) stack, whose ONE standalone
+CLIProxyAPI holds the subscription logins. This release removes what only existed for the proxy
+this repository used to run itself:
+
+- the `cliproxy` compose service and its `claude-proxy` profile, `deploy/cliproxy-init.sh`,
+  `deploy/cliproxy-migrate-uid.sh`, `deploy/cliproxy.config.example.yaml`, and the tests that
+  existed for them (`test_cliproxy_init.py`, `test_cliproxy_migrate_uid.py`,
+  `test_deploy_proxy_ports.py`, the proxy section of `test_deploy_state.py`). Compose now pulls no
+  image at all, so `test_every_image_compose_pulls_is_pinned` holds the NEXT pulled image to the
+  pin and asserts the built/reused split it depends on instead of asserting that one exists.
+  `test_deploy_selection.py` drives nat64.sh's profile check with the `desktop` profile, the one
+  profiled service left — the check itself was always generic and is unchanged.
+- **Kept**: the CLIProxyAPI management client (`endpoints/cliproxy_mgmt.py`, `cliproxy_login.py`,
+  `cliproxy_quota.py`), the endpoint watch and the console's account rows and sign-in. They now
+  run against the standalone proxy through a model-less `cliproxy-mgmt` endpoint
+  (`quota_source: cliproxy`), whose card shows every account, every sign-in and the quota line.
+- `deploy/decision-server/` and its protocol test moved to their own repository,
+  [local-model-server](https://github.com/wehnsdaefflae/local-model-server) (deployed on predator
+  as `local-model-server.service`, same port); every reference points there.
+- `docs/claude-proxy-cutover.md` is replaced by **`docs/model-gateway.md`** — the four gateway
+  endpoints, normalised model ids, signing in through `cliproxy-mgmt`, decisions through the
+  gateway — and the docs sweep (CLAUDE.md, DOCKER.md, SETUP.md, endpoints, architecture,
+  getting-started, README, the deploy scripts' comments) describes no service that no longer
+  exists.
+
+**Deploying it**: a host whose `.env` still says `COMPOSE_PROFILES=claude-proxy` drops that
+profile (keep `desktop` if it runs the desktops), and a `routine-scheduler-cliproxy-1` container
+left from the old service is removed with `docker compose up -d --remove-orphans` — otherwise
+`deploy/nat64.sh` refuses, correctly, because a container sits outside the selection.
+
+### A gateway's reworded `response_format` refusal degrades the turn instead of failing it
+
+The `openai` adapter retries once without `response_format` when a 400 names it. Otari rewords a
+provider's refusal as *"Model X does not support the requested response format."* — a space, no
+underscore — so the retry never fired. `"response format"` joins the hints
+(`endpoints/openai_compat.py`); `tests/test_openai_rf_refusal.py` pins the reworded refusal and
+that an unrelated 400 still keeps its schema.
+
+### System One decisions carry images
+
+`endpoints/decisions_systemone.py` refused every image. The gateway's `/api/v1/systemone` and
+llama-server's take an optional `images` list of `data:` URLs (at most 16), so the adapter now
+sends a request's images there and refuses only more than 16. Both protocols carry images now;
+`DECISION_MEDIA_PROTOCOLS` became `DECISION_MEDIA_DEFAULT` (on for `openai`, OFF for `systemone`,
+because Jev itself reads none), so a vision model on a System One server is switched on by its own
+`multimodal: true` — which the loader and the settings route no longer refuse. The console's
+protocol line says so, the add-model form's *protocol default* names what it resolves to, and a
+preset for a System One gateway or local server joins the provider list.
+
 ## [0.482.0] — 2026-10-31
 
 ### The console's responses are compressed (the operator: "super slow")

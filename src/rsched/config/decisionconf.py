@@ -1,6 +1,7 @@
 """Decision-model config: the transports and the catalog behind the `decide` action.
 
-A DECISION model (TypeSafe's Jev, OpenAI's Decisions API, the SemIf readout served on predator)
+A DECISION model (TypeSafe's Jev, OpenAI's Decisions API, the SemIf readout local-model-server
+serves on predator)
 takes evidence and typed questions and returns probabilities over the answers it was offered —
 never text. That is a different contract from a chat completion, so these are their own
 catalog beside `endpoints:`/`models:` rather than a third chat kind: nothing that resolves a chat
@@ -17,13 +18,17 @@ from pydantic import Field, model_validator
 from .base import BlankableStr, _Config
 
 #: The two wire protocols. `openai` is OpenAI's `POST {base}/decisions` (input + a questions
-#: LIST; text and inline images) — also what deploy/decision-server serves. `systemone` is
-#: TypeSafe's `POST {base}/systemone` (state + a questions MAP; text only) — Jev, served by
-#: TypeSafe itself and resold by OpenRouter under the same path.
+#: LIST; text and inline images). `systemone` is TypeSafe's `POST {base}/systemone` (state + a
+#: questions MAP, plus an optional `images` list of data URLs) — Jev, served by TypeSafe itself,
+#: resold by OpenRouter and routed by an Otari gateway under the same path. Both are also what
+#: github.com/wehnsdaefflae/local-model-server serves over a local vision model.
 DecisionProtocol = Literal["openai", "systemone"]
 DECISION_PROTOCOLS = get_args(DecisionProtocol)
-#: The protocols that carry images at all. Jev is text-only by its own documentation.
-DECISION_MEDIA_PROTOCOLS = frozenset({"openai"})
+#: Whether a model is sent images when its own `multimodal` flag is unset. Both protocols CARRY
+#: them; the default says what the protocol's usual model reads. `systemone` is off because Jev
+#: is text-only by its own documentation — a vision model behind a gateway or local-model-server
+#: is switched on by its own flag.
+DECISION_MEDIA_DEFAULT = {"openai": True, "systemone": False}
 #: The secrets-store variable a decision endpoint's key is read from when `key_var` is unset.
 DECISION_KEY_VAR_DEFAULTS = {"openai": "OPENAI_API_KEY", "systemone": "TYPESAFE_API_KEY"}
 #: A whole request's ceiling. Generous because a local model on a CPU fallback decides a dozen
@@ -55,18 +60,21 @@ class DecisionModelConfig(_Config):
     name: str = ""          # filled from the `decision_models:` mapping key
     endpoint: str           # which configured decision endpoint serves it
     model: str              # the provider's model id (gpt-6-luna, typesafe/jev-1.13, …)
-    # None = the protocol's default: on for `openai`, off for `systemone` (which cannot be on).
+    # None = the protocol's default (DECISION_MEDIA_DEFAULT): on for `openai`, off for
+    # `systemone`, whose own model Jev reads no images.
     multimodal: bool | None = None
 
 
 def multimodal_effective(model: DecisionModelConfig, endpoint: DecisionEndpointConfig | None
                          ) -> bool:
-    """Whether this model is sent images: its own flag, else its protocol's default — and never
-    on a protocol that cannot carry them, whatever the flag says (the loader reports that).
+    """Whether this model is sent images: its own flag, else its protocol's default. A model
+    whose endpoint is missing is sent nothing (the loader reports the missing endpoint).
     """
-    if endpoint is None or endpoint.protocol not in DECISION_MEDIA_PROTOCOLS:
+    if endpoint is None:
         return False
-    return True if model.multimodal is None else model.multimodal
+    if model.multimodal is None:
+        return DECISION_MEDIA_DEFAULT[endpoint.protocol]
+    return model.multimodal
 
 
 def decision_problems(cfg) -> list[str]:
@@ -80,9 +88,6 @@ def decision_problems(cfg) -> list[str]:
         if ep is None:
             problems.append(f"decision_models.{name}: decision endpoint {mc.endpoint!r} is not "
                             "configured")
-        elif mc.multimodal and ep.protocol not in DECISION_MEDIA_PROTOCOLS:
-            problems.append(f"decision_models.{name}: multimodal is on, but the {ep.protocol} "
-                            "protocol carries text only — images would never be sent")
     for key in ("decision_model", "decision_media_model"):
         value = getattr(cfg, key)
         if value and value not in cfg.decision_models:

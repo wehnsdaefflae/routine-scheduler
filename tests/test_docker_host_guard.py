@@ -29,7 +29,7 @@ GUARD = REPO / "deploy" / "docker-host-guard.sh"
 #: Every deploy script that drives a Docker daemon, and the guard call it must carry. A new one
 #: added without the guard is the same defect again, which is why this is a list and not a pair
 #: of asserts.
-DRIVERS = ("nat64.sh", "cliproxy-migrate-uid.sh")
+DRIVERS = ("nat64.sh",)
 
 
 def _stub_tree(tmp_path: Path) -> tuple[Path, dict[str, str]]:

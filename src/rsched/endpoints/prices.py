@@ -14,8 +14,8 @@ rate — whatever transport carried it.
   REPORTED on the completion when it reports one (OpenRouter does, the auto-router included,
   whose list price is variable), else the prices it PUBLISHES for that exact model id
   (OpenRouter's `/models`, Nano-GPT's own `/api/models`).
-- **A subscription route** (a proxy whose catalog lists ids and no prices — every `anthropic`
-  endpoint here, the codex and antigravity proxies) is priced at the model's LIST price, read
+- **A subscription route** (a proxy or gateway whose catalog lists ids and no prices — every
+  endpoint here that is neither OpenRouter nor Nano-GPT) is priced at the model's LIST price, read
   from the public reference catalog (OpenRouter's `/models`) under the name vendors share
   (`price_name`): that is what the same tokens cost when bought, which is what "notional" means.
 

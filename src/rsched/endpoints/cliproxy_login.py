@@ -1,6 +1,6 @@
 """Sign a subscription account back in through CLIProxyAPI, from the console.
 
-The proxy owns the OAuth flow (docs/claude-proxy-cutover.md): it mints the consent URL,
+The proxy owns the OAuth flow (docs/model-gateway.md): it mints the consent URL,
 receives the authorization code and writes the auth file. What the console adds is the
 HANDOFF for a browser that is not on the server. The consent page redirects to
 `http://localhost:54545/callback` (Claude; 1455 for Codex; `51121/oauth-callback` for

@@ -26,7 +26,8 @@ at run time**. Values are **write-only** — the UI lists key names, never the v
 |---|---|
 | `OPENROUTER_KEY` | `sk-or-v1-…` |
 | `ANTHROPIC_KEY` | `sk-ant-…` |
-| `CLIPROXY_API_KEY` | *(proxy client key — see §3)* |
+| `OTARI_API_KEY` | *(the model gateway's client key — see §3)* |
+| `CLIPROXY_MANAGEMENT_KEY` | *(the subscription proxy's management key — see §3)* |
 | `BROWSER_CDP_TOKEN` | *(the same value as in `.env` — the signed-in browser's door)* |
 | `DISCORD_BOT_TOKEN` | *(for the `discord` util)* |
 
@@ -49,9 +50,12 @@ uncensored one) on its page.
 
 ### Using your Claude subscription
 
-Run the pinned CLIProxyAPI sidecar and sign in through its OAuth flow. Configure an
-Anthropic-compatible endpoint with the proxy client key. See the
-[subscription proxy guide](../docs/claude-proxy-cutover.md).
+Subscriptions are reached through a separate gateway stack,
+[llm-interfaces](https://github.com/wehnsdaefflae/llm-interfaces): Otari routes every model name,
+and the CLIProxyAPI beside it holds the subscription logins. Nothing in this repository runs
+either. Point an `anthropic` endpoint at the gateway with its client key, bind one model-less
+endpoint to the proxy's management API, and sign the accounts in from that endpoint's card. See
+the [model gateway guide](../docs/model-gateway.md).
 
 ## 4. Connect GitHub  (Settings → GitHub)
 

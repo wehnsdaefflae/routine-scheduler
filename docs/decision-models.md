@@ -5,7 +5,8 @@ offered** — never text. Give it some evidence and a question; it returns P(yes
 question, one probability per option for a choice, or a probability-weighted position on an
 ordered scale for a score. TypeSafe calls the family *System One* and its model **Jev**; OpenAI's
 **Decisions API** (`gpt-6-luna`) is the same idea; SemIf/OpenJev reads the same answer out of an
-open model's logits, and that is what runs on predator.
+open model's logits, and that is what [local-model-server](https://github.com/wehnsdaefflae/local-model-server)
+runs on predator.
 
 Most decisions a routine makes are small — route this, screen that, is this evidence enough. A
 chat model answers them by writing a sentence the run then parses back into an `if`. A decision
@@ -22,7 +23,7 @@ Decision models have their own catalog beside the LLM one, in Settings → **Dec
 
 ```yaml
 decision_endpoints:
-  predator:            # deploy/decision-server on the GPU box
+  predator:            # local-model-server on the GPU box
     protocol: openai
     base_url: http://192.168.0.246:8790/v1
     key_var: PREDATOR_DECISIONS_TOKEN
@@ -31,6 +32,10 @@ decision_endpoints:
     protocol: systemone
     base_url: https://openrouter.ai/api/v1
     key_var: OPENROUTER_API_KEY      # the same key the LLM endpoint uses
+  otari-decisions:                   # the same Jev through an Otari gateway (docs/model-gateway.md)
+    protocol: systemone
+    base_url: http://172.17.0.1:4000/api/v1
+    key_var: OTARI_API_KEY
   openai:
     protocol: openai                 # base_url blank → https://api.openai.com/v1
 decision_models:
@@ -41,10 +46,12 @@ decision_model: jev            # what a decide call uses when it names none
 decision_media_model: vl8b     # …and when it carries images (blank → decision_model)
 ```
 
-A decision model's `multimodal` defaults to its protocol's: on for `openai`, off — and impossible
-— for `systemone`. The loader reports a model bound to a missing endpoint, a text-only protocol
-marked multimodal, a default that is not in the catalog, and an image default that cannot take
-images (`config/decisionconf.py`). Each model card has a **test** button: one yes/no question with
+A decision model's `multimodal` defaults to its protocol's (`DECISION_MEDIA_DEFAULT`): on for
+`openai`, off for `systemone`. Both protocols CARRY images; the default only says what the
+protocol's usual model reads — Jev reads none — so a vision model served on `systemone` (through a
+gateway, llama-server or local-model-server) is switched on by its own `multimodal: true`. The
+loader reports a model bound to a missing endpoint, a default that is not in the catalog, and an
+image default that does not take images (`config/decisionconf.py`). Each model card has a **test** button: one yes/no question with
 an obvious answer, showing latency, P(yes) and usage.
 
 **An instance with no decision model never shows a run the `decide` action** — the kind is
@@ -85,8 +92,8 @@ normalises both to the same answers.
 
 | protocol | request | carries | served by |
 |---|---|---|---|
-| `openai` | `POST {base}/decisions` — `input` (text, or user messages of `input_text` + inline `input_image` data URLs) and a `questions` LIST (`predicate` / `choice` with `choices` / `score` with `levels`) | text **and images** | OpenAI (`gpt-6-luna`, public beta 2026-10, $0.10/Mtok input, output free) · predator's `deploy/decision-server` |
-| `systemone` | `POST {base}/systemone` — `state` (string, object or array) and a `questions` MAP (`noul` / `choice` with `criteria` map / `score` with `criteria` levels) | text only | TypeSafe direct (`https://api.typesafe.ai/v1`, `jev-latest`, a TypeSafe key) · OpenRouter (`https://openrouter.ai/api/v1`, `typesafe/jev-1.13` or `~typesafe/jev-latest`, an OpenRouter key) |
+| `openai` | `POST {base}/decisions` — `input` (text, or user messages of `input_text` + inline `input_image` data URLs) and a `questions` LIST (`predicate` / `choice` with `choices` / `score` with `levels`) | text **and images** | OpenAI (`gpt-6-luna`, public beta 2026-10, $0.10/Mtok input, output free) · local-model-server on predator |
+| `systemone` | `POST {base}/systemone` — `state` (string, object or array), a `questions` MAP (`noul` / `choice` with `criteria` map / `score` with `criteria` levels) and an optional `images` list of `data:image/…;base64,…` URLs (at most 16) | text; **images** where the server reads them | TypeSafe direct (`https://api.typesafe.ai/v1`, `jev-latest`, a TypeSafe key) · OpenRouter (`https://openrouter.ai/api/v1`, `typesafe/jev-1.13` or `~typesafe/jev-latest`, an OpenRouter key) · an Otari gateway (`{gateway}/api/v1`, its key, e.g. `openrouter:typesafe/jev-1.13`) · llama-server and local-model-server, which read the images |
 
 OpenRouter's `/api/alpha/decisions` takes the same Jev shape as `/api/v1/systemone`; the adapter
 uses the latter, which is the same path on both vendors. Both adapters go through the shared
@@ -138,48 +145,26 @@ not (below).
 
 ## predator: hosting the measured model
 
-`deploy/decision-server/` serves the model measured in conversation `c-20261002-165425` behind the
-`openai` protocol: **Qwen3-VL-8B-Instruct Q4_K_M + its mmproj (Q8_0)**, pinned to one Hub revision
-and sha256-verified, read the SemIf way — the prompt is evaluated and the logits at the last
-position are softmaxed over only the declared answer letters. Nothing is generated. (Reading
-`create_chat_completion(logprobs=…)` instead returns logprobs at the wrong positions and once gave
-a 0.95-confidence wrong answer — R2254.)
+The model measured in conversation `c-20261002-165425` — **Qwen3-VL-8B-Instruct Q4_K_M + its
+mmproj (Q8_0)**, read the SemIf way: the prompt is evaluated and the logits at the last position
+are softmaxed over only the declared answer letters, nothing generated — is served by its own
+repository, [local-model-server](https://github.com/wehnsdaefflae/local-model-server). It runs on
+`ubuntu-predator` as the systemd user unit `local-model-server.service` on port 8790, installed by
+that repository's `install.sh`, and serves the `openai` protocol (`/v1/decisions`) as well as
+`/v1/systemone` and `/v1/chat/completions`. Until 0.483.0 its code lived here as
+`deploy/decision-server/`; how it loads, unloads, shares the GPU with training jobs and batches
+images is documented — and tested — there now.
 
-```
-scp -r deploy/decision-server mark@ubuntu-predator: && ssh mark@ubuntu-predator 'bash decision-server/install.sh'
-```
-
-`install.sh` is idempotent and needs no root: a Python 3.12 venv with `llama-cpp-python==0.3.36`
-from the cu124 index (0.3.35's cu124 wheel SIGILLs on this card; `--index-url`, not `--extra-`,
-or PyPI's CPU wheel wins), the weights, a bearer token in `~/.config/decision-server/token`, and a
-systemd **user** unit `decision-server.service` on port 8790. A user unit outlives the login only
-with linger on (`loginctl enable-linger`); the script says so when it is off. The token goes into
-the scheduler's Secrets store under the endpoint's `key_var`.
-
-How it behaves, and why:
-
-- **Lazy load, idle unload.** The model loads on the first request (~2 s from the page cache) and
-  is freed after `--idle-unload-s` (180) without one. predator is an exclusive GPU machine whose
-  training jobs need the card; a resident 4.5 GB server would starve every one of them. The
-  machine queue does not see this server — it is a cooperative guard, like every other.
-- **GPU when there is room, CPU when not.** Free VRAM is read before each load; below
-  `--min-free-vram-mib` (5600) — a job holds the card — the model loads on the CPU instead (same
-  answers, slower). A GPU allocation that fails anyway falls back the same way.
-- **The vision encoder always runs on the CPU.** On CUDA it segfaults in this wheel at every
-  image size (R2258), and a native crash leaves no exception to recover from.
-- **Several images per request**, up to `--max-images` (16) and the 4096-token context: a
-  512-px photo is ~258 tokens, so about 14 fit. A request that cannot fit is refused with the
-  count before anything is encoded. Images are made upright (EXIF) and downscaled to
-  `--max-px` (512, the benchmarked size).
-- **Questions share the encode.** The KV cache keeps the longest prefix it already holds, so a
-  second question over the same images evaluates only its own suffix. Measured: four questions
-  over two images in 4.4 s batched against 15.9 s asked separately, logits identical.
-- llama.cpp's own logging is cut to errors — mtmd otherwise logs every prompt at debug level
-  into the journal.
+Configure it like any other decision endpoint: `protocol: openai` (or `systemone`, with
+`multimodal: true` on the model, since that protocol's default is off), `base_url:
+http://192.168.0.246:8790/v1`, and the bearer token the server's install wrote, stored in Secrets
+under the endpoint's `key_var`. Both adapters send a `multimodal` model its images, so the
+image decision model may sit on whichever wire the operator prefers.
 
 Measured on predator, 2026-10-07 (RTX 3060 laptop, 6 GB): 12/12 correct on the ground-truth
 shapes (shape, colour, three-sides, edges), ~2.2 s for four questions over one small image,
 ~6 s per 512-px photo (the CPU vision encode dominates). Earlier measurements on SemIf's committed
 144-row authored fixture (mean family balanced accuracy): this VL-8B **0.8795** on text, the
 text-only Qwen3.5-9B **0.9317**, hosted Jev **0.883** (TypeSafe's subset). So for text-only
-decisions Jev on OpenRouter is the natural default and predator's model the image one.
+decisions Jev (on OpenRouter, or through the gateway) is the natural default and predator's model
+the image one.

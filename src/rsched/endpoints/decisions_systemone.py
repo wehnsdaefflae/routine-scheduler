@@ -14,10 +14,15 @@ The shape, from docs.typesafe.ai/api.md and OpenRouter's Jev tutorial (2026-10):
                                 "probabilities": {"<index>": p}, "legend": {…}}},
        "usage": {"input_tokens", "output_tokens", "cost"?}}
 
-Served by TypeSafe itself (`https://api.typesafe.ai/v1`, a TypeSafe key) and resold by
+Served by TypeSafe itself (`https://api.typesafe.ai/v1`, a TypeSafe key), resold by
 OpenRouter under the same path (`https://openrouter.ai/api/v1`, an OpenRouter key, model
-`typesafe/jev-1.13`). TEXT ONLY: Jev's documentation refuses image, audio and video input, so an
-image reaching this adapter is a routing defect and is refused before anything is sent.
+`typesafe/jev-1.13`), routed by an Otari gateway (`{gateway}/api/v1/systemone`), and served over
+a local vision model by llama-server and github.com/wehnsdaefflae/local-model-server.
+
+IMAGES ride an optional `"images"` list of inline data URLs (`data:image/…;base64,…`, at most
+`MAX_IMAGES`), which the gateway and the local servers read and Jev itself does not — so whether
+a model on this protocol is sent any is the catalog's `multimodal` flag, off by default
+(config/decisionconf.py). Each image is read and encoded here, at send time, and never stored.
 """
 
 from __future__ import annotations
@@ -40,7 +45,10 @@ from .decisions import (
     DecisionImage,
     DecisionQuestion,
 )
+from .media_types import read_media_b64
 
+#: The most images one request may carry — the limit the gateway and llama-server enforce.
+MAX_IMAGES = 16
 _WIRE_TYPE = {"yes_no": "noul", "choice": "choice", "score": "score"}
 
 
@@ -90,18 +98,25 @@ class SystemOneDecisions:
                                key_env_file=self.cfg.key_env_file, required=True)
 
     @staticmethod
-    def body(evidence: str | dict | list, questions: list[DecisionQuestion], model: str) -> dict:
-        """The request body — public so a test can pin the wire shape without a server."""
-        return {"model": model, "state": evidence,
-                "questions": {q.name: wire_question(q) for q in questions}}
+    def body(evidence: str | dict | list, images: list[DecisionImage],
+             questions: list[DecisionQuestion], model: str) -> dict:
+        """The request body — public so a test can pin the wire shape without a server. A
+        text-only call carries no `images` key at all, so Jev never sees an empty one.
+        """
+        out: dict = {"model": model, "state": evidence,
+                     "questions": {q.name: wire_question(q) for q in questions}}
+        if images:
+            out["images"] = [f"data:{img.media_type};base64,{read_media_b64(img.path)}"
+                             for img in images]
+        return out
 
     def decide(self, evidence: str | dict | list, images: list[DecisionImage],
                questions: list[DecisionQuestion], *, model: str, timeout: int) -> Decision:
         """POST the questions; answers come back under the names they were asked by."""
-        if images:
-            raise EndpointError(f"{self.name}: the systemone protocol takes text only — "
-                                f"{len(images)} image(s) cannot be sent")
-        body = self.body(evidence, questions, model)
+        if len(images) > MAX_IMAGES:
+            raise EndpointError(f"{self.name}: the systemone protocol takes at most "
+                                f"{MAX_IMAGES} images per request — {len(images)} were given")
+        body = self.body(evidence, images, questions, model)
         headers = {"Authorization": f"Bearer {self._key()}"}
 
         def call() -> dict:

@@ -12,19 +12,19 @@ endpoints and models once (Settings → Endpoints, or
 `~/.config/routine-scheduler/config.yaml`), then every routine and the system model **picks a
 model by name**.
 
-For a Claude subscription through an existing proxy, see the
-[subscription proxy guide](claude-proxy-cutover.md). **Decision models** — Jev, OpenAI's Decisions
-API, the predator server — are not chat transports and have their own catalog and Settings
-section: see [decision models](decision-models.md). The `anthropic` kind also
-accepts an Anthropic-compatible proxy URL and its client key; billing belongs to
-the upstream account, not the wire protocol.
+This instance sends every call through a separate gateway (Otari, with CLIProxyAPI holding the
+subscription logins beside it) — see the [model gateway guide](model-gateway.md). **Decision
+models** — Jev, OpenAI's Decisions API, local-model-server on predator — are not chat transports
+and have their own catalog and Settings section: see [decision models](decision-models.md). The
+`anthropic` kind also accepts an Anthropic-compatible gateway or proxy URL and its client key;
+billing belongs to the upstream account, not the wire protocol.
 
 ## The two kinds
 
 | kind | what it talks to | credential | billing |
 |---|---|---|---|
 | `openai` | any OpenAI-compatible chat API: OpenRouter, Featherless, vLLM, Ollama, Together, … | API key (or none for local Ollama) | per provider (metered or subscription) |
-| `anthropic` | Anthropic-compatible Messages API | provider API key or proxy client key | upstream plan (direct Anthropic is metered) |
+| `anthropic` | Anthropic-compatible Messages API | provider API key, or a gateway's / proxy's client key | upstream plan (direct Anthropic is metered) |
 
 Nine times out of ten you want `openai`: one kind covers every provider that speaks the
 OpenAI chat-completions dialect, cloud or local.
@@ -36,7 +36,7 @@ OpenAI chat-completions dialect, cloud or local.
 2. **Give it a credential.** Either paste an API key on the endpoint's card (stored inline
    in the server config), or set `key_var` to a name like `OPENROUTER_API_KEY` and put the
    value in **Settings → Secrets** — the central store. Secrets win for anything you might
-   rotate; inline wins for quick starts. Subscription proxies use a proxy client key. The card's **credential in use** line shows
+   rotate; inline wins for quick starts. A gateway or subscription proxy takes its own client key. The card's **credential in use** line shows
    which rung of the ladder is actually live (inline / secret / env file / none — labels
    only, values are never returned) and warns when an inline key **shadows** a set secret:
    the inline key wins, so editing the secret changes nothing until the inline key is
@@ -135,8 +135,9 @@ system_model: glm                 # the fallback model for setup-time work — a
 - `quota_source` — `cliproxy` binds the PROXY to its management API (the edit form calls
   the field *Proxy management (CLIProxyAPI)*): the signed-in account rows on the card, the
   card's *re-authenticate* control that signs a dead session back in without a terminal, and
-  the Claude subscription quota read (`docs/claude-proxy-cutover.md`, "Signing in, and
-  signing back in"). One binding per proxy is enough — an endpoint without its own resolves a
+  the Claude subscription quota read (`docs/model-gateway.md`, "Signing in, and signing back
+  in"). Here that binding is `cliproxy-mgmt`, an endpoint with no models on the standalone
+  proxy's own origin. One binding per proxy is enough — an endpoint without its own resolves a
   sibling's on the same origin — and each card shows the accounts for ITS models, by model
   family (`claude-*` → Claude, `gemini-*` and `gpt-oss*` → Antigravity — matched before the
   generic `gpt-*`/`o*`/`codex-*` → Codex); the quota line appears only on a card whose models
@@ -257,7 +258,7 @@ page then falls back to a plain text input and shows that reason. Two details: a
 catalog already holds is kept as an option even when the listing lacks it, marked *not listed*
 (opening a card never silently changes config); and a proxy lists no model for a credential it
 cannot use, so a signed-out account makes its models vanish from the picker — sign in from the
-card first (`claude-proxy-cutover.md`).
+card first (`model-gateway.md`).
 
 ### Effort (not a catalog attribute)
 
@@ -396,8 +397,8 @@ Who caches how:
   comes. On the OpenAI-compatible wire that means no marker. On the `anthropic` wire it means ONE
   marker on the smallest prefix the request has — the tool definition, else a leading slice of at
   most 1,000 chars cut from the system prompt or the first message, at a line break where one
-  falls (`anthropic_messages.claim_placement`) — because the subscription proxy every
-  `anthropic` endpoint here runs through (CLIProxyAPI v7.2.156) places its OWN breakpoints on the
+  falls (`anthropic_messages.claim_placement`) — because the subscription proxy behind this
+  instance's gateway (CLIProxyAPI, v7.2.156 when measured) places its OWN breakpoints on the
   tools, the system prompt and the last message of any request that carries none, with no setting
   to stop it. Before the claim, 100% of the archival calls' input (2.94M tokens over four calls)
   and 95% of 190 `llm` subcalls' was billed as cache writes in the week to 2026-10-08. A ~150-token
@@ -490,7 +491,7 @@ for a model no provider lists.
 your budget caps. The action rides one tool offered on `auto`, held to one call — because a
 FORCED tool choice makes the configured effort meaningless: the Messages API allows thinking
 only on `auto`, the newest Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5)
-refuse forcing with a 400, and the [subscription proxy](claude-proxy-cutover.md) strips thinking
+refuse forcing with a 400, and the [subscription proxy](model-gateway.md) strips thinking
 and effort from a forced call. Measured through the proxy on 2026-10-08: forced, Opus 5 at
 effort `low` and `max` answered alike (467 and 551 output tokens, no thinking); on `auto` it
 thought, and Opus 5, Sonnet 5 and Fable 5 all answered with the action, on a first turn and a
@@ -527,7 +528,7 @@ The same daily refresh re-reads every configured model's PRICE into
 writes — even on a subscription transport whose own `cost` is always 0.0. One source per model,
 chosen by its route: a metered endpoint (OpenRouter, Nano-GPT) is priced by its provider — the
 bill it reports on the call, else its own published rates for that exact id; a subscription
-proxy (every `anthropic` endpoint here, the codex and antigravity proxies) at the model's list
+proxy or gateway (every endpoint here that is neither OpenRouter nor Nano-GPT) at the model's list
 price in the public reference catalog. There is no price to configure and no fallback table: a
 model no source prices is listed as `unpriced` and its calls carry no figure. The cache records
 which models it CHECKED, and a configured model missing from that list makes the limits cache
@@ -625,9 +626,10 @@ it is. Those are two different states and only one is fixable by discovery:
 When the endpoint publishes no catalog at all, the question is unanswered and the card keeps the
 undecided wording — an unreachable provider is never reported as "does not serve this model".
 
-**Claude subscription** — use `kind: anthropic`, the proxy root base URL, and a proxy
-client key. CLIProxyAPI owns OAuth login, token refresh, and account routing. See the
-[subscription proxy guide](claude-proxy-cutover.md).
+**Claude subscription** — use `kind: anthropic`, the gateway's (or proxy's) root base URL, and
+its client key. CLIProxyAPI owns OAuth login, token refresh, and account routing; here it sits
+behind an Otari gateway that routes normalised model names to it. See the
+[model gateway guide](model-gateway.md).
 
 ### Seeing what is left of the subscription
 

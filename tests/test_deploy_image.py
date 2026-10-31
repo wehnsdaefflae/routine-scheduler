@@ -127,13 +127,20 @@ def test_copy_from_names_a_stage_never_an_image(dockerfile):
 
 
 def test_every_image_compose_pulls_is_pinned():
+    """No service pulls an image today — the last one, the subscription proxy, left with 0.483.0
+    for its own gateway repo — so this holds the NEXT one to the pin. What keeps it from passing
+    vacuously is the split it depends on: every service is either built here or reuses an image
+    a sibling builds, and a pulled one is whatever is left."""
     services = _compose()["services"]
     # An image ANOTHER service builds here is not pulled: `uitest` runs the engine's own
     # `rsched:latest` on purpose (the suite must test production's interpreter and packages).
     built = {spec["image"] for spec in services.values() if "build" in spec and "image" in spec}
+    assert "rsched:latest" in built, "the check no longer sees the images built here"
+    reused = {name for name, spec in services.items()
+              if "build" not in spec and spec.get("image") in built}
+    assert "uitest" in reused, "the check no longer tells a reused image from a pulled one"
     pulled = {name: spec["image"] for name, spec in services.items()
               if "image" in spec and "build" not in spec and spec["image"] not in built}
-    assert pulled, "compose pulls no image — the cliproxy pin this checks has moved"
     loose = {name: image for name, image in pulled.items() if not PINNED.match(image)}
     assert not loose, f"pulled by a tag that moves: {loose}"
 

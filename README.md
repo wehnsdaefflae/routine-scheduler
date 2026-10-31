@@ -27,8 +27,8 @@ sub-run tree is shown live in the run rail. A conversation can also `detach` a L
 reply (its own daemon-managed process, reporting back on completion). The engine commits each routine's working dir automatically. Endpoints
 are model **transports** only, and there are two kinds: any OpenAI-compatible API
 (OpenRouter, Featherless, vLLM, local Ollama) and the Anthropic Messages API — which is also
-how a Claude or Codex SUBSCRIPTION is billed, through CLIProxyAPI on the `anthropic` kind
-(`docs/claude-proxy-cutover.md`). Setup guide with per-provider recipes:
+how a Claude or Codex SUBSCRIPTION is billed, through a gateway in front of CLIProxyAPI on the
+`anthropic` kind (`docs/model-gateway.md`). Setup guide with per-provider recipes:
 [docs/endpoints.md](docs/endpoints.md). What is banned is a second *agent loop* in the
 path: this scheduler is the only harness.
 
