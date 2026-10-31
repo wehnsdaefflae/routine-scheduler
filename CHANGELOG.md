@@ -53,6 +53,32 @@ below. An allow-list integrity check keeps it from going vacuously green.
 `web/api_questions.py` SHRANK 394 → 393 and its ceiling is tightened to match. Docs:
 `docs/messages.md` (both shapes and their writers), `docs/architecture.md`, `CLAUDE.md`.
 
+### A closure claimed in prose over a row that is still open now has a reader (F793)
+
+`report_threads.undisposed_claims` has existed since the thread model: a settled report whose
+PROSE says it disposed of a row the ledger still carries open. It had exactly one reader — the
+authoring run's own refusal — so a claim that slipped through was never seen again by anybody.
+
+The second reader is `GET /api/items/orphans`, which already serves the two other "work lost from
+this ledger" kinds as banners above the Messages list; this is a third group, *claimed closed in
+prose, still open*. The logic is a new `readmodels/prose_closures.py` that BORROWS both halves
+rather than re-deriving them — the claims from `undisposed_claims`, the liveness from
+`report_threads.still_owed` — so the console and the refusal can never disagree about what a
+claim is. It flags only a SETTLED, non-retracted claimant, and names the `owner` whose `settles`
+can actually end the row. Reading costs no extra parse: `reports.read_reports` is memoized behind
+the ledger file's stat fingerprint and `load` memoizes on the same fingerprint, because the
+endpoint is console-polled.
+
+`static/views/messages.js` was AT its 425-line ceiling, so the banner came OUT first as
+`static/components/orphan-banner.js` and the group went in second (425 → 374, ceiling tightened).
+That extraction fixed a latent defect of the existing banner: its deferral group filtered
+`kind !== "undelivered"`, so ANY third kind landed in it and threw on `undefined.join`. Each
+group now filters positively.
+
+The surface reaches the CONSOLE only — the claimant's routine is not told on its next run, and the
+card carries no action button, because letting the console settle a row on a routine's behalf is
+an operator decision (D182, which `disposable()` refuses by design).
+
 ### A chat message's corner controls are no longer part of the text you select (R3085)
 
 The operator, from his own conversation: the copy button on a message's code block "copies the
