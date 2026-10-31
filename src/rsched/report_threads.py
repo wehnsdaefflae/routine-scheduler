@@ -18,6 +18,12 @@ ledger, this one READS it to answer two questions the write path asks first:
 than a path — they are pure questions about a stream the caller already holds (under the
 ledger lock, on the write path), and a second read inside the lock would be a second answer to
 the same question.
+
+`undisposed_claims` (and with it `opening_sentence`) answers a THIRD question, asked from the
+READ side rather than the write side: `readmodels/prose_closures.py` runs the same claim check
+over the SETTLED ledger, so a live row a finished report's prose claimed to dispose of is visible
+after the filing warning's turn has passed (F793). That is why both are public — a surface that
+re-implemented either would read one report differently from the warning its author saw.
 """
 
 from __future__ import annotations
@@ -40,12 +46,16 @@ _SLACK = 40
 _ID = re.compile(r"\bR\d+\b")
 
 
-def _opening_sentence(text: str) -> str:
+def opening_sentence(text: str) -> str:
     """The first sentence of `text` — where a report states what it is doing.
 
     The cheap version this check wants (F770): a report's BODY argues about rows for paragraphs
     ("F324 closed without naming it", "R2313 was closed in error"), so reading all of it would
     flag the evidence of every report that discusses the ledger at all.
+
+    Public because the claim check has a SECOND reader (F793): `readmodels/prose_closures.py`
+    judges the same two texts over the settled ledger, and a surface that re-implemented this
+    clipping would show a reader prose the filing warning never read.
     """
     return re.split(r"(?<=[.!?])\s|\n", (text or "").strip(), maxsplit=1)[0]
 
@@ -69,7 +79,7 @@ def undisposed_claims(*, title: str, detail: str, disposed: Collection[str]) -> 
     """
     done = {str(i).strip().upper() for i in (disposed or ())}
     out: list[str] = []
-    for text in (title, _opening_sentence(detail)):
+    for text in (title, opening_sentence(detail)):
         # Per SENTENCE, because a verb governs only its own clause: every id within `_SLACK` of
         # a disposition verb is claimed, so "Disposing of R12 and R13" names both rather than
         # only the first, while "Closing R44. R2313 is the evidence" names only R44.

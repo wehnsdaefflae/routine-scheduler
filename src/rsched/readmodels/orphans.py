@@ -1,7 +1,9 @@
-"""The two ways work is lost from the ledger without ever becoming an open item.
+"""Two of the three ways work is lost from the ledger without ever becoming an open item — the
+third is `prose_closures.py` (a live row a settled report's prose claimed to dispose of, F793),
+kept apart because it reads the report stream's PROSE rather than its delivery and liveness.
 
-Both are invisible to every filter on the Messages page, which is why they are banners above it
-rather than rows inside it, and both are SURFACED rather than gated — a human judges the promise.
+All are invisible to every filter on the Messages page, which is why they are banners above it
+rather than rows inside it, and all are SURFACED rather than gated — a human judges the promise.
 
 An item routinely defers part of its scope into another item: "the sidebar panel ships with
 F324's shared component". The carrier then ships its OWN scope, closes, and the changelog `items`

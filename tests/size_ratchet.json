@@ -40,7 +40,7 @@
     "static/views/conversations.js": 569,
     "static/views/dashboard.js": 436,
     "static/views/library.js": 564,
-    "static/views/messages.js": 425,
+    "static/views/messages.js": 374,
     "static/views/questions.js": 449,
     "static/views/run.js": 583,
     "tests/conftest.py": 680,

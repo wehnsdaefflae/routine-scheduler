@@ -337,10 +337,29 @@ the FILE, not the stamp: a stamp says a run has read the message, while the file
 run ever can. Retracted rows are excluded — retraction unlinks the message on purpose — and a
 message still sitting in the inbox is the normal waiting state, not this.
 
-`GET /api/items/orphans` serves both, tagged `kind: "deferral"` / `kind: "undelivered"`, and the
-Messages page banners them above the list in two groups, because they are invisible to every
-filter below it. It SURFACES rather than gates — a human judges the promise, and the fix for a
-false-positive deferral is to write the closure note so it names what it delivered.
+**A live row a SETTLED report's prose claimed to dispose of.** The third loss mechanism
+(`readmodels/prose_closures.py`, F793), and the one where the row looks attended to: some report
+said in its own words that it closed the row, while its `answers`/`settles`/`supersedes` named
+none of it. R2886 is the specimen — it opened "Closing R2313. Both halves disposed of", carried
+`answers: "R2743"` + `closes: true` + no `settles`, and R2313 stayed the oldest live row on the
+instance for 20 days. F770 ships the predicate (`report_threads.undisposed_claims`) and says so
+on the FILING observation, which warns and deliberately does not refuse — so the claim used to be
+evaluated once, in front of the one party who already believed the row was closed, and never
+again: a run that does not act on its own observation stranded the row exactly as before. This is
+that predicate's second reader. It flags only a claim whose claimant is itself SETTLED (while the
+claiming thread is open the pair is being worked and the filing warning is still in front of the
+author who can add the field) and never a retracted one, it reads liveness with the ledger's own
+`report_threads.still_owed` rather than a second opinion, and it names the `owner` — the routine
+the row was delivered to, the only one whose `settles` can end it. The flag quotes the words that
+claimed, taken from the text that was judged: the title, else the detail's opening sentence.
+
+`GET /api/items/orphans` serves all three, tagged `kind: "deferral"` / `kind: "undelivered"` /
+`kind: "prose-closure"`, and the Messages page banners them above the list in three groups
+(`static/components/orphan-banner.js`), because they are invisible to every filter below it. It
+SURFACES rather than gates — a human judges the promise, and the fix for a false-positive
+deferral is to write the closure note so it names what it delivered. Each group filters by its
+OWN kind: a group written as "not the other one" put every new kind into the deferral group,
+where it threw on a field deferrals have and it does not.
 
 Both the banner and this page's `unroutable` count answer one question — can anything ever drain
 this row? — so since F768 they answer it with ONE predicate: the fleet as `registry.scan` keys it
