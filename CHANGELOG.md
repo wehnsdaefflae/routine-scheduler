@@ -15,6 +15,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.487.0] — 2026-10-31
+
+### A classifier that cannot decide STRUCTURALLY now says so (R3108, increment 1)
+
+Three places decide retry, failover and prompt-window policy by matching ENGLISH SENTENCES in a
+provider's error body: `endpoints/base.py:417` (`"in-flight requests" in resp.text` → is this 402
+retryable), `engine/overflow.py`'s `_OVERFLOW_HINTS` (4 phrases → shrink the run's window) and
+`engine/degrade.py`'s `_FAILOVER_REASONS` (~20 needles → the health stream's failure class). The
+operator's ruling on it was stronger than the proposal: *"Good idea! I want you to replace the
+prose checks completely"*.
+
+**This increment deliberately changes NO policy** — it builds the measurement that makes the
+replacement safe, because nobody has the number it depends on: how often a structured decision is
+actually unavailable on this instance. A new `error_class_undecided` health event fires in exactly
+two places — where `degrade` would classify a failover reason as `other`, and where
+`overflow._is_overflow_text` DECLINES on a 400 whose body quotes token counts. Every existing
+retry, failover and shrink decision comes out identical, which is what
+`test_no_existing_decision_changed` pins.
+
+Two judgements worth recording. The failover hook sits in `_switch_to_fallback`, **not** in
+`_log_failover`: the item's own motivating specimen died as `model_chain_exhausted … after 0
+rungs`, a branch that never reaches the log, so the obvious site would have missed the case that
+prompted the work. And the rationale lives in a new `engine/errorclass.py` because
+`health_events.py` is EXACTLY at the 350-line bar — the first attempt put the event name on a
+continuation line, 351, a breach.
+
+What the increment does NOT yet do, so the next one is scoped honestly: **no measurement exists
+yet** (the event only fires on a real provider failure); hook (b) misses 400s absorbed inside the
+adapters (`openai_compat.py:198`, `anthropic_api.py:274`), so the count is engine-seam only; and
+the event is deliberately kept OFF `health_stream.BLOCKED_EVENTS`, so the number is reachable
+through `/api/health/events?event=error_class_undecided` but has no console card.
+
+And the finding that shapes the replacement: the structured data is not merely unparsed, it is
+**discarded**. `base.py:259` renders the body to `resp.text[:300]` and `EndpointError` carries
+only that string — no status field, no decoded body — so `error.code` / `error.type` /
+`error.param` reach no decision point at all. Two paths genuinely have nothing structured (a
+transport timeout via `_transport_cause` has no response; non-JSON bodies), which is a constraint
+on the replacement, not a reason to keep a needle list.
+
 ## [0.486.0] — 2026-10-31
 
 ### The inbox's SECOND record shape gets its one writer, and the policy scan polices both (D143)
