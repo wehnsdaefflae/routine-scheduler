@@ -70,7 +70,11 @@ DIMENSIONS = ("correctness", "completeness", "effectiveness")
 #: endpoint, and 0.371.1 stopped a resumed run repeating a hold, an assist or a challenge it had
 #: spent: on 2026-09-30 the fleet's challenged claims went from 0.03 a run to 1.2 overnight.
 #: 0.366.10 (F563) counted a stage the run WROTE into its phase cursor as entered, where before
-#: only re-reading the module did — the same work then skipped fewer stages.
+#: only re-reading the module did — the same work then skipped fewer stages. That cutoff is the
+#: release that last moved the COUNT: 0.402.0 (F620/R2228) changed only what the finish's claim
+#: check DOES with an unentered stage (a judge's hint, not an objection), which this number never
+#: read. Without it `stages_skipped` is biased ONE WAY — a run that orients faster re-reads fewer
+#: modules, so a release improving orientation would read as making the fleet less complete.
 COUNTED_SINCE = {"challenged": "0.371.1", "disputed": "0.371.1", "holds": "0.371.1",
                  "stages_skipped": "0.366.10"}
 #: The signals for runs POOLED across routines (readmodels/change_fleet.py, change_timeline.py):

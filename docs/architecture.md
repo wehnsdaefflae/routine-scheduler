@@ -1583,8 +1583,12 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   not the real one (it told the operator "already has an active run" whatever had actually
   happened). Its causes are `disabled`, `draining`, `overrun` and — F643 — **`stale_role`: a
   routine whose `models.main` names a model the catalog no longer serves is refused BEFORE a run
-  dir is claimed.** `trials.roles_problem` is the predicate, shared with `rsched validate` and the
-  config write edge — but the fire guard asks it only about `FIRE_BLOCKING_ROLES` (`main` today),
+  dir is claimed.** `trials.roles_problem` is the predicate, shared with `rsched validate`, the
+  config write edge and the ROUTINE PAGE's problem panel (`trials.config_problems`, which composes
+  it with an ignored trial's line — the two catalog questions the loader cannot ask, because it
+  cannot see the catalog; only the CHAT roles are judged, since `decision`/`decision_media` resolve
+  against the decision catalog) — but the fire guard asks it only about `FIRE_BLOCKING_ROLES`
+  (`main` today),
   **deliberately narrower than what `validate` reports**: the loop resolves `main` on turn one, so
   a stale name there means the run cannot reach its first turn, while `tool_call` and `uncensored`
   resolve only if the run makes such a call (`uncensored` only when a refusal is referred).

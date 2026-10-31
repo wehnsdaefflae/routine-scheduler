@@ -195,10 +195,10 @@ def routine_detail(request: Request, slug: str) -> dict:
     return {
         **_card(request, info, monthly=monthly, lane_of=lane_of),
         # A MODEL TRIAL (rsched/trials.py): the config plus `recorded` / `state` / `problem` —
-        # the header's chip. A trial the catalog cannot serve is IGNORED at every fire, so its
-        # problem joins the routine's own: the loader cannot see the catalog to report it.
+        # the header's chip. `config_problems` adds what the loader cannot see the catalog to
+        # report: an IGNORED trial, and a stale model role that kills every run at turn 0 (F643).
         "trial": trial,
-        "problems": [*info.problems, *([trial["problem"]] if trial and trial["problem"] else [])],
+        "problems": [*info.problems, *trials.config_problems(server, info.cfg, trial)],
         "referrals_total": referrals_total,
         "schedule_friendly": (schedule.cron_to_friendly(info.cfg.cron) if info.cfg.enabled
                               else {"frequency": "disabled"}),
