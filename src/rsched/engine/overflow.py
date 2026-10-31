@@ -18,6 +18,7 @@ import re
 
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
+from . import errorclass
 from .compaction import clamp_to_cap, estimate_input_tokens
 from .window import _reserved_tokens, compact_if_needed
 
@@ -167,6 +168,11 @@ def _recover_oversize_prompt(loop, endpoint, ref, exc: EndpointError) -> tuple |
     """
     actual, stated = parse_overflow_pair(str(exc))
     if stated is None and actual is None:
+        # R3108: both nets have declined. When the body is a 400 that QUOTES a token count, the
+        # decline is the one worth counting — a vendor shape no hint covers (2026-09-21) or a
+        # correctly-excluded rate limit, and the row says which. Measurement only: the decline
+        # itself, and every window decision, are exactly as they were.
+        errorclass.note_overflow_declined(loop, exc)
         return None                       # not an overflow error — not ours
     ctx = loop.ctx
     before = estimate_input_tokens(loop.messages)

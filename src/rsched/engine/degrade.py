@@ -14,7 +14,7 @@ import json
 from ..endpoints import failover
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import refusal, substitution, turndebris
+from . import errorclass, refusal, substitution, turndebris
 from .compaction import estimate_input_tokens
 from .overflow import _recover_oversize_prompt, _shrink_window_to_provider
 from .window import apply_media_fallback
@@ -263,6 +263,11 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     """
     failover.mark_failed(failed_ref.endpoint, failed_ref.model,
                          cooldown_s=failover.cooldown_for(exc))
+    # R3108: COUNT the failures whose class the needle list could not decide. Hooked where the
+    # class is computed rather than where it is logged, because the chain-exhausted branch below
+    # never reaches `_log_failover` — and `after 0 rungs` is the specimen that motivated it
+    # (c-20261016-075101). Measurement only: every decision in this function is unchanged.
+    errorclass.note_failover_class(loop, exc, _failover_reason(exc))
     # F566: remember what started the collapse. This seam sees the FIRST failure before any
     # other, and if the whole chain dies the run otherwise reports only the last rung's error —
     # the least actionable one. Recorded once and never overwritten, so later rungs cannot

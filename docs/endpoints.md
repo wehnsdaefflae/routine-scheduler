@@ -352,6 +352,26 @@ engine instead **fails over**:
   head, both model names and a reason (`rate_limit` · `auth` · `server` · `refusal` ·
   `empty` · `other`) — a run that fails over finishes `ok`, so without it a fleet running
   all day on metered fallbacks looks healthy.
+- **A classifier that could not decide STRUCTURALLY says so** — an `error_class_undecided`
+  health event (`engine/errorclass.py`, R3108). Three places decide retry, failover and
+  prompt-window policy by matching ENGLISH SENTENCES in a provider's error body: `base.py`'s
+  `transient_402` (`"in-flight requests" in resp.text`), `overflow.py`'s `_OVERFLOW_HINTS`
+  minus `_NEVER_OVERFLOW_STATUS`, and `degrade.py`'s `_FAILOVER_REASONS`. A hint list that
+  misses a vendor silently DISARMS its guard: on 2026-09-21 the Anthropic overflow shape
+  matched none of the openai-flavoured hints and `self-audit:20260921-000321` 400'd four times
+  with its prompt growing 1,017,305 → 1,045,385 while the engine failed over, and on 2026-10-16
+  `c-20261016-075101` died twice in 30 s as `model_chain_exhausted … after 0 rungs` while the
+  condition cleared itself. The event fires in exactly two places — when a failover class falls
+  through to `other`, and when BOTH overflow nets decline a 400 whose body quotes token counts —
+  carrying `classifier`, `reason`/`declined_by` (`no_hint_match` is the dangerous bucket;
+  `never_overflow_status` is the guard correctly refusing to read a rate limit as a context
+  size) and `error_keys_in_excerpt`. **It changes no policy**: every retry, failover and shrink
+  decision comes out identical, by design. It exists to produce the number nobody has — how
+  often a structured decision is actually unavailable on this instance — which is what makes
+  replacing the prose lists a decision on evidence rather than on argument. The structured data
+  is there and unread: OpenAI-compatible bodies carry `error.code`/`error.type`/`error.param`,
+  while `base.py:259` renders the body to `resp.text[:300]` and `EndpointError` carries that
+  string alone, so the decoded JSON reaches no decision point in the engine.
 - Chains are **transitive, breadth-first**: the named model's own `fallbacks` first, then
   each of theirs, in declaration order. `Fable Max: [Fable]` therefore reaches everything
   `Fable` falls back to, with no duplicated tails to keep in sync — write each model's own

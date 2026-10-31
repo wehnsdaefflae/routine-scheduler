@@ -11,7 +11,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"fire_paused"|"fire_catchup"|"routine_catchup_declined"|"scheduler_tick_error"
         |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
         |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"
-        |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window",
+        |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window"|"error_class_undecided",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in

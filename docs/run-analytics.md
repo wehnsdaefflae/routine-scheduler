@@ -722,6 +722,20 @@ health stream for that window held exactly one event, about an unrelated oversiz
 - `model_chain_exhausted` is the same seam's harder failure: a role's WHOLE chain unusable
   mid-turn — every member failed hard or is cooling. It carries `model`, `last_model` and
   `cooldown_s`. A `model_failover` costs money; a `model_chain_exhausted` costs the run.
+- `error_class_undecided` (`engine/errorclass.py`, R3108) is the META reading on both: how often
+  the classifier behind that `reason` had no structural basis for its verdict. The `reason`
+  above is derived by matching ENGLISH SENTENCES in the provider's error text
+  (`degrade._FAILOVER_REASONS`, ~20 needles), as is the window guard's overflow test
+  (`overflow._OVERFLOW_HINTS`), and a list that misses a vendor silently disarms its guard for
+  it — `c-20261016-075101` died twice in 30 s as `model_chain_exhausted … after 0 rungs` on
+  2026-10-16, and `self-audit:20260921-000321` 400'd four times on 2026-09-21 with a prompt
+  growing 1,017,305 → 1,045,385 because the Anthropic wording matched no hint. One row is filed
+  when a failover class falls through to `other`, and one when both overflow nets decline a 400
+  whose body quotes token counts, carrying `classifier`, `reason`/`declined_by` and
+  `error_keys_in_excerpt`. Read it as a RATE against `model_failover`: a high
+  `declined_by: no_hint_match` share says the prose lists are load-bearing and a vendor is
+  missing from them, a near-zero one says they can be replaced by structured fields. It changes
+  no policy — every retry, failover and shrink decision is identical with it and without it.
 - Read both by the HEAD, not by the count: one event is a provider hiccup, while a run of
   them sharing one `model` is a primary that is not serving the fleet. The per-run transcript
   `error` event with its `failover` payload stays the record of which model served a given

@@ -346,7 +346,19 @@ one you are about to touch, not all of them.
   rejected, repeated or attempt-exhausted turn was visible only as a transcript `error` and two
   per-run counters. It carries `reason`/`turn`/`model`/`effort`, is read on the blocked-work
   surface, and is a MEASUREMENT: it changes no effort, no model and no retry — the effort ladder
-  behind it is a later increment that this rate has to justify, so do not wire one here. A finish emitted while an undrained user message waits is deferred so the message
+  behind it is a later increment that this rate has to justify, so do not wire one here.
+  **A classifier that could not decide STRUCTURALLY is a health event on the same terms**
+  (`error_class_undecided`, `engine/errorclass.py`, R3108): retry, failover and prompt-window
+  policy are decided in three places by matching ENGLISH SENTENCES in a provider's error body
+  (`endpoints/base.py`'s `transient_402`, `engine/overflow.py`'s `_OVERFLOW_HINTS` minus
+  `_NEVER_OVERFLOW_STATUS`, `engine/degrade.py`'s `_FAILOVER_REASONS`), and a hint list that
+  misses a vendor silently disarms its guard for it. One row when a failover class falls through
+  to `other`, one when both overflow nets decline a 400 quoting token counts; it carries
+  `classifier`, `reason`/`declined_by` and `error_keys_in_excerpt`, and it changes NO policy —
+  replacing the prose lists with structured fields is the later increment this rate has to
+  justify, so do not start it here. The structured data is unread, not absent:
+  OpenAI-compatible bodies carry `error.code`/`error.type`/`error.param` and `base.py:259`
+  renders the body to `resp.text[:300]`, which is the only thing `EndpointError` carries. A finish emitted while an undrained user message waits is deferred so the message
   becomes the next turn (a finish that must stand — the spent reserved turn, an abort — names the
   still-queued message in the summary instead). Budgets are a runaway BACKSTOP, never a pace; do not reintroduce prose that has a run
   ration its work against the turn counter. The 85% warning is an EVENT, not a state: it is said
