@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-from .. import patchreceipt
+from .. import answerfile, patchreceipt
 from ..paths import atomic_write_json, read_json
 from .api_questions import _announce_answer, _answered_record_dir
 from .decisions_read import find_question
@@ -45,11 +45,15 @@ def record_patch_applied(request: Request, qid: str) -> dict:
         raise HTTPException(400, f"question {qid!r} carries no config_patch to report on")
     fields = patchreceipt.receipt(match, applied=True)
     touched: list[str] = []
-    for path in (routine_dir / "inbox" / f"answer-{qid}.json", archive):
-        record = read_json(path)
-        if isinstance(record, dict) and record:
-            atomic_write_json(path, {**record, **fields})
-            touched.append(path.name)
+    # The queued answer goes through its one writer, which rewrites a file that is still
+    # there and creates nothing: correcting an answer a run already drained would otherwise
+    # re-file it, and the next run would read a settled decision as fresh (D143).
+    if answerfile.update(routine_dir, qid, fields) is not None:
+        touched.append(answerfile.path(routine_dir, qid).name)
+    record = read_json(archive)
+    if isinstance(record, dict) and record:
+        atomic_write_json(archive, {**record, **fields})
+        touched.append(archive.name)
     if not touched:
         raise HTTPException(404, f"no answer on record for {qid!r}")
     _announce_answer(request, qid, routine)

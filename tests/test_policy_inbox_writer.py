@@ -28,6 +28,14 @@ receiver has to be an inbox for the row to mean anything.
 
 Both checks report the offending `path:line` and name the call that replaces it, because a
 policy failure whose repair the reader has to work out is a policy that gets deleted.
+
+**Both shapes are policed, by one allow-list** (D143). The directory holds two record shapes,
+and only the first was ever unified: `answer-<qid>.json` had seven hand-rolled write sites in
+four modules, each spelling the filename and stamping its own `ts` — the state `msg-*` was in
+before F499. They cannot share a writer, because an answer must never be counted as freight
+(the one thing that must not buy a run), so `SANCTIONED_WRITERS` names the owner of each shape
+WITH the reason it is allowed: adding a direct write is a failure that names the seam to call,
+and adding an entry here is a design decision a later reader can check against its reason.
 """
 
 import re
@@ -65,6 +73,45 @@ _INBOX_GLOB = re.compile(
 _BANNED_EXCLUSION = re.compile(
     r"""inbox\w*[^\n]*?(?:startswith\(\s*["']answer-|!=\s*["']answer-)"""
     r"""|(?:startswith\(\s*["']answer-|!=\s*["']answer-)[^\n]*?inbox\w*""")
+
+
+#: Every module allowed to write a file into a routine's `inbox/`, and WHY it is — one entry
+#: per record shape that lives there, naming the invariants its writer is the one place to
+#: hold. A NEW entry is a design decision, not a formality: it says a third shape now shares
+#: that directory, and the reason has to survive the reader who meets it next.
+SANCTIONED_WRITERS: dict[str, str] = {
+    "engine/inbox.py":
+        "owns the `msg-*` shape: `file_message` validates `via` against the closed VIAS set "
+        "(the delivery-policy switch three subsystems read), stamps one `ts` spelling, holds "
+        "the unique-suffix rule, and `rewrite_message` edits a queued record under the "
+        "drain's lock (F499)",
+    "answerfile.py":
+        "owns the `answer-<qid>.json` shape: `answerfile.write` spells the filename from the "
+        "qid, carries that qid INTO the record, stamps `ts` once, and refuses a record "
+        "neither reader would consume — the half F499 unified for messages and left undone "
+        "for answers (D143)",
+}
+
+#: An expression naming a FILE inside an inbox: `… / "inbox" / f"answer-{qid}.json"`,
+#: `inbox / f"{msg_id}.json"`, `inbox_dir / f"msg-rep-{id}.json"`. The directory alone
+#: (`… / "inbox"`, the receiver every scanner globs) is deliberately not a hit: this check is
+#: about the files written into it, and `reports.py` and `readmodels/orphans.py` build that
+#: directory to ask whether a delivery is still queued.
+_INBOX_FILE = re.compile(r"""(?:["']inbox["']|\binbox\w*)\s*/\s*f?["'][^"']+["']""")
+
+#: Binding that expression to a name — `marker = … / "inbox" / …`, or the `for path in (…)`
+#: form `api_patch_applied` uses to correct both copies of a receipt in one loop.
+_BINDING = re.compile(r"""^\s*(?:for\s+(?P<loop>\w+)\s+in|(?P<name>\w+)\s*=(?!=))""")
+
+#: Handing a BOUND inbox path to a writer. The write sits up to a dozen lines below the
+#: expression that built it (`api_question_decline` has a 409 guard, the payload and three
+#: lines of comment in between), so a fixed window would miss it — the name is tracked
+#: instead, and reset at every `def`, because `path` is bound to something else entirely in
+#: the next function of the very same module (`engine/inbox_questions._archive_answer`).
+_WRITE_OF = re.compile(r"""\b(?:atomic_write_json|atomic_write)\s*\(\s*(\w+)\s*[,)]"""
+                       r"""|\b(\w+)\.(?:write_text|write_bytes)\s*\(""")
+
+_DEF = re.compile(r"^\s*(?:async\s+)?(?:def|class)\s")
 
 
 def _py_files() -> list[Path]:
@@ -142,3 +189,80 @@ def test_every_inbox_scanner_names_the_one_writers_stem():
                     f"then renames into consumed/, so the writer's own replace() fails and "
                     f"the message is lost. Select `msg-*.json` positively (F499).")
     assert not problems, "\n".join(problems)
+
+
+def _inbox_writes(path: Path) -> list[tuple[int, str]]:
+    """Every line in `path` that writes a file INTO an inbox — (line, the name it wrote).
+
+    Two shapes, because both occur in the live tree: the write inline in the expression that
+    builds the path (`api_questions`), and the write of a name bound earlier in the same
+    function (`api_question_decline`'s `marker`, nine lines up, past a 409 guard). Bindings are
+    dropped at every `def`: `path` names an inbox answer in `inbox_questions.take_answer` and
+    the ANSWERED-archive record two functions below, and conflating them would report a
+    sanctioned write as a breach.
+    """
+    found: list[tuple[int, str]] = []
+    bound: dict[str, int] = {}
+    for n, line in _code_lines(path.read_text(encoding="utf-8")):
+        if _DEF.match(line):
+            bound.clear()
+        inbox_file = _INBOX_FILE.search(line)
+        if inbox_file:
+            if _WRITE_CALL.search(line):
+                found.append((n, inbox_file.group(0).strip()))
+            elif (binding := _BINDING.match(line)):
+                bound[binding.group("name") or binding.group("loop")] = n
+        found.extend((n, written)
+                     for written in (m.group(1) or m.group(2)
+                                     for m in _WRITE_OF.finditer(line))
+                     if written in bound)
+    return found
+
+
+def test_only_the_sanctioned_writers_write_into_a_routines_inbox():
+    """D143. A routine's `inbox/` holds two record shapes and each has ONE owner; every other
+    module asks that owner. The defect is the EXISTENCE of a hand-rolled write site — no
+    exercise of the right one can see it — and the measured cost is drift per endpoint: before
+    the answer shape was unified, four modules spelled `answer-<qid>.json` themselves at seven
+    sites, each stamping its own `ts` and one of them omitting the `qid` the consumer falls
+    back to the filename for.
+    """
+    problems = []
+    for path in _py_files():
+        rel = path.relative_to(SRC).as_posix()
+        if rel in SANCTIONED_WRITERS:
+            continue
+        for n, what in _inbox_writes(path):
+            problems.append(
+                f"src/rsched/{rel}:{n}: writes `{what}` into a routine's inbox/ directly. "
+                f"Each shape there has ONE writer, holding invariants a second site drifts "
+                f"from: call `answerfile.write(routine_dir, qid, payload)` to file an answer "
+                f"(or `answerfile.update(routine_dir, qid, fields)` to correct one already "
+                f"queued), and `engine.inbox.file_message(...)` for the `msg-*` shape — "
+                f"`inbox.rewrite_message` for an in-place edit of queued freight. A genuinely "
+                f"new record shape in that directory is a new entry in SANCTIONED_WRITERS "
+                f"WITH its reason, not a write here (D143/F499).")
+    assert not problems, "\n".join(problems)
+
+
+def test_every_sanctioned_writer_exists_and_says_why_it_is_one():
+    """The allow-list is the whole instrument: an entry is what makes a direct write legal, so
+    a stale one silently unpolices a module and a reasonless one teaches the next author that
+    adding a name is a formality. Both halves are asserted — the same reason
+    `tests/test_policy.py` makes its checks say what to do instead.
+    """
+    for rel, reason in SANCTIONED_WRITERS.items():
+        assert (SRC / rel).is_file(), (
+            f"SANCTIONED_WRITERS names src/rsched/{rel}, which does not exist — a moved or "
+            f"deleted writer leaves its module unpoliced. Point the entry at the owner of "
+            f"that shape, or drop it.")
+        assert len(reason) > 40 and ("msg-" in reason or "answer-" in reason), (
+            f"src/rsched/{rel} is allow-listed without a reason that names the SHAPE it owns "
+            f"and the invariants it holds for it — write one, or the entry is just an "
+            f"exemption, and the next author reads adding a name here as a formality.")
+    assert WRITER in SANCTIONED_WRITERS, (
+        f"{WRITER} is the one writer of the `msg-*` shape and must be allow-listed as such")
+    assert _inbox_writes(SRC / WRITER), (
+        f"{WRITER} is allow-listed as an inbox writer but writes no inbox file — either the "
+        f"writer moved (point the entry at it) or this check no longer sees a real write, "
+        f"which would make the whole scan vacuous")

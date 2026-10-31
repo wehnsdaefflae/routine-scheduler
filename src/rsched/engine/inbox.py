@@ -5,8 +5,12 @@ Two filename shapes live in <routine>/inbox/, written atomically and never by ha
   msg-<stem>.json   {"text", "ts", "via", …}   — freight for a run, written by `file_message`
   answer-<qid>.json {"qid", "text", "source"}  — a question's answer, matched by qid
 
-This module owns the FIRST shape. The second lives in `engine/inbox_questions` (D143,
-2026-09-24), split out when this file reached 530 lines against the repo's ~350 budget — two
+This module owns the FIRST shape; `file_message` below is its one writer. The second shape's
+lifecycle lives in `engine/inbox_questions` and its one WRITER in `rsched/answerfile` (D143) —
+a separate seam, because an answer carries no `via`, has no delivery policy and must never buy
+a run. `tests/test_policy_inbox_writer.py` allow-lists exactly those two writers, so a third
+direct write into an `inbox/` fails the suite naming the seam to call. inbox_questions was
+split out (D143, 2026-09-24) when this file reached 530 lines against the repo's ~350 budget — two
 record shapes sharing a directory and a consume-by-rename discipline, and nothing else. Every
 public question name is re-exported at the foot of this module, so `inbox.file_question(...)`
 still resolves and no caller moved.
