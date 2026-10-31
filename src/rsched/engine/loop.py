@@ -39,6 +39,7 @@ from . import (
     remind,
     requests,
     sidefields,
+    turnwindow,
 )
 from .actionschema import brief_value
 from .boot import boot
@@ -397,10 +398,9 @@ class EngineLoop:
         if REPEAT_WARN <= streak < REPEAT_FAIL:
             text += self._repeat_warning(streak)
         if warning := self.ctx.budget_warning():
-            text += (f"\n[BUDGET: {warning} — converge DELIBERATELY now: reach a point "
-                     "worth handing over, record what matters (LEDGER, state files), "
-                     "then finish with an authored summary. Once the budget is spent "
-                     "you get exactly ONE turn, and it can only be a finish.]")
+            text += turnwindow.converge(warning)
+        # D227: and what is LEFT, as a fact — HERE because the contract is composed once
+        text += turnwindow.budget_tail(self.ctx)
         if self._history_active:
             self._hist_note_countdown -= 1
             if self._hist_note_countdown <= 0:

@@ -366,7 +366,11 @@ the limits (single-writer status.json preserved).
   `ctx.usage_base`; budgets ignore it). status.json's `budgets` block carries that base turn,
   the window's own count and both ceilings beside `turns_left`, and the runs table renders
   `348 (window 179/200, resumed at 169)` — without them a resumed run showed a turn count past
-  its own `max_turns` beside a large "turns left" and read as a failed ceiling (F564/D155). The **model can be switched mid-run** — a `control.json`
+  its own `max_turns` beside a large "turns left" and read as a failed ceiling (F564/D155).
+  **The RUN is told the same thing, once per turn** (D227): `turnwindow.budget_block` is the one
+  reading status.json records and the `[BUDGET LEFT: …]` observation tail is rendered from, so a
+  resumed leg reads `179 of 200 turns (this resume window, re-based at turn 327)` instead of
+  pacing by a wall clock that counts the minutes it was not running. The **model can be switched mid-run** — a `control.json`
   `switch_model` signal applied at the turn boundary (`for_model` re-resolves every turn).
 - **"Once" survives a resume** (`engine/guardscope.py`). The once-only guards — the hold
   ledger, each rule assist's single fire and the one assist finish deferral, the repos found

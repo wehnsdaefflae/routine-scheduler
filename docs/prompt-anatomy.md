@@ -395,8 +395,9 @@ docs/architecture.md).
 4. **Once-grant spent** (only when this action spent an `allow once` grant, D65 — a HELD action spends nothing): `[ONCE-GRANT SPENT: <ids> — consumed by this <util 'x' call | kind action>; the grant is now revoked. …]` (§3a)
 5. **Repeat warning** (3–4 identical actions): `[ENGINE WARNING: this exact action has now run N times in a row — 5 identical actions fail the run. Change course. …]`
 6. **Budget warning** (an EVENT, not a state: said ONCE when the first budget to trip crosses its `warn_at` line — 85% — and once more at `FINAL_WARN_AT` 95%, per resource, never on every turn above a line; a warning riding every turn reads as a countdown and a budget is a runaway BACKSTOP, never a pace): `[BUDGET: … — converge DELIBERATELY now: reach a point worth handing over, record what matters (LEDGER, state files), then finish with an authored summary. Once the budget is spent you get exactly ONE turn, and it can only be a finish.]`
-7. **History note** (right after a compaction, then every 10th turn — NOT every turn): `[history: earlier turns are archived under runs/<ts>/history/INDEX.md — read_file the index and the relevant files before relying on memory.]`
-8. **Non-holding reminder fire** (`engine/remind.at_observation`, only when a reminder whose `kind` is not `action` matched this turn): one `[REMINDER rem-… — your own caution, on this turn's result|prose|<moment> turn] <caution> (label it with remind_feedback: …)` line per reminder. These triggers watch what has already happened — the observation, the turn's own `say`, a special turn — so there is nothing to hold and no turn is spent; they count a `fires` and ask for a label exactly as a hold does. See [reminders](reminders.md).
+7. **Budget left** (D227, operator 2026-10-31 — *"Why not just remaining turns, minutes, tokens (if limited)?"*: on EVERY turn, and the only tail here that is a standing FACT rather than an event): `[BUDGET LEFT: 47 of 60 turns · 38 of 45 min · 412,345 of 500,000 tokens]`, rendered by `turnwindow.budget_left` from the very block status.json records (`turnwindow.budget_block`, the one reading both surfaces share — two readings of one number can drift apart, and then the prompt tells a run what status.json denies). It rides a TAIL and not the contract because the harness contract and the state digest are, in `composer.py`'s own words, *"composed ONCE at run start"*: a number that changes every turn would be frozen at turn 1 there and a lie on every later turn. `(if limited)` is literal — an unlimited axis prints nothing for itself rather than the word "unlimited" (cost: 46 B/turn for the common two-axis run, 75 B with a token ceiling, 91 B on a resumed leg — ~14-23 kB over a 300-turn run, which is why it carries remainders and nothing else: no cost figure, no usage breakdown, no history). Each remainder is given beside the ceiling it is a remainder of, so `window_turns + turns_left == max_turns` stays legible (F564/D155) and a RESUMED leg says `179 of 200 turns (this resume window, re-based at turn 327)` rather than its cumulative count, which is what once read as a ceiling that had failed. It states numbers and asks for nothing — the contract two screens up insists a budget is "a CEILING and a runaway BACKSTOP — never a pace, and never a ration", and item 6 is the one that asks for something.
+8. **History note** (right after a compaction, then every 10th turn — NOT every turn): `[history: earlier turns are archived under runs/<ts>/history/INDEX.md — read_file the index and the relevant files before relying on memory.]`
+9. **Non-holding reminder fire** (`engine/remind.at_observation`, only when a reminder whose `kind` is not `action` matched this turn): one `[REMINDER rem-… — your own caution, on this turn's result|prose|<moment> turn] <caution> (label it with remind_feedback: …)` line per reminder. These triggers watch what has already happened — the observation, the turn's own `say`, a special turn — so there is nothing to hold and no turn is spent; they count a `fires` and ask for a label exactly as a hold does. See [reminders](reminders.md).
 
 The **util reminder** — `[tools: the CAPABILITIES catalog lists the global utils; run `util name=list args=["<name>"]` for one util's exact usage; if none fits, …]` (the tail varies with the write_util capability) — is ONE-SHOT: appended to the kickoff (or the resume ENGINE NOTE), never to observations. An identical tail on every turn was rent re-read for the rest of the run; a failed util call carries its own `[hint]` repair route anyway.
 
@@ -1257,11 +1258,13 @@ The model's message (always just the JSON, `say` finding-first):
 {"say": "Quirks note says portal 1 needs the site: filter — scanning it first.", "kind": "util", "name": "websearch", "args": ["site:freelance.de LLM projekt", "--json"]}
 ```
 
-The engine's reply (the observation, nothing else on an ordinary turn):
+The engine's reply (the observation, plus the one tail an ordinary turn always carries — what is
+LEFT of the budget, §3b item 7; every other tail is conditional):
 
 ```
 OBSERVATION (util websearch, exit 0):
 [{"title": "LLM Engineer (remote) …", "url": "https://…"}, …]
+[BUDGET LEFT: 47 of 60 turns · 38 of 45 min]
 ```
 
 ### 5.4 Near the end (conditional tails)
@@ -1269,6 +1272,7 @@ OBSERVATION (util websearch, exit 0):
 ```
 OBSERVATION (write_file): wrote 1832 bytes to state/shortlist.md
 [BUDGET: ~6 turns left — converge DELIBERATELY now: reach a point worth handing over, record what matters (LEDGER, state files), then finish with an authored summary. Once the budget is spent you get exactly ONE turn, and it can only be a finish.]
+[BUDGET LEFT: 6 of 60 turns · 4 of 45 min]
 [history: earlier turns are archived under runs/20260712-070000/history/INDEX.md — read_file the index and the relevant files before relying on memory.]
 ```
 
