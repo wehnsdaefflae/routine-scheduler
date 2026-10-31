@@ -17,7 +17,8 @@
 
 import { el } from "/static/util.js";
 import {
-  CONFIG_CONFIRM_OPTIONS, JOB_OPTIONS, REMINDER_OPTIONS, REMIND_CONFIRM_OPTIONS, RUNS_OPTIONS,
+  CONFIG_CONFIRM_OPTIONS, JOB_OPTIONS, REMINDER_OPTIONS, REMIND_CONFIRM_OPTIONS,
+  REVISE_CONFIRM_OPTIONS, RUNS_OPTIONS,
 } from "/static/components/abilities-data.js";
 
 /** One dial: a <select> over `options` resting on `current`. `set` records the choice and
@@ -68,5 +69,8 @@ export function settingsCard({ caps, stackRow, changed }) {
       approval,
       row("config approval", "config_confirm",
           "who approves a config change it proposes for itself", CONFIG_CONFIRM_OPTIONS),
+      row("recipe approval", "revise_confirm",
+          "who approves a revision another routine proposes for this recipe",
+          REVISE_CONFIRM_OPTIONS),
       row("jobs", "jobs", "the job layer — standing work kept as jobs", JOB_OPTIONS)));
 }

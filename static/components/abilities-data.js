@@ -67,12 +67,23 @@ export const CONFIG_CONFIRM_OPTIONS = [
     + "ladder's two turn numbers; the rest asks"],
   ["never", "on — it applies any unsealed field of its own config (schedule and outcome included)"],
 ];
+// Who may revise THIS routine's recipe (rsched/revisedial.py, D198) — the dial of the routine
+// whose instructions would change, never the one proposing the change. A proposer needs
+// recipe-authoring to propose at all; this says whether his click stands between the proposal
+// and the recipe. Either way the EDIT is made by this routine's own next run, under the one-leg
+// unlock, and it may refuse a line that is wrong about what its runs do. routine.yaml stays
+// sealed at every level.
+export const REVISE_CONFIRM_OPTIONS = [
+  ["always", "on — a revision another routine proposes for this recipe is your decision"],
+  ["invited", "on — a recipe-authoring routine's revision is handed to its next run without "
+    + "asking you"],
+];
 // What a mapping that leaves a setting out holds once saved: the server fills a missing key
 // with its all-off value (grants.SETTING_DEFAULTS, through capabilities_for), so a dial
-// resting on it shows what the save would write. Every read the panel is given fills all seven.
+// resting on it shows what the save would write. Every read the panel is given fills all eight.
 export const SETTING_DEFAULTS = {
   confirm: "always", rule_confirm: "always", remind_confirm: "always",
-  config_confirm: "always",
+  config_confirm: "always", revise_confirm: "always",
   runs: "none", reminders: "none", jobs: "off",
 };
 

@@ -23,9 +23,8 @@ leg's user-utterance count beside its pid, and the same leg may confirm once tha
 grown. A changed field on the confirming call is a DESIGN CHANGE, not a confirmation: it
 replaces the draft and restarts the round-trip.
 
-Structural rule: it MATERIALIZES only in a ROOT CONVERSATION; any other depth-0 run QUEUES a
-proposal (F328), a child run is refused, and a call with `replaces` creates a replacement
-CANDIDATE at once, its swap the one decision (engine/candidate.py).
+Structural rule: it MATERIALIZES only in a ROOT CONVERSATION, else QUEUES a proposal (F328);
+a child is refused, `replaces` creates a CANDIDATE and `revises` revises a recipe, at once.
 
 It scaffolds SYNCHRONOUSLY (the user is waiting); the registry rescan picks the dir up.
 """
@@ -37,7 +36,7 @@ from pathlib import Path
 
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
-from . import candidate, outcome_words
+from . import candidate, outcome_words, reviseroutine
 from .run_context import RunContext
 from .runkind import is_root_conversation
 
@@ -369,8 +368,10 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     before anything is created or queued (engine/outcome_words.py).
     Every field is part of the draft's identity, so changing one restarts the confirmation.
     """
-    if action.get("replaces"):      # created at once, never drafted — its swap is the decision
-        return candidate.create(ctx, action)
+    # `replaces` creates a REPLACEMENT CANDIDATE (its swap the one decision); D198's `revises`
+    if act := (candidate.create if action.get("replaces") else    # revises an EXISTING recipe
+               reviseroutine.revise if action.get("revises") else None):  # behind ITS own dial
+        return act(ctx, action)                    # both act at once; neither is ever drafted
     slug = str(action.get("target") or "").strip()
     name = str(action.get("name") or "").strip()
     instruction = str(action.get("prompt") or "").strip()
@@ -424,7 +425,6 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
                         workflow_slug=workflow_slug, pattern=pattern, setup=setup,
                         done_when=done_when, finish_line=finish_line, never=never,
                         outcome=declared)
-
 
 
 def _lines(raw: object) -> list[str]:

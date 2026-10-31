@@ -230,9 +230,9 @@ def test_routine_cards_and_detail(client):
     assert detail["workflow_ref"]["slug"] == "test-flow"   # workflow is REFERENCED, not a routine file
     assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
     assert all("requires" in p and "active" in p for p in detail["permissions"])
-    assert set(detail["capabilities"]["active"]) == {"actions", "utils", "confirm",
-                                                     "rule_confirm", "remind_confirm", "runs",
-                                                     "reminders", "jobs", "config_confirm"}
+    expected = {"actions", "utils", "confirm", "rule_confirm", "remind_confirm", "runs",
+                "reminders", "jobs", "config_confirm", "revise_confirm"}   # D198: the 4th dial
+    assert set(detail["capabilities"]["active"]) == expected
     # the actions a config may name — `detach` is gated but the loader refuses it in
     # `capabilities.actions` (grants.normalize_capabilities), so offering it put a choice on
     # the page that the next load reports as a problem and drops
