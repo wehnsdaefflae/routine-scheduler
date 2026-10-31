@@ -11,7 +11,7 @@ and cost the small-model support the whole design is built around.
 
 from __future__ import annotations
 
-from . import roleswap, schema_background, schema_questions, schema_remind
+from . import roleswap, schema_background, schema_questions, schema_remind, schema_routine
 
 READ_PATHS_MAX = 8
 
@@ -372,41 +372,9 @@ ACTION_SCHEMA: dict = {
                                     "(default general-task) — pick the pattern matching its "
                                     "purpose · create_routine: the library workflow pattern the "
                                     "new routine is materialized from (default general-task)"},
-        "pattern": {"type": "string",
-                    "description": "create_routine: the SETTINGS pattern the new routine "
-                                   "follows (default: the one that fits its workflow)"},
-        "setup": {"type": "array", "items": {"type": "string"}, "maxItems": 12,
-                  "description": "create_routine: the user's answers to the settings "
-                                 "pattern's questions — which folders, which mailbox and "
-                                 "senders, which cadence — one per entry, in their words. They "
-                                 "become the new routine's proposed settings, which the user "
-                                 "accepts on its page; they never go into the instruction"},
-        "done_when": {"type": "array", "items": {"type": "string"}, "maxItems": 8,
-                      "description": "create_routine: what ONE finished run of the new routine "
-                                     "leaves behind, in the USER's own words, one per entry "
-                                     '("the digest is published and the link works"): lines of '
-                                     "its `## Done when`, accounted for at every finish. Carry "
-                                     "their answer verbatim; never invent one"},
-        "finish_line": {"type": "array", "items": {"type": "string"}, "maxItems": 6,
-                        "description": "create_routine: when the ROUTINE is done for good, one "
-                                       "outcome per entry led by its judge — `run: …` (a run "
-                                       "proves it), `you: …` (only the user decides), "
-                                       "`YYYY-MM-DD: …` — plus `until YYYY-MM-DD`. Most "
-                                       "routines never end (a monitor, a digest): omit it then"},
-        "never": {"type": "array", "items": {"type": "string"}, "maxItems": 8,
-                  "description": "create_routine: what a run of the new routine must NEVER "
-                                 'do, in the USER\'s words, one per entry ("never mail the '
-                                 'funder"): lines of its `## Never`, and its settings leave off '
-                                 "what would allow it. Omit it when they named none"},
-        "produces": {"type": "array", "items": {"type": "string"}, "maxItems": 7,
-                     "description": "create_routine (required): what the routine exists to "
-                                    "PRODUCE, in the user's words — `principal: <who>` once, "
-                                    "then per measure `<id> · <count|level> · <higher|lower> — "
-                                    "<what it counts>`; its own scripts/outcome.py counts them"},
-        "replaces": {"type": "string",
-                     "description": "create_routine: an EXISTING routine's slug — create a "
-                                    "REPLACEMENT CANDIDATE at once (routine-rebuild), unscheduled "
-                                    "and without its grants, plus ONE swap decision for the user"},
+        # D198: the fields only this kind uses live in `schema_routine` — this file is AT its
+        # size ceiling (shrink-only), so the revise path's `revises` flag needed room first.
+        **schema_routine.ROUTINE_FIELDS,
         "label": {"type": "string",
                   "description": "spawn/subtask/detach: short name shown in the run tree"},
         "turns": {"type": "integer", "minimum": 1,

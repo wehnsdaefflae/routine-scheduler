@@ -29,6 +29,7 @@ demand):
       rule_confirm: always | creations | never  # write_rule approval level
       remind_confirm: always | creations | never  # GLOBAL consequence-reminder approval
       config_confirm: always | own_fields | never  # its OWN config-patch autonomy (D191)
+      revise_confirm: always | invited  # who may revise ITS recipe (D198, rsched/revisedial.py)
       runs: last | all                 # previous-run read depth — a SETTING, no doc needed
       reminders: none | local | global # consequence-reminder stores — a SETTING too
       jobs: off | on                  # the routine keeps JOBS (rsched/jobs.py) — a SETTING
@@ -58,7 +59,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import configdial, jobs_compat
+from . import configdial, jobs_compat, revisedial
 from .engine.actionschema import KINDS
 from .ids import is_slug
 from .jobs import LEVELS as JOB_LEVELS
@@ -101,10 +102,10 @@ _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "revise_util": "util-aut
 # next run and a global reminder starts HOLDING actions in routines that never asked for it, so
 # collapsing them would make a never-confirm util policy silently authorize the others.
 CONFIRM_LEVELS = ("always", "creations", "never")
-# Dial → the ladder IT accepts. `config_confirm` (D191, `configdial`) is the fourth, with its
-# OWN ladder: `own_fields` is a declared field allow-list, not a create-vs-revise rung.
-APPROVAL_DIALS = {"confirm": CONFIRM_LEVELS, "rule_confirm": CONFIRM_LEVELS,
-                  "remind_confirm": CONFIRM_LEVELS, configdial.DIAL: configdial.LEVELS}
+# Dial → the ladder IT accepts. `config_confirm` (D191, `configdial`) and `revise_confirm`
+# (D198, `revisedial`) each carry their OWN ladder, not a create-vs-revise rung.
+APPROVAL_DIALS = {**dict.fromkeys(("confirm", "rule_confirm", "remind_confirm"), CONFIRM_LEVELS),
+                  configdial.DIAL: configdial.LEVELS, revisedial.DIAL: revisedial.LEVELS}
 # runs: access to previous runs. `last` is every routine's floor (D96); `all` is the setting a
 # longitudinal routine (self-audit, rules-review) is given. `none` exists for CHILD runs only,
 # which read their brief rather than the archive (loopsetup).

@@ -16,6 +16,32 @@ from .run_context import RunContext
 from .subruns import SubrunManager
 
 
+def _take_invited_revisions(ctx: RunContext) -> bool:
+    """Consume the revisions another routine proposed for THIS one and file them as this leg's
+    instruction — True when there were any, which is what unlocks the recipe for the leg (D198).
+
+    Only an ordinary routine run is handed one: a CHILD run works its parent's brief and a
+    conversation has no recipe of its own (`recipeproposal.asks_for_revisions`' reasoning, and
+    the same three exclusions). Best-effort: a store read must never stop a run from booting,
+    so a broken spool leaves the invitation for the next fire instead of failing the leg.
+    """
+    if ctx.depth > 0 or runkind.is_conversation(ctx) or runkind.is_detached_run(ctx):
+        return False
+    try:
+        from .. import reciperevise
+        from . import inbox
+        records = reciperevise.take(ctx.server.routines_home, ctx.routine.slug)
+        if not records:
+            return False
+        # `web-converse` is a LIVE via, so this leg's own boot drains it — the pair
+        # `web/api_recipe_revision.py` files for the same unlock, for the same reason.
+        inbox.file_message(ctx.routine.dir, reciperevise.instruction(records),
+                           via="web-converse")
+    except OSError:
+        return False
+    return True
+
+
 def build_base_policy(loop, grants_map: dict) -> None:
     """Set `loop.base_grants` — the run's CONFIG-derived grant policy, before the one-time
     overlay `requests.rebuild_policy` folds over it.
@@ -119,7 +145,13 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # the /revise endpoint drops in the run dir, read once and cleared here. No persisted
     # fs_write_root, so the recipe stays sealed to every ordinary run (see engine/revise.py).
     from .revise import REVISE_KINDS, clear_revise_marker, revise_marker
-    revising = revise_marker(ctx.run_dir) is not None
+    # D198 rides the same `revising` flag: a revision ANOTHER routine proposed for this one,
+    # authorized by the operator (or by this routine's own `revise_confirm` dial) and waiting
+    # for this run — the same one-leg unlock, pointed at an invitation instead of a marker
+    # (rsched/reciperevise.py). Consumed HERE, at init, so a run is never rewritten mid-flight:
+    # one filed while this run is going waits for the fire after it. Taken FIRST so a marker
+    # does not short-circuit the invitation away unread.
+    revising = _take_invited_revisions(ctx) or revise_marker(ctx.run_dir) is not None
     if revising:
         clear_revise_marker(ctx.run_dir)
         if loop.allowed_tools is not None:

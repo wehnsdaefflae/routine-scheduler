@@ -157,7 +157,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
     "create_routine": (("target", "name", "prompt"),
                        ("workflow", "pattern", "setup", "done_when", "finish_line", "never",
-                        "produces", "replaces")),
+                        "produces", "replaces", "revises")),   # D198: `revises` = that recipe
     "manage_lane": (("verb",), ("target", "name", "members", "on_failure", "cron", "paused")),
     "job": (("verb",), ("id", "title", "brief", "path", "state", "outcome", "summary",
                          "wake", "quiet_days", "accounting")),

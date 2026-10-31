@@ -7,7 +7,9 @@ place it does. Materializing goes through the SAME `workflows.scaffold` / `rsche
 calls a conversation's confirmed creation uses — one materializer, not a second path that can
 drift from it.
 
-Five kinds ride this queue. Two are creations (`create_routine`, `manage_lane`); one is a SWAP
+Six kinds ride this queue. Two are creations (`create_routine`, `manage_lane`); one REVISES an
+existing routine's recipe (`revise-routine`, D198: the prose is handed to that routine, whose own
+next run makes the edit — engine/reviseroutine.py, `_materialize_revise`); one is a SWAP
 (`replace-routine`: a replacement candidate the improver created and proved takes the old
 routine's place — engine/candidate.py, `_materialize_replace`); one is a DECISION with a choice
 (`unowned-report`: a report nobody has owned for a week, routed or closed by the operator —
@@ -28,8 +30,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import lanes, library_drift, pending, schedule
-from ..engine import finishline
+from .. import lanes, library_drift, pending, reciperevise, schedule
+from ..engine import finishline, reviseroutine
 from ..paths import read_yaml
 
 router = APIRouter(tags=["pending"])
@@ -245,6 +247,33 @@ def _discard_replace(request: Request, rec: dict) -> None:
     candidate.forget(home, new)
 
 
+def _materialize_revise(server, rec: dict) -> dict:
+    """Approve a revision one routine proposed for ANOTHER's recipe (D198): hand the prose to
+    the target, whose own next run makes the edit under the one-leg recipe unlock.
+
+    Not a web-side recipe write, for `api_recipe_revision`'s reason: the proposal is PROSE
+    about a recipe, not a diff, and only a run that can read what that recipe is for can turn
+    it into an edit. Unlike D200's card there is no leg to resume — the reasoning is the
+    PROPOSER's and the recipe is the TARGET's — so the invitation waits for the target's next
+    fire (`rsched/reciperevise.py`) instead of resuming anybody.
+    """
+    fields = rec.get("fields") or {}
+    target = str(fields.get("target") or "")
+    lines = [str(x) for x in (fields.get("lines") or []) if str(x).strip()]
+    if not lines:
+        raise ValueError("this proposal names no revision — discard it")
+    if not (server.routines_home / target / "routine.yaml").is_file():
+        raise ValueError(f"routine {target!r} is gone — discard this proposal")
+    entry = reciperevise.invite(server.routines_home, target, lines=lines,
+                                by=str(rec.get("routine") or ""),
+                                run_id=str(fields.get("run_id") or rec.get("run_id") or ""),
+                                approved_by=str(rec.get("id") or ""))
+    if entry is None:
+        raise ValueError(f"{target} already has {reciperevise.MAX_PENDING} revisions waiting "
+                         "for its next run — approve this once it has run")
+    return {"revises": target, "lines": lines, "armed": True}
+
+
 @router.post("/pending-creations/{pid}/materialize")
 def materialize(request: Request, pid: str, body: Choice | None = None) -> dict:
     """Build what the run proposed. The record is dropped only once the proposal has
@@ -266,6 +295,8 @@ def materialize(request: Request, pid: str, body: Choice | None = None) -> dict:
             out = _materialize_goal_reached(request, rec)
         elif rec.get("kind") == "replace-routine":
             out = _materialize_replace(request, rec)
+        elif rec.get("kind") == reviseroutine.KIND:
+            out = _materialize_revise(server, rec)
         elif rec.get("kind") == "unowned-report":
             out = _decide_unowned(server, rec, body)
         else:
