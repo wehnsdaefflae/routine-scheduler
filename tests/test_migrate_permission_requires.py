@@ -12,8 +12,7 @@ over operator-editable files:
 * it corrects the file that names the dead utils;
 * it leaves the PROSE below the frontmatter byte for byte — the body is his;
 * it leaves a file he already corrected alone, so the migration can never revert a
-  hand-correction (the shape `migrate_rule_assists` uses when a live declaration outranks the
-  seed's);
+  hand-correction (the shape `seed_assists` uses when a live declaration outranks the seed's);
 * it runs ONCE — the record is the guard, as with every migration in this family.
 """
 

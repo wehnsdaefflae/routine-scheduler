@@ -90,7 +90,7 @@ Validation runs in `lint_rule_text`, which means one call covers all four author
 the `write_rule` action (before its approval ask), the Library tab's PUT, `rsched lint`, and
 the per-rule `problems` the Library page shows.
 
-## The six moments
+## The eight moments
 
 | moment | fires | delivery | payload | cost |
 |---|---|---|---|---|
@@ -101,6 +101,7 @@ the per-rule `problems` the Library page shows.
 | `child-exit` | on a child run's hand-back | an appended `ENGINE NOTE` | `remind`, `action` | none |
 | `pre-finish` | as the run tries to end | a finish-gate deferral | `remind` | one turn |
 | `run-end` | once the run's result is written | a line in `state/notes.md`, for the NEXT run | `note` | none |
+| `restart` | as the DAEMON exits under a live run | a line in `state/notes.md`, for the NEXT leg | `note` | none |
 
 **`spawn` and `child-exit` are RUN-TREE moments, not turn moments** — one for each end of a
 child's life. They fire where the engine delivers the child's row to its parent

@@ -88,11 +88,15 @@ def test_the_registry_says_which_points_nothing_fires_at_yet():
     table with an empty `fires` — and they are readable as such.
     """
     gaps = [n for n in points.POINT_NAMES if not points.point(n).live]
-    assert set(gaps) == {"restart"}
-    for name in gaps:
-        assert dispatch.live(name) is False
-        assert points.point(name).fires == ()
-        assert points.point(name).site == ""   # naming a site for a dead point would be a guess
+    assert gaps == []                       # D152 step 9 wired `restart`, the last of four
+    assert set(points.LIVE_POINTS) == set(points.POINT_NAMES)
+    # The empty list is only worth anything because the same table would still SHOW a gap: a
+    # point with no mechanism has no site either, since naming one would be a guess and this
+    # table is read as fact.
+    dead = points.Point(name="x", about="nothing fires here", payloads=("note",),
+                        carrier="prompt_section")
+    assert dead.live is False and dead.fires == () and dead.site == ""
+    assert dispatch.live("x") is False       # and an unknown point fires nothing at all
     for name in points.LIVE_POINTS:
         assert dispatch.live(name) is True
         assert points.point(name).site, f"{name} fires but names no engine seam"

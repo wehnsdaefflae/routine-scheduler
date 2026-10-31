@@ -84,7 +84,7 @@ def test_run_end_is_a_live_point_that_names_its_seam():
     assert "finish_run" in point.site
     assert dispatch.live("run-end") is True
     gaps = {n for n in points.POINT_NAMES if not points.point(n).live}
-    assert gaps == {"restart"}      # the LAST dead point
+    assert gaps == set()            # step 9 wired `restart`, which was the last
 
 
 def test_run_end_carries_a_note_and_cannot_hold():

@@ -143,6 +143,18 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         # Python and still leaves nothing, which is the honest case.
         from ..daemon import restart as restart_ctl
         restart_ctl.mark_graceful_exit(server)
+        # D152 step 9: the `restart` hook point, the last one nothing fired at — and the only
+        # one outside a run, because the party that knows a restart is happening is the one
+        # exiting. HERE, after the breadcrumb and before anything is torn down, while the
+        # runner still knows which engines this exit takes down with it. Its carrier is
+        # `run-end`'s (`state/notes.md`), so the line reaches whichever leg reads that file
+        # next — the automatic resume, or the next scheduled run when no resume is granted.
+        from ..daemon import restart_hook
+
+        runner = getattr(app.state, "runner", None)
+        if runner is not None:
+            restart_hook.at_daemon_exit(server, runner.active.values(),
+                                        "external shutdown (SIGTERM)")
         set_sink(None)
         await _stop(search_task)
         app.state.search.shutdown()

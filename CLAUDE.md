@@ -74,12 +74,12 @@ one you are about to touch, not all of them.
   pattern); `docs/patterns.md` — settings patterns, pending changes and the one accept;
   `docs/run-gates.md` — the declarative checks that skip a fire with nothing to do; `docs/rule-assists.md` — its curated
   half: a rule's own `assists:` block surfacing its operative line at the moment it applies
-  (why timing is possible where compliance-checking is not, the seven moments — a pre-action
-  HOLD plus six free ones, including both ends of a child run's life and `run-end`, whose
-  `note` reaches the NEXT run through `state/notes.md`, coupled to their
+  (why timing is possible where compliance-checking is not, the eight moments — a pre-action
+  HOLD plus seven free ones, including both ends of a child run's life, `run-end` and `restart`,
+  whose `note` reaches the NEXT leg through `state/notes.md`, coupled to their
   payloads — the `action` payload, where a rule
   PERFORMS one authored action at the turn boundary with no model turn, and the
-  one-shot migration each batch needs to reach a live library)
+  add-only per-entry carry a declaration needs to reach a live library)
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer (each doc's
   `effect:` line — what a routine holding it DOES differently — is what the page labels its
   on/off control with, and the linter requires it), the two-layer
@@ -566,8 +566,8 @@ one you are about to touch, not all of them.
   `(moment, predicate) → line` entries that surface its operative line when it becomes
   relevant, so noticing the moment is the engine's job and not the model's. It is not a
   capability (holding the rule IS the decision), the predicate is named and resolved from
-  `engine/assist_predicates.py` because a rule may never ship code, and the seed sync being
-  ADD-ONLY means each batch needs a one-shot migration to reach live rules (docs/rule-assists.md).
+  `engine/assist_predicates.py` because a rule may never ship code, and the FILE-level seed sync
+  being add-only means a declaration reaches a live rule through `seed_assists.py` (docs/rule-assists.md).
   The MOMENT and the PAYLOAD are coupled: `pre-action` can only HOLD (a chosen action is only
   reachable by stopping it), the free moments can only REMIND. A hold — from either layer —
   goes through ONE seam (`engine/hold.py`): the canonical string is computed once, sources are

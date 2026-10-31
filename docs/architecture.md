@@ -321,17 +321,24 @@ the limits (single-writer status.json preserved).
   today and the engine seam that does it. The rule layer's five moments and the reminder layer's
   eight trigger kinds both MAP onto it (`for_moment`, `for_trigger`, pinned against
   `assists.MOMENT_PAYLOADS` and `reminders.KINDS` in `tests/test_hooks_points.py`), so the
-  registry is one vocabulary rather than a second opinion beside them. The points nothing fires
-  at yet are IN the table with an empty `fires` — `restart` — because a
-  registry listing only what is built cannot say what is missing. The registry shipped with FOUR
-  such gaps; the two RUN-TREE ones now fire, the rule layer reaching each where the engine
-  delivers a child's row to its parent (`child-exit` on its hand-back, `spawn` on its start) —
-  gaps closed by a mechanism rather than renamed. `run-end` fires too, and it is the first point
-  whose carrier is `prompt_section`: it reaches the NEXT run rather than this one, through
-  `state/notes.md`, whose tail the next state digest renders — the channel that already existed,
-  rather than a new store needing a new reader in the prompt. It fires in
-  `engine/loopend.finish_run` after `result.md` and before the autocommit, so the line is
-  committed with the run that learned it. `restart` is the one gap left. `dispatch.at` is the
+  registry is one vocabulary rather than a second opinion beside them. A point nothing fires at
+  stays IN the table with an empty `fires`, because a registry listing only what is built cannot
+  say what is missing — and as of D152 step 9 there is no such point: the registry shipped with
+  FOUR gaps and every one now fires. The two RUN-TREE ones go through the rule layer where the
+  engine delivers a child's row to its parent (`child-exit` on its hand-back, `spawn` on its
+  start). `run-end` was the first point whose carrier is `prompt_section`: it reaches the NEXT
+  run rather than this one, through `state/notes.md`, whose tail the next state digest renders —
+  the channel that already existed, rather than a new store needing a new reader in the prompt.
+  It fires in `engine/loopend.finish_run` after `result.md` and before the autocommit, so the
+  line is committed with the run that learned it. `restart` shares that carrier and is the only
+  point fired from OUTSIDE a run (`daemon/restart_hook.py`, called from the app lifespan's
+  shutdown half beside F746's breadcrumb): the daemon is exiting, so there is no turn loop to
+  ask and no turn left to reach — the site hands each live run's own directory to the same
+  writer, and the line is read by whichever leg reads that file next, the automatic resume or
+  the next scheduled run. A declaration reaches the live library through `rsched/seed_assists.py`,
+  add-only per entry, because the file-level seed sync cannot carry a block into a rule the
+  library already has — which is how three wired points came to fire against zero candidates for
+  three releases. `dispatch.at` is the
   one evaluator: it drops a candidate whose payload the point cannot carry, and treats a
   predicate that raises as "did not fire", never as a failed turn. TWO points can change what
   runs, which corrects the hook design's rule 2: `pre-action` prevents an action and

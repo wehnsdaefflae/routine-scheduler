@@ -59,8 +59,12 @@ from pathlib import Path
 #: `prompt_section` carrier, and the reason this moment is worth having at all: the things a
 #: run learns at its close-out — that children were killed mid-work, that something was left
 #: half-done — are exactly what no summary reliably carries and what the next run pays for.
+#:
+#: `restart` is its twin at the other end of the same gap and the only moment fired from
+#: OUTSIDE a run: the daemon is exiting under a live run, so there is no loop to ask and no
+#: turn left to reach — the line goes to the same file, for whichever leg reads it next.
 MOMENTS = ("pre-action", "observation", "boundary", "pre-finish", "child-exit", "spawn",
-           "run-end")
+           "run-end", "restart")
 
 #: The payload axis is `remind -> action -> hold`. The design note spelled the middle rung
 #: `scaffold -> do`, and said neither existed "because each needs a helper channel that is not
@@ -110,7 +114,7 @@ PAYLOADS = ("remind", "note", "action", "hold")
 MOMENT_PAYLOADS = {"pre-action": ("hold",), "observation": ("remind",),
                    "boundary": ("remind", "action"), "pre-finish": ("remind",),
                    "child-exit": ("remind", "action"), "spawn": ("remind", "action"),
-                   "run-end": ("note",)}
+                   "run-end": ("note",), "restart": ("note",)}
 
 #: The action kinds an `action` assist may NOT perform: the ones that STEER a run rather than
 #: having an effect in the world. `engine/commands.py` draws this exact line for the user's own

@@ -45,19 +45,17 @@ def test_no_holding_point_carries_an_action_payload():
     assert points.ACTION_POINTS, "no point carries an action payload at all"
 
 
-def test_action_points_include_the_points_that_fire_nothing_yet():
-    """A point with no mechanism firing at it still declares what it WOULD carry — otherwise
-    the campaign's later steps would have to edit the payload column as well as wire the site,
-    and the table would stop being readable as 'what is possible here'.
+def test_wiring_a_site_never_changes_what_a_point_may_carry():
+    """A point declares what it WOULD carry whether or not anything fires there yet — otherwise
+    each campaign step would have to edit the payload column as well as wire the site, and the
+    table would stop being readable as 'what is possible here'.
+
+    All FOUR points that shipped dead with the registry declared `action` while nothing fired at
+    them, and steps 6-9 wired every one: `child-exit` on a child's hand-back, `spawn` on its
+    start, `run-end` once the result is written, `restart` as the daemon exits. Not one needed
+    its payload column touched, which is the property this test is really about.
     """
-    for name in ("restart",):
-        assert points.allows(name, "action")
-        assert not points.point(name).live
-    # `child-exit`, `spawn` and `run-end` were three of the four until steps 6, 7 and 8 wired
-    # them (the rule layer fires at both ends of a child's life, and at the run's own end).
-    # Each KEEPS the `action` payload it declared while dead, which is the property this test
-    # is really about: wiring a site must not have to edit the payload column as well.
-    for name in ("child-exit", "spawn", "run-end"):
+    for name in ("child-exit", "spawn", "run-end", "restart"):
         assert points.allows(name, "action")
         assert points.point(name).live
 

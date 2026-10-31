@@ -39,8 +39,8 @@ seed reaches a fresh instance and never this one. The repo's own rule (CLAUDE.md
 whose text must change on a live instance is converted by a one-shot migration instead") is
 what this file is.
 
-It edits ONLY the `requires:` block, exactly as `migrate_rule_assists` inserts only an
-`assists:` block: the body prose below the frontmatter is the operator's and is left byte for
+It edits ONLY the `requires:` block, exactly as `seed_assists` carries only an `assists:`
+declaration: the body prose below the frontmatter is the operator's and is left byte for
 byte. A live file that does NOT name a dead util is left alone, so a hand-correction he already
 made is never reverted, and a permission MISSING from the live library stays missing (he may
 have deleted it; the add-only sync already has that rule).
@@ -64,8 +64,8 @@ log = logging.getLogger("rsched.migrate_permission_requires")
 RECORD = Path(".control") / "migrations" / "permission-requires.json"
 
 #: permission name -> (the dead `utils:` list as the live file carries it, its replacement).
-#: Named one by one, like `migrate_rule_assists.RULES`: a migration that swept every seed
-#: declaration would also carry one a future release adds, long after anyone reads this file.
+#: Named one by one: a migration that swept every seed declaration would also carry one a
+#: future release adds, long after anyone reads this file.
 REQUIRES = {
     "outbound-mail": ("[gmail:send, fau-mail:send]", "[mail:send]"),
 }

@@ -66,11 +66,15 @@ def cmd_daemon(_args) -> int:
     # sync above only adds missing patterns
     from .migrate_converse_goals import run_migration as carry_converse_goals
     carry_converse_goals(server)
-    # MIGRATION(expires=2026-12-31): the seed rules' `assists:` declarations — the add-only sync
-    # cannot carry a block into a rule the live library already has, so every hook point the
-    # campaign wired was firing against no candidates at all
-    from .migrate_rule_assists import run_migration as carry_rule_assists
-    carry_rule_assists(server)
+    # The seed rules' `assists:` DECLARATIONS, per entry: the add-only file sync above cannot
+    # carry a block into a rule the live library already has, so every hook point the campaign
+    # wired was firing against no candidates at all. Recurring and add-only per declaration id
+    # (rsched/seed_assists.py) — this replaces 0.477.0's one-shot `migrate_rule_assists`, which
+    # by construction could only ever close the gap once: it refused a rule that already
+    # declared assists, which is every rule it had already fixed.
+    from .seed_assists import sync_seed_rule_assists
+
+    sync_seed_rule_assists(server.libraries_home, routines_home=server.routines_home)
     # MIGRATION(expires=2026-12-31): the same add-only gap, for a permission's `requires:` — the
     # fau-mail/gmail -> mail consolidation left two dead util names there, FAILing twice at the
     # start of every run of every holder, and a routine cannot edit the library (R3081)

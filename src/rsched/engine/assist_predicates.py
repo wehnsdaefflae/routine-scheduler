@@ -22,6 +22,7 @@ from typing import Any
 
 from .assist_child import child_fell_short, spawned_a_thin_brief
 from .assist_outcome import outcome_questioned
+from .assist_restart import work_cut_by_daemon_exit
 from .assist_runend import children_killed_at_end
 
 
@@ -34,6 +35,7 @@ class Situation:
     obs: dict | None = None         # the observation just returned (observation)
     child: dict | None = None       # the child run that just exited (child-exit)
     ending: dict | None = None      # how the run closed out, as recorded (run-end)
+    restart: dict | None = None      # the daemon exit cutting this run's turn (restart)
 
     @property
     def ctx(self):
@@ -325,21 +327,17 @@ PREDICATES: dict[str, Predicate] = {
         describes="the user just said something to this run"),
     "ledger-untouched": Predicate(moment="pre-finish", check=_ledger_untouched,
         describes="this run changed things and has not written to LEDGER.md"),
-    "uncheckpointed-repo-write": Predicate(
-        moment="pre-action", check=_uncheckpointed_repo_write,
+    "uncheckpointed-repo-write": Predicate(moment="pre-action", check=_uncheckpointed_repo_write,
         describes="this edits a git repo the engine does not version; its working tree "
                   "holds changes no commit can restore"),
-    "asks-piling-up": Predicate(
-        moment="boundary", check=_asks_piling_up,
+    "asks-piling-up": Predicate(moment="boundary", check=_asks_piling_up,
         describes="several decisions are waiting on the user"),
-    "unclosed-delivered-report": Predicate(
-        moment="pre-finish", check=_unclosed_delivered_report,
+    "unclosed-delivered-report": Predicate(moment="pre-finish",
+        check=_unclosed_delivered_report,
         describes="another routine handed you work this run and nobody has answered it"),
-    "rendered-output-unseen": Predicate(
-        moment="pre-finish", check=_rendered_output_unseen,
+    "rendered-output-unseen": Predicate(moment="pre-finish", check=_rendered_output_unseen,
         describes="this run wrote pages or documents and never looked at them rendered"),
-    "outcome-questioned": Predicate(
-        moment="boundary", check=outcome_questioned,
+    "outcome-questioned": Predicate(moment="boundary", check=outcome_questioned,
         describes="the person's words question what this routine PRODUCES"),
     "child-fell-short": Predicate(moment="child-exit", check=child_fell_short,
         describes="a child run you started just exited without finishing ok"),
@@ -347,4 +345,6 @@ PREDICATES: dict[str, Predicate] = {
         describes="you just started a child on a brief that may not stand on its own"),
     "children-killed-at-end": Predicate(moment="run-end", check=children_killed_at_end,
         describes="children were still working when this run ended, so they were terminated"),
+    "work-cut-by-daemon-exit": Predicate(moment="restart", check=work_cut_by_daemon_exit,
+        describes="the daemon went down while this run was mid-work, cutting its turn"),
 }

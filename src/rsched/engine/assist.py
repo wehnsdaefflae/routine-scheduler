@@ -155,7 +155,7 @@ def _matching(loop, moment: str, situation: Situation) -> list[Assist]:
                        lambda a: _fire(loop, a, situation), payload=lambda a: a.payload)
 
 
-def _rendered(assist: Assist) -> str:
+def rendered_line(assist: Assist) -> str:
     """One line, one shape, every moment — so the run reads it at a glance and knows both
     what fired and where the rest of it lives.
     """
@@ -186,7 +186,7 @@ def hold(loop, action: dict, rendered: str) -> dict | None:
         return None
     hold_seam.mark_held(loop, SOURCE, rendered)
     return {"kind": "assist_hold", "action": rendered,
-            "lines": [_rendered(a) for a in fired],
+            "lines": [rendered_line(a) for a in fired],
             "assists": [a.key for a in fired]}
 
 
@@ -202,7 +202,7 @@ def at_observation(loop, action: dict, obs: dict) -> list[Assist]:
 
 def tail(fired: list[Assist]) -> str:
     """The tail appended to an observation — "" when nothing fired."""
-    return ("\n" + "\n".join(_rendered(a) for a in fired)) if fired else ""
+    return ("\n" + "\n".join(rendered_line(a) for a in fired)) if fired else ""
 
 
 def recorded(loop, payload: dict, fired: list[Assist]) -> dict:
@@ -236,7 +236,7 @@ def at_boundary(loop) -> None:
         loop.assist_user_replies = replies
     if loop.assists:
         for assist in _matching(loop, "boundary", Situation(loop=loop)):
-            enginenote.append(loop, _rendered(assist), assists=[assist.key])
+            enginenote.append(loop, rendered_line(assist), assists=[assist.key])
             # …and, for an `action`-payload assist, the rule DOES the thing its moment calls
             # for — one authored action, no model turn (engine/assist_action.py).
             assist_action.act(loop, assist)
@@ -262,7 +262,7 @@ def at_child_exit(loop, child_row: dict) -> None:
     if not loop.assists:
         return
     for assist in _matching(loop, "child-exit", Situation(loop=loop, child=child_row)):
-        enginenote.append(loop, _rendered(assist), assists=[assist.key])
+        enginenote.append(loop, rendered_line(assist), assists=[assist.key])
         assist_action.act(loop, assist, point="child-exit")
 
 
@@ -282,7 +282,7 @@ def at_spawn(loop, start_row: dict) -> None:
     if not loop.assists:
         return
     for assist in _matching(loop, "spawn", Situation(loop=loop, child=start_row)):
-        enginenote.append(loop, _rendered(assist), assists=[assist.key])
+        enginenote.append(loop, rendered_line(assist), assists=[assist.key])
         assist_action.act(loop, assist, point="spawn")
 
 
@@ -307,7 +307,7 @@ def at_run_end(loop, ending: dict) -> None:
     if not loop.assists:
         return
     for assist in _matching(loop, "run-end", Situation(loop=loop, ending=ending)):
-        notes.append_line(loop.ctx, _rendered(assist), source="hook run-end")
+        notes.append_line(loop.ctx, rendered_line(assist), source="hook run-end")
 
 
 def at_finish(loop, action: dict) -> tuple[str, list[str]] | None:
@@ -325,7 +325,7 @@ def at_finish(loop, action: dict) -> tuple[str, list[str]] | None:
     if not fired:
         return None
     loop.assist_finish_deferred = True
-    lines = "\n".join(_rendered(a) for a in fired)
+    lines = "\n".join(rendered_line(a) for a in fired)
     message = ("OBSERVATION (finish deferred): a general rule you practise applies to how this "
                f"run ends.\n{lines}\nAct on it and finish again — this is asked once per run "
                "(once per reply, in a conversation), so the next finish stands either way.")

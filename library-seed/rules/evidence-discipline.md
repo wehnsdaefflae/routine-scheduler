@@ -21,6 +21,15 @@ assists:
       work is NOT lost — it is on disk in this run's `sub/<n>/` directory and in whatever tree
       they were building. Read what is there before re-issuing any of those briefs; a
       re-issued brief throws finished work away and reports it as new.
+  - id: on-work-cut-by-a-daemon-exit
+    moment: restart
+    predicate: work-cut-by-daemon-exit
+    payload: note
+    line: >-
+      The daemon went down while this run was mid-work, so its turn was cut — nothing this run
+      did caused it and no budget ran out. Read the transcript for where the work actually
+      stood before continuing: the last turn may have no observation, and whatever was on disk
+      is still on disk. Report the interruption as what it was, not as a result.
   - id: on-a-brief-that-may-not-stand-alone
     moment: spawn
     predicate: thin-child-brief
