@@ -15,6 +15,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.486.0] — 2026-10-31
+
+### The inbox's SECOND record shape gets its one writer, and the policy scan polices both (D143)
+
+The operator's answer: *"Build the seams the review named but could not reach, starting with the
+two remaining `msg-*` writers plus the policy scan."*
+
+**One scope correction, from reading the tree rather than the brief: the `msg-*` half was already
+done.** `tests/test_policy_inbox_writer.py` exists and its `msg-*` checks pass unmodified. Every
+direct inbox write left in the two modules the brief called "the two remaining `msg-*` writers"
+is the OTHER shape, `answer-<qid>.json`, which had no writer at all — SEVEN sites in FOUR modules
+(`web/api_questions` for the answer, the answer-and-run-now rewrite and the defer marker,
+`web/api_question_decline`, `web/api_patch_applied`, `engine/inbox_questions.revise_answer`),
+each spelling the filename itself and stamping its own `ts`. Exactly the state `msg-*` was in
+before F499 unified it.
+
+So the answer shape gets its own writer — `src/rsched/answerfile.py` — rather than being forced
+through `file_message`, whose invariants it does not share: that seam validates `via` against the
+closed `VIAS` set, and freight BUYS a run while an answer must never (`daemon/gate_prepare`, the
+operator's reversal of 2026-09-12: an answer is work for a fire that already happened, never a
+reason to fire). All seven sites routed through it, and the patch-applied route through its
+`update`, which refuses to resurrect an answer a run has already consumed — a plain write
+re-created the record and the next run read a settled decision as fresh, the answer-side twin of
+the race `inbox.rewrite_message` holds a lock for. The writer also refuses a record neither
+reader would consume (both require a `text` key or a truthy `defer`), which is the one catchable
+moment: such a file is never read, never drained, and by the gate rule above does not even admit
+the run that might have noticed it.
+
+**The durable half** is the policy scan: `SANCTIONED_WRITERS` names the owner of each shape WITH
+the reason it is allowed, and any other direct write into an `inbox/` is a test failure reporting
+`path:line` plus the seam to call. It tracks a path bound to a NAME across the lines between (a
+write sits up to a dozen lines below the expression that built it) and drops bindings at every
+`def`, because `path` names an inbox answer in one function and the archive record two functions
+below. An allow-list integrity check keeps it from going vacuously green.
+
+`web/api_questions.py` SHRANK 394 → 393 and its ceiling is tightened to match. Docs:
+`docs/messages.md` (both shapes and their writers), `docs/architecture.md`, `CLAUDE.md`.
+
+### A chat message's corner controls are no longer part of the text you select (R3085)
+
+The operator, from his own conversation: the copy button on a message's code block "copies the
+glyph, not the code" — he clicked it and got `⧉`.
+
+**The reported cause is not reproducible, and that is recorded rather than quietly fixed around.**
+`static/md.js` emits every fence as `<pre><code>…</code></pre>` (its only two `<pre>` producers),
+`chat.js`'s `fenceBtns` reads `code.textContent` with `pre.textContent` only as a fallback for a
+`<pre>` without a `<code>` child — which that renderer never produces — and
+`tests/ui/test_flows.py::test_code_fence_copy_button` already asserts the clipboard equals exactly
+the fence's source after a CLICK. It passes. Only three clipboard writers exist in all of
+`static/`; the other two copy a URL.
+
+What CAN put the glyph in his clipboard is the other way of copying: every one of these controls
+is a CHILD of the thing it acts on (deliberately — each is pinned to a corner), with no
+`user-select` rule, so dragging across the code block and pressing ⌘/Ctrl-C takes the button's
+text with the code. The same was true of the bubble's own corner controls: selecting a whole
+message took ⧉ ⑂ ⟲ ⚑ with it — **and the ↩ refer glyph, which the red-first run found** and which
+run turns and finish banners share. `user-select: none` on all three families — still clickable,
+still focusable, simply no longer text a selection can carry. Line-NEUTRAL in
+`static/views.css`, which is at its 2024-line ceiling.
+
+Five browser tests in a new file, each over a seeded REPLY — the only bubble that carries all six
+controls, because ⑂ ⟲ ⚑ return null without a callback and an integer turn. Every check asserts
+the control is PRESENT before reading its style, which the first version of this file did not: it
+looked for `.branch-msg` on a user message, matched nothing, and so reddened one release gate
+while its sibling glyph check had been passing vacuously. Proven red-first by stripping the
+declarations: 4 of 5 fail, and the 5th — the click path, repeated here so the file fails if the
+fix is ever made by moving the button out of the `<pre>` — correctly passes either way.
+
 ## [0.485.0] — 2026-10-31
 
 ### Hooks: the LAST dead point fires, and a declaration can reach the live library again (D152 step 9)
