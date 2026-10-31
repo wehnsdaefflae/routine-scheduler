@@ -15,6 +15,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.485.0] — 2026-10-31
+
+### Hooks: the LAST dead point fires, and a declaration can reach the live library again (D152 step 9)
+
+`hooks/points.py` has carried `restart` with an empty `fires` since the registry shipped in
+0.458.0, and after steps 6-8 wired `child-exit`, `spawn` and `run-end` it was the last moment the
+engine passed through with nothing firing at it. **All four points that shipped dead now fire.**
+
+`restart` is the only one fired from OUTSIDE a run, and that is what made it different in kind:
+the daemon is exiting, the engine is a separate process about to be killed, and the party that
+knows a restart is happening is the one on its way out. So the site hands each live run's own
+directory to the carrier instead of reaching a turn loop — `daemon/restart_hook.at_daemon_exit`,
+called from `web/appwiring`'s lifespan shutdown half beside F746's breadcrumb
+(`restart.mark_graceful_exit`), the one seam every graceful exit reaches: a deploy, a
+`systemctl restart`, a container replacement, and the daemon's own self-update path.
+
+The carrier is `run-end`'s: `state/notes.md`, whose tail the next state digest renders. A run
+killed by a restart has no next prompt of its own, so the line is for whichever leg reads that
+file next — the automatic resume (`daemon/reap_resume`) or the next scheduled run. It is NOT a
+second copy of the resume note: `reap_resume` files an inbox message and is the better channel
+where it applies, but only for a run the next boot RE-OPENS, and a leg whose resume is refused
+(cap spent, routine paused, cause never established, run gone) gets nothing — which is exactly
+where F746's measurement sits: 79 orphans over 50 boots, 15 of the 20 carrying a cause at all
+reading `unknown`, and not one ever reading `daemon_restart`.
+
+New predicate `work-cut-by-daemon-exit` (`engine/assist_restart.py`): a PARKED run declines it,
+because a run waiting on a person was not working and saying its work was cut would be a claim
+about something that did not happen. `assists.MOMENTS` gains `restart`, carrying `note` only —
+no model left to remind, no action in hand to hold. `assist._rendered` becomes public
+`assist.rendered_line`, so the daemon-side site renders a fired assist exactly as every in-loop
+rung does rather than growing a second format. `assist_predicates.py` stayed AT its 350-line
+ceiling: four registry entries compacted to pay for the new one.
+
+**And the half without which it would have shipped dead.** 0.477.0 found that the points steps
+6-8 wired were firing against ZERO candidates, because `bootstrap.sync_seed_library_docs` is
+add-only at the FILE level and cannot carry an `assists:` block into a rule the live library
+already has. Its one-shot `migrate_rule_assists` fixed that once and by construction could never
+fix it again — it refused a rule that already declared assists, which is every rule it had just
+repaired, so a declaration added by any later release could not reach the live library and the
+next point would ship dead exactly as those three did. The carry is therefore now a RECURRING
+sync at the granularity the problem actually has, the ENTRY: `rsched/seed_assists.py`, add-only
+per declaration id, refusing to overwrite an entry (the operator's wording outranks the seed's),
+to resurrect one this rule's own history removed, or to create a rule the live library lacks.
+`migrate_rule_assists.py` and its test are DELETED under the delete-after-convergence policy.
+
+23 tests (14 + 9), red first: five sibling test files pinned `gaps == {"restart"}` and now pin
+the empty set. Docs swept — `docs/rule-assists.md` (eight moments), `docs/architecture.md`,
+`CLAUDE.md`. **Honest limit: proven by test only.** No graceful daemon exit has happened while
+this code was live, so the fire has no live specimen yet; after the next restart a run
+interrupted mid-work should carry a `hook restart` line in its routine's `state/notes.md`.
+
+### A stale model role is visible where a person looks (R3106, F643)
+
+Two routines each carried a bare `Sonnet` stored nine weeks earlier; after the catalog rename
+both died at boot — rc=1, no finish, no summary, no `result.md`, an orphan row and nothing to
+read. `trials.roles_problem` already detected it and was reachable only from `rsched validate`,
+a command a person types, while its WEAKER sibling `ignored_problem` was on the routine page: the
+lesser failure had a surface and the total one did not. New
+`trials.config_problems(server, cfg, trial)` composes both where their predicates already live,
+and `web/api_routines.py` stays at its 381-line ceiling (five lines in, five out).
+
+It judges the CHAT roles only. `decision`/`decision_media` sit in the same `models:` map but
+resolve against the decision catalog, so the literal change the report asked for would have
+printed "the run dies resolving it" for a working decision model — a false alarm on the one panel
+that has to be believed. Three API tests plus a browser test that LOADS the routine page and
+asserts the `.panel.err`, all red first.
+
+### The skipped-stage count names the release its ruler moved in (R3107)
+
+`COUNTED_SINCE["stages_skipped"] = "0.366.10"` shipped in 0.454.0; what was missing is the
+regression pin and the reason, so a future reader cannot delete the entry as unexplained.
+0.366.10 (F563) is the release that last moved the COUNT — it began crediting a stage the run
+WROTE into its phase cursor — while 0.402.0 changed only what the finish's claim check DOES with
+an unentered stage, which this number never read. The comment now names the one-way bias as well:
+a run that orients faster re-reads fewer modules, so a release improving orientation would read
+as making the fleet LESS complete. Proven by temporarily removing the shipped entry
+(`assert 3.0 is None`).
+
 ## [0.484.0] — 2026-10-31
 
 ### The gateway's reported cost is what bills a call; `-metered` is the paid route of the same model
