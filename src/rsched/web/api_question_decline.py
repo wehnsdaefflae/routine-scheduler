@@ -36,8 +36,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from .. import decline, patchreceipt
-from ..paths import atomic_write_json
+from .. import answerfile, decline, patchreceipt
 from .api_questions import (
     Answer,
     _announce_answer,
@@ -82,15 +81,14 @@ def _file_decline(request: Request, qid: str, body: Decline) -> tuple[dict, obje
                                  "typed decision `deny_now` or `deny_forever`, which is what "
                                  "the engine reads to deny the grant")
     routine_dir = _record_dir(server, match)
-    marker = routine_dir / "inbox" / f"answer-{qid}.json"
-    if marker.exists():
+    if answerfile.path(routine_dir, qid).exists():
         raise HTTPException(409, "an answer for this question is already queued")
     payload = decline.payload(qid, body.reason)
     # A declined proposal is the clearest possible case of a `config_patch` that was NOT
     # applied, and the record states it in the words the asking run already reads
     # (rsched/patchreceipt.py) — declining never applies anything.
     payload.update(patchreceipt.receipt(match, applied=False))
-    atomic_write_json(marker, payload)
+    answerfile.write(routine_dir, qid, payload)
     # A report-born decision routed work to another routine; that routine has no way to learn
     # an answer filed into someone else's inbox, and a refusal is exactly what it must not miss
     # (F621, `api_questions._relay_report_answer`).

@@ -837,7 +837,11 @@ and the capabilities digest's catalog listing):
   (a message is written by ONE function, `engine.inbox.file_message`, with a deterministic
   `name=` stem per channel — `trig-<event>`, `once-<id>`, `branch-<slug>-<ts>`, `bg-<taskid>` —
   and every SCANNER selects `msg-*.json` rather than "every file that is not `answer-*`",
-  because `paths.atomic_write` creates its temp file IN the target directory)
+  because `paths.atomic_write` creates its temp file IN the target directory; the directory's
+  SECOND shape, `answer-<qid>.json`, has its own one writer `rsched/answerfile.write` — a
+  separate seam because an answer carries no `via` and must never buy a run, and one that
+  refuses a record neither reader would consume, D143 — and `tests/test_policy_inbox_writer.py`
+  allow-lists exactly those two writers with the invariants each holds)
   (the ONE decision-record shape: {mode, type, default, expires, request?} — asks, util approvals
   and access requests alike; `routine.yaml` additionally carries the `grants:` decision rows:
   deny-forever tombstones for any entity + secret exposure, written only by the web — and

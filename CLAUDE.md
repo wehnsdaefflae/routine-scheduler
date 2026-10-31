@@ -965,7 +965,14 @@ by a test, by the engine, or by a past incident.
   the code actually writes — a branch hand-back filed on the USER channel was read by the parent
   as the operator speaking. A QUEUED message is edited only through `inbox.rewrite_message`, under
   the inbox lock the drain holds: a check-then-write lost the race to a drain and re-queued the
-  edited text, so the run received it twice.
+  edited text, so the run received it twice. The directory's SECOND shape has its own single
+  writer — `answerfile.write` for `answer-<qid>.json`, a separate seam because an answer has no
+  `via`, no delivery policy, and must never buy a run — which refuses a record carrying neither
+  `text` nor `defer` (no reader consumes one, so it would wait unread), and
+  `answerfile.update` corrects a STILL-QUEUED answer without creating one, so a correction
+  cannot re-file a record a run already drained. `tests/test_policy_inbox_writer.py` allow-lists
+  exactly these two writers with the invariants each holds, so a third direct write into an
+  `inbox/` fails the suite naming the seam to call (D143).
 - **A console view acts only while it is mounted, and only on its newest read.** Work a view
   schedules past an `await` or a timer (a remount, a URL rewrite, a scroll, a rail refresh, a
   transcript catch-up) checks the view is still the current one, and of overlapping reads only

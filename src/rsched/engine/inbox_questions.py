@@ -7,6 +7,15 @@ directory, sharing a consume-by-rename discipline and nothing else.
   msg-<stem>.json    freight for a run          -> engine/inbox
   answer-<qid>.json  a question's answer        -> HERE, matched by qid
 
+The answer shape's one WRITER is `rsched/answerfile` (D143): this module owns the question
+LIFECYCLE — filing the ask, taking the answer, archiving the pair — and that one owns where an
+answer file lives and what makes it readable at all, so the three web routes that file one
+(answer, decline, defer) and `revise_answer` below all go through it instead of spelling the
+filename. `tests/test_policy_inbox_writer.py` allow-lists exactly the two writers, one per
+shape. It is a separate seam from `file_message` because an answer carries no `via` and must
+never buy a run, and it sits at the top level rather than here because three web modules call
+it and this file is near the repo's ~350-line budget.
+
 What lives here is everything that knows what a QUESTION record is: filing one
 (`file_question`), taking its answer (`take_answer`, `collect_deferred_answers`), archiving
 the pair for the Decisions page (`_archive_answer`, `answered_questions`, `revise_answer`),
@@ -23,7 +32,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .. import decline, patchreceipt
+from .. import answerfile, decline, patchreceipt
 from ..ids import now_iso
 from ..paths import read_json
 from . import askclass
@@ -38,7 +47,7 @@ def take_answer(routine_dir: Path, qid: str, consumed_dir: Path) -> dict | None:
     marker (`{"defer": true}`, written by the Decisions page's defer-to-next-run action)
     is returned like an answer — the caller unblocks without a decision.
     """
-    path = routine_dir / "inbox" / f"answer-{qid}.json"
+    path = answerfile.path(routine_dir, qid)
     obj = read_json(path)
     if not isinstance(obj, dict) or ("text" not in obj and not obj.get("defer")):
         return None
@@ -224,13 +233,10 @@ def revise_answer(routine_dir: Path, qid: str, text: str) -> Path:
     """
     from ..paths import atomic_write_json
 
-    answer_path = routine_dir / "inbox" / f"answer-{qid}.json"
-    waiting = read_json(answer_path)
+    waiting = read_json(answerfile.path(routine_dir, qid))
     if isinstance(waiting, dict) and "text" in waiting:
-        answer_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(answer_path, {**waiting, "text": text, "ts": now_iso(),
-                                        "revised": True})
-        return answer_path
+        return answerfile.write(routine_dir, qid,
+                                {**waiting, "text": text, "ts": now_iso(), "revised": True})
     archived = read_json(_answered_dir(routine_dir) / f"{qid}.json")
     if not isinstance(archived, dict) or not archived.get("question"):
         raise LookupError(f"no answer on record for {qid!r} — nothing to revise")
@@ -240,11 +246,9 @@ def revise_answer(routine_dir: Path, qid: str, text: str) -> Path:
               if k not in ("answered", "answer", "answer_source", "answered_ts",
                            "consumed", "first_consumed", "revised", "decision")}
     atomic_write_json(pending, record)
-    answer_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(answer_path, {"qid": qid, "text": text,
-                                    "source": str(archived.get("answer_source") or "web"),
-                                    "ts": now_iso(), "revised": True})
-    return answer_path
+    return answerfile.write(routine_dir, qid,
+                            {"text": text, "revised": True,
+                             "source": str(archived.get("answer_source") or "web")})
 
 
 def file_question(routine_dir: Path, qid: str, question: str, options: list[str],  # noqa: PLR0913 — the ONE record shape: every field is a documented key of it, keyword-only

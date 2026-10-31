@@ -1,8 +1,8 @@
 """Open questions across routines (blocking from live status.json, deferred from
 questions/pending/) PLUS the self-audit report's open decisions (meta-badged) — the ONE
-answering surface. Answers land as an atomic inbox file either way; an audit decision's
-answer takes the same [AUDIT decision · id] form the audit feedback channel uses, so the
-routine consumes both identically.
+answering surface. Answers land through `answerfile.write` — the ONE writer of the inbox's
+`answer-*` shape (D143) — either way; an audit decision's answer takes the same [AUDIT
+decision · id] form the audit feedback channel uses, so the routine consumes both identically.
 
 Question STATE is derived, never stored twice: a question is `answered` the moment its
 inbox/answer-<qid>.json exists — even though the pending file lives on until the routine's
@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from .. import patchreceipt, registry
+from .. import answerfile, patchreceipt, registry
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json, read_yaml
 from .decisions_read import (
@@ -87,7 +87,7 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
         # still on the loop with no await since the fire: the run's engine cannot have
         # booted and consumed the file before it is rewritten
         payload["ran_now"] = fired
-        atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
+        answerfile.write(routine_dir, qid, payload)
     return {"ok": True, "routine": match["routine"], "mode": match["mode"],
             # R2189: the UNAPPLIED-PATCH fields ride the response, not only the answer file.
             # The file is what the RUN reads; the response is what the person who just clicked
@@ -133,7 +133,7 @@ def _file_answer(request: Request, qid: str, body: Answer) -> tuple[dict, Path, 
     # this answer, which says so explicitly. Either way the record states which happened, for
     # the person who clicked AND for the run that asked (rsched/patchreceipt.py).
     payload.update(patchreceipt.receipt(match, applied=body.config_patch_applied))
-    atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
+    answerfile.write(routine_dir, qid, payload)
     _relay_report_answer(server, match, body)
     _announce_answer(request, qid, match["routine"])
     return match, routine_dir, payload
@@ -386,9 +386,8 @@ def defer_question(request: Request, qid: str) -> dict:
         raise HTTPException(400, "only a blocking question can be deferred — a deferred "
                                  "one already waits for a future run")
     routine_dir = _record_dir(server, match)
-    marker = routine_dir / "inbox" / f"answer-{qid}.json"
-    if marker.exists():
+    if answerfile.path(routine_dir, qid).exists():
         raise HTTPException(409, "an answer for this question is already queued")
-    atomic_write_json(marker, {"qid": qid, "defer": True, "ts": now_iso(), "source": "web"})
+    answerfile.write(routine_dir, qid, {"defer": True, "source": "web"})
     _announce_answer(request, qid, match["routine"])
     return {"ok": True, "deferred": True}

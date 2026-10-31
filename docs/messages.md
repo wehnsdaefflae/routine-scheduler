@@ -27,6 +27,27 @@ wake a routine's report trigger like any inbox work — docs/triggers.md.)
 
 ## One writer, one stem
 
+The directory holds TWO record shapes and each has exactly one writer:
+`msg-*.json` → `engine/inbox.file_message`, `answer-<qid>.json` → `rsched/answerfile.write`
+(D143). They are separate writers on purpose — the message seam validates `via` against the
+closed `VIAS` set and produces freight a drain consumes, while an answer has no delivery
+policy and must never buy a run (docs/triggers.md) — and `tests/test_policy_inbox_writer.py`
+allow-lists exactly those two, with the invariants each holds as the stated reason. A third
+direct write into an `inbox/` is a test failure naming the seam to call, so a new shape in
+that directory is a design decision somebody has to write down rather than a filename
+somebody spells.
+
+The answer shape had the same history as the message one and was finished later: four
+modules spelled `inbox/answer-<qid>.json` themselves at seven sites (the answer, the
+answer-and-run-now rewrite and the defer marker in `web/api_questions`, plus
+`web/api_question_decline`, `web/api_patch_applied` and `engine/inbox_questions.revise_answer`),
+each stamping its own `ts`. What the seam adds beyond one spelling: a record carrying neither
+`text` nor `defer` is REFUSED at the write, because both readers skip such a file without
+consuming it — it would wait in the inbox unread, and an answer does not admit the run that
+might have noticed; and a correction to an already-filed answer (`answerfile.update`, what the
+`approve & apply` button reports through) rewrites a still-queued file and creates nothing, so
+correcting an answer a run already drained cannot re-file it as fresh for the next one.
+
 Every `msg-*.json` file is written by `engine/inbox.file_message` and by nothing else. The
 channels differ only in what they pass it: a `via` (which decides WHEN the message is
 consumed — see below), the extra keys that channel adds (`attachments` + `command` for a
