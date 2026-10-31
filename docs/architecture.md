@@ -653,7 +653,7 @@ and the capabilities digest's catalog listing):
   total_tokens / max_cost (whole-$ ceiling on NOTIONAL spend — `endpoints/usage.dollars_spent`:
   `usage["notional"]`, stamped on every completion at the pricing seam whatever transport carried
   it, and the provider's own billed figure wherever one is reported. It read `usage["cost"]`
-  alone until F758, which exactly one adapter writes and no `anthropic` endpoint does, so the
+  alone until F758, which exactly one adapter then wrote and no `anthropic` endpoint did, so the
   ceiling bounded nothing on the route most routines inherit through `system_model`) — the last
   four honor -1 = unlimited — / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, creation flow + routine page), `fs_read_roots` / `fs_write_roots`, retention —

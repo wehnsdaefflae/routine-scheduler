@@ -43,6 +43,7 @@ from .decisions import (
     DecisionQuestion,
 )
 from .media_types import read_media_b64
+from .usage import reported_cost
 
 _WIRE_TYPE = {"yes_no": "predicate", "choice": "choice", "score": "score"}
 
@@ -141,8 +142,8 @@ class OpenAIDecisions:
         usage_raw = data.get("usage") or {}
         usage: dict = {"in": int(usage_raw.get("input_tokens") or 0),
                        "out": int(usage_raw.get("output_tokens") or 0)}
-        if usage_raw.get("cost") is not None:
-            usage["cost"] = float(usage_raw["cost"])
+        if (cost := reported_cost(usage_raw)) is not None:
+            usage["cost"] = cost
         return Decision([_answer(q, by_name[q.name], self.name) for q in questions], usage,
                         model=str(data.get("model") or ""), provider=str(data.get("provider")
                                                                          or ""))

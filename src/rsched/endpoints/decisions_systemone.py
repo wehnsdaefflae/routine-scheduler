@@ -12,7 +12,7 @@ The shape, from docs.typesafe.ai/api.md and OpenRouter's Jev tutorial (2026-10):
                                 "probabilities": {"<option>": p}}
                              | {"type": "score", "score", "confidence",
                                 "probabilities": {"<index>": p}, "legend": {…}}},
-       "usage": {"input_tokens", "output_tokens", "cost"?}}
+       "usage": {"input_tokens", "output_tokens", "cost"? (OpenRouter), "cost_usd"? (Otari)}}
 
 Served by TypeSafe itself (`https://api.typesafe.ai/v1`, a TypeSafe key), resold by
 OpenRouter under the same path (`https://openrouter.ai/api/v1`, an OpenRouter key, model
@@ -46,6 +46,7 @@ from .decisions import (
     DecisionQuestion,
 )
 from .media_types import read_media_b64
+from .usage import reported_cost
 
 #: The most images one request may carry — the limit the gateway and llama-server enforce.
 MAX_IMAGES = 16
@@ -134,8 +135,8 @@ class SystemOneDecisions:
         usage_raw = data.get("usage") or {}
         usage: dict = {"in": int(usage_raw.get("input_tokens") or 0),
                        "out": int(usage_raw.get("output_tokens") or 0)}
-        if usage_raw.get("cost") is not None:
-            usage["cost"] = float(usage_raw["cost"])
+        if (cost := reported_cost(usage_raw)) is not None:
+            usage["cost"] = cost
         return Decision([_answer(q, answers[q.name], self.name) for q in questions], usage,
                         model=str(data.get("model") or ""),
                         provider=str(data.get("provider") or ""))

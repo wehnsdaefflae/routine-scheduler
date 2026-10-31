@@ -526,10 +526,13 @@ The same daily refresh re-reads every configured model's PRICE into
 `<routines>/.control/model-prices.json` (`endpoints/prices.py`), so each completion carries a
 `notional` dollar figure for its whole context volume — fresh input, output, cache reads and
 writes — even on a subscription transport whose own `cost` is always 0.0. One source per model,
-chosen by its route: a metered endpoint (OpenRouter, Nano-GPT) is priced by its provider — the
-bill it reports on the call, else its own published rates for that exact id; a subscription
-proxy or gateway (every endpoint here that is neither OpenRouter nor Nano-GPT) at the model's list
-price in the public reference catalog. There is no price to configure and no fallback table: a
+chosen by its route: a metered call is priced by its provider — the bill it REPORTS on the call
+(OpenRouter's `cost`; an Otari gateway's `cost_usd` on either wire, docs/model-gateway.md), else
+its own published rates for that exact id (OpenRouter, Nano-GPT); a subscription proxy or gateway
+(every endpoint here that is neither OpenRouter nor Nano-GPT) at the model's list price in the
+public reference catalog — a gateway's `<name>-metered` id under `<name>`'s, since it is the paid
+route of the same model. A reported zero (the gateway's figure for a subscription call) is that
+call's true bill and stays its `cost`, but it is no price, so the list price is its notional. There is no price to configure and no fallback table: a
 model no source prices is listed as `unpriced` and its calls carry no figure. The cache records
 which models it CHECKED, and a configured model missing from that list makes the limits cache
 stale (`prices.missing`), so a new model — or a deploy that brings the price cache — is priced at
@@ -539,7 +542,7 @@ where the figure is read.
 That figure is also what a **cost BUDGET** meters: `budgets.max_cost` is checked against
 `endpoints/usage.dollars_spent` — `notional` first, a provider's reported `cost` only as the
 fallback (F758). This matters when you point `system_model` at a metered `anthropic` endpoint:
-until F758 the ceiling read `usage["cost"]`, which NO `anthropic` adapter writes, so a cap set on
+until F758 the ceiling read `usage["cost"]`, which NO `anthropic` adapter then wrote, so a cap set on
 such a route bounded nothing while reading as a real one. It now binds — in LIST-PRICE dollars on
 a subscription route (not an invoice: a run there can trip a dollar cap having been billed
 nothing) and in real spend on a metered one, where the provider's own reported figure IS the

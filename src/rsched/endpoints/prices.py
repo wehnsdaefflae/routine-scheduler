@@ -12,12 +12,17 @@ rate — whatever transport carried it.
 
 - **A metered route** — the provider bills this call — is priced by the provider: the `cost` it
   REPORTED on the completion when it reports one (OpenRouter does, the auto-router included,
-  whose list price is variable), else the prices it PUBLISHES for that exact model id
+  whose list price is variable; an Otari gateway does for every call, as `cost_usd` —
+  `usage.reported_cost`), else the prices it PUBLISHES for that exact model id
   (OpenRouter's `/models`, Nano-GPT's own `/api/models`).
 - **A subscription route** (a proxy or gateway whose catalog lists ids and no prices — every
   endpoint here that is neither OpenRouter nor Nano-GPT) is priced at the model's LIST price, read
   from the public reference catalog (OpenRouter's `/models`) under the name vendors share
   (`price_name`): that is what the same tokens cost when bought, which is what "notional" means.
+  The gateway reports such a call's bill as zero, which is true and is kept as its `cost`; a zero
+  is not a price, so the list price is still what `notional` carries. A gateway id ending
+  `-metered` is the PAID route of the same model and is read under that model's name, so when
+  its call reports no bill it falls back to the same list price.
 
 What is not published is NOT priced. A model no source prices, or a completion that used a token
 class whose rate its source does not publish (a cache write on a model listing no cache-write
@@ -62,9 +67,9 @@ def cache_path(routines_home: Path) -> Path:
 
 def price_name(model_id: str) -> str:
     """The name a model is priced under in the reference catalog: the vendors' shared name
-    (`catalogs.reference_name`), its snapshot date dropped and its version written with dashes —
-    the proxy's `claude-haiku-4-5-20251001` and OpenRouter's `anthropic/claude-haiku-4.5` are the
-    same model.
+    (`catalogs.reference_name`, which also drops a gateway's `-metered`), its snapshot date
+    dropped and its version written with dashes — the proxy's `claude-haiku-4-5-20251001` and
+    OpenRouter's `anthropic/claude-haiku-4.5` are the same model.
     """
     return _SNAPSHOT.sub("", catalogs.reference_name(model_id)).replace(".", "-")
 

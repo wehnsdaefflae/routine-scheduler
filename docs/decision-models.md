@@ -100,7 +100,7 @@ uses the latter, which is the same path on both vendors. Both adapters go throug
 transport helpers — retries on 408/409/429/5xx, the credential ladder (inline key → Secrets →
 env file), auth failures flagged for the UI — and every call is recorded like a chat completion,
 so it shows in the LLM activity dock while it runs. Usage folds into the run's budget; `cost` is
-booked when the provider reports it (OpenRouter does).
+booked when the provider reports it (OpenRouter as `cost`, an Otari gateway as `cost_usd`).
 
 ## The `decide` action
 

@@ -572,10 +572,14 @@ shows `notional`), the dashboard's spend line and heartbeat.
 `notional_cost` comes from `endpoints/prices.py`, priced at the instrumentation seam the moment a
 completion finishes — so a recorded figure is what those tokens cost THEN. One source per model,
 decided by its ROUTE, never a chain of guesses: a metered route is priced by its provider (the
-bill it REPORTED on the call, else the prices it publishes for that exact id — OpenRouter's
-`/models`, Nano-GPT's `/api/models`); a subscription route at the model's LIST price from the
-public reference catalog under the name vendors share (a proxy's `claude-haiku-4-5-20251001` is
-OpenRouter's `anthropic/claude-haiku-4.5`). The rates are re-read daily with the model limits into
+bill it REPORTED on the call — OpenRouter's `cost`, an Otari gateway's `cost_usd`, read into
+usage `cost` by `endpoints/usage.reported_cost` on both wires — else the prices it publishes for
+that exact id — OpenRouter's `/models`, Nano-GPT's `/api/models`); a subscription route at the
+model's LIST price from the public reference catalog under the name vendors share (a proxy's
+`claude-haiku-4-5-20251001` is OpenRouter's `anthropic/claude-haiku-4.5`, and a gateway's
+`claude-opus-5-metered` — the paid route of the same model — is `anthropic/claude-opus-5`). The
+gateway reports a subscription call's bill as zero: true, kept as its `cost`, and no price, so
+its notional is still the list price. The rates are re-read daily with the model limits into
 `.control/model-prices.json`. What no source publishes is UNPRICED — a model without a price, or
 a call that used a token class whose rate its source does not publish, gets no figure at all, and
 the cache's `unpriced` list names every such configured model; nothing is estimated, defaulted or
@@ -587,10 +591,10 @@ itself recorded (`migrate_usage_volume.py`), `null` where nothing did.
 
 The same figure, live: `max_cost` is checked against `endpoints/usage.dollars_spent(ctx.usage)` —
 `notional` first, a reported `cost` only as the fallback for a reading that never passed the
-pricing seam (F758). It read `usage["cost"]` alone until then, and that key is written by exactly
+pricing seam (F758). It read `usage["cost"]` alone until then, and that key was written by exactly
 ONE adapter (`endpoints/openai_compat.py`, OpenRouter's credit accounting): no `anthropic`
-endpoint reports a cost, so a ceiling set on a routine whose model resolved there bounded nothing
-at all — documented as "a whole-dollar ceiling on real provider spend" while 17 of 30 enabled
+endpoint reported a cost (the adapter has read an Otari gateway's `cost_usd` since 0.484.0), so
+a ceiling set on a routine whose model resolved there bounded nothing at all — documented as "a whole-dollar ceiling on real provider spend" while 17 of 30 enabled
 routines inherited such an endpoint through `system_model`. Three consequences worth stating
 plainly:
 

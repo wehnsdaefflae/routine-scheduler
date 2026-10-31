@@ -49,7 +49,8 @@ never reaches a routine: it is resolved on the server for the management routes 
 `glm-5.3-uncensored`, … — which Otari's aliases resolve to a provider and a credential. A
 catalog entry therefore names WHAT model it wants, and moving a model from a subscription to a
 metered key (or to another provider) is an alias change in the gateway, with no catalog edit
-here. The model form's id picker lists what the endpoint's own models route answers
+here (a `-metered` id is the paid route of the model it names — [what a call
+costs](#what-a-call-costs)). The model form's id picker lists what the endpoint's own models route answers
 ([endpoints](endpoints.md#model-id-picker)); a listed name is still not proof the route behind it
 works, so use the card's *test* before binding a routine to one.
 
@@ -67,6 +68,31 @@ without `response_format` reads the refusal's wording, so "response format" is o
 beside `response_format`, `json_schema` and `structured` (`endpoints/openai_compat.py`). A model
 that refuses it on every call is still better bound to `otari-openai-plain` (`schema_mode: none`):
 the retry costs a round trip per turn, the plain endpoint costs none.
+
+## What a call costs
+
+Otari prices every request itself and returns the figure in the response's usage block as
+`cost_usd`, a six-decimal USD STRING (`"0.000005"`), beside `pricing_source` — on the Messages
+wire and on chat-completions alike (where an OpenRouter upstream adds its own numeric `cost`).
+That reported figure is what bills a call. Both adapters read it into the usage's `cost`
+(`endpoints/usage.reported_cost`: OpenRouter's `cost` when it is there, else `cost_usd`; a
+missing, malformed, negative or non-finite value is no figure at all, never a zero), and the
+pricing seam takes a reported bill at its word as the call's `notional` — so a pay-per-use call
+through the gateway is metered, and its cost budget bounded, by what the gateway says it cost.
+The decision adapters read it the same way.
+
+A subscription model is priced `"0.000000"` there, which is its real bill and is kept as its
+`cost`. A zero is not a price, though, so its `notional` is still the model's LIST price from the
+public reference catalog — what the same tokens cost bought, the figure every cost ranking and a
+subscription route's cost budget read ([run analytics](run-analytics.md#what-a-run-costs-volume-and-notional_cost)).
+
+**`-metered` names the paid route of the SAME model.** Where one model is reachable both on a
+subscription and pay-per-use, the gateway names the paid route `<name>-metered`
+(`claude-opus-5-metered`, served by OpenRouter's `anthropic/claude-opus-5`). The scheduler reads a
+trailing `-metered` as that suffix and nothing else (`catalogs.reference_name`), so the id looks
+up `<name>`'s list price and context window in the reference catalog — the fallback for a call
+whose bill was not reported, and the window the run is sized by. Only the suffix counts: an id
+with `metered` elsewhere in it is its own name.
 
 ## Signing in, and signing back in
 

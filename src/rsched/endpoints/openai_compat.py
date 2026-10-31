@@ -18,6 +18,9 @@ the exception — they cache only where a breakpoint says to — so a conversati
 carries a top-level `cache_control` (OpenRouter's automatic last-block mode) and its
 `cache_write_tokens` are folded into usage. A ONE-SHOT call (`cacheable=False`) places no
 marker: its prefix is never sent again, so the write would buy a read that never comes.
+
+A bill the provider REPORTS — OpenRouter's usage accounting `cost`, else an Otari gateway's
+`cost_usd` — becomes the usage's `cost` (`usage.reported_cost`).
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ from .base import (
 )
 from .media_types import read_media_b64, supports_media_type
 from .openai_media import render_media
+from .usage import reported_cost
 
 log = logging.getLogger("rsched.endpoints.openai")
 
@@ -321,8 +325,8 @@ class OpenAICompatEndpoint:
             out["cached_in"] = cached
         if written:
             out["cache_write"] = written
-        if usage.get("cost") is not None:   # OpenRouter usage accounting → $ (credits)
-            out["cost"] = float(usage.get("cost") or 0)
+        if (cost := reported_cost(usage)) is not None:   # OpenRouter's `cost`, Otari's `cost_usd`
+            out["cost"] = cost
         stop = str(data["choices"][0].get("finish_reason") or "")
         stop_details: dict = {}
         refusal = message.get("refusal")

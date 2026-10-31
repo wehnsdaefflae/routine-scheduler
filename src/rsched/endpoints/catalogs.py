@@ -145,16 +145,21 @@ REFERENCE_URL = "https://openrouter.ai/api/v1/models"
 #: route serves one model as several ids that differ only in the level baked into them, and the
 #: window belongs to the model, not to the level.
 _LEVEL_SUFFIX = re.compile(r"-(?:minimal|low|medium|high|xhigh|max|thinking)$")
+#: An Otari gateway's name for the PAY-PER-USE route of a model it also reaches on a
+#: subscription (`claude-opus-5-metered` ↔ `claude-opus-5`, served by OpenRouter): the route is
+#: the gateway's, the model — its list price, its window — is the same one.
+_METERED_SUFFIX = re.compile(r"-metered$")
 
 
 def reference_name(model_id: str) -> str:
     """A model id reduced to the name vendors share: the last path segment (`google/gemini-4-
-    argon` → `gemini-4-argon`), lower-cased, any `:variant` (`:free`, `:batch`) and one trailing
-    thinking level removed — so a proxy's `gemini-4-argon-high` and OpenRouter's
-    `google/gemini-4-argon` are the same name.
+    argon` → `gemini-4-argon`), lower-cased, any `:variant` (`:free`, `:batch`), the gateway's
+    trailing `-metered` and then one trailing thinking level removed — so a proxy's
+    `gemini-4-argon-high`, a gateway's `claude-opus-5-metered` and OpenRouter's
+    `google/gemini-4-argon` / `anthropic/claude-opus-5` are the same names.
     """
     name = model_id.lower().rsplit("/", 1)[-1].split(":", 1)[0]
-    return _LEVEL_SUFFIX.sub("", name)
+    return _LEVEL_SUFFIX.sub("", _METERED_SUFFIX.sub("", name))
 
 
 def fetch_reference() -> dict | None:

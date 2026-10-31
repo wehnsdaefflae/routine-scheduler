@@ -61,7 +61,8 @@ never sent again, so a write would cost 1.25x for a read that never comes. It do
 that by sending no marker — the subscription proxy places its own breakpoints on any request
 that carries none — but by sending ONE on the smallest prefix it has: the tool definition, else
 a 1,000-char leading slice of its first text (`anthropic_messages.claim_placement`). Cache
-traffic is reported as usage "cached_in" / "cache_write" (kept out of "in"). A 400 naming
+traffic is reported as usage "cached_in" / "cache_write" (kept out of "in"); a billed figure
+the wire reports (an Otari gateway's `cost_usd`) as usage "cost". A 400 naming
 cache_control gets one degraded retry without the markers.
 
 Multimodal: a message may carry a `media` list ([{path, media_type}]); this API takes
@@ -99,6 +100,7 @@ from .base import (
     with_retries,
 )
 from .media_types import supports_media_type
+from .usage import reported_cost, summed
 
 log = logging.getLogger("rsched.endpoints.anthropic")
 
@@ -131,24 +133,20 @@ _FORCED = {"type": "tool", "name": "action"}
 _ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
 
 
-def _summed(a: dict, b: dict) -> dict:
-    """Two requests' usage as one: a re-asked turn cost both, and a budget reading only the
-    second would undercount it.
-    """
-    return {k: int(a.get(k) or 0) + int(b.get(k) or 0) for k in {*a, *b}}
-
-
 def _usage(raw: dict) -> dict:
     """The Messages API's usage block → our usage dict. `input_tokens` EXCLUDES cache traffic
     on this API; cache reads/writes are surfaced as `cached_in` / `cache_write`, kept OUT of
-    "in" so token budgets keep their meaning.
+    "in" so token budgets keep their meaning. A billed figure the wire REPORTS (an Otari
+    gateway's `cost_usd`) is the usage's `cost` — `usage.reported_cost` reads it.
     """
-    usage = {"in": int(raw.get("input_tokens") or 0),
-             "out": int(raw.get("output_tokens") or 0)}
+    usage: dict = {"in": int(raw.get("input_tokens") or 0),
+                   "out": int(raw.get("output_tokens") or 0)}
     if raw.get("cache_read_input_tokens"):
         usage["cached_in"] = int(raw["cache_read_input_tokens"])
     if raw.get("cache_creation_input_tokens"):
         usage["cache_write"] = int(raw["cache_creation_input_tokens"])
+    if (cost := reported_cost(raw)) is not None:
+        usage["cost"] = cost
     return usage
 
 
@@ -189,9 +187,10 @@ def _degrade(body: dict, error: str) -> dict | None:
 
 
 class AnthropicEndpoint:
-    """Anthropic-compatible Messages adapter; billing belongs to the upstream. Schema via
-    a single tool on `auto` (forced only where the endpoint says so); effort via `output_config`
-    and `temperature` when configured — each optional field degraded on a 400 naming it.
+    """Anthropic-compatible Messages adapter; billing belongs to the upstream, which may report
+    it (`_usage`). Schema via a single tool on `auto` (forced only where the endpoint says so);
+    effort via `output_config` and `temperature` when configured — each optional field degraded
+    on a 400 naming it.
     """
 
     def __init__(self, cfg: EndpointConfig):
@@ -304,7 +303,7 @@ class AnthropicEndpoint:
             return unread
         return Completion(text=again.text, parsed=again.parsed,
                           parsed_rest=again.parsed_rest,
-                          usage=_summed(unread.usage, again.usage),
+                          usage=summed(unread.usage, again.usage),
                           stop_reason=again.stop_reason,
                           stop_details={**again.stop_details, "forced_reask": what})
 

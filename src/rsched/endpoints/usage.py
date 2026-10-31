@@ -2,8 +2,9 @@
 
 A `Completion.usage` reading uses these keys: "in" (fresh input) and "out" always; "cached_in"
 (prompt-cache reads) and "cache_write" when the transport reports them; "cost" (real $) when
-known; "notional" ($ at list price, stamped by endpoints/prices.py). Adapters keep cache traffic
-OUT of "in", so a token budget keeps its meaning.
+known — what the provider REPORTED it billed for the call, read from its usage block by
+`reported_cost`; "notional" ($ at list price, stamped by endpoints/prices.py). Adapters keep
+cache traffic OUT of "in", so a token budget keeps its meaning.
 
 `dollars_spent` is the one reading of those keys AS MONEY — what a cost budget meters
 (`budgets.max_cost`, engine/run_context.meter) and what any dollar figure derived from a live
@@ -16,6 +17,8 @@ shrink.
 """
 
 from __future__ import annotations
+
+from decimal import Decimal, InvalidOperation
 
 
 def fold_usage(total: dict, delta: dict) -> None:
@@ -38,20 +41,58 @@ def fold_usage(total: dict, delta: dict) -> None:
             total[key] = round(total.get(key, 0.0) + float(delta[key]), 6)
 
 
+def summed(*readings: dict) -> dict:
+    """Several requests' usage as ONE reading, by `fold_usage` — a re-asked turn cost both
+    requests, and a budget reading only the second would undercount it. Every key folds,
+    `cost` included: summing it as an integer once truncated a sub-dollar bill to nothing.
+    """
+    total: dict = {"in": 0, "out": 0}
+    for reading in readings:
+        fold_usage(total, reading)
+    return total
+
+
+#: The usage-block keys a provider reports its bill under, in order of preference: OpenRouter's
+#: usage accounting (`cost`, a number) and an Otari gateway's own pricing (`cost_usd`, a
+#: six-decimal USD STRING, `"0.000000"` for a subscription model — which IS that call's bill).
+_REPORTED_COST_KEYS = ("cost", "cost_usd")
+
+
+def reported_cost(raw: dict) -> float | None:
+    """The dollars a provider REPORTED it billed for one call, read from its raw usage block —
+    what an adapter files as usage `cost`. The first key of `_REPORTED_COST_KEYS` that holds a
+    finite, non-negative number (or a string spelling one) wins; None when none does. A missing
+    or malformed figure is NO figure — never zero, never a guess — so the call is then priced at
+    its route's list price instead (`prices.price_usage`).
+    """
+    for key in _REPORTED_COST_KEYS:
+        value = raw.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float | str):
+            continue
+        try:
+            amount = Decimal(str(value).strip())
+        except InvalidOperation:
+            continue
+        if amount.is_finite() and amount >= 0:
+            return float(amount)
+    return None
+
+
 def dollars_spent(usage: dict | None) -> float:
     """What one usage reading (or a run's fold of them) COST in dollars — the figure a cost
     budget meters. 0.0 when the completion was neither billed nor priced.
 
     `notional` first, `cost` only as a fallback (F758). A cost ceiling used to read `cost`
-    alone, which exactly ONE adapter writes — OpenRouter's credit accounting in
-    `endpoints/openai_compat.py`. Every `anthropic` endpoint reports no cost at all, so
+    alone, which then exactly ONE adapter wrote — OpenRouter's credit accounting in
+    `endpoints/openai_compat.py`. No `anthropic` endpoint reported a cost at all, so
     `max_cost` bounded NOTHING on the route 17 of 30 enabled routines had just inherited
     through `system_model`: a ceiling an operator believed held. `notional` is stamped on
     EVERY completion at the one instrumentation seam (`prices.price_usage`) whatever transport
-    carried it, and it IS the provider's own reported figure wherever one is reported, because
-    that writer takes a reported `cost` at its word before it prices anything. So this is not
-    a second number competing with `cost` — it is the same number where one exists, and the
-    only one that exists anywhere else.
+    carried it, and it IS the provider's own reported figure wherever a non-zero bill is
+    reported, because that writer takes a reported `cost` at its word before it prices anything
+    (since 0.484.0 the anthropic adapter files one too: an Otari gateway's `cost_usd`). So this
+    is not a second number competing with `cost` — it is the same number where one exists, and
+    the only one that exists anywhere else.
 
     The fallback matters for a reading that never passed the pricing seam (a replayed leg, a
     directly-dispatched adapter in a test): metering it at 0.0 would make a billed call free.

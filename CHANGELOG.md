@@ -15,6 +15,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.484.0] — 2026-10-31
+
+### The gateway's reported cost is what bills a call; `-metered` is the paid route of the same model
+
+Since 0.483.0 every model call goes through the Otari gateway, which prices each request itself
+and returns the figure in the usage block as `cost_usd` (a six-decimal USD string). The
+`anthropic` adapter read no reported cost at all, so pay-per-use Claude models through the
+gateway (`claude-opus-5-metered`, `claude-opus-5-5`) were metered only by a reference list price
+— and `claude-opus-5-metered` found none, leaving its calls unpriced and a cost budget on it
+unbounded.
+
+- **A reported bill is read on both wires.** `endpoints/usage.reported_cost` reads a usage
+  block's billed dollars — OpenRouter's numeric `cost` first, else the gateway's `cost_usd` —
+  parsed through `Decimal`, and a missing, malformed, negative or non-finite value is no figure
+  (never a zero, never a guess). The anthropic adapter now files it as usage `cost`, the field
+  the openai adapter already filled from OpenRouter, and the openai adapter takes `cost_usd`
+  when no `cost` is there (a malformed `cost` used to raise in `float()` and end the call). The
+  two decision adapters read it the same way. The semantics are unchanged: reported `cost` is
+  the bill and the pricing seam takes a non-zero one at its word as `notional`; a subscription
+  call's reported `"0.000000"` is its true bill, kept as `cost`, and its `notional` is still
+  the list price.
+- **A re-asked turn bills both requests in dollars.** The anthropic adapter summed a forced
+  re-ask's two usages key by key as integers, which would have truncated a sub-dollar `cost` to
+  nothing; it now folds them with `fold_usage` (`endpoints/usage.summed`).
+- **`-metered` is the gateway's suffix, not part of the model's name.**
+  `catalogs.reference_name` drops a trailing `-metered` (the suffix only) before the thinking
+  level, so `claude-opus-5-metered` gets `claude-opus-5`'s list price (`prices.price_name`) and
+  window (the limits reference lookup) — the fallback for a call whose bill was not reported.
+- Docs: `docs/model-gateway.md` gains "What a call costs"; the cost-source passages in
+  `docs/endpoints.md`, `docs/run-analytics.md`, `docs/decision-models.md`,
+  `docs/architecture.md`, CLAUDE.md and the touched module docstrings now name the gateway's
+  figure, and the ones saying no `anthropic` adapter writes a cost speak in the past tense.
+- Tests: `tests/test_reported_cost.py`.
+
 ## [0.483.0] — 2026-10-31
 
 ### Model traffic leaves through the separate gateway; the compose proxy and the decision server move out

@@ -31,7 +31,7 @@ DEFAULT_BUDGETS = {
     # spend on a specific routine. max_cost is a whole-dollar ceiling on NOTIONAL spend
     # (endpoints/usage.dollars_spent): `usage["notional"]`, which endpoints/prices.py stamps on
     # every completion whatever transport carried it, and which IS the provider's own billed
-    # figure wherever one is reported. It used to read `usage["cost"]` alone — written by one
+    # figure wherever one is reported. It used to read `usage["cost"]` alone — then written by one
     # adapter (OpenRouter) and by no `anthropic` endpoint — so the ceiling bounded nothing on
     # the route most routines inherit through system_model (F758). On a subscription route the
     # cap therefore bounds list-price dollars, not an invoice; -1 = no cap.
