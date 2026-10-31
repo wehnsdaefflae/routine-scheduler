@@ -44,25 +44,32 @@ def _report_header(routine_dir: Path) -> dict | None:
 
 @router.get("/items/orphans")
 def orphans(request: Request) -> list[dict]:
-    """The two ways work leaves the ledger without becoming an open item anywhere
-    (readmodels/orphans.py). Both are invisible to every filter on the Messages page, so the
-    page banners them above the list; both are surfaced rather than gated — a human judges.
+    """The three ways work leaves the ledger without becoming an open item anywhere
+    (readmodels/orphans.py, readmodels/prose_closures.py). All are invisible to every filter on
+    the Messages page, so the page banners them above the list; all are surfaced rather than
+    gated — a human judges.
 
     `kind: "deferral"` — an item deferred part of its scope into another, the carrier shipped
     its own scope and closed, and the deferred piece became an open item nowhere.
     `kind: "undelivered"` — an ADDRESSED report whose message never reached its target's inbox,
     so the target can never drain it and it sits open forever (D114).
+    `kind: "prose-closure"` — a LIVE row a SETTLED report's prose claimed to dispose of while
+    its fields named nothing (F793). The F770 check says so once, on the filing observation, to
+    the one party who already believes the row is closed; this is its second reader, so a row
+    stranded by a prose-only closure is visible to someone after that turn has passed.
 
     The banner is judged against the SAME fleet fact as the `unroutable` count on this page
     (`_fleet`, i.e. `registry.scan`'s keys): one predicate, so the two cannot say opposite
     things about one row (F768).
     """
     from ..readmodels import orphans as orphans_model
+    from ..readmodels import prose_closures
 
     home = request.app.state.server.routines_home
     _, installed = _fleet(request)
     return (orphans_model.load(_routine_dir(request))
-            + orphans_model.load_undelivered(home, installed))
+            + orphans_model.load_undelivered(home, installed)
+            + list(prose_closures.load(home)))
 
 
 @router.post("/items/orphans/{report_id}/discard")

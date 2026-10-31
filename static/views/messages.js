@@ -20,7 +20,8 @@ import { clampedBody, md, summaryLine } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { ACTIVE, backlogChips } from "/static/components/backlog-chips.js";
 import { itemCard } from "/static/components/itemcard.js";
-import { focusRef, linkifyRefs, refHref } from "/static/components/reflinks.js";
+import { orphanBanner } from "/static/components/orphan-banner.js";
+import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, toastError, when } from "/static/util.js";
 
 const TYPES = [["summary", "summaries"], ["finding", "findings"], ["decision", "decisions"],
@@ -83,63 +84,11 @@ export async function render(view, query = {}) {
   const filterBar = el("div", { class: "filterbar" });
   const body = el("div", {});
   body.append(skeleton());
-  // The two ways work leaves this ledger without becoming an open item anywhere. Above the list
-  // because they are invisible to every filter below it: a deferred piece never became an item
-  // at all (that is how D98's stopping panel was lost for six days), and an undelivered report
-  // is addressed to a routine that has never heard of it (readmodels/orphans.py).
-  const orphanBox = el("div", { hidden: true });
-  view.append(header, orphanBox, filterBar, body);
-  const orphanGroup = (title, rows, card) => {
-    if (!rows.length) return null;
-    return el("div", {},
-      el("div", { class: "q-group-head" },
-        el("span", {}, title),
-        el("span", { class: "q-group-count" }, String(rows.length))),
-      ...rows.map(card));
-  };
-  async function loadOrphans() {
-    let rows;
-    try { rows = await api("/api/items/orphans"); } catch { return; }
-    if (!rows?.length) { orphanBox.hidden = true; orphanBox.replaceChildren(); return; }
-    const deferrals = rows.filter((o) => o.kind !== "undelivered");
-    const undelivered = rows.filter((o) => o.kind === "undelivered");
-    orphanBox.hidden = false;
-    // An undelivered orphan can never be delivered (no run has a message to drain), so the only
-    // action is to clear it: discard marks it dropped, off this banner and out of the backlog.
-    const discard = (o) => {
-      const b = el("button", { class: "btn small ghost",
-        title: "discard this orphan — marks it dropped, off the banner and out of the backlog" },
-        "discard");
-      b.onclick = async () => {
-        b.disabled = true;
-        try {
-          await api(`/api/items/orphans/${encodeURIComponent(o.id)}/discard`, { method: "POST" });
-          toast(`${o.id} discarded — dropped from the backlog`);
-          await loadOrphans();
-        } catch (err) { toastError(err); b.disabled = false; }
-      };
-      return b;
-    };
-    orphanBox.replaceChildren(...[
-      orphanGroup("deferred, then lost — a carrier item closed without delivering these",
-        deferrals, (o) => el("div", { class: "card mt" },
-          el("div", {}, el("strong", {}, o.source_ids.join(", ")),
-            " was deferred into ", el("a", { href: refHref(o.carrier) }, o.carrier),
-            `, which closed ${o.carrier_status} without naming it.`),
-          el("div", { class: "faint small mt" }, o.promise))),
-      orphanGroup("addressed, never delivered — the target has no message for these and never will",
-        undelivered, (o) => el("div", { class: "card mt" },
-          el("div", { class: "row",
-            style: "justify-content:space-between;gap:8px;align-items:flex-start" },
-            el("div", {}, el("strong", {}, o.id), " from ", el("span", { class: "mono" }, o.from),
-              " is addressed to ", el("span", { class: "mono" }, o.target),
-              o.target_installed ? ", whose inbox holds no message for it."
-                                 : ", which is not a routine on this instance."),
-            discard(o)),
-          el("div", { class: "prose mt" }, o.title))),
-    ].filter(Boolean));
-  }
-  loadOrphans();
+  // The three ways work leaves this ledger without becoming an open item anywhere, above the
+  // list because all three are invisible to every filter below it. Its own module since F793
+  // added the third group (components/orphan-banner.js): this file was AT its size ceiling, so
+  // the extraction came first and the group second.
+  view.append(header, orphanBanner(), filterBar, body);
 
   // ---- feedback → the routine's inbox → consumed by the next (or current) run -----------
   // Structured feedback (finding comments, decision answers) keeps the tagged audit

@@ -1,10 +1,11 @@
-"""The Messages page's ORPHAN BANNERS — the two ways work leaves the ledger without becoming an
-open item anywhere (`readmodels/orphans.py`), shown above the list because they are invisible to
-every filter below it.
+"""The Messages page's ORPHAN BANNERS — the three ways work leaves the ledger without becoming an
+open item anywhere (`readmodels/orphans.py`, `readmodels/prose_closures.py`), shown above the list
+because they are invisible to every filter below it.
 
 Apart from `test_messages_page.py` (the list, its filters, its composer) because the banner is a
-different surface with a different source: `GET /api/items/orphans`, loaded by its own
-`loadOrphans()` and judged against the fleet rather than against the item index.
+different surface with a different source: `GET /api/items/orphans`, loaded by its own module
+(`static/components/orphan-banner.js`) and judged against the fleet rather than against the item
+index.
 """
 
 import json
@@ -71,3 +72,35 @@ def test_the_banner_says_which_undelivered_targets_are_still_on_the_instance(
     expect(installed).to_contain_text("whose inbox holds no message for it")
     gone = ui_page.locator(".card", has_text="never delivered to grants-radar")
     expect(gone).to_contain_text("which is not a routine on this instance")
+
+
+def test_the_banner_shows_a_row_a_settled_reports_prose_claimed_to_close(
+        ui, ui_page, make_routine):
+    """F793, the third loss mechanism: R2886 said "Closing R2313" in its opening words, carried
+    `answers: R2743` + `closes: true` and no `settles`, and R2313 stayed the oldest live row on
+    the instance for 20 days. The F770 check says so ONCE, on the filing observation, to the one
+    party who already believes the row is closed — so the banner is its second reader, and it
+    names the OWNER, the only routine whose `settles` can end the row.
+    """
+    make_routine(slug="scheduler-improvement-research")
+    _seed(ui, make_routine, [
+        {"id": "R2313", "ts": "2026-10-07T18:10:00+02:00", "routine": "c-20261007-150942",
+         "target": "scheduler-improvement-research", "detail": "Two findings, filed together.",
+         "title": "create_routine cannot REVISE an existing routine",
+         "delivered": {"ts": "2026-10-10T09:00:00+02:00", "run_id": "x:20261010-010003"}},
+        {"id": "R2886", "ts": "2026-10-24T03:03:10+02:00", "closes": True, "answers": "R2743",
+         "routine": "scheduler-improvement-research", "target": "self-audit",
+         "title": "R2313 settled: finding 1 is answered by D198 and parked",
+         "detail": "Closing R2313. Both halves disposed of, so nothing should be re-derived."}])
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
+    ui_page.wait_for_selector("h1:has-text('Messages')")
+
+    expect(ui_page.locator(".q-group-head",
+                           has_text="claimed closed in prose, still open")).to_be_visible()
+    card = ui_page.locator(".card", has_text="create_routine cannot REVISE an existing routine")
+    expect(card).to_contain_text("R2886")                       # the report that claimed it
+    expect(card).to_contain_text("scheduler-improvement-research")   # who can still settle it
+    # the claiming words themselves, quoted from the text that was JUDGED. Both of R2886's texts
+    # claim the row ("R2313 settled: …" in the title, "Closing R2313." in the detail's opening
+    # sentence) and the title wins, because that is the prominent statement a reader is weighing.
+    expect(card).to_contain_text("claimed by R2886: “R2313 settled: finding 1 is answered")
