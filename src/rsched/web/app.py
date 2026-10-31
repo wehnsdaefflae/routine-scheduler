@@ -22,10 +22,9 @@ from ..daemon.scheduler import Scheduler
 from ..ids import now_iso
 from ..llm_tasks import TaskCenter
 from . import assetskew
-from .appwiring import _include_api_routers, _make_lifespan
+from .appwiring import _add_middlewares, _include_api_routers, _make_lifespan
 from .ioload import attach_state
 from .screen_proxy import screen_for_path
-from .security_headers import SecurityHeaders
 
 log = logging.getLogger("rsched.web")
 
@@ -302,6 +301,8 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         return FileResponse(STATIC_DIR / "manifest.webmanifest",
                             media_type="application/manifest+json")
 
+    _add_middlewares(app)   # CSP + compression, INSIDE the two layers below (see appwiring)
+
     @app.middleware("http")
     async def fresh_ui(request, call_next):
         # The daemon self-updates and restarts; without this, browsers heuristically cache the
@@ -345,5 +346,4 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
     app.mount("/docs", StaticFiles(directory=docs_out_dir(), check_dir=False, html=True),
               name="docs")
-    app.add_middleware(SecurityHeaders)   # the CSP on every response, refusals too (D219)
     return app

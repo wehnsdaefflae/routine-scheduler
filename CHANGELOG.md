@@ -15,6 +15,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.482.0] — 2026-10-31
+
+### The console's responses are compressed (the operator: "super slow")
+
+*"The webui at rsched.markwernsdorfer.com is super slow. Fix it"*. Measured before changing
+anything: **no `content-encoding` on any response** — not from the app, not from Caddy in front
+of it — while `GET /api/questions` returns ~1.1 MB of JSON (the whole fleet's question HISTORY,
+rows settled since September: no limit, no window, no projection) and `static/app.js` refetches
+it **every 30 s for every open tab**. The server itself was not slow: 2.6 ms locally for `/`,
+0.60 s worst case net.
+
+So the first fix is the one that changes no behaviour at all — `GZipMiddleware` beside the CSP
+in one seam, `appwiring._add_middlewares`. `static/app.js` goes **19,753 → 7,314 bytes on the
+wire (37 %)**; this instance's captured API payloads compress to ~31 %.
+
+**Where it is wired is load-bearing, and the test suite found it.** `app.py`'s two
+`@app.middleware("http")` layers are `BaseHTTPMiddleware`, which re-emits every response as a
+stream, and starlette's gzip skips a small body only when it arrives in one chunk with
+`more_body=False`. Wired OUTSIDE them, a 9-byte artifact download was gzipped and lost its
+`Content-Length` — breaking `test_served_files_keep_their_bytes_type_and_freshness`, a contract
+about artifact downloads with nothing to do with compression. It is therefore wired INSIDE
+them, and `tests/test_response_compression.py` pins all of it: a large payload compresses, a
+small body is byte-identical with its length intact, `identity` gets plain bytes, and the CSP
+survives compression.
+
+Capping `/api/questions` is a separate, behavioural change and is not in this release.
+
+### A run is asked for its own recipe revisions only if it HAS a recipe
+
+*"'bg-c-20261029-080013-cd837685 proposes 1 revision to its own recipe' this is a bug never
+suggest recipe improvements for anything else but routine runs"*. A detached background task is
+a one-shot brief he typed: no recipe, no `## Done when`, nothing a proposal could edit. The ask
+was gated on `is_conversation` alone — false for a dir under `background_home` — and the card
+only on `ctx.depth`, so tasks were asked and filed cards.
+
+One predicate now governs both seams, `recipeproposal.asks_for_revisions(ctx)`: a child run, a
+conversation and a detached task are not asked and cannot file. Suppressing one seam alone
+would leave either a card nobody can apply or a question about a document that does not exist.
+
+### A null recipe revision files nothing (R3086)
+
+*"why are you surfacing this at all? don't propose null revisions. report this as a bug!"* The
+ask REQUIRES a run to say when its recipe needed no change — that is how "I looked and nothing
+was contradicted" is distinguished from not having looked — so the compliant wording
+(`RECIPE REVISION: none.`) produced one empty card per clean run, and `vodafone-outage-claims`
+is daily: he had to edit and approve a change that said there was no change. `extract` now
+drops a line whose whole content says there is no revision, matched against a closed set after
+punctuation is stripped, so "none of the stages name the cursor" is still filed.
+
+### A permission's `requires:` names the live util (R3081)
+
+`predatory-publisher-tarpit` opened every run with two FAIL rows it could not fix from inside
+itself: `outbound-mail`'s `requires:` still named `fau-mail` and `gmail` after those utils were
+consolidated into `mail`. The consolidation reached every caller's code and nothing reached the
+stores that hold util names as STRINGS — five symptoms of that one cause have now been found
+weeks apart by different routines (four reminder regexes, four task notebooks, this permission).
+
+The seed is corrected, and because `sync_seed_library_docs` is add-only (it must never overwrite
+an operator-edited library doc), `migrate_permission_requires` carries it to the live library
+once at boot. It rewrites only the `utils:` list, leaves the body prose byte for byte, and
+leaves a file he already corrected alone. Measured: `outbound-mail` is the only permission of
+the 18 seeded / 20 live whose `requires:` names a util the 57-util catalog no longer holds.
+
+**And the cause reached a second store, which the suite caught and the first attempt at this
+release missed.** Correcting the permission alone reds
+`test_patterns.py::test_a_shipped_patterns_capabilities_survive_its_own_permissions`: four
+settings patterns (`radar`, `project-steward`, `mailbox-service`, `personal-steward`) reserve
+`fau-mail:send` + `gmail:send` and nothing else, and `floor_capabilities` keeps a reserved util
+only while a HELD doc requires it — so every routine created from those patterns would have had
+its send reservation floored away at its first save. A *partial* correction of these stores is
+worse than none. Both seed and live patterns are carried by the same migration; the six live
+routine configs that name the dead verbs **beside** `mail:send` are untouched (nothing is
+blocked — the rows they produce now offer "drop the dead name" instead of "install a util that
+will never exist", which is the whole visible effect of the correction).
+
 ## [0.481.0] — 2026-10-30
 
 ### The browser screen has a clipboard-sync switch, under the frame (D221)

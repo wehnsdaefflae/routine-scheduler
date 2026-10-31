@@ -38,7 +38,8 @@ def _last_unmet(routine_dir: Path) -> list[str]:
 
 
 def digest_section(routine_dir: Path, *, goals: list[dict] | None = None,
-                   conversation: bool = False, recipe_unlocked: bool = False) -> str:
+                   conversation: bool = False, recipe_unlocked: bool = False,
+                   recipe_ask: bool = True) -> str:
     """The block — never empty for a routine run, which is always asked for its own recipe
     revisions (D200); "" for a conversation that owes nothing and was asked nothing.
 
@@ -92,7 +93,13 @@ def digest_section(routine_dir: Path, *, goals: list[dict] | None = None,
     # contract (harness/schema/example) is held to a shrink-only budget, so prose there is paid
     # for by cutting prose there (tests/test_prompt_budget.py); and this block is already where
     # the engine says what a finish owes, said ONCE at boot in the body compaction never evicts.
-    # Unconditional for a routine run, like D195's honesty instruction: a run that is not asked
-    # does not answer, and this is exactly the question a recipe cannot ask of itself.
-    out.append(recipeproposal.digest_ask(unlocked=recipe_unlocked))
+    # Unconditional for a ROUTINE run, like D195's honesty instruction: a run that is not asked
+    # does not answer, and this is exactly the question a recipe cannot ask of itself. `recipe_ask`
+    # is `recipeproposal.asks_for_revisions(ctx)` — false for a run with no recipe of its own (a
+    # child, a conversation, a detached background task). The background case reached him as a
+    # card from `bg-c-20261029-080013-cd837685`: *"never suggest recipe improvements for anything
+    # else but routine runs"* (2026-10-30). One predicate governs both this ask and the card, so
+    # the two seams cannot disagree about who has a recipe.
+    if recipe_ask:
+        out.append(recipeproposal.digest_ask(unlocked=recipe_unlocked))
     return "\n".join(out)

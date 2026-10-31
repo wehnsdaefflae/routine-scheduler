@@ -71,6 +71,11 @@ def cmd_daemon(_args) -> int:
     # campaign wired was firing against no candidates at all
     from .migrate_rule_assists import run_migration as carry_rule_assists
     carry_rule_assists(server)
+    # MIGRATION(expires=2026-12-31): the same add-only gap, for a permission's `requires:` — the
+    # fau-mail/gmail -> mail consolidation left two dead util names there, FAILing twice at the
+    # start of every run of every holder, and a routine cannot edit the library (R3081)
+    from .migrate_permission_requires import run_migration as carry_permission_requires
+    carry_permission_requires(server)
     adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
     # MIGRATION(expires=2026-11-30): every past run's record gains the fingerprint and quality
     # the change measurement reads, rebuilt from git and the runs' own files — after the library

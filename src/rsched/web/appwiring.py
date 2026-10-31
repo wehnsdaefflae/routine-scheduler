@@ -18,11 +18,13 @@ import logging
 import os
 
 from fastapi import FastAPI
+from starlette.middleware.gzip import GZipMiddleware
 
 from ..config import ServerConfig
 from ..daemon.events import EventBus
 from ..endpoints.instrument import set_sink
 from ..llm_tasks import DaemonSink, TaskCenter
+from .security_headers import SecurityHeaders
 
 log = logging.getLogger("rsched.web.appwiring")
 
@@ -157,6 +159,51 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
             app.state.io_pool = None
 
     return lifespan
+
+def _add_middlewares(app: FastAPI) -> None:
+    """The response middlewares, outermost LAST — one seam so their order is readable in one
+    place (`add_middleware` puts each new one OUTSIDE the previous).
+
+    `SecurityHeaders` — the CSP on every response, refusals too (D219). See that module.
+
+    `GZipMiddleware` — the console sent every byte uncompressed, and the operator's complaint
+    was *"The webui at rsched.markwernsdorfer.com is super slow"* (2026-10-30). Measured
+    before the fix: no `content-encoding` on any response from either the app or Caddy, and
+    `GET /api/questions` alone is ~1.1 MB of JSON that `static/app.js` refetches **every 30 s
+    per open tab**; gzip -9 takes this instance's own API payloads to ~31 % of their size
+    (1,000,000 → 313,029 bytes on a real capture). Compression is the half that needs no
+    behaviour change: nothing is hidden, no payload is capped, and removing the line restores
+    the old bytes exactly.
+
+    Why it is safe on EVERY response here, checked rather than assumed:
+
+    * There is no SSE anywhere in this app — `grep` for `StreamingResponse` /
+      `text/event-stream` finds nothing; the live streams are WebSockets, and a websocket
+      scope never reaches an http middleware (the same reason `app.py`'s timing middleware
+      cannot count one). Starlette 1.8's GZip also excludes `text/event-stream` and the
+      binary types (images, fonts, video, zip) by default, so artifact and screenshot
+      responses pass through untouched.
+    * `minimum_size=1024` keeps small bodies byte-identical — including the 9-byte body
+      `tests/test_served_file_containment.py` pins by `content-length`.
+
+    WHERE THIS IS CALLED IS LOAD-BEARING, and it was measured the hard way. `app.py` calls it
+    BEFORE its two `@app.middleware("http")` layers (`fresh_ui`, `slow_requests`), which makes
+    gzip the INNERMOST of the four. Those two are `BaseHTTPMiddleware`, which re-emits every
+    response as a STREAM, and starlette's gzip skips a small body only when it arrives in one
+    chunk with `more_body=False` (`starlette/middleware/gzip.py`). Wired outside them, every
+    response therefore looked streamed: a 9-byte artifact download was gzipped and had its
+    `Content-Length` DELETED, which broke
+    `tests/test_served_file_containment.py::test_served_files_keep_their_bytes_type_and_freshness`
+    — a contract about artifact downloads, nothing to do with compression. Inside them, the
+    threshold works as documented. If a later edit moves this call after those layers, that
+    test is the one that fails and this paragraph is the reason.
+
+    Gzip is added AFTER `SecurityHeaders` here, so it sits inside it and compresses a response
+    that already carries the policy; it rewrites `Content-Length` itself when it does compress.
+    """
+    app.add_middleware(SecurityHeaders)
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 
 def _include_api_routers(app: FastAPI, deps: list) -> None:
     from . import (

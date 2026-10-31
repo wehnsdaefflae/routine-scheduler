@@ -19,6 +19,7 @@ from . import (
     mediaops,
     obligations,
     promptfloor,
+    recipeproposal,
     runkind,
     subsalvage,
 )
@@ -101,7 +102,12 @@ def boot(loop) -> None:
                               # a run that may write its own recipe is told to make the edit,
                               # one that may not is told its lines become a proposal
                               recipe_unlocked=bool(
-                                  getattr(ctx.grants, "recipe_unlocked", False)))
+                                  getattr(ctx.grants, "recipe_unlocked", False)),
+                              # ...and WHETHER it is asked at all: only a run with a recipe of
+                              # its own is (recipeproposal.asks_for_revisions — the same
+                              # predicate the card seam reads, so neither can ask what the
+                              # other would refuse to file)
+                              recipe_ask=recipeproposal.asks_for_revisions(ctx))
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"

@@ -5,7 +5,7 @@ effect:
   when: correspondence is part of the task — a sent mail cannot be recalled
 tags: [communication, email, outbound]
 requires:
-  utils: [gmail:send, fau-mail:send]
+  utils: [mail:send]
 ---
 # permission: outbound-mail — send email from the operator's own mailboxes
 

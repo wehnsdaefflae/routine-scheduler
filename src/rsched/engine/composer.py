@@ -71,7 +71,7 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                  held_rules: list[str] | None = None,
                  store_notes: list[dict] | None = None, goals: list[dict] | None = None,
                  conversation: bool = False, jobs_section: str = "",
-                 recipe_unlocked: bool = False) -> str:
+                 recipe_unlocked: bool = False, recipe_ask: bool = True) -> str:
     from ..paths import read_json
 
     parts: list[str] = []
@@ -114,7 +114,8 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     from . import finish_digest
     if finish_sec := finish_digest.digest_section(routine_dir, goals=goals or [],
                                                   conversation=conversation,
-                                                  recipe_unlocked=recipe_unlocked):
+                                                  recipe_unlocked=recipe_unlocked,
+                                                  recipe_ask=recipe_ask):
         parts.append(finish_sec)
     state_dir = routine_dir / "state"
     if state_dir.is_dir():

@@ -33,7 +33,7 @@ from types import SimpleNamespace
 import pytest
 
 from conftest import finish, make_test_server
-from helpers import run_context, server_config
+from helpers import run_context, server_config, server_for
 from rsched import pending
 from rsched.engine import recipeproposal
 from rsched.engine.composer import build_system_prompt, state_digest
@@ -89,6 +89,64 @@ def test_a_conversation_is_not_asked(make_routine, tmp_path):
     no recipe to revise, so the ask would be an instruction it cannot act on."""
     d = make_routine(slug="conv")
     assert "RECIPE REVISIONS:" not in _prompt(d, tmp_path, conversation=True)
+
+
+def test_a_detached_background_task_is_neither_asked_nor_files_a_card(make_routine, tmp_path):
+    """A background task is a one-shot brief the operator typed: no recipe, no `## Done when`,
+    nothing a proposal could edit. It reached him anyway — task
+    `bg-c-20261029-080013-cd837685` filed "proposes 1 revision to its own recipe", because the
+    ask was gated on `is_conversation` alone (false for a dir under `background_home`) and the
+    card only on `ctx.depth`. His words, 2026-10-30: *"this is a bug never suggest recipe
+    improvements for anything else but routine runs"*.
+
+    BOTH seams are asserted together on purpose: suppressing the ask while leaving the card
+    reachable would still file one for any task whose prose happens to carry the marker, and
+    suppressing the card alone would leave every task answering a question about a document it
+    does not have. `asks_for_revisions` is the single predicate they share.
+    """
+    d = make_routine(slug="bg-c-20261029-080013-cd837685")
+    ctx = run_context(d, "20260712-070000", server=server_for(d))
+    # the one thing that makes it a background task: its dir sits directly under background_home
+    ctx.server.background_home = d.parent
+
+    assert not recipeproposal.asks_for_revisions(ctx)
+    assert "RECIPE REVISIONS:" not in state_digest(
+        d, [], [], recipe_ask=recipeproposal.asks_for_revisions(ctx))
+    assert recipeproposal.maybe_propose(ctx, f"Done.\n{MARKER} main.md — drop step 4.") == ""
+    assert pending.load_all(ctx.server.routines_home) == []
+
+    # control: the SAME summary from an ordinary routine run does file one, so the assertion
+    # above is about the run's kind and not about an extractor that stopped working
+    other = make_routine(slug="ordinary")
+    ctx2 = run_context(other, "20260712-070000", server=server_for(other))
+    assert recipeproposal.asks_for_revisions(ctx2)
+    assert recipeproposal.maybe_propose(ctx2, f"Done.\n{MARKER} main.md — drop step 4.")
+
+
+@pytest.mark.parametrize("line", [
+    "none", "none.", "**none.**", "No change", "nothing to add", "Recipe unchanged",
+    "no revisions needed", "N/A",
+])
+def test_a_null_revision_files_nothing(line):
+    """R3086, his instruction: *"why are you surfacing this at all? don't propose null
+    revisions. report this as a bug!"* The ask REQUIRES a run to say when its recipe needed no
+    change — that is how "I looked" is distinguished from "I didn't" — so the compliant wording
+    produced one empty card per clean run, and `vodafone-outage-claims` is daily: he had to
+    edit and approve a change that said there was no change.
+    """
+    assert recipeproposal.extract(f"Done.\n{MARKER} {line}") == []
+
+
+@pytest.mark.parametrize("line", [
+    "none of the stages name the cursor, so step 2 re-reads it",
+    "nothing in stages/scan.md says which feed is authoritative — name it",
+    "main.md — drop step 4.",
+])
+def test_a_real_revision_that_merely_starts_like_a_null_one_is_filed(line):
+    """The null set is matched WHOLE, not as a prefix: a proposal whose first word is `none` or
+    `nothing` is the ordinary way to write "the recipe never says X", and dropping those would
+    lose exactly the revisions the operator most needs to see."""
+    assert recipeproposal.extract(f"Done.\n{MARKER} {line}") == [line]
 
 
 # ---- reading the answer ---------------------------------------------------------------------

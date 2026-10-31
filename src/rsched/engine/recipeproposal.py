@@ -56,6 +56,43 @@ MARKER = "RECIPE REVISION:"
 #: redesign, not a revision, and the card has to stay readable at a glance.
 MAX_LINES = 8
 
+#: A revision line that says there is NO revision — matched whole, after punctuation and
+#: emphasis are stripped (`extract`). Every entry is a wording runs actually wrote while
+#: complying with the ask (R3086); anything else, including a line that merely STARTS with one
+#: of these words, is a real proposal and is filed. Deliberately a closed set rather than a
+#: pattern: guessing at "looks empty" would drop changes the operator needs to see.
+_NULL = frozenset({
+    "none", "no change", "no changes", "nothing", "not needed", "n/a", "na",
+    "none needed", "no revision", "no revisions", "no revision needed",
+    "no revisions needed", "none this run", "no change needed", "no changes needed",
+    "nothing to change", "nothing to add", "unchanged", "recipe unchanged",
+    "no recipe change", "no recipe changes",
+})
+
+
+def asks_for_revisions(ctx) -> bool:
+    """Whether THIS run is asked for its own recipe revisions at all — the ONE predicate both
+    seams read, so the ask and the card can never disagree about who has a recipe.
+
+    A run is asked only when it HAS a recipe of its own to revise. Three kinds do not:
+
+    * a CHILD run (`ctx.depth > 0`) — its task is its parent's brief;
+    * a CONVERSATION — its "recipe" is the shared `converse` pattern, not its own document
+      (pinned since D200 by `test_a_conversation_is_not_asked`);
+    * a DETACHED BACKGROUND TASK — a one-shot brief the operator typed, with no recipe, no
+      `## Done when` and nothing a proposal could edit.
+
+    The background case was missed, and it reached him: `boot.py` passed only
+    `is_conversation(ctx)`, which is False for a dir under `background_home`, so task
+    `bg-c-20261029-080013-cd837685` was asked and filed a card — "bg-c-20261029-080013-cd837685
+    proposes 1 revision to its own recipe" (`static/components/recipe-card.js`). His words,
+    2026-10-30: *"this is a bug never suggest recipe improvements for anything else but routine
+    runs"*. Hence a predicate over the run's KIND rather than a second flag at each seam.
+    """
+    from . import runkind
+    return (ctx.depth == 0 and not runkind.is_conversation(ctx)
+            and not runkind.is_detached_run(ctx))
+
 
 def digest_ask(*, unlocked: bool) -> str:
     """The engine's ask, for the digest's FINISH block — every finishing routine run reads it.
@@ -84,13 +121,23 @@ def extract(summary: str) -> list[str]:
     Tolerant on the left of the marker (a run writes `- RECIPE REVISION: …` inside a list as
     readily as a bare line) and strict about the marker itself, so the prose around it is never
     mistaken for a proposal. Empty lines are dropped and the list is capped at `MAX_LINES`.
+
+    A NULL REVISION FILES NOTHING (R3086, his instruction 2026-10-30: *"why are you surfacing
+    this at all? don't propose null revisions. report this as a bug!"*). The ask requires a run
+    to SAY when its recipe needed no change — that is how "I looked and nothing was
+    contradicted" is distinguished from not having looked — so the compliant wording
+    (`RECIPE REVISION: none.`) was producing one empty card per clean run, and
+    `vodafone-outage-claims` is daily. `_NULL` is matched against the line's own words with
+    punctuation stripped, so only a line that says *there is no revision* and nothing else is
+    dropped: "none of the stages name the cursor" proposes a real change and survives.
     """
     out: list[str] = []
     for raw in (summary or "").splitlines():
         head, sep, rest = raw.partition(MARKER)
         if not sep or head.strip(" \t-*>#"):
             continue
-        if text := rest.strip():
+        text = rest.strip()
+        if text and text.strip(" \t.!*_`-—–").casefold() not in _NULL:
             out.append(text)
     return out[:MAX_LINES]
 
@@ -104,7 +151,7 @@ def maybe_propose(ctx, summary: str) -> str:
     no recipe of its own (its task is its parent's brief), and a run that may write its own
     recipe files nothing because it could simply make the edit.
     """
-    if ctx.depth > 0:
+    if not asks_for_revisions(ctx):
         return ""
     grants = getattr(ctx, "grants", None)
     if grants is not None and getattr(grants, "recipe_unlocked", False):

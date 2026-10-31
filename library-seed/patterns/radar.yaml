@@ -32,8 +32,7 @@ settings:
     - write_util
     utils:
     - browser-session
-    - fau-mail:send
-    - gmail:send
+    - mail:send
     confirm: creations
     remind_confirm: always
     reminders: local
