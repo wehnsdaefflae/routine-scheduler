@@ -66,6 +66,50 @@ the empty set. Docs swept — `docs/rule-assists.md` (eight moments), `docs/arch
 this code was live, so the fire has no live specimen yet; after the next restart a run
 interrupted mid-work should carry a `hook restart` line in its routine's `state/notes.md`.
 
+### A run is told what is LEFT of its budget, once per turn (D227)
+
+The operator, 2026-10-31, answering the builder's R3094 §1: *"Why not just remaining turns,
+minutes, tokens (if limited)?"* — remainders and nothing else. No cost figure, no usage
+breakdown, no history.
+
+`[BUDGET LEFT: 11 of 12 turns · 44 of 45 min]`, with a token part only when a token ceiling
+exists, and `179 of 200 turns (this resume window, re-based at turn 327)` on a resumed leg.
+A run was told its ceilings exactly once, at turn 1, and never its consumption — so it paced by
+the wall clock: on the run that raised this, 265 min since the run id against a 240-min ceiling
+while the engine had metered 144 (121 of those minutes dead in a container recreate), i.e. "stop,
+you are 25 over" with 96 min left. The workaround was hand-reading `status.json`: a turn spent,
+and a run reaching into engine internals for a fact about itself.
+
+**The seam is a TAIL, not the contract.** `engine/loop._tails`, where the budget WARNING already
+rides — because `engine/composer.py` composes the harness contract and the state digest ONCE at
+run start, so a number that changes every turn would be frozen at turn 1 there and a lie on every
+later turn. `test_every_observation_tells_the_run_what_is_left` is what tells the two apart: it
+asserts the remainder MOVES, 11 → 10 → 9 → 8.
+
+**One reading, not two.** `turnwindow.budget_block` is now the single computation:
+`write_status`'s own ledger/meter/turns_left copy is deleted and it calls the same function, so
+`status.json` and the prompt cannot drift apart and tell a run different things. That also shrank
+`run_context.py` 593 → 587 (it was AT its ceiling with zero slack, so the fix was to REMOVE the
+second reading rather than add a third), and `loop.py` stayed net-zero at 437 by moving the
+warning's prose into `turnwindow.converge`.
+
+**What it costs, measured and pinned** in `tests/test_budget_left_line.py`: 46 B/turn for the
+common run, 75 B with a token ceiling, 91 B resumed, **0 B when nothing is limited** — ~14 kB over
+a 300-turn run, against the 63,670 chars of contract those same turns already re-send.
+`tests/prompt_budget.json` is UNCHANGED and its note says why: that file measures
+`composer.system_sections`, and this tail is not in it. `(if limited)` is literal — an unlimited
+axis prints nothing rather than the word "unlimited".
+
+Both of the decision's constraints are honoured and tested: the line states a FACT and never asks
+the run to pace (the contract insists a budget is "a CEILING and a runaway BACKSTOP — never a
+pace, and never a ration"), and every remainder is given beside its own ceiling so
+`window_turns + turns_left == max_turns` stays legible (F564/D155) and a resumed leg's fresh
+window cannot read as a spent one. 9 tests, red first; `docs/prompt-anatomy.md` §3b gains item 7
+and §5.3's claim that an ordinary observation carries "nothing else" is corrected.
+
+Deliberately NOT in the line, faithful to his wording: `max_cost` and the run-spanning
+`max_total_turns`. A run with a cost cap is still told nothing about it.
+
 ### A stale model role is visible where a person looks (R3106, F643)
 
 Two routines each carried a bare `Sonnet` stored nine weeks earlier; after the catalog rename
