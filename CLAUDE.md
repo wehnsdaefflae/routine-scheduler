@@ -351,7 +351,19 @@ one you are about to touch, not all of them.
   still-queued message in the summary instead). Budgets are a runaway BACKSTOP, never a pace; do not reintroduce prose that has a run
   ration its work against the turn counter. The 85% warning is an EVENT, not a state: it is said
   once at the warn line and once at 95%, per resource. Riding every observation past 85% made it
-  a countdown; runs converged at the ceiling whether or not their job was done. Every action carries `say` (finding-first narration:
+  a countdown; runs converged at the ceiling whether or not their job was done. **What is LEFT,
+  by contrast, is a standing FACT and rides every observation** (D227, operator 2026-10-31:
+  *"Why not just remaining turns, minutes, tokens (if limited)?"*) — `[BUDGET LEFT: 47 of 60
+  turns · 38 of 45 min]`, rendered by `engine/turnwindow.budget_left` from
+  `turnwindow.budget_block`, the SAME reading status.json's `budgets` records; never a second
+  computation of the same numbers, and never in the harness contract or the state digest, which
+  are composed once at run start and would freeze it at turn 1. Remainders only — no cost
+  figure, no usage breakdown — each beside the ceiling it is a remainder of (so
+  `window_turns + turns_left == max_turns` stays legible and a resumed leg's FRESH window says
+  it was re-based), and an unlimited axis prints nothing for itself: the line is paid on every
+  turn of every run (46 B, 75 B with a token ceiling). Before it, a run could not tell its
+  remaining budget at all and paced by the wall clock, which is wrong by construction after a
+  resume — measured at 265 min against a 240-min ceiling with 96 min actually left. Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
   at decision points; worded per the routine's `deliberation` level) + `kind`, plus an optional
   **`note`** — 1-3 SELF-CONTAINED lines worth keeping beyond the context window, engine-filed to

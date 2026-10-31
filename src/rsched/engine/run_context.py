@@ -531,9 +531,6 @@ class RunContext:
             self.question = question
         if self.depth > 0:
             return
-        ledger, meter = self.budgets.ledger(), self.meter()
-        turns_left = ledger.remaining("turns", meter)
-        wall_left_min = ledger.remaining("wall_clock", meter)
         atomic_write_json(self.run_dir / "status.json", {
             "run_id": self.run_id,
             "pid": os.getpid(),
@@ -584,10 +581,7 @@ class RunContext:
             "vm_hwm_kb": _vm_hwm_kb(),
             # turns_left is THIS WINDOW's remainder, `turn` above is cumulative: after a resume
             # they differ by budget_base_turn, which the block carries (turnwindow, F564/D155).
-            "budgets": turnwindow.status_budgets(
-                turn=self.turn, base_turn=self.budget_base_turn,
-                max_turns=self.budgets.max_turns,
-                max_total_turns=self.budgets.max_total_turns,
-                turns_left=turns_left, wall_left_min=wall_left_min,
-                spent=ledger.spent(meter)),
+            # ONE reading: the same call renders the per-turn BUDGET LEFT tail (D227), so the
+            # prompt can never tell a run something this file denies.
+            "budgets": turnwindow.budget_block(self),
         })
