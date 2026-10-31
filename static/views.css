@@ -638,7 +638,7 @@ pre.hl-json .tok-const { color: var(--warn); }
 .msg :is(.copy-msg, .branch-msg, .rewind-msg, .flag-msg) {
   position: absolute; top: 3px; background: none; border: none; cursor: pointer;
   color: var(--ink-3); font-size: 12px; line-height: 1; padding: 3px 5px;
-  opacity: 0; transition: opacity 0.12s;
+  opacity: 0; transition: opacity 0.12s; user-select: none;   /* R3085, as above */
 }
 .msg .copy-msg { right: 28px; font-size: var(--t-s); }
 .msg .branch-msg { right: 52px; }
@@ -653,7 +653,7 @@ pre.hl-json .tok-const { color: var(--warn); }
 .msg-body pre .copy-fence {
   position: absolute; top: 4px; right: 4px; background: none; border: none; cursor: pointer;
   color: var(--ink-3); font-size: var(--t-s); line-height: 1; padding: 3px 5px;
-  opacity: 0; transition: opacity 0.12s;
+  opacity: 0; transition: opacity 0.12s; user-select: none;   /* R3085: never COPIED with the block */
 }
 .msg-body pre:hover .copy-fence { opacity: .45; }
 .msg-body pre .copy-fence:hover,
