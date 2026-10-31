@@ -123,9 +123,10 @@ def at_daemon_exit(server: Any, runs: Iterable[Any], reason: str) -> int:
     for run in list(runs):
         try:
             written += _for_run(server, run, reason)
-        except Exception as exc:        # noqa: BLE001 — see the module docstring: a diagnostic
-            log.warning("restart hook skipped %s: %s",      # written on the way out may never
-                        getattr(run, "run_id", "?"), exc)   # fail the shutdown it describes
+        except Exception as exc:        # see the module docstring: a diagnostic written on the
+            log.warning("restart hook skipped %s: %s",      # way out may never fail or delay
+                        getattr(run, "run_id", "?"), exc)   # the shutdown it describes
+
     if written:
         log.warning("restart hook: %d note line(s) written for the next leg", written)
     return written

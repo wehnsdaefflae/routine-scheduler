@@ -95,19 +95,36 @@ def _entry_lines(seed_text: str, wanted: set[str]) -> str:
     return "".join(out)
 
 
-def _block_span(text: str) -> tuple[int, int] | None:
-    """(start, end) character offsets of the whole `assists:` block, or None when absent."""
-    marker = "\nassists:"
-    at = text.find(marker)
+def _block_end(text: str) -> int | None:
+    """The character offset just past the whole `assists:` block, or None when there is none."""
+    at = text.find("\nassists:")
     if at < 0:
         return None
-    start = at + 1
-    cursor = text.index("\n", start) + 1
+    cursor = text.index("\n", at + 1) + 1
     for line in text[cursor:].splitlines(keepends=True):
         if line[:1] not in (" ", "-", "\t"):
             break
         cursor += len(line)
-    return start, cursor
+    return cursor
+
+
+def _inserted(live_text: str, entries: str) -> str | None:
+    """The live rule with `entries` added to its `assists:` block, or None when it has no place
+    to put them.
+
+    A rule that already declares assists gains the entries at the END of its block, after the
+    operator's own. A rule with no block at all gains one before `tags:`, where every seed rule
+    carries it — the frontmatter is a mapping, so the position is cosmetic, and matching the
+    seed's layout keeps the two readable side by side.
+    """
+    end = _block_end(live_text)
+    if end is not None:
+        return live_text[:end] + entries + live_text[end:]
+    marker = "\ntags:"
+    if marker not in live_text:
+        return None
+    head, rest = live_text.split(marker, 1)
+    return f"{head}\nassists:\n{entries.rstrip()}{marker}{rest}"
 
 
 def _removed_ids(library: Path, rel: str, ids: set[str]) -> set[str]:
@@ -152,19 +169,10 @@ def _carry(live: Path, seed: Path, library: Path, rel: str) -> tuple[list[str], 
     entries = _entry_lines(seed_text, set(missing))
     if not entries:
         return [], "the seed's entries could not be located"
-    span = _block_span(live_text)
-    if span is None:
-        # No block at all: insert one before `tags:`, where every seed rule carries it. The
-        # frontmatter is a mapping, so the position is cosmetic — matching the seed's layout
-        # keeps the two readable side by side.
-        marker = "\ntags:"
-        if marker not in live_text:
-            return [], "the live rule has no `tags:` line to insert before"
-        head, rest = live_text.split(marker, 1)
-        atomic_write(live, f"{head}\nassists:\n{entries.rstrip()}{marker}{rest}")
-        return missing, ""
-    start, end = span
-    atomic_write(live, live_text[:end] + entries + live_text[end:])
+    updated = _inserted(live_text, entries)
+    if updated is None:
+        return [], "the live rule has neither an `assists:` block nor a `tags:` line"
+    atomic_write(live, updated)
     return missing, ""
 
 
