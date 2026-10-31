@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .config import RoutineConfig, ServerConfig, TrialConfig
+from .config import MODEL_KINDS, RoutineConfig, ServerConfig, TrialConfig
 from .engine.runrecord import TRIAL_FILE
 from .paths import atomic_write_json, read_json
 from .readmodels.incarnations import live_runs
@@ -89,6 +89,27 @@ def roles_problem(server: ServerConfig, models: dict[str, str] | None) -> str:
     verb = "is" if len(missing) == 1 else "are"
     return (f"{', '.join(missing)} {verb} not in the model catalog — the run dies resolving it "
             "(Settings → Models names what this instance serves)")
+
+
+def config_problems(server: ServerConfig, cfg: RoutineConfig, trial: dict | None) -> list[str]:
+    """What a routine's own config costs it on THIS instance, for the routine page's problem
+    panel — the catalog questions the loader cannot ask, because it cannot see the catalog.
+
+    Both lines are this module's: a trial the catalog cannot serve (`ignored_problem`, carried on
+    `state`) and a STANDING role it cannot serve (`roles_problem`). Composed here rather than in
+    the web layer because the predicates are, and because `rsched validate` already asks both
+    together (cli_validate.py) while the console asked only the weaker one — so the failure that
+    merely IGNORES a trial was on the page and the one that kills every run at turn 0 was not
+    (F643: two routines died at boot on a `Sonnet` that was a catalog name when it was stored).
+
+    Only the CHAT roles are judged. `decision`/`decision_media` sit in the same `models:` map but
+    resolve against the DECISION catalog (config/decisionconf.py), so measuring them against
+    `server.models` would call a working decision model a run-killer — a false alarm on the one
+    panel that has to be believed.
+    """
+    chat = {role: name for role, name in (cfg.models or {}).items() if role in MODEL_KINDS}
+    return [line for line in ((trial or {}).get("problem") or "", roles_problem(server, chat))
+            if line]
 
 
 def recorded(routines_home: Path, slug: str, trial_id: str) -> int:

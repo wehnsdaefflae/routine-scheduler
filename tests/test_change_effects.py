@@ -219,6 +219,27 @@ def test_a_count_is_compared_only_where_it_was_counted_the_same_way():
     assert change_signals.run_signals(old)["interventions"] == 0     # unaffected
 
 
+def test_the_skipped_stage_count_is_compared_only_since_its_own_ruler_moved():
+    """`stages_skipped` has its OWN cutoff, 0.366.10: F563 made `statemap.stage_coverage` fold a
+    second source — the phases a run WROTE into its phase cursor — where before only re-reading
+    `stages/<name>.md` counted as entering. The same work then skipped fewer stages (measured
+    2026-09-26: 24 of 73 fleet runs reported >=60% of their declared stages skipped,
+    `llmsectest-weekday` 0 of 7 entered on three consecutive runs of 404-423 turns).
+
+    Without the cutoff the bias is ONE-WAY and points the wrong way: a run that orients faster
+    re-reads fewer modules, so a release that improved orientation would read as making the
+    fleet LESS complete — and `config-optimizer` adopts and drops models on these verdicts.
+    0.402.0 did NOT move this ruler: it changed what the finish's claim check DOES with an
+    unentered stage (a judge's hint rather than an objection, F620/R2228), not what the number
+    counts, so the cutoff stays at the release that last moved the count itself.
+    """
+    old, new = _run(1, engine="0.366.9"), _run(2, engine="0.366.10")
+    old["quality"]["stages_skipped"] = new["quality"]["stages_skipped"] = 3
+    assert change_signals.run_signals(old)["stages_skipped"] is None
+    assert change_signals.run_signals(new)["stages_skipped"] == 3
+    assert change_signals.run_signals(old)["unmet"] == 0     # no cutoff of its own: still read
+
+
 def test_the_fleet_week_by_week(tmp_path):
     """Each routine counts once a week; a cost reads against the routine's own median; a week
     without a run is kept, empty."""
