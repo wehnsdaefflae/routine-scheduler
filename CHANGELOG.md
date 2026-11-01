@@ -15,6 +15,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.495.0] — 2026-11-01
+
+### Added — a per-RUN cost profile per routine, and the integrity of the figures it reports (D163)
+
+Three cost readings already existed and none of them answered *"what does a run of this cost"*:
+monthly spend rolls a daily routine's thirty runs into one calendar cell, the Stats aggregate
+slices the fleet, and the trend check reduces two five-run windows to a boolean flag with its
+medians buried in a reasons string. So the routine page could say a routine had ballooned without
+ever saying what it costs per run — which is the figure a budget is set in. The operator's answer
+was to *"extend what exists … into a real cost profile per routine"*, and this is a READER ONLY:
+it introduces no cost quantity of its own, takes `volume` and `notional_cost` as the usage log
+already defines them, the runs as the usage stream already folds them, the incarnation filter from
+the existing reader, and the trend verdict from the existing check — called over the same window
+pair and reported verbatim, pinned by a test that its median agrees with the flag's, so this
+module and the routine page can never disagree about whether a routine is flagged.
+
+It also reports **accounting integrity**, which is what makes a per-run figure honest. The two
+usage losses fixed in 0.494.0 understated any run that spawned children, and the stream on disk
+still carries those older rows — so a five-run window straddling the fix compares two different
+quantities and would read as a cost improvement nobody made. The detection is arithmetic rather
+than a hard-coded release date: a top-level run reporting less volume than its own child rows sum
+to is understated whatever wrote it. The profile counts those runs, marks each window
+trustworthy or not, and names which side is contaminated, so no consumer can render a mixture as
+one quantity.
+
+Deliberately no UI and no new health event in this increment: a correct reader with no view is
+worth more than a view over a quantity nobody checked. The next increments are the smallest
+consumer that renders the mixed-accounting flag, then folding integrity into the existing
+cost-trend row — a vocabulary change that needs every registration surface at once.
+
 ## [0.494.0] — 2026-11-01
 
 ### Fixed — a child run's spend survives its parent's resume, and an orphan's is recovered (R3112)
