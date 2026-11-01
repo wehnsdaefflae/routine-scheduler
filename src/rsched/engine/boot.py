@@ -29,6 +29,30 @@ from .history import orphaned_children, prior_counters, prior_usage, replay_mess
 from .transcript import read_events
 
 
+def _mark_orphans_dead(ctx, orphans: list[dict]) -> None:
+    """Record every child that did not survive the interruption, with WHAT IT SPENT.
+
+    The payload shape is `subruns._collect`'s, so every consumer of `subrun_end` (the tree
+    read-model, the replay announcements) reads one shape whether the child was collected or
+    died. Its spend and its turn count are recovered from the child's OWN transcript
+    (`subsalvage`), because a child that was never collected was never folded into the
+    parent's counter: writing `usage: {}` for one that really spent tokens attributes them
+    nowhere a routine-level reader can see. Measured at 193,930 output tokens for ONE orphan
+    of `scheduler-builder:20261030-140004` (R3112, raised by `token-lab`). What the disk
+    records, never an estimate — `{}` still means "nothing recorded there".
+    """
+    for o in orphans:
+        child_dir = ctx.run_dir / "sub" / str(o["n"])
+        spent = subsalvage.spend_reached(child_dir)
+        if spent:
+            ctx.add_usage(spent)
+        ctx.transcript.event("subrun_end", {
+            "n": o["n"], "label": o["label"], "workflow": o.get("workflow", ""),
+            "mode": o["mode"], "status": "aborted",
+            "summary": "did not survive the run's interruption",
+            "turns": subsalvage.turns_reached(child_dir), "usage": spent})
+
+
 def boot(loop) -> None:
     ctx = loop.ctx
     if loop.resume and ctx.depth == 0:
@@ -168,14 +192,7 @@ def boot(loop) -> None:
         # doesn't re-detect it) and tell the model below — otherwise it would `wait` forever
         # for a child that can never finish.
         orphans = orphaned_children(events)
-        for o in orphans:
-            # same payload shape as subruns._collect emits, so every consumer of
-            # subrun_end (tree read-model, replay announcements) reads one shape
-            ctx.transcript.event("subrun_end", {
-                "n": o["n"], "label": o["label"], "workflow": o.get("workflow", ""),
-                "mode": o["mode"], "status": "aborted",
-                "summary": "did not survive the run's interruption",
-                "turns": 0, "usage": {}})
+        _mark_orphans_dead(ctx, orphans)
         if orphans:
             # F778: the note used to say "results lost … Re-issue any you still need" while
             # every dead child's work sat on disk under sub/<n>/ — so a parent was told to

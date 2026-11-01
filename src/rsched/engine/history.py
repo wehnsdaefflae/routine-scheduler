@@ -140,7 +140,18 @@ def prior_usage(events: list[dict]) -> dict:
     """Token spend recorded across ALL prior legs of a run's transcript. A resume starts a
     fresh budget window (ctx.usage), so without this base status.json under-reports resumed
     runs by however much the earlier legs spent. Sums every event that carries usage:
-    assistant actions, llm-subcall and decide observations, and compaction calls.
+    assistant actions, llm-subcall and decide observations, compaction calls, and the exit of
+    every CHILD RUN an earlier leg collected.
+
+    A CHILD's spend is the one that was missing, and it is the largest single omission a
+    resumed run could have (R3112, measured on `scheduler-builder:20261029-140004`): its two
+    children's exits landed at 16:03 and 16:08 carrying 420,211 output tokens between them,
+    both BEFORE the leg's finish at 16:15; the run resumed, this function rebuilt `usage_base`
+    without them, and the final `status.json` reported 343,918 output for a tree that had cost
+    about a million. A child is folded into the parent's live counter at its collection
+    (`engine/subruns._collect` → `ctx.add_usage`), so inside a leg the accounting is right —
+    which is why the loss is invisible until a run is resumed, and why `token-lab` could
+    measure a 40 % understatement without finding a missing fold.
     """
     total: dict = {"in": 0, "out": 0}
     for ev in events:
@@ -149,7 +160,7 @@ def prior_usage(events: list[dict]) -> dict:
             u = ev.get("usage")
         elif ((etype == "observation"
                and (ev.get("payload") or {}).get("kind") in ("llm", "decide"))
-              or etype == "compaction"):
+              or etype in ("compaction", "subrun_end")):
             u = (ev.get("payload") or {}).get("usage")
         else:
             continue

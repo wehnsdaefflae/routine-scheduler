@@ -137,7 +137,7 @@ def no_such_child(run_dir: Path, n: int) -> str:
             "spawned, with its number and state")
 
 
-def _turns_reached(child_dir: Path) -> int:
+def turns_reached(child_dir: Path) -> int:
     """The highest turn the child's OWN transcript recorded — how much work died with it.
 
     Zero means the transcript carries no turn stamp (a child killed before its first), never
@@ -159,6 +159,48 @@ def _turns_reached(child_dir: Path) -> int:
     return top
 
 
+def spend_reached(child_dir: Path) -> dict:
+    """What a DEAD child actually spent, read from its OWN transcript — `{}` when nothing is
+    recorded there.
+
+    A child is folded into its parent's counter when the parent COLLECTS it
+    (`subruns._collect`), and a child that did not survive the run's interruption is never
+    collected: the resumed leg marks it aborted with `usage: {}` and its real spend is left
+    in `sub/<n>/transcript.jsonl` alone, attributed nowhere a routine-level reader can see.
+    Measured on `scheduler-builder:20261030-140004` (R3112): sub/1 was orphaned by an abort
+    and its 193,930 output tokens appear in no total the console or the usage stream reads.
+
+    Same discipline as `turns_reached`: what the disk records, never an estimate. The turn's
+    own `usage` and the llm/decide/compaction payloads are summed exactly as
+    `history.prior_usage` sums a leg's — one definition of "what an event spent", so a child's
+    recovered total cannot mean something different from its parent's.
+    """
+    from ..endpoints.usage import fold_usage
+
+    total: dict = {}
+    try:
+        with (child_dir / "transcript.jsonl").open(encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                etype = ev.get("type")
+                if etype == "assistant_action":
+                    usage = ev.get("usage")
+                elif ((etype == "observation"
+                       and (ev.get("payload") or {}).get("kind") in ("llm", "decide"))
+                      or etype in ("compaction", "subrun_end")):
+                    usage = (ev.get("payload") or {}).get("usage")
+                else:
+                    continue
+                if isinstance(usage, dict) and usage:
+                    fold_usage(total, usage)
+    except OSError:
+        return {}
+    return total
+
+
 def _orphan_line(run_dir: Path, orphan: dict) -> str:
     """One dead child, as the resumed leg reads it: what it was, how far it got, where its
     work is — and whether its original brief is still on disk to carry forward.
@@ -171,7 +213,7 @@ def _orphan_line(run_dir: Path, orphan: dict) -> str:
     landed = ", ".join(_artifacts(d)) or "nothing in artifacts/"
     line = (f"- #{orphan['n']} {str(orphan.get('label') or '')!r} "
             f"({orphan.get('mode') or 'child'}, workflow {orphan.get('workflow') or '?'}) "
-            f"reached turn {_turns_reached(d)}; its work is at {d} (hand-back: {landed})")
+            f"reached turn {turns_reached(d)}; its work is at {d} (hand-back: {landed})")
     brief = d / "instruction.md"
     if brief.is_file():
         line += (f"\n  its ORIGINAL BRIEF survived at {brief} — read it and a fresh child can "
