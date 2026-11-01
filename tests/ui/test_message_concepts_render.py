@@ -14,7 +14,6 @@ point of the exercise.
 """
 import json
 import os
-import tempfile
 from pathlib import Path
 
 _FIXTURE = """async (actions) => {
@@ -90,7 +89,16 @@ def test_the_highlighted_fold_is_legible_and_fits_a_phone(ui, ui_page):
     assert fits["docScroll"] <= fits["vw"] + 1, f"the page scrolls sideways on a phone: {fits}"
 
     # and leave the capture behind, so a person can look at what the assertions only describe
-    out = Path(os.environ.get("RSCHED_GATE_ARTIFACTS") or tempfile.gettempdir())
+    # `RSCHED_GATE_ARTIFACTS` is set by nothing in this repo, and since 0.478.0 moved the
+    # browser stage into the `uitest` container it could not work even if it were: the env a
+    # job carries is filtered to a few prefixes (deploy/uitest/protocol.py:61) and that name
+    # matches none of them. So this capture was landing in a container /tmp that is thrown
+    # away — the one thing the line exists to prevent. `RSCHED_UI_` IS carried, and
+    # <repo>/.audit-wt/captures/ is inside the checkout the container mounts (gitignored).
+    out = Path(os.environ.get("RSCHED_UI_CAPTURES")
+               or os.environ.get("RSCHED_GATE_ARTIFACTS")
+               or Path(__file__).resolve().parents[2] / ".audit-wt" / "captures")
+    out.mkdir(parents=True, exist_ok=True)
     capture = out / "message-concepts-fold.png"
     fold.screenshot(path=capture)
     print("capture:", capture,  # noqa: T201 — tells a person where to look; pytest -rP shows it
