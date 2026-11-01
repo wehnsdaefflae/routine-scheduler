@@ -54,8 +54,9 @@ re-renders every stored observation, so a raise there was a run no resume could 
 that can answer any of them) with `engine/config_bridge.py` the filing check of the
 `config_patch` an ask may carry, `engine/askbatch.py` the fan-out that files SEVERAL questions
 from one action through that same seam, `engine/askclass.py` the rule deciding each record's
-class, `engine/askfields.py` the action's grammar and `engine/askprose.py` the double-escaped
-newline repaired at intake,
+class, `engine/askfields.py` the action's grammar, `engine/askprose.py` the double-escaped
+newline repaired at intake and `engine/closingasks.py` the class's reader — which of a run's own
+asks ride its finish,
 `engine/admin_handlers.py` the two handlers that answer about the instance rather than to the
 user (`schedule_run`, `report`) beside their renderer `obs_admin`,
 `engine/donothing.py` the `do_nothing` action (D186) — a run's first-class statement that
@@ -1036,6 +1037,12 @@ and the capabilities digest's catalog listing):
   class says whether the asking run could do its work without the answer, `mode` whether its
   process sat and waited for one. The SUBJECT sets the default (a typed access `request` is
   blocking, a plain question closing) and the run overrides per question with `blocks_work: true`.
+  The class's first READER is the finish: a run's own open closing asks ride its `finish` event as
+  `closing_asks` (`engine/closingasks.py` selects them — this run's qids only, nothing already
+  answered, a pre-class record reading as `closing`) and the run page renders them on the finish
+  banner with their options as buttons (`static/components/closing-asks.js`), posting through the
+  ONE answer route. The surface follows the axis: a closing ask is read where the result is read,
+  while the Decisions page carries what is actually holding work up.
   An ask may carry
   `request: "<entity-id>"` — a typed ACCESS REQUEST (entities.py; docs/rules-permissions.md's
   grant model): the record then settles ONLY on one of the typed allow/deny × now/forever

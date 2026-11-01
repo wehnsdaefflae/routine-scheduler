@@ -19,7 +19,7 @@ from __future__ import annotations
 from .. import abortmark
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import archival, assist, background, inbox, jobops, recipeproposal
+from . import archival, assist, background, closingasks, inbox, jobops, recipeproposal
 from .autocommit import autocommit
 from .finish_guard import normalize_escaped_newlines
 from .run_context import RunContext
@@ -180,6 +180,14 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
             summary += ("\n[Recipe revision(s) proposed to the operator — he applies them on "
                         f"the Decisions page ({card}).]")
     finish_payload = {"status": status, "summary": summary, "authored": authored}
+    # D212 (b): the CLOSING asks ride the finish. A `closing` question is one the run finished
+    # its work without (engine/askclass.py — the operator's own axis), so its reader is the
+    # person reading what the run DID, with the answer one click away, rather than a card on a
+    # page he visits separately where it competes with the decisions that ARE holding work up.
+    # Selection only (engine/closingasks.py): the records are the ones the run already filed,
+    # answered through the one answer route every surface uses, and a run with none adds no key.
+    if asks := closingasks.for_run(ctx):
+        finish_payload["closing_asks"] = asks
     if abort is not None:
         finish_payload.update(abort_fields(abort))
     if reply_to:   # F438/D117: the reply targets an earlier message (conversations)

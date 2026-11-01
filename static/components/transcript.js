@@ -26,6 +26,7 @@
 import { actionTime } from "/static/components/actiontime.js";
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
+import { closingAsks } from "/static/components/closing-asks.js";
 import { highlightJson } from "/static/components/code.js";
 import { ruleFireStrip, sideFieldRows } from "/static/components/concept-rows.js";
 import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
@@ -69,9 +70,8 @@ const BRIEF_FIELD = { util: "name", write_util: "name", remove_util: "name",
                       edit_file: "path", delete: "path", move: "src", mkdir: "path",
                       memory_read: "name", memory_write: "name",
                       read_rule: "name", write_rule: "name", script: "name",
-                      shell: "command",
-                      llm: "prompt", decide: "question", spawn: "label", subtask: "label",
-                      detach: "label",
+                      shell: "command", llm: "prompt", decide: "question",
+                      spawn: "label", subtask: "label", detach: "label",
                       schedule_run: "target", create_routine: "target",
                       manage_lane: "verb", job: "id", goal: "id", kill: "n", wait: "n",
                       ask_user: "question", report: "title", finish: "status" };
@@ -147,8 +147,7 @@ export function createTranscript(container, opts = {}) {
         return el("div", { class: "ev question" }, head);
       }
       const strip = answerForm(p, {
-        quick: true,
-        defaultLine: false,   // the head already states the default inline
+        quick: true, defaultLine: false,   // the head already states the default inline
         submitText: (text, _intermediate, decision) => opts.answer(p.qid, text, decision),
         onSuccess: (text) => closeQuestion(p.qid, `✅ answered: ${text}`),
       });
@@ -446,7 +445,8 @@ export function createTranscript(container, opts = {}) {
           el("div", { class: "mt", style: "margin-top:6px" }, md(p.summary || "")),
           el("div", { class: "muted", style: "margin-top:6px" },
             `${ev.turns ?? "?"} turns · ${fmtTokens(ev.usage_total)}`),
-          referBtn(`your ${p.status} finish summary`, (p.summary || "").split("\n")[0])));
+          referBtn(`your ${p.status} finish summary`, (p.summary || "").split("\n")[0]),
+          closingAsks(p.closing_asks)));   // D212 (b): asked, not blocking — answer them here
         return;
       }
       const renderer = SIMPLE[ev.type];
