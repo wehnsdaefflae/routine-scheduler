@@ -22,6 +22,7 @@
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createRail } from "/static/components/rail.js";
 import { createRoutineRail } from "/static/components/routine-rail.js";
+import { mountRunScripts } from "/static/components/runscripts.js";
 import { createSubRunTree } from "/static/components/subruntree.js";
 import { wireTurnLinks } from "/static/components/turnlink.js";
 import { el } from "/static/util.js";
@@ -58,6 +59,13 @@ export function createRunRail(view, { runId, isLive }) {
   const goalBody = rail.add("goal", el("div", {}));
   const subRunTree = createSubRunTree(treeBody, {
     treeUrl: `/api/runs/${runId}/tree`, isLive, turnHref });
+  // The operator's order of 2026-11-01: "a routine's scripts should have a section in the right
+  // routine run sidebar". Mounted here for the same reason the routine rail is — "which sections
+  // the rail has" is this module's responsibility and views/run.js is frozen at its ceiling. It
+  // adds itself only if the read finds a script, so a routine with no scripts/ gains no caption,
+  // and it needs no stop(): one read, no poller, and a late append lands in a container the
+  // navigation already discarded.
+  mountRunScripts(rail, { slug: String(runId).split(":")[0] });
   const fileActivity = createFileActivity(filesBody, { url: `/api/runs/${runId}/files` });
   return { rail, artBody, filesBody, graphBody, goalBody, subRunTree, fileActivity, turnHref,
            routineRail };

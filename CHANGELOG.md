@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.488.0] — 2026-11-01
+
+### A routine's scripts have their own section in the run page's rail (operator order)
+
+*"a routine's scripts should have a section in the right routine run sidebar"* (2026-11-01). A
+routine's `scripts/` are the tooling its runs call every fire, and the run page — the surface a
+run is actually watched on — named none of them: the only way to see what a run could call was
+to open the recipe browser and list a directory.
+
+- **`GET /api/routines/{slug}/scripts`** (`web/api_routine_files.py`) serves
+  `scripts.list_scripts` — the SAME catalog the engine puts in a run's own capabilities digest,
+  so the rail shows what the run was told it could call and a second description cannot drift
+  from it. A script whose docstring header will not parse still lists, with an empty summary:
+  discoverability must not depend on hygiene.
+- **`static/components/runscripts.js`** renders it as a foldable rail section, mounted from
+  `components/runrail.js` (which owns "which sections the rail has"). ONE read, no poller — a
+  routine's script set is a property of the recipe, not of the run, and the console queues
+  recipe edits to run end. The section is ADDED only when the read finds a script, like the
+  jobs and oversight sections, so a routine with no `scripts/` gains no caption.
+- The summary's leading `<name> —` is stripped client-side: `parse_header` keeps the
+  docstring's whole first line, and repeating the name under its own heading is noise in a
+  narrow rail. The route serves the header exactly as a run is shown it.
+- `static/rail.css`'s per-block hairline now covers `[data-run-script]` as well: the card reuses
+  `.runjob`, and without the second selector a routine's scripts read as one run-on paragraph —
+  the defect that rule was added for (F646).
+- `tests/ui/test_finish_line.py`'s exact rail-caption list gains `scripts`: the UI fixture's
+  routine carries `scripts/outcome.py`, so its run page legitimately has one.
+
 ## [0.487.0] — 2026-10-31
 
 ### A classifier that cannot decide STRUCTURALLY now says so (R3108, increment 1)

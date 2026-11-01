@@ -182,8 +182,12 @@ def test_a_runs_page_shows_that_runs_own_accounting(ui, ui_page):
     expect(d1.locator(".acct-note")).to_have_text("the mailbox refused the login")
     expect(acct.locator('[data-acct="d2"]')).to_have_class(re.compile(r"\bv-met\b"))
     caps = ui_page.locator(".run-rail .rail-cap")
+    # `scripts` is last because it is added LAZILY, after the read (components/runscripts.js,
+    # operator order 2026-11-01) — the fixture routine carries `scripts/outcome.py` via
+    # helpers.declare_outcome, so this page legitimately has one. A routine with no scripts/
+    # gains no caption at all: tests/ui/test_run_scripts.py pins that half.
     assert [c.strip().lower() for c in caps.all_inner_texts()] == [
-        "artifacts", "files", "phases", "sub-runs", "goal"]
+        "artifacts", "files", "phases", "sub-runs", "goal", "scripts"]
 
 
 def test_revise_recipe_lands_on_the_runs_message_box_ready_to_edit_the_recipe(ui, ui_page):

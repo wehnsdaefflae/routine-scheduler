@@ -65,8 +65,15 @@
  * run-on paragraph, with the second job's title continuing the first one's note (seen in the
  * rendered look, not in five green browser tests — artifacts/f646-run-rail-jobs.png). The
  * FIRST block takes no rule: there is nothing above it to separate from.
+ *
+ * The SCRIPTS card (components/runscripts.js, operator order 2026-11-01) renders the same
+ * shape — a name and a quiet line under it — so it reuses this card's class and takes the same
+ * separator rather than growing a near-copy of these six rules. Without the second selector a
+ * routine's four scripts read as one run-on paragraph, which is the very defect the hairline
+ * was added for.
  */
-.runjob > [data-run-job] + [data-run-job] {
+.runjob > [data-run-job] + [data-run-job],
+.runjob > [data-run-script] + [data-run-script] {
   border-top: 1px solid var(--rule);
   margin-top: var(--s2);
   padding-top: var(--s2);

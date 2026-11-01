@@ -17,7 +17,7 @@ import os
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import pending_edits
+from .. import pending_edits, scripts
 from ..paths import resolve_rel
 from . import artifacts
 from .routines_common import _info, queue_or_apply
@@ -67,6 +67,24 @@ def get_routine_file(request: Request, slug: str, path: str) -> dict:
             return {"path": path, "content": fh.read()}
         except UnicodeDecodeError as exc:
             raise HTTPException(400, f"{path!r} is not a UTF-8 text file") from exc
+
+
+@router.get("/routines/{slug}/scripts")
+def list_routine_scripts(request: Request, slug: str) -> dict:
+    """The routine's own script catalog — `{name, summary, usage}` per `scripts/*.py`.
+
+    Operator order 2026-11-01: "a routine's scripts should have a section in the right
+    routine run sidebar". `scripts.list_scripts` already parses each docstring header for
+    the engine's own catalog, so the rail reads what a run is told, not a second
+    description that can drift from it. A script whose header will not parse still lists
+    with an empty summary — discoverability must not depend on hygiene.
+
+    Read LAZILY by the rail (components/runscripts.js), never folded into the run detail:
+    most runs' readers never open the section, and `/api/runs/{run_id}` is the payload every
+    run page fetches.
+    """
+    info = _info(request, slug)
+    return {"scripts": scripts.list_scripts(info.cfg.dir)}
 
 
 class RoutineFileBody(BaseModel):
