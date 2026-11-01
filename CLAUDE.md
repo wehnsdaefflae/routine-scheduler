@@ -394,6 +394,27 @@ one you are about to touch, not all of them.
   run as an engine note rather than silently served by the system-model fallback. The operator's
   2026-10-16 choice of the run-chosen trigger over a stage- or turn-count rule made auditability
   a condition: D188's per-turn model stamp is what satisfies it.
+  The ENGINE serves the same slot for a REPEAT POLL, without the run asking (F785, D217 "both":
+  `engine/autoswap.py`, hung off `sidefields.land` so the turn loop gains no call site). A turn
+  qualifies only when the previous action was poll-class and the new one repeats that class —
+  `subruns`/`wait` by kind, `script`/`util` only when the canonical action string is identical —
+  and the cheap serve starts at the SECOND consecutive repeat, so one re-check never changes
+  models under a run. The main model returns on the first action of a different class. Three
+  stand-downs are load-bearing: no distinct `tool_call` model means the mechanism does nothing
+  and claims nothing (31 of 32 routines today — the config half is D230); a byte-identical
+  streak at `wrongturn.WARN_STREAK` restores the main model, because that is the turn
+  `loop._repeat_warning` tells the run it is stuck and sheds the schema; and an action carrying
+  `role_swap` stops the engine guessing for the rest of the run. Measured reach on the 401
+  transcripts retained 2026-11-01 (32,255 landed turns): poll-class turns 14,395 (44.6%), but
+  ADJACENT poll repeats only 6 (0.019%), of which the escape-turn guard leaves **1 actually
+  served (0.003%)** — `REPEAT_FAIL` ends a run at 5 identical actions, so a real poll loop is
+  `poll → read the answer → poll` and its repeats are not adjacent, and for a poll whose action
+  never varies (`subruns` is declared `((), ())`) the class depth and the identical streak are
+  the same number, so `SERVE_FROM` always coincides with `WARN_STREAK` and that band is empty.
+  The adjacency rule is what D217 authorized, and on today's fleet it is close to a no-op;
+  reaching F785's 2,651 turns needs a windowed rule (22 turns, 0.07% at a window of 4) or
+  dropping adjacency altogether (1,142 turns, 3.5%), and that widening is an open operator
+  decision. `tests/test_auto_cheap_poll.py` pins the empty band with its reasoning.
   Two more SIDE FIELDS ride any kind the same turn-free way, behind the `reminders` capability:
   **`remind`** leaves/revises/deletes a CONSEQUENCE REMINDER — a `(regex → consequence)` pair over
   the canonical action string — and **`remind_feedback`** labels how one's hold turned out

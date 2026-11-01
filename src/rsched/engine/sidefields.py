@@ -23,7 +23,7 @@ oversight, and moving it here would break it.
 
 from __future__ import annotations
 
-from . import notes, roleswap
+from . import autoswap, notes, roleswap
 from .remindfields import field_problems as _reminder_problems
 from .roleswap import field_problems as _roleswap_problems
 from .sayfields import problems as _say_problems
@@ -49,6 +49,12 @@ def land(loop, action: dict) -> None:
     fail the turn that carried it (the transcript keeps the raw field on the action event
     either way). `note` is stamped into state/notes.md; `role_swap` re-points the `main` role, so
     the swap lands on the NEXT completion and never on the turn that asked for it.
+
+    `autoswap` is the engine's own half of that same slot (F785): a REPEAT POLL is served by
+    the cheap model without the run asking. It runs AFTER the run's own swap and stands down
+    for the rest of the run the moment an action carries `role_swap` — a run steering its own
+    model outranks the engine guessing for it, and two layers writing one slot otherwise fight.
     """
     notes.capture(loop.ctx, action)
     roleswap.apply(loop, action)
+    autoswap.at_landing(loop, action)   # F785: a REPEAT POLL is served cheap, unasked
