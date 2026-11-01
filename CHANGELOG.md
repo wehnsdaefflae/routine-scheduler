@@ -15,6 +15,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.494.0] — 2026-11-01
+
+### Fixed — a child run's spend survives its parent's resume, and an orphan's is recovered (R3112)
+
+`token-lab` measured that `status.json`'s `usage.out` understates a run that spawned children —
+one by 40 %, 1,099,621 reported against a 1,542,978 tree — and read the cause as a fold that only
+happens at parent reap, so a child nobody waited for would be attributed nowhere. That reading was
+the plausible one and it was wrong: a child is folded into the parent's live counter the moment it
+is COLLECTED, and the run's close-out collects every uncollected child before the finish event is
+written. Within one leg the accounting was already right. Re-measuring found two narrower causes,
+and this fixes both.
+
+**A resume dropped every child an earlier leg had collected.** `history.prior_usage` rebuilds the
+cumulative base from the transcript and summed only assistant actions, llm/decide observations and
+compactions — never `subrun_end`. Measured: a run whose two children exited carrying 420,211
+output tokens between them, both before that leg's finish, then resumed and reported 343,918 for
+the whole tree. That is the 40 %, and it was not a missing fold but a missing REPLAY of one.
+
+**An orphaned child's spend was written as `{}`.** A child that does not survive an interruption
+is never collected, and the resumed leg's marker recorded an empty usage dict while the real
+figure sat in the child's own transcript — 193,930 output tokens for one such orphan.
+`subsalvage.spend_reached` now recovers it from there, summed by the same definition the parent
+uses so a recovered total cannot mean something different from a live one, and the same marker
+carries the child's real turn count instead of 0. Both stay "what the disk records, never an
+estimate": an empty result still means nothing was recorded, a pruned child directory is not an
+error, and an unparseable line is skipped. No second usage field was added, and nothing changed
+about when a live child is folded.
+
+### Added — a conversation's HELD grants reach a surface, through the writer its deny half uses (D216 rank 1)
+
+The operator ordered conversation-settings parity as one campaign — *"All six, as one parity
+campaign"* — with the grants surface first. F783 had already shipped the DENY half (a conversation
+can show and clear its deny tombstones); what was still on no surface was the ALLOW half: a
+`grants:` TRUE row, which is what a Decisions-page *allow forever* writes for the one class with
+no native switch, and which the engine honours for a conversation exactly as for a routine. So the
+operator could see what a conversation had been DENIED and not what it had been GRANTED, and the
+deny clear deliberately refuses an allow row.
+
+The same router now serves and clears both, and — this being a parity campaign rather than a
+second copy — BOTH clears go through ONE writer, with the existing deny clear rewired through it
+and each route sign-locked out of the other's rows, so an allow clear can never reach a
+tombstone. The card is one renderer with two mounts rather than two components, and it reuses
+existing classes, so no stylesheet changed. Ranks 2-6 are untouched; the next rank needs
+re-measuring first, because two modules in the tree now label themselves "rank 1" with different
+meanings.
+
 ## [0.493.0] — 2026-11-01
 
 ### Fixed — a queued proposal's field values are judged at FILING, not when you click accept (D229, ordering F610)
