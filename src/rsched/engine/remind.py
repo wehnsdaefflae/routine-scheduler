@@ -41,7 +41,7 @@ from pathlib import Path
 from .. import reminders as store
 from ..reminders import LABEL_HELP, Reminder
 from . import hold as hold_seam
-from . import hookmirror, remind_write
+from . import hookmirror, remind_points, remind_write
 
 #: This layer's name in the shared hold ledger. Each source gets its own
 #: one-hold-per-action budget: keyed on the bare action string, a reminder hold would
@@ -128,7 +128,7 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
     """
     if not loop.reminders:
         return None
-    hits = store.matching(loop.reminders, rendered, kind="action")
+    hits = remind_points.matching_at(loop, "action", rendered)
     if not hits or hold_seam.held_before(loop, SOURCE, rendered):
         return None
     hold_seam.mark_held(loop, SOURCE, rendered)
@@ -202,7 +202,7 @@ def at_observation(loop, action: dict, obs: dict) -> str:
     for moment, text in _turn_moments(loop, action, obs):
         targets.append((f"turn:{moment}", f"turn:{moment}\n{text}", f"{moment} turn"))
     for kind, target, _name in targets:
-        for hit in store.matching(loop.reminders, target, kind=kind):
+        for hit in remind_points.matching_at(loop, kind, target):
             if hit not in fired:
                 fired.append(hit)      # one line per reminder, however many kinds it matched
     if not fired:
@@ -244,7 +244,7 @@ def at_finish(loop, action: dict) -> str:
     if not loop.reminders:
         return ""
     target = f"turn:finish\n{action.get('summary') or ''!s}"
-    fired = store.matching(loop.reminders, target, kind="turn:finish")
+    fired = remind_points.matching_at(loop, "turn:finish", target)
     if not fired:
         return ""
     _count_fires(loop, fired)

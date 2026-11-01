@@ -84,6 +84,15 @@ prevent and no reason to spend a turn: those fire as a line on the observation t
 observation-moment rule assist does, and they still count a `fires` and still ask for a
 `remind_feedback` label — the tally means the same thing whatever the trigger was.
 
+Each kind is tested at a **hook point** — `rsched/hooks/points.py`, the one table naming every
+moment the engine fires at, which the rule assists share (`docs/rule-assists.md`). The mapping is
+`points.TRIGGER_POINTS`, and the layer READS it: `engine/remind_points.matching_at` resolves the
+kind to its point and asks `hooks/dispatch.at`, so a kind whose delivery the point cannot carry
+fires nothing instead of silently never matching, and a pattern that raises while being applied
+is one reminder that did not fire rather than a broken turn. A trigger kind and a hook point are
+not the same thing: the point says WHEN a hook is tested, the kind says WHAT it watches, so
+`result` and `prose` share one point and differ in subject.
+
 Two consequences of the kind being part of the identity:
 
 - the union and the duplicate check dedupe by **(regex, kind)**, not by regex alone. The same

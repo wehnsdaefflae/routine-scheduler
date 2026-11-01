@@ -109,16 +109,27 @@ def _p(name: str, about: str, payloads: tuple[str, ...], carrier: str,
 #: no site either; naming the module that WOULD fire it is a guess, and this table is read as
 #: fact.
 POINTS: dict[str, Point] = dict([
-    _p("run-start", "the run's first turn is about to be composed", ("note", "action"),
-       "engine_note", ("reminder",), "engine/remind.py (trigger kind `turn:first`)"),
+    # CORRECTED in step 4, by routing the reminder layer through this table: the only mechanism
+    # firing here delivers a `remind` on the FIRST turn's observation tail, not an engine note —
+    # `remind.at_observation` builds a `turn:first` target and appends its line to the
+    # observation the turn was getting anyway. The old pair (`note`/`engine_note`) described a
+    # delivery nothing performs, and `points.allows` would have dropped every `turn:first`
+    # reminder the moment the layer asked the registry instead of matching by itself.
+    _p("run-start", "the run's first turn has run and its observation is being recorded",
+       ("note", "remind", "action"), "observation_tail", ("reminder",),
+       "engine/remind.py::at_observation (trigger kind `turn:first`)"),
     _p("pre-action", "an action has been chosen and has NOT run", ("hold",), "held_turn",
        ("reminder", "rule"), "engine/hold.py"),
     _p("post-action", "the action ran and its observation is about to be recorded",
        ("remind", "action"), "observation_tail", ("reminder", "rule"),
        "engine/loop.py::_observe (assist.at_observation, remind.at_observation)"),
+    # `reminder` left this point's list in step 4: the `prose` kind was mapped here, but it is
+    # evaluated and delivered with `result` on the observation tail (`TRIGGER_POINTS` says why),
+    # so no reminder trigger kind is tested at the boundary. Claiming one would be the same
+    # defect in the other direction — a mechanism named at a point it does not reach.
     _p("turn-boundary", "the turn ended and the next prompt is being assembled",
        ("note", "remind", "action"), "engine_note",
-       ("reminder", "rule", "injection", "runtree"),
+       ("rule", "injection", "runtree"),
        "engine/loop.py (assist.at_boundary, control.drain_injections)"),
     _p("pre-finalize", "a finish was emitted and has not been accepted", ("remind",),
        "held_turn", ("reminder", "rule"),
@@ -219,7 +230,13 @@ ASSIST_MOMENTS = {"pre-action": "pre-action", "observation": "post-action",
 
 #: reminder trigger kind -> point name. `action` is tested before dispatch (so it holds) and
 #: `result`/`prose` after it; the `turn:*` kinds are the run's own moments.
-TRIGGER_POINTS = {"action": "pre-action", "result": "post-action", "prose": "turn-boundary",
+#:
+#: `prose` was CORRECTED in step 4, when the reminder layer began reading this table instead of
+#: matching by itself: it said `turn-boundary`, whose carrier is an engine note, while the kind
+#: is in fact evaluated and delivered by `remind.at_observation` in the same pass as `result` —
+#: the turn's own `say` is available exactly when its observation is. Two kinds sharing a point
+#: is not a collision: the point says WHEN a hook is tested, and the kind says WHAT it watches.
+TRIGGER_POINTS = {"action": "pre-action", "result": "post-action", "prose": "post-action",
                   "turn:first": "run-start", "turn:finish": "pre-finalize",
                   "turn:question": "question", "turn:answer": "answer",
                   "turn:error": "error"}
