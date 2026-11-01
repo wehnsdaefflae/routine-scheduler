@@ -174,7 +174,13 @@ one you are about to touch, not all of them.
   engine container through a spool (`deploy/uitest/`: the runner is the service's only process,
   `submit.py` streams a job back as if it ran in place, under the caller's own `flock`); a
   caller that can write that spool can already write the code the daemon imports, so it grants
-  nothing. To WATCH the suite, attach it to the `chrome` sidecar instead — engine container,
+  nothing. Every finished job also carries the PEAK of that container's own memory cgroup for
+  its duration (`deploy/uitest/cgroupmem.py` reads it inside `uitest`, because the gate is in
+  the engine container and cannot read a sibling cgroup; `submit.py` prints it as
+  `uitest memory: {…}` after the job's output, and `deploy/DOCKER.md` says how to set
+  `mem_limit` from a week of those peaks). That number says "this stage peaked at N GB of its
+  M GB ceiling" and can NEVER say "no OOM occurred" — a restart starts a fresh cgroup, so only
+  the host's `journalctl -k` settles that. To WATCH the suite, attach it to the `chrome` sidecar instead — engine container,
   `RSCHED_TEST_CDP=http://172.30.7.10:9222 RSCHED_TEST_BIND=172.30.7.2 BROWSER_CDP_TOKEN=…`, one
   worker, so its memory stays small. Whenever browser tests are in the selection, `tests/conftest.py::pytest_configure`
   switches xdist to `--dist loadgroup`, so that one group runs on ONE worker while the fast suite

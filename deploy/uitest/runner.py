@@ -9,6 +9,13 @@ A job's environment is the runner's own (HOME, PATH, the image's venv) plus what
 allowed to carry, with the job's own directory first on PYTHONPATH — that is where a caller puts
 a plugin that lives outside the checkout (the gate's `gate_progress`), since this container
 mounts only the checkout.
+
+Each job also comes back with the PEAK MEMORY of this container's own cgroup for its duration
+(cgroupmem.py, carried in `result.json` — protocol.py): this process is the only one that can
+read that cgroup, since the caller lives in another container. It says "this stage peaked at
+N GB of its M GB ceiling" and it can NEVER say "no OOM occurred" — a restart starts a fresh
+cgroup, so only the host's `journalctl -k` settles that. Measuring is best-effort throughout: it
+cannot change a job's outcome by one bit.
 """
 from __future__ import annotations
 
@@ -21,6 +28,7 @@ import sys
 import time
 from pathlib import Path
 
+import cgroupmem
 import protocol
 
 #: A finished job's directory is kept this long, for whoever wants to read its log again.
@@ -29,8 +37,10 @@ POLL_S = 0.5
 
 
 class Job:
-    def __init__(self, path: Path, proc: subprocess.Popen[bytes], log) -> None:
+    def __init__(self, path: Path, proc: subprocess.Popen[bytes], log,
+                 watch: cgroupmem.Watch) -> None:
         self.path, self.proc, self.log = path, proc, log
+        self.watch = watch
         self.term_sent: float | None = None
 
 
@@ -48,13 +58,26 @@ def _end(job: Job) -> None:
 
 
 def _finish(job: Job, code: int) -> None:
+    """Close the job out: its measurements first, then the `exit` file that means "finished".
+
+    That order is the protocol's (protocol.py): a caller which sees `exit` sees a complete
+    result. The measurement is best-effort and `Watch.finish` never raises, so a cgroup that
+    could not be read costs the job nothing — its result simply carries no memory reading.
+    """
     job.log.close()
+    protocol.write_result(job.path, {protocol.MEMORY: job.watch.finish()})
     protocol.write_atomic(job.path / "exit", f"{code}\n")
 
 
-def start(path: Path, root: Path) -> Job | None:
-    """Start the job in `path`, or finish it at once with exit 2 when it cannot run."""
+def start(path: Path, root: Path, exclusive: bool = True) -> Job | None:
+    """Start the job in `path`, or finish it at once with exit 2 when it cannot run.
+
+    `exclusive` is False when another job is already running in this container: the memory
+    cgroup belongs to the CONTAINER, not to a job, so a reading taken while two jobs share it
+    cannot be attributed to either and says so rather than pretending (cgroupmem.py).
+    """
     log = (path / "log").open("ab")
+    watch: cgroupmem.Watch | None = None
     try:
         spec = json.loads((path / "job.json").read_text(encoding="utf-8"))
         cwd = Path(spec["cwd"]).resolve()
@@ -64,6 +87,8 @@ def start(path: Path, root: Path) -> Job | None:
             raise ValueError(f"cwd {cwd} is not a directory inside {root.parent}")
         env = dict(os.environ, **protocol.carried_env(spec.get("env") or {}))
         env["PYTHONPATH"] = os.pathsep.join(p for p in (str(path), env.get("PYTHONPATH")) if p)
+        # Before the first byte the job allocates, so the high-water mark covers all of it.
+        watch = cgroupmem.watch(exclusive=exclusive)
         proc = subprocess.Popen([str(a) for a in spec["argv"]], cwd=cwd, env=env,
                                 stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                 start_new_session=True)
@@ -71,10 +96,12 @@ def start(path: Path, root: Path) -> Job | None:
         log.write(f"uitest runner: could not start this job: {exc}\n".encode())
         protocol.write_atomic(path / "claimed", "")
         log.close()
+        if watch is not None:
+            watch.finish()      # this runner outlives the job: never leave a sampler polling
         protocol.write_atomic(path / "exit", "2\n")
         return None
     protocol.write_atomic(path / "claimed", f"{proc.pid}\n")
-    return Job(path, proc, log)
+    return Job(path, proc, log, watch)
 
 
 def recover(root: Path) -> None:
@@ -109,7 +136,11 @@ def pending(root: Path, running: dict[str, Job]) -> list[Path]:
 def step(root: Path, running: dict[str, Job]) -> None:
     """One pass: start what is new, end what was cancelled, record what exited."""
     for path in pending(root, running):
-        if job := start(path, root):
+        # Jobs run concurrently and the memory cgroup is the CONTAINER's: once a second job is
+        # in it, neither reading belongs to one job alone, and both say so (cgroupmem.py).
+        if job := start(path, root, exclusive=not running):
+            for other in running.values():
+                other.watch.overlapped = True
             running[path.name] = job
     for name, job in list(running.items()):
         code = job.proc.poll()

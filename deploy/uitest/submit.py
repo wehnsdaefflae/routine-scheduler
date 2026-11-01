@@ -13,6 +13,13 @@ PYTHONPATH: the way to hand the job a module that lives outside the checkout (th
 mounts only the checkout). PYTHONPATH entries outside the checkout are dropped for the same
 reason and named on the first output line.
 
+After the job's output, one line reports what the runner MEASURED about it:
+`uitest memory: {"peak_bytes": …, "limit_bytes": …, "peak_pct_of_limit": …, "bound": …}` — the
+peak of the `uitest` CONTAINER's own memory cgroup for the job's duration, sampled inside that
+container because this process cannot read its cgroup from here. It answers "this stage peaked
+at N GB of its M GB ceiling" and can NEVER answer "no OOM occurred": a restart starts a fresh
+cgroup, so only the host's `journalctl -k` settles that. No line at all means not measured.
+
 Exits 77 (protocol.NO_RUNNER) when no runner is answering — start it with
 `docker compose up -d uitest` — and 125 (protocol.LOST) when the runner went away mid-job.
 """
@@ -67,8 +74,33 @@ def submit(root: Path, argv: list[str], carry: list[str]) -> tuple[Path, str]:
     return root / name, note
 
 
+def _report_memory(job: Path, out) -> None:
+    """Print what the runner measured about this job's memory, when it measured anything.
+
+    The number is the peak of the `uitest` CONTAINER's own memory cgroup for the job's duration,
+    taken inside that container (cgroupmem.py) because this process cannot read it from here. It
+    says "this stage peaked at N GB of its M GB ceiling"; it can NEVER say "no OOM occurred",
+    since a restart starts a fresh cgroup and only the host's `journalctl -k` settles that.
+
+    An absent reading means NOT MEASURED — an older runner, or a cgroup it could not read — and
+    prints nothing at all rather than a zero.
+    """
+    memory = protocol.job_result(job).get(protocol.MEMORY)
+    if memory is None:
+        return
+    try:
+        out.write(f"{protocol.MEMORY_LINE}{json.dumps(memory)}\n".encode())
+        out.flush()
+    except (OSError, TypeError, ValueError):
+        pass
+
+
 def follow(job: Path, root: Path) -> int:
-    """Stream the job's log to stdout until its exit file appears; return its exit code."""
+    """Stream the job's log to stdout until its exit file appears; return its exit code.
+
+    A finished job's measurements (`_report_memory`) follow its output, on one line of their
+    own: `exit` is written last, so by then `result.json` is complete.
+    """
     out = sys.stdout.buffer
     offset = 0
     while True:
@@ -84,6 +116,7 @@ def follow(job: Path, root: Path) -> int:
             out.flush()
             offset += len(chunk)
         if done:
+            _report_memory(job, out)
             return int((job / "exit").read_text(encoding="utf-8").strip() or protocol.LOST)
         if problem := _no_runner(root):
             out.write(f"\n{problem}\n".encode())
