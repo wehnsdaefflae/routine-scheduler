@@ -155,7 +155,7 @@ COPY pyproject.toml uv.lock ./
 # pyproject.toml, so a dependency added without a re-lock builds a GREEN image that is missing
 # the package and fails as an ImportError inside the daemon at run time — with no CI and a
 # pre-commit that runs only ruff, mypy and test_policy, nothing else would catch it.
-RUN uv sync --locked --extra headroom --no-install-project \
+RUN uv sync --locked --no-install-project \
     && chown -R mark:mark /opt/rsched-venv /home/mark
 
 # Entrypoint runs as ROOT to make bind mounts writable (Docker creates missing ones root-owned),
@@ -163,4 +163,4 @@ RUN uv sync --locked --extra headroom --no-install-project \
 COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["uv", "run", "--extra", "headroom", "rsched", "daemon"]
+CMD ["uv", "run", "rsched", "daemon"]

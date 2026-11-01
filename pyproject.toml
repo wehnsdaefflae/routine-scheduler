@@ -25,7 +25,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-headroom = ["headroom-ai==0.37.0"]
+# EMPTY on purpose, and only for one transition: every image built before 0.490.1 starts the
+# daemon (and uitest) with `uv run --extra headroom`, and uv refuses an extra this table does not
+# define -- so dropping the name outright would leave the next restart on such an image unable to
+# start. Nothing reads it; delete it once no running image carries that CMD (after a rebuild).
+headroom = []
 
 [project.scripts]
 rsched = "rsched.cli:main"

@@ -46,7 +46,7 @@ retain existing output. The transcript stores the actual preview and pointer, so
 them rather than compressing anything, and the already-sent conversation prefix remains untouched.
 
 **Why logs are not excerpted.** An excerpting compressor for them (the native `LogCompressor`
-of headroom-ai) costs 28 packages in the engine image — litellm, openai, boto3, botocore,
+of headroom-ai) cost 28 packages in the engine image — litellm, openai, boto3, botocore,
 huggingface-hub, tokenizers, tiktoken, opentelemetry — and a private-module import, on a box
 that has already OOM-killed PID 1. Measured over five days of fleet traffic it saved 30,923
 tokens against 111 M input tokens (0.03%), from ten applications against 576 results that

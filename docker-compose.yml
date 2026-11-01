@@ -193,8 +193,7 @@ services:
     init: true                       # the suite's Chromium children are reaped, as in the engine
     restart: unless-stopped
     user: "${RSCHED_UID:-1000}:${RSCHED_GID:-1000}"
-    entrypoint: ["uv", "run", "--frozen", "--extra", "headroom",
-                 "python", "deploy/uitest/runner.py"]
+    entrypoint: ["uv", "run", "--frozen", "python", "deploy/uitest/runner.py"]
     command: []
     environment:
       HOME: /home/mark

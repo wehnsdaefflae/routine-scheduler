@@ -164,7 +164,7 @@ def test_the_generated_docs_tree_is_hermetic_too(tmp_path):
     "python -m rsched.cli engine-run x",
     # the DOCUMENTED spellings — README, CLAUDE.md, the Dockerfile's own CMD: the launcher
     # resolves the console script, so argv[0] is never `rsched` itself
-    ["uv", "run", "--extra", "headroom", "rsched", "daemon"],
+    ["uv", "run", "rsched", "daemon"],
     "uv run rsched run-once x",
     ["uvx", "rsched", "validate"],
     ["env", "RSCHED_BIND=0.0.0.0", "rsched", "daemon"],

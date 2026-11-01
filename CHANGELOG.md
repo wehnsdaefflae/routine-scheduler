@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.490.1] — 2026-11-01
+
+### Removed — the `headroom` extra, and the 29 packages it baked into the engine image
+
+Nothing has imported `headroom-ai` since output compression became stdlib-only (see
+docs/output-compression.md), yet the image still installed it — litellm, openai, boto3,
+botocore, huggingface-hub, tokenizers, tiktoken and 22 more — and both the daemon's `CMD` and
+the `uitest` entrypoint still asked for it, on a box whose daemon the OOM killer has taken
+before. The Dockerfile, the compose file and the lock no longer name it.
+
+The extra itself stays DECLARED, empty, for one transition: an image built before this release
+starts with `uv run --extra headroom`, and uv refuses to start on an extra the project does not
+define, so removing the name outright would have left the next restart on the old image unable
+to come up. With the extra empty, that restart simply syncs the venv down to the new lock. Delete
+the empty `headroom = []` from pyproject.toml once the image has been rebuilt.
+
 ## [0.490.0] — 2026-11-01
 
 ### A script without the util-library handle is told why — and told it about the right file
