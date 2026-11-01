@@ -136,23 +136,17 @@ def _proposal_line(ctx: RunContext, action: dict, verb: str) -> str:
 
 
 def _queued_obs(ctx: RunContext, action: dict, verb: str) -> dict:
-    """A scheduled run's lane proposal, filed for the operator (F328) — the twin of
-    create_routine's. R353 needed BOTH: a routine plus the lane it belongs in.
+    """A scheduled run's lane proposal, JUDGED against the live vocabulary and then filed for
+    the operator (F328/D229) — the twin of create_routine's. R353 needed BOTH: a routine plus
+    the lane it belongs in; D229 added the gate at the front, so a value the accept click would
+    refuse (an unknown member, a cron croniter cannot parse, an on_failure outside
+    `lanes.ON_FAILURE`) is refused to THIS run, which can still fix it, instead of to the
+    operator, who cannot. The one-line reading of the change stays here, where the lane store
+    is.
     """
-    from ..pending import queue
+    from ..pendingvocab import queued_lane_obs
 
-    fields = {k: action[k] for k in ("verb", "target", "name", "members",
-                                     "on_failure", "cron", "paused") if k in action}
-    fields["verb"] = verb
-    proposal = _proposal_line(ctx, action, verb)
-    rec = queue(ctx.server.routines_home, kind="manage_lane", routine=ctx.routine.slug,
-                run_id=ctx.run_id, fields=fields, summary=proposal)
-    return {"kind": "manage_lane", "verb": verb, "queued": True, "id": rec["id"],
-            "proposal": proposal,
-            "next": ("Nothing changed yet and nothing will until the user approves it — you "
-                     "have no user in the loop, so this went to the Decisions page as a "
-                     "proposal. Do NOT re-issue it: a second call queues a second proposal. "
-                     "Your next run learns the outcome from a message in your inbox.")}
+    return queued_lane_obs(ctx, action, verb, _proposal_line(ctx, action, verb))
 
 
 def handle_manage_lane(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911 — a verb dispatcher: each verb's guard returns its own teaching rejection, one flat handler by design
