@@ -315,31 +315,6 @@ def routine_page_url(server, slug: str) -> str:
     return f"{base}/#/routine/{slug}" if base else f"#/routine/{slug}"
 
 
-def _queued_obs(ctx: RunContext, fields: dict) -> dict:
-    """A scheduled run's proposal, filed for the operator (F328).
-
-    R353 is the case: routine-improver reached a run with a fully designed, user-approved
-    routine ready and could not materialize it, so the design was hand-carried back to the user
-    to paste in. The restriction to conversations was right — a scheduled run has no user to
-    design WITH — but the consequence was wrong. What was missing is a queue, not permission.
-    """
-    from ..pending import queue
-
-    proposal = (f"proposed: create routine {fields['slug']!r} from pattern "
-                f"{fields['workflow']!r}")
-    rec = queue(ctx.server.routines_home, kind="create_routine", routine=ctx.routine.slug,
-                run_id=ctx.run_id, fields=fields,
-                summary=f"routine {fields['slug']!r} from pattern {fields['workflow']!r}")
-    return {"kind": "create_routine", "slug": fields["slug"], "queued": True, "id": rec["id"],
-            "proposal": proposal,
-            "next": ("Nothing is created yet, and nothing will be until the user approves it — "
-                     "you have no user in the loop, so this went to the Decisions page as a "
-                     "proposal. Do NOT re-issue it: a second call queues a second proposal. "
-                     "Your next run learns the outcome from a message in your inbox. Finish the "
-                     "work that does not depend on this routine existing, and say in your "
-                     "summary that the creation is awaiting approval.")}
-
-
 def _for_non_conversation(ctx: RunContext, fields: dict) -> dict | None:
     """What happens when the caller is not a root conversation — None when it IS one.
 
@@ -354,7 +329,10 @@ def _for_non_conversation(ctx: RunContext, fields: dict) -> dict | None:
                           "must not create routines as a side effect. Hand the design back in "
                           "your finish summary and let the run that started you decide."}
     if not is_root_conversation(ctx):
-        return _queued_obs(ctx, fields)
+        # D229: judged against the live vocabulary FIRST (`pendingvocab`), so a proposal the
+        # accept click would refuse is refused to THIS run instead of to the operator.
+        from ..pendingvocab import queued_routine_obs
+        return queued_routine_obs(ctx, fields)
     return None
 
 

@@ -1419,7 +1419,16 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   second, content-free "go" after they had already said yes (R1310, `RunContext.user_replies`);
   anywhere else
   the same call writes a proposal to `.control/pending-creations/<id>.json` and returns an
-  observation saying plainly that nothing was created and not to re-issue it. The Decisions page
+  observation saying plainly that nothing was created and not to re-issue it. Before it is
+  written, every field of it drawn from a FIXED vocabulary is judged against the LIVE one
+  (`pendingvocab.py`, D229/F610): the workflow pattern against the library on disk, a lane's
+  members against the registry, `on_failure` against `lanes.ON_FAILURE`, a cron against the same
+  croniter call `lanes.create` makes, the slug's shape against `ids.is_slug`. An invalid value is
+  refused in the observation the FILING run reads, naming the field and the vocabulary — the
+  `config_bridge` discipline, for the same reason: the accept is whole-record, so a bad field
+  arrived as a 4xx on the operator's click, "three different fields in one day", and the run that
+  could have fixed it had finished days earlier. Only a value the accept would refuse is refused
+  here, so a filing check can never be stricter than the apply. The Decisions page
   carries a band of proposals — what would be created, from which routine and run, with the full
   instruction — and one click materializes through the SAME `workflows.scaffold` / `rsched.lanes`
   calls, or discards. **The engine still never writes `routine.yaml`**: the web layer materializes,

@@ -558,7 +558,14 @@ one you are about to touch, not all of them.
   **`create_routine` / `manage_lane` are conversation-INITIATED, not conversation-only** (F328):
   a root conversation materializes them; a run with no user in the loop writes a PROPOSAL to
   `.control/pending-creations/` that the Decisions page materializes with one click through the
-  SAME `workflows.scaffold` / `rsched.lanes` path. Teach the RENDERERS about the queue, not only
+  SAME `workflows.scaffold` / `rsched.lanes` path. A proposal's field values are judged against
+  the LIVE vocabulary BEFORE the record is written (`pendingvocab.py`, D229/F610) — the workflow
+  pattern against the library, lane members against the registry, `on_failure` /cron/slug shape
+  against the store's own checks — and an invalid one is refused in the observation the FILING
+  run reads, with the field named: the accept is whole-record, so a bad field used to 4xx on the
+  operator's click while the run that could have fixed it had finished days before. Never judge
+  with a second hardcoded list, and never stricter than the accept. Teach the RENDERERS about
+  the queue, not only
   the handlers — one shared branch checked before any kind's success wording
   (`obs_admin.QUEUEABLE_KINDS`), or a proposal reads as a completed action over an absent
   payload (R1200/R1183). The two handlers live in `engine/admin_handlers.py` beside that
