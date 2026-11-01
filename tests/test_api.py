@@ -231,7 +231,7 @@ def test_routine_cards_and_detail(client):
     assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
     assert all("requires" in p and "active" in p for p in detail["permissions"])
     expected = {"actions", "utils", "confirm", "rule_confirm", "remind_confirm", "runs",
-                "reminders", "jobs", "config_confirm", "revise_confirm"}   # D198: the 4th dial
+                "reminders", "jobs", "config_confirm", "revise_confirm"}   # D198: the 5th dial
     assert set(detail["capabilities"]["active"]) == expected
     # the actions a config may name — `detach` is gated but the loader refuses it in
     # `capabilities.actions` (grants.normalize_capabilities), so offering it put a choice on

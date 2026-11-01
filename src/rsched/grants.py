@@ -42,8 +42,7 @@ its credential while sending needs the permission. Which action kinds are gateab
 engine-defined (GATED_KINDS) — a library edit can reserve a new util, but can never retract a
 base action kind from every routine. Enforced per turn by `engine.actions.validate_action`
 (allowed kinds = workflow `tools:` ∩ (base ∪ capabilities)) plus path gates for runs/ and the
-routine's
-recipe/config files — a rejected call is corrected inside the schema-retry cycle and
+routine's recipe/config files — a rejected call is corrected inside the schema-retry cycle and
 never becomes a turn. Base kinds — util, read_file, write_file, llm, spawn, … — stay
 ungated.
 

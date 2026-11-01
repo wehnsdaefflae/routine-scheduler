@@ -142,11 +142,11 @@ def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
     home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION})
     lib = read_library_requires(home)
     caps = capabilities_for(["util-authoring", "messaging-discord"], lib)
-    assert caps == {"actions": ["write_util"], "utils": ["discord"],
-                    "confirm": "always", "rule_confirm": "always",
+    assert caps == {"actions": ["write_util"], "utils": ["discord"], "runs": "none",
+                    "confirm": "always", "rule_confirm": "always", "jobs": "off",
                     "remind_confirm": "always", "config_confirm": "always",
-                    "revise_confirm": "always",   # D198: the per-routine recipe dial
-                    "runs": "none", "reminders": "none", "jobs": "off"}
+                    "revise_confirm": "always", "reminders": "none"}  # D198: the recipe dial
+
     # the settings pass through untouched: the raise only ever adds means
     base = {"actions": ["shell"], "utils": [], "confirm": "never", "runs": "all"}
     caps2 = capabilities_for(["util-authoring"], lib, base)
@@ -175,10 +175,9 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     # raise THEN floor == exactly the held docs' requires + settings, no contradiction
     active = ["util-authoring", "messaging-discord"]
     assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
-        "actions": ["write_util"], "utils": ["discord"], "confirm": "always",
-        "rule_confirm": "always", "remind_confirm": "always", "runs": "none",
-        "config_confirm": "always", "revise_confirm": "always",
-        "reminders": "none", "jobs": "off"}
+        "actions": ["write_util"], "utils": ["discord"], "confirm": "always", "runs": "none",
+        "rule_confirm": "always", "remind_confirm": "always", "revise_confirm": "always",
+        "config_confirm": "always", "reminders": "none", "jobs": "off"}
 
 
 def test_floor_keeps_gated_kind_via_default_source_when_doc_predates_it(tmp_path):
@@ -621,7 +620,6 @@ def test_read_library_expects_reads_permissions_and_rules(tmp_path):
         "---\ntags: [a, b, c]\nexpects:\n  fs-write: ['*']\n---\n# rule: status page — x\n",
         encoding="utf-8")
 
-    assert read_library_expects(tmp_path / "permissions") == {
-        "remote-machines": {"machine": ["*"]}}
+    assert read_library_expects(tmp_path / "permissions") == {"remote-machines": {"machine": ["*"]}}
     assert read_library_expects(tmp_path / "rules") == {"status-page": {"fs-write": ["*"]}}
     assert read_library_expects(tmp_path / "nope") == {}

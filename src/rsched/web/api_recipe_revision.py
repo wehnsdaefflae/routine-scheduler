@@ -1,9 +1,13 @@
-"""Approving a run's RECIPE-REVISION proposal (D200): arm the revise leg that already exists.
+"""Approving a RECIPE-REVISION proposal: arm the revise leg that already exists (D200), or hand
+another routine's proposed revision to the routine that owns the recipe (D198).
 
 A separate module from `api_pending.py` for two reasons — that file is at its size ceiling, and
-this is the one proposal whose approval is not a config write. The other five kinds materialize
-something (a routine, a lane change, `enabled: false`, a swap, a report routing); this one hands
-the RUN THAT PROPOSED IT the capability it lacked at its finish.
+these are the proposals whose approval is not a config write. The other four kinds materialize
+something (a routine, a lane change, `enabled: false`, a swap, a report routing); these two
+hand a RUN the capability it lacked: D200's card resumes the run that proposed the revision to
+its OWN recipe, D198's (`materialize_revise`, dispatched from `api_pending.materialize`) files
+an invitation for the TARGET routine's next run, because a revision one routine proposes for
+another's recipe is still edited by a run of the routine that owns it.
 
 Why that, and not a web-side recipe write: the proposal is PROSE a run wrote about its own
 recipe — "the scan stage should read the cursor before the feed, this run wasted two turns on
@@ -25,7 +29,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import pending
+from .. import pending, reciperevise
 from ..engine import inbox, recipeproposal
 from ..registry import TERMINAL_STATES
 from .api_runs import run_state
@@ -40,6 +44,36 @@ class Edited(BaseModel):
     """
 
     lines: list[str] = []
+
+
+def materialize_revise(server, rec: dict) -> dict:
+    """Approve a revision one routine proposed for ANOTHER's recipe (D198): hand the prose to
+    the target, whose own next run makes the edit under the one-leg recipe unlock.
+
+    Called from the proposal queue's dispatch (`api_pending.materialize`) and living HERE for
+    this module's own reason — the two recipe-revision approvals belong together, and
+    `api_pending.py` is at its size ceiling. Not a web-side recipe write, for the same reason
+    as D200's card above: the proposal is PROSE about a recipe, not a diff, and only a run that
+    can read what that recipe is FOR can turn it into an edit. Unlike D200's card there is no
+    leg to resume — the reasoning is the PROPOSER's and the recipe is the TARGET's — so the
+    invitation waits for the target's next fire (`rsched/reciperevise.py`) instead of resuming
+    anybody.
+    """
+    fields = rec.get("fields") or {}
+    target = str(fields.get("target") or "")
+    lines = [str(x) for x in (fields.get("lines") or []) if str(x).strip()]
+    if not lines:
+        raise ValueError("this proposal names no revision — discard it")
+    if not (server.routines_home / target / "routine.yaml").is_file():
+        raise ValueError(f"routine {target!r} is gone — discard this proposal")
+    entry = reciperevise.invite(server.routines_home, target, lines=lines,
+                                by=str(rec.get("routine") or ""),
+                                run_id=str(fields.get("run_id") or rec.get("run_id") or ""),
+                                approved_by=str(rec.get("id") or ""))
+    if entry is None:
+        raise ValueError(f"{target} already has {reciperevise.MAX_PENDING} revisions waiting "
+                         "for its next run — approve this once it has run")
+    return {"revises": target, "lines": lines, "armed": True}
 
 
 def _instruction(lines: list[str], *, edited: bool = False) -> str:

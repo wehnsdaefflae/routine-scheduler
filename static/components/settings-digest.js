@@ -90,6 +90,10 @@ export function describe(key, v) {
         // so saying it would add a line to every digest that reports no policy at all
         c.config_confirm && c.config_confirm !== "always"
           ? `own config: ${c.config_confirm}` : "",
+        // same rule, for who may revise THIS recipe (revise_confirm, D198): `always` is every
+        // routine's default, and only `invited` is a policy a reader needs told
+        c.revise_confirm && c.revise_confirm !== "always"
+          ? `recipe revisions: ${c.revise_confirm}` : "",
         // named only when on: a routine without the job layer has nothing to say about it
         c.jobs === "on" ? "keeps jobs" : "",
       ].filter(Boolean).join(" · ") || "none";

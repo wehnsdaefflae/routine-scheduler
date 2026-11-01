@@ -27,6 +27,7 @@ from playwright.sync_api import expect
 from rsched.configdial import LEVELS as CONFIG_DIAL_LEVELS
 from rsched.grants import CONFIRM_LEVELS, RUN_HISTORY_LEVELS, SETTING_DEFAULTS
 from rsched.reminders import LEVELS as REMINDER_LEVELS
+from rsched.revisedial import LEVELS as REVISE_DIAL_LEVELS
 
 from .conftest import until
 from .helpers import configure, start_conversation
@@ -174,6 +175,41 @@ def test_the_config_approval_dial_shows_and_saves_what_it_governs(ui, ui_page):
     assert "own config" not in lines[1], lines[1]
 
 
+def test_the_recipe_approval_dial_shows_and_saves_what_it_governs(ui, ui_page):
+    """`revise_confirm` (D198) decides whether a revision ANOTHER routine proposes for this
+    recipe is the operator's card or is handed straight to this routine's next run. The dial
+    belongs to the routine whose instructions would change, never to the proposer
+    (rsched/revisedial.py), which is why it is on THIS page — and it is here for the same
+    reason the config one is: the panel sends the whole mapping, so a server setting with no
+    dial is a value a save writes back unseen.
+    """
+    path = ui.routine_dir("uir") / "routine.yaml"
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    _open_abilities(ui_page)
+    dial = _routine_dial(ui_page, "revise_confirm")
+    expect(dial).to_have_count(1)                             # present before anything about it
+    expect(dial).to_be_visible()
+    expect(dial).to_have_value("always")                      # the default, for every routine
+    # it says what it decides to a reader who cannot see the row it sits in
+    label = ui_page.get_by_role(
+        "combobox", name="who approves a revision another routine proposes for this recipe")
+    expect(label).to_have_count(1)
+    dial.select_option("invited")
+    ui_page.locator(".accept-bar [data-accept]").click()
+    until(lambda: (_stored(path).get("capabilities") or {}).get("revise_confirm") == "invited",
+          what="the accepted recipe dial")
+    # the panel is rebuilt from the accepted read and says what was saved
+    expect(_routine_dial(ui_page, "revise_confirm")).to_have_value("invited")
+    # and the digest names it only once it departs from `always`
+    lines = ui_page.evaluate("""async () => {
+      const { describe } = await import('/static/components/settings-digest.js');
+      const caps = (v) => ({ actions: [], utils: [], revise_confirm: v });
+      return [describe('capabilities', caps('invited')), describe('capabilities', caps('always'))];
+    }""")
+    assert "recipe revisions: invited" in lines[0], lines[0]
+    assert "recipe revisions" not in lines[1], lines[1]
+
+
 def test_the_two_approval_rows_say_which_approval_each_one_is(ui, ui_page):
     """At `global` the card shows two approval dials at once — the shared-reminder one and the
     config one — and a reader scans the kind column, not the help text inside a select that the
@@ -277,6 +313,7 @@ def test_the_dials_offer_exactly_the_values_the_server_accepts(ui, ui_page):
       return { confirm: values(m.CONFIRM_OPTIONS), rule_confirm: values(m.RULE_CONFIRM_OPTIONS),
                remind_confirm: values(m.REMIND_CONFIRM_OPTIONS), runs: values(m.RUNS_OPTIONS),
                config_confirm: values(m.CONFIG_CONFIRM_OPTIONS),
+               revise_confirm: values(m.REVISE_CONFIRM_OPTIONS),
                reminders: values(m.REMINDER_OPTIONS), defaults: m.SETTING_DEFAULTS };
     }""")
     for dial in ("confirm", "rule_confirm", "remind_confirm"):
@@ -286,6 +323,10 @@ def test_the_dials_offer_exactly_the_values_the_server_accepts(ui, ui_page):
     # `config_confirm` has its OWN ladder, not CONFIRM_LEVELS: `own_fields` is a declared field
     # allow-list, not a create-vs-revise rung (rsched/configdial.py).
     assert data["config_confirm"] == list(CONFIG_DIAL_LEVELS), data["config_confirm"]
+    # `revise_confirm` (D198, rsched/revisedial.py) has its own TWO-rung ladder for the same
+    # kind of reason: every revision revises, so there is no create-vs-revise rung, and a
+    # recipe is prose, so there is no field allow-list to make a middle rung from.
+    assert data["revise_confirm"] == list(REVISE_DIAL_LEVELS), data["revise_confirm"]
     assert data["defaults"] == SETTING_DEFAULTS
 
 

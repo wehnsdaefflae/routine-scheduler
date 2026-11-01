@@ -558,6 +558,16 @@ one you are about to touch, not all of them.
   candidate takes the old routine's lane place, cron and grants through the ordinary writers and
   the old one is switched off (kept); discarding switches the candidate off.
   `.control/candidates.json` says which routine is a candidate for which.
+  `create_routine` with `revises: true` is the THIRD mode and the only one that touches an
+  existing routine's recipe (`engine/reviseroutine.py`, D198): a caller holding `write_recipe`
+  proposes a revision of ANOTHER routine's recipe, `prompt` carrying it one line per change as
+  prose (never a diff, `recipeproposal`'s reason). The dial is the TARGET's, never the caller's
+  — `revise_confirm` (`rsched/revisedial.py`): `always`, the default, files ONE `revise-routine`
+  card (`api_recipe_revision.materialize_revise`); `invited` arms it at once. Either way the
+  WRITE is the target's own next run under the one-leg unlock, handed the lines as its
+  instruction through an invitation spool (`rsched/reciperevise.py`, consumed at that run's
+  init so nothing is rewritten mid-flight) — and a routine may not revise ITSELF through this
+  path, which the three own-recipe mechanisms already cover.
   `ask_user` asks ONE question or SEVERAL in one action (`questions:`, each entry with its own
   fields — one decision record per question, sharing one `batch` id, `engine/askbatch.py`; a batch
   is never `mode: blocking`). Every record carries its CLASS, `blocking` or `closing`

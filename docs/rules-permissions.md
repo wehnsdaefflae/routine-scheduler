@@ -515,6 +515,7 @@ capabilities:
   rule_confirm: always          # write_rule approval: always | creations | never
   remind_confirm: always        # curated-reminder approval: always | creations | never
   config_confirm: always        # its OWN config-patch autonomy: always | own_fields | never
+  revise_confirm: always        # who revises ITS recipe (D198): always | invited
   runs: last                    # previous-run read depth: none | last | all — enforced BOTH in
                                 # the read actions and in the Landlock jail, so a util or shell
                                 # command handed a deeper path is refused too (docs/sandboxing.md)
@@ -527,8 +528,16 @@ A new routine's default is its settings pattern's; with no pattern at all it is
 reserved utils, the last run readable, and `reminders: local`. `read_rule`, the `util` action,
 memory and the routine's own scripts are not listed because they are not gated.
 
-`runs`, `reminders`, `jobs` and the four approval dials are SETTINGS: yours per routine, never switched
-on by a permission and kept by the floor with none behind them. `config_confirm` is the fourth
+`runs`, `reminders`, `jobs` and the five approval dials are SETTINGS: yours per routine, never switched
+on by a permission and kept by the floor with none behind them. `revise_confirm` is the fifth
+(`rsched/revisedial.py`, D198) and it is the only one that answers for what ANOTHER routine
+proposes: a revision of THIS routine's recipe, proposed by a routine holding recipe-authoring
+(`create_routine` with `revises: true`). At `always` — every routine's default — it is one
+decision card for you; at `invited` it is handed to this routine's next run with no card. The
+dial belongs to the routine whose instructions would change, never to the proposer, and at
+neither level does the proposer write the files: the edit is made by a run of the routine that
+owns the recipe, under the one-leg unlock, and `routine.yaml` stays sealed
+(see [revise recipe](revise-recipe.md)). `config_confirm` is the fourth
 (`rsched/configdial.py`, D191): a run can never write `routine.yaml`, so it proposes the change
 on an `ask_user` carrying a `config_patch` and the Decisions page applies it with a click. At
 `own_fields` a patch the routine files FOR ITSELF naming only the declared allow-list — its
@@ -652,7 +661,11 @@ OWN recipe — `main.md` / `stages/` / `tuning.yaml`, gated by the **`write_reci
 (held through the `recipe-authoring` doc). Until 0.261.0 this was not a capability at all: it
 unlocked as a SIDE EFFECT of a user-granted fs_write_root covering the routine's own dir, so
 granting a routine write access to its working directory silently also granted it the right to
-reword its own task. Those are different decisions; `routine.yaml` stays sealed under both — are
+reword its own task. Those are different decisions; `routine.yaml` stays sealed under both. The same capability also
+lets a run PROPOSE a revision of ANOTHER routine's recipe (`create_routine` with
+`revises: true`, D198) — never a write: the proposal is prose, the TARGET's `revise_confirm`
+dial decides whether you see a card, and the edit is made by a run of the routine that owns
+that recipe. All of those gated calls are
 rejected inside the schema-retry cycle by `validate_action`, with an error naming the way out:
 a typed ACCESS REQUEST for the denied entity (see the grant model below), or the settled
 do-not-re-request wording when the user already declined it. A run NEVER writes

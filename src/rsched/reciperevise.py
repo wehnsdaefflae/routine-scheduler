@@ -59,13 +59,16 @@ def invite(routines_home: Path, target: str, *, lines: list[str], by: str, run_i
 
 
 def pending(routines_home: Path, target: str) -> list[Path]:
-    """`target`'s unconsumed invitations, in queue order."""
+    """`target`'s unconsumed invitations, in queue order.
+
+    NO `slugs_with_*` COMPANION, deliberately, which is what every other spool family has
+    (`triggers`, `schedule_once`, `pending_accepts`, `autoapply`): each of those is swept by the
+    daemon or the web layer, which has to ask WHICH routines have something waiting. An
+    invitation is consumed by the target's own run at init (`engine/loopsetup`) and by nothing
+    else, so a cross-routine sweep would have no caller — and an exported reader with no caller
+    is what `test_vulture_clean` refuses.
+    """
     return spool.pending(routines_home, FAMILY, target, PREFIX)
-
-
-def slugs_with_invitations(routines_home: Path) -> list[str]:
-    """Every routine with a revision waiting — what the routine page and a sweep read."""
-    return spool.slugs_with(routines_home, FAMILY, PREFIX)
 
 
 def take(routines_home: Path, target: str) -> list[dict]:

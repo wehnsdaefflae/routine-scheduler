@@ -652,8 +652,10 @@ and the capabilities digest's catalog listing):
   docs/run-analytics.md "Model trials", `rsched/trials.py`), `connections:` (provider → account label — OAuth
   connection bindings, a resource like models; see OAuth connections above),
   `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: `actions`,
-  `utils`, the approval dials `confirm` / `rule_confirm` / `remind_confirm` / `config_confirm`
-  (the last one `rsched/configdial.py`'s own ladder, `always | own_fields | never`) and the
+  `utils`, the approval dials `confirm` / `rule_confirm` / `remind_confirm` / `config_confirm` /
+  `revise_confirm` (the last two carry their own ladders — `rsched/configdial.py`,
+  `always | own_fields | never`, and `rsched/revisedial.py`, `always | invited`, which answers
+  for a recipe revision ANOTHER routine proposed for this one, D198) and the
   levels `runs` /
   `reminders` — both user-changeable only, side by side on the routine page with cascades between
   them; a child run picks its pattern from the catalog and never drafts one),
@@ -1460,7 +1462,8 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   `requires:` — the capability keys a doc may presume, no approval dial among them): CONDUCT docs
   of the two-layer permission set. The routine's enforced surface is its own routine.yaml
   `capabilities:` — `actions`, `utils` (an entry is `name` or `name:verb`), the dials
-  `confirm` / `rule_confirm` / `remind_confirm` / `config_confirm`, and the levels `runs` /
+  `confirm` / `rule_confirm` / `remind_confirm` / `config_confirm` / `revise_confirm`, and the
+  levels `runs` /
   `reminders` (the full
   key list with each one's meaning is docs/rules-permissions.md, not restated here) —
   grants.py builds the run policy from it alone, so a doc-without-capability config fails closed;
