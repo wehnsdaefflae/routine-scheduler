@@ -15,6 +15,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.493.0] — 2026-11-01
+
+### Fixed — a queued proposal's field values are judged at FILING, not when you click accept (D229, ordering F610)
+
+A scheduled run cannot write config, so `create_routine` and `manage_lane` QUEUE a proposal and
+the operator materializes it with a click. Its field values were judged only at that click — so an
+invalid one surfaced to HIM, at the worst possible moment, instead of to the run that filed it and
+was the only party able to correct it. F610 recorded three different fields failing exactly that
+way in one day, and sat 29 days; the operator ordered it as a campaign: *"validate every proposed
+settings value against the live vocabulary at FILING time, and refuse the proposal with the field
+named."*
+
+`rsched/pendingvocab.py` is the judge, and both filing paths now reach the queue only through it,
+so the refusal arrives in the observation the filing run reads — naming the field and the
+correction it can act on that same turn, the shape `engine/config_bridge.py` already uses for a
+`config_patch`'s keys. Every check reads the LIVE source rather than a second list that could
+drift: the slug's shape, `workflow` against the library's own listing (which catches `generate`, a
+value that passed the existing check and raised on the click), the lane's `verb`, `target` and
+`name`, `on_failure` against the lane vocabulary, `cron` through the lane module's own validator,
+and `members` against the live registry — pinned by a test that the member check answers to the
+registry and not to a fixture. The accept path is byte-for-byte unchanged, so nothing already
+queued becomes unacceptable. `engine/create_routine.py` was at its size ceiling with no slack,
+which is what the extraction paid for: 432 → 410, its ratchet ceiling re-tightened with the
+measurement.
+
+Two things this increment deliberately does NOT do, because the campaign's next steps are the
+honest place for them: the settings-`pattern` slug stays unjudged, since an unknown pattern does
+not raise at the accept — it silently omits the key — and refusing it at filing would make the
+filing stricter than the accept, which this repo's own doctrine forbids (an accept-side loudness
+increment comes first); and the judge sits in the two filing observations rather than inside the
+queue writer, so a third filing path added later would bypass it. Four other filing paths
+(`autoapply`, `recipeproposal`, `candidate`, `goalreached`) have not been reviewed for this defect
+class.
+
 ## [0.492.0] — 2026-11-01
 
 ### Added — a run's CLOSING asks ride its finish banner, answerable there (D212 (b), hooks step 5)
