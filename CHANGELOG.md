@@ -30,6 +30,7 @@ starts with `uv run --extra headroom`, and uv refuses to start on an extra the p
 define, so removing the name outright would have left the next restart on the old image unable
 to come up. With the extra empty, that restart simply syncs the venv down to the new lock. Delete
 the empty `headroom = []` from pyproject.toml once the image has been rebuilt.
+(Rebuilt and deleted the same day, once no container started with it.)
 
 ## [0.490.0] — 2026-11-01
 
