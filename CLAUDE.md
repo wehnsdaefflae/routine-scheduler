@@ -1259,7 +1259,11 @@ by a test, by the engine, or by a past incident.
   both. New ignores need the same one-line justification the existing ones carry. The two
   seed trees are excluded (`extend-exclude`): `library-seed/workflows` are never-executed
   ast-parsed pattern files gated by `workflows/lint.py`, `util-seed` are PEP 723 scripts
-  gated by `utils_header.header_problems` + their `--selftest`.
+  gated by `utils_header.header_problems` + their `--selftest`. The one file there that is
+  neither is `util-seed/gu`, the DISPATCHER every util runs through (D225): a stdlib-only
+  executable, excluded for the same single-file-script reason and gated instead by
+  `tests/test_dispatcher_seed.py`, which pins what it decides about a util's `net:`/`secrets:`
+  declarations — the sandbox's network and credential inputs.
 - **No engine or daemon path reaches a person by itself.** A message to a person is an explicit
   util call by the RUN, gated by a `messaging-*` permission, and a new channel becomes a
   permission plus a util — never an implicit send. Browser push (`web/push.py`) is the WEB

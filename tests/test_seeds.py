@@ -9,6 +9,11 @@ Covered: library-seed/ (workflows parse via pyworkflow and lint clean; rules/per
 playbooks lint clean; permission `requires:` normalize; `state/phase.json` instructions in the
 canonical {"phase": ...} shape; action-kind references), and util-seed/ (docstring headers pass
 the engine's own write_util gate, and every util's own offline `--selftest` passes).
+
+NOT covered here: `util-seed/gu`, the dispatcher (D225). It is not a PEP 723 util — no script
+block, no `--selftest` — so the header gate below would only ever report it as nonconforming;
+`tests/test_dispatcher_seed.py` gates it instead, including what it decides about the
+`net:`/`secrets:` declarations this suite checks the utils for.
 """
 
 import os

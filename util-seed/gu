@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+"""gu — dispatcher for the global utils library.
+
+Stdlib-only on purpose: gu bootstraps everything else, so it cannot depend on
+anything it manages (each util gets its own dependencies via PEP 723 + `uv run`).
+
+Library home resolution — the only mechanism, no config file:
+  1. $GLOBAL_UTILS_HOME, if set
+  2. ~/.local/share/global-utils/  (XDG default)
+
+usage: gu <command-or-util> [args...]
+
+  gu list             derived catalog (header read only — no execution, no venv)
+  gu <util> [args]    uv run utils/<util>/main.py [args] in its own cached env
+  gu help <util>      the util's --help
+  gu lint [<util>]    doc-standard conformance (everything if no util given)
+  gu deps <util>      derived dependency graph: callees and reverse-dependents
+  gu remove <util> [--force]
+                      delete a util; refuses if anything still calls it
+  gu index            write the catalog to INDEX.md (gitignored cache; the
+                      harness never needs it — `gu list` is the source of truth)
+
+The catalog and the dependency graph are DERIVED, never stored: `gu list` reads
+each util's PEP 723 block and docstring header fresh, and `gu deps` scans
+utils/*/main.py for `gu <name>` subprocess call sites (both the list form
+`["gu", "<name>", ...]` and the shell-string form `"... gu <name> ..."`).
+Comments and the module docstring are excluded from the scan, so prose that
+mentions `gu <name>` belongs there — a code string that names a util counts as
+a call site. The `calls:` docstring line is documentation only; `gu lint` flags
+any disagreement between it and the derived graph.
+"""
+
+import ast
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+RESERVED = {"list", "help", "lint", "deps", "remove", "index"}
+
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+PEP723_RE = re.compile(r"(?ms)^# /// script\s*$(?P<body>.*?)^# ///\s*$")
+SUMMARY_RE = re.compile(r"^(?P<name>\S+) — (?P<summary>.+)$")
+# Call-site forms; group 1 is the callee in both.
+LIST_FORM_RE = re.compile(r"""["']gu["']\s*,\s*["']([a-z0-9][a-z0-9-]*)["']""")
+SHELL_FORM_RE = re.compile(r"""["'][^"'\n]*\bgu\s+([a-z0-9][a-z0-9-]*)""")
+
+# The routine-scheduler engine reads the SAME docstring header to sandbox each util
+# subprocess: `net:` decides whether TCP is allowed at all (undeclared = denied, fail closed)
+# and `secrets:` decides which credentials are injected (undeclared = scrubbed, even when the
+# daemon's own environment carries them). A util that omits them lints clean here and then
+# fails mysteriously *there* — no network, no credentials — so lint enforces them too.
+# `rsched.utils_lib.header_problems` is the authoritative spec; keep this in step with it.
+NET_VALUES = {"outbound", "none"}
+# Credential-shaped env var names read by the code, in the two shapes worth catching:
+#   direct    os.environ["X_TOKEN"] / os.getenv("X_TOKEN")
+#   indirect  VAR = "X_TOKEN"  then  os.environ[VAR]   (the `gu claude` pattern)
+# The engine also handles a grouped tuple-of-names shape; that one stays server-side.
+ENV_READ = r"""os\.(?:environ(?:\.get\(|\[)|getenv\()\s*"""
+ENV_LITERAL_RE = re.compile(ENV_READ + r"""["']([A-Z][A-Z0-9_]*)["']""")
+ENV_VARKEY_RE = re.compile(ENV_READ + r"""([A-Za-z_][A-Za-z0-9_]*)\b""")
+CONST_ASSIGN_RE = re.compile(
+    r"""^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']([A-Z][A-Z0-9_]*)["']""", re.MULTILINE)
+SECRET_HINT_RE = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL)S?$")
+
+
+def secrets_read(src: str) -> set[str]:
+    """Credential-shaped env var names the source reads — directly, or through a module-level
+    string constant. Pure text scan, like every other derivation in gu.
+    """
+    found = {v for v in ENV_LITERAL_RE.findall(src) if SECRET_HINT_RE.search(v)}
+    consts = dict(CONST_ASSIGN_RE.findall(src))
+    for var in ENV_VARKEY_RE.findall(src):
+        literal = consts.get(var)
+        if literal and SECRET_HINT_RE.search(literal):
+            found.add(literal)
+    return found
+
+
+def lib_home() -> Path:
+    env = os.environ.get("GLOBAL_UTILS_HOME")
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / ".local" / "share" / "global-utils"
+
+
+def all_utils(home: Path) -> list[str]:
+    utils = home / "utils"
+    if not utils.is_dir():
+        return []
+    return sorted(d.name for d in utils.iterdir() if (d / "main.py").is_file())
+
+
+def read_source(home: Path, name: str) -> str:
+    return (home / "utils" / name / "main.py").read_text(encoding="utf-8", errors="replace")
+
+
+def parse_util(home: Path, name: str) -> dict:
+    """Read one util's header (PEP 723 block + docstring). Pure read — never executes."""
+    info: dict = {"name": name, "deps": [], "summary": None, "usage": None,
+                  "calls_doc": None, "tags": [], "net": None, "secrets": None,
+                  "problems": []}
+    problems = info["problems"]
+
+    if not NAME_RE.match(name):
+        problems.append("slug is not kebab-case ([a-z0-9-])")
+    if name in RESERVED:
+        problems.append(f"slug shadows the reserved gu command '{name}'")
+
+    src = read_source(home, name)
+
+    m = PEP723_RE.search(src)
+    if not m:
+        problems.append("missing PEP 723 '# /// script' block")
+    else:
+        toml_text = "\n".join(
+            line[2:] if line.startswith("# ") else line[1:]
+            for line in m.group("body").splitlines()
+            if line.startswith("#")
+        )
+        try:
+            meta = tomllib.loads(toml_text)
+            deps = meta.get("dependencies")
+            if isinstance(deps, list):
+                info["deps"] = deps
+            else:
+                problems.append("PEP 723 block has no 'dependencies' list")
+        except tomllib.TOMLDecodeError as exc:
+            problems.append(f"PEP 723 block is not valid TOML ({exc})")
+
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as exc:
+        problems.append(f"main.py does not parse (line {exc.lineno}: {exc.msg})")
+        return info
+
+    doc = ast.get_docstring(tree)
+    if not doc:
+        problems.append("missing module docstring")
+        return info
+
+    lines = doc.splitlines()
+    m = SUMMARY_RE.match(lines[0].strip())
+    if not m:
+        problems.append("docstring first line is not '<name> — <one-line summary>' (em dash)")
+    else:
+        if m.group("name") != name:
+            problems.append(f"docstring names '{m.group('name')}' but the directory is '{name}'")
+        info["summary"] = m.group("summary")
+
+    for idx, line in enumerate(lines[1:], start=1):
+        stripped = line.strip()
+        if stripped.startswith("usage:") and info["usage"] is None:
+            value = stripped[len("usage:"):].strip()
+            if not value:
+                # A multi-verb util writes a bare "usage:" and INDENTS one invocation per
+                # following line — the natural shape for a verb-dispatched tool. Reading
+                # only the "usage:" line itself stored "" for 15 utils, which then rendered
+                # blank in the catalog AND slipped past the validator below (an empty string
+                # is not None). Gather the indented continuation block and join it onto one
+                # line, the way `git <clone|log|restore|sync> …` already reads. (R1444)
+                cont = []
+                for follow in lines[idx + 1:]:
+                    if not follow.strip():
+                        break
+                    if not follow.startswith((" ", "\t")):
+                        break
+                    cont.append(follow.strip())
+                value = " | ".join(cont)
+            info["usage"] = value
+        elif stripped.startswith("calls:") and info["calls_doc"] is None:
+            value = stripped[len("calls:"):].strip()
+            info["calls_doc"] = [] if value == "(none)" else [
+                c.strip() for c in value.split(",") if c.strip()
+            ]
+        elif stripped.startswith("tags:") and not info["tags"]:
+            info["tags"] = [t.strip() for t in stripped[len("tags:"):].split(",") if t.strip()]
+        elif stripped.startswith("net:") and info["net"] is None:
+            info["net"] = stripped[len("net:"):].strip().lower()
+        elif stripped.startswith("secrets:") and info["secrets"] is None:
+            value = stripped[len("secrets:"):].strip()
+            # A trailing "?" marks an OPTIONAL secret (D51/F290 — the scheduler withholds
+            # it instead of asking when the routine may not see it). It is part of the
+            # DECLARATION, not of the variable name, so strip it before any name compare —
+            # rsched.utils_lib does exactly this, and not matching it here made every
+            # correctly-declared optional secret read as undeclared.
+            info["secrets"] = [] if value.lower() == "(none)" else [
+                s.strip().rstrip("?").strip() for s in value.split(",") if s.strip()
+            ]
+
+    if not info["usage"]:
+        # NOT `is None`: a bare "usage:" with nothing under it parses to "", and an empty
+        # string silently passed this check — so the utils that render blank in the catalog
+        # were exactly the ones the validator never flagged, and the invocation check below
+        # was skipped for them too. (R1444)
+        problems.append("missing 'usage:' line in docstring")
+    elif f"gu {name}" not in info["usage"]:
+        problems.append(f"'usage:' line does not show the invocation 'gu {name}'")
+    if info["calls_doc"] is None:
+        problems.append("missing 'calls:' line in docstring (use 'calls: (none)')")
+    if not info["tags"]:
+        problems.append("missing 'tags:' line in docstring (at least one tag)")
+    if info["net"] not in NET_VALUES:
+        problems.append(
+            "missing 'net: outbound' or 'net: none' line in docstring — declare whether this "
+            "util opens network connections; the scheduler's sandbox denies ALL TCP to a util "
+            "that declares none, or declares nothing")
+    undeclared = sorted(secrets_read(src) - {s.upper() for s in (info["secrets"] or [])})
+    if undeclared:
+        problems.append(
+            f"reads credential env var(s) not declared on the 'secrets:' line: "
+            f"{', '.join(undeclared)} — the scheduler's sandbox injects only DECLARED secrets, "
+            "so an undeclared one arrives empty")
+    if "--json" not in src:
+        problems.append("no --json mode in source")
+    if "--selftest" not in src:
+        problems.append("no --selftest mode in source")
+    return info
+
+
+def derived_calls(name: str, src: str) -> set[str]:
+    """Scan one util's source for `gu <name>` call sites — the authoritative graph."""
+    code = src
+    try:
+        tree = ast.parse(src)
+        first = tree.body[0] if tree.body else None
+        if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)):
+            lines = src.splitlines(keepends=True)
+            for i in range(first.lineno - 1, first.end_lineno):
+                lines[i] = "\n"
+            code = "".join(lines)
+    except SyntaxError:
+        pass
+    code = re.sub(r"(?m)^\s*#.*$", "", code)  # full-line comments, incl. the PEP 723 block
+    found: set[str] = set()
+    for pattern in (LIST_FORM_RE, SHELL_FORM_RE):
+        for m in pattern.finditer(code):
+            callee = m.group(1)
+            if callee != name and callee not in RESERVED:
+                found.add(callee)
+    return found
+
+
+def call_graph(home: Path) -> dict[str, set[str]]:
+    return {n: derived_calls(n, read_source(home, n)) for n in all_utils(home)}
+
+
+def reverse_dependents(home: Path, name: str) -> list[str]:
+    return sorted(caller for caller, callees in call_graph(home).items() if name in callees)
+
+
+def require_home(home: Path) -> bool:
+    if home.is_dir():
+        return True
+    print(f"gu: library home {home} does not exist — run deploy.sh from the "
+          f"claude-utils-library repo (or set $GLOBAL_UTILS_HOME)", file=sys.stderr)
+    return False
+
+
+def git(home: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(home), *args], capture_output=True, text=True)
+
+
+# ── commands ────────────────────────────────────────────────────────────────
+
+def catalog_lines(home: Path) -> list[str]:
+    out = [f"# global utils @ {home} — catalog derived live; run a util: gu <name> [args]"]
+    names = all_utils(home)
+    if not names:
+        out.append("(no utils yet — /create-util builds the first one)")
+        return out
+    for name in names:
+        info = parse_util(home, name)
+        if info["problems"]:
+            out.append(f"!! {name} — NONCONFORMING ({info['problems'][0]}) — see 'gu lint {name}'")
+        else:
+            out.append(f"{name} — {info['summary']}  ·  usage: {info['usage']}")
+    return out
+
+
+def cmd_list(home: Path) -> int:
+    if not require_home(home):
+        return 2
+    print("\n".join(catalog_lines(home)))
+    return 0
+
+
+def cmd_lint(home: Path, name: str | None) -> int:
+    if not require_home(home):
+        return 2
+    names = [name] if name else all_utils(home)
+    if name and name not in all_utils(home):
+        print(f"gu: no util named '{name}' (see 'gu list')", file=sys.stderr)
+        return 2
+    if not names:
+        print("nothing to lint — the library has no utils yet")
+        return 0
+    failures = 0
+    for n in names:
+        info = parse_util(home, n)
+        problems = list(info["problems"])
+        if info["calls_doc"] is not None:
+            documented = set(info["calls_doc"])
+            derived = derived_calls(n, read_source(home, n))
+            if documented != derived:
+                problems.append(
+                    f"'calls:' line says {sorted(documented) or '(none)'} but the source "
+                    f"calls {sorted(derived) or '(none)'} — the derived graph is authoritative"
+                )
+        if problems:
+            failures += 1
+            print(f"{n}: FAIL")
+            for p in problems:
+                print(f"  - {p}")
+        else:
+            print(f"{n}: ok")
+    return 1 if failures else 0
+
+
+def cmd_deps(home: Path, name: str) -> int:
+    if not require_home(home):
+        return 2
+    if name not in all_utils(home):
+        print(f"gu: no util named '{name}' (see 'gu list')", file=sys.stderr)
+        return 2
+    callees = sorted(derived_calls(name, read_source(home, name)))
+    callers = reverse_dependents(home, name)
+    print(f"{name} calls: {', '.join(callees) if callees else '(none)'}")
+    print(f"{name} is called by: {', '.join(callers) if callers else '(none)'}")
+    return 0
+
+
+def cmd_remove(home: Path, name: str, force: bool) -> int:
+    if not require_home(home):
+        return 2
+    if name not in all_utils(home):
+        print(f"gu: no util named '{name}' (see 'gu list')", file=sys.stderr)
+        return 2
+    callers = reverse_dependents(home, name)
+    if callers and not force:
+        print(f"gu: refusing to remove '{name}' — still called by: {', '.join(callers)}\n"
+              f"    (revise those first, or pass --force)", file=sys.stderr)
+        return 1
+    git(home, "rm", "-r", "-q", "--ignore-unmatch", f"utils/{name}")
+    leftover = home / "utils" / name
+    if leftover.exists():
+        shutil.rmtree(leftover)
+    git(home, "add", "-A")
+    message = f"remove {name}" + (" (forced past reverse-dependents)" if callers else "")
+    result = git(home, "commit", "-q", "-m", message)
+    if result.returncode != 0:
+        print(f"gu: removal done but commit failed:\n{result.stderr.strip()}", file=sys.stderr)
+        return 1
+    print(f"removed {name} (committed: {message!r})")
+    return 0
+
+
+def cmd_index(home: Path) -> int:
+    if not require_home(home):
+        return 2
+    index = home / "INDEX.md"
+    lines = catalog_lines(home)
+    index.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"wrote {index} (gitignored cache — `gu list` remains the source of truth)")
+    return 0
+
+
+def cmd_run(home: Path, name: str, args: list[str]) -> int:
+    if not require_home(home):
+        return 2
+    main_py = home / "utils" / name / "main.py"
+    if not main_py.is_file():
+        print(f"gu: no util named '{name}' (see 'gu list')", file=sys.stderr)
+        return 2
+    if not shutil.which("uv"):
+        print("gu: 'uv' is required to run utils but is not on PATH — "
+              "install it first (https://docs.astral.sh/uv/)", file=sys.stderr)
+        return 2
+    # exec replaces this process: stdout/stderr/exit code pass through untouched.
+    os.execvp("uv", ["uv", "run", "--script", str(main_py), *args])
+    return 2  # unreachable
+
+
+def main(argv: list[str]) -> int:
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    home = lib_home()
+    cmd, rest = argv[0], argv[1:]
+    if cmd == "list":
+        return cmd_list(home)
+    if cmd == "help":
+        if not rest:
+            print("usage: gu help <util>", file=sys.stderr)
+            return 2
+        return cmd_run(home, rest[0], ["--help"])
+    if cmd == "lint":
+        return cmd_lint(home, rest[0] if rest else None)
+    if cmd == "deps":
+        if not rest:
+            print("usage: gu deps <util>", file=sys.stderr)
+            return 2
+        return cmd_deps(home, rest[0])
+    if cmd == "remove":
+        names = [a for a in rest if not a.startswith("-")]
+        if len(names) != 1:
+            print("usage: gu remove <util> [--force]", file=sys.stderr)
+            return 2
+        return cmd_remove(home, names[0], "--force" in rest)
+    if cmd == "index":
+        return cmd_index(home)
+    return cmd_run(home, cmd, rest)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
