@@ -601,7 +601,14 @@ one you are about to touch, not all of them.
   (`engine/askclass.py`), which is ORTHOGONAL to `mode`: the class says whether the asking run
   could do its work without the answer, `mode` whether its process waited for one. The subject
   sets the default (an access `request` is blocking, a plain question closing); the run overrides
-  per question with `blocks_work: true`.
+  per question with `blocks_work: true`. **The class has a reader**: a run's own open CLOSING asks
+  ride its FINISH event (`closing_asks`, selected by `engine/closingasks.py`) and the run page
+  renders them on the finish banner with their options as buttons
+  (`static/components/closing-asks.js`), answered through the one answer route — the run finished
+  without them, so they reach the person reading what it DID instead of competing on the
+  Decisions page with the asks that are holding work up. Three bounds: this run's own qids only
+  (`q-<run-ts>-<turn>`), nothing already answered, and a record written before the class existed
+  reads as `closing`.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
   and an optional `request` ("<class>:<name>" entity id, entities.py): a typed ACCESS REQUEST the
   Decisions page settles with one of four decisions (allow/deny × now/forever). A `util:` request
