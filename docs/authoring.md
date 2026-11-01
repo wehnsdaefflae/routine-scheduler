@@ -87,7 +87,9 @@ Per-routine scripts get the same three.
 Two gates run before a util reaches the library:
 
 1. `header_problems` — the docstring standard above (missing `tags:`/`net:`, undeclared
-   secrets).
+   secrets). The `gu` dispatcher enforces the same declarations from the library side
+   (`gu lint <util>`), because it is what reads them when a util actually runs; it is tracked
+   as `util-seed/gu` with `tests/test_dispatcher_seed.py` pinning those verdicts (D225).
 2. `--selftest` — every util must implement a **fully offline** selftest; the engine runs
    it before saving. A util that can't prove itself in a sandbox doesn't land.
 

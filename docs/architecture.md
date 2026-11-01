@@ -1289,7 +1289,16 @@ docs whose `requires:` frontmatter names the capabilities they presume), **playb
 one-shot conversation briefs — the save/use-instruction analog), and **utils/** (the ONLY way
 routines run code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows +
 rules + permissions + playbooks),
-`util-seed/` (utils). There is NO routine seed: a meta routine is authored like any other
+`util-seed/` (utils, plus `gu` itself). **The dispatcher is tracked** (`util-seed/gu`, D225): it is
+what every `util` action ultimately invokes and the reader of a util's `net:`/`secrets:` header —
+the declarations that decide which network access and which credentials fold into its sandbox — so
+it is repo code with a test suite (`tests/test_dispatcher_seed.py`) and the release gate, not an
+unversioned file beside the library. `utils_lib.ensure_library` still installs the MINIMAL
+`utils_lib.DISPATCHER` stub (run a util, list the catalog) on a fresh library and
+`_install_dispatcher` never overwrites an existing dispatcher, so the tracked one reaches an
+instance carrying that stub only through a one-shot migration
+(`migrate_dispatcher_seed`), which replaces it only while it IS that stub byte for byte, keeps it
+as `gu.stub.bak` in the library root and names anything else it left. There is NO routine seed: a meta routine is authored like any other
 routine, through the scaffold path, and a fresh instance starts with none — the dashboard shows
 a notice while every meta routine it does have is disabled. `self-audit`
 works LOOKUP-FIRST from `.codemap/` — a compact derived map of this repo (module API surface,

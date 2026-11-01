@@ -153,7 +153,8 @@ def ensure_library(home: Path, *, remote: str = "") -> None:
 def _install_dispatcher(home: Path) -> None:
     """Install our minimal `gu` dispatcher + push hook — but NEVER overwrite an existing one.
     When the library root already carries its own richer `gu`, we leave its dispatcher and
-    hook untouched and just use them.
+    hook untouched and just use them. That richer dispatcher is tracked as `util-seed/gu`
+    (D225); `migrate_dispatcher_seed` carries it onto a library still holding this stub.
     """
     gu = home / "gu"
     if not gu.exists():

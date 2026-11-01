@@ -68,6 +68,12 @@ def cmd_daemon(_args) -> int:
     # already has — the sync above only adds missing ones
     from .migrate_seed_utils import run_migration as carry_seed_util_fixes
     carry_seed_util_fixes(server)
+    # MIGRATION(expires=2027-01-31): the `gu` dispatcher became a tracked repo file (util-seed/gu,
+    # D225). `ensure_library` above installs the MINIMAL stub and never overwrites an existing
+    # dispatcher, so only this carries the tracked one across — and only onto that stub, which it
+    # keeps beside it
+    from .migrate_dispatcher_seed import run_migration as carry_tracked_dispatcher
+    carry_tracked_dispatcher(server)
     sync_seed_library_docs(server.libraries_home, routines_home=server.routines_home)
     # MIGRATION(expires=2026-11-30): the converse pattern's goals revision (version 5) — the
     # sync above only adds missing patterns
