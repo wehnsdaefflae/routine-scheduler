@@ -1,5 +1,18 @@
-"""A CONVERSATION's DECLINED access — reading the deny-forever tombstones and clearing one
-(F783).
+"""A CONVERSATION's GRANTS surface — both halves of its `grants:` mapping, read and cleared
+one row at a time: the deny-forever tombstones (F783) and the allow-forever grants it HOLDS
+(D216 rank 1).
+
+The allow half came second and closes the rest of the gap. F783 gave the operator the denials;
+a `grants:` TRUE row — what a Decisions `allow_forever` writes for the one class with no native
+switch, `secret:` (`entities.TRUE_ROW_CLASSES`, `grants_apply.apply_forever`) — stayed invisible
+on every surface the console has. The engine honours it for a conversation exactly as for a
+routine (`engine/secretgate.secret_state` reads the row and the util call receives the value),
+so the operator could not read what a thread had been granted and could not take it back short
+of hand-editing routine.yaml. The ROUTINE page shows its allow rows in *Secret exposure* and can
+set one back to "ask on first use"; no conversation had either. Clearing a held row returns the
+entity to UNDECIDED — asked on first use — which is the one state reachable from this surface:
+the two clears are sign-locked (`_stored_key(..., value=...)`), so neither can do the other's
+job and the grant half can never be used to lift a denial.
 
 A Decisions-page `deny_forever` writes one uniform `{entity: false}` row into the answering
 subject's own routine.yaml (`grants_apply.apply_forever` → `config.routine.record_grants`), and
@@ -71,6 +84,19 @@ def _raw_grants(conv_dir: Path) -> dict:
     return dict(grants) if isinstance(grants, dict) else {}
 
 
+def _held(conv_dir: Path) -> list[str]:
+    """The allow-forever grants: the TRUE rows, sorted — what this conversation HOLDS.
+
+    `grants:` true rows are legal only where no native routine.yaml switch exists
+    (`entities.TRUE_ROW_CLASSES` — `secret:` today), so in practice this is the central-store
+    exposure a Decisions `allow_forever` wrote (`grants_apply.apply_forever`). Rows are read AS
+    STORED rather than filtered by class: a row of any other class is either a hand edit or a
+    class a later version added, and in both cases it is a grant the engine honours, so the
+    operator has to be able to SEE it. Filtering it out is how the conversation side got here.
+    """
+    return sorted(k for k, v in _raw_grants(conv_dir).items() if v is True)
+
+
 def _declined(conv_dir: Path) -> list[str]:
     """The deny-forever tombstones: the FALSE rows, sorted. A true row is an allow-forever
     grant and is not this surface's business.
@@ -85,19 +111,48 @@ def _declined(conv_dir: Path) -> list[str]:
     return sorted(k for k, v in _raw_grants(conv_dir).items() if v is False)
 
 
-def _stored_key(grants: dict, entity: str) -> str | None:
-    """The key this request names, as the file spells it — or None when there is no such
-    DECLINED row. The canonical form is tried too, so a request naming `fs-read:~/x` reaches
+def _stored_key(grants: dict, entity: str, *, value: bool = False) -> str | None:
+    """The key this request names, as the file spells it — or None when there is no such row
+    with `value`. The canonical form is tried too, so a request naming `fs-read:~/x` reaches
     the expanded row a Decisions click wrote.
+
+    `value` is what makes one matcher serve both halves of the mapping: False is a deny
+    tombstone (cleared to loosen), True an allow-forever grant (cleared to withdraw). Matching
+    on the value is what keeps each route unable to do the other's job — neither can touch a
+    row of the other sign, so neither surface can be turned into the other by a crafted body.
     """
     wanted = [entity]
     parsed = parse_entity(entity)
     if parsed is not None:
         wanted.append(f"{parsed[0]}:{parsed[1]}")
     for key in wanted:
-        if grants.get(key) is False:
+        if grants.get(key) is value:
             return key
     return None
+
+
+def _clear_row(info, entity: str, *, value: bool) -> dict:
+    """Delete ONE `grants:` row of sign `value` from this conversation's routine.yaml and
+    report what the mapping says afterwards — the body both clear routes answer with.
+
+    One writer for both signs: the read-modify-write, the 404 and the live-run signal are the
+    same act whichever row is going, and a second copy of it would be the kind of drift this
+    campaign exists to remove.
+    """
+    path = info.cfg.dir / "routine.yaml"
+    raw = read_yaml(path, {})
+    if not isinstance(raw, dict):
+        raise HTTPException(500, f"{path}: expected a mapping at top level")
+    grants = _raw_grants(info.cfg.dir)
+    key = _stored_key(grants, entity, value=value)
+    if key is None:
+        kind = "declined-access" if value is False else "held-grant"
+        raise HTTPException(404, f"{info.slug} has no {kind} row for {entity!r}")
+    del grants[key]
+    raw["grants"] = grants
+    atomic_write_yaml(path, raw)
+    live = signal_config_change(info, ["grants"], {"grants": grants})
+    return {"ok": True, "cleared": key, **({"told_live_run": True} if live else {})}
 
 
 @router.get("/conversations/{slug}/declined")
@@ -118,18 +173,37 @@ def clear_declined(request: Request, slug: str, body: ClearBody) -> dict:
     config write tells it (F337).
     """
     info = conversation_info(request, slug)
-    path = info.cfg.dir / "routine.yaml"
-    raw = read_yaml(path, {})
-    if not isinstance(raw, dict):
-        raise HTTPException(500, f"{path}: expected a mapping at top level")
-    grants = _raw_grants(info.cfg.dir)
-    key = _stored_key(grants, body.entity.strip())
-    if key is None:
-        raise HTTPException(404, f"{info.slug} has no declined-access row for "
-                                 f"{body.entity.strip()!r}")
-    del grants[key]
-    raw["grants"] = grants
-    atomic_write_yaml(path, raw)
-    live = signal_config_change(info, ["grants"], {"grants": grants})
-    return {"ok": True, "cleared": key, "declined": _declined(info.cfg.dir),
-            **({"told_live_run": True} if live else {})}
+    out = _clear_row(info, body.entity.strip(), value=False)
+    return {**out, "declined": _declined(info.cfg.dir)}
+
+
+@router.get("/conversations/{slug}/grants")
+def list_held(request: Request, slug: str) -> dict:
+    """The allow-forever grants this conversation HOLDS — what it has been given.
+
+    The deny half of this mapping has had a surface since F783; the allow half had none, on
+    either side of the console, so a `secret:NAME: true` row a Decisions click wrote was
+    invisible from the moment it landed: the operator could not read what a thread had been
+    granted, and could not take it back short of hand-editing the file. The engine honours the
+    row identically for a routine and for a conversation (`engine/secretgate.secret_state`),
+    which is what makes the missing surface a parity gap rather than a feature.
+    """
+    info = conversation_info(request, slug)
+    return {"slug": info.slug, "held": _held(info.cfg.dir)}
+
+
+@router.post("/conversations/{slug}/grants/clear")
+def clear_held(request: Request, slug: str, body: ClearBody) -> dict:
+    """Withdraw ONE allow-forever grant: the entity returns to undecided (asked on first use).
+
+    The mirror of `clear_declined`, and deliberately the same shape — clear ONE named row, never
+    a wholesale replace, because this panel writes on click and cannot re-read the file first.
+    Where clearing a tombstone LOOSENS, clearing a grant TIGHTENS: either way the entity lands
+    back on the undecided state the engine asks about, which is the only state reachable from
+    here. 404 when no such ALLOW row exists — including when the row is a DENIAL, so this route
+    can never be used to lift a denial the operator set (that is `clear_declined`'s job, and it
+    is reached by its own press).
+    """
+    info = conversation_info(request, slug)
+    out = _clear_row(info, body.entity.strip(), value=True)
+    return {**out, "held": _held(info.cfg.dir)}

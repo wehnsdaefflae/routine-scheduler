@@ -708,7 +708,13 @@ and back out):
   through the permission cascade (allow-forever activates a covering conduct doc and
   runs the same raise-then-floor the permissions editor uses), a connection/machine
   binding, an fs root. `secret:` is the one class with no native switch — its
-  allow-forever is a `grants:` true row, and it covers the CENTRAL store only: a
+  allow-forever is a `grants:` true row, and it covers the CENTRAL store only (that row is
+  READABLE and WITHDRAWABLE from the subject's own surface, both homes: the routine page's
+  *Secret exposure* dial sets a name back to "ask on first use", and since D216 rank 1 a
+  conversation's capabilities panel carries a *granted forever* card whose press clears ONE
+  named true row through `web/api_conversation_grants.py` — the mirror of its *declined access*
+  card below, sign-locked so neither press can touch a row of the other sign. Withdrawing
+  TIGHTENS where clearing a tombstone loosens; both land the entity on **undecided**): a
   routine-scoped secret (D103, `secrets.d/<slug>.env`) is owned by its routine, so there is
   nothing to decide and the gate skips the name entirely. Only an UNDECIDED REQUIRED secret
   declaration triggers the

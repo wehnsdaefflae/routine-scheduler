@@ -5,7 +5,7 @@
 import { api } from "/static/api.js";
 import { branchControls } from "/static/components/branches.js";
 import { connectionsCard } from "/static/components/connections.js";
-import { declinedAccessCard } from "/static/components/declined-access.js";
+import { declinedAccessCard, heldGrantsCard } from "/static/components/declined-access.js";
 import { machinesCard } from "/static/components/machines.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -230,6 +230,16 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     + "THIS conversation; they need no exposure decision and override a central name of the "
     + "same value for its runs"),
     ownSecretsCard(slug, { base: "/api/conversations", subject: "conversation" }));
+  // Held grants (D216 rank 1): the allow-forever rows this conversation's `grants:` mapping
+  // carries — what a Decisions `allow_forever` wrote for the one class with no native switch
+  // (`secret:`). The engine honours such a row for a conversation exactly as for a routine, but
+  // no surface ever showed it: the operator could not read what a thread had been granted, nor
+  // take it back short of hand-editing routine.yaml. The routine page has both (its *Secret
+  // exposure* dial sets a name back to "ask on first use"); this is a conversation's.
+  capBody.append(el("div", { class: "faint small mt" }, "granted forever — access this "
+    + "conversation's requests were allowed FOREVER; the engine hands it over without asking. "
+    + "Removing a row returns the entity to undecided (asked on first use again)"),
+    heldGrantsCard(slug));
   // Declined access (F783): the deny-forever tombstones this conversation carries. A
   // Decisions-page deny writes the row into its own routine.yaml and the engine then refuses
   // the entity and stops asking — and the only editor that removed such a row was the ROUTINE

@@ -859,9 +859,12 @@ and the capabilities digest's catalog listing):
   (the ONE decision-record shape: {mode, type, default, expires, request?} — asks, util approvals
   and access requests alike; `routine.yaml` additionally carries the `grants:` decision rows:
   deny-forever tombstones for any entity + secret exposure, written only by the web — and
-  CLEARABLE from the subject's own surface either way: the routine page's *Declined access*
-  draft, or a conversation's capabilities panel through `web/api_conversation_grants.py`,
-  which clears one named row (F783)),
+  CLEARABLE from the subject's own surface either way, BOTH SIGNS: the routine page's
+  *Declined access* draft and its *Secret exposure* dial, or a conversation's capabilities
+  panel through `web/api_conversation_grants.py`, which clears one named row per press —
+  `declined` for the false rows (F783) and `grants` for the allow-forever true rows the
+  conversation HOLDS (D216 rank 1), sign-locked so neither half can touch the other's rows;
+  either clear lands the entity on undecided),
   `runs/<ts>/` (transcripts + status.json incl. usage/turns/elapsed_s + the finish `outcome` —
   `state` folds a partial finish into "finished", the outcome field keeps it distinguishable —
   the dashboard's sortable per-routine stats AND its run-history **heartbeat strip**
