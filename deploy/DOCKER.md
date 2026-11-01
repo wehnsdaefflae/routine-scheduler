@@ -504,10 +504,10 @@ Debian (`bookworm` → `trixie`) in every Dockerfile that names it.
 cd ~/git-repos/routine-scheduler
 deploy/nat64.sh status                      # the selection both commands read; what runs now
 docker compose build                        # all three images: rsched, chrome, tor
-docker compose exec rsched rsched drain     # pause scheduling, wait for in-flight runs (F746)
+docker compose exec -u mark rsched /opt/rsched-venv/bin/rsched drain   # pause scheduling, wait for in-flight runs (F746)
 docker compose up -d                        # recreates each container whose image or config changed
-docker compose exec rsched rsched drain --resume   # lift the pause the drain left in place
-docker compose exec -u mark rsched rsched postdeploy   # the live instance, checked + recorded (below)
+docker compose exec -u mark rsched /opt/rsched-venv/bin/rsched drain --resume   # lift the pause the drain left in place
+docker compose exec -u mark rsched /opt/rsched-venv/bin/rsched postdeploy   # the live instance, checked + recorded (below)
 ```
 
 Both run bare, from the checkout's root: they read this host's files and profiles from `.env`
@@ -515,6 +515,10 @@ Both run bare, from the checkout's root: they read this host's files and profile
 the override's memory ceilings, the NAT64 resolvers while they are on, and `desktop` on a host
 that runs it. A file
 flag or a profile flag here would replace that selection for the one command.
+
+The CLI is named by its full path because the image does not put `/opt/rsched-venv/bin` on
+`PATH`: a bare `rsched` inside `docker compose exec` is not found. `-u mark` keeps what it
+writes owned by the instance's uid.
 
 For a NEW IMAGE, `up -d` replaces the running `rsched` process — unlike a code change, which it
 never reloads (CLAUDE.md, "Deploy") — and any routine running at that moment goes with it. That
@@ -545,7 +549,7 @@ built. That gap is where this project finds most of its defects — nine of 2026
 no record. It is one command now, and it is read-only against the box:
 
 ```bash
-docker compose exec -u mark rsched rsched postdeploy    # host install: uv run rsched postdeploy
+docker compose exec -u mark rsched /opt/rsched-venv/bin/rsched postdeploy   # host install: uv run rsched postdeploy
 ```
 
 One line per check, then a summary. **Exit 1 means act before you walk away**; a NOTE is
