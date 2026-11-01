@@ -46,12 +46,9 @@
 .card .problem { color: var(--err); font-size: var(--t-s); }
 /* run-history heartbeat strip (components/heartbeat.js) — card row + list-view cell */
 .heartbeat { display: block; width: 147px; max-width: 100%; height: 24px; }
-.heartbeat .hb-ok { fill: var(--ok); }
-.heartbeat .hb-partial { fill: var(--warn); }
-.heartbeat .hb-failed { fill: var(--err); }
-.heartbeat .hb-aborted { fill: var(--ink-3); }
-.heartbeat .hb-active { fill: var(--signal); }
-.heartbeat .hb-empty { fill: var(--rule); }
+.heartbeat .hb-ok { fill: var(--ok); } .heartbeat .hb-partial { fill: var(--warn); }
+.heartbeat .hb-failed { fill: var(--err); } .heartbeat .hb-aborted { fill: var(--ink-3); }
+.heartbeat .hb-active { fill: var(--signal); } .heartbeat .hb-empty { fill: var(--rule); }
 .heartbeat a.hb-bar:hover rect:last-child { opacity: 0.7; }
 td.hb-cell { min-width: 155px; }
 /* stacked (base.css `table.list.stack`, ≤860px) the row is a flex card and a 155px floor on one
@@ -338,6 +335,9 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .finish-banner.ok { background: var(--ok-dim); border: 1px solid color-mix(in srgb, var(--ok) 38%, transparent); }
 .finish-banner.partial, .finish-banner.aborted { background: var(--warn-dim); border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent); }
 .finish-banner.failed { background: var(--err-dim); border: 1px solid color-mix(in srgb, var(--err) 38%, transparent); }
+/* D212 (b): the closing asks the run left, inside its banner, set off from the summary above */
+.closing-asks { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 10px; }
+.closing-ask { background: var(--plate); border: 1px solid var(--rule); border-radius: var(--r2); padding: 10px 12px; white-space: normal; }
 /* phase grouping: a labeled divider whenever the acting stage changes, so the say stream
    reads as a story chaptered by the routine's own stages */
 .phase-divider {
