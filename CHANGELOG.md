@@ -15,6 +15,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.492.0] — 2026-11-01
+
+### Added — a run's CLOSING asks ride its finish banner, answerable there (D212 (b), hooks step 5)
+
+Increment (a) (0.465.0) made every decision record carry its CLASS — `blocking` or `closing`,
+from the operator's answer *"Both axes: subject decides the default, the run may override it when
+the work is genuinely blocked"* — and nothing read it: a grep for `"class"` over `src/` and
+`static/` found only the writers. This is its first reader, and it follows the axis rather than
+describing it. A `closing` ask is one the run finished its work WITHOUT, so its reader is the
+person reading what the run DID, with the answer one click away — not a card on a page he visits
+separately, where it competes for attention with the decisions that ARE holding work up.
+
+`engine/closingasks.py` selects a run's own open closing asks and the finish event carries them as
+`closing_asks`; `static/components/closing-asks.js` renders them on the finish banner with their
+options as buttons, posting through the ONE answer route every other surface uses. Three bounds,
+each from something already true of the store: this run's own qids only (`q-<run-ts>-<turn>`, the
+prefix the answer taker already attributes by), nothing whose answer is already waiting in the
+inbox, and a record written before increment (a) — which has no `class` key — reading as
+`closing`. Selection only: nothing is filed, answered, re-asked or expired here, and a store that
+cannot be read yields nothing, because a surface that only adds something to read must never fail
+a run. Increment (c), the Decisions page keeping only the blocking class, is not in this release:
+it belongs with the lifecycle rebuild that is rewriting that page anyway.
+
+### Added — the engine serves a REPEAT POLL on the cheap model, unasked (F785, D217's engine half)
+
+D185 gave a run `role_swap` and nothing in the fleet used it, so the turns F785 measured kept
+paying main-model prices to read a one-line answer. `engine/autoswap.py` is the engine's own half
+of that slot, hung off `sidefields.land` — the seam the turn loop already calls, so `engine/loop.py`
+gained no line. A turn qualifies only when the previous action was poll-class and the new one
+repeats that class, served from the SECOND consecutive repeat so the models never change under a
+single re-check, restored on the first action of a different class. Three stand-downs: a routine
+with no distinct `tool_call` gets nothing and is told nothing; the stuck-escape turn — where the
+loop sheds the provider schema and the next reply must re-plan without a grammar — stays on the
+main model; and an action carrying `role_swap` latches the engine off for the rest of the run,
+because a run steering its own model outranks the engine guessing for it. The operator's console
+switch is never clobbered: this layer only ever undoes a swap it made itself.
+
+**Its reach is measured, and it is ~zero today.** Over 401 retained transcripts / 32,255 landed
+turns the shipped rule would have served ONE turn cheap (0.003 %), not the 2,651 (11.5 %) the
+finding projects. The gap is structural: a run ends at five byte-identical actions, so a long
+ADJACENT poll streak cannot exist — a real poll loop is `poll → read → poll`, whose repeats are
+not adjacent — and the 11.5 % is a count by KIND (44.63 % of all turns are poll-class by kind).
+Worse, for a poll whose action never varies (`subruns`, an identical gate `status` call) the class
+depth equals the byte-identical streak, so the serve threshold always coincides with the
+stuck-escape guard: that band is empty, and it is pinned as a test with its reasoning. Nothing
+fires at all until a distinct `tool_call` model is bound fleet-wide, which is config and not code.
+Put to the operator with the three widenings and their measured reach, his answer was **"leave it
+as shipped: adjacency only — the mechanism exists and waits for D230"**, so this is the settled
+rule and not a first cut.
+
+### Changed — the `gu` dispatcher is tracked repo code, with a selftest and a migration (D225)
+
+`gu` is the dispatcher every `util` action ultimately invokes and the reader of a util's `net:` /
+`secrets:` headers — the declarations that decide which network access and which credentials fold
+into its sandbox. It lived as an untracked executable in the library root, reachable by no routine
+and gated by nothing. The operator's answer: *"`gu` becomes a tracked file in the scheduler repo,
+seeded and synced into the library like util-seed/ content, so it acquires a test suite and a
+release gate… Not a one-line move — it needs a seed path, a selftest and a migration for the live
+copy."*
+
+It is now `util-seed/gu`, byte-identical to the live copy (sha256 verified at both ends), where
+the library's own `utils/` already comes from. `tests/test_dispatcher_seed.py` (17 tests) pins
+that it parses and answers `--help` as an executable, that it is the rich dispatcher the embedded
+stub is not, and — from the outside, through `gu lint` against fixtures — the sandbox decision the
+operator named: an undeclared credential read is refused BY NAME, a declared one passes in all
+three spellings, and an undeclared or invalid `net:` is refused naming "denies ALL TCP".
+`migrate_dispatcher_seed.py` carries it to a live instance, because `ensure_library` installs a
+minimal stub and never overwrites an existing dispatcher: it replaces the live copy ONLY while
+that copy is the stub byte for byte, keeps the stub beside it as `gu.stub.bak`, and leaves
+anything else untouched and named in its record — a dispatcher is an executable the operator may
+have edited, and a migration cannot tell an edited stub from an edited anything-else. `gu`'s own
+AST/lint defect (a dynamically-built argv is invisible to its call graph) is unchanged and is now
+a separate increment against a gated file.
+
 ## [0.491.0] — 2026-11-01
 
 ### Added — `create_routine revises:`, a recipe revision for ANOTHER routine, gated by the TARGET's dial (D198)
