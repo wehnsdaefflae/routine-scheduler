@@ -32,5 +32,6 @@ docker-compose.override.yml
 # between, the script leaves that copy behind, token included.
 /.env.*
 
-# The browser-stage container's job spool (deploy/uitest/protocol.py) — jobs, logs, exit codes
+# The browser-stage container's job spool (deploy/uitest/protocol.py) — jobs, logs, exit codes,
+# and what the runner measured about each job (result.json: the container's own memory peak)
 .uitest-jobs/

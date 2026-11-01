@@ -676,6 +676,28 @@ docker compose exec uitest /opt/rsched-venv/bin/python -m pytest -q -m ui   # by
 With the container down, a release gate reports its browser stage `unavailable` and names the
 `up -d` above — never `red`.
 
+**What the ceiling should be, measured rather than guessed.** Every job the runner finishes
+comes back with the peak of THIS container's own memory cgroup for that job's duration
+(`deploy/uitest/cgroupmem.py`, carried in the job's `result.json`), and `submit.py` prints it
+after the job's output, so it is in the stage log the gate keeps:
+
+```
+uitest memory: {"peak_bytes": 3221225472, "limit_bytes": 4294967296,
+                "peak_pct_of_limit": 75.0, "bound": "exact", "proves_no_oom": false}
+```
+
+It is read INSIDE `uitest`, because the gate runs in the engine container and cannot read a
+sibling's cgroup. `bound` says how to take the number: `exact` (the kernel's `memory.peak`,
+reset for this job), `upper` (a mark that could not be reset, or a second job in the same
+container cgroup at the same time) or `lower` (`memory.current` sampled, on a kernel with no
+`memory.peak` — a spike between samples is missed). No line at all means not measured: an
+older runner, or a cgroup it could not read — never zero.
+
+It can say "this stage peaked at N GB of its M GB ceiling". It can NEVER say "no OOM occurred":
+a restart starts a fresh cgroup, and the kill leaves nothing in these files. That question is
+the host's alone — `journalctl -k | grep 'Memory cgroup out of memory'`. Set `mem_limit` from a
+week of these peaks, not from one run.
+
 ## The agent desktops
 
 Opt-in per host (`docs/desktop-sessions.md` says what they are). The host needs hardware

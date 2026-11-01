@@ -27,10 +27,15 @@ Job layout, `<spool>/<id>/`:
   log       stdout+stderr, written by the runner as the job runs
   claimed   the runner has started it (its pid inside)
   cancel    the caller wants it ended (SIGTERM to its group, SIGKILL after the grace)
+  result.json  what the runner MEASURED about the job, written BEFORE `exit` so it is complete
+            whenever a caller sees a finished job. Today one key: "memory" (cgroupmem.py), the
+            peak of the `uitest` container's own memory cgroup. EVERY key here is optional —
+            see `job_result` — and an absent one reads as "not measured", never as zero.
   exit      the exit code, written LAST and atomically — its existence means "finished"
 """
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -62,6 +67,19 @@ ENV_PREFIXES = ("PYTEST_", "AUDIT_GATE_", "RSCHED_TEST_", "RSCHED_SKIP_", "RSCHE
                 "RSCHED_UI_")
 
 
+#: What the runner measured about a job, beside its log and its exit code. Written BEFORE
+#: `exit`, so a caller that sees a finished job sees a complete result.
+RESULT = "result.json"
+#: The one key in it today: the peak of the `uitest` CONTAINER's own memory cgroup for this
+#: job's duration (cgroupmem.py builds the value and says what it can and cannot prove — it can
+#: never prove that no OOM occurred). A job result that does not carry it was NOT MEASURED.
+MEMORY = "memory"
+#: How `submit.py` hands the reading to its caller: this prefix, then the JSON, on one line of
+#: its stdout. The release gate reads it from the stage's log, where the job's whole output
+#: already goes, so no second channel out of the container is needed.
+MEMORY_LINE = "uitest memory: "
+
+
 def spool() -> Path:
     return Path(os.environ.get(SPOOL_ENV) or Path(__file__).resolve().parents[2] / ".uitest-jobs")
 
@@ -76,6 +94,37 @@ def heartbeat_age(root: Path) -> float | None:
         return time.time() - (root / HEARTBEAT).stat().st_mtime
     except OSError:
         return None
+
+
+def write_result(job: Path, result: dict[str, object]) -> None:
+    """Write what the runner measured, dropping the keys that measured nothing.
+
+    Called before the `exit` file, and never fatal: a job's outcome does not depend on whether
+    anything could be measured about it, so a result that cannot be written is simply absent.
+    """
+    try:
+        kept = {k: v for k, v in result.items() if v is not None}
+        if kept:
+            write_atomic(job / RESULT, json.dumps(kept))
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def job_result(job: Path) -> dict[str, object]:
+    """What the runner measured about this job — `{}` when it measured nothing.
+
+    DELIBERATELY TOLERANT IN BOTH DIRECTIONS, because the two halves of this spool are deployed
+    separately (the runner is baked into the `uitest` image; the client runs from the checkout):
+    a runner that reports no measurements leaves a caller that expects them with an empty dict,
+    and a runner that reports a key this caller has never heard of is simply carried through.
+    An absent key means NOT MEASURED. It never means zero, and a caller must not default it to
+    one — `0` is a real peak reading and "no reading" is not a number at all.
+    """
+    try:
+        loaded = json.loads((job / RESULT).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def write_atomic(path: Path, text: str) -> None:

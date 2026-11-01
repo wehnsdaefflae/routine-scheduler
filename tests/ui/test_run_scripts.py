@@ -104,7 +104,7 @@ def test_the_section_is_captured_for_a_person_to_look_at(ui, ui_page):
     The capture goes under `<repo>/.audit-wt/captures/` — inside the checkout, which is what the
     `uitest` container mounts, and gitignored (.gitignore:26). `RSCHED_GATE_ARTIFACTS`, the
     convention test_message_concepts_render.py uses, matches no carried env prefix
-    (deploy/uitest/protocol.py:61) and so cannot reach a browser-stage job; `RSCHED_UI_` can.
+    (protocol.ENV_PREFIXES) and so cannot reach a browser-stage job; `RSCHED_UI_` can.
 
     TWO THINGS THE CAPTURES DO NOT SHOW, so nobody reads them for more than they are:
 
