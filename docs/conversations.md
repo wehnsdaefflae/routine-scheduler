@@ -284,6 +284,14 @@ what changed and which part of it reaches it — F337):
 - **Permissions** work exactly as they do for routines (see the *Rules, permissions & capabilities* guide). A
   conversation starts with the default set; the **shell** action is a one-click grant. Previous-run depth is
   greyed out — a conversation is one continuous run, so it doesn't apply.
+- **Granted forever / Declined access** — the two halves of what you have settled for this
+  thread on the Decisions page, each readable and undoable from the panel itself. *Granted
+  forever* lists what an **allow-forever** gave it (a central-store secret, the one kind of
+  access with no switch of its own); *Declined access* lists what a **deny-forever** took away,
+  which the engine then refuses without asking again. **remove** on either row returns that
+  entity to **undecided** — asked again the first time it is needed — so a mis-click is never
+  permanent in either direction. One row per press, so a decision you make while the page is
+  open is never overwritten.
 - **Model** switches from the line at the top. Change it any time; if a reply is in flight, it
   switches at its next turn boundary too. The picker labels every model with its context window
   (and flags tight ones); a model whose window minus its max output tokens leaves no room for

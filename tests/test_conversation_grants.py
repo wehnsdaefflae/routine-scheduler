@@ -179,3 +179,120 @@ def test_the_clear_is_refused_to_the_routine_token(tmp_path):
                     headers={"Authorization": f"Bearer {TEST_TOKEN}"})
         assert ok.status_code == 200, ok.text
     assert _grants(c_dir) == {}
+
+
+# ---------------------------------------------------------------------------------------------
+# The ALLOW half of the same mapping — D216 rank 1.
+#
+# F783 (above) gave the operator the DENIALS. A `grants:` TRUE row — what a Decisions
+# `allow_forever` writes for the one class with no native switch, `secret:`
+# (entities.TRUE_ROW_CLASSES, web/grants_apply.apply_forever) — had no surface at all: the
+# engine honours it for a conversation exactly as for a routine (engine/secretgate.secret_state
+# reads the row and the util call receives the value), while the console could neither show what
+# a thread had been granted nor take it back short of a hand edit of routine.yaml. The routine
+# page has both halves (its *Secret exposure* dial returns a name to "ask on first use").
+#
+# The two clears are SIGN-LOCKED (`_stored_key(..., value=...)`): each refuses a row of the
+# other sign, so the grant route can never lift a denial the operator set, and the declined
+# route can never withdraw a grant. Both pinned here.
+# ---------------------------------------------------------------------------------------------
+
+
+def test_the_held_rows_are_listed_and_the_declined_rows_are_not(conv):
+    """What the conversation HOLDS is the TRUE rows. A false row is a tombstone and belongs to
+    the declined half, which has its own reader and its own press."""
+    c, _c_dir, slug = conv
+    body = c.get(f"/api/conversations/{slug}/grants").json()
+    assert body["slug"] == slug
+    assert body["held"] == ["secret:NTFY_URL"]
+
+
+def test_withdrawing_a_held_grant_returns_it_to_undecided_and_keeps_every_other_row(conv):
+    c, c_dir, slug = conv
+    out = c.post(f"/api/conversations/{slug}/grants/clear", json={"entity": "secret:NTFY_URL"})
+    assert out.status_code == 200, out.text
+    assert out.json()["held"] == []
+    assert out.json()["cleared"] == "secret:NTFY_URL"
+    # One named row, never a wholesale replace: the tombstones in the same mapping survive, so a
+    # withdrawal from this click-to-write panel cannot drop a deny row that landed in between.
+    assert _grants(c_dir) == {"util:signal": False, "action:shell": False}
+
+
+def test_the_row_an_allow_forever_click_leaves_is_what_this_withdraws(tmp_path):
+    """The finding's own path, end to end: `grants_apply.apply_forever` is what the Decisions
+    page runs for an allow_forever, and its true row is the row this route removes."""
+    from rsched.web import grants_apply
+
+    server = _server(tmp_path)
+    c_dir = _conversation(server)
+    grants_apply.apply_forever(server, c_dir, ["secret:NTFY_URL"], "allow_forever")
+    assert _grants(c_dir) == {"secret:NTFY_URL": True}
+    with authed_client(server) as c:
+        listed = c.get(f"/api/conversations/{c_dir.name}/grants").json()
+        assert listed["held"] == ["secret:NTFY_URL"]
+        cleared = c.post(f"/api/conversations/{c_dir.name}/grants/clear",
+                         json={"entity": "secret:NTFY_URL"})
+        assert cleared.status_code == 200, cleared.text
+    assert _grants(c_dir) == {}
+
+
+def test_neither_clear_can_do_the_other_s_job(conv):
+    """The sign lock. A denial is not a held grant and a held grant is not a denial, so each
+    route 404s the other's rows — otherwise this surface would become a way to lift a denial
+    the operator set, which is exactly what the declined route's own press is for."""
+    c, c_dir, slug = conv
+    assert c.post(f"/api/conversations/{slug}/grants/clear",
+                  json={"entity": "util:signal"}).status_code == 404
+    assert c.post(f"/api/conversations/{slug}/declined/clear",
+                  json={"entity": "secret:NTFY_URL"}).status_code == 404
+    assert c.post(f"/api/conversations/{slug}/grants/clear",
+                  json={"entity": "secret:NOPE"}).status_code == 404
+    assert _grants(c_dir) == {"util:signal": False, "action:shell": False,
+                              "secret:NTFY_URL": True}
+
+
+def test_a_held_row_is_matched_in_the_spelling_the_file_carries(tmp_path):
+    """A row the operator can SEE has to be a row the operator can remove: the canonical form is
+    tried as well, so a request naming `fs-read:~/x` reaches the expanded row a Decisions click
+    wrote — the same matching the declined half does."""
+    from pathlib import Path
+
+    server = _server(tmp_path)
+    expanded = str(Path.home() / "data-x")
+    c_dir = _conversation(server, grants={f"fs-read:{expanded}": True})
+    with authed_client(server) as c:
+        slug = c_dir.name
+        assert c.get(f"/api/conversations/{slug}/grants").json()["held"] == [
+            f"fs-read:{expanded}"]
+        out = c.post(f"/api/conversations/{slug}/grants/clear",
+                     json={"entity": "fs-read:~/data-x"})
+        assert out.status_code == 200, out.text
+    assert _grants(c_dir) == {}
+
+
+def test_the_grants_half_is_unreachable_for_an_unknown_slug_or_a_routine(conv, make_routine):
+    """The two homes stay separate and a typo materializes nothing — the same refusals the
+    declined half makes, because it is the same router."""
+    c, _c_dir, _slug = conv
+    make_routine("grantr2")
+    assert c.get("/api/conversations/grantr2/grants").status_code == 404
+    assert c.post("/api/conversations/grantr2/grants/clear",
+                  json={"entity": "secret:NTFY_URL"}).status_code == 404
+    assert c.get("/api/conversations/c-nope/grants").status_code == 404
+
+
+def test_the_withdrawal_is_refused_to_the_routine_token(tmp_path):
+    """A run must not be able to withdraw its own grant either — every write on this router is
+    operator-only (`app.ROUTINE_TOKEN_MUTATIONS` is empty)."""
+    server = _server(tmp_path, routine_token="routine-tok")
+    c_dir = _conversation(server, grants={"secret:NTFY_URL": True})
+    with TestClient(create_app(server)) as c:
+        denied = c.post(f"/api/conversations/{c_dir.name}/grants/clear",
+                        json={"entity": "secret:NTFY_URL"},
+                        headers={"Authorization": "Bearer routine-tok"})
+        assert denied.status_code == 403
+        ok = c.post(f"/api/conversations/{c_dir.name}/grants/clear",
+                    json={"entity": "secret:NTFY_URL"},
+                    headers={"Authorization": f"Bearer {TEST_TOKEN}"})
+        assert ok.status_code == 200, ok.text
+    assert _grants(c_dir) == {}
