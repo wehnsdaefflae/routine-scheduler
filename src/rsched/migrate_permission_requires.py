@@ -46,11 +46,14 @@ made is never reverted, and a permission MISSING from the live library stays mis
 have deleted it; the add-only sync already has that rule).
 
 Runs once at daemon boot, after the seed sync, recorded in
-`.control/migrations/permission-requires.json`; while that record exists it does nothing.
+`.control/migrations/permission-requires.json`; a record of the CURRENT `PASS` stops it dead.
+The pass number exists because pass 1 shipped broken and its own record then outlived the bug —
+see `_carry` and `PASS` below, and `tests/test_migrate_permission_requires.py` for both shapes.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -62,6 +65,15 @@ from .paths import atomic_write, atomic_write_json
 log = logging.getLogger("rsched.migrate_permission_requires")
 
 RECORD = Path(".control") / "migrations" / "permission-requires.json"
+
+#: Which PASS of this migration the record describes. Every other migration in this family
+#: guards on the record's mere existence, and that is right for one that worked. This one did
+#: not: pass 1 (0.482.0) matched the dead list as a whole literal, missed the live file, and
+#: wrote a record saying it had nothing to do — after which no correction could ever run,
+#: because the guard it had already satisfied outlived the bug. A pass number keeps the
+#: once-only semantics (a record of THIS pass still stops it dead) and costs a corrected
+#: migration nothing. Bump it only when the migration's own behaviour changes.
+PASS = 2
 
 #: permission name -> (the dead `utils:` list as the live file carries it, its replacement).
 #: Named one by one: a migration that swept every seed declaration would also carry one a
@@ -84,16 +96,42 @@ DEAD_ITEMS = re.compile(r"^(\s+)- fau-mail:send\n\s+- gmail:send\n", re.MULTILIN
 LIVE_ITEM = r"\1- mail:send\n"
 
 
+#: The inline `utils: [...]` list, matched without crossing its own line.
+UTILS_LIST = re.compile(r"(^[ \t]*utils:[ \t]*)\[([^\]]*)\][ \t]*$", re.MULTILINE)
+
+
+def _items(spec: str) -> list[str]:
+    """`[a:send, b:send]` or `a:send, b:send` -> ['a:send', 'b:send']."""
+    return [p.strip() for p in spec.strip().strip("[]").split(",") if p.strip()]
+
+
 def _carry(live: Path, dead: str, live_form: str) -> tuple[bool, str]:
-    """Replace the one `utils:` list. Returns (changed, why-not)."""
+    """Correct the one `utils:` list ITEM-WISE. Returns (changed, why-not).
+
+    The first release of this migration matched the dead list as a WHOLE LITERAL, and that is
+    what made it a silent no-op on the instance it was written for: the live file read
+    `[mail:send, gmail:send, fau-mail:send]` — the live verb FIRST, which is what a hand-edit
+    that ADDED the live name leaves behind — so the literal missed, the file was recorded as
+    "already corrected by hand", and six routines kept opening every run with two FAIL rows for
+    utils that do not exist (R3113, carrying the operator's own ruling). Dropping the dead items
+    from whatever the list holds cannot miss that way, and it still leaves a list naming no dead
+    util completely alone, which is the hand-correction guarantee this family of migrations
+    rests on.
+    """
     try:
         text = live.read_text(encoding="utf-8")
     except OSError as exc:
         return False, f"not read: {exc}"
-    pattern = re.compile(r"(^\s*utils:\s*)" + re.escape(dead) + r"\s*$", re.MULTILINE)
-    if not pattern.search(text):
-        return False, f"its `requires:` no longer names {dead} — already corrected by hand"
-    atomic_write(live, pattern.sub(lambda m: m.group(1) + live_form, text, count=1))
+    found = UTILS_LIST.search(text)
+    if not found:
+        return False, "its `requires:` carries no inline `utils:` list — left for a person"
+    held, doomed = _items(found.group(2)), _items(dead)
+    if not set(doomed) & set(held):
+        return False, f"its `requires:` names none of {doomed} — already corrected by hand"
+    kept = [u for u in held if u not in set(doomed)]
+    kept += [u for u in _items(live_form) if u not in kept]
+    corrected = found.group(1) + "[" + ", ".join(kept) + "]"
+    atomic_write(live, text[:found.start()] + corrected + text[found.end():])
     return True, ""
 
 
@@ -115,9 +153,16 @@ def run_migration(server) -> dict:
     home = Path(server.routines_home)
     record_path = home / RECORD
     library = Path(server.libraries_home)
-    if record_path.exists() or not home.is_dir() or not (library / "permissions").is_dir():
+    if not home.is_dir() or not (library / "permissions").is_dir():
         return {}
-    record: dict = {"started": now_iso(), "carried": [], "left": {}}
+    if record_path.exists():
+        try:
+            done = json.loads(record_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}          # unreadable: treat it as done, never as licence to run again
+        if int(done.get("pass") or 1) >= PASS:
+            return {}
+    record: dict = {"started": now_iso(), "pass": PASS, "carried": [], "left": {}}
     for name, (dead, live_form) in REQUIRES.items():
         rel = f"permissions/{name}.md"
         live = library / rel

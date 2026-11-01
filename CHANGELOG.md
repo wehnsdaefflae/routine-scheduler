@@ -15,6 +15,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.489.0] — 2026-11-01
+
+### The `outbound-mail` migration actually lands — pass 1 was a silent no-op
+
+0.482.0 shipped `migrate_permission_requires` to take the two dead util names (`gmail:send`,
+`fau-mail:send`) out of the `outbound-mail` permission's `requires:`, because a routine cannot
+edit the library and the seed sync is add-only. **It never ran on the instance it was written
+for.** It matched the dead list as a WHOLE LITERAL — `[gmail:send, fau-mail:send]` — while the
+live file read `[mail:send, gmail:send, fau-mail:send]`: the live verb FIRST, which is exactly
+what a hand-edit that ADDED the live name leaves behind. The literal missed, the migration
+recorded *"already corrected by hand"*, and six routines (`birthday-admin`, `fau`,
+`freelance-hunter`, `grant-hunter`, `kaution-leipzig`, `predatory-publisher-tarpit`) kept
+opening every single run with two FAIL rows for utils that do not exist. Reported from outside
+by `freelance-hunter` (R3113), carrying the operator's own ruling that the old mail utils must
+give way to the general `mail` util.
+
+Two changes, and the second is the one that matters beyond this file:
+
+- **`_carry` is item-wise.** It drops the dead names from whatever the list holds and keeps the
+  live one, in any order. A list naming no dead util is still left completely alone, which is
+  the hand-correction guarantee this family of migrations rests on.
+- **The record now carries a `PASS` number.** Every migration in this family guards on the
+  record's mere existence, which is right for one that worked. This one shipped broken, and its
+  own record — written by the pass that did nothing — then outlived the bug: no correction could
+  ever run again. A record of the CURRENT pass is still a hard stop (pinned by its own test),
+  and an unreadable record fails CLOSED rather than licensing a re-run over operator-edited
+  files.
+
+Proven against the real live file in a sandbox copy before shipping:
+`[mail:send, gmail:send, fau-mail:send]` → `[mail:send]`, the operator's prose byte-identical,
+a second pass a no-op. The FAIL rows themselves are emitted from each ROUTINE's utils list
+(`readmodels/surface_caps.py:47-53`), and `floor_capabilities` keeps a reserved verb only while
+a held doc requires it — so this release makes the remedy performable and the floor correct;
+taking the dead names out of the six `routine.yaml` files is the operator's config and is asked
+separately.
+
 ## [0.488.0] — 2026-11-01
 
 ### A routine's scripts have their own section in the run page's rail (operator order)
