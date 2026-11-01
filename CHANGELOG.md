@@ -15,6 +15,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.491.0] — 2026-11-01
+
+### Added — `create_routine revises:`, a recipe revision for ANOTHER routine, gated by the TARGET's dial (D198)
+
+A routine holding `write_recipe` can propose a revision of a *different* routine's recipe:
+`create_routine` with `revises: true`, its `prompt` carrying the change one line per change as
+prose — never a diff, because only a run that can read what a recipe is FOR can turn prose into
+an edit (`engine/recipeproposal.py`'s reason, D200). The approval dial belongs to the routine
+whose instructions would change, never to the proposer: `revise_confirm` (`rsched/revisedial.py`,
+`always | invited`) on its *Permissions & capabilities* panel. `always` — every routine's default
+— files ONE `revise-routine` decision card; `invited` arms it at once. Either way the WRITE is
+made by a run of the routine that owns the recipe, under the one-leg unlock `engine/revise.py`
+already implements, handed the lines as its instruction through an invitation spool
+(`rsched/reciperevise.py`) consumed at that run's INIT — so no run is ever rewritten mid-flight,
+and the run may refuse a line that is wrong about what its own runs do. `routine.yaml` stays the
+operator's at every level.
+
+**This is not a security fix, and says so.** Building it established that the cross-routine
+recipe write is already possible and ungated: `write_recipe` together with a write root over
+`~/routines` rewrites any `main.md` with `edit_file`, because the recipe seal is scoped to the
+run's own dirs (`engine/fileops._write_gate` → `engine/reach.routine_dirs`). Asked to rule on
+that, the operator answered: *"leave it: a routine granted write_recipe AND ~/routines is trusted by
+construction, and the grant pair is the gate."* So the open route stays open by his decision, and
+this path's value is the RECORD and the target routine's visibility — who proposed what, what
+authorized it, and a run of the owning routine that can say no.
+
+`engine/actionschema.py` was at its size ceiling, so the seven `create_routine`-only schema
+fields moved to `engine/schema_routine.py` first (661 → 629); `web/api_recipe_revision.py` carries
+the card's approval beside D200's, since `web/api_pending.py` has no room. Console: a `recipe
+approval` dial row and its settings-digest line, with a browser test proven red by stripping the
+row.
+
+### Changed — the reminder layer's trigger kinds go through the hook-point registry (D152 step 4)
+
+`hooks/points.py` has said since 0.458.0 that the `reminder` mechanism fires at eight points, and
+`points.TRIGGER_POINTS` mapped every one of `reminders.KINDS` to its point. Nothing read either:
+`engine/remind.py` matched directly at four sites, so the registry described the layer without
+governing it. `engine/remind_points.matching_at` now resolves the kind to its point and asks
+`hooks/dispatch.at`, so the reminder layer inherits what the rule layer has had since 0.458.0: a
+candidate whose payload the point cannot carry never fires, and **a pattern that raises while
+being applied is one reminder that did not fire rather than a broken turn** — new to this layer,
+and the reason the step matters: a reminder regex is user-authored and was applied inside the turn
+loop with nothing between a pathological match and the run.
+
+Routing it exposed two defects in the table nobody had been consulting, each of which would have
+silently dropped the only mechanism firing at its point: `run-start` declared an `engine_note`
+carrier with payloads `("note","action")`, while a `turn:first` reminder is delivered on the first
+turn's OBSERVATION TAIL — so `points.allows` would have refused every one of them; and `prose`
+mapped to `turn-boundary` though the kind is evaluated and delivered in the same pass as `result`.
+Both corrected to what the engine does, both pinned by regression tests, and `turn-boundary` no
+longer claims a mechanism it does not reach.
+
+### Fixed — six routines no longer open every run with two FAIL rows about utils that do not exist (D228)
+
+The `fau-mail`/`gmail` → `mail` consolidation reached every caller's code and nothing reached the
+stores that hold util names as STRINGS: six installed routines still list `fau-mail:send` and
+`gmail:send` in `capabilities.utils` beside the live `mail:send`, so every one of their runs opens
+with two *"no util by that name is in the library"* FAIL rows — six routines teaching their own
+runs to skim their preflight. `routine.yaml` is the operator's config and no run may write it, so
+the only writer that can reach those files is the daemon's own boot:
+`src/rsched/migrate_dead_reserved_utils.py`, `MIGRATION(expires=2026-12-31)`, beside the other two
+routine.yaml migrations. It walks EVERY `*/routine.yaml` under all three homes rather than a list
+of six, drops only (a file that would be left without `mail:send` is recorded under
+`no_live_mail`, never granted one), leaves a file naming no dead util byte for byte, and records
+what it did in `.control/migrations/dead-reserved-utils.json`.
+
+### Added — a browser-stage job carries the peak of its OWN container's memory cgroup (D226, the `uitest` half)
+
+Since 0.478.0 the browser stage runs in the `uitest` container, whose cgroup the release gate —
+in the engine container — cannot read; its ui-stage memory reading therefore carries
+`covers_stage_work: false`. `deploy/uitest/cgroupmem.py` reads the peak INSIDE the container that
+does the work and hands it back through the job spool: `memory.peak` preferred and reset per job
+(`bound: exact`), unresettable or a concurrent job → `upper`, no `memory.peak` → sampled
+`memory.current` → `lower`; the ceiling from `memory.max`, where a literal `max` yields no
+percentage rather than a guess. Every reading carries `proves_no_oom: false`, stated in each
+docstring: a sample can say *"this stage peaked at N GB of its M GB ceiling"* and can never say
+*"no OOM occurred"* — a restart starts a fresh cgroup, so only the host's `journalctl -k` settles
+that. No caps are set; that is D226's measure-then-decide second half.
+
 ## [0.490.1] — 2026-11-01
 
 ### Removed — the `headroom` extra, and the 29 packages it baked into the engine image
