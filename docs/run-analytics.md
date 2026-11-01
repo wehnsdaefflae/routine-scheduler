@@ -162,6 +162,44 @@ own record has landed, and emits `cost_trend_degraded` while it is flagged
 as structured fields). A payload nobody opens is a reading nobody has — the nightly audit reads
 the health stream, so that is where a regression this size has to appear.
 
+#### What a run of it actually costs — the per-run profile
+
+The trend above answers "has it got worse" as a boolean plus two medians inside a `reasons`
+string. It does not answer the figure a budget is set in: **what does one run of this routine
+cost**. Nothing did — `stats.monthly_spend` rolls spend up per calendar MONTH (30 runs of a
+daily routine averaged into one cell) and `stats.aggregate` slices the fleet. So the routine
+page could report a routine had ballooned without ever reporting its per-run cost.
+
+`readmodels/cost_profile.cost_profile(routines_home, slug)` is that reading, and it is a
+READER ONLY — it introduces no cost quantity of its own. The runs are `usage_stream.usage_runs`
+(legs folded once), the incarnation filter is `incarnations.live_runs`, the quantity is
+`volume` and `notional_cost` exactly as `usage_log.spend` defines them, and the verdict under
+`trend` is `recent_trend` called and passed through VERBATIM, over the same window pair — so
+the profile and the routine page can never disagree about whether a routine is flagged
+(`tests/test_cost_profile.py::test_median_agrees_with_the_flags_median` pins the medians
+together). Shape: `{slug, runs, typical, baseline, recent, trend, mixed_accounting, integrity}`,
+where `typical` is the median over EVERY run and `baseline`/`recent` are the compared windows
+with their `runs_detail`.
+
+**It also reports whether its own figures can be trusted.** Until 0.494.0 a run that spawned
+children under-reported its tree by up to 40% (R3112, two causes, both closed:
+`history.prior_usage` rebuilt a resumed leg's cumulative base without summing `subrun_end`, so
+children collected in an earlier leg vanished at the resume boundary; an orphaned child's spend
+was written as `usage: {}` with the real figure left in `sub/<n>/transcript.jsonl`). Runs from
+0.494.0 on are sound, but **the stream on disk still carries the older understated rows**, and
+a 5-run window straddling the fix compares two different quantities — reported as one median it
+reads as a cost improvement nobody made. Detection is therefore ARITHMETIC, not a hard-coded
+release date (which would be wrong on every other instance and unfalsifiable here): a parent's
+usage folds its children in and a child reports under `<parent>#sub<n>` at depth > 0, so a
+depth-0 run reporting LESS volume than its own child rows sum to is understated whatever wrote
+it (`UNDERSTATEMENT_SLACK` = 2% keeps rounding out of it; the measured R3112 case was 40%).
+`integrity` counts those runs and says so in prose; `mixed_accounting` names the side —
+`["baseline"]`, `["recent"]`, or both — whose rows are contaminated. **A consumer that renders
+these medians without reading `mixed_accounting` is rendering a mixture as one quantity.**
+
+No UI reads this yet, and that is deliberate: a correct reader over a quantity nobody has
+checked is worth more than a view over one nobody has.
+
 #### Whose regression is it — attribution before the finding names anyone
 
 The reading above says a routine's window got worse. It does NOT say why, and the alarm

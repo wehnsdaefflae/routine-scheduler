@@ -888,7 +888,16 @@ and the capabilities digest's catalog listing):
   (`readmodels/trend_attribution.py`, F568): the same window is read across the fleet, and
   `scope` carries host · routine · unattributable — a host-wide condition degraded everything
   that ran on 2026-09-27/28 and filed three findings naming three routines for one problem with
-  the box, so a `host` row now carries no `routine` at all and says what it is about;
+  the box, so a `host` row now carries no `routine` at all and says what it is about.
+  **Per-run cost** (`readmodels/cost_profile.py`, D163) is the reading none of those give: what
+  ONE run of a routine costs (`typical`), the compared windows behind the flag with their runs,
+  and `trend` passed through verbatim so the profile can never disagree with the page. It adds no
+  cost vocabulary — same `usage_runs` fold, same `volume`/`notional_cost`, same window pair — and
+  it reports its own trustworthiness: a depth-0 run reporting less volume than its own
+  `<parent>#sub<n>` child rows sum to was understated by the accounting defect closed in 0.494.0
+  (R3112), detected by arithmetic rather than by a release date, counted in `integrity` and named
+  per side in `mixed_accounting`. No UI reads it yet.
+  `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
   `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
   routine.yaml or state; queued while a run is active and applied when it ends, D78-A).
   Flag-first: the improver never auto-reverts.

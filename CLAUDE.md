@@ -1121,6 +1121,19 @@ by a test, by the engine, or by a past incident.
   cannot be read must count as UNDETERMINED inside the denominator, because a cold share
   computed over only the fires it managed to read reads exactly like a complete measurement.
   See docs/run-analytics.md.
+- **What ONE RUN of a routine costs is its own reading — and it says whether it can be trusted.**
+  `readmodels/cost_profile.py` (D163's second half) is the per-RUN fold the other three never
+  gave: `monthly_spend` averages 30 runs into a calendar cell, `recent_trend` reduces two
+  windows to a boolean. It adds NO cost vocabulary — same `usage_runs` fold, same `volume`, same
+  window pair, and `trend` is `recent_trend` passed through VERBATIM so the profile and the
+  routine page can never disagree about a flag. The part worth copying: **a cost surface over a
+  stream that was once mis-accounted must say so, per window.** Runs before 0.494.0 understated
+  a spawning run's tree by up to 40% (R3112), those rows are still on disk, and a 5-run window
+  straddling the fix reads as a cost improvement nobody made — so understatement is detected by
+  ARITHMETIC (a depth-0 run reporting less volume than its own `<parent>#sub<n>` rows sum to),
+  never by a hard-coded release date, and `mixed_accounting` names the contaminated side. A
+  consumer rendering those medians without reading it renders a mixture as one quantity.
+  No UI reads it yet — deliberately: a checked reader beats a view over an unchecked number.
 - **What a run COSTS is its VOLUME, never `tokens`.** `tokens` (fresh input + output) is what a
   token BUDGET meters — adapters keep cache traffic out of it — and a subscription's `cost` is
   0.0 on every call, so ranking by either put freelance-radar (33M cached tokens a run) among the
