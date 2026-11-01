@@ -44,6 +44,13 @@ def cmd_daemon(_args) -> int:
     # written once by the scaffold and never touched, so a deliberate uncapping stands.
     from .migrate_total_turns import run_migration as derive_total_turns
     derive_total_turns(server)
+    # MIGRATION(expires=2026-12-31): the fau-mail/gmail -> mail consolidation left two dead
+    # reserved-util names in six installed `capabilities.utils` lists, FAILing twice at the start
+    # of every one of their runs — and routine.yaml is the operator's config, which no run may
+    # write (D228, his answer (a)). Here with the other two routine.yaml migrations: before
+    # anything loads one.
+    from .migrate_dead_reserved_utils import run_migration as drop_dead_reserved_utils
+    drop_dead_reserved_utils(server)
     # The library repo exists BEFORE the syncs fill it. A container has no install step and its
     # library is an empty bind mount at first boot; the util sync installs only into an
     # existing utils/, and the repo used to be created by the web lifespan after these ran — so
