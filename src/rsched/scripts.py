@@ -264,4 +264,43 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     res = utils_run.run_jailed(cmd, env=env, cwd=routine_dir, timeout=timeout,
                                label=f"script {name!r}", config_seal=seal_dir or routine_dir,
                                aborted=aborted, cancelled=cancelled, secrets=env_secrets)
-    return res.exit_code, res.stdout, res.stderr
+    err = res.stderr + _gu_note(routine_dir, name, res.exit_code, res.stderr)
+    return res.exit_code, res.stdout, err
+
+
+#: The TWO ways a script without the library handle fails on `gu`, neither of which says why.
+#: Which one a caller meets depends on the host, and the second is the one this host produces —
+#: found by the test that was supposed to merely confirm the first:
+#:   1. `gu` is not on PATH at all: a bare OSError naming the handle (what R3052 reported).
+#:   2. `gu` IS on some inherited PATH but no `GLOBAL_UTILS_HOME` was folded in, so the
+#:      dispatcher itself exits 2 with "library home <default> does not exist — run deploy.sh",
+#:      which reads as a broken INSTALL rather than an undeclared call.
+_GU_ABSENT = re.compile(r"(FileNotFoundError|No such file or directory|command not found)"
+                        r"[^\n]*\bgu\b|\bgu\b: (command )?not found"
+                        r"|\bgu: library home\b[^\n]*does not exist")
+
+
+def _gu_note(routine_dir: Path, name: str, code: int, err: str) -> str:
+    """Why `gu` was not on PATH, appended to a failure that hit its absence.
+
+    A script that declares no `calls:` gets no library handle at all — deliberately, since the
+    declaration is what folds each util's secrets and network into the jail. What the AUTHOR saw
+    was a bare `FileNotFoundError: 'gu'`, and one reader concluded from it that this host has no
+    util front end whatsoever (R3052, `llmsectest-weekday`): the helper really had declared
+    `calls: tts`, but the engine reads the header of the script it RUNS, and that was a bridge
+    which declared nothing.
+
+    So the note names THE FILE WHOSE HEADER WAS READ. "this script declares no callees" would
+    send the author back to the file they are already looking at, which in a bridge topology is
+    the wrong one — both files are plausible and only one is consulted, and that is the entire
+    failure mode.
+    """
+    if code == 0 or declared_calls(routine_dir, name) or not _GU_ABSENT.search(err or ""):
+        return ""
+    return (f"\n[engine] This script has no util-library handle because the header the engine "
+            f"read — the docstring of {script_path(routine_dir, name)} — carries no `calls:` "
+            "line. That declaration is what earns the handle (and folds each named util's "
+            "secrets and network into the jail), so `gu` is either absent from PATH or resolves "
+            "with no library home — the message above is NOT a broken install. If the util call "
+            "lives in a script this one execs, it is THIS file's header that must name it: add "
+            "e.g.\n    calls: tts\nand rerun.")

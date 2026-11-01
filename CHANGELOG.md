@@ -15,6 +15,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.490.0] — 2026-11-01
+
+### A script without the util-library handle is told why — and told it about the right file
+
+Reported from outside by `llmsectest-weekday` (R3052, F801): a helper shelling out to
+`gu tts say` died with a bare `FileNotFoundError: 'gu'`, and the reporter concluded that this
+host has no util front end at all. A reasonable reading of the only evidence it had — and wrong.
+
+The helper HAD declared `calls: tts`. The engine reads the header of the script it RUNS, and
+what ran was a bridge that declared nothing. Two files were plausible and only one was
+consulted: that is the whole failure mode, so `run_script` now appends a note naming **the file
+whose header it read**. *"This script declares no callees"* would send the author back to the
+file they are already looking at, which in a bridge topology is the wrong one.
+
+**The test written to confirm that found a second shape of the same failure, and it is the one
+this host produces.** Which error a caller meets depends on the host:
+
+1. `gu` is not on PATH at all — a bare OSError naming the handle. What R3052 reported.
+2. `gu` IS on some inherited PATH but no `GLOBAL_UTILS_HOME` was folded in, so the dispatcher
+   itself exits 2 with *"gu: library home … does not exist — run deploy.sh from the
+   claude-utils-library repo"* — which reads as a broken INSTALL and sends the author off to
+   deploy a library that is already deployed.
+
+A note covering only shape 1 would have missed every real caller here. Both are the same cause
+(no `calls:` line, so no handle), and the note says so, including that the message above it is
+not a broken install.
+
+The note is appended to stderr by `scripts.run_script`, where both facts are known, and only on
+a non-zero exit whose output shows one of the two shapes — a script that declares its calls, or
+one that succeeds, never carries it (both pinned). `engine/executor.py` sits at its size-ratchet
+ceiling and is untouched. Tests in their own file for the same reason:
+`tests/test_script_gu_note.py`, proven in both directions (without the fix, the assertion fails
+on the bare dispatcher error).
+
 ## [0.489.0] — 2026-11-01
 
 ### The `outbound-mail` migration actually lands — pass 1 was a silent no-op
