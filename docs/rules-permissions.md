@@ -18,8 +18,8 @@ ownership:
   conversation gets it at setup and no config names it, so a request for it is refused before
   it reaches the Decisions page; `revise_util` and `write_recipe` are
   capability TOKENS rather than emittable kinds), reserved utils or single VERBS of them (every
-  entry a permission doc's `requires.utils:` names — `signal:send`, `gmail:send`,
-  `fau-mail:send`, `usenet:post`, `ntfy`, `browser-session`, `darknet`), and the settings: the
+  entry a permission doc's `requires.utils:` names — `signal:send`, `mail:send`,
+  `usenet:post`, `ntfy`, `browser-session`, `darknet`), and the settings: the
   approval dials, the previous-run read depth, the reminder layer, the job layer. What every
   routine does —
   the `util` action, its memory, its own `scripts/` — is no capability at all. Held via
@@ -631,7 +631,7 @@ routine shares, a reach outside the routine's own world.
 | `scheduling` | `schedule_run` — arm or cancel a one-shot future run of a routine | opt-in |
 | `routine-rebuild` | the `rebuild_routine` capability — `create_routine` with `replaces` creates a REPLACEMENT CANDIDATE at once (the old routine's settings without its secrets, unscheduled) and files the one swap decision (engine/candidate.py) | opt-in |
 | `shell` | the `shell` action — one host command per turn, in the run's own jail with no secret injected | opt-in |
-| `outbound-mail` | `gmail:send`, `fau-mail:send` — send email from the user's own mailboxes | opt-in |
+| `outbound-mail` | `mail:send` — send email from the user's own mailboxes (the `fau-mail`/`gmail` → `mail` consolidation retired the two older verbs: `migrate_permission_requires` corrected the doc, `migrate_dead_reserved_utils` dropped them from every installed `capabilities.utils`) | opt-in |
 | `browser-sessions` | `browser-session` — drive the shared browser that is already signed in (see [browser sessions](browser-sessions.md)) | opt-in |
 | `desktop-sessions` | `desktop` — drive this routine's OWN desktop VM the way a person would, its granted folders mounted inside (see [desktop sessions](desktop-sessions.md)) | opt-in |
 | `darknet` | `darknet` — read Tor hidden services (see [darknet](darknet.md)) | opt-in |

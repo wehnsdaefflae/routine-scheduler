@@ -26,11 +26,13 @@ what caught it, and it is the sixth symptom of this one cause found by a differe
 lesson is that a util rename must sweep the stores that hold util names as STRINGS, and that a
 partial correction of them can be worse than none.
 
-What this migration does NOT touch: the six live routine.yaml files that still name the two
-dead verbs beside the live one. Those are the operator's config (every one already carries
-`mail:send`, so nothing is blocked), and the `absent util` rows they produce now offer the
-performable remedy — drop the dead name — instead of "install a util that will never exist",
-which is the whole visible effect of correcting the permission.
+What this migration does NOT touch: the six live routine.yaml files that named the two dead
+verbs beside the live one. Those are the operator's config (every one already carries
+`mail:send`, so nothing was blocked), and correcting the permission is what turned the
+`absent util` rows they produced into a PERFORMABLE remedy — drop the dead name — instead of
+"install a util that will never exist". He then authorized that drop as its own one-shot
+(D228), which is `migrate_dead_reserved_utils`: a routine.yaml is his config and no run may
+write it, so only the daemon's boot can reach those six files.
 
 WHY A MIGRATION AND NOT JUST THE SEED EDIT. `bootstrap.sync_seed_library_docs` is ADD-ONLY by
 design — it installs a doc the live library LACKS and never overwrites one it has, because

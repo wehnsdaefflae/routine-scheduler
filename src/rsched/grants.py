@@ -23,7 +23,7 @@ demand):
       #   `revise_util` is a capability TOKEN here, never an action kind: the model emits
       #   write_util for both, and the engine picks create-vs-revise from whether the
       #   target name already exists in the library.
-      utils: [discord, gmail:send]     # reserved utils switched on for this routine — a bare
+      utils: [discord, mail:send]      # reserved utils switched on for this routine — a bare
       #   name grants every verb, `name:verb` grants that ONE subcommand (the call's 1st arg)
       confirm: always | creations | never       # write_util approval level
       rule_confirm: always | creations | never  # write_rule approval level
@@ -36,8 +36,8 @@ demand):
       #   (`tasks:` is the pre-D174 spelling, still read — rsched/jobs_compat.py)
 
 Which utils are "reserved" at all is library-defined: the union of every permission
-doc's `requires.utils`, at the grain the doc names — a bare `gmail` reserves every verb of
-the util, `gmail:send` reserves ONLY that verb, so reading a mailbox stays behind nothing but
+doc's `requires.utils`, at the grain the doc names — a bare `mail` reserves every verb of
+the util, `mail:send` reserves ONLY that verb, so reading a mailbox stays behind nothing but
 its credential while sending needs the permission. Which action kinds are gateable is
 engine-defined (GATED_KINDS) — a library edit can reserve a new util, but can never retract a
 base action kind from every routine. Enforced per turn by `engine.actions.validate_action`
