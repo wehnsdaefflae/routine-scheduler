@@ -42,8 +42,17 @@ def run_migration(server) -> dict:
     if record_path.exists() or not home.is_dir():
         return {}
     record: dict = {"started": now_iso(), "migrated": {}, "failed": {}}
-    for label, root in (("routines", home), ("conversations", server.conversations_home),
-                        ("background", server.background_home)):
+    # The two extra homes are read with getattr, never as attributes: a boot migration is handed
+    # whatever `load_server_config` returns, and the fresh-container boot test hands it a
+    # six-attribute stand-in — so a hard `server.conversations_home` kills the WHOLE DAEMON BOOT
+    # with an AttributeError raised inside a migration that had nothing to migrate (R3132: this
+    # runs FOURTH in `cli_daemon.cmd_daemon`, so the library bootstrap, every seed sync, every
+    # later migration, the web app and the scheduler would all never run). The sibling
+    # `migrate_total_turns` learned this from gate 1792680349875750345 and `migrate_usage_volume`
+    # carried the same defect. An absent home is an absent home: nothing to walk.
+    extra = [(label, getattr(server, f"{label}_home", None))
+             for label in ("conversations", "background")]
+    for label, root in [("routines", home), *[(a, b) for a, b in extra if b]]:
         for path in sorted(Path(root).glob("*/routine.yaml")) if Path(root).is_dir() else []:
             if path.parent.name.startswith("."):
                 continue                        # clarify workspaces and strays stay untouched

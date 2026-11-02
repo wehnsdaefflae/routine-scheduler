@@ -60,6 +60,23 @@ def _number(value: object) -> float:
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
 
 
+def reading(value: object) -> float | None:
+    """One stream number as a READING: a usable float, or None for NO reading at all.
+
+    `_number` answers 0 for an unusable value, which is right when SUMMING a run's legs — a leg
+    that recorded nothing adds nothing. It is wrong for an AVERAGE or a MEDIAN, where 0 is itself
+    a reading: one malformed row would drag the median and could fire a regression flag by
+    itself. So every reader that medians a stream field takes it through here, and a row whose
+    `volume` was written as a dict or a stray string is skipped as a reading rather than raising
+    out of a read model — the rule `readmodels/stats.py` states for this very stream ("one
+    malformed record is skipped whole … never a 500 on the dashboard"). The same definition of a
+    number as `_number`'s, so the two never disagree about what one is.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
 def _add_tallies(older: object, newer: object) -> dict:
     out: dict = {}
     for tally in (older, newer):

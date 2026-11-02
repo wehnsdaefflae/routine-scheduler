@@ -114,3 +114,21 @@ def test_it_runs_once_and_records_what_it_could_not_read(tmp_path):
     late = _routine(server.routines_home, "late", disabled=True)
     assert migrate_enabled.run_migration(server) == {}
     assert routine_yaml(late)["schedule"]["disabled"] is True
+
+
+def test_a_server_without_the_extra_homes_does_not_break_the_boot(tmp_path):
+    """A boot migration is handed whatever `load_server_config` returns, and this one runs
+    FOURTH in `cli_daemon.cmd_daemon` — so reading `server.conversations_home` as an attribute
+    killed the whole daemon boot (the library bootstrap, every seed sync, every later migration,
+    the web app and the scheduler) with an AttributeError raised inside a migration that had
+    nothing to migrate. R3132, raised by scheduler-builder from a stand-in with only the six
+    attributes `tests/test_bootstrap.py` carries. The sibling `migrate_total_turns` learned this
+    from gate 1792680349875750345."""
+    minimal = SimpleNamespace(routines_home=tmp_path / "routines")
+    minimal.routines_home.mkdir()
+    _routine(minimal.routines_home, "lonely", disabled=True)
+
+    record = migrate_enabled.run_migration(minimal)
+
+    assert record["migrated"] == {"routines/lonely": False}
+    assert routine_yaml(minimal.routines_home / "lonely")["enabled"] is False

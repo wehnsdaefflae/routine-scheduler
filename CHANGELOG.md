@@ -15,6 +15,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.496.0] — 2026-11-02
+
+### Fixed — a boot migration can no longer kill the daemon's boot, and a malformed usage row can no longer raise out of a read model (R3132, R3138)
+
+Two defects raised by `scheduler-builder` from its own worktrees, both latent in a green suite,
+both the same shape: an unvalidated read of something the rest of the system treats as optional.
+
+**A boot migration reading an extra home as an attribute kills the WHOLE boot** (R3132).
+`migrate_enabled.run_migration` read `server.conversations_home` and `server.background_home` as
+hard attributes, and it runs FOURTH in `cli_daemon.cmd_daemon` — so on a server object without
+them (what `load_server_config` may return, and what the fresh-container boot test hands it) the
+daemon died at `cli_daemon.py:40` with an `AttributeError` raised inside a migration that had
+nothing to migrate, before the library bootstrap, every seed sync, every later migration, the web
+app and the scheduler. Both extra homes are now read with `getattr`, the shape
+`migrate_total_turns` learned from gate 1792680349875750345 and `migrate_dead_reserved_utils`
+already carries. The same sweep found a SECOND live instance on the boot path —
+`migrate_usage_volume._run_dir` — fixed identically.
+
+It stayed invisible because `tests/test_bootstrap.py`'s fresh-container boot patched
+`migrate_enabled.run_migration` out, so the only test driving the real `cmd_daemon` never
+executed a migration against its own stand-in. That is now closed as a class rather than as an
+instance: `test_the_boot_survives_every_migration_on_a_minimal_server` drives the real boot with
+NOTHING patched out of the migration sequence, so the next migration to read a home hard fails
+its own test instead of a container's first start.
+
+**A malformed number in the durable usage stream raised out of `run_health`** (R3138).
+`regression_flag.profile` and `_by_version` both did `float(rec["volume"])` behind an
+`is not None` guard, so a row whose `volume` was written as a dict or a stray string raised
+`TypeError` out of three production surfaces: the routine page's development line
+(`recipe_regression` → `api_changes.routine_summary`), `GET /routines/{slug}/health`, and run-end
+telemetry (`engine/runtime._log_cost_trend` → `recent_trend`). `fold_legs` sanitizes only runs
+with SEVERAL legs — "a run with one leg keeps its raw values" — so a single-leg row arrived
+exactly as written. Both sites now take the value through `usage_stream.reading`, the stream's one
+definition of a number beside `_number`: an unusable value is **no reading**, skipped rather than
+coerced, and never a 0 — a 0 is itself a reading and one of them drags a median far enough to
+fire a regression flag on its own. The two `turns` coercions raised on the same shapes and keep
+their established absent-is-0 contract without raising. The fix sits in the shared read model
+because four readers fold this stream; `cost_profile._sanitized` was a local shield for one.
+
+9 tests (`tests/test_run_health_malformed.py` new, `test_migrate_enabled.py`,
+`test_bootstrap.py`). Red-first by reverting all four source files with the tests kept: 2 failed
+and 1 error, the error being the real `cmd_daemon` dying at `migrate_enabled.py:45` — R3132's
+mechanism reproduced end to end.
+
 ## [0.495.0] — 2026-11-01
 
 ### Added — a per-RUN cost profile per routine, and the integrity of the figures it reports (D163)

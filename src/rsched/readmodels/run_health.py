@@ -36,7 +36,7 @@ from ..recipes import recipe_log
 from . import health_stream, library_reads, memo
 from .incarnations import live_runs
 from .stamps import instant
-from .usage_stream import fold_legs, usage_runs
+from .usage_stream import fold_legs, reading, usage_runs
 
 # --- regression heuristic constants (each with its reason) ---------------------------
 # Runs compared on each side of the newest recipe change. 5 ≈ one week of a daily
@@ -82,6 +82,21 @@ def _median(vals: list[float]) -> float:
     s = sorted(vals)
     mid = len(s) // 2
     return float(s[mid]) if len(s) % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def _readings(recs: list[dict], field: str) -> list[float]:
+    """The usable values of one stream field — an unmeasured OR malformed row is NO reading.
+
+    Both were `float(rec[field])` behind an `is not None` guard, which raises TypeError straight
+    out of this read model on a row whose number was written as a dict or a stray string (R3138).
+    `fold_legs` sanitizes only runs with SEVERAL legs ("a run with one leg keeps its raw values"),
+    so a single-leg row reaches here exactly as it was written. Four readers fold this stream —
+    the production routine page's development line, `GET /routines/{slug}/health`, the
+    routine-improver's target order and run-end telemetry (`_log_cost_trend`) — so the skip
+    belongs here rather than in each caller, and a malformed row may not become a 0 either: 0 is
+    a reading, and one of them drags a median hard enough to fire a flag by itself.
+    """
+    return [v for v in (reading(rec.get(field)) for rec in recs) if v is not None]
 
 
 def _stream_runs(server: ServerConfig, slug: str) -> list[dict]:
@@ -134,9 +149,8 @@ def regression_flag(before: list[dict], after: list[dict], *,
         ok = sum(1 for r in recs if r.get("status") == "ok")
         return {"runs": len(recs),
                 "fail_rate": round(1 - ok / len(recs), 3) if recs else None,
-                "turns_median": _median([float(r.get("turns") or 0) for r in recs]),
-                "volume_median": _median([float(r["volume"]) for r in recs
-                                          if r.get("volume") is not None])}
+                "turns_median": _median([reading(r.get("turns")) or 0 for r in recs]),
+                "volume_median": _median(_readings(recs, "volume"))}
 
     b, a = profile(before), profile(after)
     if len(before) < MIN_RUNS or len(after) < MIN_RUNS:
@@ -255,9 +269,8 @@ def _by_version(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
         b["runs"] += 1
         status = str(rec.get("status") or "")
         b[status if status in ("ok", "partial", "failed", "aborted") else "failed"] += 1
-        b["_turns"].append(float(rec.get("turns") or 0))
-        if rec.get("volume") is not None:      # an unmeasured run is no reading, never 0
-            b["_volume"].append(float(rec["volume"]))
+        b["_turns"].append(reading(rec.get("turns")) or 0)
+        b["_volume"].extend(_readings([rec], "volume"))   # unmeasured OR malformed: no reading
         b["asks_deferred"] += int(rec.get("asks_deferred") or 0)
         b["inferred_runs"] += 1 if inferred else 0
         ts = str(rec.get("ts") or "")
