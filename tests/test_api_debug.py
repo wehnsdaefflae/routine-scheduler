@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import authed_client, make_test_server
+from helpers import idle_socket
 from rsched.web.app import create_app
 
 
@@ -74,8 +75,9 @@ def test_live_streams_are_never_counted_as_slow(client):
     app.state.slow_request_s = 0.0
     r = client.post("/api/stream-ticket")
     assert r.status_code == 200
-    with client.websocket_connect(f"/api/events?ticket={r.json()['ticket']}"):
-        time.sleep(0.05)
+    # Held past the threshold through `idle_socket`, which leaves the socket cleanly: the bare
+    # `with …: sleep()` form raced starlette's exit stack and failed 8 of 12 parallel runs.
+    idle_socket(client, f"/api/events?ticket={r.json()['ticket']}", hold_s=0.05)
     paths = [e["path"] for e in client.get("/api/debug/slow").json()["requests"]]
     assert "/api/stream-ticket" in paths
     assert "/api/events" not in paths

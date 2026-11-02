@@ -24,6 +24,7 @@ from __future__ import annotations
 import pytest
 
 from conftest import authed_client, make_test_server
+from helpers import idle_socket
 
 CSP = "object-src 'none'; frame-ancestors 'self'"
 
@@ -70,5 +71,6 @@ def test_a_live_stream_still_connects(client):
     r = client.post("/api/stream-ticket")
     assert r.status_code == 200
     assert r.headers.get("content-security-policy") == CSP
-    with client.websocket_connect(f"/api/events?ticket={r.json()['ticket']}"):
-        pass
+    # `idle_socket` rather than `with …: pass`: the handshake is what this asserts, and the
+    # bare form raced starlette's exit stack into a CancelledError on a parallel worker.
+    idle_socket(client, f"/api/events?ticket={r.json()['ticket']}")
