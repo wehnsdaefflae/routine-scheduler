@@ -913,7 +913,12 @@ and the capabilities digest's catalog listing):
   it reports its own trustworthiness: a depth-0 run reporting less volume than its own
   `<parent>#sub<n>` child rows sum to was understated by the accounting defect closed in 0.494.0
   (R3112), detected by arithmetic rather than by a release date, counted in `integrity` and named
-  per side in `mixed_accounting`. No UI reads it yet.
+  per side in `mixed_accounting`. Served by `GET /changes/{slug}/cost` (`web/api_changes.py`,
+  beside that view's other per-routine read models) and read by the **Per-run cost** panel of a
+  routine's development view (#/changes/<slug>, `static/components/cost-panel.js`), where a window
+  the read model calls understated is marked as mixed in the warn tone wherever its median is
+  read and `integrity.detail` is printed verbatim — a median shown as a clean figure when the
+  reader itself calls it a floor is the one way that surface could mislead.
   `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
   `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
   routine.yaml or state; queued while a run is active and applied when it ends, D78-A).
