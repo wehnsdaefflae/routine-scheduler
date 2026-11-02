@@ -147,17 +147,29 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   const turnsIn = numIn(b.max_turns ?? -1, "-1");
   const minsIn = numIn(b.max_wall_clock_min ?? -1, "-1");
   const tokIn = numIn(b.max_total_tokens ?? -1, "-1");
+  // D216 (c): the two ceilings this editor never carried. `max_cost` is the spend backstop a
+  // conversation had none of — created at -1 like every other, so the one run type with a human
+  // driving it was also the only one with no dollar cap. `ask_timeout_min` is minutes a BLOCKING
+  // question waits before the reply continues on its stated default, which matters most here,
+  // where questions are the medium; it is a positive number, never -1.
+  const costIn = numIn(b.max_cost ?? -1, "-1");
+  const askIn = numIn(b.ask_timeout_min ?? 480, "1");
   const saveBudgets = el("button", { class: "btn small" }, "save budgets");
   saveBudgets.onclick = () => act(saveBudgets,
     () => api(`/api/conversations/${slug}`, { method: "PATCH", body: { budgets: {
       max_turns: +turnsIn.value || -1, max_wall_clock_min: +minsIn.value || -1,
-      max_total_tokens: +tokIn.value || -1 } } }),
+      max_total_tokens: +tokIn.value || -1, max_cost: +costIn.value || -1,
+      // never `|| -1`: an unlimited ask timeout is what a stated default exists to end, so a
+      // blank or zero field keeps the server's own value rather than lifting the ceiling.
+      ...(+askIn.value > 0 ? { ask_timeout_min: +askIn.value } : {}) } } }),
     "budgets saved — they cap EACH reply, from the next one");
   const budgetField = (label, input) => el("label", { style: "flex-direction:column" },
     el("span", { class: "faint" }, label), input);
   capBody.append(el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;align-items:flex-end" },
     budgetField("turns / reply (-1=∞)", turnsIn), budgetField("minutes / reply (-1=∞)", minsIn),
-    budgetField("tokens / reply (-1=∞)", tokIn), saveBudgets));
+    budgetField("tokens / reply (-1=∞)", tokIn),
+    budgetField("$ / reply (-1=∞)", costIn),
+    budgetField("ask timeout (min)", askIn), saveBudgets));
   // Folder access (D82): the same read/write roots the composer grants at create time,
   // editable mid-conversation. Saved to config wholesale; they reach the NEXT reply's
   // boot (a live reply keeps the roots it booted with) — same contract as budgets above.

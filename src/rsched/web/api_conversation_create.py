@@ -167,7 +167,8 @@ def _parse_efforts(raw: str) -> dict[str, str] | None:
 
 
 #: The budgets the composer offers, each a whole number (-1 = unlimited where it applies).
-_BUDGET_FIELDS = ("max_turns", "max_total_turns", "max_wall_clock_min", "max_total_tokens")
+_BUDGET_FIELDS = ("max_turns", "max_total_turns", "max_wall_clock_min", "max_total_tokens",
+                  "max_cost", "ask_timeout_min")   # D216 (c) added the last two
 _RESTARTING = ("the server is restarting — the conversation was NOT created. Start it again "
                "in a moment, once the server is back.")
 
@@ -199,6 +200,8 @@ class ComposerForm(BaseModel):
     max_total_turns: str = ""   # … except this one: cumulative over the conversation
     max_wall_clock_min: str = ""
     max_total_tokens: str = ""
+    max_cost: str = ""          # whole-$ cap on NOTIONAL spend (D216 (c))
+    ask_timeout_min: str = ""   # minutes a BLOCKING question waits before its stated default
     deliberation: str = ""      # one of DELIBERATION_LEVELS
     permissions: str = ""       # JSON — the ⚙ panel's {active, capabilities}
     fs_read_roots: str = ""     # JSON array of absolute (or ~/) paths

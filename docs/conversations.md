@@ -104,7 +104,12 @@ is not trying to answer quickly, it is trying to answer.
 
 A new conversation has **no per-reply budget**: no turn, time, token or cost ceiling. What bounds
 a reply is what you asked for (see *Goals and final replies* below). You can still set any ceiling
-— on the composer before you start, or in the header panel later — and then it is a **backstop**
+— turns, minutes, tokens, **dollars** (`max_cost`, a whole-$ cap on notional spend) and the
+minutes a **blocking question** waits before the reply continues on its stated default
+(`ask_timeout_min`) — on the composer before you start, **or in the header panel later**: both
+surfaces carry all five, and the header's save sends all five, so none of them is frozen at
+create. (Until D216 (c) the last two reached neither surface, which left the one run type with a
+human driving it as the only one with no spend backstop at all.) A ceiling is a **backstop**
 against a runaway, not a pace: when the agent nears it, it gets a warning and converges to the
 nearest clean handover — it brings the working plan and LEDGER up to date and replies with honest
 progress, not final, ending with an offer to continue. Say **continue** and it picks up right where
