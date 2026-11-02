@@ -309,6 +309,9 @@ export async function render(view) {
       { label: "kind", get: (d) => d.kind },
       { label: "endpoint", get: (d) => d.endpoint },
       { label: "model", get: (d) => d.model },
+      // the TOOL-CALL half of the pair (D230): the same value as `model` means this routine's
+      // cheap turns run its expensive model, so a `role_swap: cheap` saves nothing
+      { label: "tool_call", get: (d) => d.tool_call_model },
     ], (k, d) => routineHref(k, d.kind)));
     parts.push(sliceTable("By model", agg.by_model, "model"));
     parts.push(sliceTable("By endpoint", agg.by_endpoint, "endpoint"));

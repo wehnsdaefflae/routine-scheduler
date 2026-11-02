@@ -471,9 +471,16 @@ endpoint serves many models with different windows and vision support). Each **r
 references models BY NAME** (`routine.yaml` `models:` maps a role → catalog name): `main` (the
 loop — and every spawned child's default), `tool_call` (the `llm` action), optional
 `uncensored` — plus the two DECISION roles `decision` / `decision_media`, which name a decision
-model (below) and fall back to the instance's decision defaults instead. A chat role left unset falls back to the server's single `system_model` (also a catalog
+model (below) and fall back to the instance's decision defaults instead. A chat role left unset
+falls back to an INSTANCE DEFAULT, resolved by the one pure rule
+`config.base.role_default_model()`: `tool_call` prefers `system_tool_call_model` — the fleet-wide
+default for the cheap half of the work (D230) — and every role, `tool_call` included while that is
+unset, falls through to the server's single `system_model` (also a catalog
 name) — the ONE model for pre-routine machine work (the clarify flow + workflow
-generation/suggestion). A MODEL TRIAL (`trial:`, `rsched/trials.py`) replaces chat roles (and
+generation/suggestion). `system_tool_call_model` SHIPS EMPTY, so nothing moved at the release:
+before it existed there was no instance default for the role at all, and 31 of 32 routines
+therefore resolved `main` and `tool_call` to one model — a `role_swap: cheap` turn saved exactly
+nothing while the run believed it did. A MODEL TRIAL (`trial:`, `rsched/trials.py`) replaces chat roles (and
 their efforts) for the routine's next N fires without touching `models:` / `efforts:` — the
 daemon names the trial's models and efforts to the engine per run, exactly as `run-once --model
 … --effort …` does by hand. A single `llm`/`spawn`/`subtask` call may override its model per call
@@ -712,8 +719,9 @@ and the capabilities digest's catalog listing):
   overseer resolved to a model nobody chose for this routine judges with less context than the
   run it judges.
   **A blank picker says the default its own role resolves to** — the four roles do not share
-  one (`static/views/routine-config-models.js`, `blankLabel`): main and tool_call fall back to
-  the server's system model, `supervisor` to this routine's `main` (following the main picker
+  one (`static/views/routine-config-models.js`, `blankLabel`): main falls back to the server's
+  system model, `tool_call` to the instance's `system_tool_call_model` when one is set and to the
+  system model otherwise (D230), `supervisor` to this routine's `main` (following the main picker
   live, before any accept), and `uncensored` to NOTHING AT ALL — an unset uncensored role means
   referral is off, there is no system-model fallback behind it (`endpoints.for_uncensored`).
   One template for all four is how the supervisor row shipped claiming the system model while

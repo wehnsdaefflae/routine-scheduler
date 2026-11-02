@@ -2,9 +2,13 @@
 
 The verifier (engine/verifier.py) checks each `met` a finish asserts, on the routine's
 `tool_call` role — long documented as "a SECOND model, never the main one". A role the routine
-leaves unset runs the server's `system_model` (`EndpointRegistry.for_model_chain`), so when both
-roles are unset, or both name the same catalog model, the second opinion is the first one asked
-again. Harness² (arXiv 2610.14224) measured what that costs: a checker written by the same
+leaves unset runs the instance default FOR THAT ROLE (`config.base.role_default_model`, which
+`EndpointRegistry.for_model_chain` applies): `system_tool_call_model` for `tool_call` once the
+operator sets one (D230), else `system_model` as before. So when both roles are unset and no
+tool-call default is set, or both name the same catalog model, the second opinion is the first
+one asked again — and setting that one default ends it fleet-wide.
+
+Harness² (arXiv 2610.14224) measured what that costs: a checker written by the same
 editor reported PASS three times while 4 of 11 tests failed — "a checker written by the editor
 cannot catch the editor's assumption" — and its authors recommend a verifier that is a different
 model from the one being judged. On 2026-10-25 every one of this instance's 32 routines resolved
@@ -21,13 +25,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .config.base import role_default_model
+
 if TYPE_CHECKING:
     from .config import ServerConfig
 
 
 def _resolved(server: ServerConfig, models: dict[str, str] | None, role: str) -> str:
-    """The catalog name a role runs on: its own, else the server's system model."""
-    return (models or {}).get(role) or getattr(server, "system_model", "") or ""
+    """The catalog name a role runs on: its own, else the instance default FOR THAT ROLE.
+
+    Through `config.base.role_default_model`, the one function the engine's own resolution uses
+    (`endpoints.for_model_chain`) — a second copy of the precedence here would report "both
+    unset, so both run the system model" about an instance where `system_tool_call_model` had
+    already made them different (D230).
+    """
+    return (models or {}).get(role) or role_default_model(server, role)[0]
 
 
 def shared_verifier_problem(server: ServerConfig, models: dict[str, str] | None) -> str | None:
@@ -41,8 +53,11 @@ def shared_verifier_problem(server: ServerConfig, models: dict[str, str] | None)
         return None
     if catalog[main].model != catalog[judge].model:
         return None
+    # "both unset" is only the honest wording when the ROLES are unset AND no tool-call default
+    # answered for one of them — with `system_tool_call_model` set they resolve apart (D230).
     how = "both unset, so both run the system model" if not (models or {}).get("tool_call") \
-        and not (models or {}).get("main") else f"main {main!r}, tool_call {judge!r}"
+        and not (models or {}).get("main") and main == judge \
+        else f"main {main!r}, tool_call {judge!r}"
     return (f"the claim verifier judges with the model that made the claims "
             f"({catalog[main].model}; {how}) — a second opinion from the same model shares its "
             "blind spots; set models.tool_call to a different model to make it independent")

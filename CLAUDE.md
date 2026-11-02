@@ -396,8 +396,14 @@ one you are about to touch, not all of them.
   mutation the operator's console switch makes (`switches.apply_model_switch`: assign
   `routine.models['main']`), applied at `loop._land` where `note` is filed, so it lands on the
   NEXT completion — `endpoints.for_model` re-resolves the role every turn, so model, window and
-  effort self-correct. A position the routine cannot serve (no `tool_call` model) is NAMED to the
-  run as an engine note rather than silently served by the system-model fallback. The operator's
+  effort self-correct. The cheap position resolves the role through `config.base.role_default_model`
+  (the routine's own `tool_call`, else the instance's `system_tool_call_model`, D230) and is served
+  only when the result DIFFERS from what `main` resolves to — one rule, `roleswap.cheap_model`,
+  which `engine/autoswap.py` delegates to so the two layers cannot disagree. A position that
+  resolves to no cheaper model is NAMED to the run as an engine note rather than silently served by
+  the system-model fallback. A `strong` on a routine that configures no `main` REMOVES the override
+  instead of naming a model, so the run returns to the instance default rather than being stranded
+  on the cheap one. The operator's
   2026-10-16 choice of the run-chosen trigger over a stage- or turn-count rule made auditability
   a condition: D188's per-turn model stamp is what satisfies it.
   The ENGINE serves the same slot for a REPEAT POLL, without the run asking (F785, D217 "both":
@@ -407,7 +413,12 @@ one you are about to touch, not all of them.
   and the cheap serve starts at the SECOND consecutive repeat, so one re-check never changes
   models under a run. The main model returns on the first action of a different class. Three
   stand-downs are load-bearing: no distinct `tool_call` model means the mechanism does nothing
-  and claims nothing (31 of 32 routines today — the config half is D230); a byte-identical
+  and claims nothing (31 of 32 routines were in that position — D230 shipped the config half:
+  `config.base.role_default_model` gives the role a FLEET-WIDE default,
+  `ServerConfig.system_tool_call_model`, which an unset `models.tool_call` prefers over
+  `system_model`. It ships EMPTY, so the stand-down still holds for every routine until the
+  operator names a model there, and then stops holding fleet-wide in one setting); a
+  byte-identical
   streak at `wrongturn.WARN_STREAK` restores the main model, because that is the turn
   `loop._repeat_warning` tells the run it is stuck and sheds the schema; and an action carrying
   `role_swap` stops the engine guessing for the rest of the run. Measured reach on the 401
@@ -989,7 +1000,9 @@ by a test, by the engine, or by a past incident.
   is fatal: the endpoint's `base_url` (one host, one outage) and its `key_var` (one credential,
   one expiry). That second axis is the 2026-09-14 incident — `Astra high`'s only fallback was
   `Opus high`, both on `cliproxy`, and eight routines died at turn 0 within two minutes on one
-  expired token. `system_model` is checked as the INSTANCE's, since every unset role runs on it.
+  expired token. `system_model` is checked as the INSTANCE's, since every unset role runs on it,
+  and `system_tool_call_model` beside it (D230) for the same reason — an unset `tool_call` runs
+  on that one; an unset pointer raises nothing, which is how the tool-call default ships.
   REPORTED, never counted: whether a single-domain chain is acceptable is a judgement about this
   instance's providers (a one-provider instance has no other domain to reach), so it prints as a
   `NOTE  failover ·` line beside the setup and recipe notes and leaves the exit code alone.

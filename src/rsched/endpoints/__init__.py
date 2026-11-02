@@ -16,6 +16,7 @@ from ..config import (
     EndpointConfig,
     ModelRef,
     ServerConfig,
+    role_default_model,
 )
 from . import failover, limits
 from .anthropic_api import AnthropicEndpoint
@@ -155,16 +156,20 @@ class EndpointRegistry:
     def for_model_chain(self, kind: str, models: dict[str, str],
                         efforts: dict[str, str]) -> list[tuple[InstrumentedEndpoint, ModelRef]]:
         """A routine role's full failover chain (primary first), at the role's effort. The
-        engine's turn completion walks it when the picked model fails hard mid-turn. A role the
-        routine left unset runs the server's system model — at the role's own effort when the
-        routine names one, else at the server's `system_effort`.
+        engine's turn completion walks it when the picked model fails hard mid-turn.
+
+        A role the routine left unset runs the INSTANCE DEFAULT for that role
+        (`config.base.role_default_model`): `tool_call` prefers `system_tool_call_model` and
+        falls through to `system_model` when that is unset, every other role takes
+        `system_model` directly. At the role's own effort when the routine names one, else at
+        the effort belonging to whichever default answered.
         """
         if name := models.get(kind):
             return self.resolve_chain(name, efforts.get(kind))
-        if not self.server.system_model:
+        name, effort = role_default_model(self.server, kind)
+        if not name:
             raise EndpointError(f"no model configured for {kind!r} (and no system_model fallback)")
-        return self.resolve_chain(self.server.system_model,
-                                  efforts.get(kind) or self.server.system_effort)
+        return self.resolve_chain(name, efforts.get(kind) or effort)
 
     def for_model(self, kind: str, models: dict[str, str],
                   efforts: dict[str, str]) -> tuple[InstrumentedEndpoint, ModelRef]:

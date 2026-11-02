@@ -41,13 +41,18 @@ sandbox: permissive
 #                of CLIProxyAPI subscription logins — docs/model-gateway.md).
 # Models are a CATALOG over those endpoints, each entry named once and picked by that name. Each
 # ROUTINE picks its own (main / tool_call, plus an optional uncensored one) in the UI or its
-# routine.yaml. The only server-level model is system_model below: the ONE fallback for machine
-# work that isn't a routine yet — the new-routine clarify flow and workflow generation — and for
-# any role a routine leaves unset.
+# routine.yaml. The server-level models are system_model below — the ONE fallback for machine
+# work that isn't a routine yet (the new-routine clarify flow and workflow generation) and for
+# any role a routine leaves unset — and system_tool_call_model, the fleet-wide default for the
+# tool_call role alone: the cheap half of the work (the `llm` action, a turn a run swaps down
+# with role_swap: cheap, the claim verifier's second opinion). Blank, it falls through to
+# system_model exactly as before, which is why a cheap turn used to save nothing.
 #
 # endpoints: {}          # transports — populated from the UI
 # models: {}             # the catalog: name → {endpoint, model, …} — populated from the UI
 # system_model: ""       # a catalog model NAME — set from the UI once the catalog has one
+# system_tool_call_model: ""   # fleet default for tool_call; blank = system_model (unchanged)
+# system_tool_call_effort: ""  # the effort THAT model runs at; blank = the provider's default
 
 # DECISION models — typed classifiers that answer with probabilities, never text (TypeSafe's
 # Jev, OpenAI's Decisions API, a self-hosted github.com/wehnsdaefflae/local-model-server). Their own catalog, behind

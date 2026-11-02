@@ -53,7 +53,8 @@ export async function renderEndpoints(view) {
     listBox.append(addForm());
     listBox.append(...modelPanels({
       endpoints: data.endpoints, models: data.models || [], systemModel: data.system_model,
-      systemEffort: data.system_effort, compactionModel: data.compaction_model,
+      systemEffort: data.system_effort, toolCallModel: data.system_tool_call_model,
+      toolCallEffort: data.system_tool_call_effort, compactionModel: data.compaction_model,
       compactionEffort: data.compaction_effort, effortLevels: data.effort_levels || [],
       reload: load }));
   }

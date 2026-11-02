@@ -48,6 +48,26 @@ def test_each_role_states_the_default_its_own_resolver_applies(ui, ui_page):
     assert "blank = main" not in row.inner_text()
 
 
+def test_the_tool_calls_blank_names_the_fleet_default_once_the_instance_sets_one(ui, ui_page):
+    """D230: `tool_call` stopped sharing `main`'s default. While the instance names no
+    `system_tool_call_model` the row must read exactly as before (the test above pins that);
+    once it does, the row has to say THAT model, because it is what the engine resolves the
+    role to — `config.base.role_default_model`.
+    """
+    first = ui.server_cfg.models["m"]
+    ui.server_cfg.models["cheap"] = ModelConfig(name="cheap", endpoint=first.endpoint,
+                                                model="vendor/cheap")
+    ui.server_cfg.system_tool_call_model = "cheap"
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    _open_models(ui_page)
+
+    expect(_blank(ui_page, "tool_call")).to_have_text("— tool-call default (cheap) —")
+    # ...and it is the TOOL-CALL role alone: main still reads the system model, and the
+    # supervisor still follows main (D164), not the new default
+    expect(_blank(ui_page, "main")).to_have_text("— system default (m) —")
+    expect(_blank(ui_page, "supervisor")).to_have_text("— main (m) —")
+
+
 def test_the_supervisors_blank_names_the_routines_own_main(ui, ui_page):
     configure(ui, models={"main": "m"})
     ui_page.goto(f"{ui.url}/#/routine/uir")

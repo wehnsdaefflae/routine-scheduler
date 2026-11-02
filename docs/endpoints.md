@@ -69,9 +69,14 @@ OpenAI chat-completions dialect, cloud or local.
    optional **uncensored** (the refusal-clarification harness — see below — and, in a
    conversation, the model a reply flagged ⚑ as a refusal is handed to) — on the
    routine's page, each a catalog model name.
-   main/tool_call fall back to the system model when left unset; **uncensored has no
-   fallback** — leave it unset and refusals are still flagged + isolated, but no fragment
-   is referred. See *Refusal clarification* below.
+   An unset **main** falls back to the system model. An unset **tool_call** falls back to
+   `system_tool_call_model` — the fleet-wide default for the cheap half of the work (the
+   `llm` action, a turn a run swaps down with `role_swap: cheap`, the claim verifier's second
+   opinion) — and, while THAT is unset, to the system model exactly as main does. Setting it
+   is what makes a cheap turn actually cheaper: with no default for the role, every routine
+   that named no `tool_call` of its own resolved both roles to one model and saved nothing.
+   **uncensored has no fallback** — leave it unset and refusals are still flagged +
+   isolated, but no fragment is referred. See *Refusal clarification* below.
 
 ## Adding endpoints + models (config file)
 
@@ -98,6 +103,7 @@ models:                           # the catalog: each entry binds a model id to 
     context_tokens: 128000         # overrides the endpoint default for this model
 
 system_model: glm                 # the fallback model for setup-time work — a catalog NAME
+system_tool_call_model: ""        # fleet default for the tool_call role; blank = system_model
 ```
 
 ### Endpoint fields (the transport)

@@ -19,10 +19,11 @@ import { modelIdPicker } from "/static/components/model-id-picker.js";
 import { effortSelect, savedToast, temperatureHint } from "/static/views/settings-common.js";
 import { act, el, toast } from "/static/util.js";
 
-/** The three catalog panels, in the order the page shows them. `effortLevels` is the server's
+/** The four catalog panels, in the order the page shows them. `effortLevels` is the server's
  *  vocabulary (`effort_levels` in the settings payload). */
-export function modelPanels({ endpoints, models, systemModel, systemEffort, compactionModel,
-                              compactionEffort, effortLevels, reload }) {
+export function modelPanels({ endpoints, models, systemModel, systemEffort, toolCallModel,
+                              toolCallEffort, compactionModel, compactionEffort, effortLevels,
+                              reload }) {
   // ---- the model catalog: named models bound to an endpoint -----------------------------------
   function modelsSection(endpoints, models) {
     const box = el("div", { class: "panel mt" });
@@ -282,6 +283,33 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, comp
     return box;
   }
 
+  // The fleet-wide default for the TOOL_CALL role (D230) — the cheap half of every routine's
+  // work. Blank = fall through to the system model, which is what every routine did before.
+  function toolCallModelEditor(models, current, currentEffort) {
+    const sel = el("select", { "aria-label": "Fleet tool-call model" },
+      el("option", { value: "" }, "the system model"),
+      ...models.map((m) => el("option", { value: m.name }, m.name)));
+    sel.value = current || "";
+    const eff = effortSelect(effortLevels, currentEffort, "Fleet tool-call effort");
+    const sync = () => { eff.disabled = !sel.value; };
+    sel.addEventListener("change", sync); sync();
+    const save = el("button", { class: "btn small primary" }, "save tool-call model");
+    save.onclick = () => act(save, async () => {
+      await api("/api/settings/tool-call-model", { method: "PUT",
+        body: { name: sel.value, effort: sel.value ? eff.value : "" } });
+      toast(`fleet tool-call model → ${sel.value || "the system model"}`); await reload();
+    });
+    return el("div", { class: "panel mt" },
+      el("div", { class: "small", style: "font-weight:600" }, "Fleet tool-call model"),
+      el("p", { class: "muted small" },
+        "The default for every routine's ", el("strong", {}, "tool-call"), " role — the ",
+        el("code", {}, "llm"), " action, a turn a run swaps down to cheap, and the claim ",
+        "verifier's second opinion. A routine that names its own tool-call model still wins. ",
+        "Leave it on the system model and nothing changes: that is what every routine did ",
+        "before, which is also why a cheap turn saved nothing."),
+      el("div", { class: "row" }, sel, el("label", { class: "small muted" }, "effort ", eff), save));
+  }
+
   function compactionModelEditor(models, current, currentEffort) {
     const sel = el("select", { "aria-label": "Context compaction model" },
       el("option", { value: "" }, "Automatic"),
@@ -312,5 +340,6 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, comp
 
   return [modelsSection(endpoints, models),
           systemModelEditor(models, systemModel, systemEffort),
+          toolCallModelEditor(models, toolCallModel, toolCallEffort),
           compactionModelEditor(models, compactionModel, compactionEffort)];
 }

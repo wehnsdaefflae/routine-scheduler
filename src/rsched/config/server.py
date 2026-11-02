@@ -100,6 +100,21 @@ class ServerConfig(_Config):
     # The reasoning effort that system model runs at (config.base.EFFORT_LEVELS); blank = the
     # provider's default. Effort is the USE's setting, not the catalog entry's.
     system_effort: str = ""
+    # The fleet-wide default for the TOOL_CALL role (D230): the cheap half of every routine's
+    # work — the `llm` action, a `role_swap: cheap` turn, the claim verifier's second opinion.
+    # Until this existed there was no instance default for the role at all, so an unset
+    # `tool_call` landed on `system_model` — the same value an unset `main` lands on — and 31 of
+    # 32 routines resolved the two roles to ONE model: a `role_swap: cheap` turn saved exactly
+    # nothing while the run believed it did. A catalog model NAME, like `system_model`; a
+    # routine's own `models.tool_call` still wins (config.base.role_default_model).
+    # Blank = the previous behaviour EXACTLY (fall through to `system_model`), which is how it
+    # ships: WHICH model the fleet should think cheaply on is the operator's decision.
+    system_tool_call_model: str = ""
+    # The reasoning effort that tool-call default runs at (config.base.EFFORT_LEVELS); blank =
+    # the provider's default. Its own setting rather than `system_effort`, which belongs to the
+    # system model: a cheap model asked to think at the big model's level is not the saving the
+    # operator asked for. A routine's own `efforts.tool_call` still outranks it.
+    system_tool_call_effort: str = ""
     # Background navigable-history archival only; blank preserves automatic tool-call/main routing.
     compaction_model: str = ""
     # The reasoning effort that compaction model runs at (config.base.EFFORT_LEVELS); blank = the
@@ -195,13 +210,14 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
                 problems.append(f"models.{name}: fallback {fb!r} is not a catalog model")
     if cfg.system_model and cfg.system_model not in cfg.models:
         problems.append(f"system_model: {cfg.system_model!r} is not a catalog model")
-    for field in ("system_effort", "compaction_effort"):
+    for field in ("system_effort", "compaction_effort", "system_tool_call_effort"):
         if getattr(cfg, field) and getattr(cfg, field) not in EFFORT_LEVELS:
             problems.append(f"{field}: {getattr(cfg, field)!r} is not one of "
                             f"{', '.join(EFFORT_LEVELS)} (ignored)")
             setattr(cfg, field, "")
-    if cfg.compaction_model and cfg.compaction_model not in cfg.models:
-        problems.append(f"compaction_model: {cfg.compaction_model!r} is not a catalog model")
+    problems.extend(f"{field}: {getattr(cfg, field)!r} is not a catalog model"
+                    for field in ("compaction_model", "system_tool_call_model")
+                    if getattr(cfg, field) and getattr(cfg, field) not in cfg.models)
     for name, mac in cfg.machines.items():
         mac.name = name
     problems.extend(decision_problems(cfg))

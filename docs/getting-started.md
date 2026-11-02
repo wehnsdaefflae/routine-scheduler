@@ -58,7 +58,9 @@ tinted band, in the palette's violet — is how the system is changing and wheth
   `main` (the loop, and every child run by default), `tool_call` (the `llm` action and the
   engine's own subcalls) and an optional `uncensored` refusal-clarification harness (in a
   conversation, also the model a reply you flag ⚑ as a refusal is handed to) — or falls
-  back to the one **system model**. A model can be
+  back to an instance default: the **system model**, except `tool_call`, which prefers the
+  **fleet tool-call model** when you set one (Settings → Models) and takes the system model
+  otherwise. Setting it is what makes a run's cheap turns actually cheaper. A model can be
   **multimodal**: it views images and PDFs natively
   (default on for Anthropic/Claude models, a per-model toggle for OpenAI-compatible vision
   models), otherwise through the `vision` util.

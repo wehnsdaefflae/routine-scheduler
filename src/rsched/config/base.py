@@ -107,6 +107,41 @@ def supervisor_role(models: dict[str, str] | None) -> str:
     takes a path that already exists instead of a second resolution route.
     """
     return "supervisor" if (models or {}).get("supervisor") else "main"
+
+
+def role_default_model(server: object, role: str) -> tuple[str, str]:
+    """(catalog name, effort) an UNSET chat role falls back to — the instance's own default.
+
+    One function, because three readers apply this precedence and a copy drifts: the engine's
+    resolution (`endpoints.for_model_chain`), the readouts that report a routine's pair
+    (`readmodels/stats.py`, `verifier_model.py`, `conformance.py`) and the console's blank-option
+    label. `readmodels/stats.py` resolved `main` ALONE, which is why a per-routine readout showed
+    one model and the pair read identical however the instance was configured.
+
+    `tool_call` prefers `system_tool_call_model` (D230), then falls through to `system_model`
+    exactly as before. UNSET it changes nothing for anybody, which is the whole promise of the
+    release: the field ships empty and no routine's behaviour moves until the operator sets it.
+
+    The precedence is deliberately NOT the one D164 gave `supervisor`. That role falls back to
+    the routine's own MAIN because "an overseer resolved to a model nobody chose for this routine
+    judges with less context than the run it is judging" — an argument about JUDGING the run.
+    `tool_call` is the cheap mechanical half (the `llm` action, a `role_swap: cheap` turn), and
+    the operator's purpose for it is explicitly that it be a CHEAPER model than main: resolving
+    it through `main` would make `role_swap: cheap` a no-op by construction, which is the defect
+    D230 exists to end rather than a property to preserve. The one judging use of the role — the
+    claim verifier (`verifier_model.py`) — WANTS a model that is not main, so it reads the same
+    way.
+
+    `getattr`, not an attribute read: `rsched validate`'s own tests hand these readers a minimal
+    stand-in carrying only the fields they need, and a hard read there fails a command for a
+    question it was not asked.
+    """
+    if role == "tool_call" and (name := getattr(server, "system_tool_call_model", "") or ""):
+        return name, getattr(server, "system_tool_call_effort", "") or ""
+    return (getattr(server, "system_model", "") or "",
+            getattr(server, "system_effort", "") or "")
+
+
 ROUTINE_MODEL_ROLES = MODEL_KINDS + DECISION_ROLES
 # REASONING EFFORT is a setting of its own, beside the model it applies to — never a second
 # catalog entry per level (the catalog once carried "Opus high", "Opus xhigh", … as five rows
