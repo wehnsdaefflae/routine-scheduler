@@ -58,6 +58,28 @@ def reminder_disposed(loop, reminder, disposition: str) -> None:
         return
 
 
+def reminder_curated(loop, record: dict, holder: str, disposition: str) -> None:
+    """Record the CURATOR's disposal of a row in ANOTHER routine's store (D231): `dead` for a
+    row retired with its tally kept, `remove` for one deleted outright.
+
+    Addressed to the HOLDER, not to `self`: the row lives in that routine's store and the
+    annotation is a fact about it, so a reader folding the stream by addressee finds the
+    disposal beside the hook it disposes of. The origin names the curating routine and run,
+    which is the half "who retired this, and when" needs that the annotation alone — written
+    into a store nobody reads chronologically — cannot answer.
+
+    Best-effort and after the real write, like every function here: a mirror that could fail
+    the disposal would be bookkeeping dressed as a feature.
+    """
+    ctx = loop.ctx
+    try:
+        hookstore.record_reminder(
+            ctx.server.routines_home, record=record, routine=ctx.routine.slug,
+            run_id=ctx.run_id, target=holder, disposition=str(disposition or "dead"))
+    except (AttributeError, OSError, TypeError, ValueError):
+        return
+
+
 def injection_delivered(loop, m: dict) -> None:
     """Mirror a mid-run injection as a hook (`trigger: send`, addressee `run:<run_id>`).
 

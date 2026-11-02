@@ -8,11 +8,21 @@ hook store (`engine/hookmirror`, `rsched/hooks`, D152).
 The boundary was already in the code: every op ends by calling `persist`, and nothing in these
 three functions decides anything about an op. Separating them is what let the mirror land
 without growing a file that is over the house size bar and may only shrink.
+
+It is also where the two FOREIGN-store writes live, for that same reason and because they are
+writes: `dispose`, a routine's say over a hook someone set on IT, and `curate` (D231), the
+CURATOR's disposal of a row in a store it does not own — `dead` (the row keeps its tally and
+stops firing, `rsched/remind_dead`) or `delete` for a row with no evidence worth keeping. That
+second one exists because a reminder store's only other channel is an addressed report, read on
+the owner's next scheduled run, which for a routine whose config is `enabled: false` never
+comes; its authorization is the `reminders: global` dial that already governs writing the
+shared store, asked once, with no second gate over it.
 """
 
 from __future__ import annotations
 
 from .. import reminders as store
+from ..ids import now_iso
 from ..reminders import Reminder
 from . import hookmirror
 
@@ -50,6 +60,80 @@ def dispose(loop, target: Reminder, disposition: str) -> str:
     if applied:
         hookmirror.reminder_disposed(loop, target, applied)
     return applied
+
+
+def curate(loop, op: dict, slug: str, rid: str, verb: str) -> str:
+    """The CURATOR's disposal of one row in ANOTHER routine's store (D231) — the note the
+    curating run reads back, never an exception: a refused disposal is not a failed turn.
+
+    `dead` is the primary act and `delete` the fallback, which is the operator's own ordering:
+    "prefer ANNOTATE-AS-DEAD over DELETE, so a row's hold tally survives", because "a deletion
+    loses the tally that proves the pattern was too broad". So `dead` keeps the row and every
+    count on it and stops it firing (`rsched/remind_dead`), while `delete` is for a row whose
+    tally says nothing worth keeping.
+
+    WHY THIS EXISTS AT ALL: a reminder store belongs to its routine, so the curator's only
+    channel was an addressed report, read on the owner's NEXT SCHEDULED RUN — and a routine
+    whose config is `enabled: false` has none. Four consecutive curation passes recorded the
+    same four rows nobody could dispose of. `enabled` is therefore consulted nowhere here: the
+    holder's schedule is the holder's business, and a capability that only worked on disabled
+    routines would leave the curator unable to retire the row in the live routine next door.
+
+    AUTHORIZATION is the dial that already exists and gets no second gate: `reminders: global`
+    — the curator's setting, what lets a routine write the SHARED store — asked once through
+    `GrantPolicy.reminder_denial`, so a routine without it is refused with the denial that
+    names what is missing. A sub-workflow is refused like every other cross-routine write.
+    """
+    from pathlib import Path
+
+    from .. import remind_dead
+
+    ctx = loop.ctx
+    act = "marked dead" if verb == "dead" else "deleted"
+    if ctx.depth > 0:
+        return (f"sub-workflows cannot have a row in another routine's store {act} — it "
+                "changes a routine nobody in this tree supervises; say so in your summary")
+    if (grants := ctx.grants) is not None and (denial := grants.reminder_denial("global")):
+        return (f"{rid} is a row in {slug}'s own store, so nothing was {act} — curating "
+                f"another routine's rows is the same grant as writing the shared store: "
+                f"{denial}")
+    if not slug:
+        return (f"`op={verb}` names no `target`, so there is no store to curate — your own "
+                "reminder is deleted with `op=delete` and no target")
+    target_dir = Path(ctx.server.routines_home) / slug
+    if not target_dir.is_dir():
+        return f"no routine '{slug}' is installed — nothing was {act}"
+    reason = str(op.get("description") or "")
+    if verb == "delete":
+        return _curate_delete(loop, target_dir, slug, rid, reason)
+    marked = remind_dead.annotate(target_dir, rid, by=ctx.routine.slug, reason=reason,
+                                  at=now_iso())
+    if marked is None:
+        return (f"{slug} does not hold a reminder {rid!r} — nothing was marked dead; the ids "
+                "are the rows of that routine's own store")
+    hookmirror.reminder_curated(loop, marked, slug, "dead")
+    counts = " / ".join(f"{n} {f}" for f, n in (marked.get("stats") or {}).items() if n)
+    return (f"{remind_dead.line(rid, marked[remind_dead.DEAD_KEY])} — it fires no more in "
+            f"{slug}'s runs and its tally is kept ({counts or 'no fires recorded'})")
+
+
+def _curate_delete(loop, target_dir, slug: str, rid: str, reason: str) -> str:
+    """The fallback: remove a row outright, for one whose tally says nothing worth keeping.
+
+    Here rather than in `curate` because it is the branch that DESTROYS evidence, and the note
+    says so: a reader of the stream has to be able to tell the two acts apart.
+    """
+    from .. import remind_dead
+
+    live, gstats = store.load_local(target_dir)
+    if (row := store.find(live, rid)) is None:
+        return (f"{slug} does not hold a reminder {rid!r} — nothing was deleted; the ids are "
+                "the rows of that routine's own store")
+    store.save_local(target_dir, [r for r in live if r.id != rid], gstats)
+    remind_dead.forget(target_dir, rid)      # the row is gone; its annotation goes with it
+    hookmirror.reminder_curated(loop, row.as_record(), slug, "remove")
+    return (f"{rid} deleted from {slug}'s store ({reason or 'no reason given'}) — its tally "
+            f"went with it; `op=dead` keeps a tally that is still evidence")
 
 
 def save_local(loop) -> None:

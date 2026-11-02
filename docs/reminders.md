@@ -147,6 +147,55 @@ would bind a run nobody in its tree supervises.
 An `owner` of `""` means "mine": every reminder written before cross-routine assignment existed
 is its holder's own, and nothing about it changed.
 
+## Retiring a row in another routine's store (the curator's disposal)
+
+A reminder store belongs to its routine, so the curator does not rewrite another routine's
+definitions — its channel is an addressed [report](messages.md), read on the owner's NEXT
+SCHEDULED RUN. For a routine whose config says `enabled: false`, that run never comes. Four
+consecutive curation passes (2026-10-29 … 2026-11-01) recorded the same four rows nobody could
+dispose of, and D231 is the operator's answer to it: give the curator a way to retire the row
+itself.
+
+`remind {op: dead, target: <slug>, id: rem-…, description: <the reason>}` marks ONE row in that
+routine's store **dead**. The row stays where it is, with its whole tally; it stops firing; and
+the annotation records who retired it, when, and why:
+
+```json
+{"reminders": [{"id": "rem-20260921-024619-1", "regex": "^util:remote ",
+                "stats": {"fires": 22, "could_not": 8, "would_have": 6, "didnt": 4}}],
+ "dead": {"rem-20260921-024619-1": {"by": "rules-review", "at": "2026-11-02",
+                                    "reason": "premise disproved at the source"}}}
+```
+
+**Why annotate rather than delete** (the operator's own reason): *a deletion loses the tally that
+proves the pattern was too broad*. The row above held 22 actions, 8 of them labelled `could_not` —
+the pattern was firing where its consequence could not apply, and that tally IS the evidence for
+retiring it. Deleting the row destroys exactly what the pass exists to prove, so `dead` is the
+primary act and `remind {op: delete, target: <slug>}` is the fallback for a row with no evidence
+worth keeping (one of the four had 0 holds and 0 matches). `reminders.looks_too_broad` still reads
+a dead row's tally, which is what keeps a retired pattern citable as evidence afterwards.
+
+**What "stops firing" means.** The annotation is applied where the live set is formed
+(`reminders.active`), so one filter covers every fire point: a dead row is not matched, not held,
+not tallied, and not shown as in force on the routine's Recipe health section — in the holder's own
+runs as much as anywhere else. The marker is a SIDECAR key rather than a field on the record, so
+the row itself is never rewritten and the tally has no path through which it could be lost; the
+holder's own later writes carry the annotation forward (`engine/remind_write.save_local`), exactly
+as they carry a `mute`.
+
+**Authorization is the dial that already exists.** `capabilities.reminders: global` — "the
+curator's setting", what lets a routine write the SHARED store — is the grant, asked once through
+`GrantPolicy.reminder_denial`. There is deliberately no second gate over it. A routine at `local`
+is refused with the dial's own denial, which names `reminders:global`; a sub-workflow is refused
+like every other cross-routine write; a row the target does not hold, and a target that is not
+installed, come back as the engine note rather than as a failed turn.
+
+**`enabled` is consulted nowhere.** Whether the holder ever runs again is the holder's business,
+and a capability that worked only on disabled routines would leave the curator unable to retire
+the row in the live routine next door. The target's `keep` / `mute` / `remove` say over a FOREIGN
+hook is untouched: that is a routine's answer to a hook someone set on IT, while this is the
+curator's disposal of a row in a store it does not own.
+
 ## The two stores
 
 Split by BLAST RADIUS; the routing heuristic follows from it: *if another routine made this
@@ -217,7 +266,7 @@ cause first:
 | a principle of conduct rather than a call | the curator's own rule queue |
 | a surprising behaviour whose consequence follows for ANY caller | a curated reminder, reach `universal` |
 | a caution for one kind of work | a curated reminder with reach `listed`, plus a report naming the patterns whose routines should list it |
-| a dead pattern | a report asking its owner to delete or re-anchor it |
+| a dead pattern | `remind {op: dead, target: <slug>}` — the curator retires the row itself, tally intact (below); a re-anchoring it cannot decide still goes to its owner as a report |
 
 It promotes only on evidence — at least three hold-anchored `would_have`, or two routines that
 wrote the same class independently; `could_not` on at most a quarter of the anchored holds; a
@@ -292,7 +341,7 @@ and what stays unlabelled is visible in the tally.
 `rsched/reminders.py` is the store — the record, the two homes, the union, the tally.
 `engine/remind.py` is the runtime — interception, the ops, the approval gate — with
 `engine/remindfields.py` holding the write gate's own checks, which need no run state. The two side fields
-are `remind` (`{op: add|revise|delete, id?, regex?, description?, scope?, reach?}`) and `remind_feedback`
+are `remind` (`{op: add|revise|delete|dead, id?, regex?, description?, scope?, reach?, target?}`) and `remind_feedback`
 (`{id, label}`), both modelled on `note`: optional on ANY kind, no turn cost, filed by the engine.
 
 One turn, in order:

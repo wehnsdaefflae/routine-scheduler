@@ -66,7 +66,11 @@ one you are about to touch, not all of them.
   reminder that reaches it — a curated one declares its reach, `universal` (every routine whose
   action matches) or `listed` (only routines whose `shared_reminders` name it, which a pattern
   carries). `global` — writing the curated store, each write approved — is the curator's:
-  rules-review holds it and runs a census-driven `reminders` stage. A label is recorded only
+  rules-review holds it and runs a census-driven `reminders` stage. That same grant is what lets
+  it RETIRE a row in another routine's store (`remind {op: dead, target}`, D231) — the row keeps
+  its tally and stops firing, annotated with who/when/why (`rsched/remind_dead.py`), because a
+  report cannot reach a routine whose config is `enabled: false`; no second gate sits over the
+  grant. A label is recorded only
   against a hold of that reminder in that run, once. The four-way tally has exactly ONE automatic
   reader (`reminders.looks_too_broad`); nothing demotes a reminder behind the run's back
 - `docs/reminders.md` — the consequence-reminder layer (the pre-execution hold, the two
@@ -423,7 +427,8 @@ one you are about to touch, not all of them.
   decision. `tests/test_auto_cheap_poll.py` pins the empty band with its reasoning.
   Two more SIDE FIELDS ride any kind the same turn-free way, behind the `reminders` capability:
   **`remind`** leaves/revises/deletes a CONSEQUENCE REMINDER — a `(regex → consequence)` pair over
-  the canonical action string — and **`remind_feedback`** labels how one's hold turned out
+  the canonical action string, and with `target` sets one on another routine or (at `global`,
+  `op=dead`) retires a row in its store with the tally intact — and **`remind_feedback`** labels how one's hold turned out
   (could_not / would_have / did / didnt). A matching action is HELD before it executes, never
   after: a caution that arrives with the observation arrives after the consequence. Two stores by
   blast radius (the routine's `state/reminders.json`, autonomous; the library's `reminders/`,

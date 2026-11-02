@@ -36,7 +36,7 @@ export const RUNS_OPTIONS = [
 export const REMINDER_OPTIONS = [
   ["none", "none — off: no reminder holds an action"],
   ["local", "local — leaves its own; heeds the shared ones"],
-  ["global", "global — also writes the shared ones, as curator"],
+  ["global", "global — as curator: writes the shared ones, and retires a dead row in another routine's store (tally kept)"],
 ];
 // The JOB layer (rsched/jobs.py, docs/jobs.md): on, the routine keeps its standing work as
 // jobs — the `job` action exists for it, an open job's workspace is the run's working
