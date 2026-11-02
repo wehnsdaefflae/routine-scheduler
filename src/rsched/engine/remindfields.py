@@ -40,8 +40,8 @@ def _remind_problems(op: object, grants) -> list[str]:
     if not isinstance(op, dict):
         return ['`remind` must be an object: {"op": "add|revise|delete", ...}']
     verb = str(op.get("op") or "")
-    if verb not in ("add", "revise", "delete"):
-        return ['`remind.op` must be "add", "revise" or "delete"']
+    if verb not in ("add", "revise", "delete", "dead"):
+        return ['`remind.op` must be "add", "revise", "delete" or "dead"']
     scope = str(op.get("scope") or "local")
     if scope not in store.SCOPES:
         return ['`remind.scope` must be "local" or "global"']
@@ -53,15 +53,18 @@ def _remind_problems(op: object, grants) -> list[str]:
     if (p := checks.kind_problem(kind)) and verb != "delete":
         return [p]          # every further check depends on which moment this watches
     kind = kind if isinstance(kind, str) and kind in store.KINDS else store.DEFAULT_KIND
-    # the TARGET: another routine's slug. Setting a hook on someone else is a different act
-    # from leaving one for yourself, so it is checked here and refused outright for the two
-    # verbs that cannot mean it (a foreign hook is the TARGET's to revise or delete).
+    # the TARGET: another routine's slug. Acting on someone else's store is a different act
+    # from leaving a reminder for yourself, so it is checked here. `revise` is the one verb it
+    # cannot mean — a foreign hook's wording is its HOLDER's to change — while `dead` and
+    # `delete` are the curator's disposal of a row in that store (D231).
     if (target := op.get("target")) is not None:
         from ..ids import is_slug
 
-        if verb != "add":
-            problems.append(f"`remind.target` belongs to `op=add` — a hook another routine "
-                            f"holds is ITS to {verb}, which is what its disposition does")
+        if verb == "revise":
+            problems.append("`remind.target` belongs to `op=add` (setting a hook on another "
+                            "routine) or to `op=dead`/`op=delete` (the curator retiring a row "
+                            "in its store) — a foreign hook's WORDING is its holder's to "
+                            "revise, which is what its disposition does")
         elif not is_slug(str(target or "")):
             problems.append("`remind.target` must be another routine's kebab-case slug — the "
                             "routine whose runs this hook fires in")
@@ -69,6 +72,19 @@ def _remind_problems(op: object, grants) -> list[str]:
             problems.append("`remind.target` and `scope=global` are two different reaches: a "
                             "global reminder already reaches every routine it is curated for, "
                             "so a target would mean nothing")
+    # `dead` is the CURATOR's disposal of a row in another routine's store (D231): it names
+    # whose store, which row, and WHY — the reason is stored with the annotation and is the
+    # whole difference between retiring a row and losing the evidence for retiring it. The
+    # dial is asked engine-side (`remind_write.curate`), where the store being written is
+    # known; here the grammar alone is settled, so a malformed op never becomes a turn.
+    if verb == "dead":
+        if op.get("target") is None:
+            problems.append("`remind.op=dead` needs the `target` whose store holds the row — "
+                            "it retires a row in ANOTHER routine's store (your own reminder is "
+                            "revised or deleted without a target)")
+        if checks.description_problem(op.get("description")):
+            problems.append("`remind.op=dead` needs a `description`: the REASON the row is "
+                            "retired, stored with the annotation so a later pass can read why")
     if verb == "add":
         problems += [p for p in (checks.regex_problem(op.get("regex"), kind),
                                  checks.description_problem(op.get("description"))) if p]

@@ -418,10 +418,10 @@ def _apply_op(loop, op: dict, poll_s: float) -> str:
     if verb == "add":
         return _add(loop, op, scope, poll_s)
     rid = str(op.get("id") or "")
-    resolved = _resolve_target(loop, op, rid)
-    if isinstance(resolved, str):
-        return resolved
-    target = resolved
+    if (foreign := str(op.get("target") or "")) or verb == "dead":
+        return remind_write.curate(loop, op, foreign, rid, verb)
+    if isinstance(target := _resolve_target(loop, op, rid), str):
+        return target
     if scope != target.scope and op.get("scope") is not None:
         return (f"{rid} is a {target.scope} reminder and a {verb} cannot move it — to promote a "
                 "proven local reminder, `add` it with scope global (its evidence is per-routine "

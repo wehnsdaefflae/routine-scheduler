@@ -289,8 +289,12 @@ the limits (single-writer status.json preserved).
   resume — see below), so re-emitting the held action is the confirmation to proceed — the
   same anti-livelock shape the claim verifier uses. A curated
   reminder declares its reach (`universal`, or `listed` for the routines whose settings list it);
-  rules-review curates the store from a census of every routine's own. Full narration in
-  [reminders](reminders.md).
+  rules-review curates the store from a census of every routine's own — and at `reminders:
+  global` it may RETIRE a row in another routine's store (`remind {op: dead, target}`, D231,
+  `rsched/remind_dead.py`): the row keeps its whole tally, which is the evidence that the pattern
+  was too broad, and stops firing, annotated with who/when/why. That exists because an addressed
+  report is read on the owner's next scheduled run and a routine whose config is `enabled: false`
+  has none. Full narration in [reminders](reminders.md).
 - **A curated rule surfaces itself at the moment it applies** (`rsched/assists.py` +
   `engine/assist.py`, `engine/assist_predicates.py`). A rule declares `assists:` in its own
   frontmatter — a deterministic predicate over the SITUATION plus the operative line to surface

@@ -20,11 +20,13 @@ from ..reminder_checks import MAX_DESCRIPTION_CHARS, MAX_REGEX_CHARS
 REMIND_FIELD = {
     "type": "object", "additionalProperties": False,
     "properties": {
-        "op": {"type": "string", "enum": ["add", "revise", "delete"],
-               "description": "add a new reminder, revise one, or delete it"},
+        "op": {"type": "string", "enum": ["add", "revise", "delete", "dead"],
+               "description": "add a new reminder, revise one, delete it, or — with "
+                              "`target`, as curator — mark a row in ANOTHER routine's "
+                              "store dead: it keeps its tally and stops firing"},
         "id": {"type": "string",
-               "description": "revise/delete: the reminder's id (rem-…) — exactly as a fire "
-                              "names it; anything else is refused"},
+               "description": "revise/delete/dead: the reminder's id (rem-…) — exactly as a "
+                              "fire names it; anything else is refused"},
         "regex": {"type": "string",
                   "description": "the pattern, matched against what `kind` names — at most "
                                  f"{MAX_REGEX_CHARS} characters. For "
@@ -53,7 +55,9 @@ REMIND_FIELD = {
                         "description": "the caution shown when it fires — what the "
                                        "CONSEQUENCE is and what to check, not that "
                                        "care is needed. One or two sentences, at most "
-                                       f"{MAX_DESCRIPTION_CHARS} characters"},
+                                       f"{MAX_DESCRIPTION_CHARS} characters. On "
+                                       "op=dead/delete with a `target`: the REASON the row "
+                                       "is retired, stored and required"},
         "scope": {"type": "string", "enum": ["local", "global"],
                   "description": "local (default) = yours alone; global = the shared "
                                  "library store, for a consequence that would follow "
@@ -64,13 +68,15 @@ REMIND_FIELD = {
                                  "meets); listed = held only for routines whose "
                                  "settings list it (a caution for one kind of work)"},
         "target": {"type": "string",
-                   "description": "op=add only: ANOTHER routine's slug — set this hook "
-                                  "on that routine instead of yourself. It fires in ITS "
-                                  "runs from its next one on, and that routine decides "
-                                  "on each fire whether to keep, mute or remove it; you "
-                                  "cannot revise or delete it, and a pattern it removed "
-                                  "you cannot set again. Use it for a consequence YOU "
-                                  "observed that will land on THAT routine's work"},
+                   "description": "ANOTHER routine's slug. op=add SETS this hook on it: it "
+                                  "fires in ITS runs from its next one on, and that routine "
+                                  "decides on each fire whether to keep, mute or remove it; "
+                                  "you cannot revise it, and a pattern it removed you cannot "
+                                  "set again. Use it for a consequence YOU observed that "
+                                  "lands on THAT routine's work. op=dead/delete DISPOSES of "
+                                  "a row already in its store — the curator's act, needing "
+                                  "`reminders: global`, and the one channel that reaches a "
+                                  "routine that never runs again"},
     },
     "description": "OPTIONAL, on any action: leave yourself a CONSEQUENCE REMINDER "
                    "the same turn you notice an action had an unintended effect. "
@@ -82,7 +88,8 @@ REMIND_FIELD = {
                    "to write. Also revises or deletes one (op + id) as your own "
                    "tally teaches you which patterns earn their interruptions. With "
                    "`target` it sets the hook on ANOTHER routine, whose runs then meet "
-                   "it and whose disposition over it outranks yours.",
+                   "it and whose disposition over it outranks yours — or, as curator, "
+                   "retires a row already in that routine's store (`op=dead`).",
 }
 
 #: The `remind_feedback` object — how a hold turned out, the only evidence that tunes a pattern.

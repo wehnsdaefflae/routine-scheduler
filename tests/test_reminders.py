@@ -297,7 +297,7 @@ def test_malformed_ops_are_corrected_inside_the_schema_retry_cycle(tmp_path):
                                grants=on)
 
     assert "must be an object" in problems(remind="add one")[0]
-    assert '"add", "revise" or "delete"' in problems(remind={"op": "nope"})[0]
+    assert '"add", "revise", "delete" or "dead"' in problems(remind={"op": "nope"})[0]
     assert "non-empty pattern" in problems(remind={"op": "add", "description": "d"})[0]
     assert "consequence IS" in problems(remind={"op": "add", "regex": "^util:x"})[0]
     assert "needs the `id`" in problems(remind={"op": "delete"})[0]

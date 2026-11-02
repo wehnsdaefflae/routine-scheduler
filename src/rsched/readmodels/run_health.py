@@ -322,6 +322,7 @@ def cautions(server: ServerConfig, routine_dir: Path) -> dict:
     stores are missing or hand-broken is a routine with nothing to show, not a broken page.
     """
     from .. import assists as assists_mod
+    from .. import remind_dead
     from .. import reminders as reminders_mod
     from ..paths import read_json
 
@@ -344,6 +345,6 @@ def cautions(server: ServerConfig, routine_dir: Path) -> dict:
                      # A key with no live assist behind it is the interesting row, not a
                      # corrupt one: the rule was revised or unbound and the tally outlived it.
                      "retired": a is None})
-    return {"reminders": [r.as_record() for r in [*local, *shared]],
+    return {"reminders": remind_dead.decorate(routine_dir, [*local, *shared]),  # D231 annotation
             "labels": list(reminders_mod.LABELS),
             "assists": rows}
