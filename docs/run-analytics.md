@@ -197,8 +197,23 @@ it (`UNDERSTATEMENT_SLACK` = 2% keeps rounding out of it; the measured R3112 cas
 `["baseline"]`, `["recent"]`, or both — whose rows are contaminated. **A consumer that renders
 these medians without reading `mixed_accounting` is rendering a mixture as one quantity.**
 
-No UI reads this yet, and that is deliberate: a correct reader over a quantity nobody has
-checked is worth more than a view over one nobody has.
+**Where it is read.** `GET /api/changes/<slug>/cost` serves the profile (`web/api_changes.py`,
+behind the same `_routine_home` guard as that view's other per-routine read models — a 404 for
+an unknown slug), and the **Per-run cost** panel of a routine's DEVELOPMENT view renders it at
+`#/changes/<slug>`, directly under Outcome: what the routine produces, then what a run of it
+costs to produce (`static/components/cost-panel.js`, styled in `static/dev.css`). It shows the
+`typical` figure with the run count behind it, the `baseline`/`recent` pair as the two rows the
+trend flag compares, and the flag's own `reasons` when it fired.
+
+The integrity verdict is rendered, not dropped: `integrity.detail` is printed VERBATIM, an
+understated history raises a `panel warn` saying the figures span two different quantities, and
+every window named in `mixed_accounting` carries a "· mixed" mark in the warn tone *beside its own
+median* — the sound side is deliberately left unmarked, because the mark names a side rather than
+disclaiming the panel. A flagged trend across that boundary says in words that part of the fall or
+rise is the 0.494.0 accounting fix. `tests/ui/test_cost_panel.py` loads the page and asserts each
+of those elements is present before asserting what it says, and reads the mark's computed colour
+against a `var(--warn)` probe so the rule is proven to reach the class;
+`tests/test_api_cost_profile.py` pins the route, including that a MIXED window is served as mixed.
 
 #### Whose regression is it — attribution before the finding names anyone
 

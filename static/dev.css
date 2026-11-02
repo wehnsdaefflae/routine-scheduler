@@ -11,6 +11,19 @@
 .outcome-panel .summons { color: var(--summons); }
 .outcome-table td .mono { margin-left: 4px; }
 
+/* The PER-RUN COST panel (components/cost-panel.js, D163) sits beside the outcome panel: what a
+ * run of this routine costs, against what it produces. The integrity verdict is the point of the
+ * tones here — a window the read model calls understated wears WARN wherever its median is read
+ * (`cost-mixed` beside the row, `.panel.warn` above the figures), because a cost figure shown as
+ * clean when the reader itself calls it mixed is the one way this surface can mislead. A flagged
+ * trend is ERR, like every other flag on this view. */
+.cost-panel { margin-bottom: 6px; }
+.cost-figure { font-family: var(--f-mono); font-size: var(--t-l); }
+.cost-integrity { margin-bottom: 10px; }
+.cost-mixed { color: var(--warn); font-size: var(--t-xs); white-space: nowrap; }
+.cost-flagged { color: var(--err); margin-top: 6px; }
+.cost-table td .cost-mixed { margin-left: 2px; }
+
 /* The MOMENT TEST on a change (components/change-moment.js): a repeated failure the change
  * removed is OK, one it brought in is ERR, an aim the runs before never repeated is WARN, and
  * what persists is quiet. A window that reached across a neighbouring change wears WARN. */

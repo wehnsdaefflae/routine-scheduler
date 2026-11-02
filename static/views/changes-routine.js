@@ -5,6 +5,10 @@
 //
 //   Outcome      — what the routine EXISTS to produce against what it cost (components/
 //                  outcome-panel.js): first, because every reading below is about process.
+//   Per-run cost — what ONE run of it costs (components/cost-panel.js, D163): the median over
+//                  every run, the window pair behind the trend flag, and the accounting-integrity
+//                  verdict — a window the read model calls understated is marked as mixed where
+//                  its median is read, never shown as a clean figure.
 //   Weeks        — the routine's own weeks as small multiples (components/sparkline.js): volume
 //                  and turns against its usual, lines met, interventions per run.
 //   Changes      — newest first, one row each: when · what changed · runs before → after · the
@@ -33,6 +37,7 @@ import { DIMENSIONS, dimMarks, fmtSignal, signalMark, verdictChip, whatChanged }
   from "/static/components/change-marks.js";
 import { foldEntries, rebuiltMark } from "/static/components/change-folds.js";
 import { momentCell, momentDetail } from "/static/components/change-moment.js";
+import { mountCost } from "/static/components/cost-panel.js";
 import { onRunFinished } from "/static/components/run-finished.js";
 import { fmt, sparkStrip } from "/static/components/sparkline.js";
 import { mountOutcome } from "/static/components/outcome-panel.js";
@@ -241,6 +246,7 @@ export async function render(view, slug) {
       el("div", { class: "sub" }, "What changed in this routine and whether its runs got better. ",
         el("a", { href: `#/routine/${encodeURIComponent(slug)}` }, "The routine itself →")))));
   const outcomeBox = el("div", { class: "outcome-panel" });
+  const costBox = el("div", { class: "cost-panel" }, skeleton(["50%", "80%"]));
   const weeksHead = el("h2", { id: "sec-weeks", hidden: true }, "Weeks");
   const weeksBox = el("div", {});
   const changesBox = el("div", {}, skeleton(["100%", "100%", "70%"]));
@@ -248,11 +254,13 @@ export async function render(view, slug) {
   const healthBox = el("div", {}, skeleton(["60%", "90%"]));
   const changesHead = el("h2", { id: "sec-changes" }, "Changes");
   view.append(el("h2", { id: "sec-outcome" }, "Outcome"), outcomeBox,
+    el("h2", { id: "sec-cost" }, "Per-run cost"), costBox,
     weeksHead, weeksBox, changesHead, changesBox,
     el("h2", { id: "sec-model-fit" }, "Model fit"), fitBox,
     el("h2", { id: "sec-recipe-health" }, "Recipe health"), healthBox);
   const health = mountHealth(healthBox, slug);
   const outcome = mountOutcome(outcomeBox, slug);
+  const cost = mountCost(costBox, slug);
 
   const opened = new Set();   // the rows, groups and folds a reader opened survive a live re-read
   let alive = true, seq = 0;
@@ -279,7 +287,9 @@ export async function render(view, slug) {
   }
 
   await load();
-  const stop = onRunFinished(() => { load().catch(() => {}); health.reload(); outcome.reload(); },
+  const stop = onRunFinished(() => {
+      load().catch(() => {}); health.reload(); outcome.reload(); cost.reload();
+    },
     { slug });
   return () => { alive = false; stop(); health.dispose(); };
 }
