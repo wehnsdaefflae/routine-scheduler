@@ -39,12 +39,17 @@ from collections import Counter
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+from . import finish_rungs
 from .transcript import _open_bytes
 
 #: The finish gate's rungs by the key each one records on its deferral (engine/finishgate.py
-#: `_defer`). A deferral carrying none of them is the "no action at all" rung.
-RUNGS = ("pending_user_input", "asked_back", "final_undeclared", "jobs_owed", "accounting",
-         "assist", "unbacked_claims", "claims_unsupported")
+#: `_defer`), READ from the gate's own declaration rather than copied (D152 step 6). This list
+#: was a second vocabulary beside the ladder and had already drifted: it carried eight keys
+#: where the ladder has nine, in a different order, because the fabrication rung
+#: (`no_actions`) defers with no key at all — which is what `no_action` below stands in for.
+#: Reading `finish_rungs.RUNG_KEYS` means a tenth rung is counted here the day it is declared,
+#: instead of silently falling into the fallback bucket.
+RUNGS = finish_rungs.RUNG_KEYS
 #: Kinds whose non-zero exit or error is not a failure of the run's harness (module docstring).
 NOT_COUNTED = frozenset({"shell", "finish", "reminder_hold", "assist_hold"})
 

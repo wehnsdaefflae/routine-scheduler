@@ -7,6 +7,7 @@ from . import (
     accounting,
     assist,
     donewhen,
+    finish_rungs,
     finishline,
     goalreached,
     goals,
@@ -104,7 +105,8 @@ def _undeclared(loop, ctx, action: dict) -> tuple[str, dict] | None:
     has no once-only limit; never the reserved turn, for the reason every rung gives.
     """
     still = [g["id"] for g in goals.open_goals(ctx.goals)]
-    if loop._finish_reserved or not still or isinstance(action.get("final"), bool):
+    if (not finish_rungs.eligible(loop, ctx, "final_undeclared") or not still
+            or isinstance(action.get("final"), bool)):
         return None
     message = (f"OBSERVATION (finish deferred): goals are open ({', '.join(still)}) — declare "
                "whether this reply is FINAL. `final: true` when it delivers what the person "
@@ -114,7 +116,7 @@ def _undeclared(loop, ctx, action: dict) -> tuple[str, dict] | None:
     return message, {"final_undeclared": True}
 
 
-def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
+def _unanswered(loop, ctx, owed: tuple[list[dict], list[dict]] | None,
                 verdicts: dict, *, final: bool,
                 arrived: bool = True) -> tuple[str, dict] | None:
     """`(message, keys)` for a finish that still owes work, or None.
@@ -141,9 +143,10 @@ def _unanswered(loop, owed: tuple[list[dict], list[dict]] | None,
 
     Both skip the reserved-finish turn (deferring it would force-finish with an engine string).
     """
-    if (jobs_owed := jobops.finish_owed(loop)) is not None:
+    if (finish_rungs.eligible(loop, ctx, "jobs_owed")
+            and (jobs_owed := jobops.finish_owed(loop)) is not None):
         return jobs_owed, {"jobs_owed": True}
-    if owed is not None and not loop._finish_reserved:
+    if owed is not None and finish_rungs.eligible(loop, ctx, "accounting"):
         found = accounting.problems(verdicts, *owed, final=final, arrived=arrived)
         if any(found.values()):
             return accounting.deferral(found), {"accounting": found}
@@ -175,7 +178,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # the one exception — deferring it would force-finish the run with an
     # engine string on the next boundary — so _finish_run surfaces the
     # still-queued message to both sides instead.
-    if (ctx.depth == 0 and not loop._finish_reserved
+    if (finish_rungs.eligible(loop, ctx, "pending_user_input")
             and inbox.has_pending_messages(ctx.routine.dir,
                                            vias=inbox.LIVE_MESSAGE_VIAS)):
         _defer(loop, ctx,
@@ -191,7 +194,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # message above — the reminder note carrying their words rides this deferral
     # (`EngineLoop._finish`). Every ask-back is fresh input, so no once-only limit; never the
     # reserved turn, for the reason every rung here gives.
-    if ctx.depth == 0 and not loop._finish_reserved and loop.reminder_asked_back:
+    if finish_rungs.eligible(loop, ctx, "asked_back") and loop.reminder_asked_back:
         _defer(loop, ctx,
                "OBSERVATION (finish deferred): the user replied to the approval this finish "
                "asked for WITHOUT deciding — their words are in the reminder note below. "
@@ -204,7 +207,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     owed = _owed(loop, ctx, action)
     verdicts = accounting.parse(action.get("accounting"))
     if (unanswered := (_undeclared(loop, ctx, action) if conversation else None)
-            or _unanswered(loop, owed, verdicts, final=conversation,
+            or _unanswered(loop, ctx, owed, verdicts, final=conversation,
                            arrived=accounting.arrived(action.get("accounting")))) is not None:
         message, why = unanswered
         _defer(loop, ctx, message, **why)
@@ -215,13 +218,13 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # `assist.at_finish` allows this at most ONCE per run (per reply, in a conversation), so
     # a rule can ask for the ending to be reconsidered but can never negotiate over it. The
     # deferral names the assists behind it: that record is what keeps "once" across a resume.
-    if (ctx.depth == 0 and not loop._finish_reserved
+    if (finish_rungs.eligible(loop, ctx, "assist")
             and (deferral := assist.at_finish(loop, action))):
         message, keys = deferral
         _defer(loop, ctx, message, assist=True, assists=keys)
         return None   # deferred — the loop goes round again
-    if (action["status"] == "ok" and loop.executed_actions == 0 and ctx.depth == 0
-            and not loop._finish_reserved):
+    if (action["status"] == "ok" and loop.executed_actions == 0
+            and finish_rungs.eligible(loop, ctx, "no_actions")):
         # Fabrication guard: a top-level ok-finish as the very first action
         # is a hallucinated completion (the classic no-tools failure mode) —
         # no observation exists that could ground any of its claims.
@@ -234,7 +237,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                "run, so the workflow cannot be complete and none of your claims have "
                "observations behind them. Start at workflow step 1 and do the actual work.")
         return None   # deferred — the loop goes round again
-    if action["status"] == "ok" and ctx.depth == 0:
+    if action["status"] == "ok" and finish_rungs.eligible(loop, ctx, "unbacked_claims"):
         # Claim guard (D31=B): a top-level ok-finish whose summary claims a
         # high-signal action (report/ask_user/schedule_run) the run never
         # took is narrated unperformed work — reject so the run either takes
@@ -275,7 +278,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # conversation, and kept across a resume (`rebuild`): the model keeps the last word and
     # the disagreement is recorded instead.
     disputes: dict[str, str] = {}
-    if owed is not None and not loop._finish_reserved:
+    if owed is not None and finish_rungs.eligible(loop, ctx, "claims_unsupported"):
         claims = _claims(verdicts, *owed)
         cov = ctx.stage_coverage()
         if cov["declared"]:
