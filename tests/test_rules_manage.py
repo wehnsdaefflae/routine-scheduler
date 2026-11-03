@@ -40,6 +40,21 @@ tags: [a, b, c]
 """
 
 
+#: A rule the library LINTER accepts whole, for the tests that need to reach the write past
+#: the lint gate (RULE_A's effect lines are deliberately too short to pass it).
+RULE_LINTABLE = """---
+effect:
+  with: the run does the thing deliberately, before anything ships
+  without: the run skips the thing and ships whatever it had
+  when: before any change that ships
+tags: [a, b, c]
+---
+# rule: alpha — the first principle
+
+- **Do the thing.** Carefully.
+"""
+
+
 @pytest.fixture
 def lib(tmp_path):
     home = tmp_path / "library" / "rules"
@@ -163,6 +178,64 @@ def test_read_rule_is_ungated_so_a_routine_can_read_what_binds_it():
     assert "read_rule" in KINDS
     assert "read_rule" not in GATED_KINDS
     assert validate_action({"say": "s", "kind": "read_rule", "name": "alpha"}) == []
+
+
+def _rule_loop(tmp_path, lib, monkeypatch, written: list):
+    """A top-level run holding rule-authoring with its dial off — the shape in which a
+    `write_rule` reaches the library write, so the only thing under test is the guard."""
+    from rsched import library_docs
+    from rsched.engine import authoring
+
+    monkeypatch.setattr(library_docs, "write_doc",
+                        lambda home, name, content: written.append((name, content)))
+    monkeypatch.setattr(library_docs, "git_commit", lambda *a, **k: True)
+    ctx = SimpleNamespace(
+        depth=0,
+        server=SimpleNamespace(rules_home=lib, libraries_home=tmp_path / "library",
+                               routines_home=tmp_path / "routines",
+                               conversations_home=tmp_path / "conversations",
+                               background_home=tmp_path / "background"),
+        routine=SimpleNamespace(slug="demo", rules=["alpha"]))
+    # the dial: nothing to approve, so the handler runs straight through to the write
+    ctx.grants = SimpleNamespace(needs_rule_confirm=lambda creating: False)
+    return SimpleNamespace(ctx=ctx), authoring
+
+
+def test_a_revision_that_changes_nothing_is_refused_before_it_commits(tmp_path, lib,
+                                                                      monkeypatch):
+    """`write_rule` committed on EVERY call, even when `replacement` was byte-identical to
+    `anchor` — so a no-op revision landed as a real commit on every holder of that rule
+    (100+ for the big ones) and showed in the library's history as a change that changed
+    nothing. rules-review carried a reminder for it from 2026-10-26 and retired it on
+    2026-11-02 (R3148): its predicate — is the replacement identical to the anchor? — is
+    invisible to any regex, so it had to hold on every write_rule whether the hazard was
+    there or not (final tally 15 holds, 3 would_have, 9 didnt).
+
+    Both directions, because the guard must bite only on the no-op: a revision that really
+    changes a clause still writes.
+    """
+    written: list = []
+    # a rule the LINTER accepts: the guard under test sits beside the lint gate, so a
+    # non-conforming fixture would prove the lint works and nothing about this defect
+    (lib / "alpha.md").write_text(RULE_LINTABLE, encoding="utf-8")
+    loop, authoring = _rule_loop(tmp_path, lib, monkeypatch, written)
+
+    same = authoring.handle_write_rule(loop, {
+        "kind": "write_rule", "name": "alpha",
+        "anchor": "- **Do the thing.** Carefully.",
+        "replacement": "- **Do the thing.** Carefully."}, poll_s=0.01)
+
+    assert written == [], "a no-op revision must not reach the library write"
+    assert same.get("declined") and not same.get("written")
+    assert "identical" in same["reason"]
+
+    real = authoring.handle_write_rule(loop, {
+        "kind": "write_rule", "name": "alpha",
+        "anchor": "- **Do the thing.** Carefully.",
+        "replacement": "- **Do the thing.** Deliberately."}, poll_s=0.01)
+
+    assert real["written"] and not real["created"]
+    assert len(written) == 1 and "Deliberately" in written[0][1]
 
 
 def test_write_rule_is_gated_and_carries_its_own_approval_dial(tmp_path):

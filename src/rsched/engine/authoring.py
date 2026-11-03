@@ -204,7 +204,7 @@ def _impact_note(ctx, kind: str, name: str, content: str | None) -> str:
         return ""
 
 
-def handle_write_rule(loop, action: dict, poll_s: float) -> dict:
+def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR0911 — gate ladder: every refusal is its own teaching exit
     """Author or revise a GENERAL RULE in the shared library — the write_util shape, applied
     to prose instead of code, gated by the rule-authoring permission.
 
@@ -253,6 +253,14 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:
             return {"kind": "write_rule", "name": name, "edit_failed": True, "reason": problem}
     else:
         content = str(raw_content)
+    if existing is not None and content == existing:
+        # A no-op revision used to COMMIT — on every holder of the rule (100+ for the big
+        # ones), as a change that changed nothing. rules-review carried a reminder for this
+        # from 2026-10-26 and retired it 2026-11-02 (R3148): the predicate is invisible to a
+        # regex, so the caution had to fire on every write_rule. Refused here instead.
+        return {"kind": "write_rule", "name": name, "declined": True,
+                "reason": "this revision is identical to the rule already in the library — "
+                          "nothing to change, and a commit here would reach every holder"}
     if problems := lint_rule_text(content, filename=f"{name}.md"):
         return {"kind": "write_rule", "name": name, "lint_ok": False, "problems": problems}
     creating = existing is None

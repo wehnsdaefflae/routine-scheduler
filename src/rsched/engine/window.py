@@ -232,7 +232,7 @@ def _pick_archival_model(loop, middle: list[dict], endpoint, ref, cinfo: dict):
         cinfo["archival_selection_fallback"] = f"{prior}; {note}" if prior else note
     candidates.append((endpoint, ref))
     declined: list[str] = []
-    for c_endpoint, c_ref in candidates:
+    for c_endpoint, c_ref in ((e, _calibrated_window(loop, r)) for e, r in candidates):
         if archival_fits(middle, c_ref):
             if dedicated:
                 cinfo["archival_model"] = c_ref.name or c_ref.model

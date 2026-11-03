@@ -15,6 +15,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.497.0] — 2026-11-03
+
+### Fixed — an archival candidate is judged against the window the run MEASURED, and a no-op rule revision no longer commits to every holder
+
+**The operator's background archive died on a 400 the fit test should have prevented.** His
+message, 2026-11-02: *"— background archive did not land — (history archival degraded: otari:
+HTTP 400: prompt is too long: 1028908 tokens > 1000000 maximum)"*.
+
+`estimate_input_tokens` is 3.5 UTF-8 bytes per token — a packing guess, not a tokenizer — so a
+run whose content packs denser reads LIGHT. `window.note_prompt_size` measures exactly that gap
+on every completion and keeps it as `loop._token_ratio`, and `compact_if_needed` restates the
+foreground model's window in those measured units (`_calibrated_window`) before any gate sees
+it. But `_pick_archival_model` built its own candidates — the dedicated compaction model and
+the tool-call model — FRESH from the registry, which serves the CATALOG figure, and those are
+the PREFERRED candidates (machine work belongs on the cheaper tier). So `archival_fits`
+(prompt + schema + output reserve ≤ 0.7 × window) was evaluated against a window the run had
+already measured as smaller, and a run reading ≥1.43× light posted an archival over the
+provider's hard limit. One generator expression in the candidate loop now calibrates every
+candidate, not just the one passed in.
+
+Why that 400 is terminal where a foreground turn's is not: `overflow._recover_oversize_prompt`
+shrinks and retries the TURN, and the archival runs in a thread with no such net
+(`engine/archival.py` treats any failure as a designed degrade). So the middle's navigable
+history is simply lost and the run is told the archive degraded — which is the message he saw.
+`tests/test_archival_window_calibration.py` asserts both directions through
+`compact_if_needed`: unmeasured, the same middle and models still archive; measured 1.6× light,
+every candidate is declined and the deterministic digest stands.
+
+Context for how often this bites: the health stream carries 32 `prompt_oversize_shrunk` events,
+7 of them on 2026-11-02 in one conversation (`c-20261014-134208`, real prompts 1,090,248 →
+1,332,781 tokens against a 1,000,000 window). Those are the FOREGROUND rescues working. The
+archival had no equivalent, and 7 `archival_degraded` rows in 19 days carried no oversize case
+before this one — it is a new mode, not a known one.
+
+**A rule revision that changes nothing no longer commits** (R3148, `rules-review`).
+`write_rule` committed on every call, even when `replacement` was byte-identical to `anchor`, so
+a no-op revision landed as a real commit on every holder of that rule — 100+ routines and
+conversations for the big ones — and showed in the library's history as a change that changed
+nothing. `handle_write_rule` now refuses a revision whose resolved text equals the rule already
+in the library, before the lint, the approval ask and the commit. `rules-review` had carried a
+`^write_rule` reminder for this hazard since 2026-10-26 and retired it on 2026-11-02 with
+`didnt` (9) past `would_have` (3): the predicate — *is the replacement identical to the anchor?*
+— is invisible to any regex, so the caution had to fire on every `write_rule` whether the
+hazard was present or not. A refusal at the seam costs nobody a turn.
+
 ## [0.496.0] — 2026-11-02
 
 ### Fixed — a boot migration can no longer kill the daemon's boot, and a malformed usage row can no longer raise out of a read model (R3132, R3138)
