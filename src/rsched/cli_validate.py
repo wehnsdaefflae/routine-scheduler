@@ -123,8 +123,9 @@ def _instance_problems(server) -> list[str]:
     from . import lanes as lanes_mod
     from .conformance import system_model_problems
 
-    # The server's own `system_model` is the fallback behind every role a routine leaves unset,
-    # so an unresolvable or single-domain one is a FLEET condition no routine's surface can see.
+    # The server's own pointers are the fallbacks behind every role a routine leaves unset —
+    # `system_model` for any role, `system_tool_call_model` for `tool_call` (D230) — so an
+    # unresolvable or single-domain one is a FLEET condition no routine's surface can see.
     model = system_model_problems(server)
     try:
         all_lanes = lanes_mod.list_lanes(server.routines_home)

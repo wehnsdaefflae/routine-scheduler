@@ -6,9 +6,13 @@ distinct main/tool_call pair — so the turns F785 measured went on paying main-
 read a one-line answer: *"2,651 turns do nothing but re-ask whether something finished (a release
 gate's status, a child's subruns table) … Each one re-sends the entire prompt to the main model."*
 The operator's answer to D217 was *"Both — the automatic cheap poll AND a real tool_call model to
-swap to"*; this module is the first half. The second (binding a distinct `tool_call` model
-fleet-wide) is D230 and lives in config, which is why this module is a no-op on today's fleet and
-says so rather than claiming a saving it cannot make.
+swap to"*; this module is the first half. The second is D230: `ServerConfig`'s
+`system_tool_call_model`, the instance-wide default an unset `tool_call` resolves through
+(`config.base.role_default_model`). The role is therefore read through that function here and not
+off `routine.models` alone — otherwise this module would stay the no-op it shipped as for the 31
+routines that name no `tool_call`, which is the fleet D217 was answered for. The default SHIPS
+EMPTY, so until the operator names a model there this module still serves nothing and says
+nothing, rather than claiming a saving it cannot make.
 
 It is the same mechanism `roleswap` and `switches.apply_model_switch` use — assign
 `ctx.routine.models["main"]`, which `endpoints.for_model` re-resolves on every turn — driven by
@@ -50,7 +54,7 @@ from __future__ import annotations
 
 import json
 
-from . import enginenote
+from . import enginenote, roleswap
 from .wrongturn import WARN_STREAK
 
 #: Kinds whose entire content is "has it finished?", so a repeat is the same question again
@@ -91,20 +95,22 @@ def poll_class(action: dict) -> str | None:
 
 
 def _cheap_model(loop) -> str | None:
-    """The routine's DISTINCT cheap model, or None when it has none.
+    """The DISTINCT cheap model this run's turns can be served from, or None when there is none.
 
-    The no-op case, and it is the common one: 31 of the fleet's 32 routines configure no
-    `tool_call` model at all, and a `tool_call` equal to the configured `main` is the same
-    nothing. Returning None here is what makes the mechanism silent rather than a swap to the
-    server's fallback model, which `endpoints.for_model` would resolve an unset role to and
-    which is not necessarily cheaper.
+    Resolved the way the engine resolves the role (`config.base.role_default_model`): the
+    routine's own `tool_call`, else the instance's `system_tool_call_model`. The second half is
+    D230, the other half of the operator's "both" answer to D217, and it is what moves this
+    module off the no-op it shipped as: 31 of the fleet's 32 routines configure no `tool_call`
+    model, and returning None for them was right only because an unset role resolved to
+    `system_model` — the model `main` was already on, and not necessarily cheaper. A default FOR
+    THE ROLE is the operator's fleet-wide choice of a cheaper model, so it is servable; with no
+    default set this still returns None and the mechanism stays silent.
+
+    A cheap model equal to the configured `main` is the same nothing, however it was resolved.
+    One rule, held in `roleswap.cheap_model`, because the run-chosen swap and this engine-served
+    one must not disagree about whether a cheaper model exists.
     """
-    models = loop.ctx.routine.models
-    cheap = models.get("tool_call")
-    if not cheap:
-        return None
-    strong = getattr(loop.ctx, "configured_main", None) or models.get("main")
-    return None if cheap == strong else cheap
+    return roleswap.cheap_model(loop.ctx)
 
 
 def _serve_cheap(loop) -> None:
@@ -121,14 +127,17 @@ def _serve_cheap(loop) -> None:
     if not hasattr(ctx, "configured_main"):
         ctx.configured_main = models.get("main") or ""
     models["main"] = cheap
+    # what THIS layer served, so `_restore` can tell its own swap from someone else's
+    loop._autoswap_model = cheap
     loop._autoswap_on = True
     if getattr(loop, "_autoswap_told", False):
         return      # once per run: a note on every poll would be rent on the cheap stretch
     loop._autoswap_told = True
     enginenote.append(
-        loop, f"the engine is serving your REPEAT POLLS on `{cheap}` (this routine's tool_call "
-              f"model): the last {SERVE_FROM} turns asked the same question again, and reading "
-              "a one-line answer does not need your main model. You asked for nothing and need "
+        loop, f"the engine is serving your REPEAT POLLS on `{cheap}` (the tool_call model for "
+              f"this routine): the last {SERVE_FROM} turns asked the same question again, and "
+              "reading a one-line answer does not need your main model. You asked for nothing "
+              "and need "
               "do nothing — your main model is restored the moment you take an action of a "
               "different kind, and the transcript's per-turn model stamp names which model "
               "answered each turn.")
@@ -141,11 +150,24 @@ def _restore(loop) -> None:
     models = loop.ctx.routine.models
     strong = getattr(loop.ctx, "configured_main", None) or ""
     loop._autoswap_on = False
-    if not strong or models.get("main") == strong:
+    if models.get("main") == strong:
         return
-    if models.get("main") != models.get("tool_call"):
+    if models.get("main") != getattr(loop, "_autoswap_model", None):
         # Someone else re-pointed `main` since: the operator's console switch, or a failover.
         # Theirs is the live decision and this layer does not clobber it.
+        #
+        # Compared against the model this layer actually SERVED, recorded at the swap — not
+        # against `models['tool_call']` (since D230 the served model may have come from the
+        # instance default, leaving that key empty) and not against a recomputed
+        # `_cheap_model` (which answers None once the swap is in place on a routine that
+        # configures no `main`, because the cheap model is then what `main` resolves to).
+        # Either of those reads refuses every restore and strands the run on the cheap model.
+        return
+    if not strong:
+        # The routine configures no `main` of its own, so the honest inverse of the swap is
+        # removing the override: `main` resolves through the instance default again, which is
+        # exactly where it was before this layer touched it.
+        models.pop("main", None)
         return
     models["main"] = strong
 

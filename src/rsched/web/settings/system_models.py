@@ -1,7 +1,8 @@
-"""The two instance-wide model choices that read from the catalog: the SYSTEM model (the
-scheduler's own helper calls) and the context-compaction model.
+"""The instance-wide model choices that read from the catalog: the SYSTEM model (the
+scheduler's own helper calls), the fleet-wide default for the TOOL_CALL role, and the
+context-compaction model.
 
-Split out of `endpoints.py`, which stores transports and the catalog — these two are
+Split out of `endpoints.py`, which stores transports and the catalog — these are
 single-name pointers INTO the catalog, saved by their own routes.
 """
 
@@ -46,6 +47,31 @@ def set_system_model(request: Request, body: SystemEffortBody) -> dict:
     reload_into(request, path, "system_model", "system_effort")
     return {"ok": True, "system_model": s.system_model or None,
             "system_effort": s.system_effort or None}
+
+
+@router.put("/settings/tool-call-model")
+def set_tool_call_model(request: Request, body: SystemEffortBody) -> dict:
+    """Set the fleet-wide default for the TOOL_CALL role (D230) — the cheap half of every
+    routine's work (the `llm` action, a `role_swap: cheap` turn, the claim verifier's second
+    opinion). An empty name clears it, and an unset default falls through to the system model
+    exactly as before, which is how it ships: a routine's own `models.tool_call` always wins.
+    """
+    s = server_of(request)
+    if body.name and body.name not in s.models:
+        raise HTTPException(400, f"unknown model {body.name!r} — add it to the catalog first")
+    if body.effort and body.effort not in EFFORT_LEVELS:
+        raise HTTPException(400, f"effort must be one of {EFFORT_LEVELS} (or blank)")
+
+    def mutate(raw: dict) -> None:
+        raw.update(system_tool_call_model=body.name)
+        raw.pop("system_tool_call_effort", None)
+        if body.name and body.effort:
+            raw["system_tool_call_effort"] = body.effort
+
+    path = update_config(request, mutate)
+    reload_into(request, path, "system_tool_call_model", "system_tool_call_effort")
+    return {"ok": True, "system_tool_call_model": s.system_tool_call_model or None,
+            "system_tool_call_effort": s.system_tool_call_effort or None}
 
 
 @router.put("/settings/compaction-model")

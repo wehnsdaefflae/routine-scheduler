@@ -37,6 +37,13 @@ from . import store as hookstore
 #: which is why only one of the three is subtractive.
 REMOVING = ("remove",)
 
+#: The curator's `dead` (D231) is NOT one of the record's dispositions: the row stays in the
+#: store with its tally and its own `disposition` untouched, and the annotation lives in the
+#: store's `dead` sidecar. So a disposal row keeps the definition in the derived view and does
+#: NOT overwrite what the record says — otherwise this projection would report `dead` where the
+#: store reports `keep` and `drift` would name a disagreement that is not one.
+ANNOTATING = ("dead",)
+
 
 def definitions(routines_home: Path, *, routine: str = "") -> dict[str, dict]:
     """Every reminder DEFINITION the hook stream implies, by id — `{regex, description, kind,
@@ -59,6 +66,8 @@ def definitions(routines_home: Path, *, routine: str = "") -> dict[str, dict]:
         if hook.disposition in REMOVING:
             out.pop(hook.id, None)
             continue
+        if hook.disposition in ANNOTATING:
+            continue        # D231: the record is unchanged; the annotation is the store's own
         trigger = dict(hook.trigger)
         payload = dict(hook.payload)
         out[hook.id] = {"regex": str(trigger.get("regex") or ""),

@@ -26,7 +26,8 @@ here is offline, free and reads only the resolved config:
 
 1. every routine role resolves to a non-empty chain;
 2. no role's chain has all its members in one failure domain;
-3. the server's `system_model` resolves (it is the fallback for every unset role).
+3. the server's fleet-wide pointers resolve — `system_model`, the fallback for every unset
+   role, and `system_tool_call_model`, the one an unset `tool_call` prefers (D230).
 
 Checked where the live config is already read — `rsched validate`, beside `trials.roles_problem`
 (the same shape: a question the loader cannot answer because it cannot see the catalog) and
@@ -134,23 +135,34 @@ def chain_problems(server: ServerConfig, models: dict[str, str] | None) -> list[
 
 
 def system_model_problems(server: ServerConfig) -> list[str]:
-    """The server's own `system_model` — the fallback behind every role a routine leaves unset.
+    """The server's own fleet-wide model pointers — the fallbacks behind every role a routine
+    leaves unset: `system_model` for any role, and `system_tool_call_model` for `tool_call`
+    once the operator sets one (D230, `config.base.role_default_model`).
 
-    Checked separately from the routines because it belongs to no routine: a routine naming no
-    `main` model runs on it, so an unresolvable or single-domain system model is a fleet-wide
-    condition that no per-routine surface can see.
+    Checked separately from the routines because they belong to no routine: a routine naming no
+    `main` model runs on the system model and a routine naming no `tool_call` runs on the
+    tool-call default, so an unresolvable or single-domain pointer is a fleet-wide condition
+    that no per-routine surface can see. An UNSET pointer is not a problem — it is how the
+    tool-call default ships.
     """
     # `getattr`, not an attribute read: `rsched validate`'s own tests hand `_instance_problems`
     # a minimal stand-in carrying only the fields that test needs (tests/test_lanes.py), and a
     # hard read there fails the whole command for a question it was not asked. Same shape as the
     # four-attribute server the fresh-container boot test hands `cmd_daemon`.
-    name = getattr(server, "system_model", "")
-    if not name or not getattr(server, "models", None):
+    if not getattr(server, "models", None):
         return []
-    if name not in server.models:
-        return [(f"system_model {name!r} is not in the model catalog — every routine that "
-                 "names no model of its own dies resolving it")]
-    # One role, so one line at most; `chain_problems` words it as `models.<role>` because that
-    # is where a routine's roles live, and the server's own model is not one of those.
-    return [line.replace("models.system_model", "system_model", 1)
-            for line in chain_problems(server, {"system_model": name})]
+    out: list[str] = []
+    for field, who in (("system_model", "every routine that names no model of its own"),
+                       ("system_tool_call_model",
+                        "every routine that names no `tool_call` model of its own")):
+        name = getattr(server, field, "")
+        if not name:
+            continue
+        if name not in server.models:
+            out.append(f"{field} {name!r} is not in the model catalog — {who} dies resolving it")
+            continue
+        # One role, so one line at most; `chain_problems` words it as `models.<role>` because
+        # that is where a routine's roles live, and the server's own model is not one of those.
+        out.extend(line.replace(f"models.{field}", field, 1)
+                   for line in chain_problems(server, {field: name}))
+    return out

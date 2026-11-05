@@ -145,6 +145,10 @@ SERVER_PATCH_FIELDS = frozenset({
     # (`PUT /api/settings/system-model`, `/compaction-model`, `/decision-defaults`)
     "system_model", "system_effort", "compaction_model", "compaction_effort",
     "decision_model", "decision_media_model",
+    # the fleet-wide default for the TOOL_CALL role (D230) — the cheap half of every routine's
+    # work. Patchable for the same reason the system model is: it is a single NAME pointing into
+    # the catalog, which the catalog's own CRUD routes still own.
+    "system_tool_call_model", "system_tool_call_effort",
 })
 
 #: The routing key that names the server surface inside a `config_patch`. A patch carries this

@@ -162,6 +162,8 @@ def list_endpoints(request: Request) -> dict:
                        for m in server.models.values()],
             "system_model": server.system_model or None,
             "system_effort": server.system_effort or None,
+            "system_tool_call_model": server.system_tool_call_model or None,
+            "system_tool_call_effort": server.system_tool_call_effort or None,
             "effort_levels": list(EFFORT_LEVELS),
             "compaction_model": server.compaction_model or None,
             "compaction_effort": server.compaction_effort or None}
@@ -175,6 +177,8 @@ def list_models(request: Request) -> dict:
                        for m in server.models.values()],
             "system_model": server.system_model or None,
             "system_effort": server.system_effort or None,
+            "system_tool_call_model": server.system_tool_call_model or None,
+            "system_tool_call_effort": server.system_tool_call_effort or None,
             "effort_levels": list(EFFORT_LEVELS),
             "compaction_model": server.compaction_model or None,
             "compaction_effort": server.compaction_effort or None}

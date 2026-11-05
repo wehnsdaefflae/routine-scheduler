@@ -37,8 +37,8 @@ settings list it (`shared_reminders`, which a settings pattern carries for its k
 
 The dial (`capabilities.reminders`) governs AUTHORING and nothing else: `none` switches the
 layer off; `local` applies this routine's own reminders plus every curated one that reaches it —
-and lets it write its own; `global` also lets it write the shared store — the curator's setting.
-Reading a curated reminder needs no dial of its own: the operator approved every one of them.
+and lets it write its own; `global` writes the shared store and retires a dead row in another
+routine's store (D231, `remind_dead`) — the curator's. Reading a curated one needs no dial.
 
 The STATS are per-routine on purpose and live only in the local file — for a global reminder
 too, under `global_stats`. A global reminder's DEFINITION is curated and shared; the evidence
@@ -59,7 +59,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import remind_mute
+from . import remind_dead, remind_mute
 from .paths import atomic_write_json, read_json
 
 LOCAL_FILE = "reminders.json"       # under <routine>/state/
@@ -333,7 +333,7 @@ def save_local(routine_dir: Path, reminders: list[Reminder],
     atomic_write_json(local_path(routine_dir), {
         "reminders": [{k: v for k, v in r.as_record().items() if k != "scope"}
                       for r in reminders if r.scope == "local"],
-        "refused": rows,
+        "refused": rows, **remind_dead.carry(routine_dir),   # D231: never drop an annotation
         "global_stats": {k: _stats(v) for k, v in sorted(global_stats.items())}})
 
 
@@ -514,7 +514,7 @@ def active(routine_dir: Path, reminders_home: Path, level: str,
     if LEVEL_RANK.get(level, 0) < LEVEL_RANK["local"]:
         return []
     stored, gstats = load_local(routine_dir)
-    local = remind_mute.live_local(stored, run_id)   # a mute lasts one run (remind_mute, F697)
+    local = remind_dead.live(routine_dir, remind_mute.live_local(stored, run_id))  # D231, F697
     seen = {(r.regex, r.kind) for r in local}
     return local + [g for g in load_global(reminders_home, gstats)
                     if (g.regex, g.kind) not in seen

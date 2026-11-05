@@ -25,7 +25,7 @@ from collections import defaultdict
 from datetime import UTC, date, datetime
 
 from .. import registry
-from ..config import ServerConfig
+from ..config import ServerConfig, role_default_model
 from ..endpoints import EndpointError, EndpointRegistry
 
 # a detached background task's slug (`bg-<owner>-<hex8>`) → its owner, so spend lands on
@@ -144,6 +144,20 @@ def monthly_spend(server: ServerConfig) -> dict:
     return {"months": sorted(months), "by_routine": dict(ordered)}
 
 
+def _role_ref(reg, server: ServerConfig, cfg, role: str):
+    """The resolved ModelRef one of a routine's roles actually runs on, or None.
+
+    The routine's own name for the role, else the instance default for THAT role
+    (`config.base.role_default_model`) — the same precedence `EndpointRegistry.for_model_chain`
+    applies, read through the one function so this readout cannot drift from the engine.
+    """
+    name = (cfg.models or {}).get(role) or role_default_model(server, role)[0]
+    try:
+        return reg.resolve(name)[1] if name else None
+    except EndpointError:
+        return None
+
+
 def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
     """Walk both homes and roll up usage into every slice the Stats tab renders."""
     homes = [("routine", server.routines_home), ("conversation", server.conversations_home)]
@@ -161,14 +175,15 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
     for kind, home in homes:
         catalog = registry.scan(server, home)
         for slug, info in catalog.items():
-            # the engine's role resolution (EndpointRegistry.for_model): a routine that leaves
-            # models.main unset runs on the server's system_model. Resolve the catalog NAME to a
-            # ModelRef so _run_ref can attribute legacy runs whose status.json lacks the model.
-            main_name = (info.cfg.models or {}).get("main") or server.system_model
-            try:
-                main_ref = reg.resolve(main_name)[1] if main_name else None
-            except EndpointError:
-                main_ref = None
+            # the engine's own role resolution (EndpointRegistry.for_model_chain): a routine
+            # that leaves a role unset runs the instance default for it — `system_model`, or
+            # `system_tool_call_model` for `tool_call` once the operator sets one (D230,
+            # config.base.role_default_model). Resolve the catalog NAME to a ModelRef so
+            # _run_ref can attribute legacy runs whose status.json lacks the model, and so the
+            # per-routine row can report the main/tool_call PAIR: it resolved `main` alone, so
+            # the pair read identical however the instance was configured.
+            main_ref = _role_ref(reg, server, info.cfg, "main")
+            tool_ref = _role_ref(reg, server, info.cfg, "tool_call")
             racc = _empty()
             for r in info.runs:
                 endpoint, model = _run_ref(r.model, main_ref)
@@ -189,9 +204,14 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
                              "notional": float((r.usage or {}).get("notional") or 0.0),
                              "elapsed_s": int(r.elapsed_s or 0)})
             if info.runs:
-                by_routine[slug] = {**racc, "kind": kind,
-                                    "endpoint": main_ref.endpoint if main_ref else "unknown",
-                                    "model": main_ref.model if main_ref else "unknown"}
+                by_routine[slug] = {
+                    **racc, "kind": kind,
+                    "endpoint": main_ref.endpoint if main_ref else "unknown",
+                    "model": main_ref.model if main_ref else "unknown",
+                    # the PAIR (D230): equal values mean this routine's cheap turns run the
+                    # model its expensive ones do, so a `role_swap: cheap` saves nothing
+                    "tool_call_endpoint": tool_ref.endpoint if tool_ref else "unknown",
+                    "tool_call_model": tool_ref.model if tool_ref else "unknown"}
 
     def _tok(d: dict) -> int:
         # the WHOLE context volume — fresh, output, cache reads and writes: ranking by fresh +

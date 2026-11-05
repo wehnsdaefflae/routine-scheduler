@@ -121,11 +121,18 @@ def validate_trial(server, value: dict) -> dict:
 def effort_picker(server, cfg) -> dict:
     """What the effort pickers need: each chat role's level (null = the provider's default —
     effort is a setting of its own beside the model, never a catalog row per level), the levels
-    on offer, and the effort the system model runs at when a role names no model.
+    on offer, and the instance defaults a role that names no model of its own resolves to.
+
+    The TOOL_CALL role has its own instance default (D230, `config.base.role_default_model`), so
+    the page carries it beside `system_effort`: the blank option of a picker states what the
+    ENGINE resolves that role to, and a label naming the system model while the engine ran a
+    different one is the defect `tests/ui/test_role_blank_defaults.py` exists to pin.
     """
     return {"efforts": {role: cfg.efforts.get(role) or None for role in MODEL_KINDS},
             "effort_levels": list(EFFORT_LEVELS),
-            "system_effort": server.system_effort or None}
+            "system_effort": server.system_effort or None,
+            "system_tool_call_model": server.system_tool_call_model or None,
+            "system_tool_call_effort": server.system_tool_call_effort or None}
 
 
 def decision_picker(server) -> dict:

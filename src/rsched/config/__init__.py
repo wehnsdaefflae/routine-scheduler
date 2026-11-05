@@ -32,6 +32,7 @@ from .base import (
     HomePath,
     SchemaMode,
     default_tz,
+    role_default_model,
 )
 from .decisionconf import (
     DECISION_PROTOCOLS,
@@ -79,5 +80,6 @@ __all__ = [
     "load_routine",
     "load_server_config",
     "load_tuning",
+    "role_default_model",
     "write_tuning",
 ]

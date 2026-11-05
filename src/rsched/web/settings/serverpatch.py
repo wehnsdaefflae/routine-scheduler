@@ -67,6 +67,8 @@ class ServerPatch(BaseModel):
     desktop_view_url: str | None = None
     system_model: str | None = None
     system_effort: str | None = None
+    system_tool_call_model: str | None = None
+    system_tool_call_effort: str | None = None
     compaction_model: str | None = None
     compaction_effort: str | None = None
     decision_model: str | None = None
@@ -91,11 +93,11 @@ def _catalog_problem(server, updates: dict) -> str:
     was `decision_media_model` → blank), and `""` is what every one of these fields means by
     "unset".
     """
-    for field in ("system_model", "compaction_model"):
+    for field in ("system_model", "compaction_model", "system_tool_call_model"):
         name = str(updates.get(field) or "")
         if name and name not in server.models:
             return f"{field}: {name!r} is not a catalog model — add it to the catalog first"
-    for field in ("system_effort", "compaction_effort"):
+    for field in ("system_effort", "compaction_effort", "system_tool_call_effort"):
         level = str(updates.get(field) or "")
         if level and level not in EFFORT_LEVELS:
             return f"{field}: must be one of {', '.join(EFFORT_LEVELS)} (or blank)"

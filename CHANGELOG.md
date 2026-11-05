@@ -17,6 +17,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.498.0] — 2026-11-02
 
+### Added — an instance default for the `tool_call` role, so `role_swap: cheap` can save something (D230)
+
+The operator's answer: *"Set the same tool_call binding fleet-wide as an instance default, so
+every routine's cheap turns actually go to a cheaper model unless it overrides."* Of 32 routines
+only one had a distinct main/tool_call pair, and only because he had applied a `config_patch` for
+it by hand — so for every other routine a run swapping down to save tokens saved exactly nothing
+while believing it did. There was no instance default for the role at all.
+
+`ServerConfig` gains `system_tool_call_model` + `system_tool_call_effort`, the established shape
+of its four existing per-purpose pairs, and ONE resolver — `config.base.role_default_model` —
+threaded through every reader (`endpoints.for_model_chain`, `readmodels/stats.py`,
+`verifier_model.py`, `conformance.py`, `cli_validate.py`), the patch surface, a new
+`PUT /api/settings/tool-call-model`, and four console surfaces.
+
+Two things building it corrected in the measured seam, both load-bearing. **Neither swap layer
+resolved through the registry**: `engine/roleswap.py` and `engine/autoswap.py` read
+`routine.models['tool_call']` directly and stood down when it was empty, so binding the role in
+the model chain alone would have changed nothing for `role_swap: cheap` — the one thing this
+decision exists to fix; both now share `roleswap.cheap_model`. And **`readmodels/stats.py`
+resolved `main` alone**, which is exactly why his proof predicate (*"a distinct main/tool_call
+pair for every routine"*) could not have been met by the chain binding: the readout would still
+have printed the pair as identical.
+
+Precedence is `models.tool_call` → `system_tool_call_model` → `system_model`, deliberately NOT
+D164's fallback-to-`main`: that reasoning is about an overseer JUDGING a run, while `tool_call` is
+the cheap mechanical half whose whole purpose is to be cheaper than main, so resolving it through
+main would make the swap a no-op by construction.
+
+**It ships EMPTY.** Unset, nothing changes for any routine, and both halves are pinned by test.
+Which catalog model the default should name is not in his answer and is not a run's to guess — a
+wrong default is a fleet-wide cost change — so the second half of his proof (*"a cheap turn shows
+a lower per-turn cost"*) waits on him setting a value. Also named rather than silently altered:
+the default does not reach a conversation whose main model is set, because the conversation header
+seeds `tool_call = main` as an explicit override, and changing that is a conversation design
+question outside the answer.
+
+### Added — a curator may retire a reminder row in another routine's store (D231)
+
+The operator's answer: *"Give rules-review a way to delete/annotate a reminder row in a DISABLED
+routine's store (an engine capability or a census verb), since no report can reach a routine that
+never runs."* Four consecutive `rules-review` passes had recorded the same four undeletable rows:
+a reminder store belongs to its routine, so the only channel was an addressed report — read on the
+owner's next scheduled run, which for a disabled routine never comes.
+
+`remind {op: dead, target: <slug>, id, description}` retires a row in another routine's store. The
+row **keeps its whole tally**, stops firing, and carries who retired it, when and why — his stated
+preference, because the tally is the evidence that a pattern was too broad and a deletion destroys
+exactly that (one acceptance row has 22 holds of which 8 are `could_not`). `op=delete` with a
+target remains the fallback for a row with no evidence worth keeping.
+
+The marker is a SIDECAR key in the holder's own store file, so the row itself is never rewritten
+and no path through this change can lose a tally even in principle. Authorization is the existing
+`capabilities.reminders: global` dial asked once through `GrantPolicy.reminder_denial` — no second
+gate over a grant the operator issued — and whether the target routine is `enabled` is read
+nowhere, which is the whole point. `reminders.py` (574/574), `engine/remind.py` (605/605) and
+`actionschema.py` (629) are all at zero ratchet slack, so every edit to them is line-neutral.
+
+`tests/prompt_budget.json` rises 64,026 → 64,454 (+428, all in `schema`), measured against the
+tree, for the three things a run cannot use the op safely without: that `op=dead` exists and is
+preferred over `delete`, that `target` now means the disposal ops too, and that `description`
+carries the REASON on a disposal. The first draft cost +869.
+
 ### Added — the finish gate's ladder goes through the hook-point registry, which gives it the ENGINE's own face (D152 step 6)
 
 The harness-squared half of the operator's 2026-10-26 brief: *"The hook system also should allow

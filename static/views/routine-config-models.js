@@ -22,15 +22,19 @@ const MODEL_KINDS = [["main", "the orchestrator loop (children inherit it by def
 // "— system default (<system model>) —", so the supervisor row contradicted its own description
 // ("blank = main") side by side, and the uncensored row promised a fallback that does not exist.
 // One statement of each default, from the code that applies it:
-//   main · tool_call → endpoints.for_model_chain — the server's `system_model`
+//   main             → endpoints.for_model_chain — the server's `system_model`
+//   tool_call        → config.base.role_default_model — the instance's `system_tool_call_model`
+//                      (D230) when the operator set one, else `system_model` as before
 //   uncensored       → endpoints.for_uncensored — NO fallback; an unset role means referral off
 //   supervisor       → config.base.supervisor_role — the routine's own `main` role (D164)
-function blankLabel(kind, { sysM, main }) {
+function blankLabel(kind, { sysM, sysTool, main }) {
   if (kind === "uncensored") return "— off · a refusal is not referred —";
   if (kind === "supervisor") {
     const resolved = main || sysM;        // main unset resolves onward to the system model
     return resolved ? `— main (${resolved}) —` : "— main —";
   }
+  // the tool-call role prefers the instance's own tool-call default, when there is one
+  if (kind === "tool_call" && sysTool) return `— tool-call default (${sysTool}) —`;
   return sysM ? `— system default (${sysM}) —` : "— system default —";
 }
 // The decide action's two roles name a DECISION model (Settings → Decision endpoints), not a
@@ -43,12 +47,18 @@ export function modelsGroup(ctx) {
   const { d, form } = ctx;
   const catalog = d.catalog || [];          // catalog model names (see Settings → Models)
   const sysM = d.system_model;              // the system model's catalog name (or null)
+  const sysTool = d.system_tool_call_model; // the instance's tool-call default (D230, or null)
 
   const decisions = d.decision_catalog || [];   // [{name, images}] — empty: no decide action
   const decDefaults = d.decision_defaults || {};
 
   const levels = d.effort_levels || [];     // the reasoning levels on offer, lowest first
   const sysEffort = d.system_effort;        // what a role with no model of its own runs at
+  const sysToolEffort = d.system_tool_call_effort;   // ...except tool_call, once D230 is set
+  // The effort that goes with whichever instance default answers for this role: a cheap
+  // tool-call model asked to think at the system model's level is not the saving it is for.
+  const blankEffort = (kind) =>
+    (kind === "tool_call" && sysTool ? sysToolEffort : sysEffort);
 
   // One block over BOTH keys: a role's model and its effort are one row and one decision.
   const models = fieldBlock(form, ["models", "efforts"], (value, set) => {
@@ -61,7 +71,7 @@ export function modelsGroup(ctx) {
     const blanks = new Map();
     const repaintBlanks = () => {
       for (const [kind, option] of blanks)
-        option.textContent = blankLabel(kind, { sysM, main: current.main });
+        option.textContent = blankLabel(kind, { sysM, sysTool, main: current.main });
     };
     const commit = (kind, v) => {
       if (v) current[kind] = v; else delete current[kind];
@@ -72,8 +82,10 @@ export function modelsGroup(ctx) {
       const sel = el("select", { "data-effort-role": kind, "data-nopersist": true,
         "aria-label": `${kind} reasoning effort`, title: "how hard the model reasons on each turn",
         onchange: () => { if (sel.value) efforts[kind] = sel.value; else delete efforts[kind]; emit(); } },
-        el("option", { value: "" }, !current[kind] && sysEffort ? `effort: system (${sysEffort})`
-          : "effort: provider default"),
+        // what the ENGINE runs this role at while it names no model: the effort belonging to
+        // whichever instance default answers for it (D230 gave tool_call its own)
+        el("option", { value: "" }, !current[kind] && blankEffort(kind)
+          ? `effort: system (${blankEffort(kind)})` : "effort: provider default"),
         ...levels.map((l) => el("option", { value: l }, l)));
       sel.value = efforts[kind] || "";
       return sel;
@@ -99,7 +111,8 @@ export function modelsGroup(ctx) {
       return roleRow(kind, desc, sel);
     });
     const rows = MODEL_KINDS.map(([kind, desc]) => {
-      const blank = el("option", { value: "" }, blankLabel(kind, { sysM, main: current.main }));
+      const blank = el("option", { value: "" },
+                       blankLabel(kind, { sysM, sysTool, main: current.main }));
       blanks.set(kind, blank);
       const sel = el("select", { "data-model-role": kind, "data-nopersist": true,
         onchange: () => commit(kind, sel.value) },
