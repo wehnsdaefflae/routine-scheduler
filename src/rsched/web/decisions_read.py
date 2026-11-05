@@ -32,9 +32,9 @@ from ..readmodels import decision_answers, memo, stamps
 
 _DECISION_RE = re.compile(r"\[AUDIT decision · ([^\]]+)\]")
 
-#: Settled decisions per routine on the page (F525). The archive is durable and grows for
-#: the life of the instance; the page shows the recent tail, and the full history stays
-#: readable in `questions/answered/`.
+#: Settled decisions per routine in the catalog (F525). The archive is durable and grows for
+#: the life of the instance; the catalog holds the recent tail, the route sends only the
+#: window a reader asks for (`decisions_window`, F810), and the rest stays in `questions/answered/`.
 SETTLED_CAP = 25
 
 #: Statuses that mean the decision is already MADE — the report carries them so the Items

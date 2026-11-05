@@ -60,13 +60,15 @@ export function createRunRail(view, { runId, isLive }) {
   const subRunTree = createSubRunTree(treeBody, {
     treeUrl: `/api/runs/${runId}/tree`, isLive, turnHref });
   // The operator's order of 2026-11-01: "a routine's scripts should have a section in the right
-  // routine run sidebar". Mounted here for the same reason the routine rail is — "which sections
-  // the rail has" is this module's responsibility and views/run.js is frozen at its ceiling. It
-  // adds itself only if the read finds a script, so a routine with no scripts/ gains no caption,
-  // and it needs no stop(): one read, no poller, and a late append lands in a container the
-  // navigation already discarded.
-  mountRunScripts(rail, { slug: String(runId).split(":")[0] });
+  // routine run sidebar" — and of 2026-11-05 (F833): conversations hold scripts too. The section
+  // is HOME-scoped like the artifacts, so the caller mounts it once the run detail names the
+  // home; a detached task's scripts are its owner's, so it gets none. It adds itself only if the
+  // read finds a script, and needs no stop(): one read, no poller, and a late append lands in a
+  // container the navigation already discarded.
+  const slug = String(runId).split(":")[0];
+  const showScripts = (home) => (home === "background" ? null
+    : mountRunScripts(rail, { slug, base: home === "conversation" ? "conversations" : "routines" }));
   const fileActivity = createFileActivity(filesBody, { url: `/api/runs/${runId}/files` });
   return { rail, artBody, filesBody, graphBody, goalBody, subRunTree, fileActivity, turnHref,
-           routineRail };
+           routineRail, showScripts };
 }

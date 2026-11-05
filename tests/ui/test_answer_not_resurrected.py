@@ -26,7 +26,7 @@ from .conftest import until
 from .helpers import hold_requests
 
 ANSWER = re.compile(r"/api/questions/q-color/answer$")
-LIST = re.compile(r"/api/questions$")
+LIST = re.compile(r"/api/questions(\?settled=\d+)?$")   # the page asks for its window
 
 
 def test_a_stale_list_does_not_reopen_an_answered_question(ui, ui_page):

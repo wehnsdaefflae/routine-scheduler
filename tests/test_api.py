@@ -935,7 +935,7 @@ def test_questions_flow(client):
     atomic_write_json(pending / "q-old-1.json",
                       {"qid": "q-old-1", "question": "Deferred Q?", "options": ["a"],
                        "asked": "20260707", "mode": "deferred"})
-    qs = c.get("/api/questions").json()
+    qs = c.get("/api/questions").json()["items"]
     assert {q["qid"] for q in qs} == {"q-20260708-110000-3", "q-old-1"}
     blocking = next(q for q in qs if q["mode"] == "blocking")
     assert blocking["run_state"] == "waiting_user" and blocking["asked"] == "20260708-110000"
@@ -959,12 +959,12 @@ def test_question_snooze_lifecycle(client):
     r = c.post("/api/questions/q-z1/snooze", json={"minutes": 60})
     assert r.status_code == 200 and r.json()["snoozed_until"]
     assert read_json(pending / "q-z1.json")["snoozed_until"] == r.json()["snoozed_until"]
-    q = next(x for x in c.get("/api/questions").json() if x["qid"] == "q-z1")
+    q = next(x for x in c.get("/api/questions").json()["items"] if x["qid"] == "q-z1")
     assert q["snoozed"] is True
 
     assert c.post("/api/questions/q-z1/snooze", json={"minutes": 0}).status_code == 200
     assert "snoozed_until" not in read_json(pending / "q-z1.json")
-    q = next(x for x in c.get("/api/questions").json() if x["qid"] == "q-z1")
+    q = next(x for x in c.get("/api/questions").json()["items"] if x["qid"] == "q-z1")
     assert not q.get("snoozed")
 
     # a blocking question cannot be snoozed — answer it or defer it
@@ -1155,7 +1155,7 @@ def test_deferred_question_links_back_to_its_run(client):
     atomic_write_json(routines / "apir" / "questions" / "pending" / "q-orphan.json",
                       {"qid": "q-orphan", "question": "Old?", "options": [],
                        "asked": "20200101-000000", "mode": "deferred"})
-    by = {q["qid"]: q for q in c.get("/api/questions").json()}
+    by = {q["qid"]: q for q in c.get("/api/questions").json()["items"]}
     assert by["q-linked"]["run_id"] == "apir:20260706-080000"
     assert by["q-linked"]["run_state"] == "finished"
     assert "run_id" not in by["q-orphan"]            # pruned run → no dangling link
@@ -1216,7 +1216,7 @@ def test_answered_question_shows_settled_not_open(client):
     atomic_write_json(pending / "q-a1.json", {"qid": "q-a1", "question": "Pick?", "options": [],
                                               "asked": "20260707", "mode": "deferred"})
     assert c.post("/api/questions/q-a1/answer", json={"text": "blue"}).status_code == 200
-    q = next(x for x in c.get("/api/questions").json() if x["qid"] == "q-a1")
+    q = next(x for x in c.get("/api/questions").json()["items"] if x["qid"] == "q-a1")
     assert q["answered"] is True and q["answer"] == "blue"
 
 
@@ -2162,7 +2162,7 @@ def test_audit_decisions_merge_into_questions(client):
             {"id": "D6", "title": "What should this be called?", "detail": "x",
              "status": "open", "options": []},
         ]})
-    qs = c.get("/api/questions").json()
+    qs = c.get("/api/questions").json()["items"]
     metas = [q for q in qs if q.get("meta")]
     # settled, in-progress and one-option items all stay out of the inbox
     assert [q["qid"] for q in metas] == ["audit:D2", "audit:D6"]
@@ -2177,7 +2177,7 @@ def test_audit_decisions_merge_into_questions(client):
     assert len(msgs) == 1
     assert read_json(msgs[0])["text"] == "[AUDIT decision · D2] selected: A"
     # out of the OPEN list (F529: it stays as an answered row — test_decision_acknowledged)
-    assert [q["qid"] for q in c.get("/api/questions").json()
+    assert [q["qid"] for q in c.get("/api/questions").json()["items"]
             if q.get("meta") and not q.get("answered")] == ["audit:D6"]
     # unknown decision → 404
     assert c.post("/api/questions/audit:D9/answer", json={"text": "x"}).status_code == 404
@@ -2281,13 +2281,13 @@ def test_audit_decision_answer_survives_inbox_consumption(client):
         "findings": [],
         "decisions": [{"id": "D2", "title": "Pick a path", "detail": "context",
                        "status": "open", "options": ["A", "B"]}]})
-    assert [q["qid"] for q in c.get("/api/questions").json() if q.get("meta")] == ["audit:D2"]
+    assert [q["qid"] for q in c.get("/api/questions").json()["items"] if q.get("meta")] == ["audit:D2"]
 
     # answer it → marker persisted alongside the queued message
     assert c.post("/api/questions/audit:D2/answer", json={"text": "A"}).status_code == 200
     marker = read_json(adir / "decisions-answered.json")
     assert isinstance(marker, dict) and marker.get("D2")
-    qs = lambda: c.get("/api/questions").json()   # noqa: E731
+    qs = lambda: c.get("/api/questions").json()["items"]   # noqa: E731
     assert not [q for q in qs() if q.get("meta") and not q.get("answered")]
     # a run consumes the inbox message (mid-run delivery) — the decision must STAY hidden
     for p in (rdir / "inbox").glob("msg-*.json"):
@@ -2302,7 +2302,7 @@ def test_audit_decision_answer_survives_inbox_consumption(client):
         "findings": [],
         "decisions": [{"id": "D2", "title": "Pick a path (round 2)", "detail": "new context",
                        "status": "open", "options": ["A", "B"]}]})
-    assert [q["qid"] for q in c.get("/api/questions").json() if q.get("meta")] == ["audit:D2"]
+    assert [q["qid"] for q in c.get("/api/questions").json()["items"] if q.get("meta")] == ["audit:D2"]
 
 
 def test_items_page_reflects_answered_decision_after_consumption(client):
@@ -2726,7 +2726,7 @@ def test_live_blocking_question_listed_once(client):
     atomic_write_json(pend / f"q-{ts}-2.json",
                       {"qid": f"q-{ts}-2", "question": "Another, deferred one",
                        "mode": "deferred"})
-    qs = [q for q in c.get("/api/questions").json() if q["routine"] == "apir"]
+    qs = [q for q in c.get("/api/questions").json()["items"] if q["routine"] == "apir"]
     assert [q["qid"] for q in qs].count(f"q-{ts}-1") == 1
     assert {q["qid"] for q in qs} == {f"q-{ts}-1", f"q-{ts}-2"}
     live = next(q for q in qs if q["qid"] == f"q-{ts}-1")

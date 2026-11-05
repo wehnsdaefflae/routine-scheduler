@@ -60,7 +60,7 @@ def test_decline_files_a_refusal_and_closes_the_item(client):
 
     # …and the open set says it as a VALUE, which is what makes the card a refusal rather
     # than an answer that happens to read like one
-    row = next(q for q in c.get("/api/questions").json() if q["qid"] == "q-n1")
+    row = next(q for q in c.get("/api/questions").json()["items"] if q["qid"] == "q-n1")
     assert row["answered"] is True
     assert row["decision"] == "declined"
     assert row["reason"] == "we do not want it"
@@ -166,7 +166,8 @@ def test_a_consumed_decline_is_still_a_decline_on_the_page(client, tmp_path):
 
     archived = read_json(rd / "questions" / "answered" / "q-n6.json")
     assert archived["decision"] == "declined" and archived["reason"] == "no budget"
-    row = next(q for q in c.get("/api/questions").json() if q["qid"] == "q-n6")
+    settled = c.get("/api/questions", params={"settled": 25}).json()["items"]
+    row = next(q for q in settled if q["qid"] == "q-n6")
     assert row["settled"] is True and row["decision"] == "declined"
     assert row["reason"] == "no budget"
 

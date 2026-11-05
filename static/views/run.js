@@ -99,10 +99,9 @@ export async function render(view, runId, query = {}) {
 
   // Side rail: what the run produced, where it is, and what it answered for — its sections,
   // their order and the two run-keyed pollers live in components/runrail.js.
-  const { rail, artBody, graphBody, goalBody, subRunTree, fileActivity, turnHref } =
+  const { rail, artBody, graphBody, goalBody, subRunTree, fileActivity, turnHref, showScripts } =
     createRunRail(view, { runId, isLive: runLive });
-  // phasegraph + artifacts are HOME-scoped (routines vs conversations routes) — created
-  // at boot once the run detail names its home; tree/files key off the run id (home-free).
+  // phasegraph, artifacts, scripts are HOME-scoped — mounted once the run detail names its home
   let phaseGraph = null;
   let artifacts = null;
   let runJob = null;
@@ -406,6 +405,7 @@ export async function render(view, runId, query = {}) {
     return null;
   }
   const home = detail.home || "routine";
+  showScripts(home);
   // the goal section is THIS run's accounting: what it reported, at its end, for each line it
   // answered for — a routine's Done when and the open outcomes of its finish line. A
   // conversation has neither (its spine is the plan it writes itself), so it has no goal section.

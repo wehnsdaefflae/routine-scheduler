@@ -1744,7 +1744,15 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   badge, the tab-open notifier and Web Push all read) is memoized per home on the same fingerprint
   over the catalog's own sources (the home listing, every `routine.yaml`, every `questions/pending`
   and `inbox` dir, every `runs/` dir and run `status.json`), so a warm call is a stat pass and never
-  a `registry.scan`. `registry.info(server, home, slug)` answers for ONE directory off the same
+  a `registry.scan`. What one READ of it carries is bounded at the route (`web/decisions_window.py`,
+  F810): every open decision and every answer still in flight whole, the settled ARCHIVE only as
+  the `?settled=<n>` newest across the instance (none by default — it was 1.08 MB of a ~1.1 MB
+  response the badge refetched every 30 s per tab and counted none of), projected to the fields a
+  receipt card reads, with `settled_total` and, when rows were left out, a `settled_note` naming
+  the parameters (`?routine=<slug>` narrows to one routine's own) for a routine that reads the API
+  with no console in front of it. The Decisions page is the one console reader that asks
+  (`questions-store.js` `wantSettled`): the newest 25, "showing the newest k of N" and a button for
+  more, released when the page unmounts. `registry.info(server, home, slug)` answers for ONE directory off the same
   four memos — exactly what `scan(server, home).get(slug)` answers, without walking the home to
   answer it. A row for an ANSWERED question whose record carried a `config_patch` also states
   whether the patch was applied (`config_patch_applied` — `rsched/patchreceipt.py` owns the field

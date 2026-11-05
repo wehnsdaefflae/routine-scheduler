@@ -178,8 +178,8 @@ Two things follow from this that are worth knowing:
   carries ⧉ copy, ⑂ branch from here, ⟲ rewind to here and ⚑ flag as refusal (below).
 - **Right — artifacts + phases.** The deliverables the agent produces, a live phase-graph card, and
   a **files** card — which files the run read / wrote / edited, per-path counts straight from the
-  transcript (subtasks and your slash commands included). Also folds to a rail so the chat gets the
-  width.
+  transcript (subtasks and your slash commands included), and a **scripts** card once the
+  conversation keeps any (below). Also folds to a rail so the chat gets the width.
 
 ## Deliberation
 
@@ -274,6 +274,18 @@ chart, a data file — it writes it into the conversation's **artifacts** folder
 panel lists and renders it: HTML (sandboxed), Markdown, images, PDF, CSV, and JSON all display
 inline. Re-writing the same filename updates the artifact in place. The agent names each artifact it
 produced in its reply, so you always know what to look at.
+
+## Scripts — the conversation's own tooling
+
+A conversation holds `scripts/` exactly as a routine does (operator, 2026-11-05, F833): when a step
+repeats — a parse, a poll, a render — the agent writes it once as `scripts/<name>.py` and calls it
+with the `script` action from then on, in the same jail and venv model as a routine's
+(`<conversation>/scripts/.venv` for one that declares dependencies). The right rail's **scripts**
+card lists them by name with their one-line summary — the same catalog the agent's own
+capabilities digest names (`GET /api/conversations/{slug}/scripts`, the routine route's twin,
+both reading `rsched/scripts.list_scripts`) — and is re-read when a reply ends, since a reply is
+what writes them. A conversation's run page shows the same card. The card appears only once there
+is a script; a failed read says so in the card rather than leaving it silently empty.
 
 ## Capabilities, budgets, and model
 

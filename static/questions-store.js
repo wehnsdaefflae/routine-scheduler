@@ -16,6 +16,12 @@
 // list because the Decisions page renders them in their own band; the one read fetches both,
 // and a failed proposals read keeps the last list rather than blanking the count.
 //
+// What one read carries is BOUNDED (F810, web/decisions_window.py): every open decision whole,
+// and the SETTLED archive only when a reader asks for it. The archive was ~1.1 MB of history
+// refetched every 30 s per tab for a badge that counts none of it, so the settled window is 0
+// unless the Decisions page — the one surface that shows history — has called wantSettled(n),
+// and it is released again when that page goes away. `settledTotal` says how many exist.
+//
 // What the listener skips is llm_task / llm_process and NOTHING else. Those fire several
 // times a second while a run works and cannot touch a decision. `run_state` can: a run that
 // asks a blocking question goes `waiting_user`, and that event is the only announcement the
@@ -31,8 +37,9 @@ const SKIP = new Set(["llm_task", "llm_process"]);
 // load-bearing for the transcript's form reconciliation — a form opened after the fetch
 // started must not be closed by an answer list that predates it.
 let snapshot = null;
-let inflight = null;
+let inflight = null;                   // { promise, settled } — the read most recently begun
 let cooldown = null, trailing = false;
+let wanted = 0;                        // settled rows a mounted reader asked for (wantSettled)
 const subscribers = new Set();
 
 // WHAT THIS CONSOLE ITSELF ANSWERED, and when — the mirror of the `at` stamp above.
@@ -72,22 +79,33 @@ function healed(items, at) {
 }
 
 function fetchNow() {
-  if (inflight) return inflight;
+  // join a read already in flight only when it asked for at least the window wanted NOW: the
+  // Decisions page's first load must not be answered by the badge's settled-free read
+  if (inflight && inflight.settled >= wanted) return inflight.promise;
   const at = Date.now();
-  inflight = Promise.all([
-    api("/api/questions"),
+  const settled = wanted;
+  const promise = Promise.all([
+    api(settled ? `/api/questions?settled=${settled}` : "/api/questions"),
     api("/api/pending-creations").catch(() => snapshot?.proposals ?? []),
   ])
-    .then(([items, proposals]) => {
-      snapshot = { items: healed(items, at), proposals, at };
+    .then(([page, proposals]) => {
+      // two reads can overlap now; only the one begun LAST may speak for the list
+      if (snapshot && snapshot.at > at) return snapshot;
+      snapshot = { items: healed(page.items, at), settledTotal: page.settled_total,
+                   settled, proposals, at };
       for (const fn of [...subscribers]) {
         try { fn(snapshot); } catch { /* one bad reader must not starve the others */ }
       }
       return snapshot;
     })
-    .finally(() => { inflight = null; });
-  return inflight;
+    .finally(() => { if (inflight?.promise === promise) inflight = null; });
+  inflight = { promise, settled };
+  return promise;
 }
+
+/** How many SETTLED decisions the next reads carry — the Decisions page's window, raised by
+ *  its "show more" and set back to 0 when it unmounts. Takes effect at the next read. */
+export function wantSettled(n) { wanted = Math.max(0, n | 0); }
 
 /** Fetch now (joining a fetch already in flight). REJECTS on failure, because the reader
  *  that asked explicitly is the one that can say so on the page; the bus path below cannot,
