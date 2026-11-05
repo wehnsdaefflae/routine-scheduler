@@ -83,5 +83,11 @@ def test_the_card_asks_the_conversation_router(ui, ui_page):
     expect(ui_page.locator('[data-own-secret="ROUTED"]')).to_be_visible()
 
     assert seen, "the card made no secrets request at all"
-    assert all(f"/api/conversations/{slug}/secrets" in url for url in seen), seen
+    # The glob also catches `/api/settings/secrets` — the CENTRAL store's names, which the
+    # sibling exposure card reads for its dial and which belongs to no subject (D216 part a).
+    # This test is about the per-subject router, so judge the per-subject requests: every one
+    # must be the conversation's, and none may be a routine's.
+    subject = [url for url in seen if "/api/settings/" not in url]
+    assert subject, "the card made no SUBJECT-scoped secrets request"
+    assert all(f"/api/conversations/{slug}/secrets" in url for url in subject), seen
     assert not any("/api/routines/" in url for url in seen), seen
