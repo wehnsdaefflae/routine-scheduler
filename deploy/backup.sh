@@ -36,6 +36,35 @@ LOCK="/tmp/rsched-backup.lock"
 KEEP_DAILY=14
 KEEP_WEEKLY=8
 
+# How much RUN HISTORY a nightly snapshot carries, and the only thing here that is DROPPED rather
+# than kept. D235, the operator's answer to F830 verbatim: "Exclude runs/ older than N days from
+# the snapshot (keep state/, .memory/, LEDGER, audit/) — biggest cut, loses old transcripts
+# off-box". The snapshot had stopped completing inside the unit's TimeoutStartSec=4h — no complete
+# one between 2026-11-01 and 2026-11-05 — and the share is sshfs, one round trip per file.
+#
+# N is 7, MEASURED 2026-11-05 on the live instance: `routines/*/runs/<ts>/` held 17,619 of the
+# 182,231 files this script transfers, 13,147 of them older than seven days (~6 % of the night's
+# round trips, ~13 minutes of a run whose one success took 3 h 31 m). Shortening it buys little
+# more — older than 3 days is 16,338 files, 3,191 beyond N=7 — and a transcript is read while it
+# is recent, so seven days is where the loss stops being free and the saving stops growing.
+# This cut ALONE does not restore a comfortable margin, and the measurement that says so is in
+# the commit message: the bulk is elsewhere (69,251 git loose objects across the routine repos,
+# 38 % of the set), which is not what he decided and is raised separately.
+#
+# WHAT IS NOT LOST: an aged-out run directory stays in every EARLIER snapshot that carried it
+# while it was fresh — retention keeps 14 daily + 8 weekly — so this drops it from tonight's copy,
+# not from the backup root. Only `routines/*/runs/<ts>` ages out; a routine's `state/`, `.memory/`,
+# `LEDGER.md` and `audit/` are carried whole at any age, as he wrote, and so are `conversations/`
+# and `background/` (a conversation is irreplaceable and is not a run directory).
+# KEEP_RUNS_DAYS=0 carries every run directory, whatever its age.
+#
+# WHY IT IS NOT IN STATE_EXCLUDES: `deploy/bundle.sh` reads that same inventory to write the
+# one-shot MIGRATION tarball, whose source host is decommissioned immediately afterwards — that
+# copy has to be complete, and ageing anything out of it would lose the only copy. The two
+# consumers therefore differ here deliberately, which is what
+# tests/test_backup_run_age.py pins.
+KEEP_RUNS_DAYS="${KEEP_RUNS_DAYS:-7}"
+
 # shellcheck source=deploy/state-paths.sh
 source "$(dirname "${BASH_SOURCE[0]}")/state-paths.sh"
 
@@ -51,6 +80,16 @@ leaves no snapshot behind — the next run carries on in that folder rather than
 BACKUP_ROOT/latest points at the newest complete one.
 After a successful run it keeps the ${KEEP_DAILY} newest snapshots, plus the newest of each of the
 ${KEEP_WEEKLY} most recent older ISO weeks that have one, and deletes the rest.
+
+RUN HISTORY is the one thing a snapshot does not carry in full: a routine's run directory
+(routines/<routine>/runs/<YYYYMMDD-HHMMSS>) stops being copied once it is more than
+${KEEP_RUNS_DAYS} days old, because on an sshfs share every file is a round trip and run folders
+are most of the file count. It stays in every snapshot taken while it was fresh, so the history is
+in the backup root until retention drops those snapshots — it is just not re-copied nightly. A
+routine's state/, .memory/, LEDGER.md, audit/, questions/ and artifacts/ are carried whole at any
+age, and so are conversations/ and background/. KEEP_RUNS_DAYS=0 carries every run directory.
+Restoring a snapshot therefore gives you that night's recent runs, not the fleet's whole history:
+for an older transcript, restore from the older snapshot that still holds it.
 
 How to restore a home — with the service stopped, so nothing writes it while it is copied back:
   docker compose stop rsched          (host install: systemctl --user stop routine-scheduler)
@@ -125,6 +164,70 @@ migrate_single_mirror() {
   mv -T "${SNAPS}/.migrating" "${SNAPS}/${day}"
   point_latest_at "${day}"
   echo "migrated: the single mirror in ${ROOT} is now snapshots/${day} (moved, not copied)"
+}
+
+# The run directories tonight's snapshot AGES OUT, as rsync exclude patterns in a file (D235).
+# Written to a file rather than argv because the list grows with the fleet's history — 583 of them
+# on the live instance the night this was measured — and one of them is one `--exclude` each.
+#
+# The DIRECTORY NAME is the authority on a run's age, never its mtime: a run id is always
+# `<YYYYMMDD>-<HHMMSS>` UTC, while mtimes move when anything re-reads or rewrites a run folder.
+# A directory whose name is not that shape is KEPT — an unparseable name must never be read as
+# "old", which is the direction that loses data.
+#
+# The patterns carry no leading `/` and one trailing `/`, the shape the inventory's own anchored
+# excludes use: matched against the END of the path rsync sees (`routines/<r>/runs/<ts>`, because
+# the `/./` in the source makes every path home-relative) and restricted to a directory. Excluding
+# the directory excludes everything under it, which is the whole point — one pattern, not one per
+# transcript. When a run is resumed, `--delete-excluded` then also removes it from a leftover
+# folder an interrupted run left, so a resumed night converges on the same answer as a fresh one.
+#
+# ONLY `routines/*/runs/<ts>` ages out. `conversations/` is routine-shaped and may hold run
+# folders of its own: it is carried WHOLE at any age, because a conversation is irreplaceable and
+# the operator's answer named run transcripts, not sessions he had.
+RUNS_EXCLUDE_FILE=""
+aged_runs=0
+# Deletes NOTHING when there is no list, and CANNOT change the script's exit status — both
+# measured, because the obvious one-liner `trap 'rm -f "${RUNS_EXCLUDE_FILE:-/dev/null}"' EXIT`
+# made every successful night exit 1 and `daemon/backup_watch` would have read each one as a
+# failed backup: the `:-` default pointed `rm` at `/dev/null`, which fails Permission denied, and
+# under this script's `set -e` a failing command in an EXIT trap becomes the script's status
+# (`bash -c 'set -e; trap "rm -f /dev/null" EXIT; exit 0'` → 1; without `set -e` → 0).
+# `|| true` rather than a trailing `return 0`, for the same reason: `set -e` abandons the function
+# at the failing command, so a `return 0` after it never runs.
+cleanup_runs_exclude_file() {
+  if [ -n "${RUNS_EXCLUDE_FILE}" ]; then rm -f "${RUNS_EXCLUDE_FILE}" || true; fi
+}
+trap cleanup_runs_exclude_file EXIT
+
+collect_aged_runs() {
+  local cutoff d ts rel
+  if [ "${KEEP_RUNS_DAYS}" -le 0 ]; then
+    echo "  run history: KEEP_RUNS_DAYS=${KEEP_RUNS_DAYS} — every run directory is carried"
+    return 0
+  fi
+  if ! cutoff="$(date -u -d "${KEEP_RUNS_DAYS} days ago" +%Y%m%d 2>/dev/null)"; then
+    echo "  run history: cannot compute the ${KEEP_RUNS_DAYS}-day cutoff — carrying every run" >&2
+    return 0
+  fi
+  RUNS_EXCLUDE_FILE="$(mktemp "${TMPDIR:-/tmp}/rsched-backup-aged-runs.XXXXXX")"
+  for d in "${HOME}"/routines/*/runs/*; do
+    [ -d "${d}" ] || continue
+    ts="${d##*/}"
+    case "${ts}" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*) ;; *) continue ;; esac
+    [ "${ts:0:8}" -lt "${cutoff}" ] || continue
+    rel="${d#"${HOME}/"}"
+    printf '%s/\n' "${rel}" >> "${RUNS_EXCLUDE_FILE}"
+    aged_runs=$((aged_runs + 1))
+  done
+  if [ "${aged_runs}" -eq 0 ]; then
+    rm -f "${RUNS_EXCLUDE_FILE}"
+    RUNS_EXCLUDE_FILE=""
+    echo "  run history: no run directory is older than ${KEEP_RUNS_DAYS} days — all carried"
+  else
+    echo "  run history: ${aged_runs} run directories older than ${KEEP_RUNS_DAYS} days are not"
+    echo "               carried tonight — each stays in the snapshots taken while it was fresh"
+  fi
 }
 
 # Take a dated snapshot out of every reader's sight NOW — a rename, instant at any size — and leave
@@ -252,6 +355,12 @@ else
 fi
 if [ "${#RESUME[@]}" -gt 0 ]; then
   echo "  carrying on in the folder an interrupted run left — what it already holds is not copied again"
+fi
+# After the console lines above, so the night's log says what it DROPPED beside what it links —
+# and before any rsync runs, since the list is one of its arguments.
+collect_aged_runs
+if [ -n "${RUNS_EXCLUDE_FILE}" ]; then
+  RSYNC_EXCLUDES+=("--exclude-from=${RUNS_EXCLUDE_FILE}")
 fi
 echo
 
