@@ -284,12 +284,11 @@ class Scheduler:
                 self._refresh_machine_queues()
                 # detached tasks — pause held per phase in the manager, not the guard below (F721)
                 await self.detached.tick(now)
+                # one-shots: a due request fires ONCE; one due while paused is SKIPPED (D237)
+                await self.oneshots.tick(self.catalog, paused=is_paused)
                 if not is_paused:
                     # event triggers: spooled webhook events → coalesced fires
                     await self.triggers.tick(self.catalog)
-                    # one-shot time triggers: due requests → a single fire, then consumed
-                    # (paused: intake deferred, so nothing is consumed unfired)
-                    await self.oneshots.tick(self.catalog)
                     # sequential lane fires: advance each armed chain one member per tick
                     await self.lane_runs.tick(self.catalog)
                 # Upkeep runs BESIDE the tick (`_off_tick`), never inside it: OAuth refreshes

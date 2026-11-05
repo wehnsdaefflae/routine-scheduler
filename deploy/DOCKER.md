@@ -661,7 +661,12 @@ read-only browser cache, nothing else. Give it its own ceiling in the host's
 the 5 GiB engine cgroup, which is why the suite now runs TWO (`tests/browsersource.py`
 `BROWSER_WORKERS`, D238): under this 4 GiB ceiling four workers had Chromium OOM-killed 153
 times in one week and the stage ran 95-113 minutes. Raise the worker count only together with
-the ceiling, and only on a host with the memory to spare:
+the ceiling, and only on a host with the memory to spare. The container's cap does not protect the
+HOST: a gate started while the host is short can still drive a global OOM, so every test session
+waits until `MemAvailable` covers it (`tests/memgate.py`). This host's other big consumers are
+bounded too (2026-11-05): tagfs.service at `MemoryHigh=3G`/`MemoryMax=4G`
+(`~/.config/systemd/user/tagfs.service.d/memory.conf`), and the llm-interfaces cliproxy and
+cache-marker sidecars raised to 768m/384m after they were OOM-killed at their own caps:
 
 ```yaml
   uitest:

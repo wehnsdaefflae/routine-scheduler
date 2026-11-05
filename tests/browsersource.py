@@ -42,6 +42,13 @@ SIDECAR_CONNECT_TIMEOUT_MS = 60_000
 _LOOPBACK = ("127.0.0.1", "::1", "localhost")
 
 
+#: The FAST suite's worker ceiling (2026-11-05). `-n auto` meant cpu_count-1 = 11 workers on
+#: this 12-core box, ~250 MB each, inside the daemon's own 5 GiB container cgroup (self-audit's
+#: and the builder's gates run there) on a host with no memory to spare. Six workers ran the
+#: suite in 110 s against 72 s at eleven, for ~1.3 GB less at peak; tests/memgate.py is the
+#: other half (the session waits for the host to have the memory at all).
+FAST_WORKERS = 6
+
 #: How many browsers may run at once when each worker launches its own. A browser worker costs
 #: a Chromium AND a uvicorn AND the test itself, so it is not the arithmetic the fast suite uses.
 #:

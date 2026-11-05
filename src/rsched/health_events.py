@@ -11,7 +11,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
         |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"
         |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window"|"error_class_undecided"
-        |"item_dropped_live",
+        |"item_dropped_live"|"oneshot_skipped",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -275,7 +275,8 @@ interval and not the pause. Both are written by `daemon/pause_skip.py`. Nothing 
 fire up — nor one missed while the daemon was down (D237, operator 2026-11-05: a missed fire is
 skipped, whatever the cause), so `fire_catchup`, `lane_fire_catchup`, `lane_catchup_declined`
 and `routine_catchup_declined` are retired: older rows still in the stream are history that no
-reader keys on.
+reader keys on. oneshot_skipped is the same rule for a one-shot (`daemon/schedule_once`): due
+while paused or while the daemon was down, it is consumed unfired; `reason` says which.
 
 wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
 the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in

@@ -154,7 +154,11 @@ one you are about to touch, not all of them.
   the suite refuses to start on another minor version — a host run on 3.14 once tested an
   interpreter production does not use
 - `uv run pytest -q` — full suite (fast, no network; PARALLEL by default via pytest-xdist
-  `-n auto --dist worksteal` in addopts — pass `-n0` for a serial run / debugging with `-s`). Two conftest
+  `-n auto --dist worksteal` in addopts, `auto` capped at `browsersource.FAST_WORKERS` (6) for
+  memory — pass `-n0` for a serial run / debugging with `-s`). Every session first WAITS until the
+  HOST has the memory its selection needs (`tests/memgate.py`: 2 GB fast, 3.5 GB browser, up to
+  `RSCHED_TEST_MEM_WAIT_S`, then exit 3 without starting; `RSCHED_TEST_MEM_WAIT=0` skips it): on
+  2026-11-05 a gate started on a host with ~2 GB free and the global OOM killed a live run. Two conftest
   env knobs keep it honest AND fast: `RSCHED_SKIP_DOCS_BUILD` (the app lifespan's pdoc build
   — a to_thread task shutdown can only await) and `RSCHED_RETRY_BASE_DELAY` (endpoint retry
   LOGIC runs, the 1s/2s backoff clock doesn't); test_docs_build / test_with_retries_backoff

@@ -43,6 +43,14 @@ def _loop(server, *, run_id="run:1", slug="runner-r", dir_=None):
 # -- parse_fire_at ----------------------------------------------------------------------
 
 
+def _up(server, runner):
+    """A manager whose daemon was already UP when the test armed its requests: one due before
+    the process started is a MISSED fire and is skipped (D237), which these tests are not about."""
+    manager = OneShotManager(server, runner)
+    manager.booted -= timedelta(hours=1)
+    return manager
+
+
 def test_parse_fire_at_relative_and_absolute():
     now = datetime(2026, 1, 1, tzinfo=UTC)
     assert schedule_once.parse_fire_at("+3d", now) == now + timedelta(days=3)
@@ -115,7 +123,7 @@ async def test_tick_fires_due_injects_reason_and_consumes(tmp_path):
     schedule_once.arm(server.routines_home, "oneshot", fire_at=past,
                       reason="wake up and re-check", requested_by="self:1")
     runner = FakeRunner()
-    await OneShotManager(server, runner).tick(registry.scan(server))
+    await _up(server, runner).tick(registry.scan(server))
     assert runner.fired == [("oneshot", "schedule_once")]
     msgs = list((d / "inbox").glob("msg-once-*.json"))
     assert len(msgs) == 1
@@ -147,7 +155,7 @@ async def test_the_wake_up_text_goes_through_the_one_inbox_writer(tmp_path, monk
         return real(routine_dir, text, **kw)
 
     monkeypatch.setattr(inbox_mod, "file_message", spy)
-    await OneShotManager(server, FakeRunner()).tick(registry.scan(server))
+    await _up(server, FakeRunner()).tick(registry.scan(server))
     assert [f["via"] for f in filed] == ["schedule_once"]
     assert filed[0]["name"] == f"once-{rec['id']}" and filed[0]["dir"] == d
 
@@ -172,7 +180,7 @@ async def test_tick_defers_while_active_and_draining_then_fires(tmp_path):
                       requested_by="x")
     runner = FakeRunner()
     runner.active["oneshot"] = "20260717-110000"
-    mgr = OneShotManager(server, runner)
+    mgr = _up(server, runner)
     catalog = registry.scan(server)
     await mgr.tick(catalog)
     assert runner.fired == [] and len(schedule_once.pending_requests(
@@ -215,18 +223,6 @@ async def test_tick_drops_request_for_a_retired_routine(tmp_path):
     await OneShotManager(server, runner).tick(catalog)
     assert runner.fired == []
     assert schedule_once.pending_requests(server.routines_home, "oneshot") == []
-
-
-async def test_a_long_stale_request_still_fires(tmp_path):
-    """T3.5: `expires_at` is gone — a one-shot EVENTUALLY runs once, however stale."""
-    server = tmp_server(tmp_path)
-    _routine(server)
-    rec = schedule_once.arm(server.routines_home, "oneshot", reason="x", requested_by="x",
-                            fire_at=datetime.now(UTC) - timedelta(days=30))
-    assert "expires_at" not in rec
-    await OneShotManager(server, runner := FakeRunner()).tick(registry.scan(server))
-    assert runner.fired and runner.fired[0][0] == "oneshot"
-    assert schedule_once.pending_requests(server.routines_home, "oneshot") == []   # consumed
 
 
 # -- the schedule_run action: schema + capability gate ----------------------------------

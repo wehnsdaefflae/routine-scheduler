@@ -71,6 +71,8 @@ BLOCKED_EVENTS: dict[str, str] = {
     "lane_fire_paused": "a due lane fire was skipped because scheduling was paused — the "
                         "fire is gone, not deferred, and the next one is a full cron "
                         "interval away",
+    "oneshot_skipped": "a one-shot came due while scheduling was paused or the daemon was "
+                       "down — it was consumed unfired, never made up (D237)",
     "lane_chain_stopped": "a lane chain ended early, so its remaining members never ran",
     "lane_chain_member_skipped": "a chain named a member that is not a routine in any home",
     "scheduler_tick_error": "a scheduler tick raised — whatever that tick owed is late",

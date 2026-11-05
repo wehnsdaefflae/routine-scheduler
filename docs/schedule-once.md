@@ -83,11 +83,14 @@ the `Scheduler` after the cron loop and beside `triggers.tick` (`daemon/schedule
 4. A req whose routine is missing, switched off or RETIRED (its finish line reached) is dropped
    with a log line (like `TriggerManager._drop`).
 
-**Missed while the daemon was down:** a `fire_at` already past at boot is still on disk →
-it fires on the first tick, however stale it has become — a one-shot is a REQUEST whose point is
-that it *eventually* runs once, so D237's "a missed cron fire is skipped" does not reach it. An `expires_at` field once bounded that
-staleness, but no caller set it and no surface showed it, so T3.5 deleted it rather than build
-a console for it: cancel an armed one-shot you no longer want, which the API and the page do.
+**Missed is skipped** (D237, operator 2026-11-05: *"yes, skip missed one-shots too"*). A request
+nobody was there to fire is consumed UNFIRED and filed as `oneshot_skipped` (`reason`: `down` or
+`paused`) on the blocked-work surface: one whose `fire_at` fell before the daemon process
+started (it came due while the daemon was down), and one that comes due while scheduling is
+paused. A request that is only WAITING — its routine still running, the daemon draining — is not
+missed and fires as soon as it can. (Until 0.500.0 a missed one-shot fired on the first tick
+however stale, on the reading that a request should eventually run once; the operator decided a
+missed fire is skipped whatever kind it is.)
 
 **When it may fire.** `fire_at` is an ISO-8601 instant (naive reads as UTC) or an offset from
 now (`+3d`, `+2h`, `+30m`, `+45s`), and must lie in the future and at most a year out
@@ -148,7 +151,7 @@ is a **new engine action** the engine executes un-sandboxed, exactly like `write
 
 - **Unit:** spool read/write/consume; `OneShotManager.tick` fires when due, defers on
   active/draining, consumes on fire, drops on a routine that is missing, off or retired,
-  fires a past req at boot however stale (nothing bounds that — T3.5).
+  SKIPS a req due before boot or while paused (D237), leaving a later one armed.
 - **Action:** `validate_action` for `schedule_run` (bad slug, past `fire_at`, empty reason);
   grants gating (denied without `scheduling`).
 - **Web + UI:** the three endpoints; a `tests/ui/` Playwright flow (arm → appears → cancel →

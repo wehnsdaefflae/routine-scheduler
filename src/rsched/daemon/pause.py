@@ -8,8 +8,9 @@ While the sentinel exists the scheduler fires NOTHING on its own:
     is skipped; it reversed the per-subject make-ups D156 and D183 had added). What a skip
     leaves is a record, `fire_paused` / `lane_fire_paused` with the subject's cron and next
     fire (`daemon/pause_skip.py`), so a reader can see what the pause cost;
-  * trigger and one-shot intake is DEFERRED (their ticks don't run) — spooled webhook
-    events and armed one-shots fire after resume; a one-shot is never consumed unfired;
+  * trigger intake is DEFERRED (its tick does not run) — spooled webhook events fire after
+    resume; a one-shot that comes due while paused is SKIPPED like a cron fire (D237: consumed
+    unfired, recorded as `oneshot_skipped`), and one due later is untouched;
   * a DETACHED background task is neither fired nor delivered-by-waking: the two phases of
     `daemon/detached.py` that START a run — intake's `runner.fire` and the wake's
     `resume_terminal` — are held, boot `reconcile()` included, while DELIVERY of a task that

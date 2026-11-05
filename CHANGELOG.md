@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.500.0] — 2026-11-05
+
+### Changed — a missed one-shot is skipped, like a missed cron fire (D237)
+
+The operator, 2026-11-05: *"yes, skip missed one-shots too."* Until now a one-shot whose
+`fire_at` passed while the daemon was down fired on the first tick however stale, and one due
+while scheduling was paused waited out the pause and fired at the lift — the one self-starting
+path D237's "a missed fire is skipped, whatever the cause" did not reach. `daemon/schedule_once`
+now consumes UNFIRED every request due before the daemon process started (`reason: down`) and
+every request that comes due while paused (`reason: paused`), filing `oneshot_skipped` on the
+blocked-work surface (18 events now). A request that is merely WAITING — its routine still
+running, the daemon draining — is not missed and fires as before. `daemon/pause.py`'s contract,
+docs/schedule-once.md and the tests say so.
+
+### Fixed — test sessions no longer start into a host that cannot hold them
+
+Found 2026-11-05: the host (14.7 GB, a 4 GB swap that was full) ran a full browser gate with ~2 GB
+available, and the kernel's GLOBAL OOM killed a live routine run (grant-hunter, rc=-9), the gate's
+own ssh sessions and an xdist worker. The `uitest` container's cap does not protect the host. Every
+session now waits in `pytest_configure` until `MemAvailable` covers its selection
+(`tests/memgate.py`: 2 GB fast, 3.5 GB browser), up to `RSCHED_TEST_MEM_WAIT_S` (20 min), then
+exits 3 without starting — a refused gate is retried, an OOM is not undone. The fast suite's
+`-n auto` is capped at `browsersource.FAST_WORKERS` = 6 (it was 11 on this 12-core box, ~250 MB
+each inside the daemon's own container): 110 s instead of 72 s, ~1.3 GB less at peak.
+
+Outside this repo, the same day (deploy/DOCKER.md records both): tagfs.service — the
+folder-reorg worker, unbounded, 8.1 GB at peak and the main driver of the global OOMs — now runs
+under `MemoryHigh=3G`/`MemoryMax=4G` (operator's choice: throttled above 3 GB, confined above 4),
+and the llm-interfaces cliproxy (OOM-killed 29× at 384 MB) and cache-marker (24× at 128 MB)
+sidecars were raised to 768 MB and 384 MB, live and in their compose file.
+
 ## [0.499.2] — 2026-11-05
 
 ### Fixed — the browser screen took no clicks: every press opened Chrome's "Einfügen" prompt (F831)

@@ -20,10 +20,8 @@ from pathlib import Path
 # points source_repo elsewhere pays a full ~19s rebuild). test_docs_build clears the var
 # to exercise the real path.
 os.environ.setdefault("RSCHED_SKIP_DOCS_BUILD", "1")
-# Endpoint retries: keep the 3-try LOGIC, zero the 1s/2s backoff clock — every test that
-# points a call at a dead endpoint (autolabel against dummy:127.0.0.1:1, refusal paths)
-# otherwise pays ~3s of pure sleep. test_with_retries_backoff clears the var to pin the
-# real production delays.
+# Endpoint retries: keep the 3-try LOGIC, zero the 1s/2s backoff clock — a test pointing a call
+# at a dead endpoint otherwise pays ~3s of pure sleep. test_with_retries_backoff clears the var.
 os.environ.setdefault("RSCHED_RETRY_BASE_DELAY", "0.01")
 
 import pytest
@@ -32,6 +30,7 @@ import yaml
 # The suite's two floors, discovered by pytest from these imports: no write into the LIVE
 # instance or spawn of this package's CLI (F394), and no observation a test makes unrendered.
 import browsersource
+import memgate
 from production_guard import _no_production_writes  # noqa: F401
 from render_guard import _every_observation_renders  # noqa: F401
 from rsched.config import ModelRef, ServerConfig
@@ -106,11 +105,9 @@ def pytest_xdist_auto_num_workers(config) -> int:
         -n 4 (auto)   574 s   149 % cpu     ← 4 cores available, under 1.5 used
         -n 3          445 s   179 % cpu     ← 22 % faster AND better utilised
 
-    Fewer workers is faster because the loss is contention, not idleness — the workers were
-    never CPU-bound, they were waiting on a box that had been oversubscribed. Reserving a core
-    keeps `auto` portable (a 16-core CI machine still gets 15). The BROWSER selection gets a
-    smaller number — each worker launches a browser; `browsersource.worker_cap` says why."""
-    reserved = max(2, (os.cpu_count() or 4) - 1)
+    Fewer workers is faster: the loss is contention, not idleness. Capped at FAST_WORKERS for
+    MEMORY, and the browser selection gets fewer still (`browsersource` says why for both)."""
+    reserved = max(2, min(browsersource.FAST_WORKERS, (os.cpu_count() or 4) - 1))
     return browsersource.worker_cap(getattr(config.option, "markexpr", ""), reserved)
 
 
@@ -155,6 +152,8 @@ def pytest_configure(config) -> None:
     """
     _refuse_a_foreign_interpreter()
     markexpr = (getattr(config.option, "markexpr", "") or "").replace("  ", " ")
+    if not hasattr(config, "workerinput"):   # the controller waits; its workers are admitted
+        memgate.wait_for_memory("fast" if "not ui" in markexpr else "browser")
     if "not ui" in markexpr:
         return
     if hasattr(config, "workerinput"):

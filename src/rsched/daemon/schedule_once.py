@@ -8,11 +8,14 @@ stay the daemon's job, exactly as for cron and trigger fires.
 
 AUTO-DEACTIVATE = CONSUME: on a successful fire the manager DELETES the request file. The
 armed file is gone, so nothing can re-fire it — that IS the non-repeating guarantee (no
-routine.yaml rewrite, no self-disabling cron). A one-shot is a REQUEST, not a cron fire, so
-D237's no-catch-up rule does not reach it: a `fire_at` already past at boot is still on disk,
-so it fires on the first tick — a one-shot's point is that it *eventually* runs once, and
-nothing bounds that staleness. (An `expires_at` field once did, set by no caller and exposed
-nowhere; T3.5 deleted it rather than build a console for it.)
+routine.yaml rewrite, no self-disabling cron).
+
+A MISSED one-shot is SKIPPED, like a missed cron fire (D237, operator 2026-11-05: "yes, skip
+missed one-shots too"). Missed means nobody was there to fire it: its `fire_at` fell before this
+daemon process started (the daemon was down), or it came due while scheduling was PAUSED. Either
+way the request is consumed unfired and `oneshot_skipped` names it, with `reason`. A request
+that is merely WAITING — its routine still running, the daemon draining — is not missed: it
+fires as soon as the routine is free, as before.
 
 Delivery is crash-safe: the reason is written as a DETERMINISTIC inbox message
 (msg-once-<id>.json) before the request is consumed, so a crash between injection and unlink
@@ -30,6 +33,7 @@ from pathlib import Path
 from .. import registry, schedule_once, spool
 from ..config import ServerConfig
 from ..engine import inbox as inbox_mod
+from ..health_events import log_health_event
 from ..ids import now_iso
 from .runner import Runner
 from .tickguard import ItemGuard
@@ -55,8 +59,11 @@ class OneShotManager:
         self.runner = runner
         self.home = server.routines_home
         self.guard = ItemGuard(self.home, "one-shot manager")
+        # A request due BEFORE this process started was due while the daemon was down.
+        self.booted = datetime.now(UTC)
 
-    async def tick(self, catalog: dict[str, registry.RoutineInfo]) -> None:
+    async def tick(self, catalog: dict[str, registry.RoutineInfo], *,
+                   paused: bool = False) -> None:
         """One pass over the spool. Never raises into the scheduler loop. `conv--<slug>`
         entries (a conversation's self-armed one-shots — engine/admin_handlers.handle_schedule_run
         namespaces them so a same-named routine can never be mis-fired) resolve to
@@ -65,12 +72,38 @@ class OneShotManager:
         try:
             for slug in schedule_once.slugs_with_requests(self.home):
                 with self.guard.item(slug):     # one bad request never starves the rest
+                    self._skip_missed(slug, paused=paused)
+                    if paused:
+                        continue
                     if slug.startswith("conv--"):
                         await self._service_conversation(slug)
                     else:
                         await self._service(slug, catalog.get(slug))
         except Exception:
             log.exception("schedule-once tick failed")
+
+    def _skip_missed(self, slug: str, *, paused: bool) -> None:
+        """Consume, unfired, every request nobody was there to fire (D237): due before this
+        process started, or due now while scheduling is paused.
+        """
+        now = datetime.now(UTC)
+        for path in schedule_once.pending_requests(self.home, slug):
+            rec = schedule_once.read_request(path) or {}
+            fire_at = _parse(rec.get("fire_at"))
+            if fire_at is None:
+                continue                        # _due_request drops the unreadable ones
+            if fire_at < self.booted:
+                why = "the daemon was down at its fire time"
+            elif paused and fire_at <= now:
+                why = "scheduling was paused at its fire time"
+            else:
+                continue
+            spool.drop([path], what="schedule-once requests", slug=slug, reason=why)
+            log_health_event(self.home, "oneshot_skipped", routine=slug, run_id="",
+                             detail=f"one-shot {rec.get('id')} due {rec.get('fire_at')} was "
+                                    f"skipped, not made up: {why} (D237)",
+                             reason="down" if fire_at < self.booted else "paused",
+                             fire_at=str(rec.get("fire_at") or ""))
 
     def _due_request(self, slug: str, paths: list[Path]) -> tuple[Path, dict] | None:
         """The earliest-due armed request, dropping corrupt files as it goes (an unreadable
