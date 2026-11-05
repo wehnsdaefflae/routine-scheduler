@@ -653,7 +653,13 @@ one you are about to touch, not all of them.
   card, each clearing ONE named row (`api_conversation_grants.py`: `GET/POST …/grants[/clear]`
   and `…/declined[/clear]`) because it has no draft to accept — rows arrive there from Decisions
   clicks while the page is open. The two presses are sign-locked, so neither can do the other's
-  job; either clear lands the entity on undecided (asked on first use again).
+  job; either clear lands the entity on undecided (asked on first use again). D216 part (a)
+  adds the DECIDE-in-advance half for a conversation: a *secret exposure* dial over the shared
+  store (`PUT …/secret-exposure`, the same three states the routine page has — expose /
+  withhold / ask on first use, the last being the absence of a row), writing ONE named row per
+  change and class-locked to `secret:` because the entity id is built server-side from a store
+  NAME. Operator-only like every write here; the renderer is shared by both pages
+  (`static/components/secret-exposure.js`).
   `memory_*` are the ONLY way into `.memory/` for a RUN (generic file actions are rejected
   there); the engine owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line
   note cap. The operator's file endpoint agrees about the files the engine owns:

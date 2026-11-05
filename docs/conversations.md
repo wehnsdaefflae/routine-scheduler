@@ -301,6 +301,14 @@ what changed and which part of it reaches it — F337):
 - **Permissions** work exactly as they do for routines (see the *Rules, permissions & capabilities* guide). A
   conversation starts with the default set; the **shell** action is a one-click grant. Previous-run depth is
   greyed out — a conversation is one continuous run, so it doesn't apply.
+- **Secret exposure** — which of the SHARED store's secrets this thread's util calls may
+  receive, one three-state dial per name: *expose*, *withhold*, or *ask on first use* (the
+  default — the engine asks you the first time a util call declares that secret). The same
+  control a routine's settings page carries, and the way to settle a credential BEFORE anything
+  asks for it; a change applies from the next reply. Each change writes that one name, so a
+  decision landing from the Decisions page while the panel is open is never overwritten. The
+  secrets themselves are managed in *Settings → Secrets*; credentials belonging to this thread
+  alone go in **own secrets** below instead, where ownership is the grant and nothing is asked.
 - **Granted forever / Declined access** — the two halves of what you have settled for this
   thread on the Decisions page, each readable and undoable from the panel itself. *Granted
   forever* lists what an **allow-forever** gave it (a central-store secret, the one kind of

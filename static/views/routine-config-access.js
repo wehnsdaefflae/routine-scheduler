@@ -10,46 +10,39 @@
 // The routine's own secrets are not a setting: a value set there is stored at once and never
 // shown again (the API answers with names).
 
-import { api } from "/static/api.js";
 import { el, skeleton } from "/static/util.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { fieldBlock, settingsGroup } from "/static/components/settings-field.js";
 import { ownSecretsCard } from "/static/components/routine-secrets.js";
 import { declinedIds, declinedRows } from "/static/components/declined-access.js";
+import { exposureDials, exposureRows, secretStore } from
+  "/static/components/secret-exposure.js";
 
 const SECRET = "secret:";
 
 export function accessGroup(ctx) {
   const { slug, form } = ctx;
-  let store = api("/api/settings/secrets").catch((err) => ({ error: err.message, keys: [] }));
+  let store = secretStore();
 
+  // The dials come from components/secret-exposure.js, which a CONVERSATION's capabilities
+  // panel also mounts (D216 part a — before it, this block was the only three-state exposure
+  // control in the instance and a conversation had none). Only the WRITE differs: here the
+  // change moves the settings DRAFT the operator then accepts, which is why a wholesale
+  // `grants` replace is safe on this page and not on that one.
   const exposure = fieldBlock(form, "grants", (value, set) => {
     const host = el("div", {}, skeleton(["50%"]));
     store.then((sec) => {
       const grants = value || {};
-      const rows = Object.fromEntries(Object.entries(grants)
-        .filter(([k]) => k.startsWith(SECRET)).map(([k, v]) => [k.slice(SECRET.length), v]));
+      const rows = exposureRows(grants);
       const names = [...new Set([...(sec.keys || []), ...Object.keys(rows)])].sort();
       host.replaceChildren(...[
         sec.error ? el("div", { class: "muted small" }, sec.error) : null,
-        names.length ? null : el("div", { class: "muted small" }, "no secrets in the store yet"),
-        ...names.map((name) => {
-          const sel = el("select", { "data-nopersist": true,
-            onchange: () => {
-              const next = { ...grants };
-              if (sel.value) next[`${SECRET}${name}`] = sel.value === "true";
-              else delete next[`${SECRET}${name}`];
-              set(next);
-            } },
-            el("option", { value: "" }, "ask on first use"),
-            el("option", { value: "true" }, "expose"),
-            el("option", { value: "false" }, "withhold"));
-          sel.value = name in rows ? String(!!rows[name]) : "";
-          return el("div", { class: "row", style: "margin:5px 0", "data-secret-row": name },
-            el("code", { class: "small", style: "min-width:240px" }, name), sel,
-            (sec.keys || []).includes(name) ? null
-              : el("span", { class: "muted small" }, "not in the store (stale entry)"));
-        }),
+        exposureDials(names, rows, (name, state) => {
+          const next = { ...grants };
+          if (state === null) delete next[`${SECRET}${name}`];
+          else next[`${SECRET}${name}`] = state;
+          set(next);
+        }, { keys: sec.keys || [] }),
       ].filter(Boolean));
     });
     return host;
@@ -75,7 +68,7 @@ export function accessGroup(ctx) {
   // survives it.
   const onBus = (e) => {
     if (e.detail?.event === "question_answered" && e.detail.routine === slug) {
-      store = api("/api/settings/secrets").catch((err) => ({ error: err.message, keys: [] }));
+      store = secretStore();
       ctx.reloadSettings();
       ctx.refreshSurface();
     }

@@ -714,7 +714,13 @@ and back out):
   conversation's capabilities panel carries a *granted forever* card whose press clears ONE
   named true row through `web/api_conversation_grants.py` — the mirror of its *declined access*
   card below, sign-locked so neither press can touch a row of the other sign. Withdrawing
-  TIGHTENS where clearing a tombstone loosens; both land the entity on **undecided**): a
+  TIGHTENS where clearing a tombstone loosens; both land the entity on **undecided**. Since
+  D216 part (a) a conversation can also DECIDE exposure in advance rather than only clear what
+  a decision left: its *secret exposure* dial is the routine page's three-state control
+  (expose / withhold / ask on first use) over the same store, writing ONE named `secret:<NAME>`
+  row per change through `PUT /api/conversations/{slug}/secret-exposure` — the key is built
+  server-side from a store NAME, so that route can reach no other entity class and the two
+  clears' sign lock is untouched): a
   routine-scoped secret (D103, `secrets.d/<slug>.env`) is owned by its routine, so there is
   nothing to decide and the gate skips the name entirely. Only an UNDECIDED REQUIRED secret
   declaration triggers the
