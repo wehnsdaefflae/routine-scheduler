@@ -15,6 +15,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.498.0] — 2026-11-02
+
+### Added — the finish gate's ladder goes through the hook-point registry, which gives it the ENGINE's own face (D152 step 6)
+
+The harness-squared half of the operator's 2026-10-26 brief: *"The hook system also should allow
+to extend the implementation of parts of the harness^2 features we already started."*
+`hooks/points.py`'s own docstring had named what stood in the way — *"a new point is an edit in
+five files, so the cheap thing to do is hard-code a sixth call site, which is what every harness²
+feature did"*. Step 4 moved the reminder layer onto the table; this moves the finish gate, the
+other mechanism firing at `pre-finalize`, and `points.MECHANISMS` gains **`guard`** — the first
+mechanism in the registry that is not an authored hook. That distinction is the point: "extend
+the features we already started" means a FEATURE registering at a point, not only a routine's
+reminder or a library rule's assist.
+
+`engine/finish_rungs.py` declares the ladder's nine rungs, each keyed by the name it already
+records on its deferral, with the access policy it carries — top-level only, skipped on the
+reserved finish turn, once per run — and `finishgate.check_finish` asks
+`eligible(loop, ctx, key)` at all nine sites instead of writing that policy out again.
+
+What it removed, measured by its own red-first run: **eight** hand-written reads of
+`_finish_reserved` in the gate, down to one (the unbacked-claim rung's DISPOSAL, which is asked on
+the reserved turn and records an `error` event rather than deferring, because a rejection there
+would lose the authored summary the reserve exists for). And a second vocabulary:
+`engine/frictions.RUNGS` was a hand-copied EIGHT-key list beside a NINE-rung ladder, so a rung it
+had never heard of fell into the `no_action` bucket — it reads the declaration now, and a tenth
+rung is counted the day it is declared.
+
+Two asymmetries become readable rather than inferable from which `if` a check sits outside of:
+`jobs_owed` is asked at any depth and on the reserved turn (a child can hold jobs, and one action
+settles it), and `unbacked_claims` is asked there with a different disposal. The gate also
+inherits `dispatch.at`'s two invariants identically with the rule and reminder layers — a payload
+the point cannot carry never fires, and a predicate that raises means "did not fire" rather than a
+failed turn, which matters most on the finish path, where an exception costs a run its summary.
+
+### Added — the per-run cost profile reaches a surface (D163)
+
+The operator answered D163 with *"extend what exists … into a real cost profile per routine"*.
+0.495.0 built the reader; it was then measured to be imported by nothing but its own test, and a
+profile he cannot see does not satisfy that answer.
+
+`GET /api/changes/{slug}/cost` serves `readmodels.cost_profile` unchanged behind the same
+`_routine_home` guard its siblings use — added to `api_changes.py` rather than a new module
+because that module is already registered, so `web/appwiring.py` (18 lines of slack) needed no
+edit at all. `static/components/cost-panel.js` renders it as a new **Per-run cost** section
+directly beneath Outcome on the routine's DEVELOPMENT page, so the page reads "what it produces,
+then what a run of it costs"; the production page is untouched.
+
+The integrity verdict is the substance, not the decoration. A window the read model itself calls
+understated (the R3112 accounting defect closed in 0.494.0, detected by arithmetic rather than by
+a release date) leads with a warn panel printing `integrity.detail` VERBATIM, names which side is
+affected, marks THAT window's median "· mixed" where it is read, and appends to a flagged trend
+that the comparison straddles the fix. The sound side is deliberately unmarked — the mark names a
+side rather than disclaiming the panel. No verdict is re-derived in the browser.
+
+### Fixed — the websocket teardown race, fixed at its cause, with a bounded net under the class (F816)
+
+A test had flaked two of five release gates, and the operator asked for the one thing a gate log
+cannot answer: *"figure out if it is a problem with the test or if we need to assign more memory
+persistently"*. MEASURED rather than read: those four files, run together under the gate's own
+shape (`-n auto --dist worksteal`), failed **8 of 12** invocations while the engine's memory
+cgroup sat at **37.2 % of its 5 GiB ceiling**. So it is the test; more memory would not have
+prevented one of the eight.
+
+The cause is in `starlette.testclient`: `WebSocketTestSession.__enter__` builds an exit stack
+registering `fut.result`, then the portal's `cs.cancel`, then `close(1000)`. Unwinding LIFO, the
+close is sent and the task scope cancelled immediately after, so a handler not yet back from its
+own close leaves `fut.result()` re-raising the cancellation into the test. The tell: of 16
+`websocket_connect` sites in the fast suite only three flake, and they are exactly the ones that
+open an IDLE socket — every site that does not flake receives frames or waits on a server-side
+event, and `test_ioload._close_and_wait`'s own docstring already named this race.
+
+One shared `tests/helpers.idle_socket` is used at both flaking sites. It suppresses the TEARDOWN
+artefact and only that: the cancellation is raised after the assertions these tests make have
+succeeded, and a socket the server REFUSES still raises `WebSocketDisconnect` with its close code,
+which every refusal test asserts on and which is not suppressed. (Draining to the disconnect does
+NOT work and the helper records why: `/api/events` is a live bus with nothing queued, so a
+post-close `receive()` blocks — twelve iterations went from ~7 s to minutes and still failed.)
+
+His second instruction in the same answer — *"also extend the rerun shield to the fast suite as a
+belt-and-braces net"* — is `reruns = 2` / `reruns_delay = 1` in `pyproject.toml`: the whole suite,
+bounded at two because the fast tests are in-process, so a failure surviving three attempts is a
+failure. The browser directory is unaffected, because `pytest-rerunfailures` takes a `flaky`
+marker as priority over the global ini setting and that directory declares its own four with an
+exemption pattern — a CLI `--reruns` would have won over markers and stripped it. Every rerun
+stays printed by the existing `-rR`, so the net is evidence in the log rather than a hiding place.
+With the fix and the net, 10 of 10 parallel invocations green and **zero reruns consumed** — the
+fix alone closed it.
+
 ## [0.497.0] — 2026-11-03
 
 ### Fixed — an archival candidate is judged against the window the run MEASURED, and a no-op rule revision no longer commits to every holder

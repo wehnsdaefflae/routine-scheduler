@@ -82,6 +82,24 @@ asyncio_mode = "auto"
 #   uv run pytest -q -m ""      everything — what ships a release
 # A CLI `-m` wins over this one, because addopts are prepended and pytest keeps the last.
 addopts = ["-n", "auto", "--dist", "worksteal", "-rR", "-m", "not ui"]  # -rR: name any flaky rerun in the summary (RERUN <nodeid>) so an intermittent UI flake is diagnosable, not just counted
+# THE WHOLE SUITE'S rerun shield — the operator's belt-and-braces net (2026-11-02), asked for
+# alongside the fix for the WebSocket teardown race (`tests/helpers.idle_socket`): where a
+# harness race is fixed at its cause, a bounded net still covers the NEXT one, undiagnosed.
+# A rerun happens only AFTER a failure, so a real regression still fails every attempt and is
+# still reported red; what it absorbs is the failure that does not reproduce — a worker
+# descheduled at the wrong microsecond, a port or lock momentarily taken, a teardown racing its
+# own task scope (MEASURED: those four websocket files failed 8 of 12 parallel invocations at
+# 37 % of the memory ceiling, i.e. a race and not scarcity).
+# TWO, not the browser suite's four: the fast tests are in-process, so a failure surviving three
+# attempts is a failure — and a 300-test red at four reruns would be 1 200 executions. The
+# browser directory is UNAFFECTED by this number: its conftest marks every item
+# `flaky(reruns=4, …, rerun_except=…)`, and pytest-rerunfailures takes a marker as priority over
+# this global setting (get_reruns_count: "use the marker as a priority over the global setting"),
+# which a CLI `--reruns` would NOT have done — it wins over markers and would have stripped that
+# exemption. Every rerun is named by `-rR` above, so the net is evidence in the log and never a
+# hiding place.
+reruns = 2
+reruns_delay = 1
 # Remove a PASSING test's tmp dir at its own teardown instead of keeping three whole
 # generations. The default (`all`, retention 3) left 85 000 files / 394 MB under
 # /tmp/pytest-of-<user> on the deployment — including an abandoned `garbage-*` tree pytest

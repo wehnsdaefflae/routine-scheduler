@@ -18,7 +18,7 @@ THREE SETS per module, because the rules need different ones:
                plus the shell's own classes from index.html.
   ancestors  — `context` unioned over the module's IMPORT CLOSURE: a component may rely on a root
                class the view that mounts it emits (dev.css styles `.outcome-panel .summons`,
-               and views/changes-routine.js:236 mounts `.outcome-panel` around
+               and views/changes-routine.js:248 mounts `.outcome-panel` around
                components/outcome-panel.js).
 """
 from __future__ import annotations

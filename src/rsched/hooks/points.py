@@ -67,7 +67,14 @@ CARRIERS = ("observation_tail", "engine_note", "held_turn", "prompt_section")
 
 #: The mechanisms that can fire at a point today. A point naming none is a point nothing
 #: reaches yet — the gap the registry exists to make readable.
-MECHANISMS = ("reminder", "rule", "report", "injection", "runtree")
+#:
+#: `guard` is the ENGINE's own face, added in step 6: the finish gate's ladder
+#: (`engine/finish_rungs.py`) declares its nine rungs and asks this table whether each may be
+#: put to a given finish. It is the first mechanism here that is not an authored hook — which
+#: is the half of the operator's ask the other four could not satisfy, since "extend the
+#: harness² features we already started" means a FEATURE registering at a point, not only a
+#: routine's reminder or a library rule's assist.
+MECHANISMS = ("reminder", "rule", "report", "injection", "runtree", "guard")
 
 
 @dataclass(frozen=True)
@@ -131,9 +138,15 @@ POINTS: dict[str, Point] = dict([
        ("note", "remind", "action"), "engine_note",
        ("rule", "injection", "runtree"),
        "engine/loop.py (assist.at_boundary, control.drain_injections)"),
+    # `guard` joined this row in step 6. The finish gate's ladder was always the mechanism
+    # firing MOST at this point — nine rungs, five of them repeating one access policy by hand
+    # — and the table named only the two authored faces that ride it. `engine/finish_rungs.py`
+    # declares each rung and asks this table whether it may be put to a finish, so the point
+    # governs the gate instead of describing it (the step-4 correction, applied to the gate).
     _p("pre-finalize", "a finish was emitted and has not been accepted", ("remind",),
-       "held_turn", ("reminder", "rule"),
-       "engine/finishgate.py (assist.at_finish) + engine/loop.py::_finish (remind.at_finish)"),
+       "held_turn", ("reminder", "rule", "guard"),
+       "engine/finish_rungs.py (the gate's ladder) + engine/finishgate.py (assist.at_finish) "
+       "+ engine/loop.py::_finish (remind.at_finish)"),
     _p("question", "the run asked a person something", ("remind", "action"),
        "observation_tail", ("reminder",), "engine/remind.py (trigger kind `turn:question`)"),
     _p("answer", "a person's reply reached the run", ("remind", "action"),

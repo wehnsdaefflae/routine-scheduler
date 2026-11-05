@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ..ids import is_slug
 from ..readmodels import change_effects
+from ..readmodels.cost_profile import cost_profile
 from ..readmodels.model_fit import model_fit
 from ..readmodels.outcome_series import DEFAULT_WEEKS, review
 from ..readmodels.run_health import recipe_regression
@@ -74,6 +75,21 @@ def routine_outcome(request: Request, slug: str, weeks: int = DEFAULT_WEEKS) -> 
     if cfg is None:
         raise HTTPException(409, f"{slug}: routine.yaml does not load")
     return review(home, cfg, weeks=max(1, min(weeks, 52)))
+
+
+@router.get("/changes/{slug}/cost")
+def routine_cost(request: Request, slug: str) -> dict:
+    """What ONE run of the routine costs (readmodels/cost_profile.py, D163): `typical` over
+    every run — the figure a budget is set in — the `baseline`/`recent` window pair behind the
+    flag with their `runs_detail`, and `trend` as `recent_trend` returned it.
+
+    `mixed_accounting` and `integrity` ride along and are NOT optional for a consumer: a window
+    whose rows the R3112 accounting defect understated (closed in 0.494.0, detected here by
+    arithmetic rather than by a release date) compares two different quantities, and rendering
+    its median as one figure shows a cost improvement nobody made.
+    """
+    home = _routine_home(request, slug)
+    return cost_profile(home, slug)
 
 
 @router.get("/changes/{slug}/summary")

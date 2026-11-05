@@ -1133,7 +1133,10 @@ by a test, by the engine, or by a past incident.
   ARITHMETIC (a depth-0 run reporting less volume than its own `<parent>#sub<n>` rows sum to),
   never by a hard-coded release date, and `mixed_accounting` names the contaminated side. A
   consumer rendering those medians without reading it renders a mixture as one quantity.
-  No UI reads it yet — deliberately: a checked reader beats a view over an unchecked number.
+  It is served by `GET /changes/{slug}/cost` and read by the **Per-run cost** panel of a routine's
+  development view (#/changes/<slug>, `static/components/cost-panel.js`), which prints
+  `integrity.detail` verbatim and marks every window `mixed_accounting` names — in the warn tone,
+  beside that window's own median — rather than showing it as a clean figure.
 - **What a run COSTS is its VOLUME, never `tokens`.** `tokens` (fresh input + output) is what a
   token BUDGET meters — adapters keep cache traffic out of it — and a subscription's `cost` is
   0.0 on every call, so ranking by either put freelance-radar (33M cached tokens a run) among the

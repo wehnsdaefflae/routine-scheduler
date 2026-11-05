@@ -344,6 +344,23 @@ the limits (single-writer status.json preserved).
   predicate that raises as "did not fire", never as a failed turn. TWO points can change what
   runs, which corrects the hook design's rule 2: `pre-action` prevents an action and
   `pre-finalize` defers a finish (the rung built after that rule was written).
+  **The ENGINE's own face (D152 step 6).** The other half of his ask — "the hook system also
+  should allow to extend the implementation of parts of the harness² features we already
+  started" — means a FEATURE registering at a point, not only a routine's reminder or a
+  library rule's assist. The finish gate is the first: `engine/finish_rungs.py` declares its
+  nine rungs (`RUNGS`, keyed by the name each one records on its deferral) with the access
+  policy each carries — top-level only, skipped on the reserved finish turn, once per run — and
+  `finishgate.check_finish` asks `eligible(loop, ctx, key)` instead of writing that policy out
+  again. `guard` is the mechanism's name in `points.MECHANISMS`. What it removed: five
+  hand-written copies of `ctx.depth == 0 and not loop._finish_reserved`, one per rung, where a
+  copy that dropped the reserved half would silently lose a budget-exhausted run the authored
+  summary the reserve exists for — plus a second vocabulary, `engine/frictions.RUNGS`, which
+  was a hand-copied eight-key list beside a nine-rung ladder and now reads the declaration. The
+  two declared exceptions are readable for the first time rather than inferable from which `if`
+  a check sits outside of: `jobs_owed` is asked at any depth and on the reserved turn (a child
+  can hold jobs and one action settles it), and `unbacked_claims` is asked on the reserved turn
+  but records an `error` event there instead of deferring, because a rejection would lose the
+  summary.
 - **A hook can PERFORM an action, not only talk** (`rsched/hooks/perform.py`), which is the
   Claude-Code half of the same ask. The operator ruled on 2026-10-26: *"Any action. This includes
   utils and therefore scripts."* He named the ACTION VOCABULARY, so the payload is built on the
@@ -896,7 +913,12 @@ and the capabilities digest's catalog listing):
   it reports its own trustworthiness: a depth-0 run reporting less volume than its own
   `<parent>#sub<n>` child rows sum to was understated by the accounting defect closed in 0.494.0
   (R3112), detected by arithmetic rather than by a release date, counted in `integrity` and named
-  per side in `mixed_accounting`. No UI reads it yet.
+  per side in `mixed_accounting`. Served by `GET /changes/{slug}/cost` (`web/api_changes.py`,
+  beside that view's other per-routine read models) and read by the **Per-run cost** panel of a
+  routine's development view (#/changes/<slug>, `static/components/cost-panel.js`), where a window
+  the read model calls understated is marked as mixed in the warn tone wherever its median is
+  read and `integrity.detail` is printed verbatim — a median shown as a clean figure when the
+  reader itself calls it a floor is the one way that surface could mislead.
   `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
   `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
   routine.yaml or state; queued while a run is active and applied when it ends, D78-A).
