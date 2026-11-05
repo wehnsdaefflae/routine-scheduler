@@ -1,6 +1,14 @@
-"""A CONVERSATION's GRANTS surface — both halves of its `grants:` mapping, read and cleared
-one row at a time: the deny-forever tombstones (F783) and the allow-forever grants it HOLDS
-(D216 rank 1).
+"""A CONVERSATION's GRANTS surface — both halves of its `grants:` mapping, read and written one
+row at a time: the deny-forever tombstones (F783), the allow-forever grants it HOLDS (D216
+rank 1), and the SHARED-store exposure it is given in advance (D216 part a).
+
+The third came last and is the only write here that CREATES a row. The two clears could only
+remove one that already existed, so the exposure decision for a conversation was reachable only
+by the engine asking at first use, while a routine's settings page has carried a three-state dial
+per store secret since D103 (`static/views/routine-config-access.js`). `…/secret-exposure` is
+that dial for a conversation: expose, withhold, or back to undecided. It is class-locked — the
+entity id is BUILT from a validated store NAME (`_secret_entity`), so it can reach no row of any
+other class and the two clears' sign lock stands untouched.
 
 The allow half came second and closes the rest of the gap. F783 gave the operator the denials;
 a `grants:` TRUE row — what a Decisions `allow_forever` writes for the one class with no native
@@ -63,6 +71,11 @@ from .routines_common import signal_config_change
 
 router = APIRouter(tags=["conversation-config"])
 
+# The one entity class whose exposure this router's dial reaches, as an id prefix. Named for
+# the CLASS rather than the word "secret" alone: ruff's S105 reads a constant called `_SECRET`
+# holding a literal as a hardcoded credential.
+_CLASS_PREFIX = "secret:"
+
 
 class ClearBody(BaseModel):
     # forbid unknown keys, like every other config body here: a silently-dropped stray reads
@@ -70,6 +83,19 @@ class ClearBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     entity: str
+
+
+class ExposureBody(BaseModel):
+    """One central-store secret's exposure for this conversation. `name` is a STORE NAME, never
+    an entity id — the id is built server-side, which is what locks the write to `secret:`.
+    `expose` carries the dial's three states: true/false write the row, None deletes it
+    (undecided — asked on first use).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    expose: bool | None = None
 
 
 def _raw_grants(conv_dir: Path) -> dict:
@@ -153,6 +179,86 @@ def _clear_row(info, entity: str, *, value: bool) -> dict:
     atomic_write_yaml(path, raw)
     live = signal_config_change(info, ["grants"], {"grants": grants})
     return {"ok": True, "cleared": key, **({"told_live_run": True} if live else {})}
+
+
+def _exposure(conv_dir: Path) -> dict[str, bool]:
+    """This conversation's SHARED-store exposure map: `{NAME: bool}` for its `secret:` rows.
+
+    Keyed by the store NAME, not the entity id, because that is what the dial is per — and
+    because the names themselves come from `/api/settings/secrets`, which is denied to the
+    routine token (`app.ROUTINE_TOKEN_DENIED_READS`) and must not be mirrored here. This reader
+    answers with the rows this conversation carries and nothing about the store.
+    """
+    return {k[len(_CLASS_PREFIX):]: v for k, v in _raw_grants(conv_dir).items()
+            if k.startswith(_CLASS_PREFIX) and isinstance(v, bool)}
+
+
+def _secret_entity(name: str) -> str:
+    """`secret:<NAME>` for a valid central-store name, or 400.
+
+    The entity id is BUILT here from a store name rather than accepted from the body, which is
+    what locks this route to the `secret:` class: `parse_entity` rejects anything that is not a
+    bare environment-variable name (`entities.KEY_RE`), so a body naming `util:signal` or
+    `fs-read:~/x` cannot reach a row of that class, and the two clears' sign lock stays the only
+    way to touch one. `secret:` is also the one class whose TRUE row is legal at all
+    (`entities.TRUE_ROW_CLASSES`, `normalize_grants`), so no other class could be exposed here
+    even if it were reachable.
+    """
+    parsed = parse_entity(f"{_CLASS_PREFIX}{name}")
+    if parsed is None:
+        raise HTTPException(400, f"{name!r} is not a central-store secret name "
+                                 f"(letters, digits and underscores, not starting with a digit)")
+    return f"{parsed[0]}:{parsed[1]}"
+
+
+@router.get("/conversations/{slug}/secret-exposure")
+def read_exposure(request: Request, slug: str) -> dict:
+    """Which of the SHARED store's secrets this conversation's util calls may receive.
+
+    The rows only — the store's names are the settings endpoint's business. An absent name is
+    UNDECIDED: the engine asks the operator the first time a util call declares it (D39).
+    """
+    info = conversation_info(request, slug)
+    return {"slug": info.slug, "exposure": _exposure(info.cfg.dir)}
+
+
+@router.put("/conversations/{slug}/secret-exposure")
+def set_exposure(request: Request, slug: str, body: ExposureBody) -> dict:
+    """Set ONE secret's exposure for this conversation: expose, withhold, or back to undecided.
+
+    The gap this closes (D216 part a): the two clear routes above can only remove a row that
+    already EXISTS, so the exposure decision for a conversation was reachable only by the engine
+    asking at first use — while a routine's settings page has carried the three-state dial since
+    D103 (`static/views/routine-config-access.js`). `expose: null` deletes the row, because
+    undecided IS the absence of one.
+
+    Still ONE named row per write, for this module's standing reason: this panel has no draft and
+    no accept, so a wholesale `grants` replace would drop a row that arrived in between. And the
+    row written is exactly the row a Decisions `allow_forever` writes
+    (`grants_apply.apply_forever` → `config.routine.record_grants`), so the engine honours both
+    identically (`engine/secretgate.secret_state`).
+
+    What this write can do is bounded by its key, not by its caller: it reads and writes
+    `secret:<NAME>` and nothing else. It is operator-only like every write here
+    (`app.ROUTINE_TOKEN_MUTATIONS` is empty) — a run exposing a secret to itself is the one
+    thing this surface must never permit.
+    """
+    info = conversation_info(request, slug)
+    entity = _secret_entity(body.name.strip())
+    path = info.cfg.dir / "routine.yaml"
+    raw = read_yaml(path, {})
+    if not isinstance(raw, dict):
+        raise HTTPException(500, f"{path}: expected a mapping at top level")
+    grants = _raw_grants(info.cfg.dir)
+    if body.expose is None:
+        grants.pop(entity, None)
+    else:
+        grants[entity] = bool(body.expose)
+    raw["grants"] = grants
+    atomic_write_yaml(path, raw)
+    live = signal_config_change(info, ["grants"], {"grants": grants})
+    return {"ok": True, "entity": entity, "exposure": _exposure(info.cfg.dir),
+            **({"told_live_run": True} if live else {})}
 
 
 @router.get("/conversations/{slug}/declined")

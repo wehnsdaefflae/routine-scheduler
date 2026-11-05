@@ -14,6 +14,7 @@ import { abilitiesPanel } from "/static/components/abilities.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { ownSecretsCard } from "/static/components/routine-secrets.js";
+import { secretExposureCard } from "/static/components/secret-exposure.js";
 import { navigate } from "/static/router.js";
 import { act, el, modelOption, toast, toastError } from "/static/util.js";
 
@@ -242,6 +243,16 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     + "THIS conversation; they need no exposure decision and override a central name of the "
     + "same value for its runs"),
     ownSecretsCard(slug, { base: "/api/conversations", subject: "conversation" }));
+  // Secret exposure (D216 part a): which of the SHARED store's secrets this conversation's util
+  // calls may receive — the three-state dial a routine's settings page has carried since D103
+  // and no conversation had. The clear routes beside it can only remove a row that already
+  // EXISTS, so before this the exposure decision for a thread was reachable only by the engine
+  // asking at first use, and withholding a name in advance meant hand-editing routine.yaml.
+  // One named row per change, because this panel writes on click and has no draft to accept.
+  capBody.append(el("div", { class: "faint small mt" }, "secret exposure — which of the SHARED "
+    + "store's secrets this conversation's util calls may receive. An undecided secret is asked "
+    + "about the FIRST time a util call declares it; a change applies from the next reply"),
+    secretExposureCard(slug));
   // Held grants (D216 rank 1): the allow-forever rows this conversation's `grants:` mapping
   // carries — what a Decisions `allow_forever` wrote for the one class with no native switch
   // (`secret:`). The engine honours such a row for a conversation exactly as for a routine, but

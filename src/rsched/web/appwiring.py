@@ -276,9 +276,9 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
                    api_conversation_playbooks,
                    api_conversation_secrets,   # D216 rank 1: the write surface the scoped
                    # store always served for a conversation but no route could reach
-                   api_conversation_grants,   # F783: the declined-access rows a deny-forever
-                   # leaves in a conversation's own routine.yaml — only the routine page
-                   # could clear one, so a conversation's denial was permanent
+                   api_conversation_grants,   # F783 + D216: a conversation's `grants:` rows —
+                   # the deny tombstones, the grants it holds, and (part a) the shared-store
+                   # exposure dial; only the routine page had any of the three
                    api_background, api_branches, api_browser, api_desktops, api_runs,
                    api_run_control,
                    api_refusal_flag,
