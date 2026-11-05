@@ -136,12 +136,12 @@ BACKUP_ROOT/latest points at the newest complete one.
 After a successful run it keeps the ${KEEP_DAILY} newest snapshots, plus the newest of each of the
 ${KEEP_WEEKLY} most recent older ISO weeks that have one, and deletes the rest.
 
-WHAT THE OFF-BOX TIER LEAVES OUT, beside the aged runs below: `.libreoffice` and each routine's
-`.secrets` cache. Both regenerate, and measured over the set rsync walks (182,231 files) they are
+WHAT THE OFF-BOX TIER LEAVES OUT, beside the aged runs below: the .libreoffice and per-routine
+.secrets caches. Both regenerate, and measured over the set rsync walks (182,231 files) they are
 ~20% of its round trips — 14,312 and 22,093 files, each almost entirely one routine's. The LOCAL
 tier carries them: on a local disk their file count costs nothing. Loose git objects are packed
 first (GC_REPOS=0 switches that off): 69,251 of them were 38% of the set, one file and one round
-trip each, and `git gc` packs them without losing any history.
+trip each, and packing them loses no history.
 
 RUN HISTORY is carried in full on the LOCAL tier and aged out of the OFF-BOX one. A routine's run
 directory (routines/<routine>/runs/<YYYYMMDD-HHMMSS>) stops being mirrored off-box once it is
