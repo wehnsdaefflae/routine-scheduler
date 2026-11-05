@@ -54,6 +54,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..endpoints import errorsignal
+
 #: The event name. Registered in `health_events`' header enum in the same change — an event at a
 #: call site and absent from that enum is invisible to every documented filter, which is the
 #: `prompt_oversize_shrunk` failure `tests/test_health_events.py` exists to catch. It is an
@@ -125,19 +127,20 @@ def note_overflow_declined(loop: Any, exc: Any) -> None:
         quoted = _TOKENS_RE.search(text)
         if quoted is None:
             return
-        from .overflow import _NEVER_OVERFLOW_STATUS, _is_overflow_text
-
-        if _is_overflow_text(text):
+        # R3108 increment two: the basis is the DECLARED signal, not the phrase lists this
+        # module used to import from `overflow` (they are gone). `declined_by` keeps its three
+        # readings and gains the operator's reportable one, `no_structured_error`.
+        signal = errorsignal.of(exc)
+        if errorsignal.is_overflow(signal):
             return
-        low = text.lower()
-        excluded = next((s for s in _NEVER_OVERFLOW_STATUS if s in low), "")
+        why = errorsignal.overflow_decline_reason(signal)
+        excluded = next(iter(signal.declared), "") if why == "never_overflow_status" else ""
         _file(loop,
               f"a 400 quoting {quoted.group(0)} was not read as a context overflow"
               + (f" (excluded by '{excluded}')" if excluded
-                 else " (no vendor hint matched its wording)")
-              + f" — the window guard is unchanged and did not fire: {text[:200]}",
-              classifier="overflow_text",
-              declined_by="never_overflow_status" if excluded else "no_hint_match",
+                 else " (it declared nothing a context fault could be read from)")
+              + f" — the window guard did not fire: {text[:200]}",
+              classifier="overflow_text", declined_by=why,
               status=400, excluded_by=excluded or None,
               error_keys_in_excerpt=bool(_ERROR_KEYS_RE.search(text)))
     except Exception:

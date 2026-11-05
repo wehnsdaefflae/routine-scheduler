@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from ..endpoints import failover
+from ..endpoints import errorsignal, failover
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import errorclass, refusal, substitution, turndebris
@@ -19,28 +19,23 @@ from .compaction import estimate_input_tokens
 from .overflow import _recover_oversize_prompt, _shrink_window_to_provider
 from .window import apply_media_fallback
 
-#: What a `model_failover` health event says caused the switch, from the error text. The
-#: vocabulary is deliberately five words wide: a sweep asking "why is the fleet off its
-#: primary today" wants the CLASS (a quota, a dead credential, an outage), not 300
-#: characters of provider prose — that is what `detail` carries.
-_FAILOVER_REASONS = (
-    ("rate_limit", ("429", "rate limit", "usage_limit", "quota", "cooling down")),
-    ("auth", ("401", "403", "auth", "credential", "refresh token", "api key")),
-    ("refusal", ("refused the turn", "stop_reason=refusal", "content_filter")),
-    ("empty", ("empty completion",)),
-    ("server", ("500", "502", "503", "504", "529", "timeout", "overloaded")),
-)
-
 
 def _failover_reason(exc: EndpointError) -> str:
-    """Classify a hard failure for the health stream. `other` when nothing matches — an
-    honest bucket beats a guess that makes a new failure mode look like a known one.
+    """Classify a hard failure for the health stream: rate_limit · auth · refusal · empty ·
+    server · other. The vocabulary a `model_failover` event carries is unchanged — a sweep
+    asking "why is the fleet off its primary today" wants the CLASS, not 300 characters of
+    provider prose, which is what `detail` carries.
+
+    R3108: the basis is what the failure DECLARED — its status and its own error.code /
+    error.type (`endpoints/errorsignal.py`), or, for the two classes that are the ENGINE's own
+    findings, the `engine=` it declared at the raise. This replaces ~20 phrase needles across
+    five reasons, three of which matched the ENGINE's OWN vocabulary ("refused the turn",
+    "empty completion", "cooling down") in whatever prose arrived — so a provider 500 that
+    happened to quote those words was filed as a classifier refusal. `other` stays an honest
+    bucket: a guess that makes a new failure mode look like a known one is what this replaces,
+    and `engine/errorclass.py` counts how often it is reached.
     """
-    low = str(exc).lower()
-    for reason, needles in _FAILOVER_REASONS:
-        if any(n in low for n in needles):
-            return reason
-    return "other"
+    return errorsignal.failover_class(errorsignal.of(exc))
 
 
 def _turn_needs(loop) -> dict:
@@ -134,7 +129,11 @@ def _handle_refusal(loop, completion, chain, ref, attempt: int,
             # the back-off's hand-back must return to the REGULAR model as soon
             # as the window closes, not skip on to its fallbacks.
             return target, True
-    switched = _switch_to_fallback(loop, chain, ref, EndpointError(what))
+    # R3108: the refusal class is DECLARED, not written into `what` for _failover_reason to
+    # match back out of it — a provider quoting "refused the turn" is not a refusal.
+    switched = _switch_to_fallback(
+        loop, chain, ref,
+        EndpointError(what, signal=errorsignal.ErrorSignal(engine="refusal")))
     if switched is not None:
         return switched, False
     raise EndpointError(
@@ -203,7 +202,8 @@ def _handle_empty(loop, completion, chain, ref,
     refstate["empty"] += 1
     if refstate["empty"] >= 2:
         failure = EndpointError(
-            f"empty completion x{refstate['empty']} (stop_reason={stop or 'unreported'})")
+            f"empty completion x{refstate['empty']} (stop_reason={stop or 'unreported'})",
+            signal=errorsignal.ErrorSignal(engine="empty"))   # R3108: declared, not re-parsed
         switched = _switch_to_fallback(loop, chain, ref, failure)
         if switched is not None:
             refstate["empty"] = 0

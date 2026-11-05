@@ -41,8 +41,18 @@ class _Registry:
 
 
 def test_parse_overflow_limit_variants():
+    # R3108 replaced the phrase lists with what the failure DECLARED, so a specimen has to be a
+    # shape the wire produces: `raise_for_status` renders `<name>: HTTP <nnn>: <body>` and
+    # attaches the decoded error object. OVERFLOW still reads, because the provider's own enum
+    # token `context_length_exceeded` is in it. The second line below used to be bare prose
+    # ("request exceeds the context window of 32768 tokens") with no status and no error object
+    # — nothing declared, so nothing structural to decide on. It now carries the 400 and the
+    # code a provider actually sends, which is the whole point of the change: a sentence no
+    # longer moves the run's window.
     assert parse_overflow_limit(OVERFLOW) == 65536
-    assert parse_overflow_limit("request exceeds the context window of 32768 tokens") == 32768
+    assert parse_overflow_limit(
+        'prov: HTTP 400: {"error":{"code":"context_length_exceeded","message":"request '
+        'exceeds the context window of 32768 tokens"}}') == 32768
     assert parse_overflow_limit("boom 401 unauthorized") is None          # not an overflow
     assert parse_overflow_limit("context_length_exceeded") is None        # no stated figure
 
@@ -80,7 +90,10 @@ def test_stated_max_at_or_above_config_declines(make_routine):
     # a single short message with no middle to elide and no body over the clamp minimum, so
     # shrinking is impossible and the turn dies LOUDLY naming its size, which is the point:
     # it never advances the fallback chain, because every other model gets the same prompt.
-    ep = _FakeEndpoint([EndpointError("maximum context length is 250000 tokens")])
+    # R3108: the wire shape, not bare prose — a declared code plus the stated figure.
+    ep = _FakeEndpoint([EndpointError(
+        'prov: HTTP 400: {"error":{"code":"context_length_exceeded","message":"maximum '
+        'context length is 250000 tokens"}}')])
     loop = _loop(make_routine, _Registry(ep))
     with pytest.raises(EndpointError) as exc:
         next_action(loop)

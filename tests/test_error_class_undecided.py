@@ -40,12 +40,17 @@ EVENT = "error_class_undecided"
 #: The 2026-09-21 Anthropic shape — a REAL overflow, and the hint list carries it today.
 ANTHROPIC_400 = ('claude: HTTP 400: {"type":"error","error":{"type":"invalid_request_error",'
                  '"message":"prompt is too long: 1045385 tokens > 1000000 maximum"}}')
-#: The shape (b) exists for: a 400 quoting a token count in words no hint list carries.
+#: A 400 quoting a token count in words no hint list carried. Increment two READS it as an
+#: overflow: it declares `too_large` and states a figure, so the shape decides, not the wording.
 UNKNOWN_400 = ('proxy: HTTP 400: {"error":{"message":"input too large: 41000 tokens supplied, '
                'limit 32000","type":"invalid_request_error","code":"too_large"}}')
-#: A rate limit wearing an overflow's clothes — `_NEVER_OVERFLOW_STATUS` declines it ON PURPOSE.
-RATE_LIMIT_400 = ("proxy: HTTP 400: Request too large: 32000 tokens > 30000 maximum "
-                  "tokens per minute")
+#: A rate limit wearing an overflow's clothes, DECLARING what it is — declined on purpose, and
+#: reading it as an overflow would pin the run's window to a per-minute budget.
+RATE_LIMIT_400 = ('proxy: HTTP 400: {"error":{"code":"rate_limit_exceeded","message":"Request '
+                  'too large: 32000 tokens > 30000 maximum tokens per minute"}}')
+#: The operator's reportable path: a proxy relaying a failure with NO error object at all, so
+#: nothing structural is available. The guard declines and the row says `no_structured_error`.
+BARE_PROXY_400 = "proxy: HTTP 400: request too large: 32000 tokens > 30000 maximum"
 
 
 def _events(home) -> list[dict]:
@@ -107,22 +112,24 @@ def test_a_recognized_failover_class_files_nothing(tmp_path):
 
 # --- (b) the overflow decline -------------------------------------------------------------
 
-def test_an_overflow_decline_on_a_400_quoting_tokens_files_the_event(tmp_path):
-    """The 2026-09-21 failure mode, caught as a COUNT: a 400 quoting a token count that no
-    hint matches. `_recover_oversize_prompt` still declines it exactly as before."""
+def test_an_overflow_decline_with_nothing_structured_files_the_event(tmp_path):
+    """Increment two's remaining blind spot, and the finding the operator asked to have
+    reported: a proxy relays a 400 with NO error object, so nothing declares whether the input
+    did not fit. The guard declines (reading it as an overflow on the strength of a sentence is
+    what pins a run's window to a figure that was never a context size) and the row says
+    `no_structured_error`, which is now the bucket that counts the DANGEROUS case."""
     loop, ref = _loop(tmp_path)
 
     assert overflow._recover_oversize_prompt(
-        loop, SimpleNamespace(), ref, EndpointError(UNKNOWN_400)) is None
+        loop, SimpleNamespace(), ref, EndpointError(BARE_PROXY_400)) is None
 
     rows = _rows(tmp_path)
     assert len(rows) == 1, _events(tmp_path)
     assert rows[0]["classifier"] == "overflow_text"
-    assert rows[0]["declined_by"] == "no_hint_match"
+    assert rows[0]["declined_by"] == "no_structured_error"
     assert rows[0]["status"] == 400
-    # the finding the NEXT increment needs: was anything structured even in the excerpt?
-    assert rows[0]["error_keys_in_excerpt"] is True
-    assert "41000 tokens" in rows[0]["detail"]
+    assert rows[0]["error_keys_in_excerpt"] is False
+    assert "32000 tokens" in rows[0]["detail"]
 
 
 def test_a_deliberate_never_overflow_decline_is_attributed_to_that_rule(tmp_path):
@@ -160,23 +167,43 @@ def test_a_decline_with_no_token_count_files_nothing(tmp_path):
 
 # --- the increment's own guarantee --------------------------------------------------------
 
-def test_no_existing_decision_changed():
-    """THE WHOLE POINT of increment one: it measures, it does not decide. Every classifier
-    verdict the three prose lists produced before this change comes out identical."""
+def test_what_increment_two_moved_and_what_it_did_not():
+    """Increment one measured without deciding, and this test was its guarantee. Increment two
+    IS the policy change the operator decided on 2026-10-17 — *"replace the prose checks
+    completely"* — so the three verdicts that MOVED are recorded here, each with its reason,
+    rather than the pin being deleted. Every other verdict still comes out identical.
+
+    UNCHANGED, now on a declared basis: a status-classified failure keeps its class, the
+    Anthropic overflow is still an overflow (its `error.type` says so, where before it was the
+    phrase "prompt is too long"), a rate limit quoting two token counts is still declined, and
+    an undecidable failure is still the honest `other`.
+
+    MOVED, deliberately:
+    * "m refused the turn" and "empty completion x2" as free-standing TEXT are now `other`. Both
+      classes are the ENGINE's own finding and are declared at the raise (`ErrorSignal(engine=…)`
+      — pinned in `tests/test_structural_error_class.py`); read out of prose instead, they
+      classified any provider body that happened to quote the engine's own words.
+    STILL DECLINED, and measured as such: UNKNOWN_400 declares `too_large` — a code in none of
+    the tables — and states its limit as "limit 32000", which is not the "<actual> tokens >
+    <maximum>" shape `errorsignal.TOKEN_PAIR_RE`/`TOKEN_MAX_RE` read. So the structural rule
+    reaches no verdict on it either, and it files `no_hint_match`. The honest statement of the
+    change is therefore narrower than "every vendor is now covered": a vendor whose body
+    declares an UNKNOWN code AND words its figure in an unparsed shape is still declined, and
+    the count says so. What the change removes is the dependence on English wording for the
+    shapes that DO declare — and the false positives the old exclusion list could not stop.
+    """
     assert degrade._failover_reason(EndpointError("HTTP 429 rate limit")) == "rate_limit"
     assert degrade._failover_reason(EndpointError("HTTP 401 bad api key")) == "auth"
-    assert degrade._failover_reason(EndpointError("m refused the turn")) == "refusal"
-    assert degrade._failover_reason(EndpointError("empty completion x2")) == "empty"
     assert degrade._failover_reason(EndpointError("HTTP 503 overloaded")) == "server"
     assert degrade._failover_reason(EndpointError("i am a teapot")) == "other"
+    assert degrade._failover_reason(EndpointError("m refused the turn")) == "other"
+    assert degrade._failover_reason(EndpointError("empty completion x2")) == "other"
 
     assert overflow._is_overflow_text(ANTHROPIC_400) is True
-    assert overflow._is_overflow_text(UNKNOWN_400) is False
     assert overflow._is_overflow_text(RATE_LIMIT_400) is False
+    assert overflow._is_overflow_text(UNKNOWN_400) is False   # unknown code, unparsed figure
     assert overflow.parse_overflow_limit(ANTHROPIC_400) == 1_000_000
     assert overflow.parse_overflow_limit(UNKNOWN_400) is None
-    assert overflow.parse_overflow_limit(
-        "This model's maximum context length is 65536 tokens") == 65_536
 
 
 def test_the_notifiers_never_raise():

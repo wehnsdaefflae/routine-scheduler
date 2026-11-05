@@ -14,8 +14,8 @@ truncated context. Only the ENDPOINT's faults belong to the failover chain (engi
 from __future__ import annotations
 
 import dataclasses
-import re
 
+from ..endpoints import errorsignal
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import errorclass
@@ -41,67 +41,46 @@ _MAX_OVERSIZE_RETRIES = 2
 # configured window is a deliberate budget); the provider is authoritative for sizing UP —
 # a stated max at or above the configured window means config wasn't the problem, so the
 # guard declines and the ordinary transport nets take over.
-# Provider vocabulary. Each vendor words the same fault differently, and a hint list that
-# misses a vendor silently DISARMS this whole guard for it — on 2026-09-21 the Anthropic
-# shape ("prompt is too long: 1045385 tokens > 1000000 maximum") matched none of the three
-# openai-flavoured hints, so self-audit:20260921-000321 400'd four times with a prompt that
-# grew each time (1,017,305 → 1,045,385) while the engine read every rejection as a broken
-# provider and failed over. Add the vendor's words here when a new one appears.
-_OVERFLOW_HINTS = ("context_length_exceeded", "maximum context length", "context window",
-                   "prompt is too long")
-
-# …and a fault that merely QUOTES two token counts is not an overflow. Rate limits ("Request
-# too large: 32000 tokens > 30000 maximum tokens per minute"), billing errors and an auth
-# failure echoing the request body all carry that shape, and reading one as an overflow is
-# worse than missing an overflow: it pins the run's window to a number that was never a
-# context size — a per-minute budget, a credit balance — for every remaining turn, while
-# suppressing the failover the real fault needed. These statuses are therefore never an
-# overflow, whatever their prose says.
-_NEVER_OVERFLOW_STATUS = ("http 429", "http 402", "http 401", "http 403",
-                          "rate_limit", "rate limit", "insufficient_quota",
-                          "per minute", "per day", "tokens per")
-
-_OVERFLOW_TOKENS_RE = re.compile(
-    r"(?:maximum context length(?: is)?|context (?:window|length) of(?: only)?|"
-    r"context_length_exceeded\D{0,40}?)\s*(\d{4,7})\s*tokens", re.IGNORECASE)
-
-#: Anthropic: "prompt is too long: <actual> tokens > <maximum> maximum" — the only shape
-#: that states BOTH numbers, which makes the overshoot exactly computable.
-_OVERFLOW_PAIR_RE = re.compile(
-    r"(\d{4,9})\s*tokens?\s*(?:>|&gt;|\\u003e|exceeds?)\s*(\d{4,9})", re.IGNORECASE)
+# R3108: THE VENDOR VOCABULARY IS GONE. This guard used to turn on four hand-kept phrases
+# ("context_length_exceeded", "maximum context length", "context window", "prompt is too long")
+# minus nine excluded status words — and a hint list that misses a vendor silently DISARMS the
+# whole guard for it. On 2026-09-21 the Anthropic shape matched none of the three
+# openai-flavoured hints then present, so self-audit:20260921-000321 400'd four times with a
+# prompt that grew each time (1,017,305 → 1,045,385) while the engine read every rejection as a
+# broken provider and failed over. The exclusion list was the same bet in reverse: a billing
+# error whose message happened to say "maximum context length" pinned the run's window to a
+# figure that was never a context size.
+#
+# What decides now is what the failure DECLARED — its status and its own error.code / error.type,
+# decoded from the whole body at the raise (`endpoints/errorsignal.py`) — with a structured
+# 400/413 that STATES a token figure covering the vendor nobody has met yet. Nothing in here
+# needs a vendor's words added to it, which is the property the phrase list never had.
 
 
-def _is_overflow_text(text: str) -> bool:
-    """Whether this error is a CONTEXT-SIZE fault at all. Prose alone is not enough: the
-    vendor vocabulary has to be there AND the fault must not be one of the statuses that
-    quote token counts for a different reason entirely (a rate limit, a quota, a balance).
+def _is_overflow_text(error) -> bool:
+    """Whether this failure says the INPUT DID NOT FIT, read from what it declared. Takes the
+    raised error (whose signal was read from the WHOLE body) or, for a caller that only has the
+    rendered text, that text — `errorsignal.of` accepts either.
     """
-    low = text.lower()
-    if any(bad in low for bad in _NEVER_OVERFLOW_STATUS):
-        return False
-    return any(h in low for h in _OVERFLOW_HINTS)
+    return errorsignal.is_overflow(errorsignal.of(error))
 
 
-def parse_overflow_pair(text: str) -> tuple[int | None, int | None]:
-    """(actual, maximum) tokens stated by a context-overflow error, either side None when
-    the text does not state it. The ACTUAL count is what makes a shrink target honest: a
-    provider that reports 1,045,385 against 1,000,000 has told us precisely how much has
-    to go, which no fraction of the window can know.
+def parse_overflow_pair(error) -> tuple[int | None, int | None]:
+    """(actual, maximum) tokens stated by a context-overflow error, either side None when it
+    states neither. The ACTUAL count is what makes a shrink target honest: a provider that
+    reports 1,045,385 against 1,000,000 has told us precisely how much has to go, which no
+    fraction of the window can know. Pass the EXCEPTION where you have it: its signal was read
+    from the whole body, while its text is a 300-character excerpt of it.
     """
-    if not _is_overflow_text(text):
-        return None, None
-    pair = _OVERFLOW_PAIR_RE.search(text)
-    if pair:
-        return int(pair.group(1)), int(pair.group(2))
-    m = _OVERFLOW_TOKENS_RE.search(text)
-    return None, (int(m.group(1)) if m else None)
+    signal = errorsignal.of(error)
+    return signal.tokens if errorsignal.is_overflow(signal) else (None, None)
 
 
-def parse_overflow_limit(text: str) -> int | None:
-    """The provider-stated maximum context TOKENS from a context-overflow error message,
-    or None when the text is not an overflow error (or states no usable figure).
+def parse_overflow_limit(error) -> int | None:
+    """The provider-stated maximum context TOKENS of a context-overflow failure, or None when
+    it is not one (or states no usable figure).
     """
-    return parse_overflow_pair(text)[1]
+    return parse_overflow_pair(error)[1]
 
 
 def new_turn(loop) -> None:
@@ -124,7 +103,7 @@ def _shrink_window_to_provider(loop, endpoint, ref, exc: EndpointError) -> tuple
     when the error is not an overflow, states no figure, config was not the problem, or
     this model was already corrected once this run (never loops).
     """
-    stated = parse_overflow_limit(str(exc))
+    stated = parse_overflow_limit(exc)
     if stated is None:
         return None
     key = (ref.endpoint, ref.model)
@@ -166,7 +145,7 @@ def _recover_oversize_prompt(loop, endpoint, ref, exc: EndpointError) -> tuple |
     that CANNOT be shrunk raises, because the honest outcome is a turn that dies naming its
     size, not a silent degrade onto a model that will answer from a truncated context.
     """
-    actual, stated = parse_overflow_pair(str(exc))
+    actual, stated = parse_overflow_pair(exc)
     if stated is None and actual is None:
         # R3108: both nets have declined. When the body is a 400 that QUOTES a token count, the
         # decline is the one worth counting — a vendor shape no hint covers (2026-09-21) or a

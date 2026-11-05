@@ -19,7 +19,7 @@ from typing import Protocol
 import httpx
 from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-from . import attempts
+from . import attempts, errorsignal
 
 # {"role": "system"|"user"|"assistant", "content": str} — plus an OPTIONAL "media" list for
 # native media input: [{"path": <abs file>, "media_type": <mime>}], the mime being one of
@@ -42,19 +42,24 @@ CONNECT_TIMEOUT = 10.0
 RETRY_AFTER_CAP_S = 30.0
 
 class EndpointError(Exception):
-    """A transport failure. `retryable` feeds the with_retries backoff; `auth` lets the
-    UI say "check the key" instead of a bare error.
+    """A transport failure. `retryable` feeds the with_retries backoff, `auth` lets the UI say
+    "check the key", `signal` carries what the failure DECLARED (R3108: read it with
+    `errorsignal.of`, never by matching sentences in the message).
     """
 
     def __init__(self, message: str, *, retryable: bool = False, auth: bool = False,
-                 retry_after: float | None = None):
+                 retry_after: float | None = None,
+                 signal: errorsignal.ErrorSignal | None = None):
         super().__init__(message)
         self.retryable = retryable
         self.auth = auth
-        # F220: the server's explicit Retry-After hint (seconds), when it sent one on a 429.
-        # with_retries honors it (capped) instead of its generic exponential schedule, so a
-        # provider asking for a longer pause is waited out rather than failed over prematurely.
+        # F220: the Retry-After hint (seconds) a 429 sent. with_retries honors it (capped) over
+        # its generic schedule, so a provider asking for longer is waited out, not failed over.
         self.retry_after = retry_after
+        # R3108: status + the provider's own error.code/type/param, decoded from the WHOLE body
+        # at the raise — `message` keeps only resp.text[:300], so an object past that cut
+        # reaches no decision point through the text (errorsignal.py states the whole design).
+        self.signal = signal
 
 
 @dataclass
@@ -241,44 +246,27 @@ def _transport_cause(exc: httpx.HTTPError, timeout: float) -> str:
     return text or type(exc).__name__
 
 
-#: Statuses that mean "the request never got a verdict", so sending it again can work: 408
-#: request timeout, 409 conflict, 429 rate limit, every 5xx (529 rides that branch) — what
-#: both provider SDKs retry — and a 402 whose body names in-flight requests, where the
-#: provider holds credit the account HAS and says "retry after in-flight requests settle".
-#: An out-of-credit 402 stays fatal. 408 is here because a proxy answers it when its own
-#: upstream stream drops, and calling that fatal spent a MODEL SWITCH on a transient.
-RETRYABLE_STATUSES = frozenset({408, 409, 429})
+#: Which statuses mean "the request never got a verdict" now lives with the rest of the failure
+#: classification, in `errorsignal` (R3108). Re-exported: it is part of this module's surface.
+RETRYABLE_STATUSES = errorsignal.RETRYABLE_STATUSES
 
 
 def raise_for_status(resp: httpx.Response, name: str) -> None:
     """The shared HTTP-status classifier: 401/403 → auth (the UI says "check the key"),
-    408/409/429/5xx and a concurrency 402 → retryable, any other non-200 → fatal.
+    408/409/429/5xx and a held-credit 402 → retryable, any other non-200 → fatal. R3108: the 402
+    split reads what the provider DECLARED (`errorsignal.retryable_402`), not the sentence "in-
+    flight requests"; the signal is built HERE because `msg` keeps only the body's first 300.
     """
     if resp.status_code == 200:
         return
     msg = f"{name}: HTTP {resp.status_code}: {resp.text[:300]}"
+    signal = errorsignal.from_body(resp.status_code, resp.text)
     if resp.status_code in (401, 403):
-        raise EndpointError(msg, auth=True)
-    transient_402 = resp.status_code == 402 and "in-flight requests" in resp.text
-    if resp.status_code in RETRYABLE_STATUSES or resp.status_code >= 500 or transient_402:
-        raise EndpointError(msg, retryable=True, retry_after=_retry_after_seconds(resp))
-    raise EndpointError(msg)
-
-
-def _retry_after_seconds(resp: httpx.Response) -> float | None:
-    """The server's Retry-After hint in SECONDS, or None. Honors the numeric-seconds form
-    (what OpenAI-compatible providers send on a 429, e.g. `Retry-After: 20`); an HTTP-date
-    form is ignored (rare here, and clock-skew makes it unreliable) so the generic backoff
-    applies instead. A non-positive or unparseable value → None.
-    """
-    raw = resp.headers.get("retry-after")
-    if not raw:
-        return None
-    try:
-        secs = float(raw.strip())
-    except (TypeError, ValueError):
-        return None
-    return secs if secs > 0 else None
+        raise EndpointError(msg, auth=True, signal=signal)
+    if errorsignal.retryable(signal):
+        raise EndpointError(msg, retryable=True, signal=signal,
+                            retry_after=errorsignal.retry_after_seconds(resp.headers))
+    raise EndpointError(msg, signal=signal)
 
 
 def json_or_raise(resp, name: str) -> dict:
