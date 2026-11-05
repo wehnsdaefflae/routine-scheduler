@@ -15,6 +15,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.501.0] — 2026-11-05
+
+### An unknown settings pattern is loud, and the vocabulary judge moved into the writer (D229, F610)
+
+The operator ordered D229 as a builder campaign — "validate every proposed settings value against
+the live vocabulary at FILING time, and refuse the proposal with the field named". 0.493.0 shipped
+the first increment; these are the three parts that were still owed.
+
+- **An unknown `pattern` slug now raises at the ACCEPT** (`workflows/scaffold.py`), naming the
+  field and the slugs the live library holds. Before, `store.read(...) or {}` answered None,
+  `settings` fell to `{}`, the `pattern:` key was omitted from the new `routine.yaml` and the
+  recommender got `""`: the click built a routine following NOTHING and no surface said so.
+- **Only then does filing judge `pattern` too.** That order is the doctrine, not a preference —
+  refusing at filing what the accept quietly tolerates would make filing stricter than accepting.
+- **The judge now sits inside `pending.queue`**, the one writer every filing path must pass, and
+  raises `pendingvocab.Refused` before writing. It guarded the two filing observations that
+  existed, so a third path added later would have written an unjudged record and handed the
+  refusal to the operator's click — the defect F610 is about. `queue` takes the `ServerConfig`
+  because the vocabulary is live (the library on disk, the registry); eight writers threaded
+  through. **The two existing paths' refusals are byte-identical**, pinned by a test asserting the
+  literal refusal head, the verbatim re-file tail and the exact observation key sets.
+- **Four other filing paths reviewed, none rebuilt.** `recipeproposal`, `candidate` and
+  `goalreached` pass through the writer and carry no judgeable vocabulary — their accept-side 4xx
+  are time-of-click run-state facts, which filing must not pre-empt. `autoapply` uses a different
+  store: its patch KEYS are already judged at filing, and the residue is field VALUES needing live
+  server state, left to the apply where a refusal becomes an ordinary decision card.
+- Known and deliberately left: `api_pending._materialize_lane` still lets an accept build a lane
+  naming a ghost routine — the one stricter-than-accept exception left, wanting an accept-side
+  loudness increment of exactly the shape above.
+
+**Behaviour change worth knowing:** a proposal filed before this release carrying an unknown
+pattern slug now fails the accept with 400 where it previously built a pattern-less routine
+silently.
+
+### The nightly backup gets a local first tier, and both tiers are judged apart (D235, F830, R3204)
+
+No off-box snapshot completed between 2026-11-01T07:04:34 and this release — `backup_stale` fired
+three nights running. The target is sshfs at one round trip per FILE, ~167k files, against the
+unit's `TimeoutStartSec=4h` whose last success had a 29-minute margin.
+
+- **`deploy/backup.sh` snapshots to `/mnt/usb500/rsched-backup` FIRST**, then brings the off-box
+  share up to date *from that snapshot* as a separate step that can neither fail nor delay the
+  local one. A disk in this box does not survive losing the box, so the off-box copy is not
+  optional — it is second. The operator's order, R3204.
+- **Run directories older than `KEEP_RUNS_DAYS` (7) are dropped from the OFF-BOX tier only** —
+  D235's answer, verbatim "Exclude runs/ older than N days from the snapshot (keep state/,
+  .memory/, LEDGER, audit/)", with N stated here because his answer left it open. The local tier
+  keeps every run directory: that is where the per-file cost does not exist. `state/`, `.memory/`,
+  `LEDGER.md`, `audit/`, `questions/`, `artifacts/`, `conversations/` and `background/` are carried
+  whole on both tiers at any age. The migration tarball still carries everything.
+- **MEASURED, and it undercuts the premise of the cut**: of 170,029 transferred files only 18,600
+  live under `routines/*/runs/`, and at N=7 the exclusion drops 12,268 — **7.2% of the set**. That
+  alone does not restore the 4h margin; the local tier is what does. Where the bulk actually is is
+  reported separately, because cutting it was not what he decided.
+- **Both tiers refuse a target that is not on a mounted filesystem of its own**, and a refusal is a
+  failed backup. Built stronger than `mountpoint -q`: the guard resolves the mount the target
+  actually lives on (`stat -c %m`) and refuses the root filesystem, `$HOME`'s mount or `$HOME`'s
+  device — because a root one level below the mountpoint passes `mountpoint` while being just as
+  wrong, and because `/dev/shm` roots are the only way this script can be tested offline.
+- **`daemon/backup_watch` judges each tier on its own stamps and names the stale one.** It took the
+  NEWEST stamp across roots, so tonight's local snapshot would have reported `ok` for an off-box
+  copy a week behind — the F602 silence with a fresh number in front of it. `unknown` still claims
+  nothing (F480). One root is still one tier, judged exactly as before.
+- **A defect introduced and fixed inside this release, now pinned**: `usage()` prints through an
+  unquoted heredoc, so backticks in its prose are command-substituted — a help line mentioning
+  `rsched postdeploy` made `backup.sh --help` RUN it and append a row to the live postdeploy
+  ledger. Two tests scan every `deploy/*.sh` for that shape and check `--help` writes nothing.
+
+Not verified in production: the next night's run is the first real evidence, and `/mnt/usb500`
+still needs its permanent `fstab` entry (by UUID, `nofail`, mode 700 — the operator's sudo).
+
+### The browser test container's memory is finally attributed to the stage (D226, goal b2)
+
+The instrument shipped and ran for a week and produced no usable number. `cgroupmem.Watch` sampled
+`memory.current` only when `memory.peak` was ABSENT — but the `uitest` container mounts
+`/sys/fs/cgroup` read-only, so the reset it needs fails `[Errno 30]` on every job, and the
+refused-reset branch reported the CONTAINER's LIFETIME mark with `samples: 0`. Every reading the
+gate ever received was that one, which is why `memory-peaks.jsonl` held engine rows only while the
+browser container — where the pressure plainly is (F834: four Chromiums under a 4 GiB ceiling
+against a suite peaking ~4.8 GB) — stayed unmeasured.
+
+- Now it **samples whenever the reset did not actually happen** and reports `bound: "lower"` with
+  the sample count; the kernel's unreset mark travels alongside as `cgroup_lifetime_peak_bytes`,
+  an upper bound beside the job's own lower one. The `exact` path is untouched.
+- Proven in the real container: a live job touching 300 MB came back `samples 11, peak 420,364,288
+  (9.8% of the 4 GiB ceiling)` where the live runner's line for the same job read `samples 0`.
+- It still cannot say "no OOM occurred" — only the host's journal can.
+
+### The browser dock hangs up on `#/browser` — and the "one seat" it was framed against does not exist
+
+`docs/designs.md`'s entry, decided 2026-11-05, option (b), with the check it ordered first.
+
+- **The check answers NO.** `x11vnc` runs `-shared` and the relay opens an independent upstream
+  socket per viewer with no seat accounting, so `#/browser` was never refused a screen while the
+  dock held one. The "fixed regardless" half had nothing to bite on; what the release buys is one
+  less duplicate stream. The one-seat belief lived only in prose, now corrected in
+  `docs/browser-sessions.md`, `CLAUDE.md` and `components/screen.js`.
+- `mountScreenDock` gains `releaseOnPage`: on `#/browser` the dock empties its body (the iframe IS
+  the connection) and re-dials on leaving, with a generation counter so an in-flight probe cannot
+  paint into the released dock. **Folding still keeps the connection** — he chose that half.
+- 4 browser journeys; the desktop dock is untouched.
+
+### A conversation's bound machines are in its prompt — the pin that proves it (D216 part b)
+
+Part (b) of the parity campaign was briefed as a defect and is not one: `capabilities._machine_notes`
+keys on `ctx.routine.machines` with no conversation gate, the composer mounts it through
+`capabilities_digest`, and `runtime.run_routine` mounts machine shares for every run it boots. What
+was missing is the pin — both sides were tested separately and nothing joined them, so a refactor
+could have dropped the machine rows from a conversation's prompt silently. Two tests now assert on
+the COMPOSED TEXT, driven from the YAML on disk; non-vacuous by mutation. No production change.
+
 ## [0.500.0] — 2026-11-05
 
 ### Changed — a missed one-shot is skipped, like a missed cron fire (D237)

@@ -422,18 +422,6 @@ node ids before and after.
 
 ---
 
-## The browser dock gives the screen's one seat back on `#/browser` (decided 2026-11-05)
-
-Once connected (on first open, 0.372.0), the dock keeps the screen's one viewer seat while folded
-and while hidden on `#/browser` — the full-screen page that needs that seat to be interactive.
-**Operator, 2026-11-05: option (b)** — the dock releases the seat while `#/browser` is shown and
-reconnects when the operator leaves it; folding keeps the seat. Check first whether `#/browser` is
-refused a seat while the dock holds it — if so that half is a defect, fixed regardless.
-
-**First increment.** That check; then the release-on-`#/browser` with a tests/ui journey.
-
----
-
 ## Dependencies and the base image's Debian release (decided 2026-11-05)
 
 The operator approved all four (2026-11-05), each building on its own:
