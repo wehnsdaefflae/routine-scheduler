@@ -62,6 +62,15 @@ export function mountComposerOnly(main) {
     style: "width:80px", title: "max minutes per reply (-1 = unlimited)" });
   const tokIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
     style: "width:100px", title: "max tokens per reply (-1 = unlimited)" });
+  // D216 (c): the SPEND backstop and the question timeout. A conversation starts with every
+  // ceiling at -1, so it was the one run type with a human driving it AND no dollar cap, while a
+  // routine could set one; and `ask_timeout_min` decides how long a BLOCKING question waits
+  // before the reply continues on its stated default — directly meaningful where questions are
+  // the medium.
+  const costIn = el("input", { type: "number", min: "-1", step: "1", placeholder: "∞",
+    style: "width:80px", title: "max $ per reply, notional spend (-1 = unlimited)" });
+  const askIn = el("input", { type: "number", min: "1", step: "1", placeholder: "default",
+    style: "width:80px", title: "minutes a BLOCKING question waits before the reply continues on its stated default" });
   // Pre-start model picker: pick a catalog model by NAME (or fall back to the system model),
   // so a conversation can start on the right model instead of system-default-then-switch.
   // Options carry the model's context window and disable ones the harness cannot run
@@ -109,6 +118,10 @@ export function mountComposerOnly(main) {
     if (b.max_turns != null) turnsIn.placeholder = shown(b.max_turns);
     if (b.max_wall_clock_min != null) minsIn.placeholder = shown(b.max_wall_clock_min);
     if (b.max_total_tokens != null) tokIn.placeholder = shown(b.max_total_tokens);
+    if (b.max_cost != null) costIn.placeholder = shown(b.max_cost);
+    // ask_timeout_min is a positive number of minutes, never -1: an unlimited wait is what the
+    // stated default exists to end, so it is shown as itself rather than through `shown`.
+    if (b.ask_timeout_min != null) askIn.placeholder = String(b.ask_timeout_min);
     permPanel = abilitiesPanel(d.permissions, d.capabilities);
     permsHost.replaceChildren(permPanel.node);
     // no onSave → the picker renders no apply button; its `selected` rides the form
@@ -161,6 +174,8 @@ export function mountComposerOnly(main) {
       if (totalTurnsIn.value.trim()) fd.append("max_total_turns", totalTurnsIn.value.trim());
       if (minsIn.value.trim()) fd.append("max_wall_clock_min", minsIn.value.trim());
       if (tokIn.value.trim()) fd.append("max_total_tokens", tokIn.value.trim());
+      if (costIn.value.trim()) fd.append("max_cost", costIn.value.trim());
+      if (askIn.value.trim()) fd.append("ask_timeout_min", askIn.value.trim());
       fd.append("deliberation", delib.value);
       if (permPanel) fd.append("permissions", JSON.stringify(permPanel.value()));
       if (rulePick) fd.append("rules", JSON.stringify(rulePick.selected));
@@ -181,6 +196,10 @@ export function mountComposerOnly(main) {
       "minutes / reply", minsIn),
     el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
       "tokens / reply", tokIn),
+    el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+      "$ / reply", costIn),
+    el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
+      "ask timeout (min)", askIn),
     el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
       "whole conversation (turns)", totalTurnsIn));
 
