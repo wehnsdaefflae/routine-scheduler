@@ -158,9 +158,16 @@ the off-box target costs one round trip per FILE, ~167k files could not finish i
 `TimeoutStartSec=4h`, and nothing completed at all between 2026-11-01 and 11-05. A disk in this box
 does not survive losing the box, so the off-box copy is not optional — it is second.
 
-Two consequences worth knowing before you restore anything. **Run history differs by tier**: the
-local snapshot carries every run directory, the off-box mirror drops those older than
-`KEEP_RUNS_DAYS` (7) because that is where the per-file cost is. And **each tier keeps its own
+Two consequences worth knowing before you restore anything. **The tiers carry different things**:
+the local snapshot is complete, while the off-box mirror drops run directories older than
+`KEEP_RUNS_DAYS` (7) plus `.libreoffice` and each routine's `.secrets` cache — all of it
+regenerable, and all of it per-file cost on a share that charges one round trip per file.
+
+That shape was measured rather than guessed, over the 182,231 files rsync actually walks:
+`runs/` older than 7 days is only **7.2%** of them, `.libreoffice` and routine `.secrets` another
+**~20%**, and **69,251 loose git objects are 38%** — so the snapshot now runs `git gc --auto` over
+the routine repos first (`GC_REPOS=0` switches it off), which packs those objects into a handful
+of files and loses no history at all. And **each tier keeps its own
 stamps**, so `rsched postdeploy` and the daemon's backup watch judge them separately and name which
 one is stale — a local snapshot that completed an hour ago must never report `ok` for an off-box
 copy that is a week behind.

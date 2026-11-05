@@ -144,6 +144,83 @@ def test_the_offbox_step_can_be_skipped_without_touching_the_local_tier(home, tm
         shutil.rmtree(base, ignore_errors=True)
 
 
+def test_the_offbox_tier_leaves_out_the_caches_the_local_one_keeps(home, tmp_path):
+    """The operator's (b), answering the measurement that `runs/` was not the bulk: `.libreoffice`
+    and routine `.secrets` caches are ~20% of the off-box round trips and regenerate, so they go
+    off-box and STAY on the local disk. His answer to the two options was "both (a) and (b)".
+    """
+    base, local, offbox = _tiers(tmp_path)
+    (home / "routines/r1/.libreoffice/cache").mkdir(parents=True)
+    (home / "routines/r1/.libreoffice/cache/big").write_text("regenerable", encoding="utf-8")
+    (home / "routines/r1/.secrets").mkdir(parents=True, exist_ok=True)
+    (home / "routines/r1/.secrets/restic-files.txt").write_text("a list", encoding="utf-8")
+    (home / "routines/r1/state").mkdir(parents=True, exist_ok=True)
+    (home / "routines/r1/state/plan.md").write_text("kept everywhere", encoding="utf-8")
+    try:
+        proc = _backup(home, local, "2026-11-05", overrides={"MIRROR_ROOT": str(offbox)})
+        _ok(proc)
+        day = max(p.name for p in (local / "snapshots").iterdir() if p.name[0].isdigit())
+        for tier, name in ((local, "local"), (offbox, "off-box")):
+            snap = tier / "snapshots" / day
+            kept = (snap / "routines/r1/state/plan.md").is_file()
+            assert kept, f"{name} tier dropped state/, which both tiers carry"
+        assert (local / "snapshots" / day / "routines/r1/.libreoffice/cache/big").is_file()
+        assert (local / "snapshots" / day / "routines/r1/.secrets/restic-files.txt").is_file()
+        assert not (offbox / "snapshots" / day / "routines/r1/.libreoffice").exists()
+        assert not (offbox / "snapshots" / day / "routines/r1/.secrets").exists()
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_loose_git_objects_are_packed_before_the_snapshot(home, tmp_path):
+    """The operator's (a). A loose object is ONE FILE and so one sshfs round trip, and 69,251 of
+    them were 38% of the whole transferred set. `git gc` packs them and loses nothing — the
+    history is packed, not pruned — so the snapshot copies packfiles instead.
+    """
+    base, local, _ = _tiers(tmp_path)
+    repo = home / "routines/r1"
+    repo.mkdir(parents=True, exist_ok=True)
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("needs git")
+    subprocess.run([git, "init", "-q", str(repo)], check=True, capture_output=True)
+    for n in range(12):
+        (repo / f"f{n}.txt").write_text(f"{n}", encoding="utf-8")
+        subprocess.run([git, "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+        subprocess.run([git, "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-qm", f"c{n}"], check=True, capture_output=True)
+    loose_before = len([p for p in (repo / ".git/objects").rglob("*")
+                        if p.is_file() and len(p.parent.name) == 2])
+    assert loose_before > 0, "the fixture repo has no loose objects to pack"
+    try:
+        proc = _backup(home, local, "2026-11-05", overrides={"SKIP_OFFBOX": "1"})
+        _ok(proc)
+        assert "git objects:" in proc.stdout, proc.stdout
+        assert f"{loose_before} loose before" in proc.stdout or "none loose" in proc.stdout
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_packing_can_be_switched_off_and_a_failure_never_fails_the_night(home, tmp_path):
+    """`git gc` is an optimisation. A repo that cannot be packed is snapshotted as it is — every
+    night before this change was — so neither a broken repo nor a host without git may cost the
+    backup, and the switch exists so the unit can turn it off without editing the script.
+    """
+    base, local, _ = _tiers(tmp_path)
+    broken = home / "routines/r1/.git"
+    broken.mkdir(parents=True, exist_ok=True)
+    (broken / "objects").mkdir(exist_ok=True)       # a .git that is not a repository
+    try:
+        off = _backup(home, local, "2026-11-05",
+                      overrides={"SKIP_OFFBOX": "1", "GC_REPOS": "0"})
+        _ok(off)
+        assert "GC_REPOS=0 — not packing" in off.stdout, off.stdout
+        on = _backup(home, local, "2026-11-05", overrides={"SKIP_OFFBOX": "1"})
+        _ok(on)                                     # the broken repo did not fail the night
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
 def test_no_heredoc_in_deploy_substitutes_a_command_when_it_is_printed():
     """A hazard that fired for real on 2026-11-05, not a hypothetical.
 
