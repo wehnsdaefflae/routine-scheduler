@@ -2,7 +2,7 @@
 and report (`R<n>`) the scheduler carries, with its status, purpose, origin, and the
 changelog rows that addressed it.
 
-Four files merge into one shape (docs/items.md is the spec):
+Five files merge into one shape (docs/items.md is the spec):
 
 - `<self-audit>/audit/report.json` — findings + decisions, and the CURRENT status. Always
   the authority: the changelog is an archive and never overrides it.
@@ -15,13 +15,18 @@ Four files merge into one shape (docs/items.md is the spec):
   that say whether an addressed one was picked up. It is the status authority for an `R<n>`,
   the way `report.json` is for an `F<n>`.
 
-A report holds only its own window, so most items live on solely through the changelog and
-the answered markers — those are `archive_only` and carry no prose of their own. The self-audit
+- `<routines>/.control/item-records.json` — the LAST RECORDED row of every finding and
+  decision report.json ever carried (`rsched/item_records.py`). A row the current report no
+  longer holds is built from it with its last status, so a row dropped while live stays live.
+
+The row shapes themselves live in `item_rows.py`. An id no record ever held — one dropped
+before the records existed — lives on solely through the changelog and the answered markers:
+those are `archive_only` and carry no prose of their own. The self-audit
 routine writes a `status` on every finding; one still reading `unknown` was written before it
 did, and an absent status is NEVER recovered from title prose.
 
 Read-model discipline: nothing here writes, and the merge is memoized behind the stat
-fingerprint of the four files plus the ⚑ priorities store (`priorities.py`), whose flags float
+fingerprint of those files plus the ⚑ priorities store (`priorities.py`), whose flags float
 an item to the top of the list. An item's AGE is NOT from here (`origin.ts` is its source's own
 date): `firstseen.py` stamps the served rows, off a store it writes, so not a memo source (F753).
 """
@@ -34,18 +39,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from ..item_records import read_records, records_path
 from ..paths import read_json
-from ..priorities import SELF_AUDIT_SLUG, priorities_path, read_priorities
+from ..priorities import priorities_path, read_priorities
 from ..reports import read_reports, reports_path
 from . import decision_answers, memo
 from .item_counts import owner_of
-from .item_reports import event_stamp, refs, report_row_item, resolved_carriers
-
-#: The status vocabulary. `unknown` is the absence of a recorded status, not a state an
-#: item is put into.
-STATUSES = ("open", "in_progress", "addressed", "settled", "dropped", "unknown")
-
-TYPE_BY_PREFIX = {"F": "finding", "D": "decision", "R": "report"}
+from .item_reports import event_stamp, report_row_item, resolved_carriers
+from .item_rows import TYPE_BY_PREFIX, archive_item, recorded_item, report_item
 
 #: Item ids in HISTORICAL prose — findings and decisions only (see `_row_ids`), with no digit
 #: ceiling for the same reason as `item_reports.REF_RE`.
@@ -57,7 +58,7 @@ def _audit_dir(routine_dir: Path) -> Path:
 
 
 def source_paths(routine_dir: Path, routines_home: Path) -> list[Path]:
-    """The five inputs, in the order the docs list them — also the memo fingerprint.
+    """The inputs, in the order the docs list them — also the memo fingerprint.
     The priorities store rides along so a ⚑ toggle invalidates the memo like any other
     source edit.
     """
@@ -69,7 +70,8 @@ def source_paths(routine_dir: Path, routines_home: Path) -> list[Path]:
     # for the same reason.
     return [audit / "report.json", audit / "changelog.jsonl",
             audit / "decisions-answered.json", routine_dir / "inbox",
-            reports_path(routines_home), priorities_path(routines_home)]
+            reports_path(routines_home), priorities_path(routines_home),
+            records_path(routines_home)]
 
 
 # ---- source readers ---------------------------------------------------------------------
@@ -138,86 +140,6 @@ def _addressed_by_id(rows: list[dict]) -> dict[str, list[dict]]:
 # ---- item assembly ----------------------------------------------------------------------
 
 
-def _status_from_report(entry: dict) -> str:
-    """The report's own status when it names one from the vocabulary. A value outside it is
-    a data error and reads `unknown` — no synonym translation lives here.
-    """
-    raw = str(entry.get("status") or "").strip().lower()
-    return raw if raw in STATUSES else "unknown"
-
-
-def _report_item(kind: str, entry: dict, report: dict,
-                 addressed: list[dict], answered: dict,
-                 answer_words: dict | None = None) -> dict:
-    item_id = str(entry.get("id") or "").strip().upper()
-    title, detail = str(entry.get("title") or ""), str(entry.get("detail") or "")
-    since = report.get("since") if isinstance(report.get("since"), dict) else {}
-    status = _status_from_report(entry)
-    if status == "unknown" and kind == "decision" and answered.get(item_id):
-        status = "settled"                      # the user answered it — a recorded fact
-    # An `open` status is NOT overridden here, deliberately. A widening to
-    # `status in ("unknown", "open")` was built on 2026-10-25 and reverted the same run:
-    # `tests/test_api.py::test_items_page_reflects_answered_decision_after_consumption` pins
-    # that an item's status comes from the REPORT (self-audit's judgement, where `settled`
-    # means the item is dealt with) while the answer is an OVERLAY the pages apply from
-    # `web/api_audit.answered_decisions`. The live case says the same: D213 was answered on
-    # 2026-10-25 and the work it authorized (F756) is still unshipped, so `settled` would
-    # misreport it. What was missing was never the status — it was the resolution below.
-    item = {
-        "id": item_id, "type": kind, "status": status, "title": title, "detail": detail,
-        "origin": {"routine": SELF_AUDIT_SLUG, "run_id": str(report.get("run_id") or ""),
-                   "ts": str(report.get("generated") or ""),
-                   "commit": str((since or {}).get("commit") or "")},
-        "addressed": addressed, "evidence": [], "refs": refs(item_id, title, detail),
-        "archive_only": False, "owner": str(entry.get("owner") or "").strip(),
-    }
-    if kind == "finding":
-        item["severity"] = str(entry.get("severity") or "")
-        item["evidence"] = [str(e) for e in (entry.get("evidence") or [])]
-    else:
-        item["options"] = [str(o) for o in (entry.get("options") or [])]
-        item["resolution"] = str(entry.get("resolution") or "")
-        if not item["resolution"] and (marker := str(answered.get(item_id) or "")):
-            # A settled decision with an EMPTY resolution records nothing — the status says
-            # "answered" and no surface can say what was decided. The report's own
-            # `resolution` always wins (self-audit's considered wording, written by its next
-            # run); this fills the gap before that run happens, from the two records the
-            # answer actually wrote.
-            item["resolution"] = (answer_words or {}).get(item_id) or f"answered {marker}"
-    return item
-
-
-def _archive_item(item_id: str, addressed: list[dict], answered: dict) -> dict:
-    """An item no source holds a record of any more: it survives through the changelog or an
-    answered marker alone. It carries no prose — the UI shows its newest `addressed` entry
-    instead. Origin is the EARLIEST linked row: the first trace of it, not necessarily the
-    moment it was raised.
-    """
-    kind = TYPE_BY_PREFIX.get(item_id[:1], "finding")
-    first = addressed[-1] if addressed else {}
-    marker = str(answered.get(item_id) or "")
-    item = {
-        "id": item_id, "type": kind,
-        "status": "settled" if (kind == "decision" and marker)
-                  else "addressed" if addressed else "unknown",
-        "title": "", "detail": "",
-        "origin": {"routine": SELF_AUDIT_SLUG, "run_id": str(first.get("run_id") or ""),
-                   "ts": str(first.get("ts") or marker),
-                   "commit": str(first.get("commit") or "")},
-        "addressed": addressed, "evidence": [], "refs": [], "archive_only": True,
-    }
-    if kind == "finding":
-        item["severity"] = ""
-    elif kind == "decision":
-        item["options"], item["resolution"] = [], ""
-    elif kind == "report":
-        item["to"], item["delivered"], item["retracted"] = "", {}, {}
-        item["superseded"], item["supersedes"] = {}, []
-        item["answers"], item["answered_by"] = "", ""
-        item["closes"] = False
-    return item
-
-
 def _sort_key(item: dict) -> tuple:
     """Newest origin first; within one timestamp, the higher number first."""
     digits = "".join(c for c in item["id"] if c.isdigit())
@@ -248,7 +170,7 @@ def _build(routine_dir: Path, routines_home: Path) -> dict:
                 continue
             item_id = str(entry.get("id") or "").strip().upper()
             if item_id:
-                items[item_id] = _report_item(kind, entry, report,
+                items[item_id] = report_item(kind, entry, report,
                                               addressed.get(item_id, []), answered,
                                               answer_words)
     rows = read_reports(reports_path(routines_home))
@@ -287,10 +209,16 @@ def _build(routine_dir: Path, routines_home: Path) -> dict:
         if item_id and event_stamp(row, "superseded"):
             items[item_id] = report_row_item(row, addressed.get(item_id, []), closed_by,
                                               resolved)
+    # A row the report no longer holds is built from its LAST RECORD (item_records), so one
+    # dropped while live stays live; only an id no record ever held falls to the changelog.
+    for item_id, record in read_records(routines_home).items():
+        if item_id not in items and isinstance(record, dict):
+            items[item_id] = recorded_item(record, addressed.get(item_id, []), answered,
+                                           answer_words)
     for item_id in [*addressed, *answered]:
         item_id = str(item_id).strip().upper()
         if item_id and item_id not in items and item_id[:1] in TYPE_BY_PREFIX:
-            items[item_id] = _archive_item(item_id, addressed.get(item_id, []), answered)
+            items[item_id] = archive_item(item_id, addressed.get(item_id, []), answered)
 
     flagged = set(read_priorities(routines_home))
     for item in items.values():

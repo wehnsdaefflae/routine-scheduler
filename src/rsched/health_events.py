@@ -11,14 +11,14 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"fire_paused"|"fire_catchup"|"routine_catchup_declined"|"scheduler_tick_error"
         |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
         |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"
-        |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window"|"error_class_undecided",
+        |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window"|"error_class_undecided"
+        |"item_dropped_live",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
 `src/rsched` must appear in it (tests/test_health_events.py walks the call sites). A reader
-keyed on the documented list — the audit recipe, the `health-events` library util's filters —
-sees exactly nothing of an event that was added without a line here, which is how
-`prompt_oversize_shrunk` and `trigger_capped` were written for weeks and read by nobody.
+keyed on the documented list — the audit recipe, the `health-events` util's filters — sees
+nothing of an event added without a line here: `trigger_capped` went unread for weeks that way.
 
 Two of these events report a STANDING CONDITION rather than an incident — `cost_trend_degraded`
 and `cache_read_degraded`, both read at RUN END — and a run end is not a run: a resumed run
@@ -30,10 +30,9 @@ other event here is an incident and is filed every time: two of them are two fac
 
 budget_exhausted vs run_partial: BOTH are a `partial` finish, and they used to be one event.
 budget_exhausted is the finish a BUDGET VIOLATION forced (the reserved finish turn was spent, or
-the engine ended the run itself); run_partial is a partial the model chose with budget to spare —
-the job needs another run, a source was down, an ask timed out. The distinction is the whole
-point of reading the stream: an instance where every routine "exhausts its budget" nightly reads
-as starved, when most of those were authored finishes. budget_exhausted carries `resource` (turns
+the engine ended the run itself); run_partial is a partial the model chose with budget to spare.
+The distinction is the point: a fleet that "exhausts its budget" nightly reads as starved, when
+most of those were authored finishes. budget_exhausted carries `resource` (turns
 · total_turns · wall_clock · tokens · cost), `limit` and `status` as structured fields — WHICH
 budget ended the run was recorded nowhere, and reconstructing it from status.json worked for 22
 of 90 cases. It is emitted whenever the RESERVED FINISH TURN was spent, whatever the finish
@@ -43,8 +42,7 @@ runs since 09-01 left no event at all). An abort's row: `loopend.abort_fields` (
 oversize_state_file: the run-end autocommit left a file OUT of the routine's own repo because it
 exceeds `engine/autocommit.OVERSIZE_BYTES` (detail names path and size). The file stays on disk
 and the run's work is untouched; what it never becomes is a git blob in a repo the instance
-mirrors and pushes — one 223 MB inventory once blocked every library push for days, and the
-mirror repo's history had to be rewritten to drop it.
+mirrors and pushes — one 223 MB inventory once blocked every library push for days.
 
 commit_failed: a commit into a repo the instance versions did not land (`libgit.commit`) — a
 routine's run-end autocommit, a web edit, a boot seed sync, a migration, the recipe snapshot.
@@ -304,6 +302,8 @@ obligation_overdue: what a person asked of a routine or approved has stayed open
 `state/obligations.json` past `obligations.OVERDUE_DAYS` (`daemon/owed_watch`) — one row per
 routine per day, `obligations` how many, detail naming each and what the last run left.
 
+item_dropped_live: a finding/decision self-audit's report.json carried open or in_progress was
+rewritten out of it (`daemon/item_record_watch`); `items` names them. The index keeps it live.
 """
 
 from __future__ import annotations

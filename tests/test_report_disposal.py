@@ -101,13 +101,11 @@ def test_a_third_routine_cannot_settle_someone_elses_row(home):
     assert _status(home)["R1"] == "in_progress", "still its owner's row"
 
 
-def test_an_untargeted_row_must_be_routed_before_it_can_be_settled(home):
-    """The operator's wording: "an untargeted row must be routed before it can be settled".
-    Routing is the fold, and the owner then disposes of it — the loop end to end."""
+def test_an_untargeted_row_is_routed_to_its_owner_and_the_owner_settles_it(home):
+    """The operator's wording: "an untargeted row must be routed before it can be settled" —
+    by anyone but triage. Routing is the fold, and the owner then disposes of it."""
     handle_report(_loop(home, "freelance-radar"), {"title": "a triage row"})
     audit = _loop(home, "self-audit")
-    assert handle_report(audit, {"title": "cannot settle this", "settles": ["R1"]}
-                         ).get("undeliverable_disposal") is True
     routed = handle_report(audit, {"target": "global-utils-review", "title": "yours",
                                    "supersedes": ["R1"]})
     assert routed["filed"]
@@ -117,6 +115,36 @@ def test_an_untargeted_row_must_be_routed_before_it_can_be_settled(home):
                                "closes": True})["filed"]
     settled = _status(home)
     assert settled["R2"] == "settled" and settled["R1"] == "settled"
+
+
+def test_triage_settles_an_unaddressed_row_whose_subject_is_its_own(home):
+    """F840: R3173 was filed with no target by self-audit's own child run, about self-audit's
+    own tooling. Settling it was refused ("not routed yet") and routing it was refused ("a
+    routine cannot address a report to itself"), so it sat in triage forever with its defect
+    fixed. An unaddressed row's recipient IS triage, so triage closes it."""
+    audit = _loop(home, "self-audit")
+    handle_report(audit, {"title": "permission_audit cannot see a declaration change"})
+    out = handle_report(audit, {"title": "fixed in scripts/permission_audit.py",
+                                "answers": "R1", "closes": True})
+    assert out["filed"], out
+    assert _status(home)["R1"] == "settled"
+
+
+def test_every_live_row_shape_has_someone_who_can_dispose_of_it(home):
+    """The invariant behind F840, over every shape a live row can take: for each, SOME routine
+    may dispose of it. A shape with no disposer is a row that can never leave the ledger."""
+    handle_report(_loop(home, "freelance-radar"), {"title": "unaddressed"})            # R1
+    handle_report(_loop(home, "self-audit"), {"title": "unaddressed, triage's own"})   # R2
+    handle_report(_loop(home, "freelance-radar"), {"target": "global-utils-review",
+                                                   "title": "addressed"})              # R3
+    handle_report(_loop(home, "freelance-radar"), {"title": "to be folded"})           # R4
+    handle_report(_loop(home, "self-audit"), {"target": "global-utils-review",
+                                              "title": "carrier", "supersedes": ["R4"]})
+    rows = _rows(home)
+    fleet = ("self-audit", "global-utils-review", "freelance-radar")
+    for rid in ("R1", "R2", "R3", "R4", "R5"):
+        assert any(disposable(rows, [rid], replier=slug)[0] for slug in fleet), (
+            f"{rid} has no disposer")
 
 
 # ---- the two refusals stay distinguishable ----------------------------------------------
@@ -168,6 +196,8 @@ def test_disposable_splits_in_the_callers_order_and_names_each_id_once():
             {"id": "R3", "routine": "c", "target": "a"}]
     assert disposable(rows, ["R3", "r1", " R1 ", "R2", "R404"], replier="a") == (
         ["R3"], ["R1"], ["R2", "R404"])
+    assert disposable(rows, ["R2", "R404"], replier="self-audit") == (["R2"], [], ["R404"]), (
+        "an unaddressed row is triage's; an id the ledger lacks is nobody's")
 
 
 # ---- what must NOT change ----------------------------------------------------------------

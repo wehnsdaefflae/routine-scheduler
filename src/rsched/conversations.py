@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .config import (
     DEFAULT_BUDGETS,
+    DEFAULT_CAPABILITIES,
     DEFAULT_DELIBERATION,
     DEFAULT_PERMISSIONS,
     DEFAULT_RULES,
@@ -49,6 +50,19 @@ CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS]
 # declares itself final must meet every open one, and one that is not final hands back with
 # them open. A person can still set any ceiling per conversation; max_subruns and the subrun
 # depth stay structural.
+def starting_capabilities(active: list[str], lib: dict[str, dict]) -> dict:
+    """A NEW conversation's capabilities: the active docs' raise-then-floor, with the reminder
+    layer and run history at the ROUTINE defaults (decided 2026-11-05) — a layer nobody
+    switches on never learns anything, and that holds for a conversation too. The create path
+    and the composer's preview both read this, so the panel shows what will persist.
+    """
+    from .grants import capabilities_for, floor_capabilities
+
+    caps = floor_capabilities(active, lib, capabilities_for(active, lib))
+    return {**caps, "reminders": DEFAULT_CAPABILITIES["reminders"],
+            "runs": DEFAULT_CAPABILITIES["runs"]}
+
+
 CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": -1, "max_wall_clock_min": -1,
                         "max_total_tokens": -1, "max_cost": -1,
                         # explicitly, not inherited: a scheduled routine's max_total_turns
@@ -230,16 +244,15 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     available_perms = set(library_docs.slugs(server.permissions_home))
     active_perms = [p for p in (permissions if permissions is not None
                                 else CONVERSATION_PERMISSIONS) if p in available_perms]
-    from .grants import capabilities_for, floor_capabilities, read_library_requires
+    from .grants import read_library_requires
 
     # a caller-resolved mapping (the composer's ⚙ panel, already validated + floored by
     # resolve_permission_layers) wins; otherwise derive it from the active docs — under
     # the SAME raise-then-floor discipline every save applies (decided 2026-07-23: a
     # mapping is floored from BIRTH on every path, so no orphan capability ever persists)
     if capabilities is None:
-        lib = read_library_requires(server.permissions_home)
-        capabilities = floor_capabilities(active_perms, lib,
-                                          capabilities_for(active_perms, lib))
+        capabilities = starting_capabilities(active_perms,
+                                             read_library_requires(server.permissions_home))
     cfg = {
         "name": title,
         "slug": slug,

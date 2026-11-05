@@ -22,8 +22,8 @@ from pydantic import BaseModel
 from ..engine import inbox
 from ..ids import now_iso
 from ..paths import atomic_write_json, file_lock, read_json
+from ..priorities import SELF_AUDIT_SLUG
 from ..readmodels import stamps
-from ..readmodels.items import SELF_AUDIT_SLUG
 from .routines_common import rewrite_queued_message
 
 router = APIRouter(tags=["audit"])

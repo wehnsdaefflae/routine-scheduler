@@ -56,7 +56,7 @@ def _audit_decisions(server) -> list[dict]:
     """The self-audit report's open decisions (`_audit_decisions_fresh`), reused while the
     report, the durable answered-markers and the inbox (the queued answers) are unchanged.
     """
-    from ..readmodels.items import SELF_AUDIT_SLUG
+    from ..priorities import SELF_AUDIT_SLUG
 
     rdir = server.routines_home / SELF_AUDIT_SLUG
     return memo.memoized(f"decisions:audit:{rdir}",
@@ -78,7 +78,7 @@ def _audit_decisions_fresh(rdir: Path) -> list[dict]:
     ask, which the answer POST accepts. Nothing is hidden by this: every decision, at every
     status, is still listed on the Messages page (`readmodels.items`) with its status.
     """
-    from ..readmodels.items import SELF_AUDIT_SLUG
+    from ..priorities import SELF_AUDIT_SLUG
     from .api_audit import queued_messages
 
     report = read_json(rdir / "audit" / "report.json")

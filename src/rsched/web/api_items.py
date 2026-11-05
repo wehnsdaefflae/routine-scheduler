@@ -23,9 +23,9 @@ from pydantic import BaseModel, ConfigDict
 
 from .. import firstseen, priorities, registry
 from ..paths import read_json
+from ..priorities import SELF_AUDIT_SLUG
 from ..readmodels import item_counts, memo, summaries
 from ..readmodels import items as items_model
-from ..readmodels.items import SELF_AUDIT_SLUG
 from .api_audit import _routine_dir, answered_decisions, queued_messages
 
 router = APIRouter(tags=["items"])

@@ -20,6 +20,7 @@ why the two cannot drift apart again.
 from __future__ import annotations
 
 from .. import recipients
+from ..report_threads import TRIAGE_READER
 
 #: The kinds that can come back QUEUED — a scheduled run's proposal for the Decisions page
 #: (F328). Both carry the same three keys (`queued`, `id`, `next`) plus a self-describing
@@ -242,10 +243,10 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                              f"it: {named}. Reply to its owner instead, or re-emit with "
                              "`supersedes` naming it to take the thread over")
             if unrouted := obs.get("unrouted") or []:
-                parts.append("NOT ROUTED YET, so nobody has read it and there is no owner "
-                             f"to dispose of it: {', '.join(unrouted)}. Route it first (a "
-                             "report with `supersedes` naming it and a `target`), then the "
-                             "owner settles it")
+                parts.append("NOT ROUTED YET — unaddressed, so it sits in triage and only "
+                             f"triage ({TRIAGE_READER}) disposes of it: {', '.join(unrouted)}. "
+                             "Route it first (a report with `supersedes` naming it and a "
+                             "`target`), then the owner settles it")
             return ("OBSERVATION (report REFUSED — `answers`/`settles` dispose of a row only "
                     "for the routine the row was delivered TO. " + "; and ".join(parts)
                     + ". Nothing was filed.)")

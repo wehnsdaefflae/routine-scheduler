@@ -40,12 +40,23 @@ the engine's own finish ever touches.
 | `<self-audit>/audit/changelog.jsonl` | the self-audit routine | the archive: which commit addressed which item, when (`commit` empty for a builder completion without a release, whose items self-audit settles) |
 | `<self-audit>/audit/decisions-answered.json` | the web layer (`api_audit`) | durable "the user answered this decision" markers |
 | `<routines>/.control/reports.jsonl` | the engine (`rsched/reports.py`), as a PROJECTION of `.control/hooks.jsonl` (`rsched/hooks/reportproj`, D152) | every report a run filed, and how far an addressed one got |
+| `<routines>/.control/item-records.json` | the daemon (`daemon/item_record_watch` → `rsched/item_records.py`) | the LAST RECORDED row of every finding and decision `report.json` ever carried, and when it left |
 
 `report.json` carries only the CURRENT window (schema 1: `run_id`, `generated`,
 `since{commit,window}`, `summary`, `findings[]`, `decisions[]`) — a report lists the items
-that run considered, not every item that ever existed. The changelog and the answered
-markers are what keep older items visible; an item known only from those is *archive-only*
-and says so.
+that run considered, not every item that ever existed.
+
+**No row can vanish** (2026-11-05). The item records keep the newest version of every row the
+file has ever held, observed by the daemon whenever the file changes, and the index builds an
+item from that record for every id the current report omits — with its last recorded STATUS
+and its own prose, and `left_report` saying when it left. So a row self-audit's rewrite drops
+while `open`/`in_progress` stays live in the index and in every count; it is ended only by a
+recorded status, or by a changelog row that addressed it AFTER it left. The departure itself
+is filed as `item_dropped_live` on the blocked-work surface, naming the ids. This exists
+because the changelog did NOT keep every dropped item visible, as this page used to claim:
+walking all 239 committed versions found F216, F217, F322, F355 and F445 dropped while live,
+named by no changelog row, and gone from every surface. An item known only from the changelog
+and the answered markers — dropped before the records began — is *archive-only* and says so.
 
 `findings.json` / `decisions.json` there are NOT item stores despite their names: per-run
 scratch from the routine's first runs (keyed by run id, arbitrary payloads), which nothing reads.
@@ -106,6 +117,8 @@ scratch from the routine's first runs (keyed by run id, arbitrary payloads), whi
   current rather than historical.
 - **`archive_only`** — true when no source holds the item's own record any more and it
   survives solely through the changelog / answered markers.
+- **`left_report`** — on a finding or decision the current report no longer holds but the
+  item records do: when the report first omitted it (`""` while it is in the report).
 - **`priority`** — present (`true`) only on an item the user flagged ⚑ (see below).
 - **`owner`** (findings and decisions) — who must act next, verbatim from the row self-audit
   wrote: a routine slug, or `operator` for an item only the operator can move. `""` when the
@@ -155,9 +168,11 @@ Precedence, in order — the first rule that applies wins:
    marker rides along in `answered_decisions` and the card overlays an "answered" badge,
    the same overlay the Decisions page uses. A newer report re-raising the decision is the
    authority on it being open again.
-3. **Archive-only with at least one linked changelog row** → `addressed`. The item has
+3. **Dropped from the report, with a record** → the RECORDED status, except `addressed` when
+   a changelog row linked to it is newer than its departure (`readmodels/item_rows.recorded_item`).
+4. **Archive-only with at least one linked changelog row** → `addressed`. The item has
    dropped out of the current report and a recorded code change names it.
-4. Otherwise → `unknown`.
+5. Otherwise → `unknown`.
 
 A status value outside the vocabulary is a data error and reads as `unknown`; the read model
 does not translate synonyms.
@@ -254,8 +269,13 @@ view 14 seconds after he filed it, settled by its own follow-up.
 The gate is a WRITE precondition in the report handler (`report_threads.disposable`), with two
 refusals that stay apart because they need different moves: a row delivered elsewhere is its
 owner's to answer — reply to the owner, or `supersedes` it to take the thread over — while an
-**unrouted row must be routed before it can be settled at all**, since there is no owner to
-dispose of it. A FOLDED row's owner is its carrier's target, followed to the end of the chain,
+**unrouted row must be routed before anyone but triage can settle it**. An unaddressed row's
+recipient is triage (`report_threads.TRIAGE_READER`, self-audit), so triage may dispose of it
+directly (F840, 2026-11-05): before that an unaddressed row about triage's OWN subject had no
+disposer at all — settling was refused as unrouted, routing was refused because a routine
+cannot address itself — and R3173 sat in triage with its defect fixed.
+`tests/test_report_disposal.py::test_every_live_row_shape_has_someone_who_can_dispose_of_it`
+holds the invariant that every live row shape has a disposer. A FOLDED row's owner is its carrier's target, followed to the end of the chain,
 so the ordinary route-then-reply pass is unaffected. The READ model is deliberately untouched:
 the rows already disposed of this way stay settled, because re-deriving them would hand triage
 hundreds of rows at once.

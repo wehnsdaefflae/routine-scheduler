@@ -75,6 +75,10 @@ CHANGES_SCHEMA = {
 }
 
 
+#: The pattern a routine follows when no pick can be made: one job, no special shape.
+NEUTRAL_PATTERN = "one-job"
+
+
 def choose(server, *, workflow: str, name: str, task: str) -> str:
     """The pattern a routine on `workflow` follows: the one built on that workflow when there is
     exactly one, else the system model's pick among all of them. "" only when the library holds
@@ -96,7 +100,14 @@ def choose(server, *, workflow: str, name: str, task: str) -> str:
         f"ROUTINE: {name}\nTASK:\n{task[:6000]}\n\nPATTERNS:\n{listing}"),
         CHOICE_SCHEMA, purpose=f"choose pattern → {name}")
     picked = str((obj or {}).get("pattern") or "")
-    return picked if any(p["slug"] == picked for p in pool) else pool[0]["slug"]
+    if any(p["slug"] == picked for p in pool):
+        return picked
+    # No usable pick (the model is down, or named a slug that is not offered): the NEUTRAL
+    # pattern, never whichever sorts first — an alphabetical accident presented as a
+    # recommendation (operator, 2026-11-05: "fall back to one-job").
+    if any(p["slug"] == NEUTRAL_PATTERN for p in patterns):
+        return NEUTRAL_PATTERN
+    return pool[0]["slug"]
 
 
 def recommend(server, *, slug: str, saved: dict, pattern: dict | None,

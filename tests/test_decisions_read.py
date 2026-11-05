@@ -13,8 +13,8 @@ import yaml
 
 from conftest import make_test_server, mk_run
 from rsched.paths import atomic_write_json
+from rsched.priorities import SELF_AUDIT_SLUG
 from rsched.readmodels import memo
-from rsched.readmodels.items import SELF_AUDIT_SLUG
 from rsched.web import decisions_read
 
 RUN = "20260708-110000"

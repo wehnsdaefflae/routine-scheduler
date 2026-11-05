@@ -26,6 +26,7 @@ from .backup_watch import BackupWatch
 from .detached import DetachedManager
 from .endpoint_watch import EndpointWatch
 from .events import EventBus
+from .item_record_watch import ItemRecordWatch
 from .lane_runs import LaneRunManager
 from .library_watch import LibraryWatch
 from .marker_watch import MarkerWatch
@@ -80,12 +81,12 @@ class Scheduler:
         # The library MOVES under its holders — a sync pull, a hand edit, a restored bundle — with
         # no writer to gate. This notices and files the breakage as a decision (library_watch.py).
         self.library = LibraryWatch(server)
-        # Facts this product held and never READ about itself, filed into the health stream: the
-        # nightly snapshot (backup_watch, F602), a migration's declared deadline (marker_watch,
-        # F702) — and owed work: an obligation open for days, a report nobody owns (owed_watch).
+        # Facts this product held and never READ about itself: the nightly snapshot (F602), a
+        # migration deadline (F702), owed work (owed_watch), a live item dropped from report.json.
         self.backup = BackupWatch(server)
         self.markers = MarkerWatch(server)
         self.owed = OwedWatch(server)
+        self.item_records = ItemRecordWatch(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
         # D71: lanes with a cron of their own. A due lane fire ARMS the sequential chain (member 0
@@ -318,17 +319,16 @@ class Scheduler:
                     # sequential lane fires: advance each armed chain one member per tick
                     await self.lane_runs.tick(self.catalog)
                 # Upkeep runs BESIDE the tick (`_off_tick`), never inside it: OAuth refreshes
-                # expiring connections with a 20 s POST each (a provider that is down keeps every
-                # connection due), the library watch re-resolves every routine after a library
-                # change, the endpoint watch asks each proxy whose credential is still alive —
-                # awaited here, any of them held every fire behind it. Then the readers of facts
-                # nothing else surfaces (backup F602, a migration deadline F702, owed work).
+                # expiring connections with a 20 s POST each, the library watch re-resolves every
+                # routine after a library change, the endpoint watch asks each proxy whose
+                # credential is alive — awaited here, any of them held every fire behind it.
                 self._off_tick("oauth", self.oauth.tick)
                 self._off_tick("library-watch", self.library.tick)
                 self._off_tick("endpoint-watch", self.credentials.tick)
                 self._off_tick("backup-watch", self.backup.tick)
                 self._off_tick("marker-watch", self.markers.tick)
                 self._off_tick("owed-watch", self.owed.tick)
+                self._off_tick("item-record-watch", self.item_records.tick)
             except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
             except Exception as exc:

@@ -16,6 +16,7 @@
    A pre-commit hook runs this file so the mismatch never reaches a commit.
 """
 
+import itertools
 import re
 import warnings
 from datetime import UTC, date, datetime, timedelta
@@ -238,3 +239,16 @@ def test_version_bump_has_changelog_entry():
     assert headers[0][0] == rsched.__version__, (
         f"__version__ is {rsched.__version__} but the newest CHANGELOG.md header is "
         f"[{headers[0][0]}] — every version bump ships its release notes in the same commit")
+
+
+def test_changelog_versions_never_repeat_or_go_backwards():
+    """Several writers release into one main (self-audit, the builder, operator sessions), and a
+    merge that keeps its own entry on top passed the check above while main had already shipped
+    the same number — two different 0.371.0s, and the console's version went backwards (decided
+    2026-11-05). Every header must be strictly lower than the one above it."""
+    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    versions = [tuple(int(n) for n in v.split("."))
+                for v in re.findall(r"^## \[(\d+\.\d+\.\d+)\]", changelog, flags=re.MULTILINE)]
+    bad = [f"{'.'.join(map(str, a))} above {'.'.join(map(str, b))}"
+           for a, b in itertools.pairwise(versions) if a <= b]
+    assert not bad, f"CHANGELOG.md headers repeat or go backwards: {bad[:5]}"

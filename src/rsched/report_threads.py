@@ -31,6 +31,11 @@ from __future__ import annotations
 import re
 from collections.abc import Collection
 
+#: Who reads the UNADDRESSED stream, and therefore who an unaddressed row was given to. A row
+#: filed with no `target` goes to triage, and triage is this routine's (CLAUDE.md: "UNADDRESSED
+#: goes to the triage stream self-audit reads"; `priorities.py` routes such a row's ⚑ there).
+TRIAGE_READER = "self-audit"
+
 #: A DISPOSITION VERB standing beside a report id: the one shape that distinguishes "closing
 #: R2313" from "R2313 is why I am writing" (F770). Narrow on purpose — the check says something
 #: the author can act on in the turn he still can, and a predicate that fired on every report
@@ -193,8 +198,16 @@ def disposable(rows: list[dict], ids: list[str], *,
 
     Two refusals, kept apart because they need different moves: a row delivered elsewhere is
     its owner's to answer (reply to the owner, or `supersedes` it to take the thread over),
-    while an UNROUTED row has to be routed before it can be settled at all. An id the ledger
-    does not have is `unrouted` too — there is nothing to own.
+    while an UNROUTED row has to be routed before anyone but triage can settle it. An id the
+    ledger does not have is `unrouted` too — there is nothing to own.
+
+    An unaddressed row's recipient is TRIAGE (`TRIAGE_READER`), so triage may dispose of it
+    (F840, operator 2026-11-05: "solve the rows that never close"). Before that it had no
+    disposer at all whenever its subject was triage's own — the ordinary case of a self-audit
+    child run reporting on self-audit's tooling: settling was refused as "not routed yet", and
+    routing it was refused because "a routine cannot address a report to itself", so R3173 sat
+    in triage and in the live count with its defect already fixed. D182's specimen is unchanged:
+    a SENDER still cannot retire its own unread report, because the sender is not triage.
 
     This is a WRITE precondition only. The read model is deliberately untouched, so the rows
     already disposed of this way stay settled: re-deriving them would hand triage back
@@ -208,6 +221,8 @@ def disposable(rows: list[dict], ids: list[str], *,
         if not rid or rid in allowed or rid in elsewhere or rid in unrouted:
             continue
         owner = owner_of(rows, rid)
+        if owner == "" and replier == TRIAGE_READER:
+            owner = TRIAGE_READER
         if owner and owner == replier:
             allowed.append(rid)
         elif owner:

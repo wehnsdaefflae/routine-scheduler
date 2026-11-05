@@ -44,7 +44,15 @@ _LOOPBACK = ("127.0.0.1", "::1", "localhost")
 
 #: How many browsers may run at once when each worker launches its own. A browser worker costs
 #: a Chromium AND a uvicorn AND the test itself, so it is not the arithmetic the fast suite uses.
-BROWSER_WORKERS = 4
+#:
+#: TWO, not four (D238, operator 2026-11-05). Four peaked at ~4.8 GB anon, and the `uitest`
+#: container that runs this suite is capped at 4 GiB (docker-compose.override.yml) on a 14 GB
+#: host with ~2 GB free — so the kernel OOM-killed chrome-headless inside it 153 times in the
+#: week to 2026-11-05 (`journalctl -k`), each kill a test parked 120 s on a browser that never
+#: answered, and the browser stage ran 95-113 min or timed out: no release shipped from 11-02.
+#: Raising the ceiling was declined — the host has no memory to give — so each worker gets
+#: twice the headroom instead, and the stage is slower but finishes.
+BROWSER_WORKERS = 2
 
 
 def cdp_endpoint() -> str:
@@ -62,7 +70,7 @@ def worker_cap(markexpr: str, reserved: int) -> int:
     after 97 s, with 13 nodes left unresolved. That is not a verdict about the candidate, it is
     an oversubscribed box, and the gate correctly called it `timeout` rather than red.
 
-    Four is the shape that WAS measured: four concurrent processes, each with its own browser,
+    Four was the shape first measured (before the 4 GiB `uitest` ceiling, see BROWSER_WORKERS): four concurrent processes, each with its own browser,
     did 42 s of work in 18 s of wall clock. It is also consistent with the old contention
     evidence from the shared-browser era (three workers into ONE Chrome produced dozens of
     reruns) — the browsers being separate is what makes four survivable where three were not.

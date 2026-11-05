@@ -323,7 +323,6 @@ def conversation_defaults(request: Request) -> dict:
     """
     from types import SimpleNamespace
 
-    from ..grants import capabilities_for, floor_capabilities
     from ..readmodels import library_reads
 
     server = request.app.state.server
@@ -331,7 +330,7 @@ def conversation_defaults(request: Request) -> dict:
     active = [p for p in conv_mod.CONVERSATION_PERMISSIONS if p in available]
     # floored like the create path — the preview must show what will actually persist
     lib = library_reads.requires(server.permissions_home)
-    caps = floor_capabilities(active, lib, capabilities_for(active, lib))
+    caps = conv_mod.starting_capabilities(active, lib)
     permissions, capabilities = permission_layers_detail(
         server, SimpleNamespace(permissions=active, capabilities=caps),
         routine_only=conv_mod.ROUTINE_ONLY_PERMISSIONS)
