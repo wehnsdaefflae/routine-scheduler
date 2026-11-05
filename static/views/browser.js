@@ -18,6 +18,7 @@
 
 import { api } from "/static/api.js";
 import { el, emptyState, skeleton, storage } from "/static/util.js";
+import { bridgeClipboard } from "/static/components/clipboard-bridge.js";
 import { BROWSER, grantPass as grantScreenPass, screenSrc } from "/static/components/screen.js";
 
 // The browser's own bindings of the shared screen builder (components/screen.js) — the dock and
@@ -64,11 +65,13 @@ export async function render(view) {
   // the novnc browser share the clipboard with my host machine?" — and then asked for the
   // control: "add a checkox if we want the clipboard to sync or not. under the novnc iframe".
   //
-  // WHAT ACTUALLY GATES THE CLIPBOARD is this iframe's permission grant. x11vnc runs with no
-  // `-nosel`/`-noclipboard` (deploy/chrome-entrypoint.sh), so the RFB side already relays the X
-  // CLIPBOARD selection both ways, and this page already drops `view_only` — the embedded noVNC
-  // page can reach the host clipboard exactly while the embedder permits it. So the switch is
-  // the `allow` attribute, and OFF means the attribute is absent, not merely different.
+  // WHAT THE SWITCH CONTROLS is the clipboard BRIDGE and the permission it runs under (F831).
+  // x11vnc runs with no `-nosel`/`-noclipboard` (deploy/chrome-entrypoint.sh), so the RFB side
+  // relays the X CLIPBOARD selection both ways — but the noVNC page itself never touches this
+  // machine's clipboard (its clipboard is a manual side panel), so D221's permission alone
+  // synced nothing. components/clipboard-bridge.js makes the calls, on the FRAME's own
+  // `navigator.clipboard`: ON is the bridge plus the explicit `allow` grant it runs under, OFF
+  // is neither — and it is the missing BRIDGE that stops the sync, not the missing attribute.
   //
   // Default ON: that is the option he picked. The choice lives in this browser's own storage
   // because it is a property of the machine he is sitting at, not of the instance — and
@@ -83,22 +86,27 @@ export async function render(view) {
     ...(syncOn() ? { allow: "clipboard-read; clipboard-write" } : {}),
   });
   let frame = mountFrame();
+  let unbridge = syncOn() ? bridgeClipboard(frame) : () => {};
   const syncBox = el("input", { type: "checkbox", "data-clipboard-sync": true,
     ...(syncOn() ? { checked: true } : {}) });
   // Permissions Policy is evaluated when a document LOADS, so changing `allow` on a live frame
   // changes nothing: the frame is replaced. That reconnects the screen, which the label says.
   syncBox.onchange = () => {
     storage.set(SYNC_KEY, syncBox.checked ? "on" : "off");
+    unbridge();
     const next = mountFrame();
+    unbridge = syncOn() ? bridgeClipboard(next) : () => {};
     frame.replaceWith(next);
     frame = next;
   };
   const syncRow = el("label", {
     class: "row small faint mt", "data-clipboard-sync-label": true,
     style: "gap:6px;align-items:center",
-    title: "share this machine's clipboard with the browser in the container, both ways. "
-           + "Flipping it reconnects the screen, because a frame's clipboard permission is "
-           + "fixed when it loads. Off: the guest cannot read what you last copied.",
+    title: "share this machine's clipboard with the browser in the container, both ways: what "
+           + "you copied here is sent when you click or focus the screen, and what is copied in "
+           + "the container lands on this machine's clipboard. Your browser asks once for "
+           + "clipboard access. Flipping it reconnects the screen, because a frame's clipboard "
+           + "permission is fixed when it loads. Off: neither direction is synced.",
   }, syncBox, "sync clipboard with this machine");
   box.replaceChildren(
     el("div", { class: "row", style: "gap:8px;align-items:center" },
