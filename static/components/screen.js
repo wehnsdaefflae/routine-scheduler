@@ -62,8 +62,10 @@ export function screenSrc(prefix, { viewOnly = false, token = "" } = {}) {
 // (`RFB 003.008`) the instant the relay bridges the two sockets — so the first message means
 // there is something to look at, and a close with nothing received means there is not. This is
 // exactly the 1006 noVNC itself reports; the probe just reads it before an error can be painted.
-// The socket is opened and closed BEFORE the frame's own, never alongside it, so a screen that
-// admits one viewer at a time still gets a clean seat when the preview connects.
+// The socket is opened and closed BEFORE the frame's own, never alongside it, so the probe never
+// doubles the viewers of a screen that is picky about how many it has. (The shared browser's is
+// not: x11vnc runs `-shared` and the relay bridges one upstream socket per viewer — measured
+// 2026-11-05, see docs/browser-sessions.md.)
 export function relayReachable(prefix, { token = "", timeoutMs = 6000 } = {}) {
   return new Promise((resolve) => {
     const url = new URL(`/${socketPath(prefix, token)}`, location.href);

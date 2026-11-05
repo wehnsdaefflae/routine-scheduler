@@ -902,7 +902,12 @@ by a test, by the engine, or by a past incident.
   width between 861 and 1900px, so an open dock lies on the Routines page's run-now column and on
   an endpoint card's save-key row. It therefore rests open only at ≥1900px, where the side TOC
   also lives and now ends above it; below that it starts collapsed and a click-open folds again
-  on the next route change (`components/screendock.js`).
+  on the next route change (`components/screendock.js`). A dock CONNECTS the first time it is
+  both open and on screen and keeps that connection through a fold — but the BROWSER dock hangs
+  up on `#/browser` and dials again on leaving (`releaseOnPage`, the operator's call 2026-11-05):
+  its own page is a full-size interactive copy of the same screen, so a connection held there is
+  a duplicate stream nobody can see. Not a seat problem — x11vnc runs `-shared` and the relay
+  bridges a socket per viewer, so both surfaces could always connect at once.
 - **A run never writes its own config through an ACTION.** `routine.yaml` is blocked by FILENAME
   anywhere a run can write, external repos included, on the action path (`grantpolicy`,
   `fileops._write_gate`, `grants`) — which is the only path that CAN block it: the file sits in
