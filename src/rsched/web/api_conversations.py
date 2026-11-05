@@ -1,5 +1,5 @@
 """Conversations API: living with one — the list, a message and its queued edits, delete,
-the phase graph, and artifact + attachment serving.
+the phase graph, artifact + attachment serving, and its own scripts catalog.
 
 A conversation is a routine-shaped dir under conversations_home (see conversations.py);
 its ONE run is continued in place — a message to a live run is an ordinary injection, a
@@ -21,7 +21,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from .. import conversations as conv_mod
-from .. import registry
+from .. import registry, scripts
 from ..engine import inbox
 from ..paths import read_json
 from . import artifacts
@@ -214,6 +214,16 @@ def phasegraph(request: Request, slug: str) -> dict:
     last = info.last_run
     return {"phases": [dict(s) for s in conv_mod.CONVERSATION_PHASES],
             "current": conv_mod.conversation_phase(last.state if last else None)}
+
+
+@router.get("/conversations/{slug}/scripts")
+def list_scripts(request: Request, slug: str) -> dict:
+    """The conversation's own `scripts/*.py` catalog — the routine route's twin (F833: the
+    operator decided 2026-11-05 that conversations hold scripts). Same reader as the engine's
+    capabilities digest (`scripts.list_scripts`), so the rail shows what a reply was told it
+    could call. Its own route, like `artifacts`, because a slug is unique only within a home.
+    """
+    return {"scripts": scripts.list_scripts(conversation_info(request, slug).cfg.dir)}
 
 
 @router.get("/conversations/{slug}/artifacts")

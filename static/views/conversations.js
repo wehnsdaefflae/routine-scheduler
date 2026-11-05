@@ -22,6 +22,7 @@ import { playbookRow } from "/static/components/playbook-row.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createRail } from "/static/components/rail.js";
+import { mountRunScripts } from "/static/components/runscripts.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createPhaseGraph } from "/static/components/phasegraph.js";
 import { createSubRunTree } from "/static/components/subruntree.js";
@@ -257,13 +258,9 @@ export async function render(view, slug, _query = {}) {
     const treeBody = detail.run_id ? rail.add("sub-runs", el("div", {})) : el("div", {});
     const filesBody = detail.run_id ? rail.add("files", el("div", {})) : el("div", {});
     // NO browser section here (F561, operator 2026-10-01: "we wanna remove the browser preview
-    // in the sidebar. it is redundant now that we have the browser preview chip"). The rail used
-    // to carry the browser-session handle, a status chip and the latest screenshot (D86, R262
-    // pt2). The permanent read-only dock (#browser-dock, components/browserdock.js) now shows
-    // the shared browser live on every page, so the rail copy was a second, POLLED, and
-    // demonstrably staler view of the same thing: it kept reading "● RUNNING" with an empty
-    // preview box after `browser-session stop` had returned `{"stopped": true}`, because its
-    // rows came from persisted handles refreshed on an 8 s timer rather than from the screen.
+    // in the sidebar. it is redundant now that we have the browser preview chip"): the permanent
+    // dock (components/browserdock.js) shows the shared browser live on every page, and the rail
+    // copy was a second, POLLED, staler view — "● RUNNING" over an empty box after a stop.
     // detached background tasks the assistant launched (the `detach` action): a flat cross-run
     // list with a cancel affordance. Hidden until there is at least one.
     const bgBody = rail.add("background", el("div", { class: "bg-tasks" }));
@@ -277,6 +274,8 @@ export async function render(view, slug, _query = {}) {
     const fileActivity = detail.run_id
       ? createFileActivity(filesBody, { url: `/api/runs/${detail.run_id}/files` }) : null;
     const artifacts = createArtifacts(artsBody, { slug });
+    // F833: a conversation holds its own scripts/ — the run rail's section, re-read per reply
+    const scripts = mountRunScripts(rail, { slug, base: "conversations" });
 
     const BG_LIVE = new Set(["queued", "starting", "running", "waiting_user", "paused"]);
     function paintBackground(rows) {
@@ -326,7 +325,7 @@ export async function render(view, slug, _query = {}) {
     paintBackground(detail.background || []);
 
     cleanup.push(() => { clearInterval(bgTimer);
-                         artifacts.destroy(); subRunTree?.stop(); });
+                         artifacts.destroy(); subRunTree?.stop(); scripts.stop(); });
 
     const chat = createChat(chatBox, {
       answer: (qid, text, decision) => api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),
@@ -371,7 +370,7 @@ export async function render(view, slug, _query = {}) {
       phaseGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
       if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); subRunTree?.refresh();
-                             fileActivity?.refresh(); }
+                             fileActivity?.refresh(); scripts.refresh(); }
       armPolls();            // the run going live or terminal changes what is worth polling for
       refreshBackground();   // a finished detached task wakes the conversation → catch it here
     };

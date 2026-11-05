@@ -47,7 +47,9 @@ def _audit(tmp, report=None):
 
 
 def _metas(c):
-    return {q["qid"]: q for q in c.get("/api/questions").json() if q.get("meta")}
+    # with the settled window the Decisions page asks for: a consumed receipt is SETTLED (F810)
+    rows = c.get("/api/questions", params={"settled": 25}).json()["items"]
+    return {q["qid"]: q for q in rows if q.get("meta")}
 
 
 def test_an_answered_audit_decision_keeps_a_receipt_carrying_his_words(api_client):
@@ -66,7 +68,7 @@ def test_an_answered_audit_decision_keeps_a_receipt_carrying_his_words(api_clien
     assert row["answered"] is True
     assert row["answer"] == "B — name it", row
     # it is not a new ask: every surface that COUNTS what waits filters `answered` out
-    assert [q["qid"] for q in c.get("/api/questions").json()
+    assert [q["qid"] for q in c.get("/api/questions").json()["items"]
             if q.get("meta") and not q.get("answered")] == ["audit:D158"]
 
 

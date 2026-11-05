@@ -13,7 +13,8 @@
 
 import { replaceHash } from "/static/router.js";
 import { api } from "/static/api.js";
-import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
+import { loadQuestions, subscribeQuestions, wantSettled } from "/static/questions-store.js";
+import { SETTLED_PAGE, settledMore } from "/static/components/settled-more.js";
 import { pendingBand } from "/static/components/pending.js";
 import { answerForm } from "/static/components/answerform.js";
 import { linkifyRefs } from "/static/components/reflinks.js";
@@ -33,14 +34,10 @@ const reportChip = (q) => (q.type === "report"
   ? chip(`report ${q.report || ""}${q.report_target ? ` → ${q.report_target}` : " → triage"}`,
          "partial")
   : null);
-// audit decisions reference findings/decisions by id (F63, D14) — make those clickable,
-// but ONLY in the audit's own voice (meta items); elsewhere a bare "D1" is a false positive
-// Render the question text as MARKDOWN, with the BLOCK renderer, whoever wrote it. A run lays
-// out what it found before it asks — the ask-policy rule and the deliberation contract both
-// push it to — so an ordinary deferred question arrives carrying a GFM table of counts, a
-// numbered list of options and a fenced snippet, exactly as a meta decision does. Rendered
-// inline those become literal pipes and asterisks in the one place the user has to read
-// carefully enough to decide. md() is a superset of mdInline(), so nothing reads worse for it.
+// Question text is MARKDOWN, block-rendered whoever wrote it: a run lays out what it found
+// (a GFM table, a numbered list, a fenced snippet) before it asks, and inline those became
+// literal pipes in the one place the user must read carefully. Finding/decision ids (F63, D14)
+// link only in the audit's own voice (meta items); elsewhere a bare "D1" is a false positive.
 const qBody = (q) => md(q.question);
 const qText = (q) => {
   const node = el("div", { class: "q-text" }, qBody(q));
@@ -67,7 +64,8 @@ export async function render(view, query = {}) {
   // filter + routine live in the URL (#/questions?filter=…&routine=…) so a routine
   // page's "answer" link can deep-link straight to its own open decisions
   const state = { filter: query.filter || "all", routine: query.routine || "",
-                  sort: "priority", items: [] };
+                  sort: "priority", items: [], snap: null };
+  const take = (snapshot) => { state.snap = snapshot; state.items = snapshot.items; };
   const syncURL = () => replaceHash("#/questions", {
     ...(state.filter !== "all" ? { filter: state.filter } : {}),
     ...(state.routine ? { routine: state.routine } : {}) });
@@ -165,11 +163,14 @@ export async function render(view, query = {}) {
     } else {
       qs.forEach((q, i) => list.append(item(q, i)));
     }
+    const more = state.filter !== "snoozed"
+      && settledMore(state.snap, (snap) => { take(snap); renderList(); });
+    if (more) list.append(more);
     if (focus) focusAt(0);
   }
 
   async function load({ focus = true } = {}) {
-    try { state.items = (await loadQuestions()).items; }
+    try { take(await loadQuestions()); }
     catch (err) { list.replaceChildren(emptyState("✕", "Couldn't load decisions", err.message)); return; }
     renderList({ focus });
   }
@@ -281,10 +282,8 @@ export async function render(view, query = {}) {
     ] : [];
     // Lifecycle controls beside the answer — DECLINE (the first-class no, R2197), defer-to-
     // next-run and snooze: the three ways a card leaves this page without an answer in prose.
-    // They live in their own component (components/decision-lifecycle.js) because this view is
-    // at its size ceiling, and because none of them is the answer protocol the form owns.
-    // `panel`/`controls`/`form` are declared below and reached at CLICK time, as the inline
-    // handlers did.
+    // Their own component (components/decision-lifecycle.js): none is the answer protocol the
+    // form owns. `panel`/`controls`/`form` are declared below and reached at CLICK time.
     const lifecycle = lifecycleControls(q, {
       settle: (label, note, cls = "partial") => {
         panel.classList.remove("warn");
@@ -419,11 +418,11 @@ export async function render(view, query = {}) {
     return panel;
   }
 
+  wantSettled(SETTLED_PAGE);   // the one reader that shows history asks for it (F810)
   await load();
-  // This page is a READER of the shared questions store (questions-store.js): it owns the bus
-  // listener, skips the llm_task/llm_process storm, and coalesces every surface's refresh into
-  // one fetch. This view used to fetch on EVERY bus event with no filter and no timer —
-  // several GETs a second while a run worked, each rebuilding every card.
+  // A READER of the shared questions store (questions-store.js), which owns the bus listener
+  // and coalesces every surface's refresh into one fetch — this view used to fetch on EVERY
+  // bus event, several GETs a second while a run worked, each rebuilding every card.
   //
   // The rebuild (renderList → list.replaceChildren) also yanks focus out of the answer field
   // you are typing into: on mobile it dismisses the keyboard and drops the caret, so the answer
@@ -437,7 +436,7 @@ export async function render(view, query = {}) {
   const paint = (snapshot) => {
     if (typingHere()) { deferred = snapshot; return; }
     deferred = null;
-    state.items = snapshot.items;
+    take(snapshot);
     renderList({ focus: false });
   };
   const unsubscribe = subscribeQuestions(paint);
@@ -445,5 +444,5 @@ export async function render(view, query = {}) {
     // focusout fires before focus settles on the next node — re-check on the next tick
     setTimeout(() => { if (deferred && !typingHere()) paint(deferred); }, 0);
   });
-  return unsubscribe;
+  return () => { unsubscribe(); wantSettled(0); };
 }

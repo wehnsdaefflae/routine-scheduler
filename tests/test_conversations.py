@@ -806,7 +806,7 @@ def test_answering_a_finished_conversation_resumes_it(client):
     qid = "q-decide"
     atomic_write_json(conv_dir / "questions" / "pending" / f"{qid}.json",
                       {"qid": qid, "question": "Which way?", "mode": "deferred", "asked": ts})
-    qs = c.get("/api/questions").json()
+    qs = c.get("/api/questions").json()["items"]
     assert any(q["qid"] == qid and q.get("conversation") for q in qs)
     r = c.post(f"/api/questions/{qid}/answer", json={"text": "left"})
     assert r.status_code == 200, r.text
@@ -822,7 +822,7 @@ def test_conversation_questions_reach_decisions(client):
     atomic_write_json(conv_dir / "questions" / "pending" / "q-1.json",
                       {"qid": "q-1", "question": "Which branch?", "options": [],
                        "asked": "20260712-120000", "mode": "deferred", "type": "question"})
-    qs = c.get("/api/questions").json()
+    qs = c.get("/api/questions").json()["items"]
     match = next(q for q in qs if q["qid"] == "q-1")
     assert match["conversation"] is True and match["routine"] == slug
     r = c.post("/api/questions/q-1/answer", json={"text": "main"})

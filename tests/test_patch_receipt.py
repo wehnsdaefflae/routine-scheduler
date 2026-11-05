@@ -197,7 +197,7 @@ def test_the_questions_api_says_whether_a_patch_was_applied(client):
                        "config_patch": {"budgets": {"max_turns": 120}}})
     c.post("/api/questions/q-row/answer", json={"text": "no, leave it"})
 
-    row = next(q for q in c.get("/api/questions").json() if q["qid"] == "q-row")
+    row = next(q for q in c.get("/api/questions").json()["items"] if q["qid"] == "q-row")
     assert row.get("answered") is True, row
     assert row.get("config_patch_applied") is False, (
         f"an answered patch row must state the patch verdict, not leave the reader to guess "
