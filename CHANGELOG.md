@@ -15,6 +15,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.502.0] — 2026-11-05
+
+### the nightly backup packs the loose objects and leaves the regenerable caches off-box (R3205)
+
+The operator chose both halves of R3205, verbatim: *"both (a) and (b)"*, after the measurement
+showed D235's own decided option cuts only 7.2% of the transferred files. Measured against the
+live transfer set: **69,251 loose git objects — 38% of the 170,029 files** the snapshot walks,
+each one a round trip over sshfs, against `TimeoutStartSec=4h` where the last SUCCESSFUL run
+finished with a 29-minute margin.
+
+- **(a)** Loose objects in every repository under the home are packed before the snapshot walk,
+  so the off-box tier transfers packs instead of tens of thousands of single files. `GC_REPOS=0`
+  switches it off; it can neither fail the night nor delay it past its own guard.
+- **(b)** The `.libreoffice` and per-routine `.secrets` caches — 14,312 + 22,093 files, ~20% of
+  the walk's round trips — are excluded from the OFF-BOX tier only. Both regenerate. The LOCAL
+  tier stays a complete copy, as R3204 requires.
+
+### the report ledger reads back AS hooks, and the first decision moves onto the stream (D152 step 7)
+
+The hooks campaign's remaining gap. Step 4 made the hook the SOURCE of every new report; what
+it left open is what `hooks/store.py`'s own docstring said out loud — *"Nothing reads this stream
+to make a decision yet"*. Ten modules fold `reports.jsonl` to answer something; none read the
+stream.
+
+- **`hooks/reportinv.hook_of_row`** — the projection read backwards, and EXACT rather than
+  approximate: all **5,016 rows of the live ledger round-trip identically** (zero mismatches,
+  pinned as a test). Lenient like `from_record`, and deliberately not routed through `Disposal`:
+  one live row carries a `closes` shape D196 now refuses, and history must read back as what it
+  says.
+- **`migrate_report_hooks`** — MIGRATION(expires=2026-12-31). The stream began 2026-10-19, the
+  ledger 2026-07-19: **3,952 rows covering 2,209 report ids had no hook**. Without the backfill a
+  decision on the stream would answer from three weeks of a four-month history and be wrong while
+  looking right. Merged by timestamp, atomic, idempotent, keyed by (id, event).
+- **The decision: the OPEN-THREAD CAP** now counts through `open_threads_now`, which reads the
+  stream — the first decision in the engine taken from the hooks. Conservative by design: the
+  ledger's answer is kept whenever the two disagree and a `hook_stream_diverged` health event is
+  filed, because the ledger is what the operator's backlog counts are built on.
+
+### a conversation can pre-expose a shared-store secret (D216 part a)
+
+Part (a) of the operator's fixed order *(c), (b), (a), (d)*. The two existing clear routes can
+only remove a row that already EXISTS, so a conversation's secret-exposure decision was
+reachable only by the engine asking at first use — while a routine's settings page has carried
+the three-state dial since D103. A conversation is the one run type with a human driving it, and
+it could not be told in advance.
+
+`GET/PUT /api/conversations/{slug}/secret-exposure`, a new verb in the SAME grants router (same
+mapping, same reader, same no-draft constraint), plus `static/components/secret-exposure.js`,
+which now serves BOTH pages — the routine page consumes it instead of its own copy.
+
+**Bounded by its key, not by its caller**: the entity id is built server-side from a validated
+store NAME, so `util:signal` or `fs-read:~/x` in the body is a 400 — no spelling reaches another
+grant class. Operator-token-only: a run exposing a secret to itself is what this surface must
+never permit. `expose: null` deletes the row, because undecided IS the absence of one.
+
+### the console names the private-IP OAuth cause instead of handing the user to Google (R3061)
+
+The operator tried to re-authorize a routine's Google connection and got Google's own error page
+instead of a consent screen: *"device_id and device_name are required for private IP"*, naming
+our app and `192.168.0.128`. It blocks the flow before any consent screen and affects EVERY
+routine's Google connection on this instance.
+
+`authorize-start` now returns the URL plus a **caveat** naming the host, the cause and the
+remedy, and the Connections card states it in a confirm dialog before opening the tab. A
+WARNING, not a refusal, deliberately: whether a redirect target is acceptable is the provider's
+call, DNS here need not match DNS at Google, and the operator may be on a tunnel this box cannot
+see — a hard refusal would leave him no way through a flow he sometimes genuinely needs.
+Confirm proceeds, cancel opens nothing, a public host gets no caveat and no extra click. New
+`src/rsched/oauth/redirecturi.py` covers 10/8, 172.16/12, 192.168/16, 127/8, 169.254/16,
+fc00::/7 and ::1, for literals and resolved names; an unresolvable name says nothing.
+
+**The `device_id`/`device_name` parameters were NOT added, on evidence**: Google's own
+`oauth2/web-server` (415 KB) and `oauth2/native-app` (160 KB) pages, fetched live, contain ZERO
+occurrences of either name, while the same grep finds `redirect_uri` and `loopback` — so the
+content was real and the absence is too. An undocumented parameter on every routine's consent
+request is not worth guessing at.
+
+`docs/oauth-connections.md` is corrected too: its setup step 3 told the operator a
+VPN-resolvable name was enough, which is the advice leading straight into this refusal. The
+defect is not CURED — the remedy is a public https `public_url`, which only the operator can set.
+
 ## [0.501.0] — 2026-11-05
 
 ### An unknown settings pattern is loud, and the vocabulary judge moved into the writer (D229, F610)
