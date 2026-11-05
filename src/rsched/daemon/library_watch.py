@@ -183,7 +183,7 @@ class LibraryWatch:
             if reask:
                 fields["reask"] = reask
             pending.queue(
-                home, kind="library-drift", routine=slug, run_id="", fields=fields,
+                self.server, kind="library-drift", routine=slug, run_id="", fields=fields,
                 summary=f"{slug}: {node['id']} — {node['why']}. {trigger}"
                         + (f" {reask}" if reask else ""))
             log.info("library drift: %s — %s", key, trigger)

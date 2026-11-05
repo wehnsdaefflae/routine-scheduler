@@ -236,8 +236,9 @@ def test_approving_writes_enabled_false_through_the_one_config_writer(api_client
     c, _tmp = api_client
     d = make_routine(slug="retire-me")
     _goal_met(d)
-    rec = pending.queue(d.parent, kind="goal-reached", routine="retire-me", run_id="retire-me:1",
-                        fields={"outcomes": []}, summary="finish line reached")
+    rec = pending.queue(c.app.state.server, kind="goal-reached", routine="retire-me",
+                        run_id="retire-me:1", fields={"outcomes": []},
+                        summary="finish line reached")
 
     r = c.post(f"/api/pending-creations/{rec['id']}/materialize")
     assert r.status_code == 200, r.text
@@ -258,8 +259,9 @@ def test_declining_reopens_the_finish_line_so_the_routine_runs_again(api_client,
     finishline.save(d, {"outcomes": [{"text": "published", "judge": "run"}]}, now=NOW)
     finishline.record(d, {"g1": ("met", "the page reads back")}, run_id="not-yet:1", now=NOW)
     assert finishline.goal_reached(d) is True
-    rec = pending.queue(d.parent, kind="goal-reached", routine="not-yet", run_id="not-yet:1",
-                        fields={"outcomes": []}, summary="finish line reached")
+    rec = pending.queue(c.app.state.server, kind="goal-reached", routine="not-yet",
+                        run_id="not-yet:1", fields={"outcomes": []},
+                        summary="finish line reached")
 
     r = c.post(f"/api/pending-creations/{rec['id']}/discard", json={"reason": "not really"})
     assert r.status_code == 200, r.text

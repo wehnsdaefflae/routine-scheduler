@@ -136,7 +136,7 @@ def test_a_gap_closed_with_the_library_standing_still_is_withdrawn_at_the_next_s
     _break_sig(lib)
     watch._check()
     (routines / "archived").mkdir()                   # a record for a routine that is gone…
-    pending.queue(routines, kind="library-drift", routine="archived", run_id="",
+    pending.queue(server, kind="library-drift", routine="archived", run_id="",
                   fields={"entity": "archived:secret:X", "node": {}, "head": ""}, summary="s")
     assert len(pending.load_all(routines)) == 2
     monkeypatch.setattr("rsched.secrets.load_secrets", lambda *a, **k: {"NEW_PIN": "1234"})

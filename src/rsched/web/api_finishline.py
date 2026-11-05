@@ -90,12 +90,14 @@ def checked(body: dict) -> dict:
     return doc
 
 
-def save(routine_dir: Path, slug: str, name: str, body: dict) -> dict:
+def save(server, routine_dir: Path, slug: str, name: str, body: dict) -> dict:
     """Validate and write the operator's finish line; queue the retirement card when this save
     is what completes it. Shared by this route and the settings page's one accept.
+
+    `server` is what the queue writer judges its record against (`pending.queue`, D229).
     """
     finishline.save(routine_dir, checked(body), now=now_iso())
-    goalreached.propose(routine_dir.parent, slug, name)
+    goalreached.propose(server, slug, name)
     goalreached.withdraw(routine_dir.parent, slug)
     return payload(routine_dir)
 
@@ -111,5 +113,5 @@ def set_finish_line(request: Request, slug: str, body: FinishLineBody) -> dict:
     and there is no two-writer race. A run already going keeps what it booted with.
     """
     info = _info(request, slug)
-    out = save(info.cfg.dir, slug, info.cfg.name, body.model_dump())
+    out = save(request.app.state.server, info.cfg.dir, slug, info.cfg.name, body.model_dump())
     return {"ok": True, **out, "live_run": active_run_dir(info) is not None}

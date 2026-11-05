@@ -128,7 +128,7 @@ def revise(ctx: RunContext, action: dict) -> dict:
                          "a second call queues a second revision. Finish the work that does "
                          "not depend on the edit, and say in your summary that it is armed.")}
 
-    rec = queue(home, kind=KIND, routine=ctx.routine.slug, run_id=ctx.run_id,
+    rec = queue(ctx.server, kind=KIND, routine=ctx.routine.slug, run_id=ctx.run_id,
                 fields={"target": slug, "lines": lines, "run_id": ctx.run_id},
                 summary=f"{ctx.routine.slug} proposes a revision to {slug}'s recipe — {first}")
     return {"kind": "create_routine", "slug": slug, "revises": True, "queued": True,

@@ -183,7 +183,7 @@ def apply_settings(request: Request, slug: str, body: ApplyBody) -> dict:
                              fields=["triggers"])
         applied.append("triggers")
     if finish is not None:
-        save_finish_line(info.cfg.dir, slug, info.cfg.name, finish)
+        save_finish_line(server, info.cfg.dir, slug, info.cfg.name, finish)
         applied.append("finish_line")
     drafts.clear(server.routines_home, slug)
     return {"ok": True, "applied": applied, **_settings_payload(request, slug)}

@@ -108,7 +108,7 @@ def test_a_hand_made_proposal_without_it_is_not_materialized(tmp_path):
     from rsched import pending
 
     server = seeded_server(tmp_path)
-    rec = pending.queue(server.routines_home, kind="create_routine", routine="scout",
+    rec = pending.queue(server, kind="create_routine", routine="scout",
                         run_id="scout:20261017-000000", summary="routine 'nox'",
                         fields={"slug": "nox", "name": "Nox", "instruction": "p",
                                 "workflow": "general-task"})

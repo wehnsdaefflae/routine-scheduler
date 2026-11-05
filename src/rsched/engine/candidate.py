@@ -106,7 +106,7 @@ def create(ctx: RunContext, action: dict) -> dict:
     data = load(home)
     data[slug] = {"replaces": old, "by": ctx.run_id, "created_at": now_iso(), "why": reason}
     atomic_write_json(home / CANDIDATES, data)
-    rec = queue(home, kind="replace-routine", routine=ctx.routine.slug, run_id=ctx.run_id,
+    rec = queue(ctx.server, kind="replace-routine", routine=ctx.routine.slug, run_id=ctx.run_id,
                 fields={"candidate": slug, "replaces": old, "why": reason},
                 summary=f"replace {old} by candidate {slug}")
     return {"kind": "create_routine", "slug": slug, "candidate": True, "replaces": old,
