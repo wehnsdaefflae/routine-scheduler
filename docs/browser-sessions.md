@@ -146,9 +146,12 @@ routine token's denied reads.
 **The clipboard** (D221, F831). The Browser tab's *sync clipboard with this machine* switch,
 under the screen and ON by default, shares this machine's clipboard with the browser in the
 container, both ways. What it switches is a BRIDGE (`components/clipboard-bridge.js`) and the
-iframe permission it runs under (`allow="clipboard-read; clipboard-write"`): what you copied
-here is read when you click or focus the screen and handed to noVNC's own send path, and what
-is copied in the container is written to this machine's clipboard the moment noVNC receives it.
+iframe permission it runs under (`allow="clipboard-read; clipboard-write"`): what is copied in
+the container is written to this machine's clipboard the moment noVNC receives it, and what you
+copied here is sent ON REQUEST — the *paste my clipboard into the screen* button beside the
+switch reads it and hands it to noVNC's own send path, then Ctrl-V in the screen pastes it. It is
+never read on a click or focus of the screen: 0.499.0 did, and Chrome answers a clipboard read
+with its own "Paste"/"Einfügen" prompt, which swallowed every click on the screen (2026-11-05).
 The permission alone did nothing — the first version shipped only that, and host-to-guest never
 worked — because neither noVNC the sidecars serve (1.3.0 here, 1.6.0 on the desktops) calls the
 browser's clipboard API at all: their clipboard is a manual side panel, a textarea whose

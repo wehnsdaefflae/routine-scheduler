@@ -17,7 +17,7 @@
 // session in is the reason the screen exists, and that needs a keyboard.
 
 import { api } from "/static/api.js";
-import { el, emptyState, skeleton, storage } from "/static/util.js";
+import { act, el, emptyState, skeleton, storage } from "/static/util.js";
 import { bridgeClipboard } from "/static/components/clipboard-bridge.js";
 import { BROWSER, grantPass as grantScreenPass, screenSrc } from "/static/components/screen.js";
 
@@ -103,11 +103,20 @@ export async function render(view) {
     class: "row small faint mt", "data-clipboard-sync-label": true,
     style: "gap:6px;align-items:center",
     title: "share this machine's clipboard with the browser in the container, both ways: what "
-           + "you copied here is sent when you click or focus the screen, and what is copied in "
-           + "the container lands on this machine's clipboard. Your browser asks once for "
-           + "clipboard access. Flipping it reconnects the screen, because a frame's clipboard "
-           + "permission is fixed when it loads. Off: neither direction is synced.",
+           + "what is copied in the container lands on this machine's clipboard, and the button "
+           + "beside this sends what you copied here into the container. Flipping it reconnects "
+           + "the screen, because a frame's clipboard permission is fixed when it loads. Off: "
+           + "neither direction is synced.",
   }, syncBox, "sync clipboard with this machine");
+  // Host → guest is ON REQUEST (clipboard-bridge.js): reading the clipboard on every click put
+  // Chrome's "Paste" prompt over the screen and swallowed the click (2026-11-05).
+  const pasteBtn = el("button", { class: "btn small", type: "button", "data-clipboard-send": true,
+    title: "send this machine's clipboard into the container's clipboard — then press Ctrl-V "
+           + "in the screen. Your browser may ask to allow the paste." }, "paste my clipboard into the screen");
+  pasteBtn.onclick = () => act(pasteBtn, async () => {
+    if (!syncOn()) throw new Error("clipboard sync is off");
+    if (!(await unbridge.send?.())) throw new Error("nothing sent — the clipboard is empty or the screen is not connected yet");
+  }, "clipboard sent — press Ctrl-V in the screen");
   box.replaceChildren(
     el("div", { class: "row", style: "gap:8px;align-items:center" },
       el("span", { class: "faint small" }, "relayed through this console · ",
@@ -129,5 +138,5 @@ export async function render(view) {
           setTimeout(() => { btn.textContent = "copy upstream address"; }, 2000);
         } }, "copy upstream address")),
     el("div", { class: "mt browser-screen-wrap" }, frame),
-    syncRow);
+    el("div", { class: "row", style: "gap:12px;align-items:center" }, syncRow, pasteBtn));
 }

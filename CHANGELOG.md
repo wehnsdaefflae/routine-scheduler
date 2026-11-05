@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.499.2] — 2026-11-05
+
+### Fixed — the browser screen took no clicks: every press opened Chrome's "Einfügen" prompt (F831)
+
+The operator, 2026-11-05: *"i cannot click anything in the sidecar browser frame anymore. it just
+shows an "Einfügen" context menu."* 0.499.0's clipboard bridge read this machine's clipboard on
+every press and focus of the screen, and Chrome answers a clipboard read with its own Paste
+prompt, which took the click. The host → guest direction is now ON REQUEST: a *paste my clipboard
+into the screen* button beside the switch (through `act()`), so a prompt can only follow a press
+made for exactly that. Guest → host stays automatic — a clipboard WRITE asks nothing.
+`tests/ui/test_browser_clipboard_bridge.py` now asserts that a click on the screen reads nothing.
+
 ## [0.499.1] — 2026-11-05
 
 ### Fixed — a recorded row with no status no longer demotes a changelog-addressed item to `unknown`

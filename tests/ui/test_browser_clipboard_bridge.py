@@ -64,34 +64,42 @@ def _host_clipboard(ui_page):
     return ui_page.evaluate("() => navigator.clipboard.readText()")
 
 
-def test_what_the_operator_copied_reaches_the_guest_when_he_clicks_the_screen(ui, ui_page):
+def test_a_click_on_the_screen_never_reads_the_clipboard(ui, ui_page):
+    """2026-11-05: 0.499.0 read the clipboard on every press of the screen, and Chrome answers a
+    clipboard read with its own "Paste"/"Einfügen" prompt — which swallowed every click, so the
+    operator could not use the browser at all. A click is a click; nothing is sent."""
     screen, frame = _open(ui, ui_page)
     _host_copy(ui_page, "copied on the host")
+    ui_page.evaluate("""() => { window.reads = 0; const r = navigator.clipboard.readText.bind(
+        navigator.clipboard); navigator.clipboard.readText = () => { window.reads++; return r(); }; }""")
+    frame.evaluate("""() => { window.reads = 0; const r = navigator.clipboard.readText.bind(
+        navigator.clipboard); navigator.clipboard.readText = () => { window.reads++; return r(); }; }""")
     screen.locator("body").click()
+    screen.locator("body").click()
+    ui_page.wait_for_timeout(300)
+    assert frame.evaluate("window.sent") == []
+    assert ui_page.evaluate("window.reads") == 0 and frame.evaluate("window.reads") == 0
+
+
+def test_the_button_sends_what_the_operator_copied_to_the_guest(ui, ui_page):
+    screen, frame = _open(ui, ui_page)
+    _host_copy(ui_page, "copied on the host")
+    ui_page.locator("button[data-clipboard-send]").click()
     until(lambda: frame.evaluate("window.sent") == ["copied on the host"],
           what="the host clipboard handed to noVNC's send path", page=ui_page)
     # the panel holds it too, which is what noVNC's own send reads
     assert frame.evaluate(
         "document.getElementById('noVNC_clipboard_text').value") == "copied on the host"
 
-    # an unchanged clipboard is not re-sent on every click
-    screen.locator("body").click()
-    ui_page.wait_for_timeout(300)
-    assert frame.evaluate("window.sent") == ["copied on the host"]
-
 
 def test_what_the_guest_copied_lands_on_this_machines_clipboard(ui, ui_page):
     screen, frame = _open(ui, ui_page)
     _host_copy(ui_page, "before")
     screen.locator("body").click()           # the screen has focus, as when he is using it
-    until(lambda: frame.evaluate("window.sent") == ["before"], what="first sync", page=ui_page)
     frame.evaluate("window.receive('copied in the container')")
     until(lambda: _host_clipboard(ui_page) == "copied in the container",
           what="the guest's copy written to the host clipboard", page=ui_page)
-    # and it is not bounced straight back into the guest as a new paste
-    screen.locator("body").click()
-    ui_page.wait_for_timeout(300)
-    assert frame.evaluate("window.sent") == ["before"]
+    assert frame.evaluate("window.sent") == [], "not bounced straight back into the guest"
 
 
 def test_with_the_switch_off_neither_direction_syncs(ui, ui_page):
