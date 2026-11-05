@@ -1191,7 +1191,8 @@ def test_settings_endpoints_crud(ui, ui_page):
         or models["llama"]["endpoint"] == "vllm"
 
     # the system-model blurb states the role-fallback behaviour (not "setup-time work" only)
-    expect(ui_page.locator(".panel", has_text="System model"))\
+    # (the D230 "Fleet tool-call model" panel names the system model too, so match its heading)
+    expect(ui_page.locator(".panel", has=ui_page.get_by_text("System model", exact=True)))\
         .to_contain_text("any role a routine leaves unset falls back to this system model")
 
     # max_tokens audit flag: unset → the ⚠ chip; setting a real value clears the flag.
