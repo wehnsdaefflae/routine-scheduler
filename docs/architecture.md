@@ -1824,7 +1824,10 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   (`daemon/lane_runs.py`) advances it one transition per tick: fire the member at the cursor, wait
   for a terminal state, then per the outcome and `on_failure` (`stop` aborts the rest — any
   non-`ok` outcome counts as failure, a missing/disabled/crashed member too; `continue` fires on)
-  fire the next. The chain's end emits a `lane_chain_done` / `lane_chain_stopped` health event;
+  fire the next. The chain's end emits a `lane_chain_done` / `lane_chain_stopped` health event
+  whose detail reconciles (`chain_detail`, F826): `3 of 5 members ran, 2 skipped (…), 0 not-ok`,
+  plus `N not reached` for a stopped chain, counted against the ARM-TIME member list — it used to
+  print the log's length as "member runs", so a switched-off member read as a run;
   a member it cannot fire emits a `lane_chain_member_skipped`.
   - **The lane schedule (D71)**: a lane may carry its own `cron` (+ the server `tz`, written by
     the web beside it — the lane editor has the same friendly editor a routine's schedule uses;

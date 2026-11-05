@@ -274,7 +274,7 @@ async def test_chain_end_emits_a_done_health_event(tmp_path):
     assert len(evs) == 1
     ev = evs[0]
     assert ev["routine"] == lane["id"] and ev["run_id"].startswith("lr-")
-    assert "Nightly: 2 member runs, 1 not-ok (b)" in ev["detail"]
+    assert "Nightly: 2 of 2 members ran, 1 not-ok (b)," in ev["detail"]
     assert "armed_by=ui" in ev["detail"]
 
 
@@ -300,7 +300,7 @@ async def test_a_switched_off_member_is_not_counted_not_ok(tmp_path):
     await mgr.tick(catalog)                                     # → chain done
     evs = health_events(server.routines_home, event="lane_chain_done")
     assert len(evs) == 1
-    assert "Daily: 2 member runs, 0 not-ok," in evs[0]["detail"]
+    assert "Daily: 1 of 2 members ran, 1 skipped (off), 0 not-ok," in evs[0]["detail"]
 
 
 async def test_stop_emits_a_stopped_health_event(tmp_path):
@@ -321,7 +321,7 @@ async def test_stop_emits_a_stopped_health_event(tmp_path):
     await mgr.tick(catalog)                                     # collects failure → stop
     evs = health_events(server.routines_home)
     stopped = [e for e in evs if e["event"] == "lane_chain_stopped"]
-    assert len(stopped) == 1 and "1 not-ok (a)" in stopped[0]["detail"]
+    assert len(stopped) == 1 and "1 not-ok (a), 1 not reached," in stopped[0]["detail"]
     assert not [e for e in evs if e["event"] == "lane_chain_done"]
 
 

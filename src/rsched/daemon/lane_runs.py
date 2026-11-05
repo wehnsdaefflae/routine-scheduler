@@ -109,12 +109,6 @@ class LaneRunManager:
         rec["status"] = status
         rec["ended"] = now_iso()
         entries = rec.get("log") or []
-        # A member the user switched off (or that retired at its finish line) is logged
-        # `outcome: "skipped"` — a deliberate non-fire, not a failure. Counting it as not-ok
-        # put "1 not-ok (aisafety-grant-steward)" on a lane's heartbeat every single day for
-        # a routine that was simply disabled, which is the one reading an audit must not get.
-        not_ok = [str(e.get("slug")) for e in entries
-                  if e.get("outcome") not in ("ok", "skipped")]
         # F637/F703: the row named a SLUG, and a slug is not a run — so when the member that
         # closed this chain was resumed and finished ok, no reader could tell. `stopped_by`
         # carries that member's run id (the last not-ok entry's, the one `on_failure: stop`
@@ -126,10 +120,7 @@ class LaneRunManager:
             self.home, f"lane_chain_{status}", routine=lane_id,
             run_id=str(rec.get("id") or ""),
             stopped_by=stopped_by or None,
-            detail=f"{rec.get('name') or lane_id}: {len(entries)} member runs, "
-                   f"{len(not_ok)} not-ok"
-                   + (f" ({', '.join(not_ok)})" if not_ok else "")
-                   + f", armed_by={rec.get('armed_by') or '?'}, armed {rec.get('created')}")
+            detail=chain_detail(rec, entries))
         log.info("lane chain %s lane=%s members=%d", status, lane_id,
                  len(rec.get("members") or []))
         lane_runs.remove(self.home, lane_id)
@@ -248,3 +239,37 @@ class LaneRunManager:
         if slug not in self.runner.active and not _pid_alive(st.get("pid")):
             return ("failed", "failed")
         return None
+
+
+def chain_detail(rec: dict, entries: list[dict]) -> str:
+    """The `lane_chain_done`/`lane_chain_stopped` detail: every figure reconciles (F826).
+
+    It printed `len(entries)` as "<n> member runs", and the chain LOG is not runs: a member
+    the user switched off (or that retired at its finish line) is logged `outcome: "skipped"`
+    with no run id, so `Professional · Daily` read "5 member runs" every day while two of its
+    five members were disabled and three runs existed. So the figures are now the chain's
+    MEMBERS (its arm-time fire list, `member_slugs` — the lane may have been edited since),
+    how many of them RAN (an entry with a run id), which were SKIPPED, which were NOT-OK, and
+    — for a chain that stopped — how many were never reached:
+    members = ran + skipped + missing + not reached, where a missing member (named, but not a
+    routine in any home) is a not-ok entry without a run.
+
+    A skipped member is a deliberate non-fire, never a not-ok: counting it as one put
+    "1 not-ok (aisafety-grant-steward)" on a lane's heartbeat every day for a routine that was
+    simply disabled, which is the one reading an audit must not get.
+    """
+    lane_id = str(rec.get("lane_id") or "")
+    members = len(member_slugs(rec))
+    ran = sum(1 for e in entries if e.get("run_id"))
+    skipped = [str(e.get("slug")) for e in entries if e.get("outcome") == "skipped"]
+    not_ok = [str(e.get("slug")) for e in entries
+              if e.get("outcome") not in ("ok", "skipped")]
+    unreached = max(0, members - len(entries))
+    parts = [f"{rec.get('name') or lane_id}: {ran} of {members} members ran"]
+    if skipped:
+        parts.append(f"{len(skipped)} skipped ({', '.join(skipped)})")
+    parts.append(f"{len(not_ok)} not-ok" + (f" ({', '.join(not_ok)})" if not_ok else ""))
+    if unreached:
+        parts.append(f"{unreached} not reached")
+    parts.append(f"armed_by={rec.get('armed_by') or '?'}, armed {rec.get('created')}")
+    return ", ".join(parts)

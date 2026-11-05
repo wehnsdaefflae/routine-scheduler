@@ -262,12 +262,12 @@ intentional operator action is never logged as a refusal. Nor is `enabled: false
 operator's own off switch.
 
 lane_chain_done / lane_chain_stopped: a sequential lane chain ended (daemon/lane_runs, F316).
-routine = the lane id, run_id = the chain record id (lr-...), detail counts member runs and
-not-ok outcomes. A lane id is OPAQUE: a lane keeps the id it was created with, so resolve it
-against the lane store (rsched.lanes) rather than reading a prefix. The in-flight file is
-consumed at that moment, so this event is the chain's durable record - and a scheduled lane's
-periodic done event is a HEARTBEAT: its absence across a schedule period means the lane starved
-(F316's defect class: a week of missed fires with zero signal).
+routine = the lane id, run_id = the chain record id (lr-...), detail = how many arm-time members
+RAN, were skipped, were not-ok, went unreached (F826, lane_runs.chain_detail). A lane id is OPAQUE:
+a lane keeps the id it was created with, so resolve it against the lane store (rsched.lanes)
+rather than reading a prefix. The in-flight file is consumed then: this is the chain's durable
+record - and a scheduled lane's periodic done event is a HEARTBEAT: its absence across a schedule
+period means the lane starved (F316's defect class: a week of missed fires with zero signal).
 
 lane_chain_member_skipped: a chain named a member that is not a routine in any home - routine =
 the member slug, detail names the lane and whether the chain stopped or continued past it. A
