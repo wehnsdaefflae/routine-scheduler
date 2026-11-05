@@ -48,6 +48,9 @@ OAuth has two halves that live in different places, because a routine run is hea
   the **public `GET /oauth/callback`** (mounted without the bearer dependency, like the webhook
   route — the unguessable per-flow `state` is the CSRF guard), which exchanges the code and writes
   the connection. The Settings tab polls the flow until the callback reports `connected`.
+- **`oauth/redirecturi.py`** — `private_host_caveat(redirect_uri)`: one sentence when the target
+  resolves into a range a provider will refuse (RFC1918, loopback, link-local, and the IPv6
+  equivalents), "" otherwise. An unresolvable name says nothing — a guess is not a cause.
 - **`daemon/oauth_refresh.py`** — `OAuthRefreshManager`, started by each scheduler tick but run
   beside it (`Scheduler._off_tick`: one pass at a time, so a provider that is down and answers in
   its 20 s timeout never holds a cron fire). It refreshes
@@ -74,8 +77,16 @@ OAuth has two halves that live in different places, because a routine run is hea
 2. **Settings → Secrets**: set `NOTION_OAUTH_CLIENT_ID` and `NOTION_OAUTH_CLIENT_SECRET`.
 3. **Settings → Connections → Public URL**: set the instance's external https BASE url — the
    base, not a path. The redirect is browser-side, so the base only has to be reachable from
-   the BROWSER that consents (a name resolvable inside your VPN is enough); it does have to be
-   https, because most providers refuse any other redirect URI. See deploy/DOCKER.md,
+   the BROWSER that consents; it does have to be https, because most providers refuse any other
+   redirect URI — and it must NOT resolve to a private address. Google refuses an authorization
+   request whose `redirect_uri` is a LAN, loopback or link-local address *before* it shows any
+   consent screen ("Access blocked: Authorization error — device_id and device_name are required
+   for private IP"), which is why a `192.168.x.x` base makes every re-consent impossible with
+   nothing in the console to explain it (R3061). `authorize-start` now returns a `caveat` naming
+   the host and the cause when it sees one, and the card states it and asks before opening the
+   provider's tab — a warning, not a block: the URL still comes back, since whether a target is
+   acceptable is the provider's call and a tunnel may resolve differently than this box does.
+   See deploy/DOCKER.md,
    "HTTPS for the console". The card then shows the exact callback (`<that>/oauth/callback`) to register as the
    integration's redirect URI. This base is persisted as `public_url` in config.yaml.
 4. **Connect**: enter an account label (e.g. `personal`), click *connect*, consent in the new tab.
