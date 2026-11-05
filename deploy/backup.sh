@@ -73,6 +73,37 @@ KEEP_WEEKLY=8
 # tests/test_backup_run_age.py pins.
 KEEP_RUNS_DAYS="${KEEP_RUNS_DAYS:-7}"
 
+# What the OFF-BOX tier alone leaves out, beside the aged run directories. The local tier carries
+# these: they are working files, and on a local disk their file count costs nothing.
+#
+# Measured on this instance 2026-11-05, over the set rsync actually walks (182,231 files / 8.68 GB,
+# ~209,000 round trips including directories): `.libreoffice` is 14,312 files (14,302 of them one
+# routine's) and routine `.secrets` caches are 22,093 (all of them one routine's generated restic
+# file lists and a backup log). Together ~20% of the round trips, for files that regenerate.
+# The operator's answer to that measurement, verbatim: "both (a) and (b)" — (b) being "exclude
+# .libreoffice and routine .secrets caches from the OFF-BOX tier only — another ~20%, and those
+# working files stay on the local tier".
+#
+# These are NOT in deploy/state-paths.sh's STATE_EXCLUDES, deliberately: that list is shared with
+# bundle.sh's migration tarball, which must be COMPLETE because its source host is decommissioned
+# straight afterwards, and a drift test holds the two consumers to one list. A tier-specific
+# exclusion belongs to the tier.
+OFFBOX_EXCLUDES=(
+  '.libreoffice'
+  'routines/*/.secrets'
+)
+
+# Pack each routine repo's loose git objects before the snapshot, because a loose object is ONE
+# FILE and therefore one sshfs round trip. Measured the same day: 69,251 loose objects — 38% of
+# the whole transferred set (routines/.git 61,482, the libraries home 4,225, this checkout 3,544)
+# — which `git gc` turns into a handful of packfiles while losing nothing: the history is packed,
+# not pruned. The operator's (a), from the same answer.
+#
+# `--auto` deliberately: it packs only a repo whose loose count is over git's own threshold, so a
+# nightly run costs nothing on a repo nobody touched. Every failure is swallowed and reported —
+# a repo that cannot be packed is a repo that gets snapshotted as it is, never a failed backup.
+GC_REPOS="${GC_REPOS:-1}"
+
 # shellcheck source=deploy/state-paths.sh
 source "$(dirname "${BASH_SOURCE[0]}")/state-paths.sh"
 
@@ -104,6 +135,13 @@ leaves no snapshot behind — the next run carries on in that folder rather than
 BACKUP_ROOT/latest points at the newest complete one.
 After a successful run it keeps the ${KEEP_DAILY} newest snapshots, plus the newest of each of the
 ${KEEP_WEEKLY} most recent older ISO weeks that have one, and deletes the rest.
+
+WHAT THE OFF-BOX TIER LEAVES OUT, beside the aged runs below: the .libreoffice and per-routine
+.secrets caches. Both regenerate, and measured over the set rsync walks (182,231 files) they are
+~20% of its round trips — 14,312 and 22,093 files, each almost entirely one routine's. The LOCAL
+tier carries them: on a local disk their file count costs nothing. Loose git objects are packed
+first (GC_REPOS=0 switches that off): 69,251 of them were 38% of the set, one file and one round
+trip each, and packing them loses no history.
 
 RUN HISTORY is carried in full on the LOCAL tier and aged out of the OFF-BOX one. A routine's run
 directory (routines/<routine>/runs/<YYYYMMDD-HHMMSS>) stops being mirrored off-box once it is
@@ -226,6 +264,51 @@ cleanup_runs_exclude_file() {
   if [ -n "${RUNS_EXCLUDE_FILE}" ]; then rm -f "${RUNS_EXCLUDE_FILE}" || true; fi
 }
 trap cleanup_runs_exclude_file EXIT
+
+# Pack the loose git objects of every repository inside the homes being snapshotted, so the
+# snapshot copies a few packfiles instead of tens of thousands of single-file objects. Reports one
+# line per repo it packed and NEVER fails the night: `git gc` is an optimisation, and a repo that
+# cannot be packed is simply snapshotted loose, as every night before this one was.
+pack_loose_objects() {
+  local before after packed=0 repo
+  if [ "${GC_REPOS}" -le 0 ]; then
+    echo "  git objects: GC_REPOS=${GC_REPOS} — not packing"
+    return 0
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    echo "  git objects: no git on this host — not packing" >&2
+    return 0
+  fi
+  before=0
+  after=0
+  # Depth-bounded on purpose: a routine's own repo, a conversation's, and the homes' own — not
+  # every nested checkout a routine may have cloned for its work (that is its business, and
+  # walking into them could pack a repo mid-write for a job nobody asked about).
+  for repo in "${HOME}"/routines/.git "${HOME}"/routines/*/.git \
+              "${HOME}"/conversations/.git "${HOME}"/conversations/*/.git \
+              "${HOME}"/.local/share/routine-scheduler-libraries/.git; do
+    [ -d "${repo}" ] || continue
+    local loose
+    loose=$(find "${repo}/objects" -type f -path '*/??/*' 2>/dev/null | wc -l)
+    before=$(( before + loose ))
+    # `--auto` packs only past git's own threshold, so an untouched repo costs nothing. A failure
+    # is reported and forgotten: the snapshot that follows does not depend on it.
+    if ! git --git-dir="${repo}" gc --auto --quiet 2>/dev/null; then
+      echo "  git objects: ${repo#"${HOME}/"} could not be packed — snapshotting it as it is" >&2
+      continue
+    fi
+    local now
+    now=$(find "${repo}/objects" -type f -path '*/??/*' 2>/dev/null | wc -l)
+    after=$(( after + now ))
+    if [ "${now}" -lt "${loose}" ]; then packed=$(( packed + 1 )); fi
+  done
+  if [ "${before}" -eq 0 ]; then
+    echo "  git objects: none loose — nothing to pack"
+  else
+    echo "  git objects: ${before} loose before, ${after} after (${packed} repo(s) packed) —"
+    echo "               each loose object is one file, and on the off-box share one round trip"
+  fi
+}
 
 collect_aged_runs() {
   local cutoff d ts rel
@@ -424,6 +507,8 @@ fi
 # tier where that cost does not exist ("the local tier may keep everything"). So the local
 # snapshot is COMPLETE, and the list is handed to the off-box mirror alone (mirror_offbox).
 collect_aged_runs
+# Before the walk, so the snapshot copies packfiles rather than the loose objects they replace.
+pack_loose_objects
 echo
 
 mkdir -p "${WORK}"
@@ -597,6 +682,10 @@ mirror_offbox() {
     # The paths in the list are HOME-relative, which is also how they sit inside a snapshot.
     excludes+=("--exclude-from=${RUNS_EXCLUDE_FILE}")
   fi
+  # What the off-box tier leaves out and the local tier keeps (OFFBOX_EXCLUDES, measured above).
+  # Same HOME-relative reading: the snapshot reproduces the home at its own paths.
+  local x
+  for x in "${OFFBOX_EXCLUDES[@]}"; do excludes+=("--exclude=${x}"); done
   out=$(rsync -a --delete --delete-excluded --omit-link-times --stats "${link[@]}" \
              "${excludes[@]}" "${SNAPS}/${newest}/" "${snaps}/.in-progress/" 2>&1) || rc=$?
   if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 24 ]; then
