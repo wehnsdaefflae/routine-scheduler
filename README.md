@@ -13,8 +13,8 @@ repository under `~/routines/<slug>`, bound by shared general **rules** (one lib
 and user-set **permissions** — the held set is per-routine config in `routine.yaml`.
 
 **The workflow is the harness.** Runs execute on a provider-agnostic engine: the
-orchestrator LLM follows the workflow document and acts only by returning one JSON action
-per turn. Routines run code through a global util (the `util` action), and every util subprocess
+orchestrator LLM follows the workflow document and acts only by returning JSON actions — one
+per turn, or several independent ones chained in one reply and run in order. Routines run code through a global util (the `util` action), and every util subprocess
 runs inside a Landlock sandbox scoped to the run's declared filesystem roots, declared secrets,
 and declared network need (`docs/sandboxing.md`); if none fits, the routine writes one
 (`write_util`, selftest-gated, optionally requiring your approval — and never silently recreating

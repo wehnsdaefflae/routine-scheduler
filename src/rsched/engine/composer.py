@@ -284,6 +284,17 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
 
 
 def kickoff_message(ctx: RunContext) -> str:
+    """The first user message of a fresh run — "start working, here is what a reply is".
+
+    It said "Reply with ONE JSON action object" from the first version, and that sentence
+    is the last instruction a run reads before its first action. Chaining shipped in 0.446.0
+    and is on for every routine, yet across the 60 most recent fleet transcripts exactly
+    1 turn of 8,084 carried more than one action (0.01%, 16 of 17 routines never once) — the
+    kickoff teaches the behaviour it measures. So it now says what the FIRST TURN is (one
+    step, not a plan) without denying what a reply may carry; the harness contract explains
+    chaining, and this line no longer contradicts it.
+    """
     return (f"Begin run {ctx.run_id}. Nothing has been executed yet — the workflow starts now, "
-            "at step 1. Reply with ONE JSON action object: your first actual step (not a plan, "
-            "not a summary, not a finish).")
+            "at step 1. Reply with your first actual step as a JSON action object (not a plan, "
+            "not a summary, not a finish) — or, if the first few steps are independent and you "
+            "already know them, chain them in that one reply.")

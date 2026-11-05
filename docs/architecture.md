@@ -401,6 +401,11 @@ the limits (single-writer status.json preserved).
   resumed leg reads `179 of 200 turns (this resume window, re-based at turn 327)` instead of
   pacing by a wall clock that counts the minutes it was not running. The **model can be switched mid-run** — a `control.json`
   `switch_model` signal applied at the turn boundary (`for_model` re-resolves every turn).
+  It can also be written on a TERMINAL run (F837): `POST /runs/{id}/model` answers
+  `armed_for_resume: true` and the run page keeps the control, because a run that died on its
+  model otherwise could only be resumed onto that same model. Nothing new honours it — the
+  signal is edge-triggered against `control-applied.json`, and the resumed leg's first turn
+  boundary precedes its first completion (`tests/test_switch_after_death.py`).
 - **"Once" survives a resume** (`engine/guardscope.py`). The once-only guards — the hold
   ledger, each rule assist's single fire and the one assist finish deferral, the repos found
   clean, the verifier's one challenge per line, a reminder hold's one label and a re-driven
@@ -1819,7 +1824,10 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   (`daemon/lane_runs.py`) advances it one transition per tick: fire the member at the cursor, wait
   for a terminal state, then per the outcome and `on_failure` (`stop` aborts the rest — any
   non-`ok` outcome counts as failure, a missing/disabled/crashed member too; `continue` fires on)
-  fire the next. The chain's end emits a `lane_chain_done` / `lane_chain_stopped` health event;
+  fire the next. The chain's end emits a `lane_chain_done` / `lane_chain_stopped` health event
+  whose detail reconciles (`chain_detail`, F826): `3 of 5 members ran, 2 skipped (…), 0 not-ok`,
+  plus `N not reached` for a stopped chain, counted against the ARM-TIME member list — it used to
+  print the log's length as "member runs", so a switched-off member read as a run;
   a member it cannot fire emits a `lane_chain_member_skipped`.
   - **The lane schedule (D71)**: a lane may carry its own `cron` (+ the server `tz`, written by
     the web beside it — the lane editor has the same friendly editor a routine's schedule uses;

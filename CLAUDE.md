@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 LLM agent routine scheduler. A **routine** = instruction + workflow + schedule, living in its own
 git repo under `~/routines/<slug>`. Runs execute on a provider-agnostic engine where *the workflow
-is the harness* — the orchestrator LLM follows the workflow document and acts only through one JSON
-action per turn. **A second AGENT LOOP in the path is banned**: it fights this harness and hides the
+is the harness* — the orchestrator LLM follows the workflow document and acts only through JSON
+actions (one per turn, or an independent few chained in one reply). **A second AGENT LOOP in the path is banned**: it fights this harness and hides the
 conversation. Endpoints are model TRANSPORTS only (docs/architecture.md). Routines run code through a global util,
 plus — for the ONE-OFF only — the `shell` ACTION behind the `shell` capability. Every util
 subprocess runs inside a Landlock sandbox scoped to

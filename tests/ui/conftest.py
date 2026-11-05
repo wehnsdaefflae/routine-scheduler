@@ -78,10 +78,10 @@ def pytest_collection_modifyitems(items):
     been absorbing.
 
     `flaky` reruns ONLY on failure, so an intermittent blip passes on retry while a real
-    regression still fails all attempts (F120; reruns=4/2s since F261, where a 2-rerun shield
-    was pierced twice in one night under cron load). `rerun_except` exempts a wedged sidecar:
-    that failure is the same on every attempt, and spending four reruns per test on it turns
-    a one-line diagnosis into a gate-length one.
+    regression still fails all attempts (F120; reruns=4/2s since F261). `rerun_except` exempts
+    what fails identically on every attempt: a wedged sidecar, and — F834 — a node pytest-timeout
+    KILLED at the 300 s ceiling, which never finished, so no retry clears it. The shield re-ran
+    such nodes 3-4x: 201 of 448 worker-minutes, and two release gates into a `timeout` verdict.
 
     tryfirst, because xdist's own worker-side hook reads `xdist_group` to build the nodeid
     suffix the scheduler groups on. For an explicit path argument this conftest is an INITIAL
@@ -103,7 +103,7 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.flaky(
                 reruns=4, reruns_delay=2,
                 rerun_except=r"sidecar .* is wedged|BROWSER_CDP_TOKEN is required|no local "
-                             r"browser"))
+                             r"browser|from pytest-timeout"))
 
 
 #: Which browser this suite drives, and why — `browsersource.py` beside this file carries the

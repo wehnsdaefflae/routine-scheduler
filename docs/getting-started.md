@@ -26,8 +26,9 @@ One routine = one directory under `~/routines/<slug>`, holding:
 Two design rules explain most of the system's shape:
 
 - **The workflow is the harness.** There is no hidden agent framework: the model reads the
-  workflow and acts through exactly ONE JSON action per turn (run a util, read/write a
-  file, ask you, spawn a sub-workflow, finish). Every action and its result is in the
+  workflow and acts only through JSON actions (run a util, read/write a file, ask you,
+  spawn a sub-workflow, finish) — one per turn, or a few independent ones chained in one
+  reply, run in order and stopped at the first failure. Every action and its result is in the
   transcript you can read.
 - **Routines run code through utils.** The way a routine runs code is a **global util** — a
   named, selftested script shared by all routines (`websearch`, `gmail`, `page-fetch`, …).

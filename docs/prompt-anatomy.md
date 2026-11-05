@@ -184,7 +184,7 @@ digest; everything you need is in the instruction)`.
 Fresh run — `kickoff_message()`:
 
 ```
-Begin run job-radar:20260712-070000. Nothing has been executed yet — the workflow starts now, at step 1. Reply with ONE JSON action object: your first actual step (not a plan, not a summary, not a finish).
+Begin run job-radar:20260712-070000. Nothing has been executed yet — the workflow starts now, at step 1. Reply with your first actual step as a JSON action object (not a plan, not a summary, not a finish) — or, if the first few steps are independent and you already know them, chain them in that one reply.
 ```
 
 Resumed run — instead of the kickoff, the prior transcript is replayed into the message
@@ -1246,7 +1246,7 @@ Also watch for postings mentioning 'RAG evaluation' — a friend says those pay 
 ### 5.2 First user message (kickoff, with the ONE-SHOT util reminder tail)
 
 ```
-Begin run job-radar:20260712-070000. Nothing has been executed yet — the workflow starts now, at step 1. Reply with ONE JSON action object: your first actual step (not a plan, not a summary, not a finish).
+Begin run job-radar:20260712-070000. Nothing has been executed yet — the workflow starts now, at step 1. Reply with your first actual step as a JSON action object (not a plan, not a summary, not a finish) — or, if the first few steps are independent and you already know them, chain them in that one reply.
 [tools: the CAPABILITIES catalog lists the global utils; run `util name=list args=["<name>"]` for one util's exact usage; if none fits, write_util to create/revise one (needs the user's approval first).]
 ```
 

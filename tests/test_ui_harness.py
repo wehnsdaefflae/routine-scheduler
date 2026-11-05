@@ -82,6 +82,14 @@ def test_ui_items_carry_ui_and_rerun_markers_and_spread_when_each_worker_launche
     # unconditional token demand cost 22 tests 88 reruns and 183 s before one ran a line
     assert "BROWSER_CDP_TOKEN is required" in flaky.kwargs["rerun_except"]
     assert "no local browser" in flaky.kwargs["rerun_except"]
+    # F834: a test KILLED at the per-test ceiling never finished, so a retry cannot clear it.
+    # Two release gates died on the shield re-running such nodes 3-4x (201 of 448 worker-minutes
+    # in 1793666213256726393-release), which produced a `timeout` verdict authorizing nothing.
+    # The needle is pytest-timeout's own failure text, `Timeout (>300.0s) from pytest-timeout.`
+    assert "from pytest-timeout" in flaky.kwargs["rerun_except"]
+    import re as _re
+    assert _re.search(flaky.kwargs["rerun_except"], "Timeout (>300.0s) from pytest-timeout."), \
+        "the exemption must match the message pytest-timeout actually raises"
 
 
 def test_an_attached_sidecar_still_pins_the_directory_to_one_work_unit(monkeypatch):

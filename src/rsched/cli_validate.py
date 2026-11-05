@@ -110,7 +110,7 @@ def _instance_problems(server) -> list[str]:
     """Coherence checks that belong to no single routine, so no routine's surface can see them.
 
     A LANE is the case twice over. A scheduled lane with no members fires nothing on every tick
-    of its cron, forever, leaving a `lane_chain_done: 0 member runs` in the health stream that
+    of its cron, forever, leaving a `lane_chain_done: 0 of 0 members ran` in the health stream that
     reads exactly like a lane whose members all completed. Two of them had been running empty
     for weeks. And a lane naming a slug that is not a routine is a DANGLING REFERENCE: routines
     are deleted out of band, so no cascade removes them from the store, the chain logs a

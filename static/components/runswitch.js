@@ -46,7 +46,10 @@ export function createModelSwitch(runId, modelSpan) {
       try {
         const r = await api(`/api/runs/${runId}/model`, { method: "POST",
           body: { model: mSel.value, effort: eSel.value } });
-        toast(`${r.switch} — takes effect next turn`);
+        // F837: on a TERMINAL run the switch is armed for the resume, not for "next turn" —
+        // the server says which (`when`), because a control that promises a turn that will
+        // never come is how a person concludes the switch did nothing.
+        toast(`${r.switch} — takes effect ${r.when || "at the next turn"}`);
       } catch (err) { toastError(err); }
     };
     node.append(el("div", { class: "row mt", style: "gap:5px" }, mSel, eSel, go));
