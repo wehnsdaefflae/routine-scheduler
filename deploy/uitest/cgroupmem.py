@@ -15,14 +15,20 @@ inside a job leaves no trace in these files at all. Only the host settles that q
 `journalctl -k | grep 'Memory cgroup out of memory'`. Every reading therefore carries
 `proves_no_oom: false`, and that field is never anything else.
 
-HOW THE NUMBER IS TAKEN, in order of preference:
+HOW THE NUMBER IS TAKEN. The question is always "what did THIS job peak at", so the rule is:
+use the kernel's mark only when it covers this job alone, and sample otherwise.
   memory.peak    the kernel's own high-water mark — nothing to sample, nothing missed. Writing
-                 "0" resets it (Linux 6.1+), so when this job has the container to itself the
-                 mark covers exactly this job's duration: `bound: "exact"`. Where the kernel
-                 refuses the reset, or another job is running in this same cgroup, the mark
-                 includes memory that was not this job's: `bound: "upper"`.
-  memory.current sampled while the job runs, for a kernel that exposes no memory.peak. A spike
-                 between two samples is missed, so the number is a floor: `bound: "lower"`.
+                 "0" resets it (Linux 6.1+), so when the reset SUCCEEDS and this job has the
+                 container to itself the mark covers exactly this job: `bound: "exact"`.
+  memory.current sampled while the job runs, whenever that reset did NOT happen — no
+                 `memory.peak`, a kernel that refuses the write, a read-only cgroup mount, or a
+                 concurrent job. A spike between two samples is missed, so the number bounds
+                 this job from BELOW: `bound: "lower"`.
+  Where a mark was read but not reset, it is carried as `cgroup_lifetime_peak_bytes` next to
+  the sample: it covers the container's whole life, so it bounds this job from above. Reporting
+  it AS the job's peak is what made this instrument useless for its first week — the `uitest`
+  container mounts `/sys/fs/cgroup` read-only, the reset failed on every job, and the gate was
+  handed the container's lifetime mark with `samples: 0`.
 
 The ceiling comes from `memory.max`, which reads `max` on a container with no limit set (this
 repo leaves the `uitest` ceiling to the host's docker-compose.override.yml) — then there is no
@@ -100,17 +106,27 @@ def cgroup_dir(root: Path | None = None, proc: Path | None = None) -> Path | Non
     return None
 
 
-def _reading(where: Path, peak: int, bound: str, samples: int, overlapped: bool) -> dict:
+def _reading(where: Path, peak: int, bound: str, samples: int, overlapped: bool,
+             lifetime: int | None = None) -> dict:
     limit = _read_int(where / "memory.max")
-    return {"peak_bytes": peak,
-            "limit_bytes": limit,
-            "peak_pct_of_limit": round(100.0 * peak / limit, 1) if limit else None,
-            "bound": bound,
-            "samples": samples,
-            "cgroup": str(where),
-            "jobs_overlapped": overlapped,
-            #: Never true, whatever the number is: see this module's docstring.
-            "proves_no_oom": False}
+    reading = {"peak_bytes": peak,
+               "limit_bytes": limit,
+               "peak_pct_of_limit": round(100.0 * peak / limit, 1) if limit else None,
+               "bound": bound,
+               "samples": samples,
+               "cgroup": str(where),
+               "jobs_overlapped": overlapped,
+               #: Never true, whatever the number is: see this module's docstring.
+               "proves_no_oom": False}
+    # The kernel's own mark, carried ALONGSIDE a sampled number rather than instead of it: it
+    # covers the container's whole life (this job and every job before it), so it bounds this
+    # job from above while `peak_bytes` bounds it from below. Both are facts; neither is the
+    # other. Absent when there is no `memory.peak` to read — never defaulted to the sample.
+    if lifetime is not None:
+        reading["cgroup_lifetime_peak_bytes"] = lifetime
+        if limit:
+            reading["lifetime_pct_of_limit"] = round(100.0 * lifetime / limit, 1)
+    return reading
 
 
 class Watch:
@@ -134,7 +150,14 @@ class Watch:
             return
         if (where / "memory.peak").exists():
             self._reset = exclusive and _write_zero(where / "memory.peak")
-        elif (where / "memory.current").exists():
+        # SAMPLE UNLESS THE RESET ACTUALLY HAPPENED. Only a reset mark covers this job alone;
+        # without one the kernel's mark covers the container's whole life and attributes
+        # nothing to the stage that is being measured. That is not a theoretical branch: it is
+        # THIS deployment. `/sys/fs/cgroup` is mounted `ro` in the `uitest` container, so the
+        # write fails [Errno 30] on every job, and the reading that reached the gate was the
+        # lifetime mark with `samples: 0` — which is why D226's uitest half had produced no
+        # usable number since it shipped, while `memory-peaks.jsonl` carried engine rows only.
+        if not self._reset and (where / "memory.current").exists():
             self._thread = threading.Thread(target=self._sample, name="uitest-memory",
                                             daemon=True)
             self._thread.start()
@@ -164,13 +187,14 @@ class Watch:
             self._thread.join(timeout=SAMPLE_EVERY_S * 4)
         if self.where is None:
             return None
-        if self._sampled is not None:               # sampled: no memory.peak on this kernel
-            return _reading(self.where, self._sampled, "lower", self._samples, self.overlapped)
-        peak = _read_int(self.where / "memory.peak")
-        if peak is None:
+        lifetime = _read_int(self.where / "memory.peak")
+        if self._sampled is not None:     # sampled: no resettable memory.peak for this job
+            return _reading(self.where, self._sampled, "lower", self._samples,
+                            self.overlapped, lifetime)
+        if lifetime is None:
             return None
         exact = self._reset and not self.overlapped
-        return _reading(self.where, peak, "exact" if exact else "upper", 0, self.overlapped)
+        return _reading(self.where, lifetime, "exact" if exact else "upper", 0, self.overlapped)
 
 
 def watch(exclusive: bool = True, root: Path | None = None,
