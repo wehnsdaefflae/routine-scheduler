@@ -143,6 +143,26 @@ store, so a browser pass opens no desktop (`/api/desktop-view/pass` mints that o
 `RSCHED_API_TOKEN` can mint neither — both are POSTs — and the relay paths are among the
 routine token's denied reads.
 
+**The clipboard** (D221, F831). The Browser tab's *sync clipboard with this machine* switch,
+under the screen and ON by default, shares this machine's clipboard with the browser in the
+container, both ways. What it switches is a BRIDGE (`components/clipboard-bridge.js`) and the
+iframe permission it runs under (`allow="clipboard-read; clipboard-write"`): what you copied
+here is read when you click or focus the screen and handed to noVNC's own send path, and what
+is copied in the container is written to this machine's clipboard the moment noVNC receives it.
+The permission alone did nothing — the first version shipped only that, and host-to-guest never
+worked — because neither noVNC the sidecars serve (1.3.0 here, 1.6.0 on the desktops) calls the
+browser's clipboard API at all: their clipboard is a manual side panel, a textarea whose
+`change` sends its text and whose value noVNC overwrites when the guest copies. The bridge
+drives that panel from the console, which can reach the frame's document only because the
+screen is relayed same-origin, and it calls the FRAME's own `navigator.clipboard` under that
+explicit grant. OFF detaches the bridge as well as dropping the grant, and the bridge is what
+stops the sync: a same-origin frame may be allowed the clipboard by default, which is how the
+grant-only switch looked like control over a channel nothing used. x11vnc relays the X CLIPBOARD selection (no `-nosel` /
+`-noclipboard` in `deploy/chrome-entrypoint.sh`). Your browser asks once for clipboard access;
+flipping the switch reconnects the screen, because a frame's permissions are fixed when it
+loads. The read-only dock mirror has no clipboard at all, and the agent desktops' screens carry
+the permission but no bridge — their clipboard is the noVNC side panel by hand.
+
 ### Fallbacks when the console is not the way in
 
 Compose publishes websockify on the host's loopback (`127.0.0.1:6080`), which an SSH tunnel

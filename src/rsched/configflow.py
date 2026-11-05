@@ -66,9 +66,9 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "fs_read_roots": (NEXT_RUN, ("the sandbox roots are computed at boot and passed to every "
                                  "util subprocess; an access-REQUEST decided mid-run does reach "
                                  "the run, a config edit does not")),
-    "fs_write_roots": (NEXT_RUN, ("the sandbox jail is built at boot from these roots and "
-                                  "handed to every util subprocess; widening it mid-run would "
-                                  "not reach the jails already created")),
+    "fs_write_roots": (NEXT_RUN, ("the sandbox roots are computed at boot and passed to every "
+                                  "util subprocess; an access-REQUEST decided mid-run does "
+                                  "reach the run, a config edit does not")),
     "keep_runs": (NEXT_RUN, "retention is applied after a run, never during one"),
     # The escalation ladder. `engine/ladder.ladder_settings` runs at every turn boundary, which
     # makes it LOOK live — but it reads `ctx.routine`, the config object composed at boot, so a

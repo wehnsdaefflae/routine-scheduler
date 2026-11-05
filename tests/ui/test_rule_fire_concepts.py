@@ -8,7 +8,8 @@ Both properties are asserted against the real renderer in the real browser:
 
 1. **A reminder id is a LINK when the mount knows whose transcript it is.** `createTranscript`
    takes the routine `slug`, so a `rem-…` in a `remind` / `remind_feedback` side field points at
-   `#/changes/<slug>`, whose Recipe health carries that reminder's row, its pattern and its tally
+   `#/changes/<slug>?rem=<id>`, whose Recipe health carries that reminder's row, its pattern and
+   its tally, and lands on that row (F832, tests/ui/test_reminder_landing.py)
    (`static/views/routine-health.js`). Without a slug there is nowhere to send the reader, so the
    id stays the plain `<code>` it already was — a dead link is worse than dead text, and that
    negative case is asserted too, because it is the one a later "link everything" change breaks.
@@ -81,7 +82,8 @@ def test_a_reminder_id_links_to_its_row_only_when_the_mount_knows_the_routine(ui
     linked = ui_page.locator("#with-slug .note a.concept-link")
     # both side fields name the reminder, so both of them link to it
     assert linked.count() == 2, "the remind and remind_feedback ids should both be links"
-    expect(linked.first).to_have_attribute("href", "#/changes/uir")
+    # to the reminder's own row, not the top of the page (F832)
+    expect(linked.first).to_have_attribute("href", "#/changes/uir?rem=rem-mv")
     assert linked.first.inner_text() == "rem-mv"
     expect(linked.first).to_be_visible()
     # the link REPLACES dead text and nothing else: the pattern, the consequence and the label

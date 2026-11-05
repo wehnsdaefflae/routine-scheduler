@@ -43,14 +43,17 @@ export function permissionLink(slug, { cls = "concept-link" } = {}) {
                    title: `read the ${text} permission` }, text);
 }
 
-/** A reminder id as a link to the development view whose Recipe health carries it and its
- *  tally. Without a slug there is nowhere to send the reader, so the id renders as the plain
- *  code it is — a dead link is worse than dead text. */
+/** A reminder id as a link to ITS ROW in the development view's Recipe health, where its
+ *  pattern and tally are (`?rem=<id>` — views/routine-health.js lands on `tr[data-rem]`, F832:
+ *  the page's top left a reader hunting one row among tens). Without a slug there is nowhere to
+ *  send the reader, so the id renders as the plain code it is — a dead link is worse than dead
+ *  text. */
 export function reminderLink(rid, slug, { cls = "concept-link" } = {}) {
   const text = String(rid ?? "");
   if (!text) return text;
   if (!slug) return el("code", { class: "rem-id" }, text);
-  return el("a", { class: cls, href: `#/changes/${encodeURIComponent(String(slug))}`,
+  const href = `#/changes/${encodeURIComponent(String(slug))}?rem=${encodeURIComponent(text)}`;
+  return el("a", { class: cls, href,
                    title: `${text} — see its pattern and tally in ${slug}'s Recipe health` },
     el("code", { class: "rem-id" }, text));
 }

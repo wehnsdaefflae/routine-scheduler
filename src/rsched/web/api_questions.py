@@ -201,8 +201,8 @@ def _tell_live_run(request: Request, routine_dir: Path, before: object) -> None:
     what changed and which half reaches it (F337, `routines_common.signal_config_change`) —
     the PATCH routes did, this one did not. The decided entity itself already reaches the run
     through the answer (the overlay bridge); what the note adds is the rest of the edit — a
-    `grants:` row adopted live, a capability cascade or a new root named as next-run — so the
-    run is never left reasoning from a config it no longer has.
+    `grants:` row adopted live, a capability cascade named as next-run. A granted fs ROOT is
+    live at once (F829: each jail is built per call from `ctx.write_roots()`), as its reason says.
     """
     from ..configflow import ADOPTABLE
     from .routines_common import signal_config_change
