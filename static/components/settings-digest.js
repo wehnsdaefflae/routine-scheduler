@@ -24,16 +24,15 @@ const list = (xs, none = "none", max = 4) => {
 
 export function scheduleLine(spec) {
   const f = spec?.friendly || spec || {};
-  const catchup = spec?.catchup === "run_once" ? " · runs once if a fire was missed" : "";
   switch (f.frequency) {
     case "disabled": return "disabled — no new runs";
     case "manual": case undefined: return "manual — only when started";
-    case "hourly": return `hourly at :${String(f.minute ?? 0).padStart(2, "0")}${catchup}`;
-    case "daily": return `daily at ${f.time}${catchup}`;
+    case "hourly": return `hourly at :${String(f.minute ?? 0).padStart(2, "0")}`;
+    case "daily": return `daily at ${f.time}`;
     case "weekly":
       return `weekly on ${(f.weekdays || []).map((d) => WEEKDAY[d] || d).join(", ") || "no day"} `
-        + `at ${f.time}${catchup}`;
-    case "monthly": return `monthly on day ${f.day} at ${f.time}${catchup}`;
+        + `at ${f.time}`;
+    case "monthly": return `monthly on day ${f.day} at ${f.time}`;
     case "custom": return `custom cron ${f.cron}`;
     default: return String(f.frequency);
   }

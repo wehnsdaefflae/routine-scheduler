@@ -45,7 +45,7 @@ def _routine(home, slug, *, total=-1, max_turns=200, scaffolded=None):
     d.mkdir()
     (d / "main.md").write_text("# recipe\n", encoding="utf-8")
     raw = {"name": slug, "slug": slug, "description": "d",
-           "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "skip"},
+           "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin"},
            "budgets": {"max_turns": max_turns,
                        "max_total_turns": total if scaffolded is None else scaffolded,
                        "max_wall_clock_min": 45}}
@@ -150,7 +150,7 @@ def test_a_non_repo_config_keeps_its_minus_one(tmp_path):
     (d / "main.md").write_text("# recipe\n", encoding="utf-8")
     (d / "routine.yaml").write_text(yaml.safe_dump(
         {"name": "historyless", "slug": "historyless", "description": "d",
-         "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "skip"},
+         "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin"},
          "budgets": {"max_turns": 100, "max_total_turns": -1}}), encoding="utf-8")
 
     record = migrate_total_turns.run_migration(server)

@@ -71,7 +71,7 @@ def test_detached_run_defers_blocking_ask(tmp_path, scripted):
     (d / "inbox").mkdir()
     (d / "routine.yaml").write_text(yaml.safe_dump({
         "slug": "bg-task", "name": "t", "enabled": True,
-        "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
+        "schedule": {"cron": "", "tz": "Europe/Berlin"},
         "workflow": {"library_slug": "general-task", "library_commit": ""},
         "budgets": {"max_turns": 10, "ask_timeout_min": 1}}), encoding="utf-8")
     (d / "instruction.md").write_text("do it", encoding="utf-8")

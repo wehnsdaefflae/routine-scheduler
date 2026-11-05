@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import RoutineConfig, ServerConfig, load_routine
 from .engine.inbox import open_questions
-from .firetimes import last_due_fire
 from .ids import is_slug
 from .paths import read_json
 from .readmodels.memo import fingerprint
@@ -89,7 +88,7 @@ class RoutineInfo:
     @property
     def fireable(self) -> bool:
         """May the daemon start a run of this routine at all? ONE predicate for every fire
-        path — schedule, boot catch-up, lane chain, event trigger, one-shot.
+        path — schedule, lane chain, event trigger, one-shot.
 
         Two different "no"s: `enabled` is the user's switch, `retired` is the routine's own
         finish line being reached. `retired` used to be honoured by the schedule and the lane chain
@@ -317,29 +316,10 @@ def homes_fingerprint(server: ServerConfig) -> str:
 
 def parse_run_ts(ts: str) -> datetime | None:
     """Parse a run-ts back to an aware datetime. Run-ts is ALWAYS UTC (see ids.run_ts), so it
-    is read as UTC regardless of the routine's display tz — catch-up comparisons are by
-    absolute instant. (Reading it in the routine's tz used to skew last_start by the
-    server↔routine offset, which could spuriously re-fire a run_once routine on a UTC host.)
+    is read as UTC regardless of the routine's display tz — every comparison is by absolute
+    instant.
     """
     try:
         return datetime.strptime(ts, "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
     except ValueError:
         return None
-
-
-def missed_fire(cfg: RoutineConfig, runs: list[RunInfo], now: datetime) -> datetime | None:
-    """Boot-time catch-up: the most recent due fire that no run covered, honoring the
-    routine's catchup policy. Returns the missed fire time or None.
-    """
-    if cfg.catchup != "run_once" or not cfg.cron or not cfg.enabled:
-        return None
-    due = last_due_fire(cfg, now)
-    if due is None:
-        return None
-    last_start = parse_run_ts(runs[0].ts) if runs else None
-    if last_start is None or last_start < due - timedelta(seconds=59):
-        return due
-    return None
-
-
-

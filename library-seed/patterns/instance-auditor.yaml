@@ -9,7 +9,6 @@ asks:
   question: How often should it audit?
 settings:
   schedule:
-    catchup: skip
     friendly:
       frequency: weekly
       time: 04:00

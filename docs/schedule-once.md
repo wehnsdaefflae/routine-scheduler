@@ -84,8 +84,8 @@ the `Scheduler` after the cron loop and beside `triggers.tick` (`daemon/schedule
    with a log line (like `TriggerManager._drop`).
 
 **Missed while the daemon was down:** a `fire_at` already past at boot is still on disk →
-it fires on the first tick (a make-up fire — desirable for a one-shot; the point is it
-*eventually* runs once), however stale it has become. An `expires_at` field once bounded that
+it fires on the first tick, however stale it has become — a one-shot is a REQUEST whose point is
+that it *eventually* runs once, so D237's "a missed cron fire is skipped" does not reach it. An `expires_at` field once bounded that
 staleness, but no caller set it and no surface showed it, so T3.5 deleted it rather than build
 a console for it: cancel an armed one-shot you no longer want, which the API and the page do.
 
@@ -148,7 +148,7 @@ is a **new engine action** the engine executes un-sandboxed, exactly like `write
 
 - **Unit:** spool read/write/consume; `OneShotManager.tick` fires when due, defers on
   active/draining, consumes on fire, drops on a routine that is missing, off or retired,
-  make-up-fires a past req at boot however stale (nothing bounds that — T3.5).
+  fires a past req at boot however stale (nothing bounds that — T3.5).
 - **Action:** `validate_action` for `schedule_run` (bad slug, past `fire_at`, empty reason);
   grants gating (denied without `scheduling`).
 - **Web + UI:** the three endpoints; a `tests/ui/` Playwright flow (arm → appears → cancel →
@@ -167,5 +167,5 @@ implement**), never a unilateral audit fix. This document is the spec that decis
 - **`routine.yaml` `triggers:` entry `type: once`** — rejected for the routine-set case
   (`routine.yaml` is never run-writable); it would force two homes (UI-config vs routine
   spool). The unified `.control/` spool serves both the user and a routine.
-- **A cron that fires once** — cron has no "once"; it would need catchup + self-disable that
+- **A cron that fires once** — cron has no "once"; it would need a self-disable that
   rewrites `routine.yaml`, fighting the user-owns-config invariant. Rejected.

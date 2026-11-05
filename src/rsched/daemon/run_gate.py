@@ -237,7 +237,7 @@ async def admit(
             "resume"
             if resume
             else "scope"
-            if reason not in {"schedule", "catchup", "lane"} or cfg.kind or run.background
+            if reason not in {"schedule", "lane"} or cfg.kind or run.background
             else ""
         )
         if bypass:

@@ -399,7 +399,7 @@ def make_routine(tmp_path):
             "name": f"Test {slug}", "slug": slug, "enabled": True,
             "description": "A test routine.",
             **({"kind": kind} if kind else {}),
-            "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "skip"},
+            "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin"},
             "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
             "budgets": {"max_turns": 10, "max_wall_clock_min": 5, "max_total_tokens": 100_000,
                         "max_subruns": 2, "max_subrun_depth": 1, "ask_timeout_min": 1,

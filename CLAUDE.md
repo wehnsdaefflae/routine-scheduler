@@ -1017,16 +1017,17 @@ by a test, by the engine, or by a past incident.
   command moved out whole, exactly as F746 moved `abort`/`drain` into `cli_runctl.py`.
   An `expects:` row must be an UNCONDITIONAL presumption — it fires on EVERY holder, and has
   been wrong twice the same way by presuming a write root a holder never needs.
-- **A lane's fire table is process memory; the WATERMARK is what survives.** `lane_next_fires`
-  is recomputed as the NEXT future fire at every boot, so a lane fire due during a restart,
-  a recreate or a drain would otherwise vanish — and D71 suppresses every member's own cron, so
-  nothing else fires them (a Tue/Thu lane once lost a whole week, unnoticed). Every
-  `lane_runs.arm` stamps `.control/lane-fires.json` (`rsched/lane_fires.py`), and so does the
-  scheduler when the operator's global pause skips a due fire on purpose: EVERY path that
-  handles a fire moves the watermark, so what boot finds unstamped is a fire nobody was there
-  for. `daemon/lane_catchup.py`
-  makes up ONE missed fire per lane at boot (`catchup: run_once`, the lane default). Never
-  write that file from the web layer and never let boot arm more than one chain per lane.
+- **A missed fire is SKIPPED, whatever the cause — there is no catch-up** (D237, operator
+  2026-11-05: *"Remove all catch-up: a fire missed for any reason (pause, restart, crash) is
+  skipped."*). The fire tables (`next_fires`, `lane_next_fires`) are process memory, recomputed
+  as the NEXT future fire at every boot, and lifting the global pause makes nothing up. This
+  REVERSED three mechanisms, each added for a measured loss — the boot make-up behind a
+  routine's `schedule.catchup: run_once`, the lane boot make-up against a `.control/lane-fires.json`
+  watermark (a Tue/Thu lane had lost a week to a restart), and the pause-lift make-ups for lanes
+  (D156) and routines (D183) — so do not rebuild any of them as an obvious improvement. What a
+  skip leaves is a RECORD: `fire_paused` / `lane_fire_paused` carry the subject's cron and next
+  fire (`daemon/pause_skip.py`). A one-shot is a request, not a cron fire: one whose `fire_at`
+  passed while the daemon was down still fires on the first tick (docs/schedule-once.md).
 - **Nothing starts a run but the schedule, a trigger the operator configured, or the
   operator's own click.** A routine reads its inbox when it next RUNS: a report from another
   routine waits (a fleet-wide report trigger fired six runs at once — a message
@@ -1044,7 +1045,8 @@ by a test, by the engine, or by a past incident.
   it fails SILENT by construction: a pause only ever shows what it stopped, never what it did
   not. `detached.tick` started runs through a paused instance for as long as the feature existed
   (intake's `fire`, the wake's `resume_terminal`, and every undelivered task at boot, since
-  `_boot` reconciles before `boot_catchup`) with no event and no log line — F721. The gate
+  `_boot` reconciles before the tick loop's pause guard ever runs) with no event and no log
+  line — F721. The gate
   belongs where the run STARTS, not at the tick's call site, which is why the detached hold lives
   per phase in the manager; what starts nothing (a finished task's delivery) is not held.
 - **A run gate may answer "no work" only when it KNOWS there is none.** Every check

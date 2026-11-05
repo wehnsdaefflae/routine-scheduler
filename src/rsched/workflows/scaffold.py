@@ -157,7 +157,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "description": (description or "").strip() or name,
         "enabled": True,
         **({"tags": list(tags)} if tags else {}),
-        "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
+        "schedule": {"cron": cron, "tz": tz},
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
         "permissions": active_perms,
         "rules": active_rules,
@@ -172,7 +172,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # values the CALLER decided stand over the pattern's (a cron the CLI was given, roots the
     # API was sent); an unset one leaves the pattern's
     if cron:
-        cfg["schedule"] = {"cron": cron, "tz": tz, "catchup": "skip"}
+        cfg["schedule"] = {"cron": cron, "tz": tz}
     if tags:
         cfg["tags"] = list(tags)
     if fs_read_roots:

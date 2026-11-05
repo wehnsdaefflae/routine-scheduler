@@ -11,7 +11,6 @@ asks:
   question: How does a finished item look — what output sits beside its source?
 settings:
   schedule:
-    catchup: skip
     friendly:
       frequency: daily
       time: 03:00

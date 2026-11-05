@@ -298,7 +298,7 @@ def test_patch_routine_and_409_guard(client):
 
 def test_patch_routine_resource_fields(client):
     """keep_runs (nested under retention:), the fs roots (top-level, stripped), and the
-    schedule catchup policy all save through PATCH and surface in the detail read."""
+    schedule all save through PATCH and surface in the detail read."""
     c, tmp = client
 
     def raw():
@@ -308,20 +308,20 @@ def test_patch_routine_resource_fields(client):
         "keep_runs": 5,
         "fs_read_roots": ["~/data", "  ~/more  "],
         "fs_write_roots": ["~/out"],
-        "schedule": {"friendly": {"frequency": "daily", "time": "06:00"}, "catchup": "run_once"}})
+        "schedule": {"friendly": {"frequency": "daily", "time": "06:00"}}})
     assert r.status_code == 200
     y = raw()
     assert y["retention"]["keep_runs"] == 5
     assert y["fs_read_roots"] == ["~/data", "~/more"]        # whitespace stripped
     assert y["fs_write_roots"] == ["~/out"]
-    assert y["schedule"]["catchup"] == "run_once" and y["schedule"]["cron"] == "0 6 * * *"
+    assert y["schedule"]["cron"] == "0 6 * * *" and "catchup" not in y["schedule"]
     detail = c.get("/api/routines/apir").json()
-    assert detail["keep_runs"] == 5 and detail["catchup"] == "run_once"
+    assert detail["keep_runs"] == 5 and "catchup" not in detail
     assert detail["fs_read_roots"] and detail["fs_write_roots"]   # resolved to absolute server paths
-    # validation: positive keep_runs, a known catchup policy (typed: SchedulePatch's 422, like
-    # every schema refusal at this edge), no empty root strings
+    # validation: positive keep_runs, no catch-up policy at all (D237 — SchedulePatch's 422,
+    # like every schema refusal at this edge), no empty root strings
     assert c.patch("/api/routines/apir", json={"keep_runs": 0}).status_code == 400
-    assert c.patch("/api/routines/apir", json={"schedule": {"catchup": "bogus"}}).status_code == 422
+    assert c.patch("/api/routines/apir", json={"schedule": {"catchup": "skip"}}).status_code == 422
     assert c.patch("/api/routines/apir", json={"fs_read_roots": ["ok", ""]}).status_code == 400
 
 
@@ -2452,10 +2452,10 @@ def test_a_raw_schedule_is_judged_before_it_is_written(client):
     assert r.status_code == 400 and "invalid schedule" in r.json()["detail"]
     assert load_routine(rdir)[0].cron == "0 7 * * 1"               # untouched throughout
     ok = c.patch("/api/routines/apir",
-                 json={"schedule": {"cron": "0 9 * * 2", "tz": "UTC", "catchup": "run_once"}})
+                 json={"schedule": {"cron": "0 9 * * 2", "tz": "UTC"}})
     assert ok.status_code == 200 and ok.json()["updated"] == ["schedule"]
     cfg = load_routine(rdir)[0]
-    assert (cfg.cron, cfg.tz, cfg.catchup) == ("0 9 * * 2", "UTC", "run_once")
+    assert (cfg.cron, cfg.tz) == ("0 9 * * 2", "UTC")
 
 
 def test_put_permissions_cascades_capabilities(client):
@@ -2854,12 +2854,8 @@ def test_pause_toggle_endpoints(client):
     assert c.post("/api/settings/pause").json() == {"ok": True, "paused": True}
     assert pause.paused(server) is True
     assert c.post("/api/settings/pause").status_code == 200       # idempotent re-pause
-    # The resume REPORTS what it made up — for LANES (D156) and, since D183, for ROUTINES: it
-    # makes up a dropped fire where the subject's cadence makes waiting cost more than firing
-    # late, and says which. Both empty here: nothing in this fixture lost a fire.
-    assert c.delete("/api/settings/pause").json() == {"ok": True, "paused": False,
-                                                      "lanes_made_up": [],
-                                                      "routines_made_up": []}
+    # The resume makes nothing up and so reports nothing made up (D237)
+    assert c.delete("/api/settings/pause").json() == {"ok": True, "paused": False}
     assert pause.paused(server) is False
     assert c.delete("/api/settings/pause").status_code == 200     # idempotent re-resume
 

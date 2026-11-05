@@ -27,7 +27,7 @@ def _routine(home, slug, **top):
     d.mkdir()
     (d / "main.md").write_text("# recipe\n", encoding="utf-8")
     raw = {"name": slug, "slug": slug, "description": "d",
-           "schedule": {"cron": "0 7 * * 1", "tz": "UTC", "catchup": "skip"}}
+           "schedule": {"cron": "0 7 * * 1", "tz": "UTC"}}
     for key, value in top.items():
         if key == "disabled":
             raw["schedule"]["disabled"] = value

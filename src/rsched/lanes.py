@@ -51,8 +51,6 @@ Shape (single document, atomic-written):
                 "tz": "Europe/Berlin",       # written beside cron by the web layer
                 "paused": false,             # true = the cron never auto-arms (whole-lane
                                              # pause; an explicit Run now still fires)
-                "catchup": "run_once",       # a due fire the daemon was not up to arm is
-                                             # made up ONCE at boot ("skip" = it is lost)
                 "created": "2026-07-31T…"}]}
 
 This module owns the shared vocabulary and the file IO. It validates SHAPE only (types, dedup,
@@ -116,22 +114,10 @@ def load(routines_home: Path) -> dict:
     return {"default_on_failure": default, "lanes": lanes}
 
 
-#: Boot catch-up policy for a SCHEDULED lane (daemon/lane_catchup.py) — the lane analog of a
-#: routine's `schedule.catchup`, with the opposite default. A routine defaults to skip because
-#: its cron is one of many; a lane IS the fleet's schedule now (D71 suppresses every member
-#: cron), its fire table lives in daemon memory, and a restart at the wrong second silently
-#: lost a week of fires for a Tue/Thu lane before anything noticed. One make-up, never a backlog.
-CATCHUP = ("run_once", "skip")
-DEFAULT_CATCHUP = "run_once"
-
-
 def _normalize(rec: dict) -> dict:
     on_failure = rec.get("on_failure")
     if on_failure not in ON_FAILURE:
         on_failure = None
-    catchup = rec.get("catchup")
-    if catchup not in CATCHUP:
-        catchup = DEFAULT_CATCHUP
     cron = str(rec.get("cron") or "").strip()
     if cron and not croniter.is_valid(cron):
         cron = ""                       # a corrupt row degrades to unscheduled, never raises
@@ -143,18 +129,17 @@ def _normalize(rec: dict) -> dict:
         "cron": cron,
         "tz": _known_zone(rec.get("tz")),
         "paused": bool(rec.get("paused")),
-        "catchup": catchup,
         "created": str(rec.get("created") or ""),
     }
 
 
 def schedulable(lane: dict) -> SimpleNamespace:
-    """A lane as the `Schedulable` shape `firetimes.next_fire` / `firetimes.last_due_fire` read.
+    """A lane as the `Schedulable` shape `firetimes.next_fire` reads.
 
     ONE adapter, so the lane and routine cron rules cannot drift: the scheduler's fire table
-    and boot catch-up both go through it. A PAUSED lane reads as a disabled schedulable —
-    next_fire yields None, so the lane simply leaves the fire table and the catch-up has
-    nothing to make up; resuming recomputes a FUTURE fire on rescan, never a backlog. An
+    and the week view both go through it. A PAUSED lane reads as a disabled schedulable —
+    next_fire yields None, so the lane simply leaves the fire table; resuming recomputes a
+    FUTURE fire on rescan, and a fire missed while paused is never made up (D237). An
     explicit "Run now" / `manage_lane run` still arms the chain: pause gates the cron only.
     `tz` falls back to the server zone — lanes are saved with it, but an older or hand-edited
     row must still fire somewhere sensible.
@@ -168,11 +153,11 @@ def _known_zone(tz: object) -> str:
 
     Degrades rather than raises, exactly as a corrupt cron does one field above. The lane
     store is hand-editable JSON with no schema on the way in, and an unknown zone reaches
-    `ZoneInfo` inside `Scheduler.rescan` and the lane boot catch-up — both of which run
-    at BOOT, before the loop's tick guard, so the exception unwound the scheduler task while
-    uvicorn kept serving. `"Europe/Berlin "` with a trailing space bought a daemon that
-    answered /api/status and never fired another run. (A routine's own tz is validated by
-    pydantic at load; the lane store has no such gate, so it is checked here on the way out.)
+    `ZoneInfo` inside `Scheduler.rescan`, which runs at BOOT, before the loop's tick guard,
+    so the exception unwound the scheduler task while uvicorn kept serving. `"Europe/Berlin "`
+    with a trailing space bought a daemon that answered /api/status and never fired another
+    run. (A routine's own tz is validated by pydantic at load; the lane store has no such
+    gate, so it is checked here on the way out.)
     """
     return zone_key(str(tz or ""))
 
@@ -195,7 +180,7 @@ def scheduled_lane_by_member(routines_home: Path) -> dict[str, dict]:
 
 def scheduled_member_slugs(routines_home: Path) -> set[str]:
     """Every routine slug whose OWN cron is suppressed because it belongs to a lane WITH a
-    schedule (D71) — the daemon's cron-fire loop and boot catch-up skip these, the week
+    schedule (D71) — the daemon's cron-fire loop skips these, the week
     endpoint (api_schedule) withholds their fires, and the routine page renders their
     Schedule dropdown as "lane managed".
     """
@@ -314,7 +299,6 @@ def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
         "cron": _check_cron(cron),
         "tz": _known_zone(tz),
         "paused": False,
-        "catchup": DEFAULT_CATCHUP,
         "created": now_iso(),
     }
     with _exclusive(routines_home):
@@ -332,7 +316,7 @@ def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
 def update(routines_home: Path, lane_id: str, *, name: str | None = None,
            members: list[dict] | None = None, on_failure: object = UNSET,
            cron: str | None = None, tz: str | None = None,
-           paused: bool | None = None, catchup: str | None = None) -> dict | None:
+           paused: bool | None = None) -> dict | None:
     """Patch a lane in place (only the fields passed are touched). `members` replaces the
     whole record list ({"slug"} each). `on_failure` is a tri-state: omit it to
     leave unchanged, pass None to inherit the default, pass a value in ON_FAILURE to
@@ -346,13 +330,12 @@ def update(routines_home: Path, lane_id: str, *, name: str | None = None,
     """
     with _exclusive(routines_home):
         return _update_locked(routines_home, lane_id, name=name, members=members,
-                              on_failure=on_failure, cron=cron, tz=tz, paused=paused,
-                              catchup=catchup)
+                              on_failure=on_failure, cron=cron, tz=tz, paused=paused)
 
 
 def _update_locked(routines_home: Path, lane_id: str, *, name: str | None,
                    members: list[dict] | None, on_failure: object, cron: str | None,
-                   tz: str | None, paused: bool | None, catchup: str | None) -> dict | None:
+                   tz: str | None, paused: bool | None) -> dict | None:
     """`update`'s body, under the store's flock — see `_exclusive`."""
     data = load(routines_home)
     for lane in data["lanes"]:
@@ -379,10 +362,6 @@ def _update_locked(routines_home: Path, lane_id: str, *, name: str | None,
             lane["tz"] = _known_zone(tz)
         if paused is not None:
             lane["paused"] = bool(paused)
-        if catchup is not None:
-            if catchup not in CATCHUP:
-                raise ValueError(f"catchup must be one of {CATCHUP}, got {catchup!r}")
-            lane["catchup"] = catchup
         _save(routines_home, data)
         return lane
     return None
@@ -391,9 +370,13 @@ def _update_locked(routines_home: Path, lane_id: str, *, name: str | None,
 def delete(routines_home: Path, lane_id: str) -> bool:
     """Delete a lane by id. Idempotent; returns True if one was removed.
 
-    Nothing else has to be cleaned up: a lane owns no store and no config, so deleting one
-    returns its members to their own crons and changes nothing else about them.
+    A lane owns no store and no config, so deleting one returns its members to their own crons
+    and changes nothing else about them. Its one sidecar is the chain's ARM LOCK, removed so
+    the lane-runs directory counts the lanes that exist (F825); an in-flight chain's own
+    record is left to finish, which is what `lane_runs` promises a deleted lane's chain.
     """
+    from .lane_runs import arm_lock_path  # function-level: lane_runs imports this module
+
     with _exclusive(routines_home):
         data = load(routines_home)
         before = len(data["lanes"])
@@ -401,4 +384,5 @@ def delete(routines_home: Path, lane_id: str) -> bool:
         if len(data["lanes"]) == before:
             return False
         _save(routines_home, data)
+    arm_lock_path(routines_home, lane_id).unlink(missing_ok=True)
     return True

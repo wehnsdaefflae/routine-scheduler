@@ -32,7 +32,7 @@ def _mk_routine(home, slug, *, model_name="opus"):
     cfg = {
         "name": f"Test {slug}", "slug": slug, "enabled": True,
         "description": "A test routine.",
-        "schedule": {"cron": "0 7 * * 1", "tz": "Etc/UTC", "catchup": "skip"},
+        "schedule": {"cron": "0 7 * * 1", "tz": "Etc/UTC"},
         "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
     }
     if model_name:  # None -> no models: block (the engine falls to system_model)

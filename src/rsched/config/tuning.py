@@ -16,8 +16,8 @@ from ..paths import atomic_write_yaml, read_yaml
 from .base import DELIBERATION_LEVELS, TUNING_KEYS
 
 TUNING_FILE = "tuning.yaml"
-#: What routine.yaml's `schedule:` mapping may hold — the keys `cron`, `tz` and `catchup` load
-#: from (their AliasPaths above).
+
+
 def load_tuning(routine_dir: Path) -> tuple[dict, list[str]]:
     """<dir>/tuning.yaml — the routine's machine-tunable BEHAVIOR parameters (today:
     `deliberation`), recipe-classed: the routine-improver may edit it under its

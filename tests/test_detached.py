@@ -62,7 +62,7 @@ def _owner(server, slug="c-1", *, last_state="finished",
         (d / sub).mkdir(parents=True, exist_ok=True)
     (d / "routine.yaml").write_text(yaml.safe_dump({
         "slug": slug, "name": "Owner", "enabled": True,
-        "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
+        "schedule": {"cron": "", "tz": "Europe/Berlin"},
         "workflow": {"library_slug": "converse", "library_commit": ""},
         "permissions": list(permissions),
         "capabilities": {"actions": ["write_util", "memory_read", "memory_write"],
@@ -86,7 +86,7 @@ def _task(server, taskid, owner_dir, *, state="finished", summary="scrape done",
     (d / "state").mkdir(parents=True, exist_ok=True)
     (d / "routine.yaml").write_text(yaml.safe_dump({
         "slug": taskid, "name": "scrape", "enabled": True,
-        "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
+        "schedule": {"cron": "", "tz": "Europe/Berlin"},
         "workflow": {"library_slug": "general-task", "library_commit": ""},
         "owner": {"slug": owner_dir.name, "dir": str(owner_dir)},
         "budgets": {"max_turns": 60},

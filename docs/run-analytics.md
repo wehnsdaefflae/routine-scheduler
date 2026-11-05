@@ -73,7 +73,7 @@ From the accept on, everything is DERIVED (`rsched/trials.py`) and nothing write
   folded per run (`usage_stream.usage_runs`) whose `fingerprint.trial` is the trial's id. Counted
   from this stream, so a restart or a retention sweep loses no run and a fire that never reached
   the engine (a gate skip, a failed launch) fakes none.
-- **Armed per fire.** While active, EVERY fire — schedule, lane, trigger, catch-up, manual — gets
+- **Armed per fire.** While active, EVERY fire — schedule, lane, trigger, one-shot, manual — gets
   `trial.json` (`{id, models, efforts, runs}`) in its new run dir before the engine exists (the runner, beside
   a hand-started run's brief), and the runner names the models to `engine-run` as `--model
   role=name` and the efforts as `--effort role=level`. The engine runs the routine on them for that run (children included), and the run's
@@ -799,13 +799,12 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. 19 health events record the opposite —
-`fire_refused`, `lane_fire_refused`, `fire_paused`, `routine_catchup_declined`,
-`lane_fire_paused`, `lane_catchup_declined`, `lane_chain_stopped`,
+Everything above measures runs that HAPPENED. 17 health events record the opposite —
+`fire_refused`, `lane_fire_refused`, `fire_paused`, `lane_fire_paused`, `lane_chain_stopped`,
 `lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped`, `commit_failed`,
 `backup_stale`, `migration_expired`, `migration_due_soon`, `obligation_overdue`,
-`finish_gate_failed`, `wrong_turn_detected`, `model_chain_exhausted` and `item_dropped_live`
-— and no run page, Items row or Stats slice can carry any of them: the first seven produce
+`finish_gate_failed`, `wrong_turn_detected`, `item_dropped_live` and `model_chain_exhausted`
+— and no run page, Items row or Stats slice can carry any of them: the first five produce
 no run at all; a commit that did not land happens after a run's finish is written, or
 outside any run (a web edit, a boot seed sync, a migration); a finish gate that RAISED
 (F678) leaves a run that reads as finished on every surface, because it did finish — on its own

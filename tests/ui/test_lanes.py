@@ -341,9 +341,9 @@ def test_escape_closes_the_lane_editor(ui, ui_page):
     expect(editor).to_have_count(0)
 
 
-def test_routines_page_lane_editor_catchup_policy(ui, ui_page):
-    """The lane editor carries the boot catch-up policy: born run_once (a missed fire is made
-    up once at the next boot), switchable to skip; the choice persists to the store."""
+def test_routines_page_lane_editor_offers_no_catchup_policy(ui, ui_page):
+    """D237 removed every make-up fire, so the lane editor has no missed-fire control: a
+    missed lane fire is skipped, whatever the cause."""
     rec = lanes.create(ui.routines, name="Sched", members=[{"slug": "uir"}],
                        cron="0 7 * * *", tz="UTC")
     ui_page.goto(f"{ui.url}/#/routines")
@@ -351,8 +351,5 @@ def test_routines_page_lane_editor_catchup_policy(ui, ui_page):
     row.wait_for()
     row.locator("[data-lane-edit]").click()
     ui_page.locator(f'[data-lane="{rec["id"]}"]').wait_for()
-    sel = ui_page.locator("[data-lane-catchup]")
-    expect(sel).to_have_value("run_once")
-    sel.select_option("skip")
-    until(lambda: lanes.get(ui.routines, rec["id"])["catchup"] == "skip", what="the catchup save")
-    expect(ui_page.locator("[data-lane-catchup]")).to_have_value("skip")   # re-rendered
+    expect(ui_page.locator("[data-lane-onfailure]")).to_have_count(1)   # the editor is up
+    expect(ui_page.locator("[data-lane-catchup]")).to_have_count(0)

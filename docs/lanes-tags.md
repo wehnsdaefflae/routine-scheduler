@@ -28,17 +28,14 @@ A flow with an inbound and an outbound end BRACKETS the lane — a dedicated inb
 placed first and a dedicated outbound-sender member placed last — rather than running one member
 twice.
 
-A scheduled lane also carries a **catch-up policy** (`catchup: run_once`, the default, or
-`skip`): a fire that came due while the daemon was not running to arm it is made up ONCE at the
-next boot — never a backlog — because a lane's fire table is process memory and its members'
-own crons are suppressed, so a lost lane fire has no other path (docs/architecture.md, "Lane
-catch-up"). What boot compares is a WATERMARK on disk (`.control/lane-fires.json`); every
-path that HANDLES a due fire moves it: an arm and a fire the operator's global pause skipped
-on purpose. A deliberate skip is handled, not missed — the next boot does not fire it. Lifting
-the pause decides once per lane (D156, `lane_catchup.resume_catchup`): a skipped fire still
-EARLY in the lane's own cadence (less than a quarter of it has passed — six hours for a daily
-lane, forty-two for a weekly one) is made up as ONE chain; a later one waits for the next fire.
-Never a backlog.
+A lane fire that is MISSED — the daemon was down, restarting or draining when it came due, or the
+operator's global pause skipped it — is **skipped, not made up** (D237, operator 2026-11-05: *"a
+fire missed for any reason (pause, restart, crash) is skipped"*). A lane's fire table is process
+memory, recomputed at boot as the NEXT future fire, and its members' own crons are suppressed, so
+the lane next runs on its own clock. Lanes used to carry a `catchup: run_once` policy, a boot
+make-up compared against a watermark (`.control/lane-fires.json`) and a pause-lift make-up (D156);
+all three were removed by that decision, so do not rebuild them. A pause-skipped fire is still on
+the record as `lane_fire_paused` (with the lane's cron and next fire).
 
 What a lane FAILED to do is read at `GET /api/health/blocked` (docs/run-analytics.md): a
 `lane_fire_refused` (the previous chain is still in flight), a `lane_chain_stopped` (the

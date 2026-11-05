@@ -66,18 +66,11 @@ BLOCKED_EVENTS: dict[str, str] = {
                     "draining, or its `main` model role names a model the catalog no longer serves",
     "lane_fire_refused": "a due lane fire armed nothing — the previous chain is still in "
                          "flight",
-    "fire_paused": "a due fire was skipped because scheduling was paused — it is owed, and "
-                   "made up at the resume only while it is still early in this routine's "
-                   "own cadence",
-    "routine_catchup_declined": "a pause-skipped routine fire was NOT made up — it came due "
-                                "too long ago for its own cadence, so the routine waits for "
-                                "its next cron fire",
+    "fire_paused": "a due fire was skipped because scheduling was paused — it is gone, not "
+                   "deferred, and the routine next runs on its cron",
     "lane_fire_paused": "a due lane fire was skipped because scheduling was paused — the "
                         "fire is gone, not deferred, and the next one is a full cron "
                         "interval away",
-    "lane_catchup_declined": "a pause-skipped lane fire was NOT made up — it came due too "
-                             "long ago for its own cadence, so its members wait for the "
-                             "next cron fire",
     "lane_chain_stopped": "a lane chain ended early, so its remaining members never ran",
     "lane_chain_member_skipped": "a chain named a member that is not a routine in any home",
     "scheduler_tick_error": "a scheduler tick raised — whatever that tick owed is late",

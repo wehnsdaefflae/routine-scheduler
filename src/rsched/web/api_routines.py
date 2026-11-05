@@ -203,7 +203,6 @@ def routine_detail(request: Request, slug: str) -> dict:
         "schedule_friendly": (schedule.cron_to_friendly(info.cfg.cron) if info.cfg.enabled
                               else {"frequency": "disabled"}),
         "server_tz": schedule.server_tz(),
-        "catchup": info.cfg.catchup,   # skip | run_once when a scheduled fire was missed
         # D141 (operator, 2026-09-21: "on the config page beside the schedule"): the
         # pre-engine admission gate. It belongs to the schedule payload because it decides
         # WHETHER a scheduled fire becomes a run at all — the config page renders it inside

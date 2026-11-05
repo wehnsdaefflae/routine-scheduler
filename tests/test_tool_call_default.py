@@ -255,7 +255,7 @@ def test_the_per_routine_readout_resolves_the_pair_through_the_default(tmp_path)
     (routine / "state").mkdir(parents=True)
     (routine / "routine.yaml").write_text(yaml.safe_dump({
         "name": "Alpha", "slug": "alpha", "enabled": True, "description": "A test routine.",
-        "schedule": {"cron": "0 7 * * 1", "tz": "Etc/UTC", "catchup": "skip"},
+        "schedule": {"cron": "0 7 * * 1", "tz": "Etc/UTC"},
     }), encoding="utf-8")     # NO models: block — the routine overrides neither role
     usage_run(routine, "20260712-070000", "finished", tin=10, tout=5, elapsed_s=30,
               model="big_ep/vendor/big")

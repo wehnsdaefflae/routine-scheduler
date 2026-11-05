@@ -55,7 +55,7 @@ def _project(raw: object) -> dict | None:
         for c in (checks if isinstance(checks, list) else []) if isinstance(c, dict)
     ]
     return {"decision": str(raw["decision"]),
-            # why the fire happened at all: schedule | catchup | lane | report | trigger | …
+            # why the fire happened at all: schedule | lane | report | trigger | …
             "fire_reason": str(raw.get("fire_reason") or ""),
             "reason": str(raw.get("reason") or "")[:REASON_MAX],
             "checks": rows}

@@ -40,7 +40,7 @@ def _server(tmp_path):
 
 def _config(slug: str, utils: list[str] | None, *, caps: bool = True) -> dict:
     raw: dict = {"name": slug, "slug": slug, "description": "d",
-                 "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "skip"},
+                 "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin"},
                  "permissions": ["outbound-mail"],
                  "budgets": {"max_turns": 120, "max_wall_clock_min": 45}}
     if caps:

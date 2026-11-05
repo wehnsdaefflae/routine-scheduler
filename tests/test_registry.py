@@ -1,4 +1,4 @@
-"""Derived catalog, run index, cron math, catch-up, retention."""
+"""Derived catalog, run index, cron math, retention."""
 
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -84,7 +84,7 @@ def test_scan_catalog(make_routine, tmp_path):
     assert alpha.runs[1].summary == "did the thing"
 
 
-def test_next_and_missed_fire(make_routine):
+def test_next_fire(make_routine):
     d = make_routine(slug="cronny")
     cfg, _ = load_routine(d)  # cron "0 7 * * 1" Europe/Berlin
     tue = datetime(2026, 7, 7, 12, 0, tzinfo=BERLIN)  # Tuesday
@@ -92,20 +92,6 @@ def test_next_and_missed_fire(make_routine):
     assert nf == datetime(2026, 7, 13, 7, 0, tzinfo=BERLIN)  # next Monday 07:00
     cfg.enabled = False
     assert firetimes.next_fire(cfg, tue) is None
-    cfg.enabled = True
-
-    # catch-up: policy skip → never; run_once → due fire when no run covered it
-    now = datetime(2026, 7, 7, 12, 0, tzinfo=BERLIN)
-    assert registry.missed_fire(cfg, [], now) is None  # default catchup: skip
-    cfg.catchup = "run_once"
-    missed = registry.missed_fire(cfg, [], now)
-    assert missed == datetime(2026, 7, 6, 7, 0, tzinfo=BERLIN)  # this week's Monday
-    covered = registry.RunInfo(run_id="cronny:20260706-070001", ts="20260706-070001",
-                               dir=d, state="finished")
-    assert registry.missed_fire(cfg, [covered], now) is None
-    stale = registry.RunInfo(run_id="cronny:20260629-070000", ts="20260629-070000",
-                             dir=d, state="finished")
-    assert registry.missed_fire(cfg, [stale], now) == missed
 
 
 def test_apply_retention(make_routine):

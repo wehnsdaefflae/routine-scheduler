@@ -8,7 +8,6 @@ asks:
   question: When in the day should it run?
 settings:
   schedule:
-    catchup: skip
     friendly:
       frequency: daily
       time: 05:00

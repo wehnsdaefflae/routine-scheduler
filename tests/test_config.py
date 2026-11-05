@@ -158,7 +158,7 @@ def test_routine_full_shape_loads(tmp_path):
     d = _mk_routine(tmp_path, {
         "slug": "testr", "name": "Test", "description": "A test routine.",
         "enabled": True, "tags": ["meta", " demo "],
-        "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "run_once"},
+        "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin"},
         "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
         "models": {"main": "gpt"},
         "budgets": {"max_turns": 10},
@@ -169,7 +169,7 @@ def test_routine_full_shape_loads(tmp_path):
     cfg, problems = load_routine(d)
     assert problems == []
     assert cfg.slug == "testr" and cfg.name == "Test" and cfg.tags == ["meta", "demo"]
-    assert (cfg.cron, cfg.tz, cfg.catchup) == ("0 7 * * 1", "Europe/Berlin", "run_once")
+    assert (cfg.cron, cfg.tz) == ("0 7 * * 1", "Europe/Berlin")
     assert (cfg.workflow_slug, cfg.workflow_commit) == ("test-flow", "abc123")
     assert cfg.models["main"] == "gpt"      # role → catalog model NAME
     assert cfg.budgets == {**DEFAULT_BUDGETS, "max_turns": 10}  # merged over defaults
@@ -184,7 +184,7 @@ def test_routine_minimal_gets_defaults(tmp_path):
     assert cfg.slug == "testr" and cfg.name == "testr" and cfg.enabled is True
     assert cfg.budgets == DEFAULT_BUDGETS and cfg.permissions == DEFAULT_PERMISSIONS
     assert "util-authoring" in cfg.permissions        # write_util grant is in the default set
-    assert cfg.catchup == "skip" and cfg.keep_runs == 30
+    assert cfg.keep_runs == 30
 
 
 def test_default_ask_timeout_is_deployment_norm(tmp_path):
@@ -251,7 +251,7 @@ def test_a_bare_ladder_key_reads_as_the_defaults(tmp_path):
 def test_routine_bad_values_reported_and_defaulted(tmp_path):
     d = _mk_routine(tmp_path, {
         "description": "Bad bits.",
-        "schedule": {"cron": "not a cron", "catchup": "sometimes"},
+        "schedule": {"cron": "not a cron"},
         "budgets": {"max_turns": "many", "max_lightyears": 3},
         # main is a dict (invalid: model roles are catalog NAMES → per-key drop); sidekick is
         # a valid string but an unknown role kind (deleted with a problem line).
@@ -259,10 +259,10 @@ def test_routine_bad_values_reported_and_defaulted(tmp_path):
     })
     cfg, problems = load_routine(d)
     text = " | ".join(problems)
-    assert "schedule.cron" in text and "schedule.catchup" in text
+    assert "schedule.cron" in text
     assert "budgets.max_turns" in text and "budgets.max_lightyears: unknown budget" in text
     assert "models.main" in text and "models.sidekick: unknown model kind" in text
-    assert cfg.cron == "" and cfg.catchup == "skip"                # invalid → defaults
+    assert cfg.cron == ""                                          # invalid → defaults
     assert cfg.budgets == DEFAULT_BUDGETS and cfg.models == {}
     # none of these problems is fatal to runtime (its gate greps for "missing")
     assert not any("missing" in p for p in problems)

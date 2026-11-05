@@ -12,7 +12,6 @@ asks:
   question: How often should it look — and by when should the result be ready?
 settings:
   schedule:
-    catchup: run_once
     friendly:
       frequency: daily
       time: 07:00

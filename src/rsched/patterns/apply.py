@@ -29,8 +29,7 @@ def routine_yaml(settings: dict, *, tz: str) -> dict:
         spec = settings["schedule"] or {}
         friendly = spec.get("friendly") or {"frequency": "manual"}
         out["enabled"] = friendly.get("frequency") != "disabled"
-        out["schedule"] = {"cron": friendly_to_cron(friendly), "tz": tz,
-                           "catchup": spec.get("catchup") or "skip"}
+        out["schedule"] = {"cron": friendly_to_cron(friendly), "tz": tz}
     if "run_gate" in settings and (settings["run_gate"] or {}).get("checks"):
         out["run_gate"] = dict(settings["run_gate"])
     renamed = {"reminders": "shared_reminders"}

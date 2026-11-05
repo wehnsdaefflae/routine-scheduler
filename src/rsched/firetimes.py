@@ -1,8 +1,7 @@
 """When a cron fires — the one place a fire instant is computed.
 
-The scheduler's fire table, both catch-up paths (a routine's `registry.missed_fire`, a lane's
-watermark check and its resume make-up) and the console's week view read their instants here,
-so the week strip draws exactly what the daemon will fire.
+The scheduler's fire table and the console's week view read their instants here, so the week
+strip draws exactly what the daemon will fire.
 
 **A wall-clock time that happens twice fires once.** When daylight saving ends the clock repeats
 an hour: 02:30 in Europe/Berlin happens at 00:30 UTC and again at 01:30 UTC, and croniter yields
@@ -61,16 +60,15 @@ def _repeats_a_wall_time(t: datetime, tz: ZoneInfo) -> bool:
     return first < second and t.astimezone(UTC) == second
 
 
-def _fires(cron: str, tz_name: str, start: datetime, *, backwards: bool) -> Iterator[datetime]:
-    """`cron`'s fire instants in `tz_name`, moving away from `start` (exclusive) in either
-    direction, the repeated occurrence of a fixed wall time left out (see the module docstring).
+def _fires(cron: str, tz_name: str, start: datetime) -> Iterator[datetime]:
+    """`cron`'s fire instants in `tz_name` after `start` (exclusive), the repeated occurrence
+    of a fixed wall time left out (see the module docstring).
     """
     tz = ZoneInfo(tz_name)
     it = croniter(cron, start.astimezone(tz))
-    step = it.get_prev if backwards else it.get_next
     fixed = names_wall_times(cron)
     while True:
-        t = step(datetime)
+        t = it.get_next(datetime)
         if not (fixed and _repeats_a_wall_time(t, tz)):
             yield t
 
@@ -79,7 +77,7 @@ def iter_fires(cron: str, tz_name: str, after: datetime) -> Iterator[datetime]:
     """Every instant `cron` fires at in `tz_name` after `after`, in order — the week view's
     enumeration, so it draws what the scheduler fires. Endless: the caller bounds it.
     """
-    return _fires(cron, tz_name, after, backwards=False)
+    return _fires(cron, tz_name, after)
 
 
 def next_fire(cfg: Schedulable, after: datetime) -> datetime | None:
@@ -88,17 +86,5 @@ def next_fire(cfg: Schedulable, after: datetime) -> datetime | None:
     """
     if not cfg.cron or not cfg.enabled:
         return None
-    return next(_fires(cfg.cron, cfg.tz, after, backwards=False))
+    return next(_fires(cfg.cron, cfg.tz, after))
 
-
-def last_due_fire(cfg: Schedulable, before: datetime) -> datetime | None:
-    """The most recent instant `cfg`'s cron came due before `before`.
-
-    Reads `enabled` like `next_fire` does: a schedule that is switched off — or a lane that is
-    PAUSED, which `lanes.schedulable` presents the same way — has no due fire to have missed.
-    The repeated occurrence of a fixed wall time is skipped here too, or a boot inside the
-    repeated hour would find the first occurrence's run too old and make it up.
-    """
-    if not cfg.cron or not cfg.enabled:
-        return None
-    return next(_fires(cfg.cron, cfg.tz, before, backwards=True))

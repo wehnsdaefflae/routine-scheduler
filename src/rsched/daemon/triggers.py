@@ -7,7 +7,7 @@ one-run-per-routine rule, max_concurrent_runs and the restart drain stay the dae
 job, exactly as for cron fires. A trigger fire draws from the normal cron slot pool and
 holds a restart drain like any scheduled run.
 
-COALESCING (the trigger analog of the catchup/overrun rules — docs/triggers.md): events
+COALESCING (the trigger analog of the overrun rule — docs/triggers.md): events
 wait in the spool while the routine has an active/queued run, while the daemon drains
 for a restart, or inside the trigger's cooldown window — and however many piled up, the
 next fire is ONE run. Every coalesced event still lands as its OWN inbox message

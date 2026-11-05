@@ -161,7 +161,7 @@ scheduler tick (≤ ~5 s) hands spooled events to the `TriggerManager`
 (`daemon/triggers.py`), which fires through the same runner as cron — one run per routine,
 `max_concurrent_runs`, and the restart drain all apply unchanged.
 
-These are the trigger analog of the schedule's catchup/overrun rules:
+These are the trigger analog of the schedule's overrun rule:
 
 - **Overrun → queue, not skip.** A cron fire that finds its routine running is skipped
   (`overrun_skipped`); a trigger event that finds it running (or queued, or the daemon
@@ -203,8 +203,9 @@ These are the trigger analog of the schedule's catchup/overrun rules:
   arrival, are dropped with a log line — the hook itself already rejects new ones in those
   states.
 - **Interplay with cron.** A trigger fire is an ordinary run (`reason: "trigger"` in the
-  log/live stream); the schedule keeps its own rhythm. Boot catchup (`run_once`) considers cron
-  fires only.
+  log/live stream); the schedule keeps its own rhythm. A missed CRON fire is skipped, never made
+  up (D237); an event waiting in the spool is not a missed fire and still fires once the daemon
+  is back.
 
 The Triggers card shows the per-trigger fire ledger (last fired, delivered events, pending
 count), read from the daemon-maintained `state.json` next to the spool. A REPORT trigger has no

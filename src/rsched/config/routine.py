@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 import yaml
 from pydantic import (
@@ -94,7 +94,7 @@ class RoutineConfig(_Config):
     name: BlankableStr = ""
     # THE off switch, and its one spelling: `enabled: false` starts no run at all — no cron,
     # trigger, lane or one-shot fire and no manual start (runner.fire refuses). Every reader
-    # asks this field (the fire table, catch-up, lanes, the runner, the console's `enabled`);
+    # asks this field (the fire table, lanes, the runner, the console's `enabled`);
     # the console's "Disabled" cadence and the dashboard's pause both write it.
     enabled: bool = True
     run_gate: RunGateConfig = Field(default_factory=RunGateConfig)
@@ -102,8 +102,6 @@ class RoutineConfig(_Config):
     cron: BlankableStr = Field("", validation_alias=AliasPath("schedule", "cron"))
     # No zone named = the server's (default_tz): the zone the console shows and saves in.
     tz: str = Field(default_factory=default_tz, validation_alias=AliasPath("schedule", "tz"))
-    catchup: Literal["skip", "run_once"] = Field(
-        "skip", validation_alias=AliasPath("schedule", "catchup"))
     workflow_slug: BlankableStr = Field("", validation_alias=AliasPath("workflow", "library_slug"))
     workflow_commit: BlankableStr = Field(
         "", validation_alias=AliasPath("workflow", "library_commit"))
@@ -273,7 +271,11 @@ class RoutineConfig(_Config):
         return v if isinstance(v, dict) else cls._default_of("ladder")
 
 
-SCHEDULE_KEYS = frozenset({"cron", "tz", "catchup"})
+SCHEDULE_KEYS = frozenset({"cron", "tz"})
+_RETIRED_SCHEDULE_KEYS = {
+    "disabled": "a routine is switched off by the top-level `enabled: false`",
+    "catchup": "catch-up was removed (D237): a missed fire is skipped, whatever the cause",
+}
 
 
 def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
@@ -321,21 +323,19 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     # aliased fields load from their CONTAINER key (schedule.cron, workflow.library_slug,
     # playbook.slug). Any other top-level key is a typo whose real field silently reverted to
     # defaults (a misspelled `permisions:` = a permission reset with zero problems reported).
-    aliased = {"cron", "tz", "catchup", "workflow_slug", "workflow_commit",
+    aliased = {"cron", "tz", "workflow_slug", "workflow_commit",
                "playbook_slug", "keep_runs"}
     known = (set(RoutineConfig.model_fields) - aliased) | {"schedule", "workflow",
                                                            "playbook", "retention"}
     problems.extend(f"{key}: unknown routine.yaml key — check the spelling (ignored)"
                     for key in sorted(set(raw) - known))
-    # The same check one level down: `schedule:` holds exactly the three keys its aliased
-    # fields read. A stray one there is read by nothing — `schedule.disabled`, the off switch's
-    # retired second spelling, most of all: it once had the final word over `enabled`.
+    # The same check one level down: `schedule:` holds exactly the two keys its aliased fields
+    # read. A stray one is read by nothing, and a RETIRED one says what replaced it (D237).
     schedule_raw = raw.get("schedule")
     if isinstance(schedule_raw, dict):
         problems.extend(
             f"schedule.{key}: unknown routine.yaml key — "
-            + ("a routine is switched off by the top-level `enabled: false`" if key == "disabled"
-               else "check the spelling") + " (ignored)"
+            + _RETIRED_SCHEDULE_KEYS.get(key, "check the spelling") + " (ignored)"
             for key in sorted(set(schedule_raw) - SCHEDULE_KEYS))
     try:
         gate = RunGateConfig.model_validate(raw.get("run_gate", {}))

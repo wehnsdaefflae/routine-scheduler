@@ -49,7 +49,6 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from . import lane_fires
 from .ids import now_iso
 from .lanes import DEFAULT_ON_FAILURE, ON_FAILURE
 from .paths import atomic_write_json, file_lock, read_json
@@ -149,5 +148,4 @@ def _arm_locked(routines_home: Path, lane: dict, lane_id: str, default_on_failur
         "ended": None,
     }
     save(routines_home, rec)
-    lane_fires.stamp(routines_home, lane_id, str(rec["created"]))   # the boot catch-up watermark
     return rec
