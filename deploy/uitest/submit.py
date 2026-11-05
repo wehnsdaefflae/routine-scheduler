@@ -19,6 +19,10 @@ peak of the `uitest` CONTAINER's own memory cgroup for the job's duration, sampl
 container because this process cannot read its cgroup from here. It answers "this stage peaked
 at N GB of its M GB ceiling" and can NEVER answer "no OOM occurred": a restart starts a fresh
 cgroup, so only the host's `journalctl -k` settles that. No line at all means not measured.
+`bound` says which number it is: `exact` when the kernel's own mark was reset for this job, and
+`lower` when it was sampled because that reset was refused — which is what this container does,
+since it mounts the cgroup read-only. A sampled reading also carries the unreset kernel mark as
+`cgroup_lifetime_peak_bytes`: the container's whole life, an upper bound beside the lower one.
 
 Exits 77 (protocol.NO_RUNNER) when no runner is answering — start it with
 `docker compose up -d uitest` — and 125 (protocol.LOST) when the runner went away mid-job.

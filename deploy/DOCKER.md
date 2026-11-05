@@ -691,15 +691,28 @@ after the job's output, so it is in the stage log the gate keeps:
 
 ```
 uitest memory: {"peak_bytes": 3221225472, "limit_bytes": 4294967296,
-                "peak_pct_of_limit": 75.0, "bound": "exact", "proves_no_oom": false}
+                "peak_pct_of_limit": 75.0, "bound": "lower", "samples": 1180,
+                "cgroup_lifetime_peak_bytes": 3650722816, "lifetime_pct_of_limit": 85.0,
+                "proves_no_oom": false}
 ```
 
 It is read INSIDE `uitest`, because the gate runs in the engine container and cannot read a
 sibling's cgroup. `bound` says how to take the number: `exact` (the kernel's `memory.peak`,
-reset for this job), `upper` (a mark that could not be reset, or a second job in the same
-container cgroup at the same time) or `lower` (`memory.current` sampled, on a kernel with no
-`memory.peak` — a spike between samples is missed). No line at all means not measured: an
-older runner, or a cgroup it could not read — never zero.
+successfully reset for this job, so the mark is the job's own), or `lower` (`memory.current`
+sampled every 0.5 s, because that reset did NOT happen — a spike between two samples is missed,
+so the number bounds the job from below). **On this host it is always `lower`**: the container
+mounts `/sys/fs/cgroup` read-only, so writing `0` to `memory.peak` fails `[Errno 30]` and the
+kernel's mark covers the container's whole life rather than one job. A sampled reading therefore
+carries that mark too, as `cgroup_lifetime_peak_bytes` / `lifetime_pct_of_limit` — an upper bound
+on the job, beside the lower bound that is the job's own. `upper` is what a reading looks like
+when the mark was read but could be attributed to nothing (a second job in the same container
+cgroup with no `memory.current` to poll). No line at all means not measured: an older runner, or
+a cgroup it could not read — never zero.
+
+Until 0.501.0 the refused reset fell through to the kernel's lifetime mark with `samples: 0`
+instead of sampling, so **every** reading this container produced described the container's whole
+life and attributed nothing to the stage — which is why a week of gates left no usable uitest row
+even though the instrument was shipped and running.
 
 It can say "this stage peaked at N GB of its M GB ceiling". It can NEVER say "no OOM occurred":
 a restart starts a fresh cgroup, and the kill leaves nothing in these files. That question is

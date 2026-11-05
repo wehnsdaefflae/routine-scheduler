@@ -68,6 +68,59 @@ def test_a_peak_that_could_not_be_reset_is_an_upper_bound_not_an_exact_one(tmp_p
     assert reading["peak_bytes"] == 500 and reading["bound"] == "upper"
 
 
+def test_a_refused_reset_falls_back_to_sampling_rather_than_the_lifetime_mark(tmp_path,
+                                                                             monkeypatch):
+    """THE DEPLOYED SHAPE, and the defect this test exists for.
+
+    The `uitest` container mounts `/sys/fs/cgroup` read-only, so writing "0" to `memory.peak`
+    fails [Errno 30] on every job. The reading that reached the gate was then the CONTAINER's
+    lifetime mark with `samples: 0` — a number that answers nothing about the stage being
+    measured, which is why `memory-peaks.jsonl` held no usable uitest row for a week.
+    """
+    root, proc = _tree(tmp_path, {"memory.peak": "9000\n", "memory.current": "100\n",
+                                  "memory.max": "10000\n"})
+    monkeypatch.setattr(cgroupmem, "_write_zero", lambda _path: False)   # a read-only mount
+    monkeypatch.setattr(cgroupmem, "SAMPLE_EVERY_S", 0.01)
+    watch = cgroupmem.watch(root=root, proc=proc)
+    (root / "memory.current").write_text("2500\n")        # what THIS job actually peaked at
+    time.sleep(0.08)
+    reading = watch.finish()
+    assert reading["samples"] >= 1                        # it sampled instead of giving up
+    assert reading["peak_bytes"] == 2500                  # this job's peak, not the container's
+    assert reading["peak_pct_of_limit"] == 25.0
+    assert reading["bound"] == "lower"
+    # The kernel's mark is still a fact — carried alongside, bounding the job from above.
+    assert reading["cgroup_lifetime_peak_bytes"] == 9000
+    assert reading["lifetime_pct_of_limit"] == 90.0
+
+
+def test_a_successful_reset_still_trusts_the_kernel_and_samples_nothing(tmp_path):
+    """The `exact` path is unchanged: a reset mark covers this job, so there is nothing to poll."""
+    root, proc = _tree(tmp_path, {"memory.peak": "0\n", "memory.current": "100\n",
+                                  "memory.max": "1000\n"})
+    watch = cgroupmem.watch(root=root, proc=proc)
+    (root / "memory.peak").write_text("750\n")
+    reading = watch.finish()
+    assert reading["bound"] == "exact" and reading["samples"] == 0
+    assert reading["peak_bytes"] == 750
+    assert "cgroup_lifetime_peak_bytes" not in reading    # the mark IS this job's: not doubled
+
+
+def test_a_concurrent_job_samples_and_keeps_saying_it_is_not_alone(tmp_path, monkeypatch):
+    """A second job in the container makes the kernel's mark unattributable — so sample."""
+    root, proc = _tree(tmp_path, {"memory.peak": "9000\n", "memory.current": "100\n",
+                                  "memory.max": "10000\n"})
+    monkeypatch.setattr(cgroupmem, "SAMPLE_EVERY_S", 0.01)
+    watch = cgroupmem.watch(exclusive=False, root=root, proc=proc)
+    (root / "memory.current").write_text("3000\n")
+    time.sleep(0.08)
+    reading = watch.finish()
+    assert reading["jobs_overlapped"] is True
+    assert reading["bound"] == "lower" and reading["samples"] >= 1
+    # Still an upper bound on the pair, not on this job: the honesty of the old reading is kept.
+    assert reading["cgroup_lifetime_peak_bytes"] == 9000
+
+
 def test_a_concurrent_job_makes_the_reading_an_upper_bound(tmp_path):
     root, proc = _tree(tmp_path, {"memory.peak": "500\n", "memory.max": "1000\n"})
     reading = cgroupmem.watch(exclusive=False, root=root, proc=proc).finish()
