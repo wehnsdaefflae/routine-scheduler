@@ -809,7 +809,8 @@ separate feature; this request grammar does not implement it.
 Ownership is strict: FOREVER decisions are persisted by the WEB layer at click time —
 the engine never writes routine.yaml, not even to record an approval. Like every web edit of
 that file it then tells a LIVE run what changed (F337: a `config_change` signal naming each
-changed key — a `grants:` row adopted live, a capability or root named as next-run) beside
+changed key — a `grants:` row adopted live, a capability named as next-run; a granted fs
+root's or machine's field says that the decision itself reached the run, F829/F802) beside
 the decision the answer bridges into the run's overlay. Sub-workflows
 cannot request; they inherit the parent's RESOURCE grants (fs/secret/connection/machine)
 and none of its capability grants. `recreate:<slug>` deliberately has no allow-forever: a
