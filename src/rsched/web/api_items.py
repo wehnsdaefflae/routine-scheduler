@@ -44,7 +44,7 @@ def _report_header(routine_dir: Path) -> dict | None:
 
 @router.get("/items/orphans")
 def orphans(request: Request) -> list[dict]:
-    """The three ways work leaves the ledger without becoming an open item anywhere
+    """The four ways work leaves the ledger without becoming an open item anywhere
     (readmodels/orphans.py, readmodels/prose_closures.py). All are invisible to every filter on
     the Messages page, so the page banners them above the list; all are surfaced rather than
     gated — a human judges.
@@ -57,19 +57,25 @@ def orphans(request: Request) -> list[dict]:
     its fields named nothing (F793). The F770 check says so once, on the filing observation, to
     the one party who already believes the row is closed; this is its second reader, so a row
     stranded by a prose-only closure is visible to someone after that turn has passed.
+    `kind: "unrecorded-order"` — a docs/designs.md entry (a decided order) that no finding or
+    decision row quotes, so no count or filter can see the work (readmodels/design_orders.py).
 
     The banner is judged against the SAME fleet fact as the `unroutable` count on this page
     (`_fleet`, i.e. `registry.scan`'s keys): one predicate, so the two cannot say opposite
     things about one row (F768).
     """
+    from ..readmodels import design_orders, prose_closures
     from ..readmodels import orphans as orphans_model
-    from ..readmodels import prose_closures
 
-    home = request.app.state.server.routines_home
+    server = request.app.state.server
+    home = server.routines_home
     _, installed = _fleet(request)
+    ledger = (items_model.build(_routine_dir(request), home)["items"]
+              if _routine_dir(request).is_dir() else [])
     return (orphans_model.load(_routine_dir(request))
             + orphans_model.load_undelivered(home, installed)
-            + list(prose_closures.load(home)))
+            + list(prose_closures.load(home))
+            + design_orders.unrecorded(server.source_repo, ledger))
 
 
 @router.post("/items/orphans/{report_id}/discard")

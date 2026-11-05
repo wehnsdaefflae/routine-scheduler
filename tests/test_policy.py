@@ -252,3 +252,15 @@ def test_changelog_versions_never_repeat_or_go_backwards():
     bad = [f"{'.'.join(map(str, a))} above {'.'.join(map(str, b))}"
            for a, b in itertools.pairwise(versions) if a <= b]
     assert not bad, f"CHANGELOG.md headers repeat or go backwards: {bad[:5]}"
+
+
+def test_designs_md_holds_orders_never_open_questions():
+    """docs/designs.md is DECIDED-but-unbuilt work, and its reader is the builder. Five
+    "Decide: …" entries sat there from 2026-10-01 to 2026-11-05: an open question in a file only
+    the builder reads never reached the operator's Decisions page, so nobody could answer it and
+    nobody could build it. A question is a self-audit `D` row (it reaches the Decisions page);
+    the entry is written here once the answer exists."""
+    text = (REPO / "docs" / "designs.md").read_text(encoding="utf-8")
+    asked = [h for h in re.findall(r"^## (.+)$", text, flags=re.MULTILINE)
+             if re.match(r"(?i)(decide|question|open question|undecided)\b", h)]
+    assert not asked, f"open questions parked in docs/designs.md (ask them as D rows): {asked}"

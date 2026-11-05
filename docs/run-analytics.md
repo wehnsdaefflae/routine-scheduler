@@ -799,12 +799,12 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. 18 health events record the opposite —
+Everything above measures runs that HAPPENED. 19 health events record the opposite —
 `fire_refused`, `lane_fire_refused`, `fire_paused`, `routine_catchup_declined`,
 `lane_fire_paused`, `lane_catchup_declined`, `lane_chain_stopped`,
 `lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped`, `commit_failed`,
 `backup_stale`, `migration_expired`, `migration_due_soon`, `obligation_overdue`,
-`finish_gate_failed`, `wrong_turn_detected` and `model_chain_exhausted`
+`finish_gate_failed`, `wrong_turn_detected`, `model_chain_exhausted` and `item_dropped_live`
 — and no run page, Items row or Stats slice can carry any of them: the first seven produce
 no run at all; a commit that did not land happens after a run's finish is written, or
 outside any run (a web edit, a boot seed sync, a migration); a finish gate that RAISED

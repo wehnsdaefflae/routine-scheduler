@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from conftest import authed_client, make_test_server
+from conftest import authed_client, seeded_server
 from rsched.config import DEFAULT_BUDGETS
 from rsched.web.api_conversation_create import _BUDGET_FIELDS, ComposerForm
 
@@ -54,7 +54,7 @@ def test_a_conversation_is_created_with_the_spend_backstop_the_form_sent(tmp_pat
     """End to end through the real route: the composer's `max_cost` reaches the conversation's
     own config, where every reply reads its ceilings from.
     """
-    server = make_test_server(tmp_path)
+    server = seeded_server(tmp_path)
     with authed_client(server) as client:
         r = client.post("/api/conversations",
                         files={"files": ("x.txt", b"", "text/plain")},
@@ -72,7 +72,7 @@ def test_both_ceilings_are_patchable_after_create(tmp_path):
     was missing was only that the body named these keys. A ceiling settable only at create is the
     shape this gap had: `max_total_turns` was settable and then frozen for the same reason.
     """
-    server = make_test_server(tmp_path)
+    server = seeded_server(tmp_path)
     with authed_client(server) as client:
         slug = client.post("/api/conversations",
                            files={"files": ("x.txt", b"", "text/plain")},

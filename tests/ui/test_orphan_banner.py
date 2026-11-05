@@ -104,3 +104,20 @@ def test_the_banner_shows_a_row_a_settled_reports_prose_claimed_to_close(
     # claim the row ("R2313 settled: …" in the title, "Closing R2313." in the detail's opening
     # sentence) and the title wins, because that is the prominent statement a reader is weighing.
     expect(card).to_contain_text("claimed by R2886: “R2313 settled: finding 1 is answered")
+
+
+def test_a_designs_order_no_row_records_is_bannered(ui, ui_page, make_routine):
+    """design_orders.py: a docs/designs.md entry no finding or decision row quotes is decided work
+    outside every count, so the banner names it. The instance's own designs.md is read (the
+    server's `source_repo`), and the ledger here holds one decision that quotes none of it."""
+    _seed(ui, make_routine, [])
+    audit = ui.routines / "self-audit" / "audit"
+    audit.mkdir(parents=True, exist_ok=True)
+    (audit / "report.json").write_text(json.dumps({
+        "schema": 1, "run_id": "self-audit:x", "generated": "2026-11-05T00:00:00+00:00",
+        "since": {}, "summary": "", "findings": [],
+        "decisions": [{"id": "D1", "title": "unrelated", "detail": "", "status": "open",
+                       "options": ["a", "b"]}]}), encoding="utf-8")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
+    ui_page.wait_for_selector("h1:has-text('Messages')")
+    expect(ui_page.locator(".q-group-head", has_text="decided, never recorded")).to_be_visible()

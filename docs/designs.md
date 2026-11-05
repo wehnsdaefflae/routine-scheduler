@@ -11,7 +11,10 @@ orient as one of the sources of its queue and deletes the entry in the commit th
 `self-audit`, which keeps the item ledger, gives each entry an `in_progress` decision row whose
 detail names this file as where it was decided, so the Items page can see it. Adding an entry
 here is therefore an order, not a note: write one only for work that is actually decided, and
-delete one the moment it stops being wanted.
+delete one the moment it stops being wanted. An OPEN QUESTION never goes here — only the builder
+reads this file, so a "Decide: …" entry reached nobody who could answer it (five sat here from
+2026-10-01 to 2026-11-05); ask it as a self-audit `D` row, which reaches the Decisions page, and
+write the entry once it is answered (`tests/test_policy.py` refuses a question heading).
 From 2026-08-26 to 2026-09-22 this file had no reader at all: five entries accumulated and
 none was built, the oldest waiting thirty-three days through roughly a hundred and eighty
 releases, because the builder's queue could not see it.
@@ -419,68 +422,32 @@ node ids before and after.
 
 ---
 
-## Decide: a CHANGELOG version may never repeat or go backwards
-
-`tests/test_policy.py` checks only that `__version__` equals the newest CHANGELOG header. Several
-writers release into one main now — self-audit, scheduler-builder, operator sessions, review
-sessions — and on 2026-10-01 `audit/D152` called its release 0.371.0 after main had shipped a
-different 0.371.0: a merge that keeps its entry on top passes the policy test, and the console's
-version goes backwards. Options: (a) the policy test also fails when two headers carry the same
-version or a header is not lower than the one above it — all 509 headers pass today; (b) keep, each
-writer renumbering by hand. **Review's recommendation: (a).**
-
-**First increment.** The decision; then the check, red-first against a repeated header.
-
----
-
-## Decide: the settings-pattern recommender's fallback (C1.2)
-
-`patterns/recommend.choose` falls back to the alphabetically FIRST pattern when none matches the
-routine's workflow — an arbitrary pick presented as a recommendation. Options: (a) fall back to
-`one-job`, the neutral pattern; (b) recommend no pattern and say none fits; (c) keep.
-**Review's recommendation: (a).**
-
-**First increment.** The decision; then the chosen fallback with a red-first test.
-
----
-
-## Decide: the reminder layer and run history for NEW conversations
-
-New conversations start at `reminders: none` and `runs: none`, while routines default to `local`
-and `last` (`DEFAULT_CAPABILITIES`, every settings pattern) — and CLAUDE.md's reason for that
-default ("a layer nobody switches on never learns anything") holds for conversations too, though a
-hold costs a turn in a live chat. Options: (a) conversations default like routines; (b) keep both
-off; (c) reminders `local`, runs `none`. **Review's recommendation: (a).**
-
-**First increment.** The decision; then the composer's default with tests.
-
----
-
-## Decide: does the browser dock give the screen's one seat back?
+## The browser dock gives the screen's one seat back on `#/browser` (decided 2026-11-05)
 
 Once connected (on first open, 0.372.0), the dock keeps the screen's one viewer seat while folded
 and while hidden on `#/browser` — the full-screen page that needs that seat to be interactive.
-Options: (a) release on fold and on `#/browser`, reconnecting on show; (b) release on `#/browser`
-only; (c) keep. **Review's recommendation: (b) at least.** Check first whether `#/browser` is
-refused a seat while the dock holds it — if so that half is a defect, fixed without asking.
+**Operator, 2026-11-05: option (b)** — the dock releases the seat while `#/browser` is shown and
+reconnects when the operator leaves it; folding keeps the seat. Check first whether `#/browser` is
+refused a seat while the dock holds it — if so that half is a defect, fixed regardless.
 
-**First increment.** That check; then the decision.
+**First increment.** That check; then the release-on-`#/browser` with a tests/ui journey.
 
 ---
 
-## Decide: dependencies and the base image's Debian release
+## Dependencies and the base image's Debian release (decided 2026-11-05)
+
+The operator approved all four (2026-11-05), each building on its own:
 
 - `psutil` — pid liveness with process create-time for the abort fallback (pid reuse).
-  Recommended: yes.
-- `filelock` — replace `paths.file_lock`, which raises on timeout. Recommended: evaluate for a net
-  reduction.
-- `regex` — match-time limits for reminder patterns; declined before. Recommended: no, until a
-  catastrophic pattern is seen.
-- `httpx2` — Starlette's test client deprecation (a `filterwarnings` ignore holds it today).
-  Recommended: when Starlette requires it.
-- Debian trixie for the three images (bookworm is in LTS). Recommended: at the next image refresh.
+- `filelock` — EVALUATE replacing `paths.file_lock` (which raises on timeout); adopt only for a net
+  reduction in code and a gain in clarity, else record why not here and delete the line.
+- `regex` — match-time limits for reminder patterns, so one catastrophic pattern cannot stall a
+  hold check.
+- Debian trixie for the three images (bookworm is in LTS) — at the next image refresh.
 
-**First increment.** The decision; each accepted item then builds on its own.
+(`httpx2`, offered in the same question, waits until Starlette requires it.)
+
+**First increment.** `psutil` in the abort fallback, with a pid-reuse test.
 
 ---
 

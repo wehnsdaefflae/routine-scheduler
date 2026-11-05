@@ -1,9 +1,9 @@
-// The Messages page's ORPHAN BANNER: the three ways work leaves this ledger without becoming an
+// The Messages page's ORPHAN BANNER: the four ways work leaves this ledger without becoming an
 // open item anywhere. Above the list because all three are invisible to every filter below it —
 // a deferred piece never became an item at all (that is how D98's stopping panel was lost for
 // six days), an undelivered report is addressed to a routine that has never heard of it, and a
-// prose-only closure leaves a live row that reads as attended to (readmodels/orphans.py,
-// readmodels/prose_closures.py).
+// prose-only closure leaves a live row that reads as attended to, and a designs.md order no row
+// records is decided work no count sees (readmodels/orphans.py, prose_closures.py, design_orders.py).
 //
 // Its own module since F793 added that third group: views/messages.js was AT its size ceiling
 // with zero slack, so the extraction came first and the group second — the same move
@@ -79,6 +79,12 @@ export function orphanBanner() {
     el("div", { class: "prose mt" }, o.title),
     el("div", { class: "faint small mt" }, `claimed by ${o.claimed_by}: “${o.claim}”`));
 
+  // A docs/designs.md order no finding or decision row quotes: decided work outside every count
+  // (readmodels/design_orders.py). Nothing to click — self-audit records it, by quoting the heading.
+  const orderCard = (o) => el("div", { class: "card mt" },
+    el("div", { class: "prose" }, o.heading),
+    el("div", { class: "faint small mt" }, "docs/designs.md — no item row quotes this order"));
+
   async function load() {
     let rows;
     try { rows = await api("/api/items/orphans"); } catch { return; }
@@ -92,6 +98,8 @@ export function orphanBanner() {
         of("undelivered"), undeliveredCard),
       group("claimed closed in prose, still open — a settled report said it disposed of these",
         of("prose-closure"), proseClosureCard),
+      group("decided, never recorded — designs.md orders no item row carries",
+        of("unrecorded-order"), orderCard),
     ].filter(Boolean));
   }
 
