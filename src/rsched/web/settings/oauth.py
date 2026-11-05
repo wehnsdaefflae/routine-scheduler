@@ -26,7 +26,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from ...oauth import exchange, providers, store
+from ...oauth import exchange, providers, redirecturi, store
 from ...oauth.store import Connection
 from .common import server_of, update_config
 
@@ -168,7 +168,12 @@ def authorize_start(request: Request, provider: str, body: AuthorizeStart) -> di
     _register(flow_id, {"provider": provider, "account": account, "code_verifier": verifier,
                         "redirect_uri": redirect_uri, "state": state, "status": "pending",
                         "error": "", "expires_at": time.time() + FLOW_TTL_S})
-    return {"flow_id": flow_id, "authorize_url": f"{prov.authorize_url}?{urlencode(params)}"}
+    # A redirect target the provider will refuse is named HERE, not by the provider's own opaque
+    # error page (R3061: Google answered a LAN redirect_uri with "device_id and device_name are
+    # required for private IP" instead of a consent screen). A caveat, not a refusal: the URL
+    # still comes back and the card asks before opening the tab.
+    return {"flow_id": flow_id, "authorize_url": f"{prov.authorize_url}?{urlencode(params)}",
+            "caveat": redirecturi.private_host_caveat(redirect_uri)}
 
 
 @router.get("/settings/oauth/flow/{flow_id}")

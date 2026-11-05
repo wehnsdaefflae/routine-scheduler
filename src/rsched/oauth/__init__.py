@@ -8,6 +8,7 @@ happen in a headless, sandboxed run); a run only ever reads.
 Layout:
 - `providers.py` — the per-provider metadata registry + client-credential resolution.
 - `exchange.py` — the token-endpoint POST, shared by the connect flow and the refresh pass.
+- `redirecturi.py` — is the redirect target one a provider refuses before consent (a private IP)?
 - `store.py` — the daemon-owned connection store (single writer) + `tokens_for_routine`.
 - `web/settings/oauth.py` — the authorize flow + the public `/oauth/callback` route.
 - `daemon/oauth_refresh.py` — refreshes expiring access tokens on the scheduler tick.

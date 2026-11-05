@@ -45,6 +45,12 @@ export function renderConnections(view) {
       let f;
       try { f = await api(`/api/settings/oauth/${providerId}/authorize-start`, { method: "POST", body: { account } }); }
       catch (err) { toastError(err, 6000); return; }
+      // The server names a redirect target the provider will refuse (R3061: a LAN public_url got
+      // Google's "device_id and device_name are required for private IP" page instead of a
+      // consent screen). Say it HERE, where it is actionable — but let him through: it is an
+      // inference about another party's policy, and on a tunnel he may know better.
+      if (f.caveat && !(await confirmDialog(`${f.caveat} Try the authorization anyway?`,
+        { confirmLabel: "authorize anyway", danger: false }))) return;
       window.open(f.authorize_url, "_blank", "noopener");
       toast("authorize in the new tab, then return here");
       const deadline = Date.now() + 600 * 1000;
