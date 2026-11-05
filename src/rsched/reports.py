@@ -40,28 +40,28 @@ the closure reopens the thread.
 A report may also SUPERSEDE existing rows (`supersedes`): "these are now this thread." That is
 the one operation routing and consolidation both needed and neither had (F492/D110): handing a
 triage row to its owner used to leave the original untargeted, so the next pass routed it a
-second time (R1491/R1496/R1516/R1517/R1519/R1520 each twice in two days), and
-`problem-routing`'s "add your evidence to the OLDEST open one" named an operation that did not
-exist. A `superseded` event row closes both: the original folds into the carrier and takes the
-carrier's status from then on (docs/items.md), so it leaves triage once and settles when the
-thread it joined settles.
+second time (six ids twice in two days), and `problem-routing`'s "add your evidence to the
+OLDEST open one" named an operation that did not exist. A `superseded` event row closes both:
+the original folds into the carrier and takes the carrier's status from then on
+(docs/items.md), so it leaves triage once and settles when the thread it joined settles.
 
 A report is also ONE CONFIGURATION OF A HOOK (D152): trigger `send`, addressee the target
 routine or `triage`, delivery `next_prompt`, disposition open → settled. Since campaign step 4
 the HOOK IS THE SOURCE: every row below is written to `.control/hooks.jsonl` first and appended
-here as its PROJECTION (`hooks/reportproj`, which says why this file's bytes stay), so the two
-cannot drift; a hook that cannot be written REFUSES the filing.
+here as its PROJECTION (`hooks/reportproj`, which says why this file's bytes stay); a hook that
+cannot be written REFUSES the filing. Step 7 moved the first DECISION onto that stream
+(`hooks/reportinv.open_threads_now`), keeping the ledger's answer and filing a health event —
+`hook_stream_diverged` — if the two ever disagree.
 
 That is also what makes the OPEN-THREAD CAP fair. A run may not open more than
 `OPEN_THREAD_CAP` parallel threads to one owner (D110, operator 2026-08-31); the refusal names
-the open ids, and `supersedes` is the way through — fold them into the one report that carries
-them all. A cap without an append operation would just lose the finding.
+the open ids, and `supersedes` is the way through — a cap without it would lose the finding.
 
-The user's ONE write on this stream is RETRACTION (`retract_report`, D74): an addressed
-report whose delivery still waits in the target's inbox can be withdrawn — the delivery file
-is unlinked (the recipient never sees it) and a `retracted` event row records it. The report
-row itself is never rewritten or edited: it is the RUN's utterance, and a correction is a new
-message the user writes to the target's inbox in their own voice (docs/messages.md).
+The user's ONE write on this stream is RETRACTION (`retract_report`, D74): an addressed report
+whose delivery still waits in the target's inbox can be withdrawn — the delivery file is
+unlinked (the recipient never sees it) and a `retracted` event row records it. The report row
+is never rewritten: it is the RUN's utterance, and a correction is a new message the user
+writes to the target's inbox in their own voice (docs/messages.md).
 """
 
 from __future__ import annotations
@@ -72,9 +72,10 @@ from pathlib import Path
 from . import report_detail, report_disposal
 from .engine import inbox
 from .hooks import reportproj
+from .hooks.reportinv import open_threads_now
 from .ids import now_iso
 from .paths import append_jsonl, file_lock, read_jsonl
-from .report_threads import OPEN_THREAD_CAP, ThreadCapError, open_threads, supersedable
+from .report_threads import OPEN_THREAD_CAP, ThreadCapError, supersedable
 
 REPORTS_FILE = "reports.jsonl"
 REPORT_ID_RE = re.compile(r"^R(\d+)$")
@@ -172,7 +173,7 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
             rows = read_reports(path)
             folded, _ = supersedable(rows, list(supersedes))
             if target and not answers and not disposal.settles and not folded:
-                open_ids = open_threads(rows, routine=routine, target=target)
+                open_ids = open_threads_now(routines_home, rows, routine=routine, target=target)
                 if len(open_ids) >= OPEN_THREAD_CAP:
                     raise ThreadCapError(routine, target, open_ids)
             item_id = next_id(path)
@@ -181,10 +182,9 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
             # row as where the rest still is. The 273 rows cut before this stay as they are.
             full_detail = str(detail or "")
             kept_detail = clip_detail(full_detail, item_id)[0]
-            # THE HOOK IS THE SOURCE (D152 step 4): steps 2-3 built this row here and mirrored
-            # it afterwards, best-effort. Now the hook is written first and this row is its
-            # projection — one construction, and `reportproj.rebuild` can derive the whole
-            # ledger from the stream rather than paraphrase it.
+            # THE HOOK IS THE SOURCE (D152 step 4, see the docstring): the hook is written
+            # first and this row is its projection — one construction, so
+            # `reportproj.rebuild` derives the ledger rather than paraphrasing it.
             append_jsonl(path, reportproj.filed(
                 routines_home, report_id=item_id, routine=routine, run_id=run_id,
                 title=title[:TITLE_MAX], detail=full_detail, target=target,

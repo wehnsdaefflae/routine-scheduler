@@ -11,7 +11,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
         |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"
         |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window"|"error_class_undecided"
-        |"item_dropped_live"|"oneshot_skipped",
+        |"item_dropped_live"|"oneshot_skipped"|"hook_stream_diverged",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -296,6 +296,11 @@ routine per day, `obligations` how many, detail naming each and what the last ru
 
 item_dropped_live: a finding/decision self-audit's report.json carried open or in_progress was
 rewritten out of it (`daemon/item_record_watch`); `items` names them. The index keeps it live.
+
+hook_stream_diverged: a decision taken from the hook stream disagreed with the report ledger it
+projects (`hooks/reportinv`, D152 step 7) — carrying `stream` and `ledger`, the two counts. The
+LEDGER's answer was used, because that is what the operator's backlog counts are built on; the
+event is what makes the disagreement findable while both stores are still written.
 """
 
 from __future__ import annotations

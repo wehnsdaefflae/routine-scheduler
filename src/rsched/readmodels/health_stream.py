@@ -90,6 +90,9 @@ BLOCKED_EVENTS: dict[str, str] = {
                          "migration code is deleted",
     "migration_due_soon": "a MIGRATION marker expires within the warning window — the deletion "
                           "is owed before that date, or it lands on whoever ships that day",
+    "hook_stream_diverged": "a decision taken from the hook stream disagreed with the report "
+                            "ledger it projects — the ledger's answer was used, so nothing is "
+                            "wrong yet, but one of the two stores is missing a write",
     "item_dropped_live": "a live finding or decision was rewritten out of self-audit's report "
                          "— the item index keeps it live, but self-audit's ledger lost its row",
     "obligation_overdue": "something a person asked of this routine, or approved, has stayed "
