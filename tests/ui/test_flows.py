@@ -1190,8 +1190,7 @@ def test_settings_endpoints_crud(ui, ui_page):
     assert models["llama"] == {"endpoint": "vllm", "model": "meta/llama-3"} \
         or models["llama"]["endpoint"] == "vllm"
 
-    # the system-model blurb states the role-fallback behaviour (not "setup-time work" only)
-    # (the D230 "Fleet tool-call model" panel names the system model too, so match its heading)
+    # the system-model blurb states the role-fallback behaviour; matched by its heading (D230)
     expect(ui_page.locator(".panel", has=ui_page.get_by_text("System model", exact=True)))\
         .to_contain_text("any role a routine leaves unset falls back to this system model")
 

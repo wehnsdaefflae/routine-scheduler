@@ -15,7 +15,267 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
-## [0.498.0] — 2026-11-02
+## [0.499.0] — 2026-11-05
+
+### Fixed — no finding or decision can vanish from the item index any more, and the ones that did are back
+
+The operator, 2026-11-05: *"the number of active items increases instead of decreasing … do some
+items fall out of the backlog to remain active forever?! make sure nothing is lost."* Walking all
+239 committed versions of self-audit's `audit/report.json` answered both halves. The index treated
+whatever the latest WHOLE rewrite held as the whole set, and a row the rewrite left out survived only
+if some changelog row named it — so **F216, F217, F322, F355 and F445 left the file while open or
+in_progress, named by no changelog row, and disappeared from every surface** (D42 and D58 left live
+too and survived only through answer markers); 200 more left closed and kept no record. The recipe's
+own sentence — "items that drop out of the report keep their history through the changelog" — was
+true only for the items a release happened to name.
+
+`rsched/item_records.py` keeps the newest version of every F/D row the file has ever carried in
+`.control/item-records.json`, observed by ONE writer, `daemon/item_record_watch.py` (a stat per tick,
+a parse only on change). The index builds a dropped row from its last record
+(`readmodels/item_rows.recorded_item`) with its last STATUS and its own prose, plus `left_report`:
+a row dropped while live stays live in the index and every count, ended only by a recorded status
+or a changelog row newer than its departure. The departure is filed as `item_dropped_live` on the
+blocked-work surface. The store was seeded from the 239 versions; a history search recovered 20 of
+the 31 ids no committed version held (F36–F49 lived in the scheduler repo's own `audit/report.json`,
+deleted in 0.29.0; the rest were renumbered or folded), and the other 11 are numbering gaps that
+appear nowhere. The row shapes moved out of `readmodels/items.py` into `readmodels/item_rows.py`.
+
+### Fixed — a row only triage could close was closable by nobody (F840)
+
+An unaddressed report's recipient is triage — self-audit — so `report_threads.disposable` now lets
+triage dispose of it. Before, an unaddressed row about self-audit's OWN subject had no disposer at
+all: settling was refused as "not routed yet" and routing was refused because "a routine cannot
+address a report to itself", so R3173 sat in triage and in the live count with its defect fixed.
+D182's specimen is unchanged — a SENDER still cannot retire its own unread report.
+`test_every_live_row_shape_has_someone_who_can_dispose_of_it` holds the invariant.
+
+### Fixed — the browser test stage fits its container (D238)
+
+`tests/browsersource.BROWSER_WORKERS` 4 → 2. Four workers peaked at ~4.8 GB in a `uitest` cgroup
+capped at 4 GiB on a 14 GB host with ~2 GB free: the kernel OOM-killed chrome-headless there 153
+times in the week to 2026-11-05, each kill a test parked on a browser that never answered, and the
+stage ran 95–113 minutes or timed out — no release shipped from 11-02. Raising the ceiling was
+declined (the host has no memory to give). Measured on this release: 697 browser tests in 19 min.
+
+### Added — designs.md holds orders, never open questions, and an order no row records is bannered
+
+Five "Decide: …" entries sat in docs/designs.md from 2026-10-01 — a file only the builder reads —
+so no surface the operator reads ever asked them. All five were answered 2026-11-05; three are built
+here: CHANGELOG versions may never repeat or go backwards (`tests/test_policy.py`), the pattern
+recommender falls back to `one-job` instead of whichever sorts first (`patterns/recommend.NEUTRAL_PATTERN`),
+and new conversations start with the reminder layer at `local` and run history at `last`, like
+routines (`conversations.starting_capabilities`, read by the create path and the composer's
+preview). The other two are decided entries now. `tests/test_policy.py` refuses a question heading
+in the file, and `readmodels/design_orders.py` gives the Messages banner a fourth group — a
+designs.md order no finding or decision row quotes ("decided, never recorded"; 32 of 33 today).
+
+### Shipped — the builder's eight stranded branches
+
+D163's cost panel, D216 (c), D230, D231, F816 and D152 step 6 were built 2026-11-02 and never gated
+(the gate's browser stage timed out — D238). They ship here as 0.498.0, renumbered (main had spent
+0.496.0 and 0.497.0 since), with two test fixes the gate found: D216 (c)'s tests needed a seeded
+library, and a settings test matched D230's new panel by accident.
+
+### Removed — every catch-up: a fire missed for any reason is skipped (D237, F825)
+
+The operator's answer, asked what lifting a pause should do: *"we don't want this at all. no
+catch-ups. why do we need it for restarts? do we need it at all?"* — and, told what each
+mechanism was for, *"Remove all catch-up: a fire missed for any reason (pause, restart, crash)
+is skipped."* That reverses D183 (his own 2026-10-15 order) and D156, and the 0.329.0 lane boot
+make-up. Three mechanisms are gone, not switched off:
+
+- the boot make-up behind a routine's `schedule.catchup: run_once` (`registry.missed_fire`,
+  `Scheduler.boot_catchup`) — a field every live routine already set to `skip`;
+- the lane boot make-up (`daemon/lane_catchup.py`) and the watermark it compared against,
+  `.control/lane-fires.json` (`rsched/lane_fires.py`), which every `lane_runs.arm` and every
+  paused lane skip stamped for no other reader;
+- the pause-lift make-ups for lanes (D156) and routines (D183: `daemon/routine_catchup.py`,
+  `rsched/routine_fires.py`, `.control/routine-fires.json`). `DELETE /api/settings/pause` now
+  answers `{"ok": true, "paused": false}` and arms nothing; the dashboard's resume toast and
+  pause banner say so.
+
+The lane's `catchup` field, `SchedulePatch.catchup`, the routine page's "if a run was missed"
+select, the lane editor's "if the daemon was down at fire time" select, the settings-digest
+suffix and `catchup` in every seed settings pattern go with them; a PATCH naming `catchup` is a
+422 on both models. A skipped fire is still RECORDED: `fire_paused` / `lane_fire_paused` keep
+the subject's cron and next fire, and their wording now says the fire is not made up. The four
+make-up events (`fire_catchup`, `lane_fire_catchup`, `lane_catchup_declined`,
+`routine_catchup_declined`) are retired from the vocabulary and the blocked-work fold; rows
+already in the stream stay as history that no reader keys on. A one-shot is a request, not a
+cron fire, so one whose `fire_at` passed during downtime still fires (docs/schedule-once.md).
+
+A `routine.yaml` still carrying `schedule.catchup` loads as before with a problem line, like
+every unknown key, that names the decision instead of "check the spelling". The one-shot
+migration (`/tmp/claude-migrate-catchup.py`) strips it from 169 live files — 30 routines, 139
+conversations — each committed in its own repo; drops `catchup` from all seven lanes; deletes
+the two stores and their locks; and strips `settings.schedule.catchup` from the 14 live library
+patterns, without which every routine following a pattern would read its schedule as an
+override.
+
+**F825** ends with it: the six deleted lanes' stale fire stamps vanish with `lane-fires.json`,
+`lanes.delete` now removes the lane's `lane-runs/<id>.lock`, and the migration sweeps the six
+stale locks (grp-80fd7080, grp-8bfd2aa6, grp-a675e218, lane-13fa195f, lane-c8888845,
+lane-d7d7aae7), so the lane-runs directory counts the lanes that exist.
+`tests/test_no_catchup.py` pins the reversal from outside: a weekly routine and a scheduled lane
+whose last due fire nobody ran fire nothing at boot, and a fire skipped during a pause fires
+nothing once the pause is lifted through the API.
+
+### Fixed — the kickoff that taught every run one action per turn, a run that died on its model can be re-pointed, and a lane's heartbeat whose member count reconciles (F836, F837, F834, F826)
+
+**Nobody chained, because the engine's own kickoff said not to.** The operator, 2026-11-05: *"i
+have never seen a run use the ability to run actions in parallel with the && syntax. why is
+that?"* Measured over the 60 most recent fleet transcripts: **1 turn of 8,084 carried more than
+one action (0.01%)**, and 16 of 17 routines had never chained once — while `engine/chain.py` has
+been on for every routine since 0.446.0 and reads actions from a reply's text AND from
+`completion.parsed_rest`. `composer.kickoff_message` said *"Reply with ONE JSON action object"* —
+the last instruction a run reads before its first action, contradicting the harness paragraph
+that says a reply may carry several. It now names the first turn's shape (a step, not a plan, not
+a finish) and the option to chain the first few independent steps in that one reply. Per D236
+(*"Free fix, re-measure"*) this is the kickoff ALONE: the kickoff is a one-shot boot message
+outside the ratcheted engine contract, so it costs the always-on budget nothing, while the
+candidate's +297-character when-to-chain paragraph for the harness was declined —
+`test_the_engine_contract_never_grows` keeps its ceiling, `say` stays required on every action,
+and the chaining rate is re-measured on this fix alone. Pinned off the message the first
+completion is actually SENT (`tests/test_kickoff_chaining.py`); `docs/prompt-anatomy.md`,
+README, `docs/getting-started.md`, `docs/curated-rules.md` and CLAUDE.md stopped saying "exactly
+one action per turn".
+
+**A run that died BECAUSE of its model could only be restarted on that model.** The operator:
+*"you cannot switch the model if the run is paused or aborted. but sometimes i have to"*. The
+paused half did not reproduce — `paused` is an active state and the pause gate runs before
+`apply_model_switch`. The other half was real at both layers: `require_active` returned 409 for
+`finished`/`failed`/`aborted` and `run.js` hid the control on exactly those states, while neither
+`resume-run` nor `rewind` takes a model. `deficit-coach` died three times on 2026-11-04 with
+`model_chain_exhausted`, every one an Opus 429, and its `control.json` shows a person at that
+switch after the run had died. The switch is now accepted on a terminal run and armed for its
+resume; the reply carries `armed_for_resume` and `when`, and the toast says "at this run's
+resume" instead of promising a turn that will never come. Nothing new honours it —
+`switches._fresh` edge-triggers against `control-applied.json` and the resumed leg's first turn
+boundary precedes its first completion — and `tests/test_switch_after_death.py` now proves that
+end to end (the resumed leg's first completion resolves the new model), beside a real-browser
+test of the control.
+
+**A hung browser test no longer costs five attempts.** Two release gates in two days returned
+`timeout` (ui stages of 6,779 s and 5,723 s); of 794 executions in one, 39 hit the per-test 300 s
+ceiling and cost 201 of 448 worker-minutes, with `test_toc`/`test_token_gate` nodes repeating
+three and four times each. A node pytest-timeout KILLED never finished, so `reruns=4` could only
+spend twenty minutes per hung node; `rerun_except` now exempts `from pytest-timeout`, as it
+already exempted a wedged sidecar. This is the amplifier only — the cause, four Chromiums inside
+`uitest`'s 4 GiB against a suite measured at ~4.8 GB, is what D238 halved to two workers.
+
+**A lane's heartbeat counted log rows and called them runs.** `lane_chain_done` printed
+`len(rec["log"])` as "<n> member runs", and a switched-off or retired member is a log row with no
+run: `Professional · Daily` read "5 member runs" on every fire from 10-25 to 11-01 while two of
+its five members were `enabled: false` and three runs existed. The test of exactly that shape
+asserted "2 member runs" for ONE run — the suite pinned the defect. The detail
+(`daemon/lane_runs.chain_detail`) now reads `3 of 5 members ran, 2 skipped (a, b), 0 not-ok`,
+plus `N not reached` for a stopped chain, against the chain's arm-time member list — so members =
+ran + skipped + missing + not reached for every row (`tests/test_lane_chain_detail.py`). The
+"Morning Brief: 3 member runs" counter-example on today's 2-member lane is the same defect read
+against the arm-time snapshot: a chain logs one row per member it was armed with, so the 10-29
+chain held three; only two runs exist (`grant-hunter:20261029-080752`,
+`predatory-publisher-tarpit:20261029-085751`) and it logged 0 not-ok, so the third was a skip —
+the new detail would have read `2 of 3 members ran, 1 skipped (…)`.
+
+### Fixed — `/api/questions` no longer ships the fleet's whole decision history to a badge every 30 s (F810)
+
+MEASURED against this instance's stores on 2026-11-05 (read from `~/routines/*/questions/` and
+`~/conversations/*/questions/`, not from the live API): the response carried 392 SETTLED rows —
+every routine's and conversation's consumed-answer archive up to 25 per dir — at 1.08 MB, beside
+~33 KB of open asks and ~7 KB for the 3 open audit decisions. `static/app.js` refetches it every
+30 s in every open tab, for a header badge, a notifier and a run view that count only OPEN rows.
+F809's gzip cut the wire bytes; the payload was still built, serialized and parsed whole.
+
+The route now bounds what one read carries (`web/decisions_window.py`): open decisions and answers
+still in flight are sent whole, always; the settled archive only as `?settled=<n>` — the newest
+n across the whole instance, ordered by when a run took them as INSTANTS (F771's DST trap), and
+NONE by default — projected to the fields a receipt card reads (`SETTLED_FIELDS`: options,
+defaults, batch ids and request entity lists are an ask's machinery). `?routine=<slug>` narrows
+every row to one routine's own. The response is now `{"items": [...], "settled_total": N}`, plus a
+`settled_note` naming the parameters whenever rows were left out — a routine reads this API with no
+console in front of it (self-audit's orient, config-optimizer), and a cut it is not told about
+reads exactly like "nothing was ever answered". Estimated from the same stores: the badge's read
+drops from ~1.12 MB to ~40 KB; the Decisions page's first load to ~75 KB.
+
+The Decisions page is the one console reader that asks for history (`questions-store.js`
+`wantSettled`): the newest 25, a footer "settled: showing the newest k of N" with a **show more**
+button (`components/settled-more.js`, through `act()`), and the window released when the page
+unmounts so the 30 s poll goes back to carrying none. The store now lets two reads overlap only
+when the newer one asks for a wider window, and only the read begun LAST may publish. The
+Decisions page, `api_questions.py` and the size ratchet each SHRANK in the process.
+
+### Fixed — a conversation's scripts rail was empty: conversations hold scripts, and now show them (F833)
+
+The operator, 2026-11-02: *"why do conversations not show the routine's scripts in the right side
+bar? routine runs seem to do it"*; decided 2026-11-05: conversations hold scripts. The engine
+already let them — a conversation run's `script` resolves `<conversation>/scripts/<name>.py`
+(`executor._script_homes` starts at the run's own dir), `scripts/` is neither sealed nor recipe,
+and on this instance 33 of 139 conversations hold 144 scripts between them (the finding's "no
+conversation has a scripts dir" was not so). What was missing was the READ: the only scripts
+route resolved slugs through the routines home, so every conversation's list 404'd and
+`components/runscripts.js` swallowed the 404 by design.
+
+`GET /api/conversations/{slug}/scripts` is the routine route's twin on the same reader
+(`scripts.list_scripts`, the catalog the run's own capabilities digest names) — its own route,
+like `artifacts`, because a slug is unique only within a home. The section now mounts in the
+conversation view's rail (re-read when a reply ends, since a reply is what writes scripts) and in
+the run page's rail for either home, once the run detail names it (a detached task's scripts are
+its owner's, so it gets none). The deliberate 404 swallow is gone: every home that holds scripts
+has the route now, so a failed read says so in the section instead of leaving it silently empty.
+
+### Fixed — the browser screen's clipboard switch now syncs the clipboard, both ways (F831)
+
+The operator, 2026-11-02: *"the host to client clipboard sync for the sidecar browser does not
+work"*. D221's switch set the iframe's `allow="clipboard-read; clipboard-write"`, on the reading
+that the embedded noVNC page would reach the host clipboard once permitted. It never does: read at
+source, neither noVNC the sidecars serve (Debian bookworm's 1.3.0 for the browser, 1.6.0 for the
+desktops) calls `navigator.clipboard` anywhere. Their clipboard is a manual side panel — a
+textarea whose `change` event sends its text to the guest (`UI.clipboardSend` →
+`rfb.clipboardPasteFrom`) and whose value noVNC overwrites with a plain assignment when the guest
+copies. A permission grant only removes a block; nothing made the call, and the four toggle tests
+asserted the control against a dead screen, so the suite could not see it.
+
+`static/components/clipboard-bridge.js` makes the calls from the embedder, through that panel —
+the one contract both versions share, reachable because the screen is relayed same-origin. When
+the screen is clicked or focused it reads this machine's clipboard and, if new, puts it in the
+panel and fires `change`, so noVNC's own send path hands it to x11vnc; the panel's `value`
+setter is wrapped on that element, so what the guest copies is written to this machine's
+clipboard the moment noVNC receives it. Both go through the FRAME's own `navigator.clipboard`
+under the explicit grant; the switch is now the bridge plus the grant, and OFF is neither — and
+it is the bridge that stops the sync, since a same-origin frame may hold the clipboard by default.
+The agent desktops keep the permission without a bridge — automatically reading the operator's
+clipboard into a routine's VM is a choice he has not made — and docs/browser-sessions.md says
+so. `tests/ui/test_browser_clipboard_bridge.py` proves both directions and the off state against a
+page carrying noVNC's exact clipboard contract and the browser's real clipboard; it runs no RFB
+stream, since the uitest container has no VNC server.
+
+### Fixed — a reminder link lands on the reminder, not on the top of the page (F832)
+
+His words: *"clicking the reminder link to the routine's health page should take us straight to
+the reminder's anchor instead of the top of the healtzh page"*. `reminderLink` built
+`#/changes/<slug>` and the caution rows carried no address, so with tens of reminders (169 across
+the instance, 164 of them local) the reader scrolled past five sections and found the row by
+eye. The link now carries `?rem=<id>`, each caution row carries `data-rem`, and Recipe health's
+first paint lands on that row through the house's own landing (`landOn`: folds opened, centred,
+flashed, held while the sections above fill in). It lands once — a live re-read never scrolls the
+reader again — and a reminder the routine no longer holds says so in a toast.
+`tests/ui/test_reminder_landing.py`.
+
+### Fixed — a mid-run filesystem grant's note no longer says it waits for the next run (F829)
+
+R3164 (`llmsectest-weekday`): the operator granted an `fs-write` root permanently while the run
+was live, the engine's note said it *"takes effect at your NEXT RUN … widening it mid-run would not
+reach the jails already created"*, and the very next identical util call succeeded with the new
+root. The behaviour was right — `sandbox.policy_for_ctx` builds every jail per call from
+`ctx.write_roots()`, which folds in the run's grant overlay — and the words were wrong:
+`_tell_live_run` hands every changed config key to the change note, and
+`configflow.CLASSIFICATION['fs_write_roots']` was the one fs-root entry never corrected (its
+sibling `fs_read_roots` always drew the request/edit line). It now carries the same sentence — an
+access request decided mid-run reaches the run, a config edit does not — and
+`tests/test_configflow_fsroots.py` pins the behaviour against the prose and both fields to one
+wording, the same shape F802 gave `machines`.
+
+## [0.498.0] — 2026-11-05
 
 ### Added — an instance default for the `tool_call` role, so `role_swap: cheap` can save something (D230)
 

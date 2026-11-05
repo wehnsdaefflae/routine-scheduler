@@ -125,7 +125,8 @@ def test_the_api_surfaces_it(api_client, make_routine):
     (audit / "report.json").write_text(json.dumps({"findings": [F324, F336]}), encoding="utf-8")
     (audit / "changelog.jsonl").write_text(
         json.dumps(DEFER_ROW) + "\n" + json.dumps(CLOSE_ROW) + "\n", encoding="utf-8")
-    got = c.get("/api/items/orphans").json()
+    # the deferral kind only: the server's own docs/designs.md also feeds `unrecorded-order` rows
+    got = [o for o in c.get("/api/items/orphans").json() if o["kind"] == "deferral"]
     assert len(got) == 1 and got[0]["carrier"] == "F324"
     assert got[0]["source_ids"] == ["D98", "F334"]
 
