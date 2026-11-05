@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.499.1] — 2026-11-05
+
+### Fixed — a recorded row with no status no longer demotes a changelog-addressed item to `unknown`
+
+Found deploying 0.499.0, measured on the live index: 177 items read `unknown` where none had. 111
+are July rows that never carried a `status` and were invisible before the item records — honestly
+`unknown` now, and not counted as active. The other 66 had read `addressed` through their
+changelog rows; the record, built ahead of the archive rule, outranked it with an empty status.
+`item_rows.recorded_item` now applies the archive rule to a record with no status: `addressed`
+when a changelog row names the item. A recorded status still wins.
+
 ## [0.499.0] — 2026-11-05
 
 ### Fixed — no finding or decision can vanish from the item index any more, and the ones that did are back

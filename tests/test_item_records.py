@@ -108,3 +108,17 @@ def test_the_watch_observes_on_change_and_files_the_live_loss(tmp_path, monkeypa
 def test_the_records_store_invalidates_the_index_memo(tmp_path):
     home, rd = _home(tmp_path)
     assert item_records.records_path(home) in items_model.source_paths(rd, home)
+
+
+def test_a_record_with_no_status_falls_back_to_the_changelog(tmp_path):
+    """July rows carried no `status`; before the records existed such a row was `addressed` by
+    its changelog row, and the record must not demote it to `unknown`."""
+    home, rd = _home(tmp_path)
+    item_records.observe(home, _report(rd, [{"id": "F125", "title": "old"},
+                                            {"id": "F126", "title": "older"}]))
+    item_records.observe(home, _report(rd, [{"id": "F900", "status": "open"}]))
+    row = {"ts": "2026-07-20T00:00:00+00:00", "commit": "c", "summary": "s", "items": ["F125"]}
+    (rd / "audit" / "changelog.jsonl").write_text(json.dumps(row))
+    got = _items(rd, home)
+    assert got["F125"]["status"] == "addressed"
+    assert got["F126"]["status"] == "unknown", "no status and no changelog row: honestly unknown"

@@ -118,8 +118,10 @@ def recorded_item(record: dict, addressed: list[dict], answered: dict,
     """An item the current report no longer holds, from its LAST RECORDED row (item_records).
 
     Its status is the recorded one — a row dropped while live stays live — unless a changelog
-    row addressed it after it left. `left_report` says when the report omitted it, which is
-    what a surface needs to tell "self-audit closed it" apart from "self-audit lost it".
+    row addressed it after it left. A record with NO status (rows written before self-audit
+    emitted one) falls back to the archive rule: `addressed` when a changelog row names it.
+    `left_report` says when the report omitted it, which is what a surface needs to tell
+    "self-audit closed it" apart from "self-audit lost it".
     """
     raw_entry, raw_meta = record.get("entry"), record.get("report")
     entry: dict = raw_entry if isinstance(raw_entry, dict) else {}
@@ -127,6 +129,8 @@ def recorded_item(record: dict, addressed: list[dict], answered: dict,
     kind = str(record.get("kind") or TYPE_BY_PREFIX.get(str(entry.get("id"))[:1], "finding"))
     item = report_item(kind, entry, meta, addressed, answered, answer_words)
     item["left_report"] = str(record.get("left") or "")
+    if item["status"] == "unknown" and addressed:
+        item["status"] = "addressed"    # recorded before statuses existed: the archive rule
     left = _instant(item["left_report"])
     if item["status"] in LIVE and left is not None and any(
             (when := _instant(row.get("ts"))) is not None and when > left for row in addressed):
