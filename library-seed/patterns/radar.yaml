@@ -12,7 +12,6 @@ asks:
     sites?
 settings:
   schedule:
-    catchup: skip
     friendly:
       frequency: daily
       time: 07:00

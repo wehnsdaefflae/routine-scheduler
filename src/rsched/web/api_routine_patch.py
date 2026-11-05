@@ -10,7 +10,6 @@ LIVE run what changed and which half of it reaches it now.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 from croniter import croniter
 from fastapi import APIRouter, HTTPException, Request
@@ -50,7 +49,7 @@ class SchedulePatch(BaseModel):
     `updated: ["schedule"]`, and the next load DROPPED it with a problem (`_validate_lenient`):
     a scheduled routine silently became a manual one. A misspelled key landed beside the real
     ones, read by nothing; a non-mapping `friendly` was a 500. All of those are 422s here —
-    strict, like `RunGatePatch`, so `"catchup": 1` is refused rather than coerced. Switching a
+    strict, like `RunGatePatch`, so `"cron": 1` is refused rather than coerced. Switching a
     routine off is not a schedule key: it is the top-level `enabled`, which the friendly
     "disabled" cadence writes.
     """
@@ -58,7 +57,6 @@ class SchedulePatch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     friendly: dict | None = None    # {"frequency": …} — translated to cron + the server's tz
-    catchup: Literal["skip", "run_once"] | None = None
     cron: str | None = None
     tz: str | None = None
 
@@ -84,7 +82,7 @@ class RoutinePatch(BaseModel):
     # the off switch (RoutineConfig.enabled) — strict, so `"no"` is a 422, never read as true
     enabled: StrictBool | None = None
     run_gate: RunGatePatch | None = None    # partial — validated MERGED, see _apply_run_gate
-    schedule: SchedulePatch | None = None   # {"friendly":…, "catchup":…} (cron built server-side)
+    schedule: SchedulePatch | None = None   # {"friendly":…} | {cron, tz} (cron built server-side)
     budgets: BudgetsPatch | None = None     # the runaway backstops, by name — a misspelled
     #                                          key is a 422 here, never a silent revert at load
     models: dict | None = None              # {main|tool_call|uncensored: catalog name,
@@ -271,7 +269,7 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
     """Place the routine.yaml resource fields a PATCH carries that the caller's generic
     top-level merge can't handle on its own: retention.keep_runs (nested under `retention:`),
     the fs roots (validated, stripped — left in `updates` for the wholesale merge), and the
-    schedule (a friendly spec → cron + the server's tz, plus the catchup policy). Pops what
+    schedule (a friendly spec → cron + the server's tz). Pops what
     it consumes. A write root covering the routine's own dir unlocks recipe self-editing
     (grants.py) — the user's deliberate choice here, the same lever the routine-improver holds.
 
@@ -295,7 +293,7 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
             updates[roots_key] = validate_roots(roots_key, updates[roots_key],
                                                 current=raw.get(roots_key))
     if "schedule" in updates:
-        # typed by SchedulePatch: catchup, a raw cron and its tz arrive valid
+        # typed by SchedulePatch: a raw cron and its tz arrive valid
         sched_patch = updates.pop("schedule") or {}
         raw.setdefault("schedule", {})
         if "friendly" in sched_patch:
@@ -306,7 +304,7 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
                 raise HTTPException(400, f"invalid schedule: {exc}") from exc
             raw["schedule"].update(cron=cron, tz=schedule.server_tz())
             raw["enabled"] = friendly.get("frequency") != "disabled"
-        # merge the remaining RAW keys (cron / tz / catchup) — a friendly spec was already
+        # merge the remaining RAW keys (cron / tz) — a friendly spec was already
         # translated and popped above; tz is preserved when only cron is sent.
         raw["schedule"].update(sched_patch)
 

@@ -12,7 +12,6 @@ asks:
   question: When is the model good enough to stop training — a metric the run can check, or your own judgement?
 settings:
   schedule:
-    catchup: skip
     friendly:
       frequency: daily
       time: 02:00

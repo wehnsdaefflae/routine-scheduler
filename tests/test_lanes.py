@@ -151,7 +151,7 @@ def _mk(tmp_path: Path, slug: str) -> None:
     (d / "inbox").mkdir()
     import yaml
     cfg = {"name": f"Test {slug}", "slug": slug, "enabled": True,
-           "description": "t", "schedule": {"cron": "0 7 * * 1", "tz": "UTC", "catchup": "skip"},
+           "description": "t", "schedule": {"cron": "0 7 * * 1", "tz": "UTC"},
            "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
            "budgets": {"max_turns": 5, "max_wall_clock_min": 5, "max_total_tokens": 1000,
                        "max_subruns": 1, "max_subrun_depth": 1, "ask_timeout_min": 1}}
@@ -434,12 +434,9 @@ def test_paused_lane_leaves_the_daemon_fire_table():
     lane = {"cron": "0 7 * * *", "tz": "UTC", "paused": True}
     now = datetime(2026, 8, 10, 6, 0, tzinfo=UTC)
     assert firetimes.next_fire(lanes.schedulable(lane), now) is None
-    # …and the catch-up reads the same adapter, so a paused lane has no missed fire either
-    assert firetimes.last_due_fire(lanes.schedulable(lane), now) is None
     lane["paused"] = False
     nf = firetimes.next_fire(lanes.schedulable(lane), now)
     assert nf is not None and nf.hour == 7
-    assert firetimes.last_due_fire(lanes.schedulable(lane), now).hour == 7
 
 
 def test_api_lane_pause_toggle(api_client):
@@ -457,43 +454,41 @@ def test_api_lane_pause_toggle(api_client):
     assert r.json()["lane"]["paused"] is False
 
 
-def test_store_catchup_roundtrip(tmp_path):
-    """The boot catch-up policy: born run_once (a lane IS the fleet's schedule, and a lost
-    fire has no other path), patchable to skip, validated, normalized on load."""
-    import pytest
-    home = tmp_path
-    rec = lanes.create(home, name="G", cron="0 7 * * *", tz="UTC")
-    assert rec["catchup"] == "run_once"
-    lanes.update(home, rec["id"], catchup="skip")
-    assert lanes.get(home, rec["id"])["catchup"] == "skip"
-    lanes.update(home, rec["id"], name="G2")            # untouched fields stay put
-    assert lanes.get(home, rec["id"])["catchup"] == "skip"
-    with pytest.raises(ValueError, match="catchup"):
-        lanes.update(home, rec["id"], catchup="always")
+def test_a_lane_has_no_catchup_policy_any_more(api_client):
+    """D237 removed every make-up fire, and the lane's `catchup` field with it: a PATCH naming
+    it is a 422 (the strict lane model), and a leftover key in the store is read by nothing."""
     from rsched.paths import atomic_write_json
-    atomic_write_json(lanes.lanes_file(home),
-                      {"lanes": [{"id": "lane-x", "name": "G", "catchup": "bogus"}]})
-    assert lanes.load(home)["lanes"][0]["catchup"] == "run_once"   # a corrupt value → default
-
-
-def test_api_lane_catchup_patch(api_client):
     client, tmp_path = api_client
     _mk(tmp_path, "alpha")
     lane_id = client.post("/api/lanes",
                           json={"name": "C",
                                 "members": [{"slug": "alpha"}]}).json()["lane"]["id"]
-    r = client.patch(f"/api/lanes/{lane_id}", json={"catchup": "skip"})
-    assert r.status_code == 200, r.text
-    assert r.json()["lane"]["catchup"] == "skip"
-    assert client.get("/api/lanes").json()["lanes"][0]["catchup"] == "skip"
-    assert client.patch(f"/api/lanes/{lane_id}", json={"catchup": "twice"}).status_code == 400
+    assert "catchup" not in client.get("/api/lanes").json()["lanes"][0]
+    assert client.patch(f"/api/lanes/{lane_id}", json={"catchup": "skip"}).status_code == 422
+    home = tmp_path / "routines"
+    atomic_write_json(lanes.lanes_file(home),
+                      {"lanes": [{"id": "lane-x", "name": "G", "catchup": "run_once"}]})
+    assert "catchup" not in lanes.load(home)["lanes"][0]
 
+
+def test_deleting_a_lane_removes_its_arm_lock(tmp_path):
+    """F825: a deleted lane left its `lane-runs/<id>.lock` behind, so the sidecars counted
+    lanes that no longer existed. The lock goes with the lane; an in-flight chain's record
+    does not — `lane_runs` promises a deleted lane's chain finishes."""
+    from rsched import lane_runs
+    rec = lanes.create(tmp_path, name="Gone", members=[{"slug": "a"}], cron="0 7 * * *",
+                       tz="UTC")
+    assert lane_runs.arm(tmp_path, rec, default_on_failure="stop") is not None
+    lock = lane_runs.arm_lock_path(tmp_path, rec["id"])
+    assert lock.exists()
+    assert lanes.delete(tmp_path, rec["id"]) is True
+    assert not lock.exists()
+    assert lane_runs.read(tmp_path, rec["id"]) is not None     # the chain finishes on its own
 
 
 def test_an_unknown_lane_tz_degrades_instead_of_killing_the_scheduler(tmp_path):
     """The lane store is hand-editable JSON with no schema on the way in, and an unknown zone
-    reaches `ZoneInfo` inside `Scheduler.rescan` and the lane boot catch-up — both of
-    which run at BOOT, before the loop's tick guard, so the exception unwound the scheduler
+    reaches `ZoneInfo` inside `Scheduler.rescan`, which runs at BOOT, before the loop's tick guard, so the exception unwound the scheduler
     task while uvicorn kept serving. `"Europe/Berlin "` bought a daemon that answered
     /api/status and never fired another run. It degrades like a corrupt cron: to "", which
     every reader turns into the server zone.
@@ -514,7 +509,7 @@ def test_an_unknown_lane_tz_degrades_instead_of_killing_the_scheduler(tmp_path):
 
 async def test_a_boot_rescan_that_raises_does_not_stop_the_scheduler(tmp_path, monkeypatch):
     """The tick body has been guarded since a tz typo took the heart out of a live daemon; the
-    boot rescan and boot catch-up run BEFORE the loop and were not, which is the same failure
+    boot rescan runs BEFORE the loop and was not, which is the same failure
     with a worse blast radius — nothing fires until a human restarts it."""
     import asyncio
 

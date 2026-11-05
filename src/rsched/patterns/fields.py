@@ -161,7 +161,7 @@ def snapshot(cfg) -> dict:
 
     friendly = cron_to_friendly(cfg.cron) if cfg.enabled else {"frequency": "disabled"}
     values = {
-        "schedule": {"friendly": friendly, "catchup": cfg.catchup},
+        "schedule": {"friendly": friendly},
         "run_gate": cfg.run_gate.model_dump(),
         "triggers": list(cfg.triggers or []),
         "improve": bool(cfg.improve),
@@ -228,7 +228,7 @@ def patch_shape(key: str, value: object, lane_managed: bool) -> tuple[str, objec
             return "enabled", False
         if lane_managed:
             return "enabled", True
-        return "schedule", {"friendly": friendly, "catchup": spec.get("catchup") or "skip"}
+        return "schedule", {"friendly": friendly}
     if key == "reminders":
         return "shared_reminders", value
     return key, value

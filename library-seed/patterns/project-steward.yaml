@@ -14,7 +14,6 @@ asks:
   question: Where do the project's messages arrive — which mailbox, which senders?
 settings:
   schedule:
-    catchup: skip
     friendly:
       frequency: daily
       time: 08:00

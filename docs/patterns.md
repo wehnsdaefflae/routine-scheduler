@@ -19,7 +19,7 @@ asks:                             # what creation must ask when the task does no
   - field: run_gate
     question: Where does new material arrive — which mailbox and senders, which feed …?
 settings:                         # every governed value (rsched/patterns/fields.py)
-  schedule: {friendly: {frequency: daily, time: "07:00"}, catchup: run_once}
+  schedule: {friendly: {frequency: daily, time: "07:00"}}
   run_gate: {enabled: false, timeout_s: 30, checks: []}
   permissions: [util-authoring]
   capabilities: {actions: [revise_util, write_util], confirm: creations, reminders: local, …}

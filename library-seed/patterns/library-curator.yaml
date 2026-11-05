@@ -8,7 +8,6 @@ asks:
   question: How often should it review?
 settings:
   schedule:
-    catchup: skip
     friendly:
       frequency: weekly
       time: 03:00

@@ -10,7 +10,6 @@ asks:
   question: When should it run — once at a date, or only when you start it?
 settings:
   schedule:
-    catchup: skip
     friendly:
       frequency: manual
   run_gate:

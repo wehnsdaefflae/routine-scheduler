@@ -51,11 +51,10 @@ def test_a_custom_cron_that_is_not_five_valid_fields_is_refused(cron):
 def test_the_routine_patch_saves_a_custom_cron(api_client, make_routine):
     c, _ = api_client
     root = make_routine(slug="cust")
-    body = {"schedule": {"friendly": {"frequency": "custom", "cron": "0 6,14 * * *"},
-                         "catchup": "run_once"}}
+    body = {"schedule": {"friendly": {"frequency": "custom", "cron": "0 6,14 * * *"}}}
     assert c.patch("/api/routines/cust", json=body).status_code == 200
     sched = routine_yaml(root)["schedule"]
-    assert sched["cron"] == "0 6,14 * * *" and sched["catchup"] == "run_once"
+    assert sched["cron"] == "0 6,14 * * *"
     assert sched["tz"] == server_tz()
     bad = {"schedule": {"friendly": {"frequency": "custom", "cron": "0 25 * * *"}}}
     r = c.patch("/api/routines/cust", json=bad)

@@ -839,7 +839,7 @@ def _bg_task(server, taskid, owner_slug, *, state="running", pid=999999):
     (d / "state").mkdir(parents=True, exist_ok=True)
     (d / "routine.yaml").write_text(yaml.safe_dump({
         "slug": taskid, "name": "scrape", "enabled": True,
-        "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
+        "schedule": {"cron": "", "tz": "Europe/Berlin"},
         "workflow": {"library_slug": "general-task", "library_commit": ""},
         "owner": {"slug": owner_slug, "dir": str(server.conversations_home / owner_slug)},
     }))

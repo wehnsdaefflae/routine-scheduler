@@ -1,8 +1,9 @@
 """The cron scheduler: derives its fire table live from the routine catalog.
 
 Every tick (5s) it checks due fires; every registry_rescan_s it rescans ~/routines (so edits to
-routine.yaml — schedule changes, enable/disable — take effect without restarts). Catch-up
-(`run_once`) is evaluated exactly once, at daemon boot. A fire that finds its routine still
+routine.yaml — schedule changes, enable/disable — take effect without restarts). There is NO
+catch-up (D237, operator 2026-11-05): a fire missed for any reason — a pause, a restart, a crash —
+is skipped, and boot computes the NEXT future fire. A fire that finds its routine still
 running is skipped and logged (`overrun_skipped`, inside Runner.fire). Event triggers ride the
 same tick: spooled webhook events become coalesced fires — the trigger analog of the overrun
 rule is that events QUEUE instead of being skipped (daemon/triggers.py, docs/triggers.md).
@@ -51,7 +52,7 @@ def _now() -> datetime:
 
 class Scheduler:
     """The cron heart: rescans the catalog, computes next fires (`firetimes`, per-routine
-    tz + catchup policy), hands due routines to the Runner, and snapshots its state for
+    tz), hands due routines to the Runner, and snapshots its state for
     the UI.
     """
 
@@ -151,32 +152,13 @@ class Scheduler:
             by_lane[lane["id"]] = prev if (prev is not None and prev <= now) else nf
         self.lane_next_fires = by_lane
 
-    async def boot_catchup(self) -> None:
-        if pause.paused(self.server):
-            return  # a restart must not bypass the operator's durable pause
-        for slug, info in self.catalog.items():
-            if slug in self.suppressed_members:
-                # D71: a lane-managed member's own cron never fires, catch-up included
-                continue
-            if not info.fireable:
-                continue     # switched off, or finished: no missed fire worth making up
-            missed = registry.missed_fire(info.cfg, info.runs, _now())
-            if missed is not None:
-                log.info("catchup routine=%s missed_fire=%s → one make-up run", slug, missed)
-                await self.runner.fire(info.cfg, reason="catchup")
-        # Fires nobody was there for: a scheduled LANE's (its fire table is process memory) and
-        # a ROUTINE's the pause dropped with no resume left to read it (D183). Both ARM.
-        from . import lane_catchup, routine_catchup
-        lane_catchup.boot_catchup(self.server, _now())
-        routine_catchup.catchup(self.server, _now(), at="at boot")
-
     def _log_loop_failure(self, what: str, exc: Exception) -> None:
         """One bad pass must never kill scheduling for good — at BOOT as much as in the loop.
 
         An exception anywhere in a scheduling pass (a hand-edited lane tz reaching ZoneInfo, a
         disk-full stat, an sshfs blip) used to unwind run_forever silently while the web UI kept
         serving — the daemon looked alive with its heart stopped. The tick body has been guarded
-        since; the BOOT rescan and boot catch-up run before the loop starts and were not, which
+        since; the BOOT passes run before the loop starts and were not, which
         is the same failure with a worse blast radius: nothing fires until someone restarts it.
         Log it, flag it in the health stream, keep going — a later rescan recovers.
         """
@@ -205,8 +187,9 @@ class Scheduler:
 
     async def _boot(self) -> None:
         """Everything that happens once, before the first tick: the catalog, the orphans the
-        previous process left, the detached tasks it was delivering, then catch-up. Every step
-        that can raise is guarded (`_log_loop_failure`) — the loop must start regardless.
+        previous process left, the detached tasks it was delivering. Every step that can raise
+        is guarded (`_log_loop_failure`) — the loop must start regardless. Nothing missed while
+        the daemon was down is made up (D237).
         """
         try:
             self.rescan()
@@ -230,10 +213,6 @@ class Scheduler:
                 self.rescan()
             except Exception as exc:
                 self._log_loop_failure("boot rescan", exc)
-        try:
-            await self.boot_catchup()
-        except Exception as exc:
-            self._log_loop_failure("boot catch-up", exc)
 
     async def run_forever(self) -> None:
         await self._boot()
@@ -249,7 +228,7 @@ class Scheduler:
                 self._tick_once(loop)
                 now = _now()
                 # global pause (D34): skip our own fires, but keep ADVANCING the fire
-                # table — resuming must not backlog-fire everything that came due.
+                # table — a skipped fire is gone, never made up (D237).
                 is_paused = pause.paused(self.server)
                 for slug, due in list(self.next_fires.items()):
                     if now < due:
@@ -279,13 +258,8 @@ class Scheduler:
                         firetimes.next_fire(lanes.schedulable(lane), now) or due)
                     if is_paused:
                         log.info("scheduling paused — skipped due lane fire of %r", lane_id)
-                        # A deliberate skip is a HANDLED fire and moves the watermark: only an
-                        # arm stamped it before, so a pause left the lane's last due fire
-                        # reading as unarmed, the next boot made it up as a whole chain and
-                        # blamed a daemon that was up, and the OWED stamp beside it is what
-                        # lets the resume make it up (D156 C). Both, with the event, live in
-                        # `pause_skip` beside the routine path: inlined here the two DRIFTED,
-                        # leaving a lane-less routine's dropped fire with no record at all.
+                        # The record lives in `pause_skip` beside the routine path: inlined here
+                        # the two DRIFTED, leaving a lane-less routine's skip with no record.
                         pause_skip.lane_fire_dropped(
                             self.server, lane, due, self.lane_next_fires[lane_id])
                         continue

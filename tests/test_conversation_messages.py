@@ -51,7 +51,7 @@ def _conversation(tmp_path, slug: str = "convo"):
     (d / "runs").mkdir()
     cfg = {"name": f"Conv {slug}", "slug": slug, "enabled": True, "kind": "conversation",
            "description": "a test conversation.",
-           "schedule": {"cron": "", "tz": "Europe/Berlin", "catchup": "skip"},
+           "schedule": {"cron": "", "tz": "Europe/Berlin"},
            "workflow": {"library_slug": "converse", "library_commit": "abc123"}}
     (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
     (d / "main.md").write_text("# converse\n", encoding="utf-8")

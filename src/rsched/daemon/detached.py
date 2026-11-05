@@ -39,9 +39,9 @@ pending message), so the first tick after the resume wakes the owner, and intake
 is never consumed unfired — the same promise the one-shot intake makes.
 
 The gate lives in this module rather than in the scheduler's `if not is_paused:` block so that
-the boot path inherits it: `_boot` calls `reconcile()` BEFORE the pause-checking `boot_catchup`,
-so a restart under a pause fired every undelivered task, and a guard at the single call site in
-the tick loop would not have covered it.
+the boot path inherits it: `_boot` calls `reconcile()` before the tick loop's pause guard ever
+runs, so a restart under a pause fired every undelivered task, and a guard at the single call
+site in the tick loop would not have covered it.
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ class DetachedManager:
         """Boot pass: re-attempt any undelivered terminal task (run after the scheduler's
         recover_orphans(background_home) has closed out dead-pid mid-run tasks). Same work as
         a tick — the design is deliberately idempotent, pause hold included: `_boot` calls this
-        BEFORE the pause-checking `boot_catchup`, so a restart under a pause once fired every
+        before the tick loop's pause guard ever runs, so a restart under a pause once fired every
         undelivered task (F721). It still DELIVERS them; it starts nothing.
         """
         await self.tick()
@@ -208,8 +208,7 @@ class DetachedManager:
             "slug": taskid,
             "description": f"background task for {req['owner'].get('slug', '?')}: {label}",
             "enabled": True,
-            "schedule": {"cron": "", "tz": raw.get("schedule", {}).get("tz", server_tz()),
-                         "catchup": "skip"},
+            "schedule": {"cron": "", "tz": raw.get("schedule", {}).get("tz", server_tz())},
             "workflow": {"library_slug": workflow,
                          "library_commit": head_commit(self.server.libraries_home)},
             "owner": {"slug": str(req["owner"].get("slug", "")), "dir": str(owner_dir)},

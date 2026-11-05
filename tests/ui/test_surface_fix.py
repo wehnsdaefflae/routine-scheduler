@@ -82,7 +82,7 @@ ABILITY = '.ability[data-ability="needs-shell"]'
 # every one of them — so the day a second dial lands in that card, the assertion reds with a
 # message about the wrong control.
 SWITCH = f"{ABILITY} [data-switch-on]"      # abilities.js: the card's own switch
-SCHED_FREQ = f"{SCHEDULE} + .panel div.row > select"          # the cadence; catchup is in a label
+SCHED_FREQ = f"{SCHEDULE} + .panel div.row > select"          # the cadence select
 SCHED_CLEAR = f"{SCHEDULE} + .panel [data-clear-cron]"
 ACCEPT = ".accept-bar [data-accept]"           # the settings page's ONE save
 
@@ -340,7 +340,7 @@ def _seed_install_util(ui, mp) -> None:
 
 
 def _seed_set_schedule(ui, mp) -> None:
-    _configure(ui, schedule={"cron": "", "tz": "Europe/Berlin", "catchup": "skip"})
+    _configure(ui, schedule={"cron": "", "tz": "Europe/Berlin"})
 
 
 def _seed_lane_schedule(ui, mp) -> None:

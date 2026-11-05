@@ -74,18 +74,6 @@ def test_a_done_when_line_never_retires_anything(make_routine, tmp_path):
     assert "perrun" in sched.next_fires
 
 
-async def test_boot_catchup_does_not_make_up_runs_for_a_finished_routine(make_routine, tmp_path):
-    d = make_routine(slug="catchgoal")
-    text = (d / "routine.yaml").read_text().replace("catchup: skip", "catchup: run_once")
-    (d / "routine.yaml").write_text(text)
-    _goal_met(d)
-    fr = FakeRunner()
-    sched = Scheduler(tmp_server(tmp_path), fr, EventBus())
-    sched.rescan()
-    await sched.boot_catchup()
-    assert fr.fired == []
-
-
 def test_the_registry_reports_retired_separately_from_disabled(make_routine, tmp_path):
     done = make_routine(slug="done")
     off = make_routine(slug="off")

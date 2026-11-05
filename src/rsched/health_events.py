@@ -7,8 +7,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"finish_gate_failed"|"observation_render_failed"|"endpoint_needs_reauth"
         |"tool_param_salvaged"|"cache_read_degraded"|"cost_trend_degraded"|"model_failover"
         |"model_chain_exhausted"|"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
-        |"lane_fire_refused"|"lane_fire_paused"|"lane_fire_catchup"|"lane_catchup_declined"
-        |"fire_paused"|"fire_catchup"|"routine_catchup_declined"|"scheduler_tick_error"
+        |"lane_fire_refused"|"lane_fire_paused"|"fire_paused"|"scheduler_tick_error"
         |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
         |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"
         |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window"|"error_class_undecided"
@@ -131,15 +130,6 @@ context is silently truncated: a routine that has outgrown its model or its stat
 
 prompt_floor_over_window: the same condition at BOOT, before any provider rejection — the floor
 already exceeds the window; the run starts anyway (D223, engine/promptfloor.py).
-
-lane_fire_catchup: at daemon boot a SCHEDULED lane's most recent due fire had not been armed and
-the lane's catchup policy is run_once, so ONE make-up chain was armed (routine = the lane id,
-run_id empty). Never a backlog: one fire however many were missed, like a routine's own
-`catchup: run_once`. It says WHAT the watermark showed and not WHY, because the daemon cannot
-know: its only reading is "nobody armed it", and asserting a cause instead ("daemon down,
-restarting or draining") is the invention F480 removed from the boot reap. Every path that
-HANDLES a due fire stamps the watermark — an arm, and a global pause skipping one deliberately —
-so what remains is a fire the daemon was not there for.
 
 scheduler_tick_error: a scheduling pass raised, so whatever it owed is late. routine = `(daemon)`
 when a whole pass or the boot rescan raised (daemon/scheduler.py); otherwise the ITEM one
@@ -281,10 +271,11 @@ empty). One-off overlap is benign; a run of these is a wedged chain starving the
 fire_paused / lane_fire_paused: a DUE fire — a routine's own, or a scheduled lane's — was
 skipped because global scheduling is paused. routine = the slug or the lane id, run_id
 empty, both carrying `cron` and `next_fire`, because the COST of a dropped fire is the cron
-interval and not the pause. Both are written by `daemon/pause_skip.py`, which records each as
-OWED. fire_catchup / routine_catchup_declined say what became of a ROUTINE's (D183,
-`daemon/routine_catchup.py`): ONE make-up as a one-shot under a quarter of its own cadence,
-else a DECLINE with both numbers — absence reads like a daemon that never got there.
+interval and not the pause. Both are written by `daemon/pause_skip.py`. Nothing makes such a
+fire up — nor one missed while the daemon was down (D237, operator 2026-11-05: a missed fire is
+skipped, whatever the cause), so `fire_catchup`, `lane_fire_catchup`, `lane_catchup_declined`
+and `routine_catchup_declined` are retired: older rows still in the stream are history that no
+reader keys on.
 
 wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
 the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in

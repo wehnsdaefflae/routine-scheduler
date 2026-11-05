@@ -92,7 +92,7 @@ async def test_pause_holds_detached_intake(tmp_path):
 
 
 async def test_boot_reconcile_under_a_pause_starts_nothing(tmp_path):
-    """`_boot` reconciles BEFORE the pause-checking `boot_catchup`, so a restart under a pause
+    """`_boot` reconciles before the tick loop's pause guard ever runs, so a restart under a pause
     fired every undelivered task. The hold lives in the manager, so boot inherits it."""
     server = _server(tmp_path)
     owner = _owner(server)

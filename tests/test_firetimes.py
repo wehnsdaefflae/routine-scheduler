@@ -9,15 +9,13 @@ an hour later at UTC+1.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from itertools import islice
 from types import SimpleNamespace
 
 import pytest
 
-from rsched import firetimes, lane_fires, lanes, registry
-from rsched.config import RoutineConfig, ServerConfig
-from rsched.daemon import lane_catchup
+from rsched import firetimes
 from rsched.web.api_schedule import _cron_fires
 
 BERLIN = "Europe/Berlin"
@@ -75,31 +73,6 @@ def test_spring_forward_fires_the_skipped_time_at_the_jump():
 ])
 def test_names_wall_times(cron, wall):
     assert firetimes.names_wall_times(cron) is wall
-
-
-def test_catch_up_inside_the_repeated_hour_does_not_make_up_the_first_fire(tmp_path):
-    """The daemon fired at 02:30 CEST and restarted during the repeated hour. Read from 01:45Z,
-    the last due fire was the REPEAT at 01:30Z, so the 00:30Z run looked an hour too old and
-    boot made it up — the same double fire by the catch-up path."""
-    cfg = RoutineConfig(slug="dst", name="dst", dir=tmp_path, cron="30 2 * * *", tz=BERLIN,
-                        catchup="run_once")
-    now = _z(25, 1, 45)
-    due = firetimes.last_due_fire(cfg, now)
-    # compared in UTC: an ambiguous local time never equals an instant in another zone (PEP 495)
-    assert due is not None and due.astimezone(UTC) == _z(25, 0, 30)
-    ran = registry.RunInfo(run_id="dst:20261025-003004", ts="20261025-003004", dir=tmp_path,
-                           state="finished")
-    assert registry.missed_fire(cfg, [ran], now) is None
-    missed = registry.missed_fire(cfg, [], now)                  # a real miss is still made up
-    assert missed is not None and missed.astimezone(UTC) == _z(25, 0, 30)
-
-
-def test_a_lane_armed_at_the_first_occurrence_is_not_made_up_at_boot(tmp_path):
-    server = ServerConfig()
-    server.routines_home = tmp_path
-    lane = lanes.create(tmp_path, name="Night", cron="30 2 * * *", tz=BERLIN)
-    lane_fires.stamp(tmp_path, lane["id"], (_z(25, 0, 30) + timedelta(seconds=3)).isoformat())
-    assert lane_catchup.missed_lanes(server, _z(25, 1, 45)) == []
 
 
 def test_the_week_view_draws_the_fires_the_scheduler_makes():

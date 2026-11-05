@@ -670,7 +670,7 @@ A routine dir (`~/routines/<slug>`) owns its recipe — a run NEVER follows libr
 (the recipe is materialized in at creation; deliberate, narrow exceptions read the library AS DATA
 mid-run: subtask/spawn materialization, gated in-run workflow generation, `read_rule` reads,
 and the capabilities digest's catalog listing):
-- `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup;
+- `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz;
   a `tz` left out is the server's zone, `config.default_tz` — the zone the console edits in; a
   fixed time the clock repeats when daylight saving ends fires once, `rsched/firetimes.py`),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
@@ -999,7 +999,7 @@ and the capabilities digest's catalog listing):
   durable `<owner>/inbox/` message, then WAKE (`runner.resume` if idle, else the live reply drains it)
   → rebuild `<owner>/state/background.json` → gc past a grace
   window. The **global pause (D34) is enforced PER PHASE inside `tick`**, which is also the boot
-  path's gate (`_boot` reconciles BEFORE the pause-checking `boot_catchup`): the two phases that
+  path's gate (`_boot` reconciles before the tick loop's pause guard ever runs): the two phases that
   START a run — intake's `fire` and the wake's `resume_terminal` — are HELD, while deliver/digest/gc
   proceed because a finished task's hand-back starts nothing. Neither hold drops anything (the
   request file stays unconsumed; the wake is state-driven), so neither files a health event. F721:
@@ -1660,7 +1660,7 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   EXPIRES it because one of its fields was decided elsewhere meanwhile (D178/F668,
   `pending_accepts.py` + `web/held_accepts.py`).
 - The daemon (`scheduler.py` + `runner.py`) fires cron through **`rsched/firetimes.py`** — croniter
-  underneath, and the ONE place a fire instant is computed: the fire table, both catch-up paths and
+  underneath, and the ONE place a fire instant is computed: the fire table and
   the week view read it, so the strip draws what fires. It adds the rule croniter lacks (Vixie
   cron's): a cron whose minute and hour fields are both fixed names WALL-CLOCK times and fires
   once when daylight saving ends repeats the hour; a wildcard minute or hour is an INTERVAL and
@@ -1726,13 +1726,12 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   SINGLE-FLIGHT per key (0.340.0: a burst of identical requests — every open tab refetching one
   endpoint on a bus event — computes once while the rest wait and re-read), `readmodels/usage_stream`
   is the ONE parser of workflow-usage.jsonl and `readmodels/health_stream` the ONE parser of
-  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the 18
+  health-events.jsonl (plus the blocked-fleet fold behind `GET /api/health/blocked`: the 17
   events that mean WORK THAT WAS DUE DID NOT HAPPEN — `fire_refused`, `lane_fire_refused`,
-  `fire_paused`, `routine_catchup_declined`, `lane_fire_paused`, `lane_catchup_declined`,
-  `lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error`,
+  `fire_paused`, `lane_fire_paused`, `lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error`,
   `finish_gate_failed`, `trigger_capped`, `commit_failed`, `backup_stale`,
   `migration_expired`, `migration_due_soon`, `obligation_overdue`, `wrong_turn_detected`,
-  `model_chain_exhausted` — one row per (event, subject) with a count and the newest
+  `item_dropped_live`, `model_chain_exhausted` — one row per (event, subject) with a count and the newest
   detail, because none of them can reach a run page, Items row or Stats slice; the count and
   the names are pinned by `tests/test_chain_exhausted_blocked.py`) — a read-model is a pure
   derivation, deletable state, never a writer. The Decisions read model (`web/decisions_read.py` — what `/api/questions`, the
@@ -1825,7 +1824,7 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
     the web beside it — the lane editor has the same friendly editor a routine's schedule uses;
     web RECORDS, daemon FIRES). The scheduler arms the chain on the lane's cron — member 0 fires,
     the rest chain on completion — and while a routine belongs to a SCHEDULED lane its OWN cron is
-    SUPPRESSED from the fire table and boot catch-up (one fire path, no double-firing); its
+    SUPPRESSED from the fire table (one fire path, no double-firing); its
     Schedule dropdown renders a locked "lane managed" state linking to the lane, the routines
     overview shows the LANE's schedule on the member's row instead of the suppressed cron
     (R313 — `/api/lanes` ships each lane's `schedule_desc` for it). The routine card says the
@@ -1837,32 +1836,20 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
     own cron at the next rescan.
     A lane fire due while its chain is still in flight is REFUSED (`lane_fire_refused`, the chain
     analog of `overrun_skipped`). Manual "Run now" on a member is unaffected.
-    **Lane catch-up (0.329.0).** The fire table is process memory, so a fire that came due while
-    the daemon was down, restarting or draining was lost outright — and with every member cron
-    suppressed, nothing else fired those routines (a Tue/Thu lane lost both of one week's fires
-    that way, unnoticed). Every `lane_runs.arm` stamps a per-lane watermark
-    (`rsched/lane_fires.py`, `.control/lane-fires.json`, daemon-owned derived state), and so does
-    the scheduler when the operator's global pause skips a due lane fire on purpose: every path
-    that HANDLES a fire moves the watermark, so what boot finds unstamped is a fire nobody was
-    there for. Boot
-    (`daemon/lane_catchup.py`, beside the routine `boot_catchup`) arms ONE make-up chain
-    (`armed_by=catchup`, health event `lane_fire_catchup`, whose detail asserts no cause — only
-    what the watermark shows) for each scheduled lane whose last due
-    fire is newer than its watermark — one, never a backlog, the same bound as a routine's
-    `catchup: run_once`. The policy is the lane's `catchup` field (`run_once` by default, `skip`
-    to let a missed fire go; the lane editor and `PATCH /api/lanes/<id>` set it). A lane with no
-    watermark yet is stamped and left alone, so the first boot after the upgrade fires nothing.
-    A fire the operator's PAUSE dropped is made up for a ROUTINE too, by the same ratio
-    (D183, `daemon/routine_catchup.py` + `rsched/routine_fires.py`): the skip stamps the fire
-    as owed, the resume and the next boot make up at most one per routine while less than a
-    quarter of that routine's own cadence has passed, armed as a one-shot so the daemon still
-    owns spawning, and a decline files `routine_catchup_declined` carrying both numbers. It is
-    NOT gated on the routine's boot `catchup` field: that field is about a daemon that was
-    down, where many fires may have been missed, while a pause-skipped fire is one the daemon
-    was up for and the operator's own pause dropped — every routine on this instance reads
-    `catchup: skip`, so gating on it would make the rule a no-op. Measured 2026-10-14: four
-    consecutive dropped fires of `scheduler-builder` (`0 6,14`, in no lane) with nothing in the
-    health stream to say so, while the six lane fires the same pause ate were each on record.
+    **No catch-up (D237, operator 2026-11-05).** The fire tables are process memory, so a fire
+    that comes due while the daemon is down, restarting or draining — or that the global pause
+    skips — is GONE: boot recomputes the next FUTURE fire and lifting the pause makes nothing up.
+    *"Remove all catch-up: a fire missed for any reason (pause, restart, crash) is skipped."*
+    That reversed three mechanisms, each added for a measured loss, so none is to be rebuilt as
+    an obvious improvement: a routine's boot make-up behind `schedule.catchup: run_once`, the lane
+    boot make-up (0.329.0, against a `.control/lane-fires.json` watermark every arm stamped —
+    a Tue/Thu lane had lost a week of fires to a restart) and the pause-lift make-ups for lanes
+    (D156) and routines (D183, one-shots armed while under a quarter of the subject's cadence).
+    A pause-skipped fire is still RECORDED — `fire_paused` / `lane_fire_paused`, each carrying the
+    subject's `cron` and `next_fire`, because the cost of a skip is the cron interval
+    (`daemon/pause_skip.py`); the retired `fire_catchup`, `lane_fire_catchup`,
+    `lane_catchup_declined` and `routine_catchup_declined` rows already in the stream are history
+    nothing keys on. A deleted lane takes its `lane-runs/<id>.lock` with it (F825).
     The dashboard's week strip renders the same rule: `/api/schedule/week` withholds a
     suppressed member's cron fires (drawing them would show runs the daemon never fires) and
     ships the lane's own fire times instead; the strip draws a scheduled lane as ONE labelled

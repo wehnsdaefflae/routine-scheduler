@@ -31,7 +31,7 @@ export function scheduleGroup(ctx) {
   const schedule = fieldBlock(form, "schedule", (value, set) => {
     const spec = value || {};
     return scheduleEditor(spec.friendly || { frequency: "manual" }, d.server_tz, {
-      catchup: spec.catchup || "skip", laneManaged: d.lane_managed || null, allowDisabled: true,
+      laneManaged: d.lane_managed || null, allowDisabled: true,
       onChange: set,
       onClearCron: async () => {
         try {
@@ -99,8 +99,8 @@ export function scheduleGroup(ctx) {
          + "starting a run. The routine's own predicate is one more check, ",
          el("code", {}, "script"), ": its file is ", el("code", {}, "scripts/admit.py"),
          ", edited below that check's row and saved at once, because it is a file of the routine "
-         + "rather than a setting. The gate applies to every scheduled fire — its own cadence, a "
-         + "lane's clock, a boot catch-up — and never to Run now, a trigger, a one-shot or a resume."],
+         + "rather than a setting. The gate applies to every scheduled fire — its own cadence or a "
+         + "lane's clock — and never to Run now, a trigger, a one-shot or a resume."],
         gate.node),
     ],
     more: [

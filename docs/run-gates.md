@@ -84,7 +84,7 @@ Built in, never configured, because each one is work by construction:
 
 ## Which fires are gated
 
-Only fresh `schedule`, `catchup` and `lane` attempts. Run now, CLI run-once, triggers,
+Only fresh `schedule` and `lane` attempts. Run now, CLI run-once, triggers,
 one-shots, conversations, background jobs and resume bypass it; "run lane now" still gates its
 members. Inbox arrival during a gate evaluation that decided "skip" overrides the skip without
 consuming anything.

@@ -19,7 +19,7 @@ def _write(root, raw):
     (root / "routine.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")
 
 
-@pytest.mark.parametrize("reason", ["manual", "schedule", "catchup", "webhook", "report", "lane", "one-shot"])
+@pytest.mark.parametrize("reason", ["manual", "schedule", "webhook", "report", "lane", "one-shot"])
 async def test_switched_off_refuses_every_new_start_without_creating_run(make_routine, reason):
     root = make_routine(slug="disabled")
     _write(root, {**routine_yaml(root), "enabled": False})
@@ -76,7 +76,7 @@ def test_the_settings_accept_switches_off_and_keeps_the_cron(api_client, make_ro
     cadence decides nothing, so all it can say is that the routine is on."""
     c, _ = api_client
     root = make_routine(slug="apir")
-    off = {"friendly": {"frequency": "disabled"}, "catchup": "skip"}
+    off = {"friendly": {"frequency": "disabled"}}
     assert fields.patch_shape("schedule", off, lane_managed=False) == ("enabled", False)
     assert fields.patch_shape("schedule", {"friendly": {"frequency": "daily", "time": "07:00"}},
                               lane_managed=True) == ("enabled", True)

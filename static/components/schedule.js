@@ -1,6 +1,6 @@
 // Friendly schedule builder. `initial` is a friendly spec {frequency, time, weekdays, ...};
-// returns { node, value(), catchup() }. Pass opts.catchup (a string) to also offer a
-// missed-run policy select — routines want it, other schedule editors do not.
+// returns { node, value() }. There is no missed-run policy to offer: a fire missed for any
+// reason is skipped (D237).
 // Pass opts.laneManaged ({id, name} — D71) when the routine belongs to a SCHEDULED lane:
 // the dropdown locks on a selected, disabled "Lane managed" state linking to the lane
 // (the routine's own cron is suppressed by the daemon; value() returns the stored spec
@@ -9,8 +9,8 @@
 // reader clears a cron the lane already suppresses. It appears ONLY where the stored spec still
 // names one, because it is the single schedule edit a lane-managed routine has left: the lane
 // goes on deciding when the routine fires; the file stops recording a time of its own.
-// Pass opts.onChange to hear every edit as it happens — `{friendly: value(), catchup:
-// catchup()}` — for a caller that keeps a draft (the routine page's settings form) rather than
+// Pass opts.onChange to hear every edit as it happens — `{friendly: value()}` — for a caller
+// that keeps a draft (the routine page's settings form) rather than
 // saving on a button of its own. CUSTOM is the cadence the reader writes as a five-field cron
 // — for what the friendly vocabulary cannot say ("06:00 and 14:00") — and a stored cron the
 // others cannot express opens on it unchanged, so building the editor never rewrites it.
@@ -65,19 +65,6 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   };
   const detail = el("span", { class: "row", style: "gap:6px;flex-wrap:wrap" });
 
-  // catchup: what to do when a scheduled fire was missed (daemon down / overrun). Only offered
-  // when the caller opts in, and only meaningful for a real schedule — hidden for "manual".
-  const hasCatchup = opts.catchup !== undefined;
-  const catchupSel = hasCatchup
-    ? el("select", { "data-nopersist": true }, ["skip", "run_once"].map((c) =>
-        el("option", { value: c, ...(opts.catchup === c ? { selected: true } : {}) },
-          c === "skip" ? "skip a missed run" : "run once if missed")))
-    : null;
-  const catchupRow = hasCatchup
-    ? el("label", { class: "row mt", style: "gap:8px" },
-        el("span", { class: "muted small" }, "if a run was missed"), catchupSel)
-    : null;
-
   // The other half of D71. The lane owns WHEN a lane-managed routine fires, so every control
   // above is locked — but the routine's own file can still record a cron the daemon suppresses.
   // A file naming a time nothing acts on is what the surface's `schedule:cron` row reports.
@@ -130,21 +117,19 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     else if (f === "monthly") detail.append(document.createTextNode("on day"), day, document.createTextNode("at"), time);
     else if (f === "custom") { checkShape(); detail.append(cron, cronShape); }
     else detail.append(el("span", { class: "muted" }, "runs only when you click Run now"));
-    if (catchupRow) catchupRow.style.display = (f === "manual" || f === "disabled" || lm) ? "none" : "";
   }
   freq.addEventListener("change", sync);
   sync();
   // every control that moves the value reports it — only a change the reader made, never the
   // build, so an untouched editor never reads as an edit
-  const notify = () => opts.onChange?.({ friendly: api.value(), catchup: api.catchup() });
-  for (const input of [freq, time, minute, day, catchupSel, ...dayBoxes.map((c) => c.box)]) {
+  const notify = () => opts.onChange?.({ friendly: api.value() });
+  for (const input of [freq, time, minute, day, ...dayBoxes.map((c) => c.box)]) {
     input?.addEventListener("change", notify);
   }
   cron.addEventListener("input", () => { checkShape(); notify(); });
 
   const node = el("div", {},
     el("div", { class: "row", style: "gap:8px" }, freq, detail),
-    catchupRow,
     clearRow,
     serverTz ? el("div", { class: "muted small", style: "margin-top:4px" },
       `times are in the server's timezone (${serverTz})`) : null);
@@ -169,9 +154,6 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     node,
     value() {
       return specFor(freq.value);
-    },
-    catchup() {
-      return catchupSel ? catchupSel.value : "skip";
     },
   };
   return api;

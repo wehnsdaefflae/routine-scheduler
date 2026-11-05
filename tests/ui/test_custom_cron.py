@@ -17,7 +17,7 @@ CRON = "#sec-schedule + .panel [data-custom-cron]"
 
 
 def _open(ui, ui_page, cron: str) -> None:
-    configure(ui, schedule={"cron": cron, "tz": "Europe/Berlin", "catchup": "skip"})
+    configure(ui, schedule={"cron": cron, "tz": "Europe/Berlin"})
     ui_page.goto(f"{ui.url}#/routine/uir")
     ui_page.wait_for_selector(FREQ)
 

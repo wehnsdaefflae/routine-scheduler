@@ -103,8 +103,8 @@ believes stopped everything. So the pause holds it, and the delivery waits in th
 is exactly where an undelivered result waits anyway while its owner is busy.
 
 **Why the gate is in the manager and not in the scheduler's `if not is_paused:` block.** `_boot`
-calls `detached.reconcile()` (`daemon/scheduler.py`) BEFORE the pause-checking `boot_catchup`, so
-a guard at the tick's call site would still have let a restart under a pause fire every
+calls `detached.reconcile()` (`daemon/scheduler.py`) before the tick loop's pause guard ever runs,
+so a guard at the tick's call site would still have let a restart under a pause fire every
 undelivered task — which is what F721 found. `reconcile()` is a `tick()`, so one gate covers both.
 
 **Neither hold files a health event**, deliberately. `health_stream.BLOCKED_EVENTS` means WORK

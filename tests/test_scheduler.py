@@ -38,18 +38,6 @@ def test_rescan_keeps_owed_fires(make_routine, tmp_path):
     assert sched.next_fires["owed"] == past  # a due fire survives the rescan
 
 
-async def test_boot_catchup_fires_run_once(make_routine, tmp_path):
-    d = make_routine(slug="catchup")
-    text = (d / "routine.yaml").read_text().replace("catchup: skip", "catchup: run_once")
-    (d / "routine.yaml").write_text(text)
-    make_routine(slug="skipper")  # default skip policy → no catch-up
-    fr = FakeRunner()
-    sched = Scheduler(_server(tmp_path), fr, EventBus())
-    sched.rescan()
-    await sched.boot_catchup()
-    assert fr.fired == [("catchup", "catchup")]
-
-
 async def test_fire_on_due_tick(make_routine, tmp_path, monkeypatch):
     make_routine(slug="ticker")
     monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
@@ -109,21 +97,6 @@ def test_rescan_suppresses_scheduled_lane_members(make_routine, tmp_path):
     sched.rescan()
     assert "chained" in sched.next_fires
     assert lane["id"] not in sched.lane_next_fires
-
-
-async def test_boot_catchup_skips_lane_managed_members(make_routine, tmp_path):
-    from rsched import lanes
-    d = make_routine(slug="gcatch")
-    text = (d / "routine.yaml").read_text().replace("catchup: skip", "catchup: run_once")
-    (d / "routine.yaml").write_text(text)
-    server = _server(tmp_path)
-    lanes.create(server.routines_home, name="Sched", members=[{"slug": "gcatch"}],
-                 cron="0 7 * * *", tz="UTC")
-    fr = FakeRunner()
-    sched = Scheduler(server, fr, EventBus())
-    sched.rescan()
-    await sched.boot_catchup()
-    assert fr.fired == []          # its own cron is suppressed, catch-up included
 
 
 async def test_due_lane_cron_arms_the_chain_and_fires_member_zero(make_routine, tmp_path,
@@ -817,9 +790,9 @@ async def test_due_lane_fire_while_in_flight_emits_refused_event(make_routine, t
 
 async def test_a_paused_lane_skip_says_so_in_the_health_stream(make_routine, tmp_path,
                                                               monkeypatch):
-    """F573: a global pause SKIPS a due lane fire and deliberately moves the watermark, so
-    boot catch-up will not make it up — and until this event existed, the only witness was a
-    `log.info` line in a journal the audit cannot read.
+    """F573: a global pause SKIPS a due lane fire, and nothing makes it up (D237) — and until
+    this event existed, the only witness was a `log.info` line in a journal the audit cannot
+    read.
 
     Measured cost of the silence: a 65-minute pause on 2026-09-26 (04:05-05:10 local) spanned
     the 05:00 fire of a WEEKLY lane, `grp-3235d2ee` "Instance · Weekly · Research". Its two

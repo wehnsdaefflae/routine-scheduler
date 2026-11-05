@@ -11,8 +11,8 @@ it. Everything after that click is DERIVED, and nothing writes config again:
   the trial's id (engine/runrecord.py). The count is the durable stream's, so a restart or a
   retention sweep loses none, and a fire that never reached the engine (a run gate's skip, a
   launch that failed) fakes none.
-- **Armed per fire.** While active, EVERY fire of the routine — schedule, lane, trigger, manual,
-  catch-up — gets `trial.json` (`{id, models, runs}`) in its new run dir before the engine
+- **Armed per fire.** While active, EVERY fire of the routine — schedule, lane, trigger, manual
+  — gets `trial.json` (`{id, models, runs}`) in its new run dir before the engine
   exists (`arm`, from `daemon/runner.Runner.fire`, beside the brief), and the runner names the
   trial's models to `engine-run` as `--model role=name` (`overrides`). A resume reads the run's
   OWN `trial.json`, so a run keeps the trial it started under, even past the trial's end.

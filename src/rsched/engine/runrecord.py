@@ -57,7 +57,7 @@ BEHAVIOUR = frozenset({"models", "efforts", "connections", "machines", "grants",
 #: the run may do.
 NOT_BEHAVIOUR = frozenset({"slug", "dir", "name", "description", "tags", "kind",
                            "owner", "workflow_slug", "workflow_commit", "playbook_slug",
-                           "pattern", "enabled", "cron", "tz", "catchup", "triggers", "run_gate",
+                           "pattern", "enabled", "cron", "tz", "triggers", "run_gate",
                            "keep_runs", "improve", "deliberation", "rules", "tuning", "trial",
                            "outcome"})
 

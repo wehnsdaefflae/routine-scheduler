@@ -40,7 +40,7 @@ def contract_chars(tmp_path: Path) -> dict[str, int]:
     (d / "state").mkdir(parents=True)
     (d / "routine.yaml").write_text(yaml.safe_dump(
         {"name": "Budget", "slug": "budget", "enabled": True, "description": "fixed",
-         "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin", "catchup": "skip"}}),
+         "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin"}}),
         encoding="utf-8")
     (d / "main.md").write_text("## Run flow\n", encoding="utf-8")
     ctx = run_context(d, "20261025-070000",

@@ -8,10 +8,11 @@ stay the daemon's job, exactly as for cron and trigger fires.
 
 AUTO-DEACTIVATE = CONSUME: on a successful fire the manager DELETES the request file. The
 armed file is gone, so nothing can re-fire it — that IS the non-repeating guarantee (no
-routine.yaml rewrite, no self-disabling cron). A make-up fire is free: a `fire_at` already
-past at boot is still on disk, so it fires on the first tick — a one-shot's point is that it
-*eventually* runs once, and nothing bounds that staleness. (An `expires_at` field once did,
-set by no caller and exposed nowhere; T3.5 deleted it rather than build a console for it.)
+routine.yaml rewrite, no self-disabling cron). A one-shot is a REQUEST, not a cron fire, so
+D237's no-catch-up rule does not reach it: a `fire_at` already past at boot is still on disk,
+so it fires on the first tick — a one-shot's point is that it *eventually* runs once, and
+nothing bounds that staleness. (An `expires_at` field once did, set by no caller and exposed
+nowhere; T3.5 deleted it rather than build a console for it.)
 
 Delivery is crash-safe: the reason is written as a DETERMINISTIC inbox message
 (msg-once-<id>.json) before the request is consumed, so a crash between injection and unlink
