@@ -33,14 +33,21 @@ passes members straight to the store, so today the queue path alone builds a lan
 ghost. Refusing it at filing makes the three paths agree instead of letting the queue be the
 loose one.
 
-This module is the gate for the two kinds that carry vocabulary. The other four queue kinds
+This module is the gate for the two kinds that carry vocabulary. The other queue kinds
 (`library-drift`, `goal-reached`, `replace-routine`, `revise-routine`, `unowned-report`) carry
-report ids, line prose and slugs of routines that already exist — no fixed vocabulary to judge.
-A kind that grows one adds its judge here, beside these two.
+report ids, line prose and slugs of routines that already exist — no fixed vocabulary to judge,
+so `problem` answers "" for them. They still go THROUGH the judge, because it sits in the
+writer: a kind that grows a vocabulary adds its judge here and every one of its writers is
+covered at once, with nothing to remember at the call site.
 
-It is NOT inside `pending.queue` itself: the judge needs the libraries home and the registry,
-which that writer does not take. Both filing paths reach it through the two observation builders
-below, which are their only way to the queue.
+The judge runs INSIDE `pending.queue` — the one writer every filing path must pass (D229 part
+2). It first sat in the two observation builders below, which guarded the two paths that
+existed rather than the queue itself: a third path added later would have written an unjudged
+record and handed the refusal back to the operator's click, which is the defect this module
+exists to close. `queue` therefore takes the server, not just the routines home, because the
+vocabulary it answers to is live — the library on disk and the registry. A refused record
+raises `Refused`; the two builders below translate that into the observation their filing run
+reads, and any other writer lets it surface as the error it is.
 """
 
 from __future__ import annotations
@@ -58,6 +65,25 @@ _REFILE = ("Nothing was queued. Correct the field and file it again this run, or
            "take: the accept would refuse it and nothing would be created.")
 
 
+class Refused(Exception):  # noqa: N818 — a refusal decision, not an error condition
+    """A proposal's field values would not survive the accept, so `pending.queue` wrote nothing.
+
+    Raised by the WRITER, not by its callers (D229 part 2). The judge used to sit in the two
+    filing observations below, which guarded the two paths that existed rather than the queue
+    itself: a third filing path added later would have written an unjudged record and handed
+    the refusal back to the operator's click — the very defect D229 closed. `reason` is the
+    sentence the filing run reads, unchanged by the move.
+    """
+
+    def __init__(self, kind: str, why: str) -> None:
+        super().__init__(f"{kind} proposal refused at filing — {why} {_REFILE}")
+        self.kind, self.why = kind, why
+
+    @property
+    def reason(self) -> str:
+        return str(self)
+
+
 def problem(server, kind: str, fields: dict) -> str:
     """"" when the accept would take this proposal's field values, else the sentence the filing
     is refused with — the offending field first, then the vocabulary that was allowed instead.
@@ -70,13 +96,12 @@ def problem(server, kind: str, fields: dict) -> str:
 
 
 def _routine_problem(server, fields: dict) -> str:
-    """The two fields of a queued creation drawn from a fixed vocabulary: the slug's SHAPE and
-    the workflow pattern. `name`, `instruction` and the line lists are free text with no
-    vocabulary to be wrong against; `pattern` is NOT judged here because an unknown settings
-    pattern does not fail the accept — `workflows.scaffold` reads no settings and leaves the
-    routine without one, which is a silent-drop defect of its own and not this gate's.
+    """The three fields of a queued creation drawn from a fixed vocabulary: the slug's SHAPE,
+    the workflow pattern and the settings pattern. `name`, `instruction` and the line lists are
+    free text with no vocabulary to be wrong against.
     """
     from .ids import is_slug
+    from .patterns import store
     from .workflows import library
 
     slug = str(fields.get("slug") or "").strip()
@@ -93,6 +118,17 @@ def _routine_problem(server, fields: dict) -> str:
                if workflow == "generate" else "")
         return (f"workflow: {workflow!r} is not a pattern the library holds.{why} Pick one the "
                 f"library has: {', '.join(known)}.")
+    # The SETTINGS pattern, judged on exactly the condition `workflows.scaffold` now raises on
+    # and no stricter: a named slug the live store does not hold. An OMITTED pattern is sound —
+    # the accept lets the recommender choose one. Until D229's part 1 made that raise, an
+    # unknown slug silently left the new routine following nothing, so judging it here would
+    # have been stricter than the accept, which `validate.py`'s rule forbids.
+    pattern = str(fields.get("pattern") or "").strip()
+    if pattern and store.read(server.libraries_home, pattern) is None:
+        held = ", ".join(p["slug"] for p in store.list_all(server.libraries_home))
+        return (f"pattern: {pattern!r} is not a settings pattern this library holds, so "
+                f"`workflows.scaffold` refuses it on the accept click. It holds: "
+                f"{held or '(none)'}. Omit it to let the recommender choose.")
     return ""
 
 
@@ -140,10 +176,10 @@ def _lane_problem(server, fields: dict) -> str:
     return ""
 
 
-def _refused(kind: str, why: str, extra: dict) -> dict:
+def _refused(refused: Refused, extra: dict) -> dict:
     """The refusal the filing run reads — the field named, the vocabulary, the correction."""
-    return {"kind": kind, "rejected": True, "queued": False,
-            "reason": f"{kind} proposal refused at filing — {why} {_REFILE}", **extra}
+    return {"kind": refused.kind, "rejected": True, "queued": False,
+            "reason": refused.reason, **extra}
 
 
 def queued_routine_obs(ctx, fields: dict) -> dict:
@@ -158,13 +194,14 @@ def queued_routine_obs(ctx, fields: dict) -> dict:
     """
     from .pending import queue
 
-    if why := problem(ctx.server, "create_routine", fields):
-        return _refused("create_routine", why, {"slug": fields.get("slug")})
     proposal = (f"proposed: create routine {fields['slug']!r} from pattern "
                 f"{fields['workflow']!r}")
-    rec = queue(ctx.server.routines_home, kind="create_routine", routine=ctx.routine.slug,
-                run_id=ctx.run_id, fields=fields,
-                summary=f"routine {fields['slug']!r} from pattern {fields['workflow']!r}")
+    try:
+        rec = queue(ctx.server, kind="create_routine", routine=ctx.routine.slug,
+                    run_id=ctx.run_id, fields=fields,
+                    summary=f"routine {fields['slug']!r} from pattern {fields['workflow']!r}")
+    except Refused as refused:
+        return _refused(refused, {"slug": fields.get("slug")})
     return {"kind": "create_routine", "slug": fields["slug"], "queued": True, "id": rec["id"],
             "proposal": proposal,
             "next": ("Nothing is created yet, and nothing will be until the user approves it — "
@@ -185,10 +222,11 @@ def queued_lane_obs(ctx, action: dict, verb: str, proposal: str) -> dict:
     fields = {k: action[k] for k in ("verb", "target", "name", "members",
                                      "on_failure", "cron", "paused") if k in action}
     fields["verb"] = verb
-    if why := problem(ctx.server, "manage_lane", fields):
-        return _refused("manage_lane", why, {"verb": verb})
-    rec = queue(ctx.server.routines_home, kind="manage_lane", routine=ctx.routine.slug,
-                run_id=ctx.run_id, fields=fields, summary=proposal)
+    try:
+        rec = queue(ctx.server, kind="manage_lane", routine=ctx.routine.slug,
+                    run_id=ctx.run_id, fields=fields, summary=proposal)
+    except Refused as refused:
+        return _refused(refused, {"verb": verb})
     return {"kind": "manage_lane", "verb": verb, "queued": True, "id": rec["id"],
             "proposal": proposal,
             "next": ("Nothing changed yet and nothing will until the user approves it — you "

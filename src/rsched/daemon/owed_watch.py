@@ -129,7 +129,8 @@ class OwedWatch:
                     (rec.get("fields") or {}).get("report") not in live:
                 pending.drop(home, rec["id"])        # it found an owner, or was settled
         for f in found:
-            pending.queue(home, kind="unowned-report", routine=f["from"], run_id="", fields=f,
+            pending.queue(self.server, kind="unowned-report", routine=f["from"], run_id="",
+                          fields=f,
                           summary=(f"{f['report']} has had no owner for {f['days']} days: "
                                    f"{f['title']}"))
 

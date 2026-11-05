@@ -121,9 +121,17 @@ def test_a_standing_proposal_is_pushed_and_withdrawn_once_decided(tmp_path, monk
     from rsched import pending
 
     server = _server(tmp_path)
-    rec = pending.queue(server.routines_home, kind="create_routine", routine="scout",
-                        run_id="scout:20260712-070000", fields={"slug": "new-one"},
-                        summary="create routine new-one")
+    # written to the queue DIRECTLY: `pending.queue` judges a record's vocabulary against the
+    # live library (D229), and this test is about the SENDER, not about what is proposable —
+    # its server has no library at all.
+    from rsched.ids import now_iso
+    from rsched.paths import atomic_write_json
+
+    rec = {"id": pending.new_id(), "kind": "create_routine", "routine": "scout",
+           "run_id": "scout:20260712-070000", "created_at": now_iso(),
+           "summary": "create routine new-one", "fields": {"slug": "new-one"}}
+    pending.pending_dir(server.routines_home).mkdir(parents=True, exist_ok=True)
+    atomic_write_json(pending.pending_dir(server.routines_home) / f"{rec['id']}.json", rec)
     push.add_subscription(server, SUB_A)
     sent: list[dict] = []
     monkeypatch.setattr(push, "_send_one", lambda _srv, sub, payload: sent.append(payload) or True)

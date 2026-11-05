@@ -174,12 +174,12 @@ def client(web_server):
         yield c
 
 
-def _queue_drift(home, *, node: dict, gap: str | None = None, routine: str = "holder") -> None:
+def _queue_drift(srv, *, node: dict, gap: str | None = None, routine: str = "holder") -> None:
     fields = {"entity": f"{routine}:{node['id']}", "node": node, "head": "abc12345deadbeef",
               "trigger": "Opened by abc12345 (zulip: require a key), which changed the zulip util"}
     if gap is not None:
         fields["gap"] = gap
-    pending.queue(home, kind="library-drift", routine=routine, run_id="", fields=fields,
+    pending.queue(srv, kind="library-drift", routine=routine, run_id="", fields=fields,
                   summary=f"{routine}: {node['id']} — {node['why']}.")
 
 
@@ -190,7 +190,7 @@ def test_dismissing_a_drift_card_settles_the_gap_it_is_about(web_server, client,
     make_routine(slug="holder")
     node = {"id": "secret:ZULIP_API_KEY", "state": "absent", "severity": "blocks",
             "why": "needed by zulip", "source": {"utils": ["zulip"]}}
-    _queue_drift(web_server.routines_home, node=node,
+    _queue_drift(web_server, node=node,
                  gap=library_drift.fingerprint("holder", node))
     pid = client.get("/api/pending-creations").json()[0]["id"]
 
@@ -212,7 +212,7 @@ def test_dismissing_a_record_from_before_the_settled_store_still_settles_its_gap
     the upgrade settles nothing and the defect survives its own fix.
     """
     make_routine(slug="holder")
-    _queue_drift(web_server.routines_home, gap=None,
+    _queue_drift(web_server, gap=None,
                  node={"id": "util:zulip", "state": "absent", "severity": "blocks",
                        "why": "held as a reserved util"})
     pid = client.get("/api/pending-creations").json()[0]["id"]
@@ -228,7 +228,7 @@ def test_discarding_an_ordinary_proposal_settles_no_gap(web_server, client):
     """The settled store is only ever about drift. A discarded creation must leave it untouched,
     or an unrelated drift report could find itself already "answered".
     """
-    pending.queue(web_server.routines_home, kind="create_routine", routine="routine-improver",
+    pending.queue(web_server, kind="create_routine", routine="routine-improver",
                   run_id="routine-improver:20260827-030000",
                   fields={"slug": "nope2", "name": "N", "instruction": "p",
                           "workflow": "general-task"},

@@ -163,7 +163,7 @@ def maybe_propose(ctx, summary: str) -> str:
     first = lines[0] if len(lines) == 1 else f"{lines[0]} (+{len(lines) - 1} more)"
     try:
         rec = pending.queue(
-            ctx.server.routines_home, kind=KIND, routine=slug, run_id=ctx.run_id,
+            ctx.server, kind=KIND, routine=slug, run_id=ctx.run_id,
             fields={"lines": lines, "run_id": ctx.run_id},
             summary=f"{ctx.routine.name or slug} proposes a revision to its own recipe — "
                     f"{first}")

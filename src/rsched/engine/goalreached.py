@@ -45,10 +45,14 @@ def already_queued(routines_home, slug: str) -> bool:
                for r in pending.load_all(routines_home))
 
 
-def propose(routines_home: Path, slug: str, name: str, *, run_id: str = "") -> str:
+def propose(server, slug: str, name: str, *, run_id: str = "") -> str:
     """Queue the one retirement card for a routine whose finish line is reached. Returns its id,
     or "" when it is not reached, is already queued, or is not a scheduled routine.
+
+    Takes the server because `pending.queue` judges every record against the live vocabulary
+    before writing it (D229 part 2) — the writer's own gate, not each caller's.
     """
+    routines_home = server.routines_home
     routine_dir = Path(routines_home) / slug
     doc = finishline.load(routine_dir)
     why = finishline.reached(doc)
@@ -57,7 +61,7 @@ def propose(routines_home: Path, slug: str, name: str, *, run_id: str = "") -> s
         return ""
     try:
         rec = pending.queue(
-            routines_home, kind=KIND, routine=slug, run_id=run_id,
+            server, kind=KIND, routine=slug, run_id=run_id,
             fields={"outcomes": [{k: o[k] for k in ("id", "text", "judge", "date", "status",
                                                     "evidence", "met_run", "disputed")}
                                  for o in doc["outcomes"]],
@@ -93,16 +97,15 @@ def maybe_propose_retirement(ctx) -> str:
     """
     if ctx.depth > 0:
         return ""
-    card = propose(ctx.server.routines_home, ctx.routine.slug, ctx.routine.name,
-                   run_id=ctx.run_id)
+    card = propose(ctx.server, ctx.routine.slug, ctx.routine.name, run_id=ctx.run_id)
     if card:
         ctx.transcript.event("stopping_update", {"goal_reached": True, "run_id": ctx.run_id,
                                                  "proposal": card})
     return card
 
 
-def propose_if_due(routines_home: Path, slug: str, name: str) -> str:
+def propose_if_due(server, slug: str, name: str) -> str:
     """From the scheduler's tick: a date outcome or the `until` date completes a finish line with
     no run at all, so the card has to come from the clock.
     """
-    return propose(routines_home, slug, name)
+    return propose(server, slug, name)

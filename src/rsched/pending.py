@@ -107,16 +107,29 @@ def find_equivalent(routines_home: Path, *, kind: str, routine: str,
                              rec.get("fields") or {}) == key), None)
 
 
-def queue(routines_home: Path, *, kind: str, routine: str, run_id: str, fields: dict,
+def queue(server: ServerConfig, *, kind: str, routine: str, run_id: str, fields: dict,
           summary: str) -> dict:
     """Write one pending creation and return the record. `fields` is the action's own fields,
     stored verbatim — the materializer reads exactly what the run proposed, so what the operator
     approves on the page and what gets built cannot drift apart.
 
+    Every record is JUDGED against the live vocabulary first (`pendingvocab`), and a value the
+    accept would refuse raises `pendingvocab.Refused` instead of being written. The judge is
+    HERE rather than in the filing paths (D229 part 2) for the reason F610 itself taught about
+    the settings writer: a check living in each caller guards the callers that exist, so a
+    filing path added later writes an unjudged record and the refusal lands on the operator's
+    accept click. It takes the server, not just the home, because the vocabulary it answers to
+    is live — the library on disk and the registry.
+
     A proposal equivalent to one already standing (`identity`) is NOT queued a second time: the
     record that is already on the Decisions page is returned instead, so the caller still gets
     an id that resolves there and the operator still has exactly one card to decide.
     """
+    from . import pendingvocab
+
+    routines_home = server.routines_home
+    if why := pendingvocab.problem(server, kind, fields):
+        raise pendingvocab.Refused(kind, why)
     if standing := find_equivalent(routines_home, kind=kind, routine=routine, fields=fields):
         log.info("pending: %s already has a standing %s (%s) — not queued twice",
                  routine, kind, standing["id"])

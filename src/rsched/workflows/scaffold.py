@@ -68,6 +68,14 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
 
     if not is_slug(slug):
         raise ValueError(f"slug {slug!r} is not kebab-case")
+    # A pattern the caller NAMED and the library does not hold used to read as None below and
+    # fall to `settings = {}`: the routine was built following nothing, the `pattern:` key left
+    # out of its routine.yaml and "" handed to the recommender, and the operator who clicked
+    # accept was told none of it (D229). A pattern CHOSEN below comes from the store already.
+    if pattern and store.read(server.libraries_home, pattern) is None:
+        held = ", ".join(p["slug"] for p in store.list_all(server.libraries_home))
+        raise ValueError(f"pattern {pattern!r} is not a settings pattern this library holds — "
+                         f"it holds: {held or '(none)'}")
     # a caller's zone is checked like a saved one: written unchecked, a typo made a routine
     # whose own config refused its schedule's zone at every load
     tz = _known_tz(tz) if tz else default_tz()

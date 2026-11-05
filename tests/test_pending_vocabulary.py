@@ -60,6 +60,22 @@ def _queued(server) -> list[dict]:
     return pending.load_all(server.routines_home)
 
 
+def _unjudged_record(server, fields: dict, *, summary: str) -> str:
+    """A record ON DISK that the judge never saw — a proposal filed before D229, or one written
+    by hand. It cannot come from `pending.queue` any more (the judge sits there now, D229 part
+    2), and the accept path must still read it exactly as it did: the operator's click is the
+    LAST line of defence, not the only one."""
+    from rsched.ids import now_iso
+    from rsched.paths import atomic_write_json
+
+    rec = {"id": pending.new_id(), "kind": "create_routine", "routine": "routine-improver",
+           "run_id": "old-run", "created_at": now_iso(), "summary": summary, "fields": fields}
+    d = pending.pending_dir(server.routines_home)
+    d.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(d / f"{rec['id']}.json", rec)
+    return str(rec["id"])
+
+
 # ---- create_routine --------------------------------------------------------------------------
 
 def test_a_slug_the_scaffold_would_refuse_is_refused_at_filing_with_the_field_named(
@@ -177,13 +193,11 @@ def test_a_record_queued_before_this_change_still_materializes(server, sched_ctx
     """An already-queued record must not become unacceptable. A record written straight to the
     queue is exactly what one filed before D229 looks like — the gate is at the filing seam, so
     the accept path reads it exactly as it did yesterday."""
-    pending.queue(server.routines_home, kind="create_routine", routine="routine-improver",
-                  run_id="old-run", summary="routine 'legacy-one' from pattern 'general-task'",
-                  fields={"slug": "legacy-one", "name": "Legacy one", "instruction": "do it",
-                          "workflow": "general-task", "pattern": "", "setup": [],
-                          "done_when": [], "finish_line": [], "never": [],
-                          "produces": PRODUCES})
-    pid = client.get("/api/pending-creations").json()[0]["id"]
+    pid = _unjudged_record(
+        server, {"slug": "legacy-one", "name": "Legacy one", "instruction": "do it",
+                 "workflow": "general-task", "pattern": "", "setup": [], "done_when": [],
+                 "finish_line": [], "never": [], "produces": PRODUCES},
+        summary="routine 'legacy-one' from pattern 'general-task'")
     assert client.post(f"/api/pending-creations/{pid}/materialize").status_code == 200
     assert (server.routines_home / "legacy-one" / "routine.yaml").is_file()
 
@@ -217,6 +231,95 @@ def test_the_refusal_reaches_the_model_as_prose_naming_the_field(server, sched_c
     routine_line = format_admin(bad_slug, "create_routine")
     assert routine_line.startswith("OBSERVATION (create_routine REJECTED)")
     assert "slug:" in routine_line
+
+
+# ---- the judge sits in the WRITER, not in the two observation builders -----------------------
+
+#: The re-file tail every refusal ends with, copied here VERBATIM as it stood before the judge
+#: moved into the writer. Together with the head below it is the byte pin the move answers to:
+#: the two filing paths' refusals must read exactly as they did (D229 part 2).
+REFILE_TAIL = ("Nothing was queued. Correct the field and file it again this run, or — if it "
+               "needs a decision only the operator can make — say so in your finish summary. A "
+               "proposal carrying this value would reach his Decisions page as a card he can "
+               "read and not take: the accept would refuse it and nothing would be created.")
+
+
+def test_a_writer_that_goes_straight_to_the_queue_is_judged_too(server):
+    """D229 part 2. The judge used to sit in the two filing OBSERVATIONS, so it guarded the two
+    paths that existed rather than the queue itself: a third filing path added later would write
+    an unjudged record and hand the refusal back to the operator's click. It now sits at the
+    write, where every writer must pass — `queue` refuses instead of filing."""
+    fields = {"slug": "fau-comms-steward", "name": "F", "instruction": "p",
+              "workflow": "generate", "pattern": "", "produces": PRODUCES}
+    with pytest.raises(pendingvocab.Refused, match="workflow:"):
+        pending.queue(server, kind="create_routine", routine="routine-improver",
+                      run_id="r:1", fields=fields, summary="s")
+    assert _queued(server) == []
+
+
+def test_the_two_filing_paths_refusals_are_byte_identical_after_the_move(server, sched_ctx):
+    """A refactor, not a behaviour change: the refusal the filing run reads is the same string,
+    head and tail, and the observation keeps the same keys."""
+    obs = _create(sched_ctx, {"target": "fau-comms-steward", "name": "FAU comms steward",
+                              "prompt": "Watch the comms inbox.", "workflow": "generate"})
+    assert obs["reason"].startswith(
+        "create_routine proposal refused at filing — workflow: 'generate' is not a pattern the "
+        "library holds. `generate` is the conversation flow's own choice — it DRAFTS a new "
+        "pattern while a user watches, and the Decisions page has no way to draft one, so it is "
+        "never a queued proposal's workflow. Pick one the library has: ")
+    assert obs["reason"].endswith(REFILE_TAIL)
+    assert set(obs) == {"kind", "rejected", "queued", "reason", "slug"}
+
+    lane = handle_manage_lane(sched_ctx, {"verb": "create", "name": "Nightly",
+                                          "members": ["routine-improver"], "cron": "nightly"})
+    assert lane["reason"].startswith("manage_lane proposal refused at filing — cron: ")
+    assert lane["reason"].endswith(REFILE_TAIL)
+    assert set(lane) == {"kind", "rejected", "queued", "reason", "verb"}
+
+
+# ---- the settings pattern: LOUD at the accept first, then judged at filing ------------------
+
+def test_an_unknown_settings_pattern_is_refused_at_the_accept_instead_of_silently_dropped(
+        server, client):
+    """D229 part 1. `scaffold` read the pattern with `store.read(...) or {}`: an unknown slug
+    answered None, `settings` fell to {}, the `pattern:` key was left OUT of routine.yaml and
+    `recommend.at_creation` was handed "" — so the operator's click built a routine following
+    NOTHING and said so nowhere. That silence is why filing could not judge `pattern` (a filing
+    check stricter than the accept would refuse a proposal that works), so the loudness lands
+    at the accept FIRST."""
+    pid = _unjudged_record(
+        server, {"slug": "patterned-one", "name": "Patterned one", "instruction": "do it",
+                 "workflow": "general-task", "pattern": "no-such-pattern", "setup": [],
+                 "done_when": [], "finish_line": [], "never": [], "produces": PRODUCES},
+        summary="routine 'patterned-one'")
+    answer = client.post(f"/api/pending-creations/{pid}/materialize")
+    assert answer.status_code == 400
+    assert "pattern" in answer.json()["detail"] and "no-such-pattern" in answer.json()["detail"]
+    assert not (server.routines_home / "patterned-one").exists()
+    assert len(client.get("/api/pending-creations").json()) == 1   # still his to fix or discard
+
+
+def test_the_scaffold_names_the_pattern_field_rather_than_building_a_routine_without_one(server):
+    """The raise is `scaffold`'s, where the drop was: every caller already turns a ValueError
+    from it into a legible refusal (the CLI's `error:`, the conversation's error observation,
+    the accept's 400), so one check serves all three."""
+    from rsched.workflows.scaffold import scaffold
+
+    with pytest.raises(ValueError, match="pattern"):
+        scaffold(server, slug="patterned-one", name="Patterned one", instruction="do it",
+                 workflow_slug="general-task", pattern="no-such-pattern")
+    assert not (server.routines_home / "patterned-one").exists()
+
+
+def test_a_pattern_the_accept_now_refuses_is_refused_at_filing_too(server, sched_ctx):
+    """Only once the accept is loud may filing judge `pattern` — and then it must judge exactly
+    the same condition, never a stricter one: non-empty and not in the live store."""
+    obs = _create(sched_ctx, {"target": "fau-comms-steward", "name": "FAU comms steward",
+                              "prompt": "Watch the comms inbox.", "workflow": "general-task",
+                              "pattern": "no-such-pattern"})
+    assert obs["rejected"] is True and not obs.get("queued")
+    assert "pattern:" in obs["reason"] and "no-such-pattern" in obs["reason"]
+    assert _queued(server) == []
 
 
 def test_a_queue_kind_with_no_fixed_vocabulary_is_left_alone(server):

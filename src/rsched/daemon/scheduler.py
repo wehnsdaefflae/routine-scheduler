@@ -134,7 +134,7 @@ class Scheduler:
                 # the `until` date), since no run did (engine/goalreached.py).
                 if info.retired and info.cfg.enabled:
                     from ..engine.goalreached import propose_if_due
-                    propose_if_due(self.server.routines_home, slug, info.cfg.name)
+                    propose_if_due(self.server, slug, info.cfg.name)
                 continue
             nf = firetimes.next_fire(info.cfg, now)
             if nf is None:

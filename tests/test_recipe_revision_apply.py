@@ -25,8 +25,8 @@ from rsched.engine import recipeproposal
 from rsched.paths import read_json
 
 
-def _queued(routines: Path, slug: str, ts: str, lines: list[str]) -> dict:
-    return pending.queue(routines, kind=recipeproposal.KIND, routine=slug,
+def _queued(srv, slug: str, ts: str, lines: list[str]) -> dict:
+    return pending.queue(srv, kind=recipeproposal.KIND, routine=slug,
                          run_id=f"{slug}:{ts}", fields={"lines": lines, "run_id": f"{slug}:{ts}"},
                          summary="proposes a revision to its own recipe")
 
@@ -46,7 +46,7 @@ def test_approving_resumes_the_proposing_run_with_its_recipe_writable(web, monke
 
     c, tmp = web
     run_dir = mk_run(tmp / "routines" / "rev", "20260709-120000", "finished")
-    rec = _queued(tmp / "routines", "rev", "20260709-120000",
+    rec = _queued(c.app.state.server, "rev", "20260709-120000",
                   ["stages/scan.md — read the cursor first"])
     resumed: dict = {}
 
@@ -77,7 +77,7 @@ def test_a_resume_that_cannot_happen_leaves_no_unlock_behind(web, monkeypatch):
 
     c, tmp = web
     run_dir = mk_run(tmp / "routines" / "rev", "20260709-130000", "finished")
-    rec = _queued(tmp / "routines", "rev", "20260709-130000", ["main.md — x"])
+    rec = _queued(c.app.state.server, "rev", "20260709-130000", ["main.md — x"])
 
     async def refuse(cfg, ts=None, *, reason=""):
         return None
@@ -93,8 +93,8 @@ def test_a_proposal_whose_run_is_gone_says_so_instead_of_resuming_nothing(web):
     """Retention prunes runs and a proposal outlives the run that made it. With no transcript
     there is no reasoning to resume, so the card says to apply it from the routine's own editor
     rather than silently opening a leg that has lost its context."""
-    c, tmp = web
-    rec = _queued(tmp / "routines", "rev", "20200101-000000", ["main.md — x"])
+    c, _tmp = web
+    rec = _queued(c.app.state.server, "rev", "20200101-000000", ["main.md — x"])
     r = c.post(f"/api/pending-creations/{rec['id']}/revise")
     assert r.status_code == 409 and "no longer on disk" in r.json()["detail"]
 
@@ -102,14 +102,14 @@ def test_a_proposal_whose_run_is_gone_says_so_instead_of_resuming_nothing(web):
 def test_a_live_run_cannot_be_unlocked(web):
     c, tmp = web
     mk_run(tmp / "routines" / "rev", "20260709-140000", "running")
-    rec = _queued(tmp / "routines", "rev", "20260709-140000", ["main.md — x"])
+    rec = _queued(c.app.state.server, "rev", "20260709-140000", ["main.md — x"])
     r = c.post(f"/api/pending-creations/{rec['id']}/revise")
     assert r.status_code == 409 and "FINISHED run" in r.json()["detail"]
 
 
 def test_the_route_refuses_a_proposal_of_another_kind(web):
-    c, tmp = web
-    rec = pending.queue(tmp / "routines", kind="goal-reached", routine="rev", run_id="rev:1",
+    c, _tmp = web
+    rec = pending.queue(c.app.state.server, kind="goal-reached", routine="rev", run_id="rev:1",
                         fields={"outcomes": []}, summary="finish line reached")
     r = c.post(f"/api/pending-creations/{rec['id']}/revise")
     assert r.status_code == 400 and "not a recipe revision" in r.json()["detail"]
@@ -119,7 +119,7 @@ def test_discarding_tells_the_proposing_routine(web):
     """The ordinary discard path: the routine learns its revision was not wanted, so its next
     run does not simply propose it again as though nothing had been decided."""
     c, tmp = web
-    rec = _queued(tmp / "routines", "rev", "20260709-150000", ["main.md — x"])
+    rec = _queued(c.app.state.server, "rev", "20260709-150000", ["main.md — x"])
     r = c.post(f"/api/pending-creations/{rec['id']}/discard",
                json={"reason": "the step is deliberate"})
     assert r.status_code == 200, r.text
@@ -133,7 +133,7 @@ def test_a_queued_proposal_shows_on_the_decisions_page_read_model(web):
     which the header badge and the push sender count too."""
     c, tmp = web
     mk_run(tmp / "routines" / "rev", "20260709-160000", "finished")
-    _queued(tmp / "routines", "rev", "20260709-160000", ["main.md — tighten step 2"])
+    _queued(c.app.state.server, "rev", "20260709-160000", ["main.md — tighten step 2"])
     rows = c.get("/api/pending-creations").json()
     assert [row["kind"] for row in rows] == [recipeproposal.KIND]
     assert rows[0]["fields"]["lines"] == ["main.md — tighten step 2"]
@@ -166,7 +166,7 @@ def test_the_operators_edited_lines_replace_the_runs_own(web, monkeypatch):
 
     c, tmp = web
     run_dir = mk_run(tmp / "routines" / "rev", "20260709-170000", "finished")
-    rec = _queued(tmp / "routines", "rev", "20260709-170000", ["main.md — tighten step 2"])
+    rec = _queued(c.app.state.server, "rev", "20260709-170000", ["main.md — tighten step 2"])
     monkeypatch.setattr(c.app.state.runner, "resume_terminal", _resumed)
     r = c.post(f"/api/pending-creations/{rec['id']}/revise",
                json={"lines": ["main.md — delete step 2 entirely", "   "]})
@@ -190,7 +190,7 @@ def test_edited_lines_are_capped_at_max_lines_server_side(web, monkeypatch):
 
     c, tmp = web
     run_dir = mk_run(tmp / "routines" / "rev", "20260709-171000", "finished")
-    rec = _queued(tmp / "routines", "rev", "20260709-171000", ["main.md — x"])
+    rec = _queued(c.app.state.server, "rev", "20260709-171000", ["main.md — x"])
     monkeypatch.setattr(c.app.state.runner, "resume_terminal", _resumed)
     over = [f"main.md — change {i}" for i in range(recipeproposal.MAX_LINES + 3)]
     r = c.post(f"/api/pending-creations/{rec['id']}/revise", json={"lines": over})
@@ -206,7 +206,7 @@ def test_an_empty_edit_is_refused_instead_of_applying_the_runs_words(web):
     """
     c, tmp = web
     mk_run(tmp / "routines" / "rev", "20260709-172000", "finished")
-    rec = _queued(tmp / "routines", "rev", "20260709-172000", ["main.md — x"])
+    rec = _queued(c.app.state.server, "rev", "20260709-172000", ["main.md — x"])
     r = c.post(f"/api/pending-creations/{rec['id']}/revise", json={"lines": ["  ", ""]})
     assert r.status_code == 400 and "empty" in r.json()["detail"]
     assert len(pending.load_all(tmp / "routines")) == 1       # still the operator's to decide
