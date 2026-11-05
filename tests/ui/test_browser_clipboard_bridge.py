@@ -82,7 +82,7 @@ def test_a_click_on_the_screen_never_reads_the_clipboard(ui, ui_page):
 
 
 def test_the_button_sends_what_the_operator_copied_to_the_guest(ui, ui_page):
-    screen, frame = _open(ui, ui_page)
+    _screen, frame = _open(ui, ui_page)
     _host_copy(ui_page, "copied on the host")
     ui_page.locator("button[data-clipboard-send]").click()
     until(lambda: frame.evaluate("window.sent") == ["copied on the host"],
