@@ -74,18 +74,43 @@ STARTED_STAMP = ".rsched-backup-started"
 #: completion after it did not complete.
 ATTEMPT_BOUND_HOURS = 4
 
-#: The backup root the shipped unit uses. A host that moved it with a drop-in sets `RSCHED_MIRROR`,
-#: which `backup_roots` reads first. A root this process cannot see at all (the share is not mounted
-#: where the daemon runs) reports UNKNOWN, never stale: claiming a backup failed because we cannot
-#: see its share would be the invention F480 removed from the boot reap.
+#: The TWO TIERS the shipped unit writes (R3204, operator 2026-11-05): the local disk every night,
+#: and the off-box share mirrored from it afterwards. A host that moved either sets `RSCHED_MIRROR`
+#: / `RSCHED_BACKUP_LOCAL`, which `backup_tiers` reads first. A root this process cannot see at all
+#: (the disk is not mounted where the daemon runs) reports UNKNOWN for that tier, never stale:
+#: claiming a backup failed because we cannot see its disk would be the invention F480 removed from
+#: the boot reap.
+DEFAULT_LOCAL_ROOT = "/mnt/usb500/rsched-backup"
 DEFAULT_ROOT = "/mnt/sshd_volume1/rsched-backup"
 
 
+def backup_tiers(env: dict[str, str] | None = None) -> list[tuple[str, Path]]:
+    """The tiers to judge, each as (label, root) — the local disk first, then the off-box share.
+
+    EACH TIER IS JUDGED ON ITS OWN STAMPS, and that is the point of this shape. Taking the newest
+    stamp across both roots — which is what this module did while there was only ever one real
+    root — would let a local snapshot that completed minutes ago report `ok` for an off-box copy
+    that has not completed for a week. That is exactly the silence F602 was about, with a fresh
+    number in front of it: the off-box tier is the one that survives losing this box, so its
+    staleness is the more serious of the two and must not be maskable by the cheaper one.
+    """
+    #: Labels by POSITION, over whatever `backup_roots` answers — which keeps that function the
+    #: ONE place the roots are decided, and keeps it as the seam a test replaces (it has been
+    #: one since F602). A host that overrode only one root still gets both labelled in order.
+    labels = ("local", "off-box")
+    roots = backup_roots(env)
+    return [(labels[i] if i < len(labels) else f"tier {i + 1}", root)
+            for i, root in enumerate(roots)]
+
+
 def backup_roots(env: dict[str, str] | None = None) -> list[Path]:
-    """The candidate backup roots, in the order they are tried."""
+    """The candidate backup roots, in the order they are tried: the local tier, then the off-box
+    one. `RSCHED_BACKUP_LOCAL` / `RSCHED_MIRROR` override them for a host that moved either.
+    """
     environ = env if env is not None else dict(os.environ)
     seen: list[Path] = []
-    for raw in (environ.get("RSCHED_MIRROR") or "", DEFAULT_ROOT):
+    for raw in (environ.get("RSCHED_BACKUP_LOCAL") or DEFAULT_LOCAL_ROOT,
+                environ.get("RSCHED_MIRROR") or DEFAULT_ROOT):
         if raw and Path(raw) not in seen:
             seen.append(Path(raw))
     return seen
@@ -110,6 +135,11 @@ def newest_stamp(name: str, roots: list[Path]) -> tuple[datetime | None, Path | 
     return newest, which
 
 
+#: Worst first: a tier's verdict is reported in this order, so the serious one is never masked by
+#: a healthier sibling. `unknown` ranks below `stale` deliberately — it claims nothing.
+_WORST_FIRST = ("stale", "unknown", "ok")
+
+
 def staleness(now: datetime | None = None, roots: list[Path] | None = None) -> tuple[str, str]:
     """The instance's backup state as (state, detail) — ONE judgement, so this check and any later
     surface read the same verdict.
@@ -117,7 +147,29 @@ def staleness(now: datetime | None = None, roots: list[Path] | None = None) -> t
     `state` is `ok` (a snapshot completed inside the window and no attempt since has failed),
     `stale` (the last one completed too long ago, OR an attempt after it did not complete) or
     `unknown` (no stamp of either kind can be read — nothing is claimed about the backup).
+
+    With no explicit `roots` this judges EVERY TIER separately (`backup_tiers`) and reports the
+    WORST, with the tier named in the detail — a fresh local snapshot must not report `ok` for an
+    off-box copy that is a week behind. `roots` still means "judge these roots as one", which is
+    what a caller testing the stamp arithmetic wants.
     """
+    if roots is None:
+        tiers = backup_tiers()
+        # ONE root is one tier: judged exactly as before, with no tier label in the detail. That
+        # is what a host with a single backup target gets, and what a test replacing
+        # `backup_roots` with one directory gets — the seam keeps its old meaning.
+        if len(tiers) > 1:
+            judged = [(label, *_tier_staleness(now, [root])) for label, root in tiers]
+            judged.sort(key=lambda row: _WORST_FIRST.index(row[1]))
+            worst_label, worst_state, worst_detail = judged[0]
+            others = "; ".join(f"{label} tier: {state}" for label, state, _ in judged[1:])
+            return worst_state, (f"{worst_label} tier: {worst_detail}"
+                                 + (f" (also — {others})" if others else ""))
+    return _tier_staleness(now, roots)
+
+
+def _tier_staleness(now: datetime | None, roots: list[Path] | None) -> tuple[str, str]:
+    """One verdict over `roots` read as a single tier — the stamp arithmetic, unchanged."""
     candidates = roots if roots is not None else backup_roots()
     when, stamp = newest_stamp(COMPLETED_STAMP, candidates)
     began, _ = newest_stamp(STARTED_STAMP, candidates)

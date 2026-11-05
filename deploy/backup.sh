@@ -31,7 +31,15 @@
 # (deploy/state-paths.sh); a Permission denied here names a file something wrote as another.
 set -euo pipefail
 
-DEFAULT_ROOT=/mnt/sshd_volume1/rsched-backup
+# TWO TIERS (R3204, operator 2026-11-05). The nightly snapshot goes to the LOCAL 500 GB USB disk
+# first, because the NAS target is sshfs at one round trip per file and ~167k files cannot finish
+# inside the unit's TimeoutStartSec=4h — no snapshot completed between 2026-11-01 and this change.
+# A local ext4 disk does the same --link-dest snapshot in minutes. It does NOT replace the off-box
+# copy: a disk in this box does not survive losing the box, so the NAS mirror runs afterwards as a
+# SEPARATE step whose slowness or failure can neither fail nor delay the local snapshot.
+DEFAULT_ROOT=/mnt/usb500/rsched-backup
+#: The off-box tier, brought up to date FROM the newest local snapshot. Empty disables the step.
+DEFAULT_MIRROR_ROOT=/mnt/sshd_volume1/rsched-backup
 LOCK="/tmp/rsched-backup.lock"
 KEEP_DAILY=14
 KEEP_WEEKLY=8
@@ -72,6 +80,22 @@ usage() {
   cat <<EOF
 usage: deploy/backup.sh [BACKUP_ROOT]        (default: ${DEFAULT_ROOT})
 
+TWO TIERS, in this order:
+  1. the LOCAL disk  ${DEFAULT_ROOT}
+     the nightly snapshot, built here because a local ext4 disk finishes in minutes.
+  2. the OFF-BOX share  ${DEFAULT_MIRROR_ROOT}
+     brought up to date FROM the newest local snapshot, as a separate step AFTER the local one is
+     complete and stamped. Its slowness or failure never fails or delays the local snapshot — it
+     is sshfs at one round trip per file, which is why nothing completed for four days when it
+     was the only tier. Set MIRROR_ROOT to move it, SKIP_OFFBOX=1 to run the local tier alone.
+A disk in this box does not survive losing the box, so the off-box copy is not optional; it is
+second because a complete local snapshot every night is worth more than a half-finished remote
+one. BACKUP_ROOT names the LOCAL tier when given. BOTH tiers are refused unless their target is
+on a mounted filesystem of its own — an unplugged drive must never make the snapshot land on the
+root disk and report success — and a refusal is a failed backup, surfaced like any other.
+Each tier keeps its own stamps, so the postdeploy backup-freshness check and the daemon's backup
+watch name WHICH tier is stale rather than reporting the newer of the two.
+
 Every run writes BACKUP_ROOT/snapshots/<YYYY-MM-DD> (this host's local date; a second run the
 same day refreshes that day's): a complete copy of every data home deploy/state-paths.sh lists,
 in which each file unchanged since the newest earlier snapshot is a hard link, not a copy. It is
@@ -81,15 +105,18 @@ BACKUP_ROOT/latest points at the newest complete one.
 After a successful run it keeps the ${KEEP_DAILY} newest snapshots, plus the newest of each of the
 ${KEEP_WEEKLY} most recent older ISO weeks that have one, and deletes the rest.
 
-RUN HISTORY is the one thing a snapshot does not carry in full: a routine's run directory
-(routines/<routine>/runs/<YYYYMMDD-HHMMSS>) stops being copied once it is more than
-${KEEP_RUNS_DAYS} days old, because on an sshfs share every file is a round trip and run folders
-are most of the file count. It stays in every snapshot taken while it was fresh, so the history is
-in the backup root until retention drops those snapshots — it is just not re-copied nightly. A
-routine's state/, .memory/, LEDGER.md, audit/, questions/ and artifacts/ are carried whole at any
-age, and so are conversations/ and background/. KEEP_RUNS_DAYS=0 carries every run directory.
-Restoring a snapshot therefore gives you that night's recent runs, not the fleet's whole history:
-for an older transcript, restore from the older snapshot that still holds it.
+RUN HISTORY is carried in full on the LOCAL tier and aged out of the OFF-BOX one. A routine's run
+directory (routines/<routine>/runs/<YYYYMMDD-HHMMSS>) stops being mirrored off-box once it is
+more than ${KEEP_RUNS_DAYS} days old, because on an sshfs share every file is a round trip and
+run folders are most of the file count; the local snapshot keeps every one of them, since on a
+local disk that cost does not exist. An aged-out run stays in every OFF-BOX snapshot taken while
+it was fresh, so the history is there until retention drops those snapshots — it is just not
+re-copied nightly. A routine's state/, .memory/, LEDGER.md, audit/, questions/ and artifacts/ are
+carried whole on both tiers at any age, and so are conversations/ and background/.
+KEEP_RUNS_DAYS=0 mirrors every run directory off-box too.
+So: restore a recent transcript from the local tier, and expect the off-box copy of a snapshot
+older than ${KEEP_RUNS_DAYS} days to hold that night's recent runs rather than the fleet's whole
+history — for an older transcript off-box, restore from the older snapshot that still holds it.
 
 How to restore a home — with the service stopped, so nothing writes it while it is copied back:
   docker compose stop rsched          (host install: systemctl --user stop routine-scheduler)
@@ -283,25 +310,60 @@ case "${ROOT}" in /*) ;; *) ROOT="${PWD}/${ROOT}" ;; esac
 exec 9>"${LOCK}"
 flock -n 9 || { echo "another backup is already running (${LOCK}) — nothing to do"; exit 0; }
 
-# THE LOAD-BEARING CHECK. The target is an autofs/sshfs mount of another machine; when it is
-# not up, its mountpoint is an ordinary empty directory on the local disk. Writing there would
-# fill /home with a copy of /home and report success — a backup that is on the same disk as the
-# data, which is the one thing a backup may never be. Touch the path first (a direct autofs
-# mount only attaches on access), then require it to live on a DIFFERENT device than $HOME.
+# Touch the path first: a direct autofs mount only attaches on access, so the off-box share must
+# be reached before anything can be learnt about it.
 mkdir -p "$(dirname "${ROOT}")" 2>/dev/null || true
 ls "$(dirname "${ROOT}")" >/dev/null 2>&1 || true
 
-target_dev="$(stat -c %d "$(dirname "${ROOT}")" 2>/dev/null || echo missing)"
 home_dev="$(stat -c %d "${HOME}")"
-if [ "${target_dev}" = "missing" ]; then
-  echo "REFUSING: $(dirname "${ROOT}") does not exist — is the share mounted?" >&2
-  exit 1
-fi
-if [ "${target_dev}" = "${home_dev}" ]; then
-  echo "REFUSING: $(dirname "${ROOT}") is on the SAME device as ${HOME} (dev ${home_dev})." >&2
-  echo "          The share is not mounted, so this would copy the disk onto itself." >&2
-  exit 1
-fi
+home_mount="$(stat -c %m "${HOME}" 2>/dev/null || echo /)"
+
+# THE LOAD-BEARING CHECK, and both tiers pass through it. It prints nothing on success and
+# REFUSES a target that is not on a mounted filesystem of its own.
+#
+# The operator's order (R3204 step 3) was `mountpoint -q`, and the rule here is its STRONGER
+# form, because a literal `mountpoint -q` on the root's parent is both too weak and too strict:
+#   - too weak in the case it was asked for. An unplugged USB disk leaves an ordinary empty
+#     directory behind, and a snapshot landing there fills the ROOT DISK while reporting success.
+#     `mountpoint` catches that only if the snapshot root's parent is itself the mount; a root one
+#     level deeper (`/mnt/usb500/backups/rsched-backup`) passes it while being just as wrong. The
+#     device comparison below does not catch it either when $HOME is a filesystem of its own —
+#     then the unplugged target is on `/`, $HOME is on `/home`, the devices differ, and the
+#     snapshot lands on the root disk exactly as the order feared.
+#   - too strict for the only honest offline test of this script, which drives it against a root
+#     on a second filesystem (`/dev/shm/<mkdtemp>/…` — see tests/test_backup_snapshots.py). That
+#     directory is a real filesystem apart from $HOME but is not itself a mountpoint, so a
+#     literal check would make every property of this script untestable.
+# So: resolve the mount the target ACTUALLY lives on (`stat -c %m`, which is `mountpoint`'s own
+# question asked of a path at any depth) and refuse it when it is the root filesystem, or the
+# mount $HOME is on, or the same device as $HOME. A backup on the root disk is the one thing a
+# backup may never be, and that is the predicate.
+#
+# A refusal is a failed backup and exits non-zero, so the unit's OnFailure= push and
+# daemon/backup_watch see it like any other failure — which is what step 3 is for while
+# /mnt/usb500 is not yet a permanent fstab mount.
+refuse_unless_mounted() {
+  local path="$1" label="$2" dir dev mount
+  dir="$(dirname "${path}")"
+  dev="$(stat -c %d "${dir}" 2>/dev/null || echo missing)"
+  if [ "${dev}" = "missing" ]; then
+    echo "REFUSING (${label}): ${dir} does not exist — is the disk/share mounted?" >&2
+    return 1
+  fi
+  mount="$(stat -c %m "${dir}" 2>/dev/null || echo unknown)"
+  if [ "${mount}" = "/" ] || [ "${mount}" = "${home_mount}" ] || [ "${dev}" = "${home_dev}" ]; then
+    echo "REFUSING (${label}): ${dir} is NOT ON A MOUNTED DISK OF ITS OWN — it resolves to" >&2
+    echo "          the mount '${mount}' (dev ${dev}), where ${HOME} lives (mount" >&2
+    echo "          '${home_mount}', dev ${home_dev}). The disk or share is not mounted, so" >&2
+    echo "          this would write the snapshot onto the very filesystem it is backing up" >&2
+    echo "          and report success. Mount it first — by UUID in fstab, with nofail." >&2
+    return 1
+  fi
+  return 0
+}
+
+refuse_unless_mounted "${ROOT}" "local tier" || exit 1
+target_dev="$(stat -c %d "$(dirname "${ROOT}")")"
 
 mkdir -p "${ROOT}"
 chmod 700 "${ROOT}" 2>/dev/null || true
@@ -356,12 +418,12 @@ fi
 if [ "${#RESUME[@]}" -gt 0 ]; then
   echo "  carrying on in the folder an interrupted run left — what it already holds is not copied again"
 fi
-# After the console lines above, so the night's log says what it DROPPED beside what it links —
-# and before any rsync runs, since the list is one of its arguments.
+# The aged-run list is built here — before any rsync, since it is one of their arguments — but it
+# is NOT applied to the LOCAL tier. The operator's two orders compose that way: D235 cuts old run
+# directories because every file is an sshfs round trip, and R3204 makes the local disk the first
+# tier where that cost does not exist ("the local tier may keep everything"). So the local
+# snapshot is COMPLETE, and the list is handed to the off-box mirror alone (mirror_offbox).
 collect_aged_runs
-if [ -n "${RUNS_EXCLUDE_FILE}" ]; then
-  RSYNC_EXCLUDES+=("--exclude-from=${RUNS_EXCLUDE_FILE}")
-fi
 echo
 
 mkdir -p "${WORK}"
@@ -496,4 +558,84 @@ fi
 
 prune_snapshots
 empty_discard
+
+# ---- the OFF-BOX tier (R3204 step 2) ---------------------------------------------------------
+# The local snapshot is COMPLETE and STAMPED by the time this runs, and that order is the whole
+# point: a disk in this box does not survive losing the box, so the NAS copy matters — but it is
+# sshfs at one round trip per file, which is why nothing completed for four days when it was the
+# only tier. So it runs here, after everything that makes the local snapshot real, and its
+# slowness or failure can neither fail nor delay it: this block never exits non-zero.
+#
+# It mirrors the newest LOCAL snapshot rather than re-walking $HOME — the local disk is the fast
+# reader, the homes are not read twice, and the two tiers can never disagree about what the
+# snapshot contained. D235's run-age exclusion applies HERE (the off-box tier is the one whose
+# per-file cost is the problem); the local tier keeps every run directory, as the operator chose.
+mirror_offbox() {
+  local root="$1" newest="$2" rc=0 out started_at elapsed
+  # Touch-then-guard, exactly as the local tier does: a direct autofs mount only attaches on
+  # access, so the share has to be reached before anything can be learnt about it — and the
+  # guard is what catches the case where that access created a plain directory instead.
+  mkdir -p "$(dirname "${root}")" 2>/dev/null || true
+  ls "$(dirname "${root}")" >/dev/null 2>&1 || true
+  refuse_unless_mounted "${root}" "off-box tier" || return 1
+  mkdir -p "${root}"
+  chmod 700 "${root}" 2>/dev/null || true
+  local snaps="${root}/snapshots" base
+  mkdir -p "${snaps}"
+  base="$(ROOT="${root}" SNAPS="${snaps}" snapshot_names | tail -1)"
+  local link=()
+  if [ -n "${base}" ] && [ "${base}" != "${newest}" ]; then
+    link=("--link-dest=${snaps}/${base}")
+  fi
+  if [ "${base}" = "${newest}" ]; then
+    echo "  off-box already holds ${newest} — refreshing it in place"
+  fi
+  date -Iseconds > "${root}/.rsched-backup-started" 2>/dev/null || true
+  started_at=$(date +%s)
+  local excludes=()
+  if [ -n "${RUNS_EXCLUDE_FILE}" ]; then
+    # The paths in the list are HOME-relative, which is also how they sit inside a snapshot.
+    excludes+=("--exclude-from=${RUNS_EXCLUDE_FILE}")
+  fi
+  out=$(rsync -a --delete --delete-excluded --omit-link-times --stats "${link[@]}" \
+             "${excludes[@]}" "${SNAPS}/${newest}/" "${snaps}/.in-progress/" 2>&1) || rc=$?
+  if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 24 ]; then
+    echo "OFF-BOX MIRROR FAILED (rsync ${rc}) — the LOCAL snapshot ${newest} is complete and" >&2
+    echo "                     unaffected; only the off-box copy is behind." >&2
+    echo "${out}" | grep -E '^rsync|^IO error|cannot ' | head -6 | sed 's/^/      /' >&2
+    return 1
+  fi
+  if [ -e "${snaps}/${newest}" ]; then
+    rm -rf "${snaps}/.discard-${newest}" 2>/dev/null || true
+    mv -T "${snaps}/${newest}" "${snaps}/.discard-${newest}" 2>/dev/null || true
+  fi
+  mv -T "${snaps}/.in-progress" "${snaps}/${newest}"
+  rm -rf "${snaps}/.discard-${newest}" 2>/dev/null || true
+  (cd "${root}" && ln -sfn "snapshots/${newest}" .latest.new && mv -T .latest.new latest)
+  date -Iseconds > "${root}/.rsched-backup-completed"
+  elapsed=$(( $(date +%s) - started_at ))
+  local sent
+  sent=$(echo "${out}" | awk -F': *' '/Total transferred file size/ {print $2}')
+  echo "  off-box ${root}: ${newest} mirrored (${sent:-0})   elapsed: ${elapsed}s"
+  ROOT="${root}" SNAPS="${snaps}" DISCARD="${snaps}/.discard" prune_snapshots
+  return 0
+}
+
+# MIRROR_ROOT, or the unit's own RSCHED_MIRROR (its name since the single-mirror era, kept so an
+# existing host drop-in still points where it did), or the default. One name reaches all three
+# readers — this script, rsched-backup.service and daemon/backup_watch — so a host that moved its
+# off-box share moves it once. An EXPLICIT empty MIRROR_ROOT means "local tier only" and is
+# honoured as written, which is why this tests `${MIRROR_ROOT+set}` rather than its emptiness.
+if [ -z "${MIRROR_ROOT+set}" ]; then
+  MIRROR_ROOT="${RSCHED_MIRROR:-${DEFAULT_MIRROR_ROOT}}"
+fi
+if [ -z "${MIRROR_ROOT}" ] || [ "${MIRROR_ROOT}" = "${ROOT}" ]; then
+  echo "off-box mirror: not configured (MIRROR_ROOT empty) — local tier only"
+elif [ "${SKIP_OFFBOX:-0}" != "0" ]; then
+  echo "off-box mirror: skipped (SKIP_OFFBOX=${SKIP_OFFBOX})"
+else
+  echo "off-box mirror → ${MIRROR_ROOT}"
+  mirror_offbox "${MIRROR_ROOT}" "${TODAY}" || true
+fi
+
 echo "done."

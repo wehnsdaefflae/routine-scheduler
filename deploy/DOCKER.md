@@ -143,10 +143,34 @@ nightly rebuild moves ~3.6 GB to capture ~90 MB.
 `deploy/backup.sh` keeps **dated snapshots** of the same inventory instead:
 
 ```bash
-deploy/backup.sh                                  # → /mnt/sshd_volume1/rsched-backup/snapshots/<today>
-deploy/backup.sh /path/to/some/other/root         # …or anywhere else
+deploy/backup.sh                                  # → /mnt/usb500/rsched-backup/snapshots/<today>
+                                                  #   then mirrored to /mnt/sshd_volume1/rsched-backup
+deploy/backup.sh /path/to/some/other/root         # …another LOCAL tier root
+MIRROR_ROOT= deploy/backup.sh                     # the local tier alone
 deploy/backup.sh --help                           # the layout, what is kept, how to restore
 ```
+
+**TWO TIERS since 0.501.0** (R3204, the operator's call of 2026-11-05), and the order is the
+decision. The nightly snapshot is built on the **local 500 GB USB disk** (`/mnt/usb500`), which
+finishes in minutes; the **off-box share** (`/mnt/sshd_volume1`, sshfs) is then brought up to date
+*from that snapshot* as a separate step that can neither fail nor delay it. The reason is measured:
+the off-box target costs one round trip per FILE, ~167k files could not finish inside the unit's
+`TimeoutStartSec=4h`, and nothing completed at all between 2026-11-01 and 11-05. A disk in this box
+does not survive losing the box, so the off-box copy is not optional — it is second.
+
+Two consequences worth knowing before you restore anything. **Run history differs by tier**: the
+local snapshot carries every run directory, the off-box mirror drops those older than
+`KEEP_RUNS_DAYS` (7) because that is where the per-file cost is. And **each tier keeps its own
+stamps**, so `rsched postdeploy` and the daemon's backup watch judge them separately and name which
+one is stale — a local snapshot that completed an hour ago must never report `ok` for an off-box
+copy that is a week behind.
+
+**Both tiers refuse a target that is not on a mounted filesystem of its own.** An unplugged drive
+leaves an ordinary empty directory behind, and a snapshot landing there would fill the root disk
+while reporting success; the refusal is a failed backup, so the unit's `OnFailure=` push and the
+health stream see it like any other. `/mnt/usb500` therefore needs a permanent mount — an
+`/etc/fstab` entry **by UUID with `nofail`**, owned by the instance user, mode 700 because the
+snapshots carry its secrets.
 
 Every run writes `<root>/snapshots/<YYYY-MM-DD>` — the host's local date; a second run the same
 day refreshes that day's — and `<root>/latest` points at the newest complete one. Each snapshot

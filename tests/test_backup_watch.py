@@ -115,9 +115,47 @@ def test_the_newest_stamp_across_roots_wins(tmp_path):
 
 def test_rsched_mirror_is_read_before_the_default_root(tmp_path):
     roots = backup_watch.backup_roots({"RSCHED_MIRROR": str(tmp_path / "elsewhere")})
-    assert roots[0] == tmp_path / "elsewhere"
-    assert Path(backup_watch.DEFAULT_ROOT) in roots
-    assert backup_watch.backup_roots({}) == [Path(backup_watch.DEFAULT_ROOT)]
+    assert tmp_path / "elsewhere" in roots
+    assert Path(backup_watch.DEFAULT_ROOT) not in roots      # the override replaced it
+    # BOTH TIERS by default since R3204: the local disk and the off-box share.
+    assert backup_watch.backup_roots({}) == [Path(backup_watch.DEFAULT_LOCAL_ROOT),
+                                             Path(backup_watch.DEFAULT_ROOT)]
+    assert [label for label, _ in backup_watch.backup_tiers({})] == ["local", "off-box"]
+
+
+def test_a_fresh_local_tier_never_masks_a_stale_offbox_one(tmp_path, monkeypatch):
+    """R3204 step 4, and the reason the two tiers are judged apart.
+
+    `newest_stamp` takes the freshest stamp across its roots — correct for one tier with a
+    leftover root beside it, and wrong the moment there are two REAL tiers: the local snapshot
+    completes every night in minutes, so it would report `ok` for an off-box copy that has not
+    completed for weeks. The off-box tier is the one that survives losing this box, which makes
+    its staleness the more serious of the two and the one that must reach the operator.
+    """
+    local = _stamp(tmp_path / "local", NOW - timedelta(hours=2))
+    offbox = _stamp(tmp_path / "offbox", NOW - timedelta(days=19))
+    monkeypatch.setattr(backup_watch, "backup_roots", lambda env=None: [local, offbox])
+    state, detail = backup_watch.staleness(now=NOW)
+    assert state == "stale", detail
+    assert "off-box tier" in detail and "19 days ago" in detail
+    assert "local tier: ok" in detail        # and it says the other one is fine
+
+    # The symmetric case: a healthy off-box tier does not excuse a local one that stopped.
+    monkeypatch.setattr(backup_watch, "backup_roots", lambda env=None: [offbox, local])
+    state, detail = backup_watch.staleness(now=NOW)
+    assert state == "stale" and "local tier" in detail
+
+
+def test_an_unseeable_tier_beside_a_fresh_one_is_reported_not_swallowed(tmp_path, monkeypatch):
+    """A tier whose disk is not mounted where the daemon runs claims nothing — `unknown`, never
+    `stale` (F480). But it must not vanish either: the operator is told the other tier is fine
+    AND that this one could not be read."""
+    local = _stamp(tmp_path / "local", NOW - timedelta(hours=2))
+    monkeypatch.setattr(backup_watch, "backup_roots",
+                        lambda env=None: [local, tmp_path / "not-mounted"])
+    state, detail = backup_watch.staleness(now=NOW)
+    assert state == "unknown", detail
+    assert "off-box tier" in detail and "local tier: ok" in detail
 
 
 async def test_a_stale_snapshot_is_filed_once_a_day_not_once_a_tick(tmp_path, monkeypatch):

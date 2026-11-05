@@ -13,16 +13,30 @@ OnFailure=rsched-backup-failed.service
 [Service]
 Type=oneshot
 
-# The backup root: backup.sh writes snapshots/<YYYY-MM-DD> and the `latest` link under it. The
-# variable keeps its name from the single mirror the root used to hold, so a host's existing
-# drop-in still points where it did. Override per host with a drop-in rather than editing this:
+# TWO TIERS (R3204, operator 2026-11-05), and the ORDER is the decision: the nightly snapshot is
+# built on the LOCAL disk, then mirrored to the off-box share from that snapshot. The off-box step
+# can neither fail nor delay the local one — it is sshfs at one round trip per FILE, which is why
+# nothing completed between 2026-11-01 and 11-05 while it was the only tier.
+#
+# RSCHED_BACKUP_LOCAL is the first tier and the script's ARGUMENT; RSCHED_MIRROR is the second and
+# backup.sh reads it from the environment — so this stays a plain command with ONE expanded
+# argument, and no `bash -c` wrapper whose `$VAR` systemd would expand before bash ever saw it
+# (the trap test_the_push_commands_dollars_reach_bash_not_systemd exists for). RSCHED_MIRROR keeps
+# its name and its meaning — the off-box share — so an existing host drop-in still points where it
+# did. `daemon/backup_watch` reads the same two variables and judges each tier on its own stamps,
+# so a fresh local snapshot cannot report `ok` for an off-box copy that is a week behind.
+#
+# Override per host with a drop-in rather than editing this:
 #   systemctl --user edit rsched-backup.service
 #   [Service]
+#   Environment=RSCHED_BACKUP_LOCAL=/some/other/disk/rsched-backup
 #   Environment=RSCHED_MIRROR=/some/other/mount/rsched-backup
-# backup.sh refuses any target on the same device as $HOME, so a share that failed to mount
-# fails the unit instead of quietly filling the local disk with a copy of itself.
+# backup.sh REFUSES a target that is not on a mounted filesystem of its own, so an unplugged
+# drive or an unmounted share fails the unit instead of quietly filling the root disk with a copy
+# of itself. Set MIRROR_ROOT empty to run the local tier alone.
+Environment=RSCHED_BACKUP_LOCAL=/mnt/usb500/rsched-backup
 Environment=RSCHED_MIRROR=/mnt/sshd_volume1/rsched-backup
-ExecStart=/bin/bash %h/git-repos/routine-scheduler/deploy/backup.sh ${RSCHED_MIRROR}
+ExecStart=/bin/bash %h/git-repos/routine-scheduler/deploy/backup.sh ${RSCHED_BACKUP_LOCAL}
 
 # The snapshot is written to a network share. If the NAS wedges mid-transfer, rsync blocks in
 # uninterruptible IO forever and every later firing skips on the lock — so bound the run and
