@@ -104,9 +104,20 @@ and starts collapsed below that. It shares that column (`#docks`, one fixed flex
 base.css) with the agent-desktop preview and the LLM activity dock, so opening any of them
 pushes the others up rather than lying on them. It connects to the screen the
 first time it is both open and visible — at load only where it rests open, otherwise on the
-first "show" — because the screen admits one viewer at a time and a folded preview held that
-seat on every page load. Once connected it keeps the seat while folded or hidden on
-`#/browser`; whether to release it then is an open decision (docs/designs.md).
+first "show" — because a preview nobody has opened should not be streaming a screen at all, and
+a folded one dialled on every page load. Once connected it keeps the connection while FOLDED —
+folding puts the picture away, it does not hang up. On **`#/browser` it hangs up**: the dock is
+hidden there behind a full-size interactive copy of the same screen, so what it held was a
+second live stream nobody could look at. It dials again when you leave the page
+(`mountScreenDock`'s `releaseOnPage`, which only the browser dock takes — `#/desktops` is a page
+of cards, not a screen). The decision was the operator's, 2026-11-05, option (b).
+
+The screen is **not** a single seat, which that decision was framed against and the release does
+not depend on: x11vnc runs with `-shared` (`deploy/chrome-entrypoint.sh`), so the RFB server
+admits simultaneous viewers, and the relay opens an independent upstream socket per viewer with
+no seat accounting (`web/api_screen_view._socket`). So `#/browser` was never refused a screen
+while the dock held one — the dock and the page could both be connected, and were. What the
+release saves is the duplicate stream, not an interactive screen the operator could not get.
 
 **The two ways in open in different tabs** (D194). The dock's own title — the chip beside what
 you are reading — opens `#/browser` in a NEW tab (`target="_blank"`, `rel="noopener"`), because

@@ -37,7 +37,12 @@ export async function initBrowserDock() {
   // D194: from HERE the full screen opens in a NEW TAB — the preview is read beside something
   // else, and taking over the tab costs whatever that was. The left sidebar's own Browser entry
   // (`#nav-browser`, static/index.html) is ordinary navigation and stays in this tab.
+  // `releaseOnPage`: on `#/browser` the dock is hidden behind a full-size interactive copy of
+  // this very screen, so a connection it keeps there is a second live stream of something
+  // nobody can look at. It hangs up on arrival and dials again on leaving (the operator's
+  // option (b), 2026-11-05). FOLDING still keeps it — he chose that half in the same answer.
   const dock = mountScreenDock(slot, { prefix: BROWSER, label: "Browser", page: "#/browser",
-    storageKey: "browser-dock-open", frameTitle: "shared browser (read-only)", newTab: true });
+    storageKey: "browser-dock-open", frameTitle: "shared browser (read-only)", newTab: true,
+    releaseOnPage: true });
   dock.show({ key: "browser", token: "" });
 }

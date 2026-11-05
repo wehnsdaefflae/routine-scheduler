@@ -21,13 +21,14 @@
 // is transient (it folds again on the next route change); above it, where the margin is real,
 // the open/closed choice is remembered.
 //
-// IT CONNECTS THE FIRST TIME IT IS SEEN, never at load for its own sake. A screen may admit one
-// viewer at a time, and a dock that dialled it at every console load — folded, hidden on its own
-// page, or on a phone where it is not displayed at all — took that seat for a preview nobody was
-// looking at (operator: "connect only when you first open it"). So it dials when it is first open
+// IT CONNECTS THE FIRST TIME IT IS SEEN, never at load for its own sake. A dock that dialled at
+// every console load — folded, hidden on its own page, or on a phone where it is not displayed at
+// all — streamed a screen for a preview nobody was looking at (operator: "connect only when you
+// first open it"). So it dials when it is first open
 // AND on screen: at load only where it rests open, otherwise on the first click or on leaving its
 // page. Once dialled it stays as it is — folding hides the frame rather than hanging up — until
-// the screen it shows CHANGES (another desktop picked, or the one shown stopped).
+// the screen it shows CHANGES (another desktop picked, or the one shown stopped), or `releaseOnPage`
+// takes it back on the dock's own page.
 
 import { el, storage } from "/static/util.js";
 import { relayReachable, screenSrc } from "/static/components/screen.js";
@@ -47,9 +48,16 @@ const WIDE = "(min-width: 1900px)";
  * open it in a new tab. clicking it in the left sidebar should open it in the current tab").
  * The dock is read beside something else — a run, a page mid-read — so taking over the tab
  * costs what he was looking at; the sidebar entry is ordinary navigation and stays in place.
+ *
+ * `releaseOnPage` HANGS UP while `page` is shown and dials again on leaving it (the operator's
+ * option (b), 2026-11-05, for the Browser). A dock keeps its connection through a fold, but on its
+ * own page it is hidden behind a full-size interactive screen of the same thing — so what it
+ * holds there is a second live stream nobody can look at. Folding is untouched: he chose that
+ * half explicitly. The desktop dock does not take it — `#/desktops` is a page of cards, not a
+ * screen, so leaving the dock connected there costs nothing twice.
  */
 export function mountScreenDock(slot, { prefix, label, page, storageKey, frameTitle,
-                                        newTab = false }) {
+                                        newTab = false, releaseOnPage = false }) {
   // One place decides it, so the title and the unreachable note's link can never disagree.
   const away = newTab ? { target: "_blank", rel: "noopener" } : {};
   const wide = window.matchMedia(WIDE);
@@ -60,6 +68,7 @@ export function mountScreenDock(slot, { prefix, label, page, storageKey, frameTi
   let present = true;
   let target = null;       // { key, token } — what the dock should show
   let dialled = null;      // the key of what its body shows now (or is connecting to)
+  let dial = 0;            // bumped per dial AND per release: an older probe's answer lands nowhere
 
   const title = el("a", { class: "sd-title", href: page, ...away,
     title: newTab ? "open the full screen in a new tab — that one takes the keyboard"
@@ -102,9 +111,13 @@ export function mountScreenDock(slot, { prefix, label, page, storageKey, frameTi
 
   const check = async () => {
     const t = target;
+    const mine = ++dial;
     body.replaceChildren(el("div", { class: "sd-note faint small" }, "connecting…"));
     const ok = await relayReachable(prefix, { token: t.token });
-    if (target !== t) return;               // superseded while probing: the newer dial paints
+    // Superseded while probing — a newer dial, or a release (`#/browser` opened mid-probe,
+    // which would otherwise paint a live frame into the hidden dock the release just emptied).
+    // Whoever superseded this probe paints, or nothing does.
+    if (target !== t || dial !== mine) return;
     if (ok) mountFrame(t);
     else mountUnreachable();
   };
@@ -129,11 +142,22 @@ export function mountScreenDock(slot, { prefix, label, page, storageKey, frameTi
     connectOnSight();
   };
 
+  // Hang up: forget what was dialled and empty the body, which is where the connection lives.
+  // An iframe out of the document is a socket closed; `dialled = null` is what lets the next
+  // sighting dial again, and what makes an in-flight probe's answer land nowhere (see `check`).
+  const release = () => {
+    if (dialled === null) return;             // never connected: nothing to give back
+    dialled = null;
+    dial++;                                   // an answer already on its way paints nothing
+    body.replaceChildren();
+  };
+
   // The dock's own page IS this screen, full size and interactive. Mirroring it in the corner
   // showed the operator the same failing frame twice.
   const onRoute = () => {
     slot.hidden = onPage() || !present;
     if (!onPage() && !wide.matches && open) { open = false; paint(); }
+    if (releaseOnPage && onPage()) release();
     connectOnSight();
   };
   window.addEventListener("hashchange", onRoute);
@@ -147,7 +171,7 @@ export function mountScreenDock(slot, { prefix, label, page, storageKey, frameTi
       target = next;
       // a screen that is no longer the one to show must not keep its connection open behind a
       // folded dock: drop it now, and dial the new one the moment it can be seen
-      if (dialled !== null && dialled !== next?.key) { dialled = null; body.replaceChildren(); }
+      if (dialled !== next?.key) release();
       connectOnSight();
     },
     setPresent(value) {
