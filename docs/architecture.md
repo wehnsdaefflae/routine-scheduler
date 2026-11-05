@@ -401,6 +401,11 @@ the limits (single-writer status.json preserved).
   resumed leg reads `179 of 200 turns (this resume window, re-based at turn 327)` instead of
   pacing by a wall clock that counts the minutes it was not running. The **model can be switched mid-run** — a `control.json`
   `switch_model` signal applied at the turn boundary (`for_model` re-resolves every turn).
+  It can also be written on a TERMINAL run (F837): `POST /runs/{id}/model` answers
+  `armed_for_resume: true` and the run page keeps the control, because a run that died on its
+  model otherwise could only be resumed onto that same model. Nothing new honours it — the
+  signal is edge-triggered against `control-applied.json`, and the resumed leg's first turn
+  boundary precedes its first completion (`tests/test_switch_after_death.py`).
 - **"Once" survives a resume** (`engine/guardscope.py`). The once-only guards — the hold
   ledger, each rule assist's single fire and the one assist finish deferral, the repos found
   clean, the verifier's one challenge per line, a reminder hold's one label and a re-driven

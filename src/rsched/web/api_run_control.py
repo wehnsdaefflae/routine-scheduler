@@ -166,8 +166,8 @@ class ModelSwitch(BaseModel):
 
 @router.post("/runs/{run_id}/model")
 def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
-    """Switch a live run's model mid-flight. Writes control.json (web-owned); the engine applies it
-    at the next turn boundary, where for_model already re-resolves the model every turn.
+    """Switch a run's model mid-flight, or on a TERMINAL run so its RESUME starts on the new one
+    (F837). control.json is web-owned; the engine applies it at its next turn boundary.
     """
     _, run_dir = _run_dir(request, run_id)
     server = request.app.state.server
@@ -179,7 +179,7 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
         raise HTTPException(400, f"unknown effort {body.effort!r} (one of {EFFORT_LEVELS})")
     if body.kind not in ("main", "tool_call", "uncensored"):
         raise HTTPException(400, "kind must be main|tool_call|uncensored")
-    require_active(run_dir, "switch")
+    armed = run_state(run_dir) in TERMINAL_STATES   # F837: no require_active; armed for resume
     # merge per-role into any PENDING switch (two quick per-role POSTs must not race:
     # the dict is replaced wholesale, so without the fold the second would drop the
     # first before the engine drains it at the turn boundary; re-applying an already
@@ -195,7 +195,8 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
     merge_control(run_dir, {"switch_model": sw})
     said = [f"{body.kind} → {body.model}"] * bool(body.model)
     said += [f"{body.kind} effort → {body.effort}"] * bool(body.effort)
-    return {"ok": True, "switch": "; ".join(said)}
+    return {"ok": True, "switch": "; ".join(said), "armed_for_resume": armed,
+            "when": "at this run's resume" if armed else "at the next turn"}
 
 class DeliberationSwitch(BaseModel):
     level: str   # one of DELIBERATION_LEVELS

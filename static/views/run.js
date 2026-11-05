@@ -327,7 +327,7 @@ export async function render(view, runId, query = {}) {
     resumeBtn.hidden = !terminal;                   // resume only a terminal run
     rewindBtn.hidden = !terminal;                   // D69: rewind only a terminal run
     if (terminal) rewindBtn.disabled = false;
-    switchBox.hidden = terminal;                    // no mid-run switch once the run has ended
+    switchBox.hidden = false;        // F837: a dead run's switch arms its resume
     delibBox.hidden = terminal;                     // deliberation re-level is mid-run only
     setModes(terminal);
     tickDur();
