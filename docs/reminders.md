@@ -230,6 +230,11 @@ a file on the server. The **Recipe health** section of a routine's development v
 Changes → the routine, `#/changes/<slug>`) shows them beside the recipe-version table, because they answer the same question it does — is this routine's behaviour getting
 better — and what changed? One row per reminder in force with this routine's own tally, one row
 per rule assist that has fired with its count, and a **delete** button on each LOCAL reminder.
+Every reminder id the console prints elsewhere (a transcript's `remind` side fields, a message's
+concept row) links to ITS row there — `#/changes/<slug>?rem=<id>` — and the view lands on it
+(scrolled to the middle, flashed, held while the sections above fill in), because a routine
+holding tens of reminders left the reader hunting one row from the top of the page (F832). A
+reminder the routine no longer holds says so in a toast instead.
 
 That button is the user's only lever over a local reminder: a run writes one with no approval,
 which is what the local rung is for, so without it a bad pattern would keep costing a turn on

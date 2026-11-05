@@ -237,7 +237,7 @@ function modelFit(groups) {
       g.elapsed_s == null ? "—" : (g.elapsed_s / 60).toFixed(1)))))));
 }
 
-export async function render(view, slug) {
+export async function render(view, slug, query = {}) {
   view.classList.add("dev-view");
   view.append(el("div", { class: "page-head" },
     el("div", {},
@@ -258,7 +258,7 @@ export async function render(view, slug) {
     weeksHead, weeksBox, changesHead, changesBox,
     el("h2", { id: "sec-model-fit" }, "Model fit"), fitBox,
     el("h2", { id: "sec-recipe-health" }, "Recipe health"), healthBox);
-  const health = mountHealth(healthBox, slug);
+  const health = mountHealth(healthBox, slug, { land: query.rem });   // a reminder link (F832)
   const outcome = mountOutcome(outcomeBox, slug);
   const cost = mountCost(costBox, slug);
 

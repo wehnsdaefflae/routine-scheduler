@@ -12,13 +12,21 @@
 // worse, and what changed. A caution that fires constantly and is labelled could_not every
 // time is a bad pattern, and the tally is kept precisely so that is reviewable — it just had
 // nowhere to be read.
+//
+// Each reminder row carries `data-rem="<id>"`, and `land` (the view's `?rem=` query, which every
+// reminder link carries — components/conceptlinks.js reminderLink) makes the FIRST paint land on
+// that row: open, centred, flashed and held while the sections above it fill in (F832). It lands
+// once — a live re-read never scrolls the reader again — and a reminder this routine no longer
+// holds is said in a toast rather than leaving the reader at an arbitrary place on the page.
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
+import { landOn } from "/static/components/settings-field.js";
 import { el, fmtNum, queuedToast, toast, toastError } from "/static/util.js";
 
-export function mountHealth(box, slug, { onRecipeChanged = () => {} } = {}) {
+export function mountHealth(box, slug, { onRecipeChanged = () => {}, land = "" } = {}) {
   let alive = true, seq = 0;   // only the newest read paints, and none after dispose
+  let toLand = land ? String(land) : "";
   async function reload() {
     const mine = ++seq;
     let h;
@@ -89,6 +97,13 @@ export function mountHealth(box, slug, { onRecipeChanged = () => {} } = {}) {
     }
     parts.push(...cautionSections(h.cautions || {}));
     box.replaceChildren(...parts);
+    if (toLand) landOnReminder(toLand);
+  }
+  function landOnReminder(rid) {
+    toLand = "";
+    const row = box.querySelector(`tr[data-rem="${CSS.escape(rid)}"]`);
+    if (row) landOn(box.closest("#view") || box, row);
+    else toast(`reminder ${rid} is no longer held by ${slug} — it may have been deleted`, 5000);
   }
   async function forget(rid, regex) {
     if (!(await confirmDialog(
@@ -115,7 +130,7 @@ export function mountHealth(box, slug, { onRecipeChanged = () => {} } = {}) {
     if (reminders.length) {
       const rows = reminders.map((r) => {
         const st = r.stats || {};
-        return el("tr", {},
+        return el("tr", { "data-rem": r.id },
           el("td", {}, el("span", { class: "ref-tag", title: r.id }, r.id),
             el("span", { class: `chip ${r.scope === "global" ? "" : "ok"}`,
                          style: "margin-left:6px" }, r.scope)),
