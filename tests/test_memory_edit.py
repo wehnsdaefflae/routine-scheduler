@@ -6,18 +6,21 @@ and composed it again — on a note created by the FIX for the same problem one 
 (R2391 split one topic into four, which buys headroom and does not change the mechanism: each
 note grows back toward the cap and the same rejection returns).
 
-Two halves of one fix, which is why they are one change: an in-place edit means a run adding
-facts to a 95-line note never re-emits the note, so the cap cannot reject work that was never
-recomposed — and the cap is evaluated against the RESULT, so an edit that keeps a note under it
-is never composed twice. `edit_file` and `write_util` already carry the mode; this is the third
-caller of the same `authoring.anchor_edit` helper, so an anchor failure teaches the same route.
+An in-place edit means a run adding facts to a 95-line note never re-emits the note.
+`edit_file` and `write_util` already carry the mode; this is the third caller of the same
+`authoring.anchor_edit` helper, so an anchor failure teaches the same route.
+
+The cap itself is gone (P3: a guard whose fix is mechanical applies it): every refusal it made —
+five tests here once pinned their numbers, R2610/R2753/R2773 — was a run trimming text to fit a
+length nothing else depended on. A note past the advised size now LANDS and is told by how much.
 """
 
 from __future__ import annotations
 
 from helpers import run_context, server_config
 from rsched.engine import executor
-from rsched.engine.actions import MEMORY_NOTE_MAX_LINES, validate_action
+from rsched.engine.actions import validate_action
+from rsched.engine.memops import MEMORY_NOTE_ADVISED_LINES
 from rsched.engine.observations import format_observation
 
 
@@ -64,93 +67,34 @@ def test_an_edit_keeps_the_notes_index_line(make_routine, tmp_path):
         "- case-state.md: the claim, now with the refund\n")
 
 
-def test_the_cap_is_measured_against_the_result_not_the_submission(make_routine, tmp_path):
-    """The half that makes edit mode worth more than it looks: a note at the cap can still be
-    revised, because what is measured is the note after the patch — not the text submitted."""
+def test_an_edit_past_the_advised_size_lands_and_says_by_how_much(make_routine, tmp_path):
+    """The three refusals for one pointer line ("shortening by one line to fit") are what this
+    replaces: the edit is WRITTEN, and the observation carries one line naming the overrun and
+    the move for next time — never a refusal to trim against."""
     ctx = _ctx(make_routine, tmp_path)
-    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES))
-    _write(ctx, "big", body, "a mature note")
-    obs = _edit(ctx, "big", "- fact 0", "- fact 0 (confirmed 2026-10-11)")
-    assert "error" not in obs and obs["lines"] == MEMORY_NOTE_MAX_LINES
-
-
-def test_an_edit_that_would_exceed_the_cap_is_refused_with_the_number(make_routine, tmp_path):
-    ctx = _ctx(make_routine, tmp_path)
-    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES))
+    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_ADVISED_LINES))
     _write(ctx, "big", body, "a mature note")
     obs = _edit(ctx, "big", "- fact 0", "- fact 0\n- fact 0b\n- fact 0c")
-    assert obs.get("error")
-    assert str(MEMORY_NOTE_MAX_LINES + 2) in obs["error"] and "capped" in obs["error"]
-    # and the note on disk is UNCHANGED, like every other refused write
-    assert (ctx.routine.dir / ".memory" / "big.md").read_text(encoding="utf-8").startswith(
-        "- fact 0\n- fact 1\n")
+    assert "error" not in obs
+    assert obs["lines"] == MEMORY_NOTE_ADVISED_LINES + 2 and obs["over_advised"] == 2
+    assert "- fact 0c" in (ctx.routine.dir / ".memory" / "big.md").read_text(encoding="utf-8")
+    seen = format_observation(obs)
+    assert "2 line(s) over the advised ~100" in seen and "split part of it" in seen
 
 
-def test_the_refusal_carries_the_budget_and_not_only_the_overrun(make_routine, tmp_path):
-    """R2610: the message stated the RESULT size, from which no caller can compute what WOULD
-    fit. One run met five consecutive rejections, three on the same note — which sat at 92 of
-    100 lines, so no net addition could ever have succeeded, while "make the replacement
-    shorter" invited exactly the trim-and-retry loop it got. The numbers that determine the
-    next attempt are the note's current size and the anchor's, and when the budget is zero the
-    way out is replacing MORE of the note, which the message now names.
-    """
+def test_a_whole_note_past_the_advised_size_is_written_too(make_routine, tmp_path):
+    """Schema-side the bound was a validate_action refusal; it is no longer a problem at all."""
+    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_ADVISED_LINES + 5))
+    action = {"say": "s", "kind": "memory_write", "name": "big", "content": body, "about": "a"}
+    assert validate_action(action) == []
+    obs = _write(_ctx(make_routine, tmp_path), "big", body, "a")
+    assert obs["over_advised"] == 5 and "5 line(s) over" in format_observation(obs)
+
+
+def test_a_note_within_the_advised_size_says_nothing_about_size(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path)
-    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES - 8))
-    _write(ctx, "nearly-full", body, "a mature note")
-    obs = _edit(ctx, "nearly-full", "- fact 0",
-                "\n".join(f"- new {i}" for i in range(12)))
-    error = obs["error"]
-    assert f"currently has {MEMORY_NOTE_MAX_LINES - 8} lines" in error, error
-    assert "anchor covers 1" in error, error
-    assert "fits in 9 line(s)" in error, error        # 100 - (92 - 1)
-    assert "LARGER anchor" in error, error
-
-
-def test_a_note_at_the_cap_is_told_its_budget_is_zero(make_routine, tmp_path):
-    """The case that made the old wording actively misleading: at the cap, the budget for a
-    one-line anchor is exactly that one line, so "shorter" is unreachable advice unless the
-    anchor grows. The number says so instead of implying a retry."""
-    ctx = _ctx(make_routine, tmp_path)
-    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES))
-    _write(ctx, "at-cap", body, "a mature note")
-    obs = _edit(ctx, "at-cap", "- fact 0", "- fact 0\n- extra")
-    assert "fits in 1 line(s)" in obs["error"], obs["error"]
-
-
-def test_the_refusal_names_the_submitted_replacement_and_the_cut(make_routine, tmp_path):
-    """R2753: the message named the ALLOWANCE and never the SUBMISSION, so a run could not
-    compute its own overrun. funscript-trainer:20261021-023002 was refused SIX times in a row
-    on a 98-line note, each retry a blind guess at its own line count — its words: the message
-    "is genuinely helpful about the allowance but never states how many lines the replacement I
-    just submitted actually had". The two numbers that close that loop are the replacement's own
-    size and the cut it needs; the allowance alone does not determine either.
-    """
-    ctx = _ctx(make_routine, tmp_path)
-    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES - 2))
-    _write(ctx, "nearly-full", body, "a mature note")
-    obs = _edit(ctx, "nearly-full", "- fact 0",
-                "\n".join(f"- new {i}" for i in range(8)))
-    error = obs["error"]
-    assert "replacement is 8 line(s)" in error, error     # the SUBMITTED size, never stated
-    assert "cut 5" in error, error                        # (98 - 1 + 8) - 100
-
-
-def test_at_the_cap_the_refusal_sends_the_run_to_a_new_note_not_to_condensing(
-        make_routine, tmp_path):
-    """R2773: moltbook-heartbeat:20261021-164943 sat permanently AT the cap and was refused
-    twice while trying to CORRECT an assertion its own measurement had just refuted — so the
-    note could not accept the correction and a later run would have planned on a known-false
-    premise. At the cap the tempting remedy is condensing the evidence already there, which is a
-    LOSS of what the note exists to keep; the non-destructive way out is a NEW note plus a short
-    pointer in place of the old block, which is what that run finally did by hand.
-    """
-    ctx = _ctx(make_routine, tmp_path)
-    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES))
-    _write(ctx, "at-cap", body, "a mature note")
-    obs = _edit(ctx, "at-cap", "- fact 0", "- fact 0\n- extra")
-    error = obs["error"]
-    assert "SPLIT" in error, error
-    assert "pointer" in error, error
+    obs = _write(ctx, "small", "- one\n- two", "a short note")
+    assert "over_advised" not in obs and "advised" not in format_observation(obs)
 
 
 def test_a_stale_or_ambiguous_anchor_is_refused_loudly(make_routine, tmp_path):

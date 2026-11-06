@@ -296,20 +296,19 @@ def _observation_body(obs: dict) -> str:  # noqa: PLR0911
                         "a PEP 723 script whose docstring header carries "
                         "'<name> — <summary>', 'net:', 'secrets:' — then call it again. "
                         "Script names are lowercase letters/digits with '-' or '_'.")
-            miss = (f"OBSERVATION (util {(obs.get('target') or obs['name'])!r} does not exist). "
+            if obs.get("script_match"):
+                # R367: a routine-local script, which the util action never runs — the EXACT
+                # call that does, args included, first. `script` is a BASE kind, so the one way
+                # it is absent from a schema is the recipe's `tools:` list leaving it out.
+                call = json.dumps({"kind": "script", "name": obs["name"],
+                                   "args": obs.get("args") or []}, ensure_ascii=False)
+                return (f"OBSERVATION (util {obs['name']!r} does not exist — it is a ROUTINE-"
+                        f"LOCAL script, scripts/{obs['name']}.py). Nothing ran. Call it as: "
+                        f"{call}. If \"script\" is not among your action kinds, this recipe's "
+                        "tools: list leaves it out — file a report naming the script.")
+            return (f"OBSERVATION (util {(obs.get('target') or obs['name'])!r} does not exist). "
                     f"Available: {names}. Pick one of those (run `util name=list` for their "
                     "usage), or write it with write_util, then call it.")
-            if obs.get("script_match"):
-                # R367: the file exists as a routine-local script — the util action will
-                # never run it; teach the one action that does. `script` is a BASE kind
-                # (grants.py: no capability, no permission to request), so the one way it is
-                # absent from a schema is the recipe's own `tools:` list leaving it out.
-                miss += (f" NOTE: {obs['name']!r} exists as a ROUTINE-LOCAL script "
-                         f"(scripts/) — run it with the script action: "
-                         f'{{"kind": "script", "name": "{obs["name"]}"}}. If "script" is '
-                         "not among your action kinds, this recipe's tools: list leaves it "
-                         "out — file a report naming the script this step needs.")
-            return miss
         if obs.get("declined_secrets") or obs.get("pending_secrets"):
             return _secret_gate(obs, str(kind))
         if err := obs.get("error"):

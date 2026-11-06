@@ -149,8 +149,8 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 f"{obs['content']}")
     if kind == "memory_write":
         if err := obs.get("error"):
-            # edit mode's refusals (memops: no such note, an anchor that does not match, a
-            # result over the cap). The note is untouched, and the existing topics ride along
+            # edit mode's refusals (memops: no such note, an anchor that does not match — size
+            # is never one: `over` below). The note is untouched, and the existing topics ride along
             # when the note to edit does not exist. Read before any success field: the first
             # live refusal reached the `lines` read below and ended the run (0.415.0).
             topics = (f" Existing topics: {', '.join(obs['topics']) or '(none yet)'}."
@@ -160,13 +160,17 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             fate = ("deleted and INDEX updated" if obs.get("existed")
                     else "did not exist — nothing to delete")
             return f"OBSERVATION (memory_write): note {obs['name']}.md {fate}."
+        # a note past the advised size LANDS (memops): one line, never a refusal to trim against
+        over = (f" It is {obs['over_advised']} line(s) over the advised ~100 — when this topic "
+                "next changes, split part of it into a new note." if obs.get("over_advised")
+                else "")
         if obs.get("edited"):
             # edit mode: say what was replaced and where the note now stands, so the next
             # edit's anchor can be chosen without re-reading the whole note (R2456)
             return (f"OBSERVATION (memory_write {obs['name']}.md, edit mode): replaced "
                     f"{obs['replacements']} occurrence(s); the note is now {obs['lines']} "
-                    "lines.")
+                    f"lines.{over}")
         return (f"OBSERVATION (memory_write): note {obs['name']}.md "
                 f"{'created' if obs.get('created') else 'revised'} ({obs['lines']} lines); "
-                "INDEX.md updated from 'about'.")
+                f"INDEX.md updated from 'about'.{over}")
     return None

@@ -235,6 +235,7 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "CONVERTED to Markdown, paged like a file",
         "which did not run either",
         "one hold per action string per run",
+        "this caution will not hold again this run",
         "[REMINDERS: ",
         # A CAPABILITY refusal survives the retry cleanup (engine/denialmemo.py): the
         # permanence phrase the engine note and the repeat answer share, and the repeat's

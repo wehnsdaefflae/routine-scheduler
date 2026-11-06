@@ -14,9 +14,9 @@ import pytest
 import render_guard
 from helpers import health_events, run_context, server_config, server_for
 from rsched.engine import executor, obs_files, obs_floor, observations
-from rsched.engine.actions import MEMORY_NOTE_MAX_LINES
 from rsched.engine.actionschema import KINDS
 from rsched.engine.history import replay_messages
+from rsched.engine.memops import MEMORY_NOTE_ADVISED_LINES
 from rsched.engine.observations import format_observation
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
@@ -77,14 +77,15 @@ def _ctx(make_routine, tmp_path):
 
 def test_each_memory_write_refusal_reads_as_one(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path)
-    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES))
+    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_ADVISED_LINES))
     executor.dispatch({"kind": "memory_write", "name": "big", "content": body,
                        "about": "a mature note"}, ctx)
     edit = {"kind": "memory_write", "name": "big", "anchor": "- fact 0"}
 
+    # the size refusal the specimen met no longer exists (memops: the size is advice), so the
+    # write lands and its words are a SUCCESS that names the overrun
     over = format_observation(executor.dispatch({**edit, "replacement": "a\nb\nc"}, ctx))
-    assert over.startswith("OBSERVATION (memory_write big.md NOT written): the edit would leave "
-                           f"the note at {MEMORY_NOTE_MAX_LINES + 2} lines")
+    assert "edit mode" in over and "2 line(s) over the advised" in over
     stale = format_observation(executor.dispatch({**edit, "anchor": "- gone"}, ctx))
     assert "NOT written" in stale and "anchor not found" in stale
     missing = format_observation(executor.dispatch({**edit, "name": "nothing"}, ctx))
@@ -95,16 +96,16 @@ def test_the_incident_run_reads_its_refusal_and_resumes(make_routine, scripted):
     """scheduler-builder:20261011-120001, end to end: the refused edit is read, the run finishes
     on its own summary, and a resume replays the stored refusal without raising."""
     d = make_routine(slug="memincident")
-    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_MAX_LINES - 4))
+    body = "\n".join(f"- fact {i}" for i in range(MEMORY_NOTE_ADVISED_LINES - 4))
     over = {"say": "Recording the look.", "kind": "memory_write", "name": "ui",
-            "anchor": "- fact 0", "replacement": "\n".join(f"- new {i}" for i in range(12))}
+            "anchor": "- no such fact", "replacement": "\n".join(f"- new {i}" for i in range(12))}
     ep = scripted([{"say": "Seeding.", "kind": "memory_write", "name": "ui", "content": body,
                     "about": "how to look at the UI"},
                    over,
                    {"say": "Done.", "kind": "finish", "status": "ok", "summary": "four shipped"}])
     assert run_routine(d, server_for(d), run_ts=TS)[0] == "ok"
     seen = ep.calls[2]["messages"][-1]["content"]
-    assert "memory_write ui.md NOT written" in seen and "notes are capped at 100" in seen
+    assert "memory_write ui.md NOT written" in seen and "anchor not found" in seen
 
     scripted([{"say": "Again.", "kind": "finish", "status": "ok", "summary": "resumed"}])
     assert run_routine(d, server_for(d), run_ts=TS, resume_from=TS)[0] == "ok"

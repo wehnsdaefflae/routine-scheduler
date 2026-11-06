@@ -336,7 +336,7 @@ def test_a_matching_action_is_held_before_it_runs_and_re_emitting_it_proceeds(
 
     holds = [e for e in events if e["type"] == "observation"
              and e["payload"].get("kind") == "reminder_hold"]
-    assert len(holds) == 1                                  # one hold per action string per run
+    assert len(holds) == 1                                  # one hold per reminder per run
     assert holds[0]["payload"]["action"] == "write_file path=state/probe.txt"
     assert holds[0]["payload"]["reminders"][0]["id"] == "rem-p"
     assert (d / "state" / "probe.txt").read_text(encoding="utf-8") == "one"   # the SECOND write

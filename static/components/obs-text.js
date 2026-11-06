@@ -166,9 +166,12 @@ export function observationText(o) {
     // "sub-workflow #undefined terminated" — see components/obs-background.js killText.
     text = killText(o);
   } else if (o.kind === "wait") {
-    text = o.error || ((o.finished || []).map((f) =>
+    // a wait also covers BACKGROUND calls (engine/waitop.py): a landing ends it, by handle
+    const rows = (o.finished || []).map((f) =>
       `#${f.n} "${f.label}" finished (${f.status}, ${f.turns} turns):\n${f.summary}`)
-      .join("\n\n") || (o.timed_out ? "wait timed out" : "nothing new finished"));
+      .concat((o.background_landed || []).map((h) => `background call ${h} landed`));
+    text = o.error || (rows.join("\n\n")
+      || (o.timed_out ? "wait timed out" : "nothing new finished"));
   } else if (o.kind === "ask_user") {
     // FOUR endings, and the BATCH one is the row this branch exists for (D212).
     //
@@ -200,8 +203,8 @@ export function observationText(o) {
   } else if (o.kind === "reminder_hold") {
     text = `HELD — "${o.action}" did NOT run. It matches a consequence reminder:\n`
       + (o.reminders || []).map((r) => `· [${r.id} · ${r.scope}] ${r.description}`).join("\n")
-      + "\nEmitting the same action again runs it (one hold per action string per run — per "
-      + "reply, in a conversation).";
+      + "\nEmitting it again, as it is or reworded, runs it (one hold per reminder per run — "
+      + "per reply, in a conversation).";
   } else if (o.kind === "assist_hold") {
     text = `HELD — "${o.action}" did NOT run. A general rule this routine practises `
       + `governs this moment:\n`

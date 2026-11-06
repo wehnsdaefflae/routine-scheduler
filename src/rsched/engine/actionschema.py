@@ -197,7 +197,7 @@ ACTION_SCHEMA: dict = {
                                    "+ the principle (or omit content and pass "
                                    "anchor/replacement to revise the existing rule in place) · "
                                    "memory_write: the note's full markdown (one string, "
-                                   "≤100 lines — or omit content and pass anchor/replacement "
+                                   "~100 lines — or omit content and pass anchor/replacement "
                                    "to revise the existing note in place, which never "
                                    "re-emits what you are not changing)"},
         # schedule_run — arm/cancel a one-shot time trigger on a routine (gated: scheduling)
@@ -395,10 +395,10 @@ ACTION_SCHEMA: dict = {
                                   "spent still books against your budget — the result says "
                                   "which of the two happened (`stopped_work`)"},
         "all": {"type": "boolean",
-                "description": "wait: wait for ALL running sub-workflows (default: any next) · "
-                               "edit_file/write_util/write_rule/memory_write edit mode: replace "
-                               "EVERY occurrence of the anchor (default: the anchor must be "
-                               "unique)"},
+                "description": "wait: wait for ALL running children and background calls "
+                               "(default: any next) · edit_file/write_util/write_rule/"
+                               "memory_write edit mode: replace EVERY occurrence of the anchor "
+                               "(default: the anchor must be unique)"},
         # ask_user
         "question": {"type": "string",
                      "description": "ask_user: the question, self-contained (simple Markdown "
@@ -458,11 +458,11 @@ ACTION_SCHEMA: dict = {
         },
         "detail": {
             "type": "string",
-            "description": "report: the full description — the exact file or artefact, what "
-                           "is wrong, the evidence (a run id, a path:line, an error), and what "
-                           "'done' looks like. Whoever picks this up has none of your context, "
-                           "so write it to stand alone. The DELIVERED copy is clipped at 4000 "
-                           "chars (the ledger row keeps it whole), so put the conclusion first",
+            "description": "report: the full description — the exact file or artefact, what is "
+                           "wrong, the evidence (a run id, a path:line, an error), what 'done' "
+                           "looks like — standalone: the reader has none of your context. The "
+                           "DELIVERED copy clips at 4000 chars, pointing at the row that keeps it "
+                           "whole: lead with the conclusion, never re-file a tail",
         },
         # job — the routine's standing units of work (only with the job layer switched on)
         "brief": {"type": "string",

@@ -36,9 +36,6 @@ SIDE_FIELDS = ("note", "remind", "remind_feedback", "role_swap")
 ALWAYS_KINDS = ("finish", "report", "list_models")
 
 
-MEMORY_NOTE_MAX_LINES = 100
-
-
 # kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
 # models merge payload keys into the action object (file bodies, finish fields at top
 # level); an abstract error alone often doesn't correct them — a concrete shape does.
@@ -93,7 +90,7 @@ KIND_EXAMPLES: dict[str, dict] = {
                "parents": True},
     "memory_read": {"say": "<why this note now>", "kind": "memory_read", "name": "topic-slug"},
     "memory_write": {"say": "<what surprised you>", "kind": "memory_write", "name": "topic-slug",
-                     "content": "<the note's full markdown, at most 100 lines>",
+                     "content": "<the note's full markdown, ~100 lines or fewer>",
                      "about": "<one line: what this note holds + when to consult it>"},
     "read_rule": {"say": "<why this rule now>", "kind": "read_rule",
                   "name": "test-design"},
@@ -410,8 +407,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append(f"kind={kind} takes 'path' OR 'paths', not both")
     if kind == "report":
         problems += report_field_problems(obj)
-    # .memory/ is reachable ONLY through the memory actions — the engine owns INDEX.md and
-    # enforces the note cap there; generic file access would silently bypass both.
+    # .memory/ is reachable ONLY through the memory actions — the engine owns INDEX.md there;
+    # generic file access would silently bypass it.
     if kind in ("read_file", "view_image", "write_file", "edit_file",
                 "delete", "move", "mkdir"):
         multi = obj.get("paths") or [] if kind in ("read_file", "view_image") else []
@@ -460,11 +457,6 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                     problems.append("memory_write requires 'content' (the note's full markdown, "
                                     "one string) unless delete: true, or 'anchor' + "
                                     "'replacement' to edit the note in place")
-                elif len(content.splitlines()) > MEMORY_NOTE_MAX_LINES:
-                    problems.append(f"memory_write: content is "
-                                    f"{len(content.splitlines())} lines — notes are capped at "
-                                    f"{MEMORY_NOTE_MAX_LINES}; split the topic into more notes, "
-                                    "or revise in place with 'anchor' + 'replacement'")
                 if not str(obj.get("about") or "").strip():
                     problems.append("memory_write requires 'about' (the note's one-line INDEX "
                                     "entry) unless delete: true")

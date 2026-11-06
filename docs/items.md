@@ -212,8 +212,11 @@ message carries a marker naming its own `R<n>` as the row holding the rest (`rep
 implemented in `rsched/report_detail.py` — the bound belongs to the DELIVERY, not to the ledger;
 D177, the operator 2026-10-11: *"the ledger is cheap disk, the prompt is the scarce resource, and
 R2436's lost question would have been recoverable"*).
-The filer is told in its own observation how many characters did not reach the reader, while it
-can still lead with what matters (F660 — before that, the cut was silent and a truncated report
+The filer is told in its own observation how many characters did not reach the reader, and that
+NOTHING needs re-filing — the delivered marker already points the reader at the row (it once
+offered "re-file it as a short follow-up", and runs paid a turn and a second row for a fix the
+engine had already applied; the marker also named an `rsched items` command that never existed)
+(F660 — before that, the cut was silent and a truncated report
 read exactly like a complete one: 273 rows of the live ledger end mid-word at exactly 4000
 characters, and R2436's cut-off tail WAS the question it was asking, which left that exchange
 unclosable). Those 273 rows stay as they are — the text is gone from before this change and a

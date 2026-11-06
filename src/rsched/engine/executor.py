@@ -4,13 +4,11 @@ DISPATCH covers the EFFECT kinds: util and shell (the util runner and the one-of
 live here), the file kinds (read_file / write_file / edit_file — fileops.py; delete / move /
 mkdir — fsops.py), view_image (mediaops.py), the name-addressed stores (memory_read /
 memory_write / read_rule — memops.py), llm and list_models (llmaction.py), decide
-(decideaction.py). `script`, the
-third way a run executes code, lives here too but is reached through actionroute.py, which
-puts the call-time secret gate in front of it and of `util`. Every other kind has its own
-handler there — the child-run kinds (spawn, subtask, subruns, kill, wait) in subruns.py,
-ask_user in interact.py, the library authoring kinds in authoring.py — and `finish` never
-leaves the loop. Every observation dict feeds both the transcript event and (via
-observations.format_observation) the next user message.
+(decideaction.py). `script`, the third way a run executes code, is here but reached through
+actionroute.py, which puts the call-time secret gate in front of it and of `util`. Every other
+kind has its own handler there — the child-run kinds in subruns.py (`wait` in waitop.py),
+ask_user in interact.py, the library authoring kinds in authoring.py — and `finish` never leaves
+the loop. Each observation dict feeds the transcript event and the next user message.
 """
 
 from __future__ import annotations
@@ -241,11 +239,10 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
             ctx.count_util(name, "missing")
         obs = {"kind": "util", "name": name, "missing": True,
                "available": [u["name"] for u in utils_lib.list_utils(home)]}
-        # R367: the name may be a ROUTINE-LOCAL script, which the util action never
-        # resolves — say so, or the caller (told "scripts/ is the place for private
-        # helpers") has no path from this miss to actually running the file.
+        # R367: the name may be a ROUTINE-LOCAL script, which the util action never resolves —
+        # the observation hands back the exact `script` call, args included (P3: told, not guessed)
         if script_home(ctx, name) is not None:
-            obs["script_match"] = True
+            obs.update(script_match=True, args=args)
         return obs
     # F290 + F756: a declared secret the routine may not see is WITHHELD from the child env
     # rather than blocking the call — an optional (`?`) one silently, and a REQUIRED one the
@@ -361,6 +358,8 @@ def do_script(action: dict, ctx: RunContext) -> dict:
            **withheld.note(ctx), **_jail_notes(policy), **killed}
     if ended := _ended_by_a_person(ctx, code):
         obs[ended] = True
+    elif code != 0 and (usage := scripts.usage(home, name)):
+        obs["usage"] = usage    # its DECLARED call form, as a failed util carries its own
     return obs
 
 

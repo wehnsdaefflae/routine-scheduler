@@ -3150,7 +3150,7 @@ def test_wait_timeout_reports_timed_out():
             x.announced = True
         return out
     stub.take_finished_unannounced = take
-    stub._finished_rows = SubrunManager._finished_rows
+    stub.finished_rows = SubrunManager.finished_rows
 
     obs = SubrunManager.wait(stub, {"timeout_s": 0.1}, poll_s=0.01, aborted=lambda: False)
     assert obs["timed_out"] is True and obs["still_running"] == [1]

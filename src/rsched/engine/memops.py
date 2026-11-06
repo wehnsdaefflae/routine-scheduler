@@ -2,8 +2,15 @@
 
 Split out of `fileops.py` (F393). These look like file actions and are deliberately not: the
 generic file kinds are REJECTED inside `.memory/`, so `memory_read`/`memory_write` are the only
-way in. That is what lets the engine own `INDEX.md` (built from each write's `about`) and the
-note cap, instead of a run quietly reorganising its own memory.
+way in. That is what lets the engine own `INDEX.md` (built from each write's `about`) instead
+of a run quietly reorganising its own memory.
+
+A note's SIZE is advice, not a gate (P3: a guard whose fix is mechanical applies it). The 100-line
+bound used to REFUSE a write — schema-side for a whole note, here for an edit's result — and runs
+then spent turns trimming to fit: three refusals for one pointer line ("shortening by one line to
+fit"), six blind retries on one 98-line note (R2753), established evidence deleted to make room
+for a correction (R2773). Nothing about the note is wrong at 101 lines, so the write lands and its
+observation carries one line saying how far over the advised size it is.
 
 `read_rule` is here for the same reason — a rule is addressed by slug from the ONE library copy,
 never forked into the routine — and is ungated: a routine must be able to read what binds it.
@@ -13,10 +20,12 @@ from __future__ import annotations
 
 from ..ids import is_slug
 from ..paths import atomic_write
-from .actions import MEMORY_NOTE_MAX_LINES
 from .authoring import anchor_edit
 from .observations import truncate
 from .run_context import RunContext, work_dir
+
+#: The ADVISED size of one note — read by the observation's over-size line, never a refusal.
+MEMORY_NOTE_ADVISED_LINES = 100
 
 
 def _memory_topics(mem_dir) -> list[str]:
@@ -101,10 +110,7 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
     if action.get("anchor") is not None:
         # EDIT MODE (R2432/R2456), the third caller of authoring's one anchor rule. Adding two
         # facts to a 95-line note required re-emitting all 95 — expensive, and exactly how
-        # content gets lost: one routine composed a 104-line revision, was rejected at the cap,
-        # hand-trimmed it and composed it again, on a note created by the previous fix for the
-        # same problem. The note is patched engine-side, so the cap is then measured against the
-        # RESULT and work that was never recomposed can never be rejected for its size.
+        # content gets lost. The note is patched engine-side, so nothing is ever recomposed.
         if created:
             return {"kind": "memory_write", "name": name, "error":
                     f"no note {name!r} exists to edit — pass 'content' (the whole note) and "
@@ -118,38 +124,6 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
             return {"kind": "memory_write", "name": name, "error": problem}
         replacements = before.count(str(action["anchor"]))
         data = patched.rstrip() + "\n"
-        if len(data.splitlines()) > MEMORY_NOTE_MAX_LINES:
-            # EVERY number the caller needs to size the next attempt, because the result size
-            # alone does not determine one (R2610): five consecutive rejections in one run, three
-            # on the same note, which sat at 92 of 100 lines — so NO net addition could ever have
-            # succeeded and "make the replacement shorter" invited a trim-and-retry loop for
-            # something only a larger anchor can fix. Current + anchor gives the budget; the way
-            # out when the budget is zero is replacing MORE of the note, not writing less.
-            #
-            # R2753 + R2773, two unrelated routines on 2026-10-21, are the rest of it. The
-            # message stated the allowance and never the SUBMISSION, so a run still could not
-            # compute its own overrun: funscript-trainer retried SIX times on one 98-line note,
-            # each attempt a blind guess at its own line count. Hence the replacement's size and
-            # the exact cut. And the remedy order matters because the wrong remedy is the
-            # tempting one — moltbook-heartbeat sat permanently AT the cap while trying to
-            # CORRECT an assertion its own measurement had refuted, and "condense what is
-            # already there" pushes a run to delete established evidence to make room for a
-            # correction. Splitting the topic and leaving a pointer behind loses nothing, so it
-            # is named as the way out rather than as the third option.
-            anchor_lines = len(str(action["anchor"]).splitlines())
-            before_lines, result_lines = len(before.splitlines()), len(data.splitlines())
-            repl_lines = len(str(action.get("replacement") or "").splitlines())
-            budget = MEMORY_NOTE_MAX_LINES - (before_lines - anchor_lines)
-            return {"kind": "memory_write", "name": name, "error":
-                    f"the edit would leave the note at {result_lines} lines — notes are capped "
-                    f"at {MEMORY_NOTE_MAX_LINES}. The note is UNCHANGED on disk. It currently "
-                    f"has {before_lines} lines, your anchor covers {anchor_lines} and your "
-                    f"replacement is {repl_lines} line(s), so a replacement fits in "
-                    f"{max(budget, 0)} line(s): cut {result_lines - MEMORY_NOTE_MAX_LINES} "
-                    "line(s) from it, or replace a LARGER anchor (more of the note for your new "
-                    "text to fit in). Do NOT condense what is already there to make room — that "
-                    "spends established evidence on a correction: SPLIT the topic into a new "
-                    "note and leave a short pointer block behind in this one"}
     else:
         data = str(action["content"]).rstrip() + "\n"
     atomic_write(path, data)
@@ -157,8 +131,10 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
         # an edit does not change the note's SUBJECT, so `about` is optional there; a revised
         # one still updates the engine-owned INDEX line
         _memory_index_upsert(mem_dir, name, str(action["about"]))
-    out = {"kind": "memory_write", "name": name, "created": created,
-           "lines": len(data.splitlines())}
+    lines = len(data.splitlines())
+    out = {"kind": "memory_write", "name": name, "created": created, "lines": lines}
+    if lines > MEMORY_NOTE_ADVISED_LINES:
+        out["over_advised"] = lines - MEMORY_NOTE_ADVISED_LINES
     if action.get("anchor") is not None:
         out.update(edited=True, replacements=replacements)
     return out

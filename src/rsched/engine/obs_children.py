@@ -99,13 +99,20 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
             parts.append(f"{noun} {f['n']} {f['label']!r} FINISHED "
                          f"(status {f['status']}, {f['turns']} turns):\n{f['summary']}"
                          + (f"\n{got}" if got else ""))
+        # a landed background call is DELIVERED by the turn boundary right after this (the one
+        # path every landing takes, background.collect) — the wait only names it (waitop.py)
+        if landed := obs.get("background_landed"):
+            parts.append(f"background call(s) {', '.join(landed)} LANDED — the real "
+                         "observation follows below, tagged with its handle.")
+        bg = (f"; background still running: {', '.join(obs['background_running'])}"
+              if obs.get("background_running") else "")
         if obs.get("interrupted_by_user"):
             parts.append("Wait PAUSED — a user message just arrived (delivered next). Handle "
                          "it, then `wait` again for the still-running child(ren) "
-                         f"{obs.get('still_running')} when you are ready to continue the "
+                         f"{obs.get('still_running')}{bg} when you are ready to continue the "
                          "sequence.")
         elif obs.get("timed_out"):
-            parts.append(f"wait timed out; still running: {obs.get('still_running')}")
+            parts.append(f"wait timed out; still running: {obs.get('still_running')}{bg}")
         elif not parts:
             parts.append("nothing new finished")
         return "OBSERVATION (wait):\n" + "\n\n".join(parts)

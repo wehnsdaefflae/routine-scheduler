@@ -157,7 +157,13 @@ cannot offer.
   script's or a util's arguments, hands it to `decide` as evidence, or rides a `then_script` over
   it — and HOLDS it until that write has landed. The barrier closes on the dependency, so a run
   that never calls `wait` is still correctly ordered; `wait` remains the explicit form for a run
-  that wants everything quiet. Two DEFERRED writes to one target have no safe order, so the
+  that wants everything quiet — and it COVERS background calls (`engine/waitop.py`): the any-mode
+  wait returns on the next child exit OR background landing (naming the handle; the observation
+  itself follows at that turn boundary through `collect`), `all` waits for every child and every
+  call, and with no child at all it waits for the calls instead of refusing. Before, it saw
+  children only: with none it answered "no sub-workflows have been spawned" at once (one run
+  asked 8 times on one backgrounded gate), and with some it never woke on a landing, so a verdict
+  that came back in two minutes sat unread through a 20-minute timeout. Two DEFERRED writes to one target have no safe order, so the
   second is refused naming the handle that holds it; a SYNCHRONOUS write to the same target is
   simply ordered behind the deferred one. A path target is RESOLVED against the directory the
   run's relative paths resolve in (`run_context.work_dir`) before anything is compared, because

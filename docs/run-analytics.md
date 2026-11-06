@@ -355,7 +355,7 @@ the edit is judged by whether THAT failure came back, not by whether an average 
 
 - **Signatures** (`engine/frictions.py`) name a failure the same way in every run of every
   routine, read from events the engine already writes: `schema`, `script:<name>` and
-  `util:<name>` (a non-zero exit), `edit_miss`, `read_miss`, `memory_cap`, `refused:<kind>`,
+  `util:<name>` (a non-zero exit), `edit_miss`, `read_miss`, `memory_cap` (retained transcripts only — the note size no longer refuses), `refused:<kind>`,
   `deferral:<rung>` (the finish-gate rung that set the finish aside), `budget:<resource>` (from
   the `budget` key the reserved-turn injection now carries) and `unmet:d<n>` (the final
   accounting). A `shell` exit, an endpoint error and a refusal are not signatures — grep's "no

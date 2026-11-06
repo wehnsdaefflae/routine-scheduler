@@ -448,8 +448,9 @@ one you are about to touch, not all of them.
   (could_not / would_have / did / didnt). A matching action is HELD before it executes, never
   after: a caution that arrives with the observation arrives after the consequence. Two stores by
   blast radius (the routine's `state/reminders.json`, autonomous; the library's `reminders/`,
-  approval-gated by `remind_confirm`), one hold per action string per run so re-emitting the held
-  action IS the confirmation, and the tally is per-routine even for a library reminder
+  approval-gated by `remind_confirm`), one hold per REMINDER per run (keyed by id, never by the
+  action string — a reworded action re-held by a caution already in context taught nothing) so
+  re-emitting the held action IS the confirmation, and the tally is per-routine even for a library reminder
   (docs/reminders.md). A reminder is ONE CONFIGURATION OF A HOOK (`rsched/hooks`, D152): five
   fields — trigger, addressee, payload, delivery, disposition — of which a report, a
   consequence reminder and a mid-run injection are three settings, in the one store
@@ -673,8 +674,9 @@ one you are about to touch, not all of them.
   jail via `ownseal` — so never re-add a rule assist, recipe stage or prose that asks a run to
   write or rotate it: what a run would record goes in its finish summary or a `note`.
   `memory_*` are the ONLY way into `.memory/` for a RUN (generic file actions are rejected
-  there); the engine owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line
-  note cap. The operator's file endpoint agrees about the files the engine owns:
+  there); the engine owns `.memory/INDEX.md` (built from each write's `about`); a note's ~100-line
+  size is ADVICE — a longer write lands and its observation names the overrun, never a refusal
+  to trim against (`engine/memops.py`). The operator's file endpoint agrees about the files the engine owns:
   `PUT /api/routines/{slug}/file` refuses `routine.yaml`, `state/finish-line.json`,
   `.memory/INDEX.md`, `LEDGER.md`, `.ledger/`, `.git/`, `runs/`, `inbox/` and `questions/` BY NAME
   (`api_routine_files.NOT_EDITABLE_HERE`), each refusal naming the endpoint or owner that holds
@@ -690,7 +692,7 @@ one you are about to touch, not all of them.
   reachable by stopping it), the free moments can only REMIND. A hold — from either layer —
   goes through ONE seam (`engine/hold.py`): the canonical string is computed once, sources are
   asked in precedence order (reminder before rule: specific before general), the model is
-  stopped ONCE per action, and the per-run ledger is keyed `(source, canon)` so the two layers
+  stopped ONCE per action, and the per-run ledger is keyed `(source, key)` — a reminder's id, a rule hold's canon — so the two layers
   cannot spend each other's single allowed hold. `hold.is_hold(obs)` is the predicate the
   fabrication guard and the allow-once spend both read. EVERY once-only guard (that ledger,
   an assist's one fire, the one finish deferral, the verifier's one challenge per line, …)
@@ -724,7 +726,9 @@ one you are about to touch, not all of them.
   `engine/background_order.py`): `write_file`, `edit_file` and `memory_write` may defer because
   each names the one thing it writes, and `dispatch_action` holds any later action touching that
   target until the write has landed — so a run that never calls `wait` is still correctly
-  ordered. Compare a path target as the RUN would resolve it (`run_context.work_dir`), or one
+  ordered. And `wait` COVERS background calls (`engine/waitop.py`): with no `n` it ends on the
+  next child exit OR background landing, `all` waits for both, and with no child it waits for
+  the calls instead of refusing — it saw children only, and one run burned 20 minutes on it. Compare a path target as the RUN would resolve it (`run_context.work_dir`), or one
   file reached by a relative and an absolute path counts as two and the barrier misses the stale
   read it exists to prevent. A kind whose handler is not reached by `background._runner` may not
   join that list — `write_util`/`write_rule` are gated in `actionroute._route`, and a

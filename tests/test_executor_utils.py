@@ -166,10 +166,14 @@ def test_util_miss_names_a_matching_routine_local_script(util_ctx):
     sdir = util_ctx.routine.dir / "scripts"
     sdir.mkdir()
     (sdir / "explode.py").write_text('"""explode — test helper."""\n', encoding="utf-8")
-    obs = dispatch({"kind": "util", "name": "explode"}, util_ctx)
+    obs = dispatch({"kind": "util", "name": "explode", "args": ["--dry", "a b"]}, util_ctx)
     assert obs["missing"] is True and obs["script_match"] is True
     text = format_observation(obs)
     assert "ROUTINE-LOCAL script" in text and "tools: list leaves it out" in text
+    # P3: told, not guessed — the EXACT script call, the run's own args carried over, and no
+    # catalog of unrelated utils in front of it
+    assert '{"kind": "script", "name": "explode", "args": ["--dry", "a b"]}' in text
+    assert "Available:" not in text and "Nothing ran" in text
     assert "action:script" not in text     # a BASE kind: there is no grant to request
     # a plain miss (no matching script) stays hint-free
     plain = dispatch({"kind": "util", "name": "nope"}, util_ctx)
