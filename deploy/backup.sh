@@ -209,28 +209,6 @@ point_latest_at() {
   mv -Tf "${ROOT}/.latest.new" "${ROOT}/latest"
 }
 
-# MIGRATION(expires=2026-11-15) — the single-mirror layout this root held until now: every home
-# directly under it, converged nightly. The first run that finds it MOVES that mirror into
-# snapshots/<date of its last completed run> — a rename on the share, instant at any size — so
-# this run links against it instead of copying gigabytes again. A mirror that never completed a
-# run has no date to give, so it is filed as today's: this run links against it and supersedes
-# it. Through `.migrating`, so a cut-short move resumes on the next run instead of stranding half.
-migrate_single_mirror() {
-  local p top day tops=()
-  for p in "${STATE_PATHS_REQUIRED[@]}" "${STATE_PATHS_OPTIONAL[@]}"; do
-    top="${p%%/*}"
-    if [ -e "${ROOT}/${top}" ] && [[ " ${tops[*]} " != *" ${top} "* ]]; then tops+=("${top}"); fi
-  done
-  [ "${#tops[@]}" -gt 0 ] || [ -d "${SNAPS}/.migrating" ] || return 0
-  day="$(head -c 10 "${ROOT}/.rsched-backup-completed" 2>/dev/null || true)"
-  [[ "${day}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || day="${TODAY}"
-  mkdir -p "${SNAPS}/.migrating"
-  for top in "${tops[@]}"; do mv -T "${ROOT}/${top}" "${SNAPS}/.migrating/${top}"; done
-  mv -T "${SNAPS}/.migrating" "${SNAPS}/${day}"
-  point_latest_at "${day}"
-  echo "migrated: the single mirror in ${ROOT} is now snapshots/${day} (moved, not copied)"
-}
-
 # The run directories tonight's snapshot AGES OUT, as rsync exclude patterns in a file (D235).
 # Written to a file rather than argv because the list grows with the fleet's history — 583 of them
 # on the live instance the night this was measured — and one of them is one `--exclude` each.
@@ -464,7 +442,6 @@ TODAY="$(date +%F)"
 date -Iseconds > "${ROOT}/.rsched-backup-started"
 
 rsched_collect_state_paths
-migrate_single_mirror
 mkdir -p "${SNAPS}"
 
 RSYNC_EXCLUDES=()

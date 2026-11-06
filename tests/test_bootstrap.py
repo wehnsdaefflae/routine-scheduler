@@ -50,7 +50,6 @@ def test_a_fresh_containers_first_boot_seeds_utils_and_docs(tmp_path, monkeypatc
     server.routines_home.mkdir()
     monkeypatch.setattr(bootstrap, "ensure_config", lambda: False)
     monkeypatch.setattr(cli_daemon, "load_server_config", lambda: (server, []))
-    monkeypatch.setattr("rsched.migrate_enabled.run_migration", lambda s: {})
     monkeypatch.setattr("rsched.web.app.create_app", lambda s: None)
     monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
 
@@ -176,12 +175,12 @@ def test_the_implicit_default_block_carries_the_reminders_setting():
 
 
 def test_the_boot_survives_every_migration_on_a_minimal_server(tmp_path, monkeypatch):
-    """The boot test above patches `migrate_enabled.run_migration` OUT, which is what kept R3132
-    latent in a green suite: the only test driving the real `cmd_daemon` never executed a
-    migration against its own stand-in, and a hard `server.conversations_home` in any of them
-    kills the WHOLE boot — the library bootstrap, every seed sync, every later migration, the web
-    app and the scheduler. This one patches NOTHING out of the migration sequence, so the next
-    migration to read a home as an attribute fails HERE rather than on a fresh container."""
+    """R3132 stayed latent in a green suite because the one test driving the real `cmd_daemon`
+    had the offending migration patched OUT, so no migration ever ran against its own stand-in —
+    and a hard `server.conversations_home` in any of them kills the WHOLE boot: the library
+    bootstrap, every seed sync, every later migration, the web app and the scheduler. This
+    patches NOTHING out of the migration sequence, so the next migration to read a home as an
+    attribute fails HERE rather than on a fresh container."""
     from types import SimpleNamespace
 
     from rsched import cli_daemon

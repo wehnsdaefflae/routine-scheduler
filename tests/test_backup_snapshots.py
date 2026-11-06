@@ -264,58 +264,6 @@ def test_a_clock_set_back_never_prunes_the_snapshot_it_just_wrote(home, root):
     assert _latest(root) == "snapshots/2026-09-28"
 
 
-@pytest.mark.parametrize(("completed", "snapshots"), [
-    ("2026-09-29T03:41:07+02:00\n", ["2026-09-29", "2026-10-01"]),
-    (None, ["2026-10-01"]),          # never completed: no date to give, so it is today's base
-])
-def test_the_old_single_mirror_is_moved_into_the_first_snapshot(home, root, completed,
-                                                                 snapshots):
-    """MIGRATION(expires=2026-11-15): until now the root held one mirror, every home directly
-    under it. The first run MOVES it into a snapshot — a rename, instant at gigabytes — dated
-    by the run that last completed it, and links tonight's against it instead of copying
-    everything again. What is not an inventory home stays where it is."""
-    shutil.copytree(home, root, symlinks=True)           # the mirror: every home at the root
-    if completed is not None:
-        (root / ".rsched-backup-completed").write_text(completed, encoding="utf-8")
-    (root / "lost+found").mkdir()
-    mirrored_inode = (root / "routines/data.txt").stat().st_ino
-
-    proc = _backup(home, root, "2026-10-01")
-    _ok(proc)
-    assert "migrated" in proc.stdout
-    assert _snapshots(root) == snapshots
-    assert _leftovers(root) == []
-    assert _latest(root) == "snapshots/2026-10-01"
-    assert sorted(p.name for p in root.iterdir()) == \
-        [".rsched-backup-completed", ".rsched-backup-started", "latest", "lost+found",
-         "snapshots"]
-    # moved, not copied — and the night's snapshot links to it rather than copying it again
-    assert (root / "snapshots" / snapshots[0] / "routines/data.txt").stat().st_ino \
-        == mirrored_inode
-    assert (root / "snapshots/2026-10-01/routines/data.txt").stat().st_ino == mirrored_inode
-
-
-@pytest.mark.parametrize("moved_before_the_cut", [("routines", "conversations"), "every home"])
-def test_a_migration_cut_short_resumes_instead_of_stranding_half(home, root, moved_before_the_cut):
-    """MIGRATION(expires=2026-11-15): the move goes through `snapshots/.migrating` and takes its
-    date last, so a run killed between two renames is finished by the next one — including when
-    every home had already moved, and nothing at the root still looks like the old layout."""
-    shutil.copytree(home, root, symlinks=True)
-    (root / ".rsched-backup-completed").write_text("2026-09-29T03:41:07+02:00\n", encoding="utf-8")
-    tops = sorted(p.name for p in home.iterdir())
-    moved = tops if moved_before_the_cut == "every home" else moved_before_the_cut
-    (root / "snapshots/.migrating").mkdir(parents=True)
-    for top in moved:
-        (root / top).rename(root / "snapshots/.migrating" / top)
-
-    _ok(_backup(home, root, "2026-10-01"))
-    assert _snapshots(root) == ["2026-09-29", "2026-10-01"]
-    assert _leftovers(root) == []
-    assert sorted(p.name for p in (root / "snapshots/2026-09-29").iterdir()) == tops
-    assert sorted(p.name for p in root.iterdir()) == \
-        [".rsched-backup-completed", ".rsched-backup-started", "latest", "snapshots"]
-
-
 def test_the_tarball_and_the_snapshot_carry_the_same_files(home, root, tmp_path):
     """bundle.sh and backup.sh read ONE exclude list, so they must carry exactly the same
     files. The mirror used to sync each home from inside it, where rsync never sees the

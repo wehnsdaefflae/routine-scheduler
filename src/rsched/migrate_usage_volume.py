@@ -40,9 +40,10 @@ RECORD = Path(".control") / "migrations" / "usage-volume.json"
 
 
 def _run_dir(server, routine: str, ts: str) -> Path | None:
-    # getattr for the two extra homes, never attributes: see migrate_enabled.run_migration —
-    # a boot migration takes whatever `load_server_config` returns, and a hard attribute here
-    # kills the whole daemon boot on a stand-in that has only `routines_home` (R3132).
+    # getattr for the two extra homes, never attributes: a boot migration takes whatever
+    # `load_server_config` returns, and a hard attribute here kills the whole daemon boot on a
+    # stand-in that has only `routines_home` (R3132; `tests/test_bootstrap.py`'s
+    # `test_the_boot_survives_every_migration_on_a_minimal_server` is what now catches it).
     homes = [server.routines_home, *(h for h in (getattr(server, "conversations_home", None),
                                                  getattr(server, "background_home", None)) if h)]
     for home in homes:

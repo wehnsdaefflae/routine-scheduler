@@ -32,8 +32,8 @@ not survive it. A file naming no dead util is left BYTE FOR BYTE, which is the h
 guarantee this family of migrations rests on.
 
 Written back with `paths.atomic_write_yaml`, the ONE writer this system has for `routine.yaml`
-(key order preserved, unicode kept) — the same writer `migrate_enabled` and
-`migrate_total_turns` use for the same file. It is a full dump, so a comment would not survive
+(key order preserved, unicode kept) — the same writer `migrate_total_turns` uses for the same
+file. It is a full dump, so a comment would not survive
 it; measured 2026-11-01, no `routine.yaml` on this instance carries a single comment line,
 and nothing but this system's own writers has ever written one.
 

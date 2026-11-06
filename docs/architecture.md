@@ -1435,7 +1435,7 @@ permissions, settings PATTERNS and the reminder store's README — plus whole pl
 files are user-editable, so overwriting one would discard an operator's edit silently. A seed doc
 or util whose TEXT must change on a live instance is carried by a one-shot migration instead,
 which replaces the live copy only while it is byte-identical to the seed it supersedes and names
-every copy it left (`migrate_seed_utils` carries this release's four util fixes).
+every copy it left (`migrate_converse_goals` carries this release's `converse` revision).
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
   (`slug / name / description / when_to_use / version / tags / includes`, optional `tools:`
@@ -2404,7 +2404,7 @@ silent way. Three rules close that, each where it happened:
   localized messages. `routines_home` — whose health stream hears about it — is a REQUIRED
   argument, so every call site decides; only install-time seeding and a repo's first commit pass
   None. A migration that commits per routine records a commit that did not land under `failed`
-  (`migrate_enabled`).
+  (`migrate_dead_reserved_utils`).
 
 **A stale lock is removed automatically — only when PROVABLY stale** (`gitlock`). The other
 choice was to leave every lock to a person behind a one-click remedy. It was rejected because
