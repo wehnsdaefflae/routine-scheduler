@@ -28,7 +28,9 @@ prompts). What is checked here is the part a machine can be SURE of, with a fixe
   naming `scripts/outcome.py`) is the task by definition and always counts as a task clause.
 - `ledger_instructions(text)` — a sentence telling a run to WRITE to the ledger or rotate it:
   a ledger token beside a write verb. Reading what the engine filed is not an instruction to
-  write, so a sentence with a ledger token and no write verb passes.
+  write, so a sentence with a ledger token and no write verb passes, and so does one that is
+  negated ("no ledger of its own") or says the ENGINE writes it — a repaired recipe explains the
+  mechanism in exactly those words.
 
 Both are lint ERRORS: `lint.py` fails a library pattern on them (so `generate` repairs or
 refuses the draft), the materialization pipeline refuses a main/stage carrying them (one retry,
@@ -133,10 +135,12 @@ _LEDGER = PROCESS_OBJECTS[0][1]
 _NOT_THE_RUN_LEDGER = re.compile(r"(?i)\bledger(?:\.py|\s+(?:tool|script|register|file of))\b")
 _WRITE = re.compile(
     r"(?i)\b(?:append\w*|writ(?:e|es|ten|ing)|wrote|add(?:s|ed|ing)?|record(?:s|ed|ing)?"
-    r"|log(?:s|ged|ging)?|rotat\w*|archiv\w*|trim\w*|prun\w*|updat\w*)\b"
+    r"|log(?:s|ged|ging)?|rotat\w*|archiv(?:e|es|ed|ing)|trim\w*|prun\w*|updat\w*)\b"
     r"|\b(?:one|exactly one|a single|this run's|the run's)\s+(?:\w+\s+)?"
     r"(?:ledger(?:\.md)?\s+)?entr(?:y|ies)\b")
-_NEGATED = re.compile(r"(?i)\b(?:never|not|do not|don't|must not)\b[^.]{0,60}?\bledger")
+_NEGATED = re.compile(r"(?i)\b(?:never|not|no|do not|don't|must not)\b[^.]{0,60}?\bledger")
+#: A sentence saying the ENGINE writes the ledger describes the mechanism, it instructs no run.
+_ENGINE_AUTHOR = re.compile(r"(?i)\bengine-written\b|\bengine\b.{0,160}?\bledger")
 _SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z*`\"(])")
 _ITEM = re.compile(r"^(?:[-*+]|\d+[.)]|#+)\s")
 
@@ -161,12 +165,12 @@ def _sentences(text: str) -> list[tuple[int, str]]:
 
 def ledger_instructions(text: str) -> list[tuple[int, str]]:
     """`(line, sentence)` per sentence of `text` that tells a run to write to or rotate the
-    ledger: a ledger token beside a write verb, not negated, and not a product tool that merely
-    shares the word.
+    ledger: a ledger token beside a write verb, not negated, not a sentence saying the ENGINE
+    writes it, and not a product tool that merely shares the word.
     """
     return [(n, s) for n, s in _sentences(text)
             if _LEDGER.search(_NOT_THE_RUN_LEDGER.sub(" ", s)) and _WRITE.search(s)
-            and not _NEGATED.search(s)]
+            and not _NEGATED.search(s) and not _ENGINE_AUTHOR.search(s)]
 
 
 def done_when_findings(lines: list[tuple[str, str]]) -> list[str]:

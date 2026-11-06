@@ -115,6 +115,16 @@ READS = [
     ("Never print, echo, log or quote its contents anywhere — not in state files, not in the "
     "LEDGER, not in the finish report."),
     "Record the regression debt in the ledger row beside the checkpoint.",
+    # a repaired recipe explaining the mechanism (live, 2026-11-06)
+    ("The engine writes the LEDGER entry from this summary, so it carries what a ledger entry "
+    "used to."),
+    "**LEDGER.md is engine-written and sealed in every routine**, this one included.",
+    ("The engine takes the fleet's outcome reading (`scripts/outcome.py`) after your last turn "
+     "and writes your LEDGER entry from the summary."),
+    ("- **No self-maintenance.** No audit stage, no check suite, no ledger of the run's own — the "
+    "engine writes `LEDGER.md` from the finish summary; a run never writes it."),
+    ("Was sie dokumentiert hat, steht in `index.md` und im LEDGER; `next_steps/` ist eine "
+    "Arbeitsliste, kein Archiv."),
 ]
 
 
