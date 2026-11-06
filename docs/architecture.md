@@ -287,9 +287,10 @@ the limits (single-writer status.json preserved).
   (autonomous) and the library's `reminders/` (approval-gated; the union is deduped by regex with
   local winning). Every fire is tallied and labelled four ways (`remind_feedback`:
   could_not / would_have / did / didnt), which is what makes a pattern tunable and the layer
-  measurable. One hold per action string per run (per reply, in a conversation; kept across a
-  resume — see below), so re-emitting the held action is the confirmation to proceed — the
-  same anti-livelock shape the claim verifier uses. A curated
+  measurable. One hold per REMINDER per run (per reply, in a conversation; kept across a
+  resume — see below): once the caution is in the run's context, a differently-worded action
+  it also matches runs unheld, and re-emitting the held action is the confirmation to proceed —
+  the same anti-livelock shape the claim verifier uses. A curated
   reminder declares its reach (`universal`, or `listed` for the routines whose settings list it);
   rules-review curates the store from a census of every routine's own — and at `reminders:
   global` it may RETIRE a row in another routine's store (`remind {op: dead, target}`, D231,

@@ -15,6 +15,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.503.0] — 2026-11-06
+
+### A run's turns belong to its task — bookkeeping is the engine's, and its absence is measured
+
+The operator's finding, measured by hand over the last ≤4 runs of all 24 active routines (~10,500
+turns): **12 routines spent more turns on their own process than on their task** (library-sync
+25% task, predatory-publisher-tarpit 38, tv-show-tracker 39, fau 42, llmsectest-weekday 42 —
+whose close-out alone was 44% of every turn —, uncensored-model-radar 43, vodafone-outage-claims
+43, rules-review 43, self-audit 45 and 17% in its latest run, moltbook-heartbeat 48,
+config-optimizer 48, token-lab 49). The operator's standard: that is a critical failure for any
+routine, and it must not be able to happen again. The causes were fleet-wide, not per routine,
+so the fix is four principles, each with its own enforcement point:
+
+- **P1 — the engine writes the process record; the model never does.** One `LEDGER.md` entry per
+  finished routine run leg, built from what the leg already produced (summary, accounting, recipe
+  revisions) by `engine/ledgerentry.py`; rotation of whole entries into `.ledger/<YYYY-MM>.md`
+  past 32 KiB by `runledger.py`, never touching the preamble above the first engine heading.
+  LEDGER.md and `.ledger/` are SEALED in both layers (the action gate via `storeseal`, the jail
+  via `ownseal`) and refused by `PUT …/file`. The `ledger-untouched` assist is deleted, the
+  `decision-record` rule no longer asks for an entry, every engine voice that asked for one is
+  reworded, conversations no longer get a ledger (nothing read 134 of 138), and the engine
+  contract's `write_file` example is a task write instead of `state/phase.json`.
+- **P2 — a contract names only the task.** `workflows/taskcontract.py` holds the fixed
+  vocabulary of "the run's own record". The generator (`generate.FORMAT_SPEC`) no longer imports
+  a ledger and forbids recording steps, per-stage phase writes and process-only DONE_WHEN lines;
+  the materialization prompts (moved to `workflows/pipeline_prompts.py`) carry the same contract
+  and a reply breaking it is retried. The machine checks: a library pattern fails lint for a
+  ledger import, a ledger-write instruction or a DONE_WHEN line naming the run's record; a live
+  recipe's process-only Done-when line or ledger-write sentence is a `FAIL  recipe ·` in
+  `rsched validate` (exit 1). All 14 seed patterns and the live library were rewritten to pass.
+- **P3 — a guard whose fix is mechanical applies it.** Consequence reminders hold once per
+  REMINDER per run, not once per action string (~39 re-emits in four self-audit runs). The
+  memory-note size is advice, not a refusal (`memops.MEMORY_NOTE_ADVISED_LINES`; the
+  `frictions.memory_cap` signature now appears only in older transcripts). A clipped report says
+  nothing needs re-filing, and the truncation marker no longer names a CLI verb that never
+  existed. `wait` covers backgrounded calls (`engine/waitop.py`). A `util` naming the routine's
+  own script leads with the exact `script` call, and a failed script carries its `usage:` block.
+  An approved recipe-revision card resumes a NARROW edit leg (`engine/reviseleg.py`): recipe edit
+  kinds only, a 12-turn backstop, no accounting or pre-finish assists, the proposing leg's verdict
+  and `result.md` summary kept (34 measured legs: median 7 turns, longest 26).
+- **P4 — overhead is measured every run and held as a fleet invariant.** `engine/overhead.py`
+  classifies every landed action TASK / PROCESS / FRICTION, deterministically and from the
+  transcript alone; status.json and the usage row carry `overhead`. The median over the last
+  runs MADE UNDER THE CURRENT RECIPE (judged from 3) above 0.27 — calibrated against the hand
+  classification: 11 of 12 bookkeeping routines flagged, 0 of 8 healthy — files
+  `process_overhead_high` (once a day, latch read from the stream itself) on the blocked-work
+  surface, a `recipe:overhead` setup-surface row with a `revise_recipe` remedy (also the
+  `rsched validate` NOTE), and one `PROCESS OVERHEAD` line beside the boot digest's
+  recipe-revision ask. A one-shot boot migration measures the kept runs.
+
+Outside the code: every routine's recipe (all 30) was repaired by hand once, against the same
+four principles — ledger, rotation and per-stage phase instructions removed, duplicate and
+same-run records removed, repeated state updates moved into one script call each (tested on
+copies of live state), script call forms written into each main.md, process-only Done-when lines
+rewritten as task outcomes. Memory notes contradicting the repaired recipes were aligned. Two
+credentials found in plain text in routine records (a Silk Compute API key in a memory note, the
+Moltbook bearer key in a recipe stage and every transcript that read it) now live in the secret
+store as `SILK_COMPUTE_API_KEY` / `MOLTBOOK_KEY`, declared by the scripts that use them, with
+every record copy redacted.
+
 ## [0.502.1] — 2026-11-05
 
 ### the screen's `-shared` flag is pinned, because two surfaces now depend on it (R3206)
