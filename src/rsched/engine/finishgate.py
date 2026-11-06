@@ -13,6 +13,7 @@ from . import (
     goals,
     inbox,
     jobops,
+    reviseleg,
     runkind,
     verifier,
 )
@@ -299,7 +300,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # (a gather stage with nothing to gather), and refusing the finish would teach recipes to
     # read modules they do not need. It is a NOTICE, like the residual an `unmet` condition
     # carries: the run ends, and the gap is on the record for whoever reads it next.
-    if ctx.depth == 0:
+    if ctx.depth == 0 and not reviseleg.active(loop):   # a revise leg enters no stage by design
         coverage = ctx.stage_coverage()
         if coverage["skipped"]:
             ctx.transcript.event("stages_skipped", {**coverage, "run_id": ctx.run_id})

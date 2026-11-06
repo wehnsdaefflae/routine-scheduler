@@ -84,6 +84,8 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # resume (both flavors) + fabrication guard
         "do NOT restart from step 1",
         "NOT a new run: do not restart the workflow",
+        # …and the third: an approved recipe-revision card's NARROW leg (engine/reviseleg.py)
+        "is resumed for a RECIPE REVISION only",
         "OBSERVATION (finish REJECTED)",
         # the renderer's floors (engine/obs_floor.py): an error result every kind words, and a
         # renderer that raises costs the run a line, never the run

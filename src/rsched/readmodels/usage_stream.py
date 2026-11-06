@@ -26,7 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..paths import read_jsonl
-from ..usage_log import WORKFLOW_USAGE_FILE
+from ..usage_log import REVISE_LEG, WORKFLOW_USAGE_FILE
 from . import memo
 
 #: A leg's own spend — summed across a run's legs (usage_log.spend). Every other field is the
@@ -34,6 +34,8 @@ from . import memo
 _LEG_NUMBERS = ("tokens", "cost", "cached_in", "cache_write", "volume", "notional_cost")
 #: A leg's own count maps — summed key by key across a run's legs.
 _LEG_TALLIES = ("compression",)
+#: The CUMULATIVE fields (see the module docstring) — the newest leg's value is the run's.
+_CUMULATIVE = ("turns", "utils", "referrals", "asks_deferred")
 
 
 def stream_path(routines_home: Path) -> Path:
@@ -89,7 +91,8 @@ def fold_legs(records: list[dict]) -> list[dict]:
     """One record per RUN, not per leg — the unit every per-run count assumes it has.
 
     Keep the NEWEST leg (the cumulative fields are right there, and its `status` and `ts` are
-    how the run ended) and SUM the per-leg ones. Measured on this instance 2026-09-23: 50.5% of
+    how the run ended) and SUM the per-leg ones — except a narrow revise leg's row, which adds
+    its spend and counters and changes nothing else. Measured on this instance 2026-09-23: 50.5% of
     depth-0 records were extra legs (2,445 records over 1,211 runs), so a five-record window
     was often two runs plus their bookkeeping — and one live specimen, a 148-turn leg carrying
     2,080 tokens, dragged a median hard enough to flag a routine that had not changed.
@@ -106,6 +109,11 @@ def fold_legs(records: list[dict]) -> list[dict]:
             folded[key] = dict(rec)
             continue
         merged = dict(rec)
+        if rec.get("leg") == REVISE_LEG:
+            # A NARROW revise leg did no task (engine/reviseleg.py): it adds its spend and moves
+            # the cumulative counters, and the run's status, quality and outcome reading stay
+            # the task leg's — read as a fresh verdict, it hid the task leg behind an edit.
+            merged = {**prev, **{f: rec[f] for f in _CUMULATIVE if f in rec}}
         for field in _LEG_NUMBERS:
             if field not in prev and field not in rec:
                 continue

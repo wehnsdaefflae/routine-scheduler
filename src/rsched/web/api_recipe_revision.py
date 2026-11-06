@@ -16,7 +16,10 @@ the run already did, and the reasoning is in that run's transcript. So approving
 proposing run through `engine/revise.py`, exactly as the run view's "editable recipe" checkbox
 does: the leg boots with recipe self-write granted (`recipe_unlocked`), the one-shot marker is
 cleared on read, and the engine commits the recipe edit at that leg's end. One unlock path, not
-a second one that can drift from it.
+a second one that can drift from it. What differs is the LEG: the card's marker makes it NARROW
+(`engine/reviseleg.py` — the recipe edit kinds, a small turn backstop, a finish that owes
+nothing, the run's verdict and result kept), because the operator approved an edit, not another
+run. D198's invitation arms a full run, which does its task as well, and stays full.
 
 The run dir is the limit, and it is named rather than hidden: retention prunes runs
 (`keep_runs`), and a proposal outlives the run that made it. Once the dir is gone there is no
@@ -84,21 +87,28 @@ def _instruction(lines: list[str], *, edited: bool = False) -> str:
     an explanation of the change. EDITED, the operator rewrote them on the card — and a leg told
     that his sentence is its own has no way to see where the two differ, so it would implement
     and defend wording it never chose. The branch says whose words these are.
+
+    Both end on the same tail, because the leg is NARROW (`engine/reviseleg.py`): it holds the
+    recipe edit kinds and a small turn backstop, and its finish owes nothing — so the words say
+    exactly that: edit, read back once, finish. No orientation, no records, no accounting.
     """
     body = "\n".join(f"- {line}" for line in lines)
     head = ("The operator approved the recipe revision(s) you proposed when you finished. Your "
-            "recipe is writable to you on THIS leg only, so make the edits now and nothing "
-            "else:")
+            "recipe is writable to you on THIS leg only, and this leg exists only to make them:")
     if edited:
         head = ("The operator decided a revision to your recipe and EDITED THE WORDING before "
                 "approving it — THE LINES BELOW ARE HIS, not the ones you proposed when you "
                 "finished. Where they differ from what you wrote, his version is the decision: "
                 "implement it as given rather than restoring your own phrasing. Your recipe is "
-                "writable to you on THIS leg only, so make the edits now and nothing else:")
+                "writable to you on THIS leg only, and this leg exists only to make them:")
     return (head + "\n\n" + body + "\n\nEdit main.md / stages/ / tuning.yaml with edit_file (a "
-            "narrow anchor, not a rewrite), check what you wrote by reading it back, and finish "
-            "with what you changed. If a line turns out to be wrong on re-reading, say so in "
-            "the summary and leave that file alone.")
+            "narrow anchor, not a rewrite; independent edits may ride one reply), read each "
+            "changed file back ONCE, then finish with one line per change. Nothing else: no "
+            "orientation (the transcript above is your context), no records (ledger, notes, "
+            "memory, state files) and no accounting — the run's work was accounted for when it "
+            "finished, its verdict stands, and your summary is appended to its result. If a "
+            "line turns out to be wrong on re-reading, say so in the summary and leave that "
+            "file alone.")
 
 
 @router.post("/pending-creations/{pid}/revise")
@@ -148,13 +158,14 @@ async def apply_recipe_revision(request: Request, pid: str, body: Edited | None 
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} is gone — discard this proposal")
 
-    from ..engine.revise import clear_revise_marker, write_revise_marker
+    from ..engine.revise import NARROW, clear_revise_marker, write_revise_marker
 
     text = _instruction(lines, edited=bool(edited))
     # The same pair the run view's checkbox files: the marker unlocks the leg, the message is
     # what the leg reads. `web-converse` is a LIVE via, so the resumed leg's boot drains it —
-    # freight on any other channel would wait for a fresh run that a resume never is.
-    write_revise_marker(run_dir, text)
+    # freight on any other channel would wait for a fresh run that a resume never is. `leg`
+    # makes it a NARROW leg (engine/reviseleg.py): the operator approved an edit, not a run.
+    write_revise_marker(run_dir, text, leg=NARROW)
     inbox.file_message(routine_dir, text, via="web-converse")
     rid = await request.app.state.runner.resume_terminal(cfg, ts, reason="converse")
     if not rid:

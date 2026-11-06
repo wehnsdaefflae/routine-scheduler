@@ -896,7 +896,14 @@ by a test, by the engine, or by a past incident.
   field. A scheduled run holds no `write_recipe`, so the lines become ONE `recipe-revision`
   Decisions card (deduped on the lines), and approving it (`web/api_recipe_revision.py`) ARMS
   the existing revise unlock (`engine/revise.py`) and resumes the proposing run with its recipe
-  writable rather than writing the recipe from the web. A run that already holds recipe
+  writable rather than writing the recipe from the web — as a NARROW leg (`engine/reviseleg.py`,
+  the marker's `leg: "edit"`): the recipe edit kinds + `finish`/`report` only, a 12-turn backstop,
+  a finish that owes nothing (`finish_rungs.Rung.on_revise_leg`), no rule assists, and the RUN
+  keeps its proposing leg's verdict, health record, outcome reading and `result.md` (the leg's
+  summary is APPENDED; its usage row is `leg: "revise"`, folded as spend only). The operator
+  approved an edit, not a run — a full leg cost ~7-26 turns of re-orientation and re-accounting.
+  D198's invitation and the run view's checkbox stay FULL legs: the first is the target's
+  scheduled run doing its task too, the second carries whatever the operator typed. A run that already holds recipe
   self-write makes the edit and files no card. THE OPERATOR MAY REWORD THE LINES BEFORE
   APPROVING (F790): prose has no patch to adjust, so his wording rides the approval as an
   optional body, capped server-side at `MAX_LINES`, and `_instruction()` has a second framing

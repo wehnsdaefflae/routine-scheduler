@@ -9,6 +9,7 @@ from ..policyload import load_policy
 from . import (
     chain,
     loopnudge,
+    reviseleg,
     runkind,
 )
 from .loopnudge import REPEAT_FAIL
@@ -40,6 +41,31 @@ def _take_invited_revisions(ctx: RunContext) -> bool:
     except OSError:
         return False
     return True
+
+
+def _revise_unlock(loop, ctx: RunContext, *, resume: bool) -> tuple[bool, bool]:
+    """`(revising, narrow)` for this leg — whether its recipe is unlocked, and whether the leg
+    is a NARROW one (an approved recipe-revision card, engine/reviseleg.py).
+
+    The marker the /revise endpoints drop in the run dir is read once and cleared here, and an
+    unlocked leg gains the file-edit kinds even where the workflow's `tools:` omits them. D198
+    rides the same flag: a revision ANOTHER routine proposed for this one, authorized by the
+    operator (or by this routine's own `revise_confirm` dial) and waiting for this run — the
+    same one-leg unlock, pointed at an invitation instead of a marker (rsched/reciperevise.py).
+    Consumed HERE, at init, so a run is never rewritten mid-flight: one filed while this run is
+    going waits for the fire after it. Taken BEFORE a full-leg marker so the marker does not
+    short-circuit the invitation away unread — but NOT on a narrow leg, which makes exactly the
+    edit the card approved and leaves an invitation for the next fire.
+    """
+    from .revise import REVISE_KINDS, clear_revise_marker, is_narrow, revise_marker
+    marker = revise_marker(ctx.run_dir)
+    narrow = resume and is_narrow(marker)
+    revising = narrow or _take_invited_revisions(ctx) or marker is not None
+    if revising:
+        clear_revise_marker(ctx.run_dir)
+        if loop.allowed_tools is not None:
+            loop.allowed_tools |= set(REVISE_KINDS)
+    return revising, narrow
 
 
 def build_base_policy(loop, grants_map: dict) -> None:
@@ -141,21 +167,10 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # is a different decision and deserves its own switch. routine.yaml stays sealed either way.
     unlocked = "write_recipe" in ((ctx.routine.capabilities or {}).get("actions") or [])
     # A "revise recipe" run (the user asked from the run view to change this routine's OWN
-    # files) is granted recipe loop-write + the file-edit kinds for THIS leg only — a marker
-    # the /revise endpoint drops in the run dir, read once and cleared here. No persisted
-    # fs_write_root, so the recipe stays sealed to every ordinary run (see engine/revise.py).
-    from .revise import REVISE_KINDS, clear_revise_marker, revise_marker
-    # D198 rides the same `revising` flag: a revision ANOTHER routine proposed for this one,
-    # authorized by the operator (or by this routine's own `revise_confirm` dial) and waiting
-    # for this run — the same one-leg unlock, pointed at an invitation instead of a marker
-    # (rsched/reciperevise.py). Consumed HERE, at init, so a run is never rewritten mid-flight:
-    # one filed while this run is going waits for the fire after it. Taken FIRST so a marker
-    # does not short-circuit the invitation away unread.
-    revising = _take_invited_revisions(ctx) or revise_marker(ctx.run_dir) is not None
-    if revising:
-        clear_revise_marker(ctx.run_dir)
-        if loop.allowed_tools is not None:
-            loop.allowed_tools |= set(REVISE_KINDS)
+    # files) is granted recipe loop-write + the file-edit kinds for THIS leg only
+    # (`_revise_unlock`, engine/revise.py) — no persisted fs_write_root, so the recipe stays
+    # sealed to every ordinary run.
+    revising, narrow = _revise_unlock(loop, ctx, resume=resume)
     # D62: an ADMIN conversation leg — the web layer validated RSCHED_ADMIN_TOKEN and dropped
     # a one-shot marker, read once and cleared here. admin lifts CAPABILITY gating for this
     # leg only (gated kinds, reserved utils, previous-run read depth); structural/ownership
@@ -184,6 +199,9 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
         from .actionschema import KINDS
         loop.allowed_tools = (set(KINDS) if loop.allowed_tools is None
                               else loop.allowed_tools) - {"decide"}
+    # LAST of the kind decisions: a narrow revise leg holds the recipe edit kinds and nothing
+    # the widenings above added (engine/reviseleg.py).
+    reviseleg.configure(loop, narrow=narrow)
     loop._recipe_unlocked = unlocked or revising
     build_base_policy(loop, ctx.routine.grants)
     loop.grants = ctx.grants = loop.base_grants.with_overlay(ctx.granted_now,

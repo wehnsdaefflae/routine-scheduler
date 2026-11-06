@@ -27,8 +27,10 @@ Payload extensions are never a new shape: `recipe_commit`, `library_commit` (the
 at the run's END, depth 0 only — a rule revision reaches every holder without moving a recipe
 version), `utils` (per-util outcome counts, ALWAYS present — its presence marks the record as
 util-counted), `asks_deferred`, `compression`, and `fingerprint` / `quality` (what made the run
-and how it went, engine/runrecord.py; depth 0 only). Best-effort like the health log: an I/O
-error is swallowed, so telemetry never fails a finished run.
+and how it went, engine/runrecord.py; depth 0 only), and `leg: "revise"` (`REVISE_LEG`) on a
+NARROW revise leg's row (engine/reviseleg.py), which the per-run fold reads as spend only — the
+run's verdict, quality and outcome reading stay its task leg's. Best-effort like the health
+log: an I/O error is swallowed, so telemetry never fails a finished run.
 """
 
 from __future__ import annotations
@@ -39,6 +41,8 @@ from .ids import now_iso
 from .paths import append_jsonl
 
 WORKFLOW_USAGE_FILE = "workflow-usage.jsonl"
+#: The `leg` value a narrow revise leg's row carries (engine/reviseleg.py).
+REVISE_LEG = "revise"
 
 
 def spend(usage: dict) -> dict:
@@ -59,7 +63,7 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
                        utils: dict | None = None,
                        asks_deferred: int = 0, compression: dict | None = None,
                        fingerprint: dict | None = None, quality: dict | None = None,
-                       outcome: dict | None = None) -> None:
+                       outcome: dict | None = None, leg: str = "") -> None:
     """Append one leg's row. `usage` is the leg's OWN usage (not the run's cumulative total):
     the stream's reader sums a run's legs (`usage_stream.fold_legs`).
     """
@@ -82,6 +86,7 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
             **({"fingerprint": fingerprint} if fingerprint else {}),
             **({"quality": quality} if quality else {}),
             **({"outcome_measures": outcome} if outcome else {}),
+            **({"leg": leg} if leg else {}),
         })
     except OSError:
         pass

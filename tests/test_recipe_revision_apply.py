@@ -59,9 +59,15 @@ def test_approving_resumes_the_proposing_run_with_its_recipe_writable(web, monke
     assert r.status_code == 200, r.text
     assert resumed == {"slug": "rev", "ts": "20260709-120000", "reason": "converse"}
     # the unlock the resumed leg reads at init, carrying the run's OWN words as the go-ahead
-    instruction = read_json(run_dir / REVISE_MARKER)["instruction"]
+    marker = read_json(run_dir / REVISE_MARKER)
+    instruction = marker["instruction"]
     assert "stages/scan.md — read the cursor first" in instruction
     assert "writable to you on THIS leg only" in instruction
+    # …as a NARROW leg (engine/reviseleg.py): the operator approved an edit, not another run,
+    # and the words say so — edit, read back once, finish, with nothing owed
+    assert marker["leg"] == "edit"
+    assert "read each changed file back ONCE" in instruction
+    assert "no accounting" in instruction
     # …and it rides a LIVE via, or a resumed leg's boot would never drain it
     msgs = [read_json(p) for p in (tmp / "routines" / "rev" / "inbox").glob("msg-*.json")]
     assert [m["via"] for m in msgs] == ["web-converse"]
