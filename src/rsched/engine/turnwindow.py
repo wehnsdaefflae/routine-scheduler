@@ -175,8 +175,8 @@ def converge(warning: str) -> str:
     one place: this one asks it to converge, that one only states what is left.
     """
     return (f"\n[BUDGET: {warning} — converge DELIBERATELY now: reach a point worth handing "
-            "over, record what matters (LEDGER, state files), then finish with an authored "
-            "summary. Once the budget is spent you get exactly ONE turn, and it can only be "
+            "over, then finish with an authored summary — the engine records it in "
+            "LEDGER.md. Once the budget is spent you get exactly ONE turn, and it can only be "
             "a finish.]")
 
 

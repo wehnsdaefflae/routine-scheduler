@@ -112,7 +112,8 @@ from the allowed roots and stranded exactly such children. Children inherit the 
 RESOURCES only (fs roots, secrets, connections, machines — one-time grants included), never its
 capability-class grants: permissions and capabilities are off at depth > 0. Keep parallel
 children's outputs disjoint by convention — they share the tree, and the harness contract
-already forbids them `LEDGER.md` / `state/phase.json`.
+already forbids them `state/phase.json`; `LEDGER.md` is the engine's alone (P1) and a child keeps
+none — its record is its hand-back.
 
 Reaching the tree is not owning it. Every file-action seal holds on each routine dir a child
 can reach — its workspace, each ancestor child's, and the routine's — not on its workspace

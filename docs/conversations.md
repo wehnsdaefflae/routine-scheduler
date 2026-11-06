@@ -68,8 +68,9 @@ A conversation is **one continuous run**, and every reply is a self-contained le
   resumes the run itself. Report/trigger deliveries are exempt from the sweep — they keep
   their own read-on-next-run contract.
 - You send another message → the same run **resumes in place** (with a fresh budget window, if
-  you set any budget). Nothing is lost between messages; the files, the LEDGER, the goals and
-  everything the agent observed carry over.
+  you set any budget). Nothing is lost between messages; the files, the plan, the goals and
+  everything the agent observed carry over (a conversation keeps no LEDGER.md: its record is its
+  own transcript, which every reply replays).
 - If you message while the agent is still working, it's delivered as an injection and **picked up at
   the next turn** rather than starting a new leg.
 
@@ -111,7 +112,7 @@ surfaces carry all five, and the header's save sends all five, so none of them i
 create. (Until D216 (c) the last two reached neither surface, which left the one run type with a
 human driving it as the only one with no spend backstop at all.) A ceiling is a **backstop**
 against a runaway, not a pace: when the agent nears it, it gets a warning and converges to the
-nearest clean handover — it brings the working plan and LEDGER up to date and replies with honest
+nearest clean handover — it brings the working plan up to date and replies with honest
 progress, not final, ending with an offer to continue. Say **continue** and it picks up right where
 it left off, with a fresh window. And if the budget does run out mid-work, the agent still gets a
 reserved final turn to write the reply itself — you never get an engine error where an answer

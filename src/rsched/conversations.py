@@ -93,9 +93,6 @@ def conversation_phase(run_state: str | None) -> str:
     """
     return "working" if run_state in _WORKING_RUN_STATES else "waiting for you"
 
-_LEDGER_SEED = "# LEDGER — conversation\n\n### seed — conversation created\n"
-
-
 def new_slug(home: Path) -> str:
     """A fresh conversation slug: c-<run_ts>, suffixed on a same-second collision."""
     base = f"c-{run_ts()}"
@@ -239,7 +236,6 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
                                       encoding="utf-8")
     (conv_dir / "instruction.md").write_text(
         _seed_instruction(pb, first_message, conv_dir) + "\n", encoding="utf-8")
-    (conv_dir / "LEDGER.md").write_text(_LEDGER_SEED, encoding="utf-8")
 
     available_perms = set(library_docs.slugs(server.permissions_home))
     active_perms = [p for p in (permissions if permissions is not None

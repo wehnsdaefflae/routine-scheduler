@@ -141,14 +141,15 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # main.md last, over the now-complete stages/ — the stages are the sole source of truth
     (routine_dir / "main.md").write_text(dump_markdown(main_meta, result["main"]),
                                          encoding="utf-8")
-    ledger = (f"# LEDGER — {name}\n\n"
-              f"### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n")
+    # The process record's title only: its entries are the ENGINE's, one per finished run
+    # (rsched/runledger.py). Where the routine came from is main.md's `materialized_from`.
+    ledger = f"# LEDGER — {name}\n\n"
     if result.get("degraded"):
         # never silent (F183/D41): the user must see the routine was born without its stages —
         # and WHY (F197: a cause-less warning sent the 2026-07-24 outage hunt through the
         # daemon journal, which sandboxed audit routines cannot read)
         why = str(result.get("reason") or "unknown failure")
-        ledger += ("\n### ⚠ scaffolded without generated stages\nThe stage-generator was "
+        ledger += ("⚠ scaffolded without generated stages: the stage-generator was "
                    "unreachable at creation (usually a transient model outage — quota/rate "
                    "limit), so main.md is the verbatim workflow pattern and stages/ is empty. "
                    "The routine is fully functional and runs on the pattern as-is; for tailored "

@@ -5,8 +5,9 @@ The unit of (re)indexing is the FILE: each source file maps to a list of doc row
 the indexer can fingerprint, reindex, and prune per file (registry.py's stat-memo model).
 Indexed surfaces: run transcripts (gz included, subrun trees included — model-authored
 say/note/finish prose, questions + answers, user messages), result.md, compaction
-history/ archives, LEDGER.md, .memory/ notes, durable decision records
-(questions/pending), and recipe files (main.md / stages / instruction.md).
+history/ archives, LEDGER.md and its engine-rotated `.ledger/` archive, .memory/ notes,
+durable decision records (questions/pending), and recipe files (main.md / stages /
+instruction.md).
 NOT indexed: config (routine.yaml, tuning.yaml, server config), state/, inbox/
 (transient), artifacts/attachments (deliverables, often binary), `.util_outputs/`
 (spilled util output — bulk, and where a leaked secret would live), `.doc_cache/` (the
@@ -24,6 +25,7 @@ from ..config import ServerConfig
 from ..engine.transcript import read_events
 from ..paths import read_json
 from ..readmodels.memo import run_tree
+from ..runledger import ARCHIVE_DIR
 
 # One doc row = one searchable unit of prose. `kind` is the search-result vocabulary
 # (rendered as a chip in the UI) — extend, never repurpose.
@@ -89,6 +91,8 @@ def _routine_sources(home_kind: str, d: Path) -> Iterator[SourceFile]:
     for subdir in ("stages",):
         for p in _md_files(d / subdir):
             yield SourceFile(p, home_kind, slug, kind="recipe")
+    for p in _md_files(d / ARCHIVE_DIR):       # the ledger's engine-rotated months
+        yield SourceFile(p, home_kind, slug, kind="ledger")
     for p in _md_files(d / ".memory"):
         if p.name != "INDEX.md":   # the index is derived from the notes it points at
             yield SourceFile(p, home_kind, slug, kind="memory")

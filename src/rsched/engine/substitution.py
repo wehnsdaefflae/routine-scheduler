@@ -150,7 +150,7 @@ def _window_correction(loop, chain, new_ref) -> None:
         f"rewritten — this run's prompt is only ever appended to.\n"
         f"Budget against {new_ref.context_tokens:,} tokens from now on: page large files with "
         f"read_file ranges instead of reading them whole, keep observations small, and move "
-        f"anything load-bearing into a durable store (a `note`, memory_write, the LEDGER) "
+        f"anything load-bearing into a durable store (a `note`, memory_write) "
         f"earlier than you otherwise would — the archive that elides the middle of this "
         f"conversation now bites proportionally sooner. If a turn fails on prompt size, that "
         f"is this substitution and not a fault in your own planning."),

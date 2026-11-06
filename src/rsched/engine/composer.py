@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from .. import decline, patchreceipt
+from ..runledger import digest_tail
 from . import notes, outputs
 from .actionschema import example_action
 from .capabilities import capabilities_digest
@@ -159,12 +160,10 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                      f"{last.read_text(encoding='utf-8').strip()}")
     else:
         parts.append("Last run result: (no previous runs)")
-    ledger = routine_dir / "LEDGER.md"
-    if ledger.exists():
-        lines = ledger.read_text(encoding="utf-8").splitlines()
-        tail = "\n".join(lines[-30:])
-        more = f" (read LEDGER.md for the full {len(lines)} lines)" if len(lines) > 30 else ""
-        parts.append(f"LEDGER tail{more}:\n{tail}")
+    # the engine's process record (rsched/runledger.py) — less the last run's own entry, whose
+    # summary is the result printed just above
+    if ledger := digest_tail(routine_dir, skip_run=runs[-1].parent.name if runs else ""):
+        parts.append(ledger)
     mem_index = routine_dir / ".memory" / "INDEX.md"
     if mem_index.exists():
         lines = mem_index.read_text(encoding="utf-8").strip().splitlines()

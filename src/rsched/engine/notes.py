@@ -15,8 +15,9 @@ summary — every boundary-crossing artifact in this system).
 
 notes.md stays ordinary run-writable state: the model may reorganize it, the improver
 prunes it (a note that can't be understood alone is broken). The transcript keeps the
-raw record on the action event regardless — this file is the working copy, exactly the
-LEDGER's relationship to the transcript. Curation into the indexed cross-run store stays
+raw record on the action event regardless — this file is the working copy. (LEDGER.md is a
+different thing: the engine's own record of each finished run, which no run writes —
+`rsched/runledger.py`.) Curation into the indexed cross-run store stays
 a deliberate memory_write (that turn price is the memory INDEX's quality gate).
 """
 

@@ -408,7 +408,7 @@ def make_routine(tmp_path):
         if instruction is not None:   # real routines don't persist a seed; wizard-shaped tests do
             (d / "instruction.md").write_text(instruction, encoding="utf-8")
         (d / "main.md").write_text(workflow_md, encoding="utf-8")   # the routine's materialized recipe
-        (d / "LEDGER.md").write_text("# LEDGER\n\n### seed — routine created for tests\n",
+        (d / "LEDGER.md").write_text("# LEDGER — routine created for tests\n\n",
                                      encoding="utf-8")
         return d
 

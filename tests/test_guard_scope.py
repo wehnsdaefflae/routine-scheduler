@@ -28,7 +28,7 @@ from rsched.endpoints.base import EndpointError
 from rsched.engine import finishline, guardscope
 from rsched.engine.runtime import run_routine
 from rsched.reminders import Reminder
-from test_assists import TS, _age_ledger, _hold_rule, _rule, _write_root
+from test_assists import TS, _hold_rule, _rule, _write_root
 
 
 def _down() -> EndpointError:
@@ -121,10 +121,9 @@ def test_the_assist_finish_deferral_does_not_recur_after_a_resume(make_routine, 
     and the next finish does not buy the rule a second negotiation."""
     d = make_routine(slug="scope")
     server = server_for(d)
-    _rule(server, "decision-record", "pre-finish", "ledger-untouched", "append one entry")
-    _hold_rule(d, ["decision-record"])
-    _age_ledger(d)
-    scripted([write_file("artifacts/report.md"), finish(), _down()])
+    _rule(server, "visual-check", "pre-finish", "rendered-output-unseen", "look at it")
+    _hold_rule(d, ["visual-check"])
+    scripted([write_file("artifacts/report.html"), finish(), _down()])
     assert run_routine(d, server, run_ts=TS)[0] == "failed"
 
     scripted([finish(), finish()])
@@ -133,7 +132,7 @@ def test_the_assist_finish_deferral_does_not_recur_after_a_resume(make_routine, 
     deferred = [e["payload"] for e in transcript_events(run_dir) if e["type"] == "observation"
                 and e["payload"].get("assist")]
     assert len(deferred) == 1, deferred
-    assert deferred[0]["assists"] == ["decision-record/m"]
+    assert deferred[0]["assists"] == ["visual-check/m"]
 
 
 def test_the_verifier_does_not_challenge_a_line_twice_across_a_resume(make_routine, scripted,

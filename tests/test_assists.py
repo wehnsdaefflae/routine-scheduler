@@ -65,7 +65,7 @@ def test_a_malformed_entry_is_dropped_and_reported(over, fragment):
 def test_a_predicate_answering_a_different_moment_is_refused():
     """A rule may not ask a pre-finish question at an observation — the situation the
     predicate reads simply is not there."""
-    got, problems = normalize_assists(_assist(predicate="ledger-untouched"))
+    got, problems = normalize_assists(_assist(predicate="rendered-output-unseen"))
     assert got == []
     assert problems and "answers at the 'pre-finish' moment" in problems[0]
 
@@ -102,7 +102,7 @@ def test_the_seed_rules_that_declare_assists_are_valid():
         assert problems == [], (path.stem, problems)
         if got:
             declared[path.stem] = got
-    assert set(declared) == {"ask-policy", "fix-the-cause", "problem-routing", "decision-record",
+    assert set(declared) == {"ask-policy", "fix-the-cause", "problem-routing",
                              "interface-craft", "git-checkpoint", "outcome-first",
                              "evidence-discipline"}
     # every registered predicate is used by a shipped rule — a predicate nothing declares is
@@ -190,23 +190,12 @@ def _hold_rule(routine_dir, slugs: list[str]) -> None:
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
 
 
-def _age_ledger(routine_dir) -> None:
-    """Date the fixture's LEDGER.md before the run's start. The ledger predicate compares the
-    file's mtime with the run's stamp — ALWAYS UTC (`ids.run_ts`), so read as UTC here too."""
-    import datetime as dt
-    import os
-
-    before = dt.datetime.strptime(TS, "%Y%m%d-%H%M%S").replace(tzinfo=dt.UTC).timestamp() - 3600
-    os.utime(routine_dir / "LEDGER.md", (before, before))
-
-
 def _run(make_routine, scripted, replies, *, slug, moment, predicate,
          line="the operative line"):
     d = make_routine(slug="assistr")
     server = server_for(d)
     _rule(server, slug, moment, predicate, line)
     _hold_rule(d, [slug])
-    _age_ledger(d)
     ep = scripted(replies)
     status, run_dir = run_routine(d, server, run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
@@ -349,69 +338,17 @@ def test_a_rule_bound_mid_run_brings_its_assists(make_routine, scripted):
 
 
 def test_a_pre_finish_assist_defers_the_finish_exactly_once(make_routine, scripted):
-    """decision-record's moment — the one that costs a turn, because a line surfaced as the
-    run ends is a line nobody can act on."""
+    """The pre-finish moment — the one that costs a turn, because a line surfaced as the run
+    ends is a line nobody can act on."""
     _d, ep, status, events = _run(
         make_routine, scripted,
-        [write_file("artifacts/report.md"), finish(), finish()],
-        slug="decision-record", moment="pre-finish", predicate="ledger-untouched",
-        line="append one LEDGER entry before you finish")
+        [write_file("artifacts/report.html"), finish(), finish()],
+        slug="visual-check", moment="pre-finish", predicate="rendered-output-unseen",
+        line="look at the page rendered before you finish")
     deferred = [e for e in events if e["type"] == "observation"
                 and e["payload"].get("assist")]
     assert len(deferred) == 1, "the finish should be set aside once, and only once"
-    assert "append one LEDGER entry" in prompt_text(ep)
-    assert status == "ok"
-
-
-def test_a_satisfied_pre_finish_assist_never_fires(make_routine, scripted):
-    """A run that DID write its ledger is not asked to."""
-    _d, _ep, status, events = _run(
-        make_routine, scripted,
-        [write_file("artifacts/report.md"), write_file("LEDGER.md", content="### run — x"),
-         finish()],
-        slug="decision-record", moment="pre-finish", predicate="ledger-untouched")
-    assert not [e for e in events if e["type"] == "observation"
-                and e["payload"].get("assist")]
-    assert status == "ok"
-
-
-def test_a_run_that_changed_nothing_lasting_is_not_asked_for_a_ledger_entry(
-        make_routine, scripted):
-    """decision-record is a DEFAULT rule. A predicate that fired on every ledger-less run
-    would take a turn from every routine in the instance, every run — and `state/` is the
-    run's own working scratch, not something a later reader interprets."""
-    _d, _ep, status, events = _run(
-        make_routine, scripted,
-        [write_file("state/probe.txt"), finish()],
-        slug="decision-record", moment="pre-finish", predicate="ledger-untouched")
-    assert not [e for e in events if e["type"] == "observation"
-                and e["payload"].get("assist")]
-    assert status == "ok"
-
-
-def test_a_conversation_reply_is_never_held_for_a_ledger_entry(make_routine, scripted,
-                                                               tmp_path):
-    """A conversation's product is the reply and its reasoning is in the thread the user can
-    already see; its spine is state/plan.md, not a ledger. Holding a reply for one costs the
-    user a turn for nothing."""
-    convs = tmp_path / "conversations"
-    convs.mkdir(parents=True, exist_ok=True)
-    d = make_routine(slug="c-assist")
-    server = server_for(d)
-    server.conversations_home = convs
-    # the run dir must sit directly under conversations_home for runkind.is_conversation to see it
-    moved = convs / d.name
-    d.rename(moved)
-    server.routines_home = convs
-    _rule(server, "decision-record", "pre-finish", "ledger-untouched", "append one entry")
-    _hold_rule(moved, ["decision-record"])
-    _age_ledger(moved)
-    ep = scripted([write_file("artifacts/reply.md"), finish()])
-    status, run_dir = run_routine(moved, server, run_ts=TS)
-    events, _ = read_events(run_dir / "transcript.jsonl")
-    assert not [e for e in events if e["type"] == "observation"
-                and e["payload"].get("assist")]
-    assert "[RULE" not in prompt_text(ep)
+    assert "look at the page rendered" in prompt_text(ep)
     assert status == "ok"
 
 
@@ -455,30 +392,6 @@ def test_every_registered_predicate_declares_a_reachable_moment():
         assert predicate.describes.strip(), name
 
 # --- the predicates that read the world rather than the actions ------------------------------
-
-def test_a_ledger_appended_outside_the_actions_still_counts(make_routine, scripted):
-    """An append through a shell heredoc, a script or a util is invisible to the actions; the
-    file's own mtime is not. Reading the actions made 48 of 75 of this assist's deferrals
-    false."""
-    d = make_routine(slug="assistr")
-    server = server_for(d)
-    _rule(server, "decision-record", "pre-finish", "ledger-untouched", "append one entry")
-    _hold_rule(d, ["decision-record"])
-    ledger = d / "LEDGER.md"
-    _age_ledger(d)
-
-    def append_by_other_means():
-        with ledger.open("a", encoding="utf-8") as fh:     # what a shell append looks like
-            fh.write("### run — kept X because Y\n")
-        return finish()
-
-    scripted([write_file("artifacts/report.md"), append_by_other_means])
-    status, run_dir = run_routine(d, server, run_ts=TS)
-    events, _ = read_events(run_dir / "transcript.jsonl")
-    assert not [e for e in events if e["type"] == "observation"
-                and e["payload"].get("assist")]
-    assert status == "ok"
-
 
 def test_a_denied_call_the_run_routed_around_is_named(make_routine, scripted):
     """ask-policy's moment: a refusal costs a turn at the validation seam; the action the

@@ -108,7 +108,7 @@ the limits (single-writer status.json preserved).
   spawnable workflow patterns, the util catalog at name+summary altitude — ONE util's usage on demand via
   `util name=list args=["<name>"]`) → **state digest** (phase, `state/` and `artifacts/` — each capped at
   `composer.DIR_LIST_MAX` entries, newest first — stage modules, held rules, last result,
-  LEDGER tail, open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/
+  the LEDGER's earlier entries, open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/
   `edit_file`/`llm`) run through `engine/executor.py`; a `write_file`/`edit_file` may carry
   `then_script` — one of the routine's scripts, run the moment the change lands, both results in
   ONE observation (`engine/thenscript.py`, SoL-Pi's Action Fusion: 1,089 of 3,459 writes in 160
@@ -189,8 +189,8 @@ the limits (single-writer status.json preserved).
   a run's 23rd pass.
 - **One turn to externalize before the middle goes** (`window._warn_before_eviction`). Retention
   is POSITIONAL — head 6, tail 24 — so a load-bearing fact in the middle survives only in
-  `history/`, reachable if the run remembers to look. `note`, `memory_write` and the LEDGER
-  already exist to carry a fact out of the conversation; what was missing was the moment to use
+  `history/`, reachable if the run remembers to look. `note` and `memory_write` already exist to
+  carry a fact out of the conversation (LEDGER.md is the engine's, written from the finish); what was missing was the moment to use
   them. The archive is deferred by exactly one turn and the run is told why — and the deferred
   pass is OWED (`loop._evict_owed`): the next turn takes it under the cap that decided it, so
   "the archive happens on your next turn" holds even when the cap has moved since. It did not
@@ -875,7 +875,25 @@ and the capabilities digest's catalog listing):
   binary refusal with what failed appended. Engine-owned and read-only for the run, gitignored on
   first use (`paths.ensure_gitignored`, the one helper every such store uses), never
   search-indexed, pruned to the `KEEP_DOCS` (32) most recently read.
-- `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here; a message's **`via`**
+- `LEDGER.md` + `.ledger/` — the routine's PROCESS RECORD, written by the ENGINE and never by a
+  run (P1, `rsched/runledger.py`). At the close-out every ending shares (`loopend.finish_run`,
+  after result.md and before the autocommit) `engine/ledgerentry.py` appends ONE entry per
+  finished depth-0 routine run leg: `### <run_ts> · <status> · <n> turns` (a resumed leg
+  `### <run_ts> · leg <n> · …`), the finish summary verbatim, then `Accounting:` (one line per
+  accounting entry) and `Recipe revisions:` (one line per `RECIPE REVISION:` line), each block
+  only when non-empty. A child keeps none (its record is its hand-back), a conversation keeps
+  none and is no longer seeded one (its record is its transcript), a detached task keeps none.
+  ROTATION is the engine's too: when the ENTRIES pass `MAX_BYTES` (32 KiB) the oldest WHOLE
+  entries move to `.ledger/<YYYY-MM>.md` until at most `KEEP_BYTES` (16 KiB) remain, never fewer
+  than the newest. An entry boundary is the engine's own heading shape and nothing else, so the
+  PREAMBLE — everything above the first such heading: the title, a frozen brief, every
+  hand-written section from before the engine took the file over — is never moved, edited or
+  shown in the digest, whose ledger section is the earlier ENTRIES less the last run's own (its
+  result is printed just above). SEALED in both layers like `.memory/INDEX.md`: the file-action
+  gate refuses a write, edit, delete or move of either (`engine/storeseal.stores`, the
+  observation `runledger.REFUSAL`), `ownseal.SEALED_FILES`/`SEALED_DIRS` withhold both from every
+  jailed subprocess, and the operator's file endpoint refuses them by name.
+- `state/`, `inbox/` (daemon/web drop messages + answers here; a message's **`via`**
   is a CLOSED set, `engine/inbox.VIAS`, validated by the one writer `inbox.file_message`, and it
   is not a label but the SWITCH that decides when the message is consumed, whether the post-finish
   reap may resume a finished run for it, whether the conversation surface offers it as the
@@ -2196,7 +2214,7 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
 - **Search** (`rsched/search/`, `web/api_search.py`, the console's
   `components/searchbox.js`, focused by `/` or Ctrl-K): SQLite FTS5 over both homes' PROSE —
   transcript say/note/finish/questions/answers/user messages (gz + subrun trees included),
-  result.md, history/ archives, LEDGER.md, `.memory/`, pending decision records, recipe
+  result.md, history/ archives, LEDGER.md and its `.ledger/` archive, `.memory/`, pending decision records, recipe
   files; NEVER config, state/, inbox, artifacts, `.util_outputs/`, `.doc_cache/`, or tool observations
   (bulk, and where a leaked secret would live). The db (`<routines_home>/.control/search.sqlite3`) is a PURE
   CACHE of the filesystem — delete it and it rebuilds; per-file stat fingerprints drive

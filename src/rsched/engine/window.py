@@ -148,10 +148,10 @@ def _warn_before_eviction(loop, size: float, ref) -> bool:
     """Give the run ONE turn to move what matters into a durable store before the middle goes.
 
     Retention is positional — head 6, tail 24 — so a load-bearing fact in the middle survives
-    only in `history/`, reachable if the run remembers to go looking. `note`, `memory_write`
-    and the LEDGER already exist to carry a fact out of the conversation; what was missing was
-    the moment to use them, which is precisely the one this layer exists to supply. Returns
-    True when the archive should wait a turn — and the caller then records the pass as OWED
+    only in `history/`, reachable if the run remembers to go looking. `note` and `memory_write`
+    already exist to carry a fact out of the conversation (LEDGER.md is the engine's, P1); what
+    was missing was the moment to use them, the one this layer exists to supply. Returns True
+    when the archive should wait a turn — and the caller then records the pass as OWED
     (`loop._evict_owed`), so the next turn takes it under the cap that decided it.
 
     The decision uses estimated input occupancy, with headroom for the next turn. The gate is
@@ -178,8 +178,8 @@ def _warn_before_eviction(loop, size: float, ref) -> bool:
         "not semantic: it does not know what mattered.\n"
         "You have this turn. Anything in the middle worth keeping — a finding, a value you "
         "will need again, a dead end worth not repeating, a decision and why — put it in a "
-        "durable store NOW: a `note` (free, rides any action), a memory_write, or a LEDGER "
-        "entry. Then carry on; the archive happens on your next turn either way.",
+        "durable store NOW: a `note` (free, rides any action) or a memory_write. Then carry "
+        "on; the archive happens on your next turn either way.",
         evict_warning=True)
     return True
 

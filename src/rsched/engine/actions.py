@@ -79,9 +79,9 @@ KIND_EXAMPLES: dict[str, dict] = {
     "view_image": {"say": "<why look at it>", "kind": "view_image",
                    "path": "attachments/shot.png",
                    "prompt": "<what to look for, if it falls back to the vision util>"},
-    "write_file": {"say": "<why this write>", "kind": "write_file", "path": "state/phase.json",
-                   "content": {"phase": "<structured data may be a plain JSON object — "
-                                        "text files take one string instead>"}},
+    "write_file": {"say": "<why this write>", "kind": "write_file", "path": "artifacts/table.json",
+                   "content": {"<item>": "<structured data may be a plain JSON object — "
+                                         "text files take one string instead>"}},
     "edit_file": {"say": "<why this edit>", "kind": "edit_file", "path": "state/notes.md",
                   "anchor": "<exact text to find (verbatim)>",
                   "replacement": "<what replaces it>"},

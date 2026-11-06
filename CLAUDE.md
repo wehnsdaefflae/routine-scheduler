@@ -21,7 +21,7 @@ printed before the group ended is kept. The "a run never writes `routine.yaml`" 
 the jail itself — Landlock has no deny rule, so `ownseal.mount_own_dir` mounts the routine's own
 directory LIST-ONLY and grants read-write only to its unsealed children, and
 `ownseal.sealed_names` subtracts `routine.yaml`, `.memory/`, `runs/`, `.util_outputs/`,
-`.doc_cache/` and (without the recipe-authoring permission) the recipe from that set, so no
+`.doc_cache/`, `LEDGER.md` + `.ledger/` and (without the recipe-authoring permission) the recipe from that set, so no
 subprocess can write them however it writes (docs/sandboxing.md). The residual is where the jail
 does not engage at all — `sandbox: off`, or a kernel without Landlock — and there `ungated_write`
 plus the runner REPORTING a change it sees is again the whole mechanism. The instruction contains only the task; cross-cutting conduct is
@@ -662,11 +662,21 @@ one you are about to touch, not all of them.
   change and class-locked to `secret:` because the entity id is built server-side from a store
   NAME. Operator-only like every write here; the renderer is shared by both pages
   (`static/components/secret-exposure.js`).
+  **The ENGINE writes the process record; no run does** (P1, `rsched/runledger.py`):
+  `LEDGER.md` gets ONE entry per finished depth-0 ROUTINE run leg at the close-out every ending
+  shares (`engine/ledgerentry.py` from `loopend.finish_run`) — `### <run_ts> · <status> · <n>
+  turns` (a resumed leg `· leg <n> ·`), the summary verbatim, its `Accounting:` and `Recipe
+  revisions:` lines — and the engine rotates the oldest WHOLE entries into `.ledger/<YYYY-MM>.md`
+  past 32 KiB of entries. The PREAMBLE above the first engine heading (a title, a frozen brief,
+  every hand-written section from before) is never moved or shown. Children, conversations and
+  detached tasks keep none. Sealed in BOTH layers — the write gate via `engine/storeseal`, the
+  jail via `ownseal` — so never re-add a rule assist, recipe stage or prose that asks a run to
+  write or rotate it: what a run would record goes in its finish summary or a `note`.
   `memory_*` are the ONLY way into `.memory/` for a RUN (generic file actions are rejected
   there); the engine owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line
   note cap. The operator's file endpoint agrees about the files the engine owns:
   `PUT /api/routines/{slug}/file` refuses `routine.yaml`, `state/finish-line.json`,
-  `.memory/INDEX.md`, `.git/`, `runs/`, `inbox/` and `questions/` BY NAME
+  `.memory/INDEX.md`, `LEDGER.md`, `.ledger/`, `.git/`, `runs/`, `inbox/` and `questions/` BY NAME
   (`api_routine_files.NOT_EDITABLE_HERE`), each refusal naming the endpoint or owner that holds
   it — the operator's own `.memory/` notes stay editable there.
   **`read_rule` / `write_rule` are the general-rules layer** — ONE library copy per rule

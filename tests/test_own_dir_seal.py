@@ -30,8 +30,8 @@ from rsched.grantpolicy import GrantPolicy
 
 def _dir_with_children(tmp_path: Path) -> Path:
     own = tmp_path / "a-routine"
-    for name in (".memory", "runs", ".util_outputs", ".doc_cache", "stages", "state",
-                 "artifacts", "scripts"):
+    for name in (".memory", "runs", ".util_outputs", ".doc_cache", ".ledger", "stages",
+                 "state", "artifacts", "scripts"):
         (own / name).mkdir(parents=True)
     for name in ("routine.yaml", "main.md", "tuning.yaml", "LEDGER.md", "notes.md"):
         (own / name).write_text("x\n", encoding="utf-8")
@@ -72,7 +72,7 @@ def test_every_path_the_write_gate_refuses_is_withheld_from_the_jail(tmp_path):
     own = _dir_with_children(tmp_path)
     _, rw, _ = _spec(own)
     for sealed in (".memory", "runs", ".util_outputs", ".doc_cache", "routine.yaml",
-                   "main.md", "stages", "tuning.yaml"):
+                   "main.md", "stages", "tuning.yaml", "LEDGER.md", ".ledger"):
         assert not _writable(rw, own / sealed), f"{sealed} is writable in the jail"
         # and so is anything beneath a sealed DIRECTORY, which is what a redirect targets
         assert not _writable(rw, own / sealed / "inside.txt")
@@ -81,9 +81,10 @@ def test_every_path_the_write_gate_refuses_is_withheld_from_the_jail(tmp_path):
 def test_the_own_dir_is_still_visible_and_its_ordinary_children_writable(tmp_path):
     """The seal must not cost the working directory. A command still cds into it, lists it and
     reads its recipe; `state/`, `artifacts/`, `scripts/` and ordinary files stay writable —
-    `cat >> LEDGER.md`, `cp … state/x.json` and a python write to `state/*.json` are what
-    shell-holding routines measurably do (the 30 `ungated_write` health records of 2026-10-18
-    to 2026-10-21).
+    `cp … state/x.json` and a python write to `state/*.json` are what shell-holding routines
+    measurably do (the 30 `ungated_write` health records of 2026-10-18 to 2026-10-21). The
+    third shape they used, `cat >> LEDGER.md`, is the one P1 SEALED: the engine writes that
+    record from the finish summary (`rsched/runledger.py`).
     """
     own = _dir_with_children(tmp_path)
     ro, rw, ls = _spec(own)
@@ -92,7 +93,7 @@ def test_the_own_dir_is_still_visible_and_its_ordinary_children_writable(tmp_pat
     # longer among them wholesale. `rundepth` carries the why.
     assert str(own) in ls and str(own) not in ro
     assert str(own / "main.md") in ro and str(own / "routine.yaml") in ro
-    for ordinary in ("state", "artifacts", "scripts", "LEDGER.md", "notes.md"):
+    for ordinary in ("state", "artifacts", "scripts", "notes.md"):
         assert str(own / ordinary) in rw, f"{ordinary} lost its write access"
 
 
@@ -105,7 +106,7 @@ def test_recipe_authoring_lifts_the_recipe_half_and_nothing_else(tmp_path):
     _, rw, _ = _spec(own, recipe_unlocked=True)
     for recipe in ("main.md", "stages", "tuning.yaml"):
         assert str(own / recipe) in rw, f"{recipe} is sealed from a routine that may write it"
-    for never in (".memory", "runs", "routine.yaml"):
+    for never in (".memory", "runs", "routine.yaml", "LEDGER.md", ".ledger"):
         assert str(own / never) not in rw
 
 
@@ -170,10 +171,12 @@ def test_the_kernel_actually_refuses_the_write_a_shell_redirect_used_to_make(
     (own / "routine.yaml").write_text("budgets: {}\n", encoding="utf-8")
     (own / "main.md").write_text("# the recipe\n", encoding="utf-8")
 
-    for target in (".memory/stolen.md", "routine.yaml", "main.md"):
-        obs = dispatch({"kind": "shell", "command": f"echo pwned > {target}"}, ctx)
+    (own / "LEDGER.md").write_text("# LEDGER\n", encoding="utf-8")
+    for target in (".memory/stolen.md", "routine.yaml", "main.md", "LEDGER.md"):
+        obs = dispatch({"kind": "shell", "command": f"echo pwned >> {target}"}, ctx)
         assert obs["exit"] != 0, f"the jail let a shell redirect write {target}: {obs}"
     assert "pwned" not in (own / "routine.yaml").read_text(encoding="utf-8")
+    assert "pwned" not in (own / "LEDGER.md").read_text(encoding="utf-8")
     assert "pwned" not in (own / "main.md").read_text(encoding="utf-8")
     assert not (own / ".memory" / "stolen.md").exists()
 

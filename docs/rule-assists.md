@@ -26,7 +26,7 @@ compliance from violation only when the two leave DIFFERENT traces. For most rul
 not. Take `fix-the-cause` — "a correction or a failure names a cause to remove". Two runs face the same
 failing test: one traces the cause and installs a general prevention, the other patches the
 symptom. Both produce the same observable trace — a diff that turns the check green, a passing
-test, a plausible ledger entry. Whether the fix addressed the cause is a fact about the space
+test, a plausible summary. Whether the fix addressed the cause is a fact about the space
 of FUTURE inputs the diff will face, and it is not observable now. No predicate over the trace
 can tell those two runs apart; the evidence a checker would need does not exist.
 
@@ -230,8 +230,8 @@ them firing had the rule still holding actions and deferring the finish of a run
 bound.
 
 `DEFAULT_RULES` is not empty, so this layer is live in most routines from the day it ships —
-which is why precision, not coverage, is the budget, and why only four of the nine assists
-cost a turn (the one `hold` and the three `pre-finish` reminders).
+which is why precision, not coverage, is the budget, and why only three of the eight
+assists cost a turn (the one `hold` and the two `pre-finish` reminders).
 
 ## The payload axis, and what exists
 
@@ -254,7 +254,7 @@ assists:
     moment: boundary
     predicate: user-corrected
     payload: action
-    line: the correction belongs in the ledger before the next edit
+    line: the correction belongs in the notes before the next edit
     action: {say: "recording the correction", kind: write_file, path: state/note.md,
              content: "…"}
 ```
@@ -295,7 +295,7 @@ there too), and names everything it skips rather than passing over it quietly. O
 with a prose revision — `problem-routing`'s did — replaces the whole file, and only while the
 live copy is still byte-identical to the seed it supersedes.
 
-## The nine
+## The eight assists
 
 | rule | moment | predicate | why this moment |
 |---|---|---|---|
@@ -304,7 +304,6 @@ live copy is still byte-identical to the seed it supersedes.
 | `fix-the-cause` | boundary | `user-corrected` | a correction has just landed; "what standing preference does this imply" is answerable now and stale later |
 | `ask-policy` | observation | `capability-denied` | a call was just refused for a missing grant; the access request is the next step — never a reason to finish partial |
 | `ask-policy` | boundary | `asks-piling-up` | several decisions are waiting on the user, which is the shape the rule is about |
-| `decision-record` | pre-finish | `ledger-untouched` | the reasoning behind the artefacts is lost at exactly this moment, and only here can the run still write it down |
 | `interface-craft` | pre-finish | `rendered-output-unseen` | the run wrote a page, a picture or a document people will look at and never looked at the rendered result |
 | `outcome-first` | boundary | `outcome-questioned` | a person's words — at boot, between runs, or mid-run — question what the routine PRODUCES ("do you even…", "zero interviews", "you need to get better"); answered then with the outcome and a change to what produces it, never with another self-check, which is what every such complaint had turned into before (engine/assist_outcome.py — a plain vocabulary over the person's own words, read only when they spoke) |
 | `problem-routing` | pre-finish | `unclosed-delivered-report` | the run was handed work by another routine and is ending without answering it — after the finish nothing is left that can close the row but a person reading the ledger |
@@ -323,11 +322,9 @@ the run's OWN first edit as uncommitted work, and held its second edit into the 
 let through (`undo_point`), and a resumed leg rebuilds the set from it — the same false hold
 otherwise came back one restart later.
 
-Three predicates read signals the engine already keeps, which is why they are cheap:
+Two predicates read signals the engine already keeps, which is why they are cheap:
 `asks-piling-up` reads `ctx.asks_deferred` (the churn telemetry for a decision thrown over the
-wall), `ledger-untouched` reads the LEDGER FILE — its mtime against the run's start — because an
-append through a shell heredoc, a script or a util never shows in the action records (reading
-the actions made 48 of 75 of its deferrals false), and `unclosed-delivered-report` reads
+wall), and `unclosed-delivered-report` reads
 `ctx.reports_open`, which the inbox drain
 fills and the `report` handler empties as each `answers` lands. That last one is bookkeeping
 the engine was already doing either side of the question, so the predicate is a truth test
@@ -355,5 +352,12 @@ its table gaining the four columns, and the `assist_hold` observation asking for
 way `reminder_hold` does. Until all four land the label has nowhere to go: the tally file is an
 int, and `_apply_feedback` answers an assist key with "no reminder … is live for this run".
 
-`ledger-untouched` reads the file itself rather than the conversation — a predicate that greps
-the message list silently stops working on exactly the long runs that need it most.
+**There is no `ledger-untouched` any more** (P1, 2026-11-06). `decision-record` used to hold a
+pre-finish assist that deferred a finish until the run had appended to `LEDGER.md` — which put
+the engine's own voice behind a bookkeeping write, overruled recipes that said "no ledger", and
+cost a turn on every run that changed anything. The engine now writes that entry itself, from
+the finish summary (`engine/ledgerentry.py`), and seals the file against the run, so the moment
+the assist watched no longer exists; the predicate, its declaration in the seed and live copies
+of the rule, and its tests were removed together. A predicate that reads the message list
+silently stops working on exactly the long runs that need it most — still the reason the
+remaining predicates read the engine's own records instead.

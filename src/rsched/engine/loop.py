@@ -184,7 +184,7 @@ class EngineLoop:
                     if self._finish_reserved:
                         return self._finish_run(
                             "partial", f"Run stopped by the engine: {spent['message']}. "
-                                       "Progress so far is in the transcript and LEDGER.")
+                                       "Progress so far is in the transcript.")
                     loopnudge.reserve_finish(self, spent)
                 self._turn_boundary()
                 retries_before = ctx.schema_retries

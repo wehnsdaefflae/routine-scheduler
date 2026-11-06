@@ -2658,7 +2658,7 @@ def test_the_file_endpoint_edits_the_recipe_and_nothing_that_has_an_owner(client
     was handed — a second, unvalidated, non-atomic config writer beside the one PATCH. A
     `routine.yaml` through this door bypasses RoutinePatch's extra="forbid", the permission
     floor, the rescan and the live-run signal; `state/finish-line.json` has an
-    endpoint documented as its only writer, and the engine owns `.memory/INDEX.md`.
+    endpoint documented as its only writer, and the engine owns `.memory/INDEX.md` and LEDGER.
 
     The recipe stays editable — that is what this endpoint is for, `.memory/` notes included.
     """
@@ -2671,9 +2671,9 @@ def test_the_file_endpoint_edits_the_recipe_and_nothing_that_has_an_owner(client
                  json={"path": ".memory/note.md", "content": "a note\n"}).status_code == 200
     for path, owner in (("routine.yaml", "PATCH"),
                         ("state/finish-line.json", "finish-line"),
-                        (".memory/INDEX.md", "engine"),
+                        (".memory/INDEX.md", "engine"), ("LEDGER.md", "engine"),
                         ("runs/2026-01-01T000000/status.json", "engine"),
-                        ("inbox/msg-x.json", "message")):
+                        ("inbox/msg-x.json", "message"), (".ledger/2026-11.md", "engine")):
         r = c.put("/api/routines/apir/file", json={"path": path, "content": "x"})
         assert r.status_code == 400, (path, r.status_code)
         assert owner in r.json()["detail"], (path, r.json()["detail"])
