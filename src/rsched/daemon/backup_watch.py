@@ -49,6 +49,7 @@ next staleness is reported rather than swallowed.
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
 from datetime import UTC, datetime, timedelta
@@ -116,23 +117,46 @@ def backup_roots(env: dict[str, str] | None = None) -> list[Path]:
     return seen
 
 
-def newest_stamp(name: str, roots: list[Path]) -> tuple[datetime | None, Path | None]:
-    """The newest instant any root's `name` stamp holds, and which stamp said so — (None, None)
-    when no candidate root holds a readable one (an unmounted share, a host that never ran a
-    backup, or — for the attempt stamp — a backup.sh older than it).
+#: The errnos that mean "this process may not LOOK", as distinct from "it is not there": a
+#: Landlock/permission refusal on the open or on the directory traversal. EROFS and friends are
+#: deliberately absent — they are not refusals of a READ.
+_REFUSED_ERRNOS = frozenset({errno.EACCES, errno.EPERM})
+
+
+def newest_stamp(name: str, roots: list[Path]
+                 ) -> tuple[datetime | None, Path | None, list[tuple[Path, str]]]:
+    """The newest instant any root's `name` stamp holds, which stamp said so, and the roots this
+    process was REFUSED — (None, None, []) when no root holds a readable stamp and none refused
+    (an unmounted share, a host that never ran a backup, or — for the attempt stamp — a
+    backup.sh older than it).
+
+    THE THIRD VALUE EXISTS BECAUSE THE TWO ARE OPPOSITE FINDINGS (the operator, 2026-11-06:
+    "Both: I will do the sudo part AND you build the ENOENT/EACCES split"). Every `OSError` used
+    to become `continue`, so "the stamp is not there" and "I am not allowed to read it" produced
+    identical output — and the detail then asserted one cause out of three ("the share may not be
+    mounted"). For the local tier that was simply wrong: the disk IS mounted and the directory IS
+    owned by the daemon's uid, but `/mnt/usb500` is outside every routine run's read roots, so
+    `stat` answers while `open` raises EACCES, and no run could tell. An absent stamp means the
+    backup did not run; a refused one means nothing about the backup and everything about where
+    the reader is standing — one calls for `journalctl`, the other for a root.
     """
     newest: datetime | None = None
     which: Path | None = None
+    blocked: list[tuple[Path, str]] = []
     for root in roots:
         stamp = Path(root) / name
         try:
             text = stamp.read_text(encoding="utf-8").strip()
-        except OSError:
+        except FileNotFoundError:
+            continue                      # no stamp here: the ordinary "it did not run" case
+        except OSError as exc:
+            if exc.errno in _REFUSED_ERRNOS:
+                blocked.append((Path(root), os.strerror(exc.errno or 0)))
             continue
         when = instant(text)
         if when is not None and (newest is None or when > newest):
             newest, which = when, stamp
-    return newest, which
+    return newest, which, blocked
 
 
 #: Worst first: a tier's verdict is reported in this order, so the serious one is never masked by
@@ -171,8 +195,8 @@ def staleness(now: datetime | None = None, roots: list[Path] | None = None) -> t
 def _tier_staleness(now: datetime | None, roots: list[Path] | None) -> tuple[str, str]:
     """One verdict over `roots` read as a single tier — the stamp arithmetic, unchanged."""
     candidates = roots if roots is not None else backup_roots()
-    when, stamp = newest_stamp(COMPLETED_STAMP, candidates)
-    began, _ = newest_stamp(STARTED_STAMP, candidates)
+    when, stamp, blocked = newest_stamp(COMPLETED_STAMP, candidates)
+    began, _, _ = newest_stamp(STARTED_STAMP, candidates)
     moment = now or datetime.now(UTC)
     unfinished = (began is not None and (when is None or began > when)
                   and moment - began > timedelta(hours=ATTEMPT_BOUND_HOURS))
@@ -184,6 +208,15 @@ def _tier_staleness(now: datetime | None, roots: list[Path] | None) -> tuple[str
                          "`journalctl --user -u rsched-backup`")
     if when is None:
         looked = ", ".join(str(r) for r in candidates)
+        if blocked:
+            # REFUSED, not absent: say so instead of asserting the mount theory. `unknown` is
+            # still the right STATE — nothing is claimed about the backup either way — so the
+            # distinction lives here, where a person reads it and reaches for the right tool.
+            refused = "; ".join(f"{root} ({why})" for root, why in blocked)
+            return "unknown", (f"{COMPLETED_STAMP} could not be read under {refused} — this "
+                               "process may not look there, which says nothing about the "
+                               "backup. Check it from a shell that can: "
+                               "`ls -la <root>` and `journalctl --user -u rsched-backup`")
         return "unknown", (f"no readable {COMPLETED_STAMP} under any backup root "
                            f"({looked or 'none'}) — the share may not be mounted where this "
                            "process can see it")
