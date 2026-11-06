@@ -117,6 +117,11 @@ def cmd_daemon(_args) -> int:
     # from the three weeks since step 4 — before the app starts, so nothing appends meanwhile
     from .migrate_report_hooks import run_migration as carry_report_hooks
     carry_report_hooks(server)
+    # MIGRATION(expires=2026-12-31): every routine's assist tally grows from an int per key to
+    # the stat fields a reminder's keeps, so the four outcome labels D239 wired have somewhere
+    # to go and the fires already counted stay the denominator they are read against
+    from .migrate_assist_stats import run_migration as grow_assist_tallies
+    grow_assist_tallies(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

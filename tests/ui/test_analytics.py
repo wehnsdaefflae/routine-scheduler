@@ -192,11 +192,22 @@ def test_cautions_table_shows_the_tallies_and_deletes_a_local_reminder(ui, ui_pa
         id="rem-mv", regex="^util:fs-ops mv ", description="it overwrites the destination",
         scope="local", created_run="r:1",
         stats={**store.blank_stats(), "fires": 3, "could_not": 2})], {})
-    atomic_write_json(d / "state" / "assists.json", {"git-checkpoint:pre-action": 4})
+    # the assist tally keeps the same stat fields a reminder's does (D239), and the row shows
+    # the four outcome labels beside `fires` — a turn-costing hold with nothing but a count
+    # cannot be reviewed for precision at all
+    atomic_write_json(d / "state" / "assists.json",
+                      {"git-checkpoint/before-the-first-repo-edit":
+                       {"fires": 4, "could_not": 3, "would_have": 1, "did": 0, "didnt": 0}})
 
     ui_page.goto(f"{ui.url}/#/changes/uir")
     expect(ui_page.get_by_text("it overwrites the destination")).to_be_visible()
-    expect(ui_page.locator('td[title="git-checkpoint:pre-action"]')).to_be_visible()
+    key_cell = ui_page.locator('td[title="git-checkpoint/before-the-first-repo-edit"]')
+    expect(key_cell).to_have_count(1)
+    expect(key_cell).to_be_visible()
+    assist_row = ui_page.locator("tr", has=key_cell)
+    expect(assist_row).to_have_count(1)
+    # fires, then could_not / would_have / did / didnt — an unlabelled column reads as a dash
+    expect(assist_row.locator("td.num")).to_have_text(["4", "3", "1", "—", "—"])
 
     ui_page.get_by_role("button", name="delete").first.click()
     ui_page.get_by_role("button", name="delete", exact=True).last.click()

@@ -86,7 +86,7 @@ def test_an_observation_assist_does_not_fire_again_after_a_resume(make_routine, 
               finish()])
     status, _run_dir = run_routine(d, server, run_ts=TS, resume_from=TS)
     assert status == "ok"
-    assert json.loads(lib.state_path(d).read_text())["fix-the-cause/m"] == 1
+    assert json.loads(lib.state_path(d).read_text())["fix-the-cause/m"]["fires"] == 1
 
 
 def test_a_boundary_assist_does_not_fire_again_after_a_resume(make_routine, scripted):
