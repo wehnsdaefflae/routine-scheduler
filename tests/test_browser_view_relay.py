@@ -113,3 +113,27 @@ def test_the_relay_authenticates_to_the_sidecar(app_client, monkeypatch):
     r = client.get("/browser-view/app/ui.js", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 200
     assert built["request_headers"].get("Authorization") == "Bearer t0k"
+
+
+def test_the_screen_admits_simultaneous_viewers():
+    """TWO console surfaces depend on this one word, and nothing pinned it (R3206).
+
+    `api_screen_view` opens an independent upstream socket per accepted viewer with no lock,
+    semaphore or viewer registry, so whether a second surface gets a picture is decided entirely
+    by the RFB server: `-shared` tells x11vnc not to drop the incumbent viewer when another
+    connects. Since 0.501.0 the browser DOCK and the full-screen `#/browser` page are both
+    allowed to hold a connection (docs/designs.md, tests/ui/test_browser_dock_seat.py), and the
+    repo's prose said the opposite — "one viewer at a time" — until that release corrected it.
+
+    Dropping the flag in a tidy-up would make the two surfaces contend for the screen, and the
+    symptom (a viewer that hangs up whenever the other opens) reads as a flaky relay rather than
+    as a deployment change. Asserted on the deploy file's text, like
+    tests/test_backup_watch.py::test_the_attempt_bound_is_the_units_time_limit.
+    """
+    from pathlib import Path
+
+    entrypoint = (Path(__file__).resolve().parent.parent
+                  / "deploy" / "chrome-entrypoint.sh").read_text(encoding="utf-8")
+    invocation = [ln for ln in entrypoint.splitlines() if ln.startswith("x11vnc ")]
+    assert len(invocation) == 1, invocation
+    assert " -shared " in f"{invocation[0]} ", invocation[0]

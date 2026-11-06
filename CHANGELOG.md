@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.502.1] — 2026-11-05
+
+### the screen's `-shared` flag is pinned, because two surfaces now depend on it (R3206)
+
+`deploy/chrome-entrypoint.sh` starts x11vnc with `-shared`, which is what lets the console's
+browser dock and the full-screen `#/browser` page hold a viewer connection at the same time:
+`web/api_screen_view` opens an independent upstream socket per accepted viewer with no lock,
+semaphore or viewer registry, so the RFB server's admission policy is the only thing deciding it.
+Nothing in `tests/` asserted the flag. Until 0.501.0 the repo's own prose said the opposite —
+"one viewer at a time" — and the dock-seat decision was taken against that belief, so the
+property is both load-bearing and newly so. Dropping the flag in a tidy-up would make the two
+surfaces contend for the screen, and the symptom (a viewer that hangs up whenever the other opens)
+reads as a flaky relay rather than as a deployment change. One offline assertion in
+`tests/test_browser_view_relay.py` reads the entrypoint's single `x11vnc` invocation and requires
+it — proven to fail with the flag dropped and with it renamed to `-noshared`, and to survive
+whitespace jitter.
+
 ## [0.502.0] — 2026-11-05
 
 ### the nightly backup packs the loose objects and leaves the regenerable caches off-box (R3205)
