@@ -51,18 +51,31 @@ def test_the_rung_height_and_the_turn_interval_land_in_their_own_files(ui, ui_pa
     _slug, conv = start_conversation(ui, ui_page, "plan the sprint")
     _open_caps(ui_page)
 
-    # Each commit is its own PATCH, so each is awaited by its RESPONSE rather than by the
-    # toast: the toast from the previous save is still on screen, so `to_contain_text("ladder
-    # saved")` passes before the next request has even been sent — which is how the first
-    # version of this test read an empty tuning.yaml while the API-level test of the same write
-    # passed.
-    def commit(fill):
-        with ui_page.expect_response(
-                lambda r: "/api/conversations/" in r.url and r.request.method == "PATCH") as got:
+    # Each commit is awaited by the RESPONSE TO ITS OWN PATCH — matched on the field that
+    # request carries, not merely on "a PATCH happened".
+    #
+    # Two races had to be closed here, and the second only showed up under gate load. The
+    # toast is useless as a signal: the previous save's toast is still on screen, so
+    # `to_contain_text("ladder saved")` passes before the next request has even been sent.
+    # But matching any `PATCH /api/conversations/` is not enough either — the predicate can
+    # match the PREVIOUS commit's response, still in flight, and the test then reads
+    # `tuning.yaml` while the interval's write has not landed (`KeyError:
+    # 'ladder_turn_interval'`, gate 1793979003964198600's browser stage, parallel AND serial).
+    # Keying on the request's own body makes each wait the right one.
+    def commit(field, fill):
+        def mine(r):
+            if "/api/conversations/" not in r.url or r.request.method != "PATCH":
+                return False
+            try:
+                return field in (r.request.post_data_json or {})
+            except (ValueError, TypeError):
+                return False
+
+        with ui_page.expect_response(mine) as got:
             fill()
         assert got.value.status == 200, got.value.text()
 
-    commit(lambda: ui_page.locator("[data-ladder-enabled]").check())
+    commit("ladder", lambda: ui_page.locator("[data-ladder-enabled]").check())
     expect(visible_toast(ui_page)).to_contain_text("ladder saved")
     height = ui_page.locator("[data-ladder-rung-height]")
     interval = ui_page.locator("[data-ladder-interval]")
@@ -76,8 +89,8 @@ def test_the_rung_height_and_the_turn_interval_land_in_their_own_files(ui, ui_pa
         interval.fill("20")
         interval.dispatch_event("change")
 
-    commit(set_height)
-    commit(set_interval)
+    commit("ladder", set_height)
+    commit("ladder_turn_interval", set_interval)
 
     stored = yaml.safe_load((conv / "routine.yaml").read_text(encoding="utf-8")) or {}
     assert stored["ladder"] == {"enabled": True, "rung_height": 2}
