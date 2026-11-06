@@ -732,7 +732,14 @@ and the capabilities digest's catalog listing):
   belong to — `ladder` under **Limits & reach → Oversight** (config, so it saves through the
   page's one accept bar, and the section names `budgets.max_subrun_depth` when that already caps
   the depth being chosen), and the interval knobs under **Models → Rung intervals** beside
-  Deliberation, the other tuning key (`components/ladder-settings.js`). All three are in the
+  Deliberation, the other tuning key (`components/ladder-settings.js`). **A CONVERSATION switches
+  it on from its capabilities panel** (D216 part d), through `ladderPanel` — the same two controls
+  as one block, since a conversation saves on commit and has no accept bar to split them across.
+  The engine never gated the ladder on being a routine (`ladder_settings` reads `ctx.routine`,
+  and a conversation IS a `RoutineConfig`), so what was missing was the surface and the PATCH
+  vocabulary: `ladder` and both knobs are now in `CONVERSATION_PATCH_FIELDS`, and
+  `patch_merge.validate_tuning`/`apply_tuning` are shared by both PATCHes so the engine's floor
+  is applied once rather than copied. All three are in the
   settings vocabulary (`patterns/fields`), so a PATTERN may carry them — a family of routines that
   should be supervised is exactly what a pattern says — and the page marks an override like any
   other field. An empty `oversight_turns` shows the number the engine will DERIVE rather than a
@@ -754,7 +761,10 @@ and the capabilities digest's catalog listing):
   live, before any accept), and `uncensored` to NOTHING AT ALL — an unset uncensored role means
   referral is off, there is no system-model fallback behind it (`endpoints.for_uncensored`).
   One template for all four is how the supervisor row shipped claiming the system model while
-  its own description beside it said "blank = main".
+  its own description beside it said "blank = main". A CONVERSATION's header carries the
+  supervisor picker too (D216 part d) — and had to, because `validate_models` REPLACES the role
+  block wholesale: the header builds its PATCH body from the pickers it shows, so a `supervisor`
+  written into a conversation's `routine.yaml` by hand was erased by the next model save.
 - `tuning.yaml` — the routine's machine-tunable BEHAVIOR parameters, classed with the RECIPE
   (editable by a routine holding `write_recipe`; config stays sealed — the file boundary IS the
   permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how

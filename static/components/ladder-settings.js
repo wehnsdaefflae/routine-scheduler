@@ -82,6 +82,32 @@ export function ladderSwitch(value, { onCommit, depthCeiling } = {}) {
 }
 
 /**
+ * BOTH controls as one panel, for a surface that SAVES ON COMMIT rather than through an accept
+ * bar — a conversation (D216 (d)). `onPatch` receives the PATCH body to send, which is the whole
+ * `{ladder: {...}}` block from the switch or one `{key: value}` from the intervals; the caller
+ * does the request and the toasting, so this component still decides nothing about transport.
+ *
+ * Why a panel and not two mounts at the call site: the routine page puts the config half in its
+ * Limits group and the tuning half in its Models group, because each saves with its own class of
+ * field. A conversation has one panel and no accept bar, so the split would be invisible there —
+ * while the LABELS still have to say which half is which, since that is the authority boundary.
+ */
+export function ladderPanel(detail, { onPatch } = {}) {
+  const sw = ladderSwitch(detail.ladder, { onCommit: (ladder) => onPatch?.({ ladder }),
+                                           depthCeiling: detail.max_subrun_depth });
+  const iv = ladderIntervals({ interval: detail.ladder_turn_interval,
+                               turns: detail.oversight_turns },
+                             { onCommit: (one) => onPatch?.(one) });
+  return {
+    // No class of its own: a NEW class a module mounts must be styled (the class contract is
+    // pinned in the FAST stage) and both stylesheets sit at their size-ratchet ceilings. The
+    // two children carry `ladder-set`, which is already styled.
+    node: el("div", {}, sw.node, el("div", { class: "mt" }, iv.node)),
+    get value() { return { ladder: sw.value, ...iv.value }; },
+  };
+}
+
+/**
  * `ladder_turn_interval` + `oversight_turns` (tuning). `onCommit` receives one `{key: value}` at
  * a time, because the two land in tuning.yaml independently; `oversight_turns` commits `null`
  * when cleared, which is how the engine is told to derive it again.

@@ -28,7 +28,7 @@
     "src/rsched/sandbox.py": 412,
     "src/rsched/utils_run.py": 520,
     "src/rsched/web/api_questions.py": 392,
-    "src/rsched/web/api_routine_patch.py": 413,
+    "src/rsched/web/api_routine_patch.py": 392,
     "src/rsched/web/api_routines.py": 380,
     "static/app.js": 398,
     "static/base.css": 1203,

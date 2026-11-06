@@ -32,10 +32,14 @@ quietly stopped appearing.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import HTTPException
 
-from ..config.base import DEFAULT_LADDER, LADDER_KEYS
+from ..config import DELIBERATION_LEVELS, write_tuning
+from ..config.base import DEFAULT_LADDER, LADDER_KEYS, TUNING_KEYS
 from ..config.routine import RunGateConfig
+from ..engine.ladder import MIN_OVERSIGHT_TURNS
 
 #: `run_gate`'s whole vocabulary, taken from the model that validates the merge rather than
 #: restated — a field added there is accepted here without a second edit.
@@ -58,6 +62,57 @@ def merge_block(stored: dict, patch: object, known: frozenset[str],
     merged = {**stored, **patch}
     repaired = [f"{label}.{key}" for key in sorted(set(merged) - known)]
     return {key: val for key, val in merged.items() if key in known}, repaired
+
+
+#: The tuning vocabulary, taken from `config.base.TUNING_KEYS`: a knob given a control must not
+#: need a second edit here to be saved.
+TUNING_FIELDS = TUNING_KEYS
+
+
+def validate_tuning(tuning: dict) -> None:
+    """Judge every tuning field BEFORE anything is written (the all-or-nothing contract).
+
+    Both ladder knobs are counted in TURNS and the ONE floor applied here is the engine's own
+    `engine/ladder.MIN_OVERSIGHT_TURNS` (`DEFAULT_TURN_INTERVAL` is a default, not a floor, and
+    is neither applied nor imported — F725): under it an interval is too short to be judged,
+    and a rung with fewer turns finishes with nothing, which reads as `continue` — invisibly.
+
+    Shared by BOTH surfaces (D216 (d)): it moved here from `api_routine_patch` when the
+    conversation PATCH gained the same knobs, because this file already holds the appliers both
+    call and a second copy of a floor is how the two homes come to mean different things.
+    """
+    level = tuning.get("deliberation")
+    if level is not None and level not in DELIBERATION_LEVELS:
+        raise HTTPException(400, f"deliberation: unknown level {level!r} "
+                                 f"(expected one of {DELIBERATION_LEVELS})")
+    for key in ("ladder_turn_interval", "oversight_turns"):
+        val = tuning.get(key)
+        if val is None:
+            continue
+        # `oversight_turns: 0` is the one spelling of "derive it again" and is written as a
+        # REMOVAL below, so it is sound here; a turn interval of 0 is not — there is no
+        # interval to derive from.
+        if key == "oversight_turns" and val == 0:
+            continue
+        if isinstance(val, bool) or not isinstance(val, int) or val < MIN_OVERSIGHT_TURNS:
+            raise HTTPException(400, f"{key}: expected a whole number of turns of at least "
+                                     f"{MIN_OVERSIGHT_TURNS} (got {val!r}) — a shorter interval "
+                                     "cannot be judged, and a rung given fewer turns than that "
+                                     "hands back nothing, which reads as `continue`"
+                                     + (" (0 = derive it from the turn interval)"
+                                        if key == "oversight_turns" else ""))
+
+
+def apply_tuning(routine_dir: Path, tuning: dict) -> list[str]:
+    """Validate the tuning block, then write it — returning the keys `write_tuning` DROPPED.
+
+    `oversight_turns: 0` means DERIVE it, written as a REMOVAL: absence is that knob's one
+    spelling of its derived default (`engine/ladder.oversight_turns_for`).
+    """
+    validate_tuning(tuning)
+    if tuning.get("oversight_turns") == 0:
+        tuning["oversight_turns"] = None
+    return [f"tuning.{k}" for k in write_tuning(routine_dir, tuning)]
 
 
 def apply_ladder(raw: dict, updates: dict) -> list[str]:

@@ -15,7 +15,9 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from .. import conversations as conv_mod
-from ..config import DELIBERATION_LEVELS, ROUTINE_MODEL_ROLES, write_tuning
+from ..config import ROUTINE_MODEL_ROLES
+from ..config.base import DEFAULT_LADDER
+from ..engine.ladder import DEFAULT_TURN_INTERVAL, oversight_turns_for
 from ..paths import atomic_write_yaml, read_yaml
 from . import playbook_offer
 from .api_background import list_background_rows
@@ -41,6 +43,7 @@ from .conversations_common import (
     conversation_info,
 )
 from .model_fit import window_meta
+from .patch_merge import TUNING_FIELDS, apply_ladder, apply_tuning
 from .routines_common import (
     active_run_dir,
     permission_layers_detail,
@@ -107,6 +110,19 @@ def detail(request: Request, slug: str) -> dict:
         "rules": list(info.cfg.rules),
         "budgets": info.cfg.budgets,
         "deliberation": info.cfg.deliberation,
+        # D216 (d): the ESCALATION LADDER, served exactly as the routine page serves it — the
+        # same split across two authority classes. `ladder` is CONFIG (whether this thread's
+        # replies are supervised and how high the ladder may go), the two TURN knobs are tuning
+        # (recipe-classed, so a meta-routine may re-level them on evidence). `oversight_turns`
+        # null means DERIVED (`n // 2 + 1`, floored), not unset — hence the derived value
+        # beside it, which is what a blank field falls back to.
+        "ladder": {**DEFAULT_LADDER, **(info.cfg.ladder or {})},
+        "ladder_turn_interval": (info.cfg.tuning.get("ladder_turn_interval")
+                                 or DEFAULT_TURN_INTERVAL),
+        "oversight_turns": info.cfg.tuning.get("oversight_turns"),
+        "oversight_turns_derived": oversight_turns_for(
+            int(info.cfg.tuning.get("ladder_turn_interval") or DEFAULT_TURN_INTERVAL)),
+        "max_subrun_depth": info.cfg.budgets.get("max_subrun_depth"),
         "runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state} for r in info.runs],
         "background": list_background_rows(request, slug),
         "problems": info.problems,
@@ -127,6 +143,11 @@ class ConversationPatch(BaseModel):
     deliberation: str | None = None   # DELIBERATION_LEVELS — applies at the next reply
     fs_read_roots: list[str] | None = None    # D82: full folder-access lists — REPLACE
     fs_write_roots: list[str] | None = None   # wholesale (workdir stays write_roots[0])
+    # D216 (d): the escalation ladder. `ladder` is CONFIG (a PARTIAL block — the switch toggles
+    # `enabled` without resending the rung height), the two knobs are TUNING.
+    ladder: dict | None = None
+    ladder_turn_interval: int | None = None
+    oversight_turns: int | None = None
 
 @router.patch("/conversations/{slug}")
 def patch_conversation(request: Request, slug: str, patch: ConversationPatch) -> dict:
@@ -182,15 +203,18 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
     if "machines" in updates:
         raw["machines"] = validate_machines(request.app.state.server, updates["machines"])
     repaired: list[str] = []
-    if "deliberation" in updates:   # tuning, not config — lands in tuning.yaml
-        if updates["deliberation"] not in DELIBERATION_LEVELS:
-            raise HTTPException(400, f"deliberation: unknown level "
-                                     f"{updates['deliberation']!r}")
-        # F759: the writer holds tuning.yaml to the vocabulary `load_tuning` reads and names
-        # what it dropped — a renamed key is cleared by an ordinary save, and SAID, here too.
-        repaired = [f"tuning.{k}"
-                    for k in write_tuning(info.cfg.dir, {"deliberation": updates["deliberation"]})]
-    if set(updates) - {"deliberation"}:   # a tuning-only patch never rewrites routine.yaml
+    # D216 (d): `ladder` is CONFIG and merges into routine.yaml through the SAME applier the
+    # routine PATCH uses — it refuses a bad value rather than letting the loader degrade it
+    # toward OFF, which is what makes "saved" honest here.
+    if "ladder" in updates:
+        repaired += apply_ladder(raw, dict(updates))
+    # The TUNING keys (recipe-classed: tuning.yaml, never the user's routine.yaml) go through
+    # the one shared validator+writer, so a conversation's floors are the engine's own.
+    # F759: it names what `load_tuning`'s vocabulary dropped — a renamed key is cleared by an
+    # ordinary save, and SAID, here too.
+    if tuning := {k: updates[k] for k in TUNING_FIELDS if k in updates}:
+        repaired += apply_tuning(info.cfg.dir, tuning)
+    if set(updates) - set(TUNING_FIELDS):   # a tuning-only patch never rewrites routine.yaml
         atomic_write_yaml(path, raw)
     # F337: a reply already in flight booted from the OLD config. Tell it what changed and
     # which half reaches it now — the same one classification the routine page's PATCH uses,

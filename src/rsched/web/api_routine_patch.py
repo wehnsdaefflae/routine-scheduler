@@ -30,7 +30,7 @@ from .config_fields import (
     validate_roots,
 )
 from .patch_bindings import apply_bindings
-from .patch_merge import apply_ladder, apply_run_gate
+from .patch_merge import apply_ladder, apply_run_gate, apply_tuning, validate_tuning
 from .routines_common import (
     _git_commit,
     _info,
@@ -143,34 +143,12 @@ assert not set(TUNING_FIELDS) - set(RoutinePatch.model_fields), (  # noqa: S101
     f"{sorted(set(TUNING_FIELDS) - set(RoutinePatch.model_fields))}")
 
 
-def _validate_tuning(tuning: dict) -> None:
-    """Judge every tuning field BEFORE anything is written (the all-or-nothing contract).
-
-    Both ladder knobs are counted in TURNS and the ONE floor applied here is the engine's own
-    `engine/ladder.MIN_OVERSIGHT_TURNS` (`DEFAULT_TURN_INTERVAL` is a default, not a floor, and
-    is neither applied nor imported — F725): under it an interval is too short to be judged,
-    and a rung with fewer turns finishes with nothing, which reads as `continue` — invisibly.
-    """
-    level = tuning.get("deliberation")
-    if level is not None and level not in DELIBERATION_LEVELS:
-        raise HTTPException(400, f"deliberation: unknown level {level!r} "
-                                 f"(expected one of {DELIBERATION_LEVELS})")
-    for key in ("ladder_turn_interval", "oversight_turns"):
-        val = tuning.get(key)
-        if val is None:
-            continue
-        # `oversight_turns: 0` is the one spelling of "derive it again" and is written as a
-        # REMOVAL below, so it is sound here; a turn interval of 0 is not — there is no
-        # interval to derive from.
-        if key == "oversight_turns" and val == 0:
-            continue
-        if isinstance(val, bool) or not isinstance(val, int) or val < MIN_OVERSIGHT_TURNS:
-            raise HTTPException(400, f"{key}: expected a whole number of turns of at least "
-                                     f"{MIN_OVERSIGHT_TURNS} (got {val!r}) — a shorter interval "
-                                     "cannot be judged, and a rung given fewer turns than that "
-                                     "hands back nothing, which reads as `continue`"
-                                     + (" (0 = derive it from the turn interval)"
-                                        if key == "oversight_turns" else ""))
+#: D216 (d): `_validate_tuning` MOVED to `patch_merge.validate_tuning` when the conversation
+#: PATCH gained the same two ladder knobs — that file already holds the appliers both surfaces
+#: call, and a second copy of the engine's own floor is how two homes come to mean different
+#: things. Re-exported under its old name because `tests/test_ladder_settings_api.py` and
+#: `patterns/validate.py`'s gap prose both name it here.
+_validate_tuning = validate_tuning
 
 
 def _apply_pattern_fields(server, raw: dict, updates: dict) -> None:
@@ -350,13 +328,11 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
     # measured evidence), so the handling is one set rather than a special case per key.
     tuning = {k: updates.pop(k) for k in TUNING_FIELDS if updates.get(k) is not None}
     if tuning:
-        _validate_tuning(tuning)
-        # `oversight_turns: 0` means DERIVE it: written as a removal, because absence is that
-        # knob's one spelling of its derived default (engine/ladder.oversight_turns_for).
-        if tuning.get("oversight_turns") == 0:
-            tuning["oversight_turns"] = None
+        validate_tuning(tuning)
         if not updates:
-            fixed = [f"tuning.{k}" for k in write_tuning(info.cfg.dir, tuning)]
+            # `apply_tuning` re-validates (cheap, and it is the shared entry point both
+            # surfaces call) and applies the `oversight_turns: 0` → removal rule.
+            fixed = apply_tuning(info.cfg.dir, tuning)
             _git_commit(request, info.cfg.dir,
                         f"tuning.yaml edit via web ({', '.join(tuning)})")
             _state(request).scheduler.rescan()
@@ -401,7 +377,10 @@ def apply_updates(request: Request, info, updates: dict, *, message: str = "") -
         else:
             raw[key] = val
     if tuning:
-        repaired += [f"tuning.{k}" for k in write_tuning(info.cfg.dir, tuning)]
+        # The MIXED patch's write (config keys passed, so routine.yaml was rewritten above).
+        # Through the SAME shared helper as the tuning-only path: the `oversight_turns: 0` →
+        # removal rule used to sit before both and would otherwise be lost on this one.
+        repaired += apply_tuning(info.cfg.dir, tuning)
     # F337 rides in the shared writer: a run already in flight booted its policy, schema and
     # prompt from the OLD config, and is told what changed and which half reaches it now.
     live = write_routine_config(
