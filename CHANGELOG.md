@@ -15,6 +15,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.506.0] — 2026-11-06
+
+### A raise gives a run its turns back, and the most expensive output a run buys stops losing its middle
+
+**A live budget RAISE now withdraws the spent reserved finish turn** (D244, review item E1.4).
+The first budget violation grants one more turn with the schema narrowed to `finish`, so a run
+ends in its own words instead of an engine string. Budgets are LIVE config, adopted at a turn
+boundary. The two never met, and the reason is pure ORDERING: `EngineLoop.run` asks
+`ctx.budget_spent()` at the TOP of its loop and calls `_turn_boundary()` after it — and the
+boundary is where the raise is adopted. So the raise arrived one step too late **every time**,
+and a run whose operator had just given it another 40 turns still stood in a finish-only grammar
+until the next RUN. The withdrawal now happens where the raise lands
+(`switches._withdraw_reserve`): the violation is re-asked, and if nothing is over its limit the
+flag is cleared, the FULL action schema restored — the narrowed grammar is what actually stops
+the run working — and ONE engine note says so, because a run told "this is your LAST turn" has
+to be told just as plainly when that stops being true. A raise too small to clear the violation
+changes nothing, so this cannot be used to walk past a budget by patching it upward by one.
+The red-first test is worth a sentence of its own: the first version wrote `control.json` before
+the run started, which gets it adopted at the FIRST boundary with nothing spent — the reserve
+never fires and the test passes while proving nothing. The raise is now written from inside the
+last pre-violation turn, and the probe is a `write_file`, which under the reserved turn's grammar
+is not expressible at all — so a landed write proves the SCHEMA came back, not merely that a flag
+flipped.
+
+**An oversized `llm` reply spills instead of losing its middle** (D246's first increment, and the
+only item in its group that loses information). `do_llm` ended with the head-and-tail truncation,
+which elides the middle and keeps nothing — while `util`, `script` and `shell` have always written
+the whole stream to `.util_outputs/` and carried a `[full output]` pointer to it. The one kind
+whose output is a MODEL's answer, the most expensive thing a run buys and the least reproducible
+since a re-ask returns a different reply, was the kind that threw it away. It now spills through
+the same store with the same pointer sentence, appended by a new `outputs.observation_tail` at
+the one place a rendered observation is assembled — so every kind that spills gets it, instead of
+each renderer growing its own copy (`util`/`script`/`shell` are excluded there by name because
+their shared body already emits it). Both obvious homes for that helper were full: the `llm`
+renderer sits at exactly 350/350 and `observations.py` at 348, and putting it in the latter took
+that file to 368, which the ratchet refuses to baseline — `outputs.py`, which owns the store and
+the pointer sentence, is where it belonged anyway.
+
 ## [0.505.0] — 2026-11-06
 
 ### A hold can be labelled, a claim must have executed, and five migrations that had done their work are gone
