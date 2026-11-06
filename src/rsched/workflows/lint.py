@@ -1,7 +1,9 @@
 """Workflow/rule/permission conformance — the gu-lint equivalent for the library.
 
 Library workflows (Python patterns): META completeness, slug↔filename, resolvable includes,
-a main() entry, PHASES, and an action-import line that agrees with the `tools:` allowlist.
+a main() entry, PHASES, an action-import line that agrees with the `tools:` allowlist, and a
+contract that names only the task (`taskcontract.pattern_problems`: DONE_WHEN's shape, no line
+about the run's own record, no ledger helper or ledger-write instruction).
 Materialized copies: provenance + no unresolved placeholders. Rules: titled principle prose,
 no capabilities. Permissions: titled, with a well-formed `requires:` key (the capabilities
 their instructions presume — see grants.py). Global reminders: a well-formed
@@ -14,7 +16,6 @@ late was otherwise found by whatever read it next.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import frontmatter
@@ -22,6 +23,7 @@ import yaml
 
 from ..ids import is_slug
 from .library import permissions_dir, rules_dir, workflows_dir
+from .taskcontract import pattern_problems
 
 
 def lint_workflow_py(source: str, *, filename: str, rule_slugs: list[str]) -> list[str]:
@@ -55,31 +57,9 @@ def lint_workflow_py(source: str, *, filename: str, rule_slugs: list[str]) -> li
         problems.append(f"{filename}: no top-level main() function (the per-run control flow)")
     if not meta.get("phases"):
         problems.append(f"{filename}: missing PHASES (the cross-run progression)")
-    problems += _done_when_problems(meta, filename)
+    problems += pattern_problems(source, meta, filename)
     problems += _tools_problems(meta, filename)
     return problems
-
-
-_DONE_LINE_RE = re.compile(r"^d(\d+) · [a-z_][a-z0-9_]* — \S")
-
-
-def _done_when_problems(meta: dict, filename: str) -> list[str]:
-    """A task pattern names what one finished run leaves behind — the skeleton of every recipe
-    decomposed from it, accounted line by line at each finish. A harness (`meta`) is exempt:
-    it serves a person in the loop, not a recipe.
-    """
-    if "meta" in (meta.get("tags") or []):
-        return []
-    lines = meta.get("done_when") or []
-    if not lines:
-        return [f"{filename}: missing DONE_WHEN (what one finished run leaves behind)"]
-    bad = [str(x)[:50] for x in lines if not _DONE_LINE_RE.match(str(x))]
-    ids = [int(m[1]) for x in lines if (m := _DONE_LINE_RE.match(str(x)))]
-    out = [f'{filename}: DONE_WHEN line {b!r} is not "d<n> · <step> — <outcome>"'
-           for b in bad]
-    if ids != list(range(1, len(ids) + 1)):
-        out.append(f"{filename}: DONE_WHEN ids run d1, d2, … in order")
-    return out
 
 
 def _tools_problems(meta: dict, filename: str) -> list[str]:

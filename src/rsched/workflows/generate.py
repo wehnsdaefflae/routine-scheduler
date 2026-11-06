@@ -13,6 +13,7 @@ from ..ids import slugify
 from ..paths import atomic_write
 from .library import list_rules, read_workflow, workflows_dir
 from .lint import lint_workflow_py
+from .taskcontract import PATTERN_CONTRACT
 
 FORMAT_SPEC = '''A library workflow is a single self-contained Python file (.py) that DEPICTS a
 routine's control flow — it is NEVER executed. Structure:
@@ -28,7 +29,8 @@ from routine.params import (
 )
 from routine.actions import read_file, write_file, util, write_util, llm, spawn, wait, \
 ask_user, finish
-from routine.state import phase, ledger
+from routine.state import phase    # ONLY when PHASES has more than one entry — the cross-run \
+lifecycle phase (state/phase.json)
 
 META = {
     "name": "<Human name>", "slug": "<kebab-case, equals the filename>",
@@ -57,12 +59,13 @@ if __name__ == "__main__":
 
 META / PHASES / DONE_WHEN must be plain literals (they are parsed statically with ast, never
 run).
-Write a DONE_WHEN list literal: what ONE finished run of this kind leaves behind, one string
-per outcome, `"d1 · <step> — <outcome>"` where <step> is the step function that produces it.
-Each is an outcome a run's own transcript can show; never "at least N"; never a cap phrased as
-a quota; never a prohibition (what a run must never do belongs to permissions and rules); and
-each must be answerable "not due, because …" on a run where it does not apply. Whether a
-routine ever finishes for good is NOT the pattern's to say — that is the operator's finish line.
+Write a DONE_WHEN list literal: what ONE finished run of this kind leaves behind, one string per
+outcome, `"d1 · <step> — <outcome>"` where <step> is the step function that produces it. Each is a
+TASK outcome a run's own transcript can show (see A CONTRACT NAMES ONLY THE TASK); never "at least
+N"; never a cap phrased as a quota; never a prohibition (what a run must never do belongs to
+permissions and rules); and each must be answerable "not due, because …" on a run where it does not
+apply. Whether a routine ever finishes for good is NOT the pattern's to say — that is the
+operator's finish line.
 Use the full range of Python control flow wherever it makes the process clearer.
 
 STEP SIZE — how much one run attempts. `main()` must SAY this, and the answer is: as much as
@@ -86,7 +89,9 @@ end of the job, where the run verifies the deliverable a final time, tells the u
 lives, and stops. A phase named in PHASES that nothing consumes is a lie the reader believes:
 `wind-down` and `wrap-up` sat in two library patterns and five live recipes for months while
 appearing NOWHERE in the engine. If the workflow is genuinely open-ended, give it a single
-phase and say so in the docstring — do not name an ending you do not implement.'''
+phase and say so in the docstring — do not name an ending you do not implement.
+
+A CONTRACT NAMES ONLY THE TASK. ''' + PATTERN_CONTRACT
 
 
 def generate(server: ServerConfig, instruction: str, hint: str = "",

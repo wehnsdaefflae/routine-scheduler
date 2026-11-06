@@ -40,7 +40,7 @@ from routine.params import (
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import read_file, write_file, util, write_util, report, finish
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Sync a mirror",
@@ -53,7 +53,7 @@ META = {
                    "run is mechanical and short, repairs the tools it depends on at the cause and "
                    "hands anything else to its owner. Not for maintaining the contents of what it "
                    "mirrors (maintain-a-codebase).",
-    "version": 1,
+    "version": 2,
     "tags": ["backup", "mirror", "git", "export", "nightly"],
     "includes": ["audit-coverage", "make-failure-visible", "change-scope"],
     "tools": None,          # None = every action kind the routine's capabilities allow
@@ -79,8 +79,6 @@ DONE_WHEN = [
     "back and reported",
     "d4 · push — the remote's head is this run's commit, read back after the push",
     "d5 · record_blocker — a refused push names its blocker, its owner and the owner's report",
-    "d6 · record — the LEDGER entry names the commit and the counts copied and removed; "
-    "state/phase.json names the phase",
 ]
 
 
@@ -96,7 +94,7 @@ class Blocker(Exception):
 
 def main():
     """One run: export, account for what the export removed, screen what is leaving, commit, pull,
-    push and read the head back, record."""
+    push and read the head back."""
     orient()
 
     if phase.current() == "bootstrap":
@@ -115,19 +113,17 @@ def main():
         push()
     except Blocker as blocker:
         record_blocker(blocker)                 # recognised from BLOCKERS, reported once
-        record(summary)
         return finish("partial", "Nothing pushed: the blocker, its owner, the report id.")
 
     if phase.current() == "blocked":
         phase.set("steady")                     # the owner cleared it; the push went through
-    record(summary)
     return finish("ok", "the commit, counts copied and removed, the remote head")
 
 
 def orient():
     """Read the state digest and BLOCKERS before exporting, so a known blocker is recognised.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers.
+    The digest carries the phase, the last result and any messages or answers.
     Reports handed to the routine arrive with it and are answered in this run."""
 
 
@@ -183,13 +179,3 @@ def record_blocker(blocker):
     owner and report id."""
 
 
-def record(summary):
-    """Append one LEDGER entry and set state/phase.json.
-
-    The entry names the commit, the counts copied and removed, anything held back and any blocker.
-    Record the phase under the key `phase`: the lifecycle label from PHASES, never the stage the
-    run is in. Rotate LEDGER.md in the run its size passes the byte cap the recipe names — derived
-    from this routine's own entries, set above the size of the tail it keeps with room for several
-    more — and when a rotation leaves the file over the cap or within one entry of it, fix the
-    numbers with that measurement."""
-    ledger.append("commit, copied / removed counts, held back, blocker")

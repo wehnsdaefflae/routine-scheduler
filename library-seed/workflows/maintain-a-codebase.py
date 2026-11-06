@@ -51,7 +51,7 @@ from routine.params import (
 from routine.actions import (read_file, write_file, edit_file, util, script, llm, spawn, subtask,
                              wait, view_image, memory_read, memory_write, ask_user, report,
                              finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Maintain a codebase",
@@ -69,7 +69,7 @@ META = {
                    "campaign. Not for one project with a counterparty and a finish line "
                    "(steward-a-project), nor for a shared library of rules or utils curated from "
                    "usage (curate-a-library).",
-    "version": 2,
+    "version": 3,
     "tags": ["code", "maintenance", "repository", "tests", "deploy", "campaign"],
     "includes": ["change-scope", "make-failure-visible", "work-order", "verify-independently",
                  "audit-coverage", "git-checkpoint"],
@@ -104,8 +104,8 @@ DONE_WHEN = [
     "the exact wording, or already waits on one",
     "d8 · answer_threads — every report handed to this routine is answered or closed; every public "
     "thread due a reply has one through CONTENT_GATE",
-    "d9 · record — FINDINGS holds the snapshot this run saw, what was fixed and what was left with "
-    "its reason; state/phase.json and state/gate.json are current",
+    "d9 · update_findings — FINDINGS holds the snapshot this run saw, what was fixed and what "
+    "was left with its reason",
 ]
 
 
@@ -126,7 +126,7 @@ class ConventionViolation(Exception):
 
 def main():
     """One run: queue first, snapshot, sync, sweep when due, triage, change and prove, gate the
-    tree, push, confirm live, propose content, answer every thread, record."""
+    tree, push, confirm live, propose content, answer every thread, update FINDINGS."""
     orient()
 
     if phase.current() == "stand-down":
@@ -147,7 +147,7 @@ def main():
     todo = triage(queue, snapshot, findings)
 
     if todo.empty():
-        record(start, applied=[], pushed=None)
+        update_findings(start, applied=[], pushed=None)
         write_gate_state(snapshot)
         return finish("ok", "Nothing due: queue empty, remote unchanged, last sweep recent — "
                             "each named with how it was checked.")
@@ -181,7 +181,7 @@ def main():
             pushed = None                       # held back and named; nothing unproven is pushed
 
     answer_threads(queue)
-    record(start, applied, pushed)
+    update_findings(start, applied, pushed)
     write_gate_state(snapshot)
     return finish("ok", "queue items, sweep findings, changes with their proofs, the pushed "
                         "commit and its live check, proposals, threads answered")
@@ -190,7 +190,7 @@ def main():
 def orient():
     """Read the state digest, FINDINGS and the campaign record before touching any repository.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers.
+    The digest carries the phase, the last result and any messages or answers.
     FINDINGS is what stops the routine re-litigating settled items: an issue examined and
     deliberately accepted is reported as such, not rediscovered and refixed."""
 
@@ -350,22 +350,16 @@ def answer_threads(queue):
     his name."""
 
 
-def record(start, applied, pushed):
-    """Overwrite FINDINGS, append one LEDGER entry, set state/phase.json and keep state/ lean.
+def update_findings(start, applied, pushed):
+    """Overwrite FINDINGS with this run's snapshot, what was fixed, what was left with its reason
+    and the open content proposals.
 
-    FINDINGS gets this run's snapshot, what was fixed, what was left with its reason and the open
-    content proposals. The LEDGER entry names the starting and pushed commits, the areas touched,
-    the decisions and the candidates rejected with why. Record the phase under the key `phase`:
-    the lifecycle label from PHASES, never the stage the run is in. Write these files with the file
-    actions or the routine's own scripts; a write made through a shell command is invisible to the
-    checks that read the run's actions. Rotate LEDGER.md in the run its size passes the byte cap
-    the recipe names — derived from this routine's own entries, set above the size of the tail it
-    keeps with room for several more — and when a rotation leaves the file over the cap or within
-    one entry of it, fix the numbers with that measurement. A file under state/ is one a later run
-    reads, under a stable name overwritten in place; a helper written for one run is deleted
-    before finishing. Machinery that failed or misled you and that you worked around goes to its
-    owner with `report`."""
-    ledger.append("start and pushed commits, areas touched, decisions, rejected + why")
+    Write these files with the file actions or the routine's own scripts — a state update the run
+    repeats the same way every time is one of those scripts; a write made through a shell command is
+    invisible to the checks that read the run's actions. A file under state/ is one a later run
+    reads, under a stable name overwritten in place; a helper written for one run is deleted before
+    finishing. Machinery that failed or misled you and that you worked around goes to its owner with
+    `report`."""
 
 
 def write_gate_state(snapshot):

@@ -47,7 +47,7 @@ from routine.params import (
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import (read_file, write_file, edit_file, util, script, llm, spawn, wait,
                              view_image, ask_user, report, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Curate and act",
@@ -65,7 +65,7 @@ META = {
                    "(steward-a-project).",
     # v3 (2026-10-28): the Steward hub is retired — no published board. The ranked corpus is in
     # each run's two-part finish summary and the principal's picks and sign-offs are asked.
-    "version": 3,
+    "version": 4,
     "tags": ["radar", "corpus", "decisions", "verification", "applications", "sign-off"],
     "includes": ["audit-coverage", "feedback-loop", "interface-craft", "write-as-the-principal",
                  "correspondence", "verify-independently"],
@@ -95,9 +95,7 @@ DONE_WHEN = [
     "the text he signed off, with its confirmation recorded",
     "d6 · ask_decisions — the records worth his pick and every draft awaiting sign-off are asked "
     "in one batched ask, each draft shown exactly as it will be sent",
-    "d7 · summarize — the finish summary's Process part says what was read, verified and out of "
-    "reach, and its Work part shows the ranked top with briefs, what went out and what waits",
-    "d8 · follow_threads — every reply on an earlier act is answered, or recorded with the date "
+    "d7 · follow_threads — every reply on an earlier act is answered, or recorded with the date "
     "an answer is due",
 ]
 
@@ -116,7 +114,7 @@ class ExternalBlocker(Exception):
 def main():
     """One run: apply the principal's answers, read every channel, verify and discover as far as
     the budget allows after reserving the principal-facing steps, advance the picks, follow the
-    threads, act on what is signed off, ask what waits on him, record and summarize."""
+    threads, act on what is signed off, ask what waits on him, summarize."""
     orient()
 
     if phase.current() == "bootstrap":
@@ -128,7 +126,7 @@ def main():
     candidates = read_channels()
 
     if nothing_due(decisions, candidates):
-        record()
+        tidy_state()
         return finish("ok", "Nothing due: no decision, nothing new, no record past its date, "
                             "no open pick or thread.")
 
@@ -158,14 +156,14 @@ def main():
 
     act_on_sign_offs(decisions)                 # after the drain, so a pass since then holds
     ask_decisions(closing)                      # ONE batched ask, just before the finish
-    record()
+    tidy_state()
     return finish("ok", summarize())
 
 
 def orient():
     """Read the state digest and memory's tool notes before any channel is read.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers;
+    The digest carries the phase, the last result and any messages or answers;
     a residual the last run handed over (a log to drain before any send, a channel to re-check)
     is this run's first work. Memory holds which tool serves each channel, the store and the act."""
 
@@ -301,19 +299,13 @@ def summarize():
     him. The full ranking and long drafts stay files the summary names by path."""
 
 
-def record():
-    """Append one LEDGER entry, set state/phase.json and keep state/ and scripts/ lean.
+def tidy_state():
+    """Leave state/ and scripts/ lean.
 
-    The entry names the decisions applied, what changed in the corpus, the drafts, what went out
-    with its confirmation and what the next run must pick up first. Record the phase under the key
-    `phase`: the lifecycle label from PHASES, never the stage the run is in. Write these files
-    with the file actions or the routine's own scripts; a write made through a shell command is
-    invisible to the checks that read the run's actions. Rotate LEDGER.md in the run its size
-    passes the byte cap the recipe names — derived from this routine's own entries, set above the
-    size of the tail it keeps with room for several more — and when a rotation leaves the file
-    over the cap or within one entry of it, fix the numbers with that measurement. A file under
-    state/ is one a later run reads, under a stable name overwritten in place; a script is named
-    for the step it performs and reused; anything only this run needed is deleted before
-    finishing. Machinery that failed or misled you and that you worked around goes to its owner
-    with `report`."""
-    ledger.append("decisions applied, corpus changes, drafts, sent with confirmation, next first")
+    Write every state file with the file actions or the routine's own scripts — a state update
+    the run repeats the same way every time is one of those scripts; a write made through a
+    shell command is invisible to the checks that read the run's actions. A file under state/
+    is one a later run reads, under a stable name overwritten in place; a script is named for the
+    step it performs and reused; anything only this run needed is deleted
+    before finishing. Machinery that failed or misled you and that you worked around goes to
+    its owner with `report`."""

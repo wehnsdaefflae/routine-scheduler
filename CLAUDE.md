@@ -254,7 +254,9 @@ one you are about to touch, not all of them.
   prose (`main.md`, `stages/`) AND reports its SETUP SURFACE (`readmodels/surface.py` joined with
   `readmodels/remedies.py`: what the held docs, bound rules and reserved utils still need, each
   unmet line ending in the remedy that settles it — a `blocks` row fails the command, a
-  `warn`/`note` row is reported only); `lint` covers the library. `engine-run` is internal
+  `warn`/`note` row is reported only — and so does a recipe CONTRACT defect, the one recipe
+  finding that is not a phrasing: `FAIL  recipe ·`, see "A contract names only the task"); `lint`
+  covers the library. `engine-run` is internal
   (daemon-spawned). `drain` and `postdeploy` BRACKET A DEPLOY and are the only two commands that
   are about the instance rather than about its config: drain quiesces the box before the restart
   (F746), postdeploy checks the box AFTER it (R2428) — served build vs the checkout, backup
@@ -815,12 +817,25 @@ by a test, by the engine, or by a past incident.
 - **A recipe says WHAT, never which tool.** Workflow patterns, materialized recipes, general
   rules and playbooks may not name a util or show its flags — they name the capability, the run picks the
   tool from its live CAPABILITIES catalog, and what worked is persisted in the ROUTINE'S memory,
-  never the recipe. Enforced AT GENERATION — `workflows/adapt.py` (materialization) and
+  never the recipe. Enforced AT GENERATION — `workflows/pipeline_prompts.py` (materialization) and
   `workflows/generate.py` (pattern drafting) spell out the forbidden forms in the prompt — not
   by a linter over the finished file: these documents are LLM-written, so the generator is the
   cause and a name-matching check over a DYNAMIC util catalog turns unrelated files red the day
   a util is named after an ordinary word. See docs/authoring.md for the two things a recipe may
   legitimately name (services/protocols; paths named after their tool).
+- **A contract names only the task** (P2, `workflows/taskcontract.py`, docs/authoring.md). The
+  run's process record is the ENGINE's — LEDGER.md filed from the finish summary, the stage
+  stamped when a run reads `stages/<name>.md`, notes from the `note` side field — so no pattern or
+  recipe has a step whose job is recording the run, tells a run to write or rotate the ledger,
+  writes `state/phase.json` between stages (it holds only a CROSS-RUN lifecycle value, set at a
+  milestone), or carries a Done-when line naming the run's own record (a ledger entry, a
+  phase/memory/notes write, a cursor advance, what the finish summary must contain); `state/`
+  holds the product or a cursor the task needs, and a repeated state update is a `script`. Stated
+  in both generation prompts (`taskcontract.PATTERN_CONTRACT`/`RECIPE_CONTRACT`) AND checked,
+  because unlike a util name its vocabulary is fixed: `workflows/lint.py` fails a pattern, the
+  materialization pipeline retries a main/stage, `rsched validate` FAILS a live recipe. The
+  vocabulary leaves out `state/` files and a lower-case "the ledger" ON PURPOSE — a watchlist or
+  an evaluation ledger's rows are product, and a false positive there gets a check switched off.
 - **Fix the cause, not the symptom.** The corollary, and a standing instruction: when an
   artefact comes out wrong, correct whatever produced it. For anything LLM-written that is the
   generation prompt — make it correct, unambiguous and strict, then repair the existing files

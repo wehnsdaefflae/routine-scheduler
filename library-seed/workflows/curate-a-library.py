@@ -47,7 +47,7 @@ from routine.params import (
 from routine.actions import (read_file, write_file, edit_file, util, script, llm, spawn, wait,
                              subruns, read_rule, write_rule, write_util, remove_util,
                              memory_read, memory_write, ask_user, report, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Curate a library",
@@ -63,7 +63,7 @@ META = {
                    "multi-pass consolidation toward a measurable target is a campaign. Not for "
                    "code with its own test suite and deployment (maintain-a-codebase), nor for "
                    "proposals someone else applies (audit-and-propose).",
-    "version": 1,
+    "version": 2,
     "tags": ["curation", "library", "evidence", "maintenance", "fleet"],
     "includes": ["audit-coverage", "change-scope", "make-failure-visible",
                  "verify-independently"],
@@ -92,7 +92,7 @@ DONE_WHEN = [
     "and the lint passed",
     "d5 · notify_holders — every holder a change touches is migrated, or told in an addressed "
     "report",
-    "d6 · record — REVIEWED holds this pass's verdicts; state/phase.json is current",
+    "d6 · record_verdict — REVIEWED holds this pass's verdicts",
     "d7 · write_gate_state — state/gate.json holds the inventory fingerprint and the "
     "fresh-evidence counts the gate compares",
 ]
@@ -118,7 +118,7 @@ def main():
     selected = select(inventory)                # campaign items, flagged items, then the stalest
 
     if not selected:
-        record()
+        tidy_state()
         write_gate_state(inventory)
         return finish("ok", "No item has fresh evidence since its last review; the intake is "
                             "closed.")
@@ -138,7 +138,7 @@ def main():
             break
 
     lint_library()
-    record()
+    tidy_state()
     write_gate_state(inventory)
     return finish("ok", "intake closed, items reviewed with verdicts, changes live, holders told")
 
@@ -146,7 +146,7 @@ def main():
 def orient():
     """Read the state digest, REVIEWED and the campaign record before reading any holder's runs.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers;
+    The digest carries the phase, the last result and any messages or answers;
     reports handed to the routine arrive with it. REVIEWED says when each item was last reviewed
     and on what evidence."""
 
@@ -237,22 +237,17 @@ def lint_library():
     A problem this pass did not cause goes to its owner in a report."""
 
 
-def record():
-    """Append one LEDGER entry, set state/phase.json and keep state/ lean.
+def tidy_state():
+    """Set the lifecycle phase at its milestone and leave state/ lean.
 
-    The entry names the reports closed, the items reviewed with their verdicts, the changes made,
-    the holders told and the candidates rejected with why; in a campaign, the distance to TARGET.
-    Record the phase under the key `phase`: the lifecycle label from PHASES, never the stage the
-    run is in — campaign while TARGET is set and not met, steady otherwise. Write every state file
-    with the file actions or the routine's own scripts; a write made through a shell command is
-    invisible to the checks that read the run's actions. Rotate LEDGER.md in the run its size
-    passes the byte cap the recipe names — derived from this routine's own entries, set above the
-    size of the tail it keeps with room for several more — and when a rotation leaves the file
-    over the cap or within one entry of it, fix the numbers with that measurement. A file under
-    state/ is one a later run reads, under a stable name overwritten in place; staged copies and
-    census files only this pass needed are deleted before finishing. Machinery that failed or
-    misled you and that you worked around goes to its owner with `report`."""
-    ledger.append("reports closed, verdicts, changes, holders told, rejected + why")
+    The phase is campaign while TARGET is set and not met, steady otherwise — the label from PHASES
+    under the key `phase`, never the stage the run is in. Write every state file with the file actions or
+    the routine's own scripts — a state update the run repeats the same way every time is one of
+    those scripts; a write made through a shell command is invisible to the checks that read the
+    run's actions. A file under state/ is one a later run reads, under a stable name overwritten in
+    place; staged copies and census files only this pass needed are deleted before finishing.
+    Machinery that failed or misled you and that you worked around goes to its owner with
+    `report`."""
 
 
 def write_gate_state(inventory):

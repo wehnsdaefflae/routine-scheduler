@@ -38,7 +38,6 @@ from routine.params import (
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import read_file, write_file, util, llm, view_image, ask_user, report, finish
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
 
 META = {
     "name": "Do one job",
@@ -53,7 +52,7 @@ META = {
                    "of what was handled. Not for a watch that finds the items and arms the fires "
                    "(watch-and-report), nor for a queue worked through in batches "
                    "(drain-a-work-queue).",
-    "version": 1,
+    "version": 2,
     "tags": ["worker", "one-shot", "event", "delivery"],
     "includes": ["verify-independently"],
     "tools": None,          # None = every action kind the routine's capabilities allow
@@ -74,7 +73,7 @@ DONE_WHEN = [
     "beside it",
     "d3 · check — the deliverable was read back against the facts it states before it went out",
     "d4 · deliver — the deliverable went out through DELIVERY, with the channel's confirmation",
-    "d5 · record — HANDLED holds the item's key with that confirmation",
+    "d5 · mark_handled — HANDLED holds the item's key with that confirmation",
 ]
 
 
@@ -85,12 +84,11 @@ class ExternalBlocker(Exception):
 
 def main():
     """One fire: take the brief, skip what is already handled, research, produce, check, deliver,
-    record."""
+    mark it handled."""
     orient()
 
     item = take_brief()
     if item is None:
-        record(None)
         return finish("ok", "No job: the brief named none and no unhandled item exists; what was "
                             "searched.")
     if already_handled(item):
@@ -102,11 +100,11 @@ def main():
         check(deliverable, facts)
         deliver(deliverable)
     except ExternalBlocker:
-        record(item)
+        mark_handled(item)
         return finish("partial", "The item, the source or channel that could not be reached, "
                                  "nothing delivered.")
 
-    record(item)
+    mark_handled(item)
     return finish("ok", "the item, the deliverable, the confirmation")
 
 
@@ -114,7 +112,7 @@ def orient():
     """Read the state digest and HANDLED before looking for an item.
 
     The digest carries the brief of a one-shot fire (the note the arming routine left), the
-    principal's message on a click, the last result and the LEDGER tail."""
+    principal's message on a click and the last result."""
 
 
 def take_brief():
@@ -152,10 +150,6 @@ def deliver(deliverable):
     ExternalBlocker."""
 
 
-def record(item):
-    """Write the item's key and confirmation to HANDLED, append one LEDGER entry, set the phase.
-
-    The entry names the item, the deliverable, the confirmation or what blocked it. Record the phase
-    under the key `phase`. A file under state/ is one a later fire reads, under a stable name
-    overwritten in place."""
-    ledger.append("item, deliverable, confirmation or blocker")
+def mark_handled(item):
+    """Write the item's key and its confirmation, or what blocked it, to
+    HANDLED — under a stable name overwritten in place — so no later fire takes it twice."""

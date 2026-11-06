@@ -13,10 +13,17 @@ edit left standing beside its own replacement. Semantic contradiction past that 
 routine-improver's periodic lens, which already hunts it with a model and a whole run's
 budget; a regex has no business guessing at it.
 
-Every row is a REPORT and never a verdict. A recipe is a hand-tuned document written by
-the person and the run that own it: a check that failed `rsched validate` over a phrasing
-would be switched off within a week, and the defects here are all cheap to read and
+Every `recipe_notes` row is a REPORT and never a verdict. A recipe is a hand-tuned document
+written by the person and the run that own it: a check that failed `rsched validate` over a
+phrasing would be switched off within a week, and the defects here are all cheap to read and
 sometimes deliberate. So `cmd_validate` prints these and leaves the exit code alone.
+
+`recipe_errors` is the one exception, and it is not a phrasing: a recipe that makes its run
+write the ledger, or a Done-when line about nothing but the run's own record, is a CONTRACT
+defect (P2, `taskcontract`) — every finish must account for that line, so it buys bookkeeping
+on every run, and the operator has called a routine mostly concerned with bookkeeping a
+critical failure. Those rows FAIL the command. A Done-when line that names a record in only
+SOME of its clauses still names a task outcome, so it is a note (`recipe_notes`).
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ import yaml
 from ..daemon import gate_prepare
 from ..grants import GATED_KINDS
 from ..readmodels.statemap import STAGES_DIR
+from . import taskcontract
 
 #: Below this many characters a paragraph is a heading, a list stub or a one-line rule —
 #: too short for near-identity to mean anything but coincidence.
@@ -99,9 +107,38 @@ def recipe_notes(routine_dir: Path, capabilities: dict | None = None) -> list[st
     return [*unparsed,
             *_stage_routing(files),
             *_done_when(files),
+            *_mixed_records(files),
             *_missing_scripts(routine_dir, files),
             *_ungranted_kinds(files, capabilities),
             *_restated_blocks(files)]
+
+
+def recipe_errors(routine_dir: Path) -> list[str]:
+    """The recipe's contract defects — `<file>: <finding>` per Done-when line about nothing
+    but the run's own record and per sentence telling the run to write or rotate the ledger.
+    """
+    from ..engine.donewhen import parse
+
+    files, _ = recipe_files(routine_dir)
+    if "main.md" not in files:
+        return []
+    lines = [(ln["id"], ln["text"]) for ln in parse(files["main.md"])]
+    return [*(f"main.md: {f}" for f in taskcontract.done_when_findings(lines)),
+            *(f"{rel}: {f}" for rel, body in files.items()
+              for f in taskcontract.ledger_findings(body))]
+
+
+def _mixed_records(files: dict[str, str]) -> list[str]:
+    """A Done-when line naming the run's record in SOME clause — a task line carrying
+    bookkeeping it does not need (the all-record lines are `recipe_errors`').
+    """
+    from ..engine.donewhen import parse
+
+    return [f"main.md: Done when {ln['id']} also asks for {label} — keep the task outcome, "
+            f"drop the record clause (the engine keeps the run's record)"
+            for ln in parse(files["main.md"])
+            if not taskcontract.process_only(ln["text"])
+            and (label := taskcontract.names_a_record(ln["text"]))]
 
 
 def _done_when(files: dict[str, str]) -> list[str]:

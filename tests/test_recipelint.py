@@ -1,6 +1,7 @@
 """Recipe hygiene (F516): what `recipe_notes` says about a routine's own main.md + stages/,
 and the one promise the wiring makes — `rsched validate` PRINTS the findings and never fails
-over them.
+over them. The one exception is a CONTRACT defect (`recipe_errors`), pinned in
+tests/test_recipe_contract.py.
 """
 
 from types import SimpleNamespace

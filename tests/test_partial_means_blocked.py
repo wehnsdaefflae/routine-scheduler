@@ -165,20 +165,17 @@ def test_the_doc_quotes_the_engine_s_new_status_prose():
         )
 
 
-def test_the_seed_general_task_keeps_the_ledger_force_without_the_status_word():
-    """The sentence is load-bearing — it is what makes the ledger entry non-optional — so the
-    force stays and only the status word goes."""
+def test_the_seed_general_task_calls_no_skipped_step_of_its_own_partial():
+    """A skipped step of the run's own is an `ok` finish with the shortfall named (D204). The
+    sentence that once carried this was the ledger-entry one; the ledger is the engine's now
+    (P2, workflows/taskcontract.py), so what stays pinned is that no status word came back."""
     text = (SEED / "workflows" / "general-task.py").read_text(encoding="utf-8")
     flat = " ".join(text.split())
     assert "ledger entry is `partial`" not in flat, (
-        "the general-task seed still calls a run without its ledger entry `partial` — a "
-        "skipped step of the run's own is an `ok` finish with the shortfall named (D204)"
+        "the general-task seed calls a run that skipped a step of its own `partial` — that is "
+        "an `ok` finish with the shortfall named (D204)"
     )
-    assert "has failed its record" in flat, (
-        "the general-task seed lost the force of its ledger sentence: a run that ends without "
-        "its ledger entry must still be told that is a failure of its record"
-    )
-    assert "append exactly one LEDGER entry" in flat
+    assert "LEDGER entry" not in flat, "the run's ledger is the engine's to write (P2)"
 
 
 def test_the_seed_converse_does_not_call_a_mid_plan_handover_partial():

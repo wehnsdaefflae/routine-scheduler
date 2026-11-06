@@ -46,7 +46,7 @@ from routine.params import (
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import (read_file, write_file, util, script, llm, view_image,
                              schedule_run, ask_user, report, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Watch and report",
@@ -61,7 +61,7 @@ META = {
                    "the sources; quiet days are normal and a run gate can skip them. Not for a "
                    "corpus the principal picks from and acts on (curate-and-act), nor for "
                    "answering the mail itself (answer-a-mailbox).",
-    "version": 1,
+    "version": 2,
     "tags": ["watch", "monitor", "digest", "diff", "delivery"],
     "includes": ["audit-coverage", "feedback-loop"],
     "tools": None,          # None = every action kind the routine's capabilities allow
@@ -79,20 +79,19 @@ PHASES = ["bootstrap", "steady"]
 # The finish accounts for every line once: met (with the observation that shows it), unmet (with
 # what remains for the next run) or not due (with how that was established).
 DONE_WHEN = [
-    "d1 · read_feedback — the votes and replies on the last output past its cursor are folded "
-    "into this run's ranking, with the cursor at the last row read",
+    "d1 · read_feedback — every vote and reply on the last output since the last run is folded "
+    "into this run's ranking",
     "d2 · read_source — every source in SOURCES was read unfiltered this run, each with a named "
     "result: its new items, unchanged against its recorded fingerprint, or unreadable with the "
     "error",
     "d3 · judge — every new item and every item an earlier run left unjudged carries a verdict, "
     "or the recorded reason it cannot be judged yet",
     "d4 · deliver — the output carrying this run's verdicts reached the principal through "
-    "OUTPUT's channel, with its link in the finish summary",
+    "OUTPUT's channel",
     "d5 · read_back — the delivered output was read back as its reader gets it",
     "d6 · dispatch — every dated item inside the dispatch window has its worker run armed and is "
     "recorded as handled",
-    "d7 · advance_markers — each source's marker stands at the newest item this run processed",
-    "d8 · write_gate_state — state/gate.json holds each source's fingerprint as this run read it, "
+    "d7 · write_gate_state — state/gate.json holds each source's fingerprint as this run read it, "
     "the items still unjudged, the next dispatch date and the date RECHECK_AFTER falls due",
 ]
 
@@ -109,7 +108,7 @@ class NeedsDecision(Exception):
 
 def main():
     """One run: feedback first, every source read raw, judge what is new, deliver, read back, arm
-    dated items, advance the markers, record, leave the gate its fingerprints."""
+    dated items, advance the markers, leave the gate its fingerprints."""
     orient()
 
     if phase.current() == "bootstrap":
@@ -132,7 +131,7 @@ def main():
     if not queue and not feedback and not dated_items_due():
         # Every source was read and none had anything new. That is a real outcome here: say which
         # sources were read and how each was compared, name any unreadable one, then stop.
-        record(output=None, readings=readings)
+        tidy_state()
         write_gate_state(readings)
         return finish("ok", "Nothing new: each source named with how it was compared.")
 
@@ -152,7 +151,7 @@ def main():
         read_back(output)
     dispatch(verdicts)                          # dated items now inside the window, old and new
     advance_markers(verdicts)
-    record(output=output, readings=readings)
+    tidy_state()
     write_gate_state(readings)
     return finish("ok", "what was new per source, what was delivered where, what was armed, "
                         "what waits")
@@ -161,9 +160,8 @@ def main():
 def orient():
     """Read the state digest, the MARKERS file and memory's tool notes before touching a source.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers.
-    Memory holds which tool reads each source and which one delivers; read the LEDGER file itself
-    only when the digest says there is more."""
+    The digest carries the phase, the last result and any messages or answers.
+    Memory holds which tool reads each source and which one delivers."""
 
 
 def bootstrap():
@@ -280,21 +278,16 @@ def advance_markers(verdicts):
     for the next run."""
 
 
-def record(output, readings):
-    """Append one LEDGER entry, set state/phase.json and keep state/ and scripts/ lean.
+def tidy_state():
+    """Leave state/ and scripts/ lean.
 
-    The entry names, per source, what was read and its result (new count, unchanged, unreadable),
-    what was delivered where and what stays unjudged. Record the phase under the key `phase`: the
-    lifecycle label from PHASES, never the stage the run is in. Write these files with the file
-    actions or the routine's own scripts; a write made through a shell command is invisible to
-    the checks that read the run's actions. Rotate LEDGER.md in the run its size passes the byte
-    cap the recipe names — derived from this routine's own entries, set above the size of the
-    tail it keeps with room for several more — and when a rotation leaves the file over the cap
-    or within one entry of it, fix the numbers with that measurement. A file under state/ is one
-    a later run reads, under a stable name overwritten in place; a script is named for the step
-    it performs and reused; anything only this run needed is deleted before finishing. Machinery
-    that failed or misled you and that you worked around goes to its owner with `report`."""
-    ledger.append("per source: result; delivered where; still unjudged")
+    Write every state file with the file actions or the routine's own scripts — a state update
+    the run repeats the same way every time is one of those scripts; a write made through a
+    shell command is invisible to the checks that read the run's actions. A file under state/
+    is one a later run reads, under a stable name overwritten in place; a script is named for the
+    step it performs and reused; anything only this run needed is deleted
+    before finishing. Machinery that failed or misled you and that you worked around goes to
+    its owner with `report`."""
 
 
 def write_gate_state(readings):
