@@ -134,6 +134,26 @@ def pointer_line(pointer: dict) -> str:
               "out, instead of re-running the util.")
 
 
+#: The kinds whose own body already renders the pointer (`observations._run_body`): the three
+#: callable kinds, which have carried this store since it existed.
+_SPILLS_IN_ITS_BODY = frozenset({"util", "script", "shell"})
+
+
+def observation_tail(obs: dict) -> str:
+    """The `[full output]` tail for a kind whose body does NOT render it itself (D246).
+
+    `util`, `script` and `shell` emit it inside their shared body and are excluded here, so
+    nothing doubles. Every OTHER kind that spills gets the pointer for free, at the one place a
+    rendered observation is assembled — which is the point: an oversized `llm` reply lost its
+    MIDDLE for as long as the action existed, because the store was wired per-kind and that
+    renderer was written before the store had a second caller.
+    """
+    pointer = obs.get("full_output")
+    if not pointer or obs.get("kind") in _SPILLS_IN_ITS_BODY:
+        return ""
+    return "\n[full output] " + pointer_line(pointer)
+
+
 def digest(routine_dir: Path, limit: int = 8) -> str:
     """The state-digest line: the newest spilled outputs from EARLIER runs, so a run can
     read what a previous one fetched instead of fetching it again. Empty when the store
