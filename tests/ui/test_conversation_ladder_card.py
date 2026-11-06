@@ -29,7 +29,7 @@ def test_a_conversation_is_switched_into_oversight_from_its_own_page(ui, ui_page
     """Press the switch: the config reaches THIS conversation's own routine.yaml, which is what
     each reply boots from. Before this panel the only way there was hand-editing the file.
     """
-    slug, conv = start_conversation(ui, ui_page, "review the migration plan")
+    _slug, conv = start_conversation(ui, ui_page, "review the migration plan")
     _open_caps(ui_page)
 
     switch = ui_page.locator("[data-ladder-enabled]")
@@ -48,7 +48,7 @@ def test_the_rung_height_and_the_turn_interval_land_in_their_own_files(ui, ui_pa
     switch and the height are CONFIG (routine.yaml, the user's), the turn interval is TUNING
     (tuning.yaml, recipe-classed). One panel, two files — not one blob.
     """
-    slug, conv = start_conversation(ui, ui_page, "plan the sprint")
+    _slug, conv = start_conversation(ui, ui_page, "plan the sprint")
     _open_caps(ui_page)
 
     # Each commit is its own PATCH, so each is awaited by its RESPONSE rather than by the

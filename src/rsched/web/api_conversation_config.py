@@ -11,7 +11,7 @@ fields are adopted at its next turn boundary, and it is told about the rest.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict
 
 from .. import conversations as conv_mod

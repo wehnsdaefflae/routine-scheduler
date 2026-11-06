@@ -17,12 +17,10 @@ from pydantic import BaseModel, ConfigDict, StrictBool, field_validator
 
 from .. import rules as rules_mod
 from .. import schedule
-from ..config import DELIBERATION_LEVELS, write_tuning
 from ..config.base import TUNING_KEYS, _known_tz
 from ..config.outcome import OutcomeConfig
 from ..config.routine import RunGatePatch
 from ..config.trialconf import TrialConfig
-from ..engine.ladder import MIN_OVERSIGHT_TURNS
 from ..paths import read_yaml
 from .config_fields import (
     BudgetsPatch,
