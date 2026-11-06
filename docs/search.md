@@ -14,7 +14,7 @@ Model-authored and user-authored **prose**, never raw tool output:
   model's `say` narration and `note` lines, finish summaries, questions and answers,
   and your injected messages.
 - **result.md** finish reports and the navigable `history/` archives compaction writes.
-- **LEDGER.md** per routine, and **`.memory/`** notes.
+- **LEDGER.md** per routine with its engine-rotated **`.ledger/`** months, and **`.memory/`** notes.
 - **Durable decision records** (`questions/pending/` — asks and util approvals).
 - **Recipe files**: `main.md`, `stages/`, and `instruction.md`.
 

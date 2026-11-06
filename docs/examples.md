@@ -55,7 +55,7 @@ out only after your explicit go.
 
 ### A typical run
 
-1. Reads the state digest: profile, yesterday's shortlist, LEDGER tail, `.memory/` index
+1. Reads the state digest: profile, yesterday's shortlist, earlier LEDGER entries, `.memory/` index
    (portal quirks live here — "GULP paginates after 20", "freelance.de needs the CDP
    browser").
 2. **Spawns one sub-workflow per platform** (`spawn`, four children in parallel, each with
@@ -68,8 +68,8 @@ out only after your explicit go.
    Reply "send" from your phone and the platform-apply util fires; ignore it and the run
    continues after 4 h with the draft safely held.
 5. Improvement passes: if a scraper errored, it reads the util source, fixes it, and the
-   selftest-gated revision is committed for every other routine too. LEDGER entry, finish
-   summary, done.
+   selftest-gated revision is committed for every other routine too. Finish summary (the
+   engine files it as the LEDGER entry), done.
 
 **Where you come in:** one deferred question per interesting posting ("pursue?"), one
 blocking question per send. Everything else is autonomous.
@@ -118,7 +118,7 @@ submitted only after your sign-off.
    **sign-off gate** (blocking, default `hold`) → submit → monitor
    the inbox for the funder's reply.
 5. Cross-run statistics from the full run history (`runs: all`): submissions
-   per month, tier→outcome rates — into `state/stats.md`. LEDGER, finish.
+   per month, tier→outcome rates — into `state/stats.md`. Finish.
 
 **Where you come in:** tier-A programs arrive as deferred "apply?" questions; each
 submission is one blocking sign-off. Expect ~10 quiet minutes a week.
@@ -167,7 +167,7 @@ grant-funded open-source project: deliverables register, worklog, public repo hy
 5. Mondays: the fresh-eyes audit — reads the public README/docs as a stranger, fixes
    "functional but bad" findings in the same run.
 6. Drafts (never posts) the weekly Zulip status update → blocking question with the text,
-   default `don't post`. LEDGER + WORKLOG, finish.
+   default `don't post`. WORKLOG, finish.
 
 **Where you come in:** the Monday "post this update?" gate, occasional scope questions,
 and the deliverables it flags as needing a human signature.
@@ -213,7 +213,8 @@ learning your taste run over run.
    direction: (1) rented cabin, self-catered · (2) restaurant back room · (3) mixed —
    cabin + one restaurant evening. Default if unanswered: keep developing 1 and 3."*
 5. Updates the taste model in `.memory/` from your previous answers (what you chose AND
-   what you rejected), LEDGER entry, finish summary you can read in one minute.
+   what you rejected), and a finish summary you can read in one minute (the engine files it
+   in the LEDGER).
 
 **Where you come in:** two option-taps on your phone twice a week. The plan converges
 because rejections are recorded as firmly as choices — the LEDGER keeps it from
@@ -226,7 +227,7 @@ re-proposing what you already declined.
 - **State the default on every ask.** All four set `default` on blocking questions — the
   run continues usefully when you're busy, and you can still answer later.
 - **Reject-memory beats accept-memory.** Freelance radar and Birthday planner both record
-  *rejections* (in LEDGER/state) so nothing is re-proposed. Cheap and transformative.
+  *rejections* (in state, and in the finish summary the LEDGER keeps) so nothing is re-proposed. Cheap and transformative.
 - **Sub-workflows per source, not one mega-loop.** Parallel children with disjoint outputs
   (Freelance radar step 2) keep the main conversation short and the failures isolated.
 - **Repair, don't route around.** A broken util fixed under `util-authoring` (revisions

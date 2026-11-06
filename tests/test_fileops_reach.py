@@ -104,7 +104,7 @@ def test_a_child_cannot_rewrite_the_routines_recipe_memory_or_finish_line(make_r
     assert "own recipe" in _write(child, "../../../../main.md")["error"]
     moved = do_move({"kind": "move", "src": str(d / "LEDGER.md"),
                      "dst": str(d / ".memory" / "ledger.md")}, child)
-    assert "memory_read" in moved["error"]
+    assert "LEDGER.md is the engine's" in moved["error"]     # the process record (P1)
     gone = do_delete({"kind": "delete", "path": str(d / "runs" / EARLIER), "recursive": True},
                      child)
     assert "engine-owned" in gone["error"]

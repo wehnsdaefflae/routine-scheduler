@@ -75,8 +75,7 @@ def test_state_digest_contents(make_routine, tmp_path):
     (prev / "result.md").write_text("Previous outcome text.")
     digest = state_digest(d, deferred_qa=[{"qid": "q1", "question": "Q?", "answer": "A!"}],
                           open_qs=[{"qid": "q2", "question": "Open?", "asked": "20260707"}])
-    for needle in ("steady", "Previous outcome text.", "LEDGER tail", "seed — routine created",
-                   "Q?", "A!", "Open?", "phase.json",
+    for needle in ("steady", "Previous outcome text.", "Q?", "A!", "Open?", "phase.json",
                    "stages/ stage modules", "discover.md"):
         assert needle in digest, needle
 

@@ -251,8 +251,11 @@ only — "may have written", never "did not") and the observation carries `ungat
 above are path predicates, so `ownseal` subtracts those paths from the jail: the own dir is
 mounted LIST-ONLY (read-only until D207 moved the read boundary in beside it — see *The
 run-history depth* below) and its UNSEALED children read-write, which means `.memory/`, `runs/`,
-`.util_outputs/`, `.doc_cache/`, `routine.yaml` and — without the recipe-authoring permission —
-`main.md`/`stages/`/`tuning.yaml` are unwritable by any subprocess, however it writes. Landlock
+`.util_outputs/`, `.doc_cache/`, `routine.yaml`, the engine-written process record `LEDGER.md`
+and its `.ledger/` archive (P1, `rsched/runledger.py` — `cat >> LEDGER.md` was one of the three
+write shapes the 2026-10 `ungated_write` records measured) and — without the recipe-authoring
+permission — `main.md`/`stages/`/`tuning.yaml` are unwritable by any subprocess, however it
+writes. The engine writes the ledger in-process, outside any jail. Landlock
 has no deny rule (a ruleset is an allow-list of hierarchies and a nested rule can only ADD
 rights), so that split mount is the only shape this can take. Two accepted costs, the
 operator's own words when he decided it: a command creating a NEW top-level entry inside the

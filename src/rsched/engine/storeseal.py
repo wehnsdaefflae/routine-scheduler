@@ -18,10 +18,15 @@ around writing it (R2787 → F752). Renaming either side would have fixed one ro
 the collision for the next one; asking the dial fixes all of them at once.
 
 The obligations half is unconditional: no setting turns obligations off, so there is no routine
-for which that file is anything but the engine's.
+for which that file is anything but the engine's. So is the PROCESS RECORD (P1,
+`rsched/runledger.py`): `LEDGER.md` and its `.ledger/` archive are written by the engine from
+each finished run's summary, so a run's write, edit, delete or move of either is refused with an
+observation saying where that record goes instead. A store here is a file OR a directory — the
+gates test "at or beneath it" — which is what lets the archive be sealed as a whole.
 """
 from __future__ import annotations
 
+from .. import runledger
 from ..jobs import JOBS_FILE
 from . import obligations
 
@@ -55,7 +60,8 @@ def _keeps_jobs(ctx) -> bool:
 
 def stores(ctx) -> dict[str, str]:
     """The engine-owned stores THIS run may not write, each with the refusal that says why."""
-    out = {str(obligations.FILE): obligations.REFUSAL}
+    out = {str(obligations.FILE): obligations.REFUSAL, runledger.FILE: runledger.REFUSAL,
+           runledger.ARCHIVE_DIR: runledger.ARCHIVE_REFUSAL}
     if _keeps_jobs(ctx):
         out[JOBS_FILE] = JOBS_REFUSAL
     return out

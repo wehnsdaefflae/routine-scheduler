@@ -106,6 +106,10 @@ NOT_EDITABLE_HERE: tuple[tuple[str, str], ...] = (
     # Refusing the whole tree would take away the operator's only surface for a memory note and
     # offer nothing in its place.
     (".memory/INDEX.md", "the engine (memory_write keeps it, one line per note's `about`)"),
+    # The process record (P1, rsched/runledger.py): one entry per finished run, written from its
+    # finish summary — and rotated into `.ledger/` — by the engine alone.
+    ("LEDGER.md", "the engine (one entry per finished run, from its finish summary)"),
+    (".ledger/", "the engine (it rotates older LEDGER.md entries there)"),
     (".git/", "git"),
     ("runs/", "the engine"),
     ("inbox/", "the message endpoints"),

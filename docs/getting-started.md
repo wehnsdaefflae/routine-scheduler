@@ -20,7 +20,7 @@ One routine = one directory under `~/routines/<slug>`, holding:
 | **Rules** | `rules:` in `routine.yaml` | The general rules that bind it (when to ask you, research discipline, what to record, git-checkpointing a project repo). Each states a principle and the run applies it to its own case. The prose lives ONCE in the shared library, so revising it there reaches every routine holding it; the routine holds slugs, not copies. |
 | **Permissions & capabilities** | `routine.yaml` | What the routine is ALLOWED to do — writing utils, Discord, reading previous runs, shell. *Capabilities* are the engine-enforced switches; *permissions* are the conduct docs that ride along (the *Rules, permissions & capabilities* guide has the full model). Only you change either — a run can never grant itself anything, nor edit its own recipe. |
 | **Budgets** | `routine.yaml` | Hard per-run ceilings: turns, minutes, tokens (unlimited by default — turns and wall-clock are the effective bound), sub-workflows and their depth, and how long a blocking question waits for you. |
-| **State & memory** | `state/`, `LEDGER.md`, `.memory/` | What carries between runs: working files, the append-only change journal, and the notebook of hard-won surprises. |
+| **State & memory** | `state/`, `LEDGER.md`, `.memory/` | What carries between runs: working files, the engine-written record of every finished run, and the notebook of hard-won surprises. |
 | **Runs** | `runs/<ts>/` | Every run's full transcript, status, and result — the conversation is the audit trail. |
 
 Two design rules explain most of the system's shape:
@@ -180,9 +180,9 @@ no longer looks identical to one that's been green for a month.
   propose better. See *Birthday planner* in Examples.
 
 The common thread: **the files are the memory.** A run reads the state its predecessors
-left, does as much of the job as it can finish and verify, records what changed and why
-(LEDGER), notes what surprised it (`.memory/`), and finishes with a summary the next run starts
-from. No chat history, no session to lose.
+left, does as much of the job as it can finish and verify, notes what surprised it (`.memory/`), and
+finishes with a summary of what changed and why — which the engine files in `LEDGER.md` and the
+next run starts from. No chat history, no session to lose.
 
 How much is "as much"? The turn budget is a runaway backstop, never a ration: a run that leaves
 work it could have finished has paced itself against a counter instead of against the job. Where

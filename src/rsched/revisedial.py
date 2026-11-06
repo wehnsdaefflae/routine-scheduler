@@ -25,7 +25,8 @@ revision revises) and no field allow-list to make a middle rung from (a recipe i
   `write_recipe` capability) is armed on this routine's NEXT run with no card. It is still not
   a write by the proposer: the invitation hands the PROSE to the run that owns the recipe
   (`rsched/reciperevise.py`), which edits its own files under the one-leg unlock
-  `engine/revise.py` already implements, records it in its LEDGER, and the engine commits it.
+  `engine/revise.py` already implements, says so in its finish summary (which the engine files
+  in its LEDGER), and the engine commits it.
 
 WHAT NO LEVEL DOES, stated here rather than left to each caller:
 

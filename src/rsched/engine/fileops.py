@@ -317,10 +317,10 @@ def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
 
 
 def _jobs_gate(ctx: RunContext, resolved) -> str | None:
-    """The engine-owned stores (`storeseal`): jobs.json only while the routine keeps jobs."""
+    """The engine-owned stores (`storeseal`) — a file, or a directory and all beneath it."""
     for d in routine_dirs(ctx):
         for rel, why in storeseal.stores(ctx).items():
-            if resolved in (d / rel, (d / rel).resolve()):
+            if _within(resolved, d / rel):
                 return why
     return None
 

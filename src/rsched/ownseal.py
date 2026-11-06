@@ -32,18 +32,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import rundepth
+from . import rundepth, runledger
 from .grants import CONFIG_FILE, RECIPE_PREFIXES
 
 #: Engine-owned or sealed children of a routine dir, as `_write_gate` refuses them. `runs/` is
 #: the engine's record of what happened; `.util_outputs/` the saved full text of util output;
 #: `.doc_cache/` the converted documents a later read trusts by content hash; `.memory/` the
-#: name-addressed store whose INDEX and 100-line note cap the engine owns.
-SEALED_DIRS = (".memory", "runs", ".util_outputs", ".doc_cache")
+#: name-addressed store whose INDEX and 100-line note cap the engine owns; `.ledger/` the
+#: archive the engine rotates old LEDGER.md entries into (`runledger`).
+SEALED_DIRS = (".memory", "runs", ".util_outputs", ".doc_cache", runledger.ARCHIVE_DIR)
 
 #: Sealed FILES directly under the routine dir. `routine.yaml` is config — permissions,
 #: capabilities, budgets, roots — and no run edits it, not even the routine-improver.
-SEALED_FILES = (CONFIG_FILE,)
+#: `LEDGER.md` is the process record the engine writes from each finish summary (P1).
+SEALED_FILES = (CONFIG_FILE, runledger.FILE)
 
 
 def _recipe_names() -> tuple[str, ...]:

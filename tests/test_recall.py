@@ -152,7 +152,7 @@ def test_the_warning_fires_only_when_there_is_a_turn_of_slack(size_factor, expec
         note = loop.messages[-1]["content"]
         assert "about to be ARCHIVED" in note
         assert "Retention is positional, not semantic" in note
-        assert "`note`" in note and "memory_write" in note and "LEDGER" in note
+        assert "`note`" in note and "memory_write" in note and "LEDGER" not in note
 
 
 def test_the_warning_is_given_once_per_run():

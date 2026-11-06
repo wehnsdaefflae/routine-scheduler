@@ -128,60 +128,6 @@ def _file_writes(s: Situation) -> list[str]:
             if r.get("kind") in ("write_file", "edit_file")]
 
 
-def _ledger_untouched(s: Situation) -> bool:
-    """This run changed something a reader will find later, and recorded no reasoning for it.
-
-    decision-record's moment, and the narrowing matters more than the check. The rule is one
-    of DEFAULT_RULES, so a predicate that fired on every ledger-less run would take a turn
-    from every routine in the instance, every run — and most runs have nothing to record. A
-    reminder that frequent is not a reminder; it is rent, and the layer stops being read.
-
-    So it asks the question the rule asks — "keep the reasoning the ARTEFACTS cannot carry" —
-    and fires only when this run produced an artefact to reason about: a write outside its own
-    `state/` scratch, which is working state and not something a later reader interprets.
-
-    Never in a conversation. A conversation's product is the reply, its reasoning is in the
-    thread where the user can already see it, and its spine is `state/plan.md` rather than a
-    ledger — so holding one's reply for a ledger entry costs the user a turn for nothing.
-
-    Whether the ledger was written is read off the FILE — its mtime against the run's start
-    — never off the actions: an append through a shell heredoc, a script or a util is
-    invisible to `turn_records`; reading the actions made 48 of 75 of this assist's
-    deferrals false.
-    """
-    from .runkind import is_conversation
-
-    ledger = s.ctx.routine.dir / "LEDGER.md"
-    if not ledger.is_file():
-        return False        # a routine that keeps no ledger is not being asked to start one
-    if is_conversation(s.ctx):
-        return False
-    try:
-        if ledger.stat().st_mtime >= _run_started(s.ctx):
-            return False    # the reasoning was recorded, by whatever means
-    except OSError:
-        return False
-    return any(not path.startswith("state/") for path in _file_writes(s))
-
-
-def _run_started(ctx) -> float:
-    """The run's start as an epoch. `run_ts` is a bare `YYYYMMDD-HHMMSS` stamp ALWAYS in UTC
-    (`ids.run_ts`), so it is read as UTC — like every other reader of it (registry.parse_run_ts,
-    runevidence, daemon/gate_prepare). It survives a resume, where the engine's own monotonic
-    clock restarts.
-
-    Reading it as LOCAL time skewed this bound by the host's whole UTC offset (2 h here in
-    summer), so `ledger.st_mtime >= _run_started(ctx)` counted a ledger written hours BEFORE
-    the run as written during it and the missing-reasoning assist silently never fired. It is
-    pinned by offset arithmetic in tests/test_assist_run_started.py, never against a named
-    zone: this host's zoneinfo files are not the zones their names promise.
-    """
-    import datetime as dt
-
-    stamp = dt.datetime.strptime(str(ctx.run_ts), "%Y%m%d-%H%M%S").replace(tzinfo=dt.UTC)
-    return stamp.timestamp()
-
-
 def _uncheckpointed_repo_write(s: Situation) -> bool:
     """This action is about to edit a file inside a git repo the engine does not version.
 
@@ -325,8 +271,6 @@ PREDICATES: dict[str, Predicate] = {
         describes="a permission refused something this run wanted"),
     "user-corrected": Predicate(moment="boundary", check=_user_corrected,
         describes="the user just said something to this run"),
-    "ledger-untouched": Predicate(moment="pre-finish", check=_ledger_untouched,
-        describes="this run changed things and has not written to LEDGER.md"),
     "uncheckpointed-repo-write": Predicate(moment="pre-action", check=_uncheckpointed_repo_write,
         describes="this edits a git repo the engine does not version; its working tree "
                   "holds changes no commit can restore"),

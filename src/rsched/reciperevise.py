@@ -109,8 +109,8 @@ def instruction(records: list[dict]) -> str:
             "recipe from watching your runs. Your own recipe files (main.md / stages/ / "
             "tuning.yaml) are writable to you on THIS leg only.\n\n" + body + "\n\nMake the "
             "edits with edit_file (a narrow anchor, not a rewrite), read back what you wrote, "
-            "note the change in your LEDGER, and say in your summary what you changed and on "
-            "whose line. You own this recipe: if a line is wrong about what your runs actually "
-            "do, do NOT make that edit — say so in the summary with what you saw instead, and "
-            "leave the file alone. `routine.yaml` is the operator's and stays sealed; a line "
-            "that needs a config change goes out as a deferred ask_user carrying the patch.")
+            "and say in your summary what you changed and on whose line. You own this "
+            "recipe: if a line is wrong about what your runs actually do, do NOT make that "
+            "edit — say so in the summary with what you saw instead, and leave the file "
+            "alone. `routine.yaml` is the operator's and stays sealed; a line that needs a "
+            "config change goes out as a deferred ask_user carrying the patch.")

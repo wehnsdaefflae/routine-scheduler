@@ -15,7 +15,7 @@ On a finished routine run's page, the message box has a mode selector. Pick
 The run **resumes with its full transcript rehydrated** (it just executed, so it knows exactly what
 happened) and edits its OWN recipe files — `main.md`, the `stages/` modules, and
 `tuning.yaml` — with its normal `read_file` / `edit_file` / `write_file` tools. It verifies the edit,
-notes it in `LEDGER.md`, and finishes. The engine commits the change; it takes effect on the
+says what it changed in its finish summary (which the engine files in `LEDGER.md`), and finishes. The engine commits the change; it takes effect on the
 routine's **next run**.
 
 ## When the run proposes it first
@@ -80,7 +80,7 @@ relies on, pointed at a single routine on demand.
 
 The **routine-improver** is the scheduled, cold, comprehensive sweep across every routine. **Revise
 recipe** is the on-demand, warm, single-routine, user-directed edit. They share the recipe-write
-mechanism and the record-it-in-the-LEDGER discipline; use revise when you have a specific change in
+mechanism and the say-it-in-the-summary discipline; use revise when you have a specific change in
 mind and the evidence fresh in front of you.
 
 Conversations have no revise mode — their recipe is the fixed `converse` workflow, not a

@@ -303,7 +303,8 @@ user-facing here.
   on the instance
 - Routine dirs: `routine.yaml`, `main.md` (the workflow, materialized) + `stages/` modules
   (the routine's sole source of truth — no persisted instruction, no recompile),
-  `state/`, `LEDGER.md`, `inbox/`, `questions/`, `runs/<ts>/` (transcripts, gitignored,
+  `state/`, `LEDGER.md` (engine-written, one entry per finished run, older months rotated into
+  `.ledger/`), `inbox/`, `questions/`, `runs/<ts>/` (transcripts, gitignored,
   keep-last-N with gzip)
 
 See `CLAUDE.md` for working conventions and the transcript/action contracts.

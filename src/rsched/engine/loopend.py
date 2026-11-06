@@ -19,7 +19,7 @@ from __future__ import annotations
 from .. import abortmark
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import archival, assist, background, closingasks, inbox, jobops, recipeproposal
+from . import archival, assist, background, closingasks, inbox, jobops, ledgerentry, recipeproposal
 from .autocommit import autocommit
 from .finish_guard import normalize_escaped_newlines
 from .run_context import RunContext
@@ -203,6 +203,9 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
     if ctx.depth == 0:
         from ..paths import atomic_write
         atomic_write(ctx.run_dir / "result.md", summary + "\n")
+        # P1: the process record is the ENGINE's — one LEDGER.md entry from what this leg
+        # already produced, before the autocommit so it is committed with the run it records.
+        ledgerentry.record(loop, status, summary)
         # D152 step 8: the `run-end` hook point. HERE — the point's own words are "the run is
         # over and its result is written" — and before the autocommit, so a line written for
         # the next run is committed with the run that learned it. Its carrier is the only one
