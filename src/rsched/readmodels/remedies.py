@@ -59,6 +59,9 @@ REMEDIES: dict[str, str] = {
     "fix_phase": "have the recipe record the phase under `{expected}`",
     "declare_outcome": "give it {missing} — what it exists to produce for its principal, as "
                        "numbers its runs answer for",
+    "revise_recipe": "revise its recipe so its runs stop spending {share} of their actions on "
+                     "its own process — drop the stages, records and Done-when lines the task "
+                     "does not need",
 }
 
 #: Which param decides between a kind's named and `:any` wording.
@@ -71,7 +74,7 @@ _ANY_PARAM = {"add_root": "path", "bind_machine": "name", "bind_connection": "pr
 #: directions, so neither the words nor the params can grow past the other unnoticed.
 #:
 #: A list param joins with commas (`missing`); everything else is said as it stands.
-_PARAMS = ("missing", "name", "mode", "path", "provider", "expected", "doc")
+_PARAMS = ("missing", "name", "mode", "path", "provider", "expected", "doc", "share")
 
 
 def _params(fix: dict) -> defaultdict[str, str]:

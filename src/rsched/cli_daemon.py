@@ -108,6 +108,10 @@ def cmd_daemon(_args) -> int:
     # moment test reads, counted from their transcripts — after the volume backfill, same window
     from .migrate_frictions import run_migration as backfill_frictions
     backfill_frictions(server)
+    # MIGRATION(expires=2026-12-31): the runs retention kept gain the task/process/friction split
+    # the process-overhead invariant reads — after the friction backfill, same window
+    from .migrate_overhead import run_migration as backfill_overhead
+    backfill_overhead(server)
     # MIGRATION(expires=2026-12-31): the pre-stream report history becomes hooks, so the first
     # decision taken from the stream (the open-thread cap) answers from the whole ledger and not
     # from the three weeks since step 4 — before the app starts, so nothing appends meanwhile

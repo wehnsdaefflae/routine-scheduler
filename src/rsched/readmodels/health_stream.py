@@ -117,6 +117,11 @@ BLOCKED_EVENTS: dict[str, str] = {
                              "hard or was cooling, so the turn could not be taken: the detail "
                              "names the chain head and the last model tried "
                              "(engine/degrade.py)",
+    # The unit is the routine's RUN TIME: a run that spent most of its actions on its own process
+    # finished `ok` on every other surface, while the task it is for did not get those turns.
+    "process_overhead_high": "a routine's runs go mostly to its OWN PROCESS — recipe reads, "
+                             "ledgers, notes, phase files, harness friction — rather than its "
+                             "task: the median share is over the fleet bar (engine/overhead.py)",
 }
 
 #: Partial finishes, split by whether a budget forced them (health_events.py's own

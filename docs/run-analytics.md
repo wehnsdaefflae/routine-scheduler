@@ -606,6 +606,60 @@ generator must give `## Done when` a line naming the measures, and the routine's
 `scripts/outcome.py` from the records its stages keep — until it does, the outcome row reads
 `unmeasured` and the engine records `{"error": …}`, never a zero.
 
+## Process overhead: does a run go to its task?
+
+An outcome says what a routine PRODUCED; it cannot say what its runs spent their turns ON. On
+2026-11-06 a hand classification of ~10,500 turns found 12 of 24 routines spending most of their
+runs on bookkeeping — reading their own recipe stage by stage, keeping LEDGER.md, phase files,
+notes and state ledgers, re-filing records, and turns the harness took back — and nothing on the
+instance had said so. The operator's standard is that this is a critical failure that must never
+again go unnoticed, so it is measured on every run and held as a fleet invariant.
+
+**Per run** (`engine/overhead.py`): every landed action is TASK, PROCESS or FRICTION, decided
+deterministically from the action and the observation the transcript records for it — memory,
+rules, goals, jobs and the finish are process; a file action is process when every target is a
+process artefact (the recipe at any depth, `.memory/`, `inbox/`, `runs/`, the engine's own
+`state/` files, anything named ledger/backlog/journal/worklog/changelog/tracker/log); a call is
+process only when everything it names is (or its program is a ledger tool), and a `shell` over
+nothing but the routine's own `state/` is the run hand-keeping its records; a held action, a
+deferred finish, an engine refusal, a failed util/script, a schema-rejected reply and every
+NOT EXECUTED chain element are friction. Product data written to `state/` stays the task's, and
+so do `report` and `ask_user`, which ARE the product for some routines. The run records
+`{task, process, friction, process_share}` — `process_share` = (process + friction) / all — as
+`overhead` in its status.json and `quality.overhead` in its usage row, at its end
+(`engine/runtime.py`), over the whole run's transcript, so a resumed run's newest leg carries
+the run.
+
+**Per routine** (`readmodels/overhead_reading.py`): the MEDIAN `process_share` of the newest
+`overhead.WINDOW` (5) measured depth-0 runs UNDER THE ROUTINE'S CURRENT RECIPE, judged once there
+are `MIN_RUNS` (3), against `overhead.THRESHOLD` (0.27). A run counts only when its row's
+`recipe_commit` is the routine's current recipe version (the newest commit touching main.md,
+stages/ or tuning.yaml), so a recipe revision RESETS the window: on 2026-11-06 every recipe was
+cut of its bookkeeping in one sweep, and a window still reading the old recipe's runs would have
+told each repaired routine to propose revisions for bookkeeping already gone — new bookkeeping. The bar is CALIBRATED, not chosen: run over the hand-classified runs
+themselves, the classifier's medians put 11 of the 12 bookkeeping-dominated routines at 0.277 or
+above and all 8 healthy ones at 0.263 or below, and 0.27 is the middle of that gap (the module
+docstring carries the table, the one miss — self-audit, whose item ledger is named as nothing —
+and four rules measured and rejected). That miss is a limit of the method: bookkeeping kept on a
+DOMAIN ledger — named for what it tracks, worked through the routine's own scripts, or filed as
+reports — is invisible to a conservative classifier, and routine-improver's outcome review (a
+routine whose outcome series stays flat while its runs finish `ok`) is the complementary net. The usage stream is the ONE source: a run whose row
+carries no `overhead` is unmeasured and left out, never recomputed from a transcript and never a
+zero. The kept runs before this release were measured once, at boot, from their transcripts
+(`migrate_overhead.py`, the `migrate_frictions.py` shape).
+
+Where the reading goes, over the bar:
+
+- **the blocked-work surface** — `process_overhead_high` (routine, `median`, `threshold`, the
+  `runs`), filed at a run's end by `engine/overhead_alarm.py`, at most once a day per routine.
+  The latch is the health stream itself, so a restart cannot re-file it, and it is not a
+  `health_cooldown` row because nothing the blocked fold counts may be;
+- **the setup surface** — the `recipe:overhead` NOTE with its `revise_recipe` remedy
+  (docs/rules-permissions.md), which is also the `NOTE` line `rsched validate` prints;
+- **the run itself** — one `PROCESS OVERHEAD:` line in the boot digest's FINISH block, right
+  after the D200 recipe-revision ask, asking that the revisions remove the bookkeeping
+  (docs/prompt-anatomy.md). Never the harness contract: it is budget-capped and every routine's.
+
 ## What a run costs (`volume` and `notional_cost`)
 
 `tokens` — fresh input + output — is what a token BUDGET meters and nothing more: adapters keep
@@ -799,13 +853,14 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. 18 health events record the opposite —
+Everything above measures runs that HAPPENED. 19 health events record the opposite —
 `fire_refused`, `lane_fire_refused`, `fire_paused`, `lane_fire_paused`, `oneshot_skipped`,
 `lane_chain_stopped`,
 `lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped`, `commit_failed`,
 `backup_stale`, `migration_expired`, `migration_due_soon`, `obligation_overdue`,
-`finish_gate_failed`, `wrong_turn_detected`, `item_dropped_live` and `model_chain_exhausted`
-— and no run page, Items row or Stats slice can carry any of them: the first six produce
+`finish_gate_failed`, `wrong_turn_detected`, `item_dropped_live`, `model_chain_exhausted` and
+`process_overhead_high` (a routine's run time going to its own process rather than its task —
+"Process overhead" above) — and no run page, Items row or Stats slice can carry any of them: the first six produce
 no run at all; a commit that did not land happens after a run's finish is written, or
 outside any run (a web edit, a boot seed sync, a migration); a finish gate that RAISED
 (F678) leaves a run that reads as finished on every surface, because it did finish — on its own

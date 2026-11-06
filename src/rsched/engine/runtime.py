@@ -224,7 +224,15 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
         status = engine.run()
         from ..usage_log import REVISE_LEG, log_workflow_usage
         from ..workflows import library
-        from . import obligations, outcome, reviseleg, runrecord
+        from . import (
+            obligations,
+            outcome,
+            overhead,
+            overhead_alarm,
+            recipeproposal,
+            reviseleg,
+            runrecord,
+        )
 
         # A narrow revise leg did no task (engine/reviseleg.py): the obligations, the outcome
         # reading and the per-run telemetry are the proposing leg's, and stay as it left them.
@@ -232,11 +240,13 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
         if not leg:
             # what a person asked of it and this run did not finish waits for the next run
             obligations.save(ctx)
-            # what the routine EXISTS to produce, measured after its last turn
-            # (engine/outcome.py) and recorded beside what the run cost — status.json and the
-            # usage row alike
+            # what the routine EXISTS to produce, measured after its last turn (engine/outcome.py),
+            # and how much of the run went to it rather than to its own process
+            # (engine/overhead.py) — recorded beside what the run cost, status.json and the usage
+            # row alike
             ctx.outcome_measures = outcome.measure(ctx)
-            if ctx.outcome_measures is not None:
+            ctx.overhead = overhead.of_run(ctx.run_dir, ctx.routine.dir)
+            if ctx.outcome_measures is not None or ctx.overhead is not None:
                 ctx.write_status()
 
         log_workflow_usage(server.routines_home, routine=cfg.slug, run_id=ctx.run_id,
@@ -257,6 +267,10 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
         if leg:
             return status, run_dir
         _log_cache_health(ctx, cfg.slug)
+        # the routine's process-overhead invariant, read over the row that just landed — for a
+        # run with a recipe of its own, the one thing the remedy revises (not a conversation)
+        if recipeproposal.asks_for_revisions(ctx):
+            overhead_alarm.file_if_high(server.routines_home, cfg.slug, ctx.run_id, routine_dir)
         # The cost-trend flag reads the stream this run's record just landed in, and is a
         # per-RUN judgement (this run against this routine's own history), so it belongs here.
         # The util-stats SNAPSHOT does not: it is one fleet-wide read model that no engine

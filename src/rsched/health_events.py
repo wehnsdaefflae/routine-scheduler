@@ -11,7 +11,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
         |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"
         |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window"|"error_class_undecided"
-        |"item_dropped_live"|"oneshot_skipped"|"hook_stream_diverged",
+        |"item_dropped_live"|"oneshot_skipped"|"hook_stream_diverged"|"process_overhead_high",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
@@ -301,6 +301,9 @@ hook_stream_diverged: a decision taken from the hook stream disagreed with the r
 projects (`hooks/reportinv`, D152 step 7) — carrying `stream` and `ledger`, the two counts. The
 LEDGER's answer was used, because that is what the operator's backlog counts are built on; the
 event is what makes the disagreement findable while both stores are still written.
+
+process_overhead_high: a routine's median `process_share` over its last runs reached the bar —
+its runs go mostly to its own process (`engine/overhead_alarm`, `median`/`threshold`/`runs`).
 """
 
 from __future__ import annotations

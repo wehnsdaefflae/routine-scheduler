@@ -13,6 +13,9 @@ from pathlib import Path
 import yaml
 
 from rsched import lanes
+from rsched.paths import append_jsonl
+from rsched.readmodels.overhead_reading import current_recipe
+from rsched.usage_log import WORKFLOW_USAGE_FILE
 
 
 def unfold(page) -> None:
@@ -67,6 +70,19 @@ def configure(ui, slug: str = "uir", **over) -> None:
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
     cfg.update(over)
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+
+def seed_overhead(ui, slug: str = "uir", share: float = 0.5, runs: int = 3) -> None:
+    """Land `runs` depth-0 usage rows whose measured `process_share` is `share` — the record the
+    process-overhead invariant reads (readmodels/overhead_reading.py). Here, not in the one test
+    file that seeds it, because that file is held at its size ceiling."""
+    recipe = current_recipe(ui.routines / slug)       # only runs of the CURRENT recipe count
+    for n in range(runs):
+        append_jsonl(ui.routines / ".control" / WORKFLOW_USAGE_FILE, {
+            "routine": slug, "run_id": f"{slug}:20260901-07000{n}", "depth": 0, "status": "ok",
+            "recipe_commit": recipe,
+            "quality": {"overhead": {"task": 5, "process": 5, "friction": 0,
+                                     "process_share": share}}})
 
 
 def start_conversation(ui, page, text: str) -> tuple[str, Path]:
