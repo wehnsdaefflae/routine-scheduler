@@ -64,13 +64,13 @@ def work_dir(ctx: RunContext) -> Path:
 
 
 def resolve_action_path(ctx: RunContext, rel: str, *, write: bool = False) -> Path:
-    """An action's path, resolved where the run's relative paths resolve (`work_dir`) and held
-    to its roots — the routine's own dir always among them, so a routine file stays reachable
-    by its absolute path while a task's workspace is the working directory. Raises
-    PermissionError outside them (paths.resolve_rel).
+    """An action's path, resolved where the run's relative paths resolve (`work_dir`), or for a
+    relative one the working directory does not hold, in the first allowed root that does
+    (`prefer_existing`) — and held to its roots, the routine's own dir always among them, so a
+    routine file stays reachable. Raises PermissionError outside them (paths.resolve_rel).
     """
     roots = ctx.write_roots() if write else ctx.read_roots()
-    return resolve_rel(work_dir(ctx), rel, [*roots, ctx.routine.dir])
+    return resolve_rel(work_dir(ctx), rel, [*roots, ctx.routine.dir], prefer_existing=True)
 
 
 @dataclass
