@@ -15,6 +15,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.504.0] — 2026-11-06
+
+### A failure is classified from what it DECLARED, a relative path finds its root, and a conversation can be supervised
+
+**Three places decided retry, failover and prompt-window policy by matching ENGLISH SENTENCES in
+a provider's error body.** The operator's order (2026-10-17, R3108): *"I want you to replace the
+prose checks completely"*. New `endpoints/errorsignal.py` builds an `ErrorSignal` at the raise in
+`endpoints/base.raise_for_status` from the WHOLE body — the HTTP status plus the provider's own
+`error.code` / `error.type` / `error.param` / `error.metadata.limit_source`, which are a DECLARED
+ENUM the vendor documents, where `message` is prose for a human. The crux is that
+`EndpointError`'s message keeps only `resp.text[:300]`, so an error object past that cut reached
+no decision point at all. `_OVERFLOW_HINTS` (4 phrases), `_NEVER_OVERFLOW_STATUS` (9),
+`_FAILOVER_REASONS` (5 reasons / ~20 needles) and the `"in-flight requests"` string check are
+**deleted**. Under the enum tables the fallback is structural, not prose: a structured 400/413
+stating a token figure is an overflow whatever code it names, and a failure's class falls back to
+its HTTP status — so a vendor nobody has met is covered by the SHAPE of its answer, and a new
+enum token is an improvement rather than the difference between armed and disarmed. The two
+classes that are the ENGINE's own finding (`refusal`, `empty`) are now declared at the raise
+instead of written into a sentence and read back out of it.
+
+**What a `no_structured_error` verdict makes the engine DO** — the residue the order leaves
+undefined, and the reason this release names it (F843/R3209). A proxy in this instance's chain
+(CLIProxy/OpenRouter-style) can relay an upstream failure as a bare body with no error object at
+all. Two readings survive that: the HTTP status, and a declared enum token appearing bare in the
+text; `structured` stays False so every site can tell the difference, and each site then fails in
+a stated direction:
+- **the window guard DECLINES** — no overflow is read, the prompt is not re-bounded, and
+  `engine/errorclass.note_overflow_declined` files the row with `declined_by:
+  no_structured_error`. The false positive would pin the run's window to a figure that was never
+  a context size, which is the worse of the two errors.
+- **a bare-body 402 is RETRYABLE** — `retryable_402` returns true when nothing is structured.
+  Measured asymmetry: fatal cost conversation `c-20261016-075101` two deaths in 30 s at 0 rungs
+  while the condition cleared itself; retryable costs two backoff sleeps before it fails exactly
+  as before.
+- **failover classes it `other`** — an honest bucket, never a guess that makes a new failure mode
+  look like a known one.
+
+**A relative action path now resolves in the allowed roots too** (R3233) — the operator, mid-run:
+*"paths shouldn't have to be absolute"*. `paths.resolve_rel` consulted `extra_roots` only as a
+permission check on an ABSOLUTE path, so a relative one joined the working directory and nowhere
+else: it could never land in a granted root and died at `open()` with ENOENT while the file sat
+in one — while the ACTION SCHEMA's own prose, mounted in every run's prompt, promises "path
+relative to your working directory (or an allowed root)". He chose full symmetry, so the rule
+(behind `prefer_existing`, which only `engine/run_context.resolve_action_path` passes — the one
+funnel for read_file / write_file / edit_file / view_image / delete / move / mkdir) is: the
+working directory first, then the first root HOLDING the path, then the first root holding its
+PARENT directory — which is what makes a CREATING write symmetric, decided on evidence already
+on disk rather than on which root is writable — else the plain join, exactly as before. **An
+ancestor root is not an alternative**: the rule as decided redirected an open JOB's `write_file
+state/progress.md` out of its workspace into the routine's own `state/`, caught by a
+pre-existing test, so a root containing the working directory is skipped.
+
+**A conversation can now be supervised the way a routine can** — D216 part (d), the last of the
+parity campaign he answered *"All six, as one parity campaign"* and ordered *"(c), (b), (a),
+(d)"*. The engine never gated the ladder on being a routine (`engine/ladder.ladder_settings`
+reads the config object composed at each reply's boot, and a conversation IS a `RoutineConfig`),
+so the gap was the surfaces: `ladder` + both turn knobs were absent from
+`CONVERSATION_PATCH_FIELDS` and from `ConversationPatch`, which is `extra="forbid"` — naming one
+was a 422. The conversation GET now serves the block and its derived rung budget, the header
+mounts `ladderPanel` (the routine page's own two controls, composed), and
+`web/patch_merge.validate_tuning`/`apply_tuning` are **shared by both PATCHes** so a
+conversation's floors are the engine's own rather than a second copy. Found while moving them:
+the routine PATCH's MIXED-patch path wrote tuning with the `oversight_turns: 0` → removal
+conversion skipped. The header also gains the **supervisor** picker, and had to: `validate_models`
+replaces the role block wholesale, so a `supervisor` written into a conversation's `routine.yaml`
+by hand was ERASED by the next model save anyone made from that header.
+
+**An empty `tools:` list in a workflow allowed EVERY action** (D242, review item E1.6).
+`loopsetup.configure` read the allowlist with a falsy test, and `[]` is falsy — so a workflow
+declaring `tools: []` (the always-kinds and nothing else) was given the full `KINDS` surface with
+the schema projected from it. A restriction that fails OPEN, and nothing downstream could catch
+it: both other readers already test `is None`, so the list reached them already turned into
+"unrestricted". Now `is not None`; an ABSENT `tools:` key still means every kind. Guard cost
+measured rather than assumed: exactly one routine declares `tools:` at all (a 7-item list) and
+nothing in the seed library or any live `main.md` declares an empty one, so no routine's
+behaviour changes today — this closes the path before someone writes `tools: []` and is silently
+given everything.
+
+**A stale worktree survived a teardown that reported completeness** (F842). `.audit-wt/otari-cost`
+on branch `wt-otari-cost` sat six days after the sweep that claimed every one was removed:
+`scheduler-builder`'s teardown enumerated `audit/*` on ORIGIN and its own guesses, so a worktree
+on a branch outside that namespace was invisible to the sweep AND untearable by name. Its script
+now reads `git worktree list` — git's own record, which cannot drift from the disk — and takes a
+worktree's branch from it instead of assuming `audit/<item>`.
+
 ## [0.503.0] — 2026-11-06
 
 ### A run's turns belong to its task — bookkeeping is the engine's, and its absence is measured
