@@ -130,7 +130,7 @@ def test_a_stand_in_server_without_the_homes_cannot_kill_the_boot():
     assert mig.run_migration(SimpleNamespace(routines_home="")) == {}
 
 
-def test_a_homeless_server_writes_NOTHING_rather_than_into_the_current_directory(tmp_path,
+def test_a_homeless_server_writes_nothing_rather_than_into_the_current_directory(tmp_path,
                                                                                 monkeypatch):
     """The half the return value above does not cover, and it cost a release gate.
 
