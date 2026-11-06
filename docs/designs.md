@@ -141,21 +141,6 @@ own notes, kept so the trail can be followed.
 
 ---
 
-## A live budget raise withdraws a spent reserved finish turn (E1.4)
-
-**Problem.** The first budget violation grants a reserved finish turn (schema narrowed to
-`finish`). Budgets are LIVE config (`configflow`), adopted at a turn boundary — but a run whose
-operator raises the spent budget still stands in its reserved turn and can only finish.
-
-**Shape.** Adopt a pending live config change BEFORE the budget check at the boundary; when the
-violated resource is back within its limit, clear `_finish_reserved`, restore the full schema, and
-say so in one engine note. A non-finish the reserved turn refused gets its observation.
-
-**First increment.** Red-first ScriptedEndpoint test: budget spent → reserved turn → control.json
-raises `turns` → the next turn may `write_file` and the run continues.
-
----
-
 ## A resumed leg keeps two more counters, and a replayed observation keeps its tails
 
 **Problem.** (a) `loop.failures` (the "failed twice this run" count behind the repair hint) and
