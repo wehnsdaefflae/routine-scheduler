@@ -12,7 +12,7 @@ import json
 
 from ..config.base import supervisor_role
 from ..endpoints.base import EndpointError
-from . import refusal
+from . import outputs, refusal
 from .observations import truncate
 from .run_context import RunContext
 
@@ -75,9 +75,20 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
                          "look identical, so this is surfaced rather than passed on. Retry "
                          "with the prompt reworded, or with a different `model` — and do not "
                          "read the silence as agreement."}
+    full_reply = reply
     reply, truncated = truncate(reply)
     out = {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
            "reply": reply, "usage": completion.usage, "truncated": truncated}
+    # D246: an oversized reply SPILLS, like a util's output, instead of losing its middle.
+    # `truncate`'s default keeps the head and the tail and elides the middle — for a util that
+    # is fine, because the whole stream is written to `.util_outputs/` and the observation
+    # carries a `[full output]` pointer to it. The one kind whose output is a MODEL's answer —
+    # the most expensive thing a run buys and the least reproducible, since a re-ask returns a
+    # different reply — was the kind that threw the middle away. Same store, same pointer
+    # sentence, so there is one thing for a run to learn rather than two.
+    if truncated and (pointer := outputs.spill(ctx, "llm", full_reply, "",
+                                               out_truncated=True, err_truncated=False)):
+        out["full_output"] = pointer
     # Refusal takeover (engine/refusal.py, operator 2026-10-16): a free-text reply the
     # classification subcall judges a content REFUSAL is re-issued WHOLE on the routine's
     # uncensored model - same messages, same schema - and its reply IS the answer (the
