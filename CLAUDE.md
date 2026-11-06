@@ -848,7 +848,9 @@ by a test, by the engine, or by a past incident.
   had said so). Every depth-0 run classifies its landed actions as task, process or friction
   (`engine/overhead.py` — deterministic over the transcript, so a kept one measures the same) and
   records `overhead` in status.json and `quality.overhead` in its usage row. The invariant is the
-  MEDIAN `process_share` of a routine's last 5 measured runs against `overhead.THRESHOLD` (0.27 —
+  MEDIAN `process_share` of a routine's last 5 measured runs UNDER ITS CURRENT RECIPE (rows whose
+  `recipe_commit` is the newest recipe commit — a revision resets the window, or a repaired
+  routine is told to remove bookkeeping it no longer has) against `overhead.THRESHOLD` (0.27 —
   CALIBRATED against that hand count, table in the module docstring; never move it without
   re-running that calibration), read by ONE read model off the usage stream
   (`readmodels/overhead_reading.py`, no transcript fallback — `migrate_overhead.py` measured the

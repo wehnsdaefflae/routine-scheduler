@@ -113,7 +113,7 @@ def _overhead_line(routine_dir: Path) -> str:
     """One line when this routine's runs are over the process-overhead bar, else ""."""
     from ..readmodels import overhead_reading
 
-    r = overhead_reading.reading(routine_dir.parent, routine_dir.name)
+    r = overhead_reading.reading(routine_dir.parent, routine_dir.name, routine_dir)
     if r is None or not r["over"]:
         return ""
     return (f"PROCESS OVERHEAD: for this routine, {overhead_reading.describe(r)} — reading its "

@@ -30,7 +30,7 @@ def _overhead_nodes(server: Any, cfg: Any) -> list[dict]:
     routine_dir = Path(getattr(cfg, "dir", None) or server.routines_home / cfg.slug)
     if _is_conversation(server, routine_dir) or not getattr(cfg, "enabled", True):
         return []
-    r = overhead_reading.reading(Path(server.routines_home), cfg.slug)
+    r = overhead_reading.reading(Path(server.routines_home), cfg.slug, routine_dir)
     if r is None or not r["over"]:
         return []
     share = f"{round(100 * r['median'])}%"

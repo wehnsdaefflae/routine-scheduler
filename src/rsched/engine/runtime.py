@@ -253,7 +253,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
         # the routine's process-overhead invariant, read over the row that just landed — for a
         # run with a recipe of its own, the one thing the remedy revises (not a conversation)
         if recipeproposal.asks_for_revisions(ctx):
-            overhead_alarm.file_if_high(server.routines_home, cfg.slug, ctx.run_id)
+            overhead_alarm.file_if_high(server.routines_home, cfg.slug, ctx.run_id, routine_dir)
         # The cost-trend flag reads the stream this run's record just landed in, and is a
         # per-RUN judgement (this run against this routine's own history), so it belongs here.
         # The util-stats SNAPSHOT does not: it is one fleet-wide read model that no engine

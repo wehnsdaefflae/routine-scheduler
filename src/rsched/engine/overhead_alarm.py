@@ -5,7 +5,8 @@ one moment the routine's median can move — so that is when it is read
 (`readmodels/overhead_reading.py`). Over the bar, the routine's runs are dominated by its own
 process, and the event says so on the blocked-work surface
 (`readmodels/health_stream.BLOCKED_EVENTS`), naming the median, the runs it was taken over and
-the bar.
+the bar. Only runs of the routine's CURRENT recipe count, so a recipe revision silences it until
+three runs under the new recipe say otherwise (`overhead_reading`'s docstring says why).
 
 AT MOST ONCE PER DAY per routine, and the latch is the STREAM itself: an earlier row for the same
 routine inside `LATCH_HOURS` keeps the next quiet. A run end has no long-lived object to latch
@@ -47,15 +48,16 @@ def filed_recently(routines_home: Path, slug: str, now: datetime | None = None) 
     return False
 
 
-def file_if_high(routines_home: Path, slug: str, run_id: str) -> bool:
-    """File `EVENT` when `slug`'s reading is over the bar and nothing was filed today.
-    Returns whether a row was filed.
+def file_if_high(routines_home: Path, slug: str, run_id: str,
+                 routine_dir: Path | None = None) -> bool:
+    """File `EVENT` when `slug`'s reading — over its runs of the CURRENT recipe — is over the bar
+    and nothing was filed today. Returns whether a row was filed.
     """
     from ..health_events import log_health_event
     from ..readmodels import overhead_reading
 
     try:
-        r = overhead_reading.reading(Path(routines_home), slug)
+        r = overhead_reading.reading(Path(routines_home), slug, routine_dir)
         if r is None or not r["over"] or filed_recently(routines_home, slug):
             return False
         log_health_event(Path(routines_home), EVENT, routine=slug, run_id=run_id,

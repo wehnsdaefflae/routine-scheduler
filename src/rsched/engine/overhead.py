@@ -50,7 +50,13 @@ runs since 2026-10-23 of each routine; median of the per-run shares, as the inva
 lowest flagged one (0.277): 11 of 12 flagged, 0 of 8 healthy. The miss is self-audit, whose
 bookkeeping is its item ledger (`audit/report.json`, named as nothing) maintained through its
 own scripts and 31 reports — both TASK by the rules above, which stay conservative rather than
-learn one routine's file names. Four rules were MEASURED and rejected: counting `report` /
+learn one routine's file names. That is a LIMIT, not a verdict: bookkeeping kept on a DOMAIN
+ledger — a store named for what it tracks rather than as a ledger, worked through the routine's
+own tooling, or reports filed as work — is outside what this classifier sees, and a routine doing
+only that reads healthy here. The complementary net is routine-improver's outcome review, which
+reads each routine's OUTCOME series (readmodels/outcome_series.py) before any health claim: a
+routine whose measures stay flat while its runs keep finishing `ok` is caught there, whatever
+its turns were spent on. Four rules were MEASURED and rejected: counting `report` /
 `ask_user` as process (one healthy routine over the bar — scheduler-improvement-research files
 reports as its product), counting every read of `state/` (deficit-coach's product reads tie the
 lowest flagged routine), not counting the finish (3 healthy routines over at any bar that flags
@@ -73,7 +79,8 @@ from .frictions import _lines
 TASK, PROCESS, FRICTION = "task", "process", "friction"
 
 #: The fleet invariant: a routine whose MEDIAN `process_share` over its last `WINDOW` depth-0
-#: runs reaches this is dominated by its own process (calibration in the module docstring).
+#: runs UNDER ITS CURRENT RECIPE reaches this is dominated by its own process (calibration in the
+#: module docstring; the recipe window is readmodels/overhead_reading.py's).
 THRESHOLD = 0.27
 #: How many of a routine's newest measured depth-0 runs the invariant reads, and how many it
 #: needs before it judges at all — one long orientation run is not a routine's habit.

@@ -6,6 +6,7 @@ validate` through that row, and the boot digest's FINISH block — plus the one-
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -18,9 +19,10 @@ from rsched.readmodels.surface_overhead import _overhead_nodes
 from rsched.readmodels.usage_stream import stream_path
 
 
-def _row(i: int, share: float | None, *, slug: str = "r", depth: int = 0) -> dict:
+def _row(i: int, share: float | None, *, slug: str = "r", depth: int = 0,
+         recipe: str | None = None) -> dict:
     rec = measured_run(i, slug=slug)
-    rec["depth"] = depth
+    rec["depth"], rec["recipe_commit"] = depth, recipe     # a dir with no git: recipe None
     if share is not None:
         rec["quality"]["overhead"] = {"task": 1, "process": 1, "friction": 0,
                                       "process_share": share}
@@ -97,7 +99,8 @@ def test_validate_prints_a_note_and_stays_green(cli_server, make_routine, capsys
 
     d = make_routine(slug="testr")
     declare_outcome(d)
-    _stream(cli_server.routines_home, [0.5, 0.6, 0.4], slug="testr")
+    _stream(cli_server.routines_home, [0.5, 0.6, 0.4], slug="testr",
+            recipe=overhead_reading.current_recipe(d))
     assert cli.cmd_validate(SimpleNamespace(routine="testr")) == 0
     out = capsys.readouterr().out
     assert "NOTE  recipe:overhead: its runs are dominated by its own process" in out
@@ -135,3 +138,41 @@ def test_the_backfill_measures_the_newest_leg_of_each_kept_run_once(tmp_path):
     assert "overhead" not in rows[2]["quality"]           # its dir is gone: unmeasured
     assert (home / RECORD).exists()
     assert run_migration(SimpleNamespace(routines_home=home)) == {}
+
+
+def _commit_recipe(d, text: str) -> str:
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                              cwd=d, check=True, capture_output=True, text=True).stdout.strip()
+    if not (d / ".git").is_dir():
+        git("init", "-q")
+    (d / "main.md").write_text(text, encoding="utf-8")
+    git("add", "main.md")
+    git("commit", "-qm", "recipe")
+    return git("log", "-1", "--format=%H")
+
+
+def test_a_recipe_change_resets_the_window_and_silences_alarm_and_digest(tmp_path):
+    """The 2026-11-06 sweep cut every recipe's bookkeeping in one go: the runs of the OLD
+    recipe must not go on telling the repaired routine to revise bookkeeping it no longer has —
+    nothing is judged until MIN_RUNS runs exist under the new recipe."""
+    home = tmp_path / "routines"
+    d = home / "r"
+    d.mkdir(parents=True)
+    old = _commit_recipe(d, "# old recipe, with a ledger stage\n")
+    rows = [_row(i + 1, 0.6, recipe=old) for i in range(5)]
+    write_usage_stream(home, rows)
+    assert overhead_reading.reading(home, "r")["over"] is True
+    new = _commit_recipe(d, "# repaired recipe\n")
+    assert overhead_reading.reading(home, "r") is None             # no run of it yet
+    assert "PROCESS OVERHEAD" not in finish_digest.digest_section(d)
+    assert overhead_alarm.file_if_high(home, "r", "r:x", d) is False
+    for n in range(overhead.MIN_RUNS):
+        rows.append(_row(10 + n, 0.6, recipe=new))
+        write_usage_stream(home, rows)
+        r = overhead_reading.reading(home, "r")
+        assert [x["run_id"] for x in r["runs"]] == [x["run_id"] for x in rows[5:]]
+        judged = n + 1 >= overhead.MIN_RUNS
+        assert (r["judged"], r["over"]) == (judged, judged)
+        assert ("PROCESS OVERHEAD" in finish_digest.digest_section(d)) is judged
+    assert overhead_alarm.file_if_high(home, "r", "r:y", d) is True

@@ -631,12 +631,19 @@ so do `report` and `ask_user`, which ARE the product for some routines. The run 
 the run.
 
 **Per routine** (`readmodels/overhead_reading.py`): the MEDIAN `process_share` of the newest
-`overhead.WINDOW` (5) measured depth-0 runs, judged once there are `MIN_RUNS` (3), against
-`overhead.THRESHOLD` (0.27). The bar is CALIBRATED, not chosen: run over the hand-classified runs
+`overhead.WINDOW` (5) measured depth-0 runs UNDER THE ROUTINE'S CURRENT RECIPE, judged once there
+are `MIN_RUNS` (3), against `overhead.THRESHOLD` (0.27). A run counts only when its row's
+`recipe_commit` is the routine's current recipe version (the newest commit touching main.md,
+stages/ or tuning.yaml), so a recipe revision RESETS the window: on 2026-11-06 every recipe was
+cut of its bookkeeping in one sweep, and a window still reading the old recipe's runs would have
+told each repaired routine to propose revisions for bookkeeping already gone — new bookkeeping. The bar is CALIBRATED, not chosen: run over the hand-classified runs
 themselves, the classifier's medians put 11 of the 12 bookkeeping-dominated routines at 0.277 or
 above and all 8 healthy ones at 0.263 or below, and 0.27 is the middle of that gap (the module
 docstring carries the table, the one miss — self-audit, whose item ledger is named as nothing —
-and four rules measured and rejected). The usage stream is the ONE source: a run whose row
+and four rules measured and rejected). That miss is a limit of the method: bookkeeping kept on a
+DOMAIN ledger — named for what it tracks, worked through the routine's own scripts, or filed as
+reports — is invisible to a conservative classifier, and routine-improver's outcome review (a
+routine whose outcome series stays flat while its runs finish `ok`) is the complementary net. The usage stream is the ONE source: a run whose row
 carries no `overhead` is unmeasured and left out, never recomputed from a transcript and never a
 zero. The kept runs before this release were measured once, at boot, from their transcripts
 (`migrate_overhead.py`, the `migrate_frictions.py` shape).
