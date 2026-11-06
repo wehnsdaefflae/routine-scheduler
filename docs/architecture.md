@@ -1447,7 +1447,12 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   action-import line — the schema is narrowed to `tools:`, so an imported-but-excluded kind is prose
   for a channel the run cannot emit. A pattern's `DONE_WHEN` literal is the skeleton of what one finished
   run leaves behind, which decomposition turns into the routine's own `## Done when`; whether a ROUTINE
-  ever finishes is its operator's finish line, never a pattern's. `workflows/lint.py` gates every change;
+  ever finishes is its operator's finish line, never a pattern's. A CONTRACT NAMES ONLY THE TASK
+  (`workflows/taskcontract.py`, docs/authoring.md): no pattern imports a ledger helper or has a
+  record step, and no DONE_WHEN line names the run's own record — the engine keeps that record,
+  so `routine.state` offers only `phase`, the cross-run lifecycle value set at a milestone. The same
+  vocabulary refuses a generated recipe that asks its run for bookkeeping and fails `rsched
+  validate` over a live one. `workflows/lint.py` gates every change;
   `suggest`/`generate` rank/draft via the `system_model`. Routine creation is initiated from a CONVERSATION ONLY (D58/D59) — there is no standalone new-routine
   wizard page. The conversation agent clarifies the task WITH the user in normal chat, then emits the **`create_routine`**
   action (`engine/create_routine.py`) — valid ONLY from a root conversation — which materializes the routine

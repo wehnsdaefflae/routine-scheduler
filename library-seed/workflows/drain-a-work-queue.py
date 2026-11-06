@@ -45,7 +45,7 @@ from routine.params import (
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import (read_file, write_file, edit_file, util, script, spawn, wait,
                              view_image, ask_user, report, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Drain a work queue",
@@ -60,7 +60,7 @@ META = {
                    "world each run, batches are verified and undoable, heavy work runs on a "
                    "worker outside the run, and a migration ends in a cut-over the principal "
                    "approves. Not for a model that improves by experiments (train-a-model).",
-    "version": 1,
+    "version": 2,
     "tags": ["queue", "batch", "migration", "worker", "verification"],
     "includes": ["change-scope", "work-order", "make-failure-visible", "verify-independently"],
     "tools": None,          # None = every action kind the routine's capabilities allow
@@ -91,7 +91,8 @@ DONE_WHEN = [
     "d5 · start_batch — every batch this run started is processed and verified or handed to the "
     "worker, with its undo recorded",
     "d6 · cut_over — the cut-over the principal approved is carried out, its result verified live",
-    "d7 · record — the queue position and state/phase.json are current",
+    "d7 · update_queue — the queue position names every item done, failed, handed to the "
+    "worker and still pending",
     "d8 · write_gate_state — state/gate.json holds the listing fingerprint and the failure count "
     "the gate compares",
 ]
@@ -110,7 +111,7 @@ class NeedsDecision(Exception):
 def main():
     """One run: steer by the principal's answers, account for the workers, verify what completed,
     reconcile the queue against the world, start the next batches while they can be verified,
-    record."""
+    update the queue position."""
     orient()
 
     if phase.current() == "bootstrap":
@@ -136,7 +137,7 @@ def main():
             except ExternalBlocker:
                 break
 
-    record()
+    update_queue()
     write_gate_state()
     return finish("ok", "queue position, batches started and verified, failures, the worker's "
                         "state, what waits")
@@ -145,7 +146,7 @@ def main():
 def orient():
     """Read the state digest, the queue position, FAILURES and the worker record before anything.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers.
+    The digest carries the phase, the last result and any messages or answers.
     Memory holds how the source is listed, how the worker is reached and how an output is
     checked."""
 
@@ -222,24 +223,20 @@ def start_batch(pending):
     (listing, copying, checking) runs as the routine's own script under a stable name."""
 
 
-def record():
-    """Record the queue position, append one LEDGER entry, set state/phase.json, keep state/ lean.
+def update_queue():
+    """Bring the queue position up to date and set the phase at its milestone.
 
-    The LEDGER entry names the items done and verified, the failures with their errors, the batch
-    handed to the worker and the count still pending. Record the phase under the key `phase`: the
-    lifecycle label from PHASES, never the stage the run is in — draining while items remain or a
-    worker runs, idle once an open queue is empty, cutover once a closed one is done in full.
-    Write every state file with the file actions or the routine's own scripts; a write made
-    through a shell command is invisible to the checks that read the run's actions. Rotate
-    LEDGER.md in the run its size passes the byte cap the recipe names — derived from this
-    routine's own entries, set above the size of the tail it keeps with room for several more —
-    and when a rotation leaves the file over the cap or within one entry of it, fix the numbers
-    with that measurement. A manifest too large to version is listed in the routine's ignore file,
-    so neither its history nor a mirror built from it carries the file. A file under state/ is one
-    a later run reads, under a stable name overwritten in place; anything only this run needed is
-    deleted before finishing. Machinery that failed or misled you and that you worked around goes
-    to its owner with `report`."""
-    ledger.append("done + verified, failures, handed to the worker, still pending")
+    The position names the items done and verified, the failures with their errors (in FAILURES),
+    the batch handed to the worker and the count still pending. The phase is draining while items
+    remain or a worker runs, idle once an open queue is empty, cutover once a closed one is done in
+    full — the label from PHASES under the key `phase`, never the stage the run is in. A manifest
+    too large to version is listed in the routine's ignore file, so neither its history nor a mirror
+    built from it carries the file. Write these files with the file actions or the routine's own
+    scripts — a state update the run repeats the same way every time is one of those scripts; a
+    write made through a shell command is invisible to the checks that read the run's actions. A
+    file under state/ is one a later run reads, under a stable name overwritten in place; anything
+    only this run needed is deleted before finishing. Machinery that failed or misled you and that
+    you worked around goes to its owner with `report`."""
 
 
 def write_gate_state():

@@ -89,7 +89,7 @@ def triage(message):
 
 def answer(message):
     """Answer a follow-up from the conversation's own context: your earlier observations,
-    state/plan.md, LEDGER.md, state/, artifacts/. Re-read a file only if the answer depends
+    state/plan.md, state/, artifacts/. Re-read a file only if the answer depends
     on its current content. One or two turns, then reply.
 
     Verify the FULL enumeration: when the answer lists N records (routines, schedules,
@@ -146,7 +146,7 @@ def work(plan, message):
       nothing the user can act on, keep going.
     - There is no turn or time ceiling on a reply unless the user set one. If they did, its
       warning is a BACKSTOP, not that signal: converge to the nearest handover point — stop
-      starting new work, bring state/plan.md and LEDGER.md up to date, then reply with honest
+      starting new work, bring state/plan.md up to date, then reply with honest
       progress (not final) and end with an offer to continue. The user's 'continue' opens a
       fresh window on the same plan and the same goals, so nothing is lost.
     - Attachments: a message may carry an '[attached files]' block of paths. read_file the

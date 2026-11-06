@@ -191,6 +191,7 @@ ignore = [
 # the `uitest` service, one wherever a caller is) — never a package this repo imports.
 "deploy/uitest/*.py" = ["T201", "INP001"]
 "src/rsched/engine/composer.py" = ["S608"]  # prompt f-strings contain SQL-like words; this file builds prompts, never SQL
+"src/rsched/workflows/taskcontract.py" = ["S608"]  # generation-prompt text contains SQL-like words; this file builds prompts and regexes, never SQL
 
 [tool.ruff.lint.mccabe]
 max-complexity = 22  # ratchet: current worst (state_digest, do_util, handle_manage_lane, format_observation — the engine loop came down to 15); lower as refactors land

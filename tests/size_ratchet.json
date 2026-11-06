@@ -30,7 +30,6 @@
     "src/rsched/web/api_questions.py": 392,
     "src/rsched/web/api_routine_patch.py": 413,
     "src/rsched/web/api_routines.py": 380,
-    "src/rsched/workflows/lint.py": 353,
     "static/app.js": 398,
     "static/base.css": 1203,
     "static/components/chat.js": 388,

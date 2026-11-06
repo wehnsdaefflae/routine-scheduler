@@ -9,11 +9,14 @@ questions, which is why it outgrew its home:
 3. can each role's chain actually FAIL OVER (`conformance`, R2196)? — and is its claim verifier
    a different model from the one it judges (`verifier_model`, a NOTE)?
 4. is the SETUP coherent (`readmodels.surface`) and does the RECIPE still hold together
-   (`workflows.recipelint`) — reported, never fatal?
+   (`workflows.recipelint`) — reported, never fatal — and does its CONTRACT name only the task
+   (`recipelint.recipe_errors`) — fatal?
 
 Only a blocking row fails the command: an interrupt, a note or a recipe phrasing is reported and
 leaves the exit code green, because a check that turned a phrasing into a failed command would be
-switched off inside a week.
+switched off inside a week. A recipe CONTRACT defect is the exception, and is no phrasing: a
+Done-when line about nothing but the run's own record, or a step telling the run to write the
+ledger, buys bookkeeping on every run, so it prints `FAIL  recipe ·` and counts.
 """
 
 from __future__ import annotations
@@ -45,7 +48,7 @@ def cmd_validate(args) -> int:
     from .readmodels.surface import routine_surface
     from .trials import ignored_problem, roles_problem
     from .verifier_model import shared_verifier_problem
-    from .workflows.recipelint import recipe_notes
+    from .workflows.recipelint import recipe_errors, recipe_notes
 
     for d in targets:
         cfg, problems = load_routine(d)
@@ -84,10 +87,12 @@ def cmd_validate(args) -> int:
         # is reported and never counted — a recipe is a hand-tuned document, and a check that
         # turned a phrasing into a failed command would be switched off inside a week.
         recipe: list[str] = []
+        contract: list[str] = []
         if cfg:
             recipe = recipe_notes(d, cfg.capabilities)
+            contract = recipe_errors(d)
         blocking = [ln for ln in lines if ln.startswith("FAIL")]
-        status = "ok" if cfg and not problems and not blocking else "PROBLEMS"
+        status = "ok" if cfg and not problems and not blocking and not contract else "PROBLEMS"
         print(f"{d.name}: {status}")
         for pr in problems:
             print(f"  - {pr}")
@@ -97,10 +102,13 @@ def cmd_validate(args) -> int:
             print(f"  NOTE  failover · {ln}")
         if judge:
             print(f"  NOTE  verifier · {judge}")
+        for ln in contract:
+            print(f"  FAIL  recipe · {ln}")
         for ln in recipe:
             print(f"  NOTE  recipe · {ln}")
         total.extend(problems)
         total.extend(blocking)
+        total.extend(contract)
     for line in _instance_problems(server):
         print(f"instance: {line}")
     return 1 if total else 0

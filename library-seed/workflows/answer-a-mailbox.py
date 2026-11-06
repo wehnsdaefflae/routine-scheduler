@@ -46,7 +46,7 @@ from routine.params import (
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import (read_file, write_file, edit_file, util, script, llm, ask_user,
                              report, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Answer a mailbox",
@@ -60,7 +60,7 @@ META = {
                    "reply service for a recurring kind of request), with drafts the principal "
                    "can veto before they go. Quiet days are the norm and a run gate can skip "
                    "them. Not for watching a mailbox only to report on it (watch-and-report).",
-    "version": 1,
+    "version": 2,
     "tags": ["mail", "correspondence", "filtering", "triage", "outbox"],
     "includes": ["write-as-the-principal", "correspondence", "audit-coverage", "change-scope"],
     "tools": None,          # None = every action kind the routine's capabilities allow
@@ -88,7 +88,7 @@ DONE_WHEN = [
     "d4 · open_thread — every new counterpart has its opening move drafted in its own thread",
     "d5 · advance_thread — every reply in a running thread has its next move drafted, or is named "
     "with what it waits on",
-    "d6 · record — THREADS holds each thread's stage and message ids; state/phase.json is current",
+    "d6 · update_threads — THREADS holds each thread's stage and message ids",
     "d7 · write_gate_state — state/gate.json holds how far the scan reached per folder and what "
     "the next run must pick up",
 ]
@@ -106,7 +106,7 @@ class Waiting(Exception):
 
 def main():
     """One run: send what the principal approved, scan every folder, keep the filter current, move
-    every thread on, record, leave the gate what it needs."""
+    every thread on, keep THREADS, leave the gate what it needs."""
     orient()
 
     if phase.current() == "bootstrap":
@@ -117,7 +117,7 @@ def main():
     fresh, replies, bounces = scan()
     waiting = carried_over()
     if not fresh and not replies and not bounces and not waiting:
-        record()
+        update_threads()
         write_gate_state()
         return finish("ok", "No new mail: each folder named with how far the scan reached.")
 
@@ -135,7 +135,7 @@ def main():
         except NeedsDecision as decision:
             ask_user(decision, mode="deferred")
 
-    record()
+    update_threads()
     write_gate_state()
     return finish("ok", "senders classified, filter changes, drafts written, sends, threads moved")
 
@@ -143,7 +143,7 @@ def main():
 def orient():
     """Read the state digest, THREADS and memory's tool notes before touching the mailbox.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers.
+    The digest carries the phase, the last result and any messages or answers.
     THREADS says where each thread stands, so no counterpart is answered twice and every thread
     resumes at its stage."""
 
@@ -205,21 +205,16 @@ def advance_thread(thread):
     needs the principal or the counterpart first."""
 
 
-def record():
-    """Update THREADS, append one LEDGER entry, set state/phase.json and keep state/ lean.
+def update_threads():
+    """Bring THREADS up to date: each thread's stage and message ids, and the one previous version
+    of the filter script that is kept (never one per run).
 
-    The entry names the senders classified, the filter's change, the drafts written, what was
-    sent and the vetoes seen. Record the phase under the key `phase`: the lifecycle label from
-    PHASES, never the stage the run is in. Write these files with the file actions or the
-    routine's own scripts; a write made through a shell command is invisible to the checks that
-    read the run's actions. Rotate LEDGER.md in the run its size passes the byte cap the recipe
-    names — derived from this routine's own entries, set above the size of the tail it keeps with
-    room for several more — and when a rotation leaves the file over the cap or within one entry
-    of it, fix the numbers with that measurement. Keep one previous version of the filter script,
-    not one per run. A file under state/ is one a later run reads, under a stable name overwritten
-    in place; anything only this run needed is deleted before finishing. Machinery that failed or
-    misled you and that you worked around goes to its owner with `report`."""
-    ledger.append("classified, filter change, drafts, sent, vetoes")
+    Write these files with the file actions or the routine's own scripts — a state update the run
+    repeats the same way every time is one of those scripts; a write made through a shell command is
+    invisible to the checks that read the run's actions. A file under state/ is one a later run
+    reads, under a stable name overwritten in place; anything only this run needed is deleted
+    before finishing. Machinery that failed or misled you and that you worked around goes to its
+    owner with `report`."""
 
 
 def write_gate_state():

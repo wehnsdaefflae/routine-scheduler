@@ -44,7 +44,7 @@ from routine.params import (
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import (read_file, write_file, edit_file, util, script, llm, spawn, wait,
                              memory_read, memory_write, ask_user, report, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Audit and propose",
@@ -59,7 +59,7 @@ META = {
                    "experiments and report confirmed wins to the routine that owns the surface. "
                    "The routine never changes the subject itself. Not for a routine that also "
                    "applies the change (maintain-a-codebase, curate-a-library).",
-    "version": 1,
+    "version": 2,
     "tags": ["audit", "proposals", "research", "decisions", "review"],
     "includes": ["audit-coverage", "verify-independently"],
     "tools": None,          # None = every action kind the routine's capabilities allow
@@ -87,7 +87,8 @@ DONE_WHEN = [
     "d5 · follow_up — every open proposal past its follow-up date is raised again with what "
     "changed since",
     "d6 · write_report — REPORT is rewritten from this run's reading, flagged findings first",
-    "d7 · record — PROPOSALS, state/phase.json and BASELINE are current",
+    "d7 · update_proposals — PROPOSALS holds every proposal filed, followed up or handed off, "
+    "and BASELINE every part's fingerprint as this run read it",
 ]
 
 
@@ -98,7 +99,8 @@ class PremiseGone(Exception):
 
 def main():
     """One run: hand accepted proposals to their owner first, read the subject live, examine it
-    through the lens, file what is new, follow up what is overdue, rewrite the report, record."""
+    through the lens, file what is new, follow up what is overdue, rewrite the report, update
+    PROPOSALS and BASELINE."""
     orient()
 
     if phase.current() == "bootstrap":
@@ -118,14 +120,14 @@ def main():
 
     follow_up()
     write_report(findings)
-    record(reading)
+    update_proposals(reading)
     return finish("ok", "hand-offs, per part or axis: filed or nothing new, open proposals")
 
 
 def orient():
     """Read the state digest, PROPOSALS and the map of SUBJECT's parts before reading any part.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers.
+    The digest carries the phase, the last result and any messages or answers.
     PROPOSALS is the memory that keeps runs additive: an idea already filed, accepted or rejected
     is not filed again."""
 
@@ -202,19 +204,13 @@ def write_report(findings):
     reason. The map of where each part lives is part of the report, so a later run reuses it."""
 
 
-def record(reading):
-    """Update PROPOSALS and BASELINE, append one LEDGER entry, set the phase, keep state/ lean.
+def update_proposals(reading):
+    """Bring PROPOSALS and BASELINE up to date.
 
-    The entry names the hand-offs, the parts or axes examined, the proposals filed, the follow-ups
-    and the candidates rejected with why. BASELINE gets the fingerprint of every part as this run
-    read it, for the run gate; the gate only reads it. Record the phase under the key `phase`: the
-    lifecycle label from PHASES, never the stage the run is in. Write every state file with the
-    file actions or the routine's own scripts; a write made through a shell command is invisible
-    to the checks that read the run's actions. Rotate LEDGER.md in the run its size passes the byte
-    cap the recipe names — derived from this routine's own entries, set above the size of the tail
-    it keeps with room for several more — and when a rotation leaves the file over the cap or
-    within one entry of it, fix the numbers with that measurement. A file under state/ is one a
-    later run reads, under a stable name overwritten in place; anything only this run needed is
-    deleted before finishing. Machinery that failed or misled you and that you worked around goes
-    to its owner with `report`."""
-    ledger.append("hand-offs, examined, filed, followed up, rejected + why")
+    BASELINE gets the fingerprint of every part as this run read it, for the run gate; the gate only
+    reads it. Write these files with the file actions or the routine's own scripts — a state update
+    the run repeats the same way every time is one of those scripts; a write made through a shell
+    command is invisible to the checks that read the run's actions. A file under state/ is one a
+    later run reads, under a stable name overwritten in place; anything only this run needed are
+    deleted before finishing. Machinery that failed or misled you and that you worked around goes to
+    its owner with `report`."""

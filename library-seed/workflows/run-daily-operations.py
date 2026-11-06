@@ -46,7 +46,7 @@ from routine.params import (
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import (read_file, write_file, edit_file, util, script, llm, view_image,
                              memory_read, memory_write, ask_user, report, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Run daily operations",
@@ -62,7 +62,7 @@ META = {
                    "work, so no run gate. Not for a queue that ends when empty "
                    "(drain-a-work-queue), nor for a project with a counterparty "
                    "(steward-a-project).",
-    "version": 1,
+    "version": 2,
     "tags": ["operations", "daily", "operator", "presence", "sync"],
     "includes": ["audit-coverage", "verify-independently", "make-failure-visible",
                  "feedback-loop"],
@@ -88,8 +88,8 @@ DONE_WHEN = [
     "it could not be read",
     "d4 · do_step — today's duty produced its external effect, each part verified by VERIFY",
     "d5 · run_periodic — every periodic duty whose date came round ran, with its date moved",
-    "d6 · record — the LEDGER entry names today's effect; state/phase.json and the state files let "
-    "the next run resume",
+    "d6 · update_state — the state files hold the watch list, what is in flight and each "
+    "periodic duty's last date as this run left them",
 ]
 
 
@@ -105,7 +105,8 @@ class ExternalBlocker(Exception):
 
 def main():
     """One run: finish what completed, do the principal's requests, read the inputs, carry out the
-    day's duty (capacity checked, effect verified), run the periodic duties, improve, record."""
+    day's duty (capacity checked, effect verified), run the periodic duties, improve, update the
+    state files."""
     orient()
 
     if phase.current() == "bootstrap":
@@ -116,7 +117,7 @@ def main():
     if started_for_a_request():
         # A fire started for one request does that request and stops: the day's full duty
         # belongs to the scheduled fire. The request is what this run is accounted against.
-        record()
+        update_state()
         return finish("ok", "the request, what was done, how it was verified")
 
     inputs = read_inputs()
@@ -132,14 +133,14 @@ def main():
 
     run_periodic()
     improve()
-    record()
+    update_state()
     return finish("ok", "today's effect, requests handled, periodic duties run, what waits")
 
 
 def orient():
     """Read the state digest, the state files and memory's tool notes before acting.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers.
+    The digest carries the phase, the last result and any messages or answers.
     The state files hold the watch list, the last snapshot of what is in flight and the dates the
     periodic duties last ran."""
 
@@ -225,18 +226,13 @@ def improve():
     while the budget allows, or leave it on the backlog with its next step."""
 
 
-def record():
-    """Update the state files, append one LEDGER entry, set state/phase.json and keep state/ lean.
+def update_state():
+    """Bring the state files up to date: the watch list, the snapshot of what is in flight and the
+    dates the periodic duties last ran.
 
-    The entry names today's effect, the requests handled, the periodic duties run and what waits.
-    Record the phase under the key `phase`: the lifecycle label from PHASES, never the stage the run
-    is in. Write every state file with the file actions or the routine's own scripts; a write made
-    through a shell command is invisible to the checks that read the run's actions. Rotate
-    LEDGER.md in the run its size passes the byte cap the recipe names — derived from this
-    routine's own entries, set above the size of the tail it keeps with room for several more —
-    and when a rotation leaves the file over the cap or within one entry of it, fix the numbers
-    with that measurement. A file under state/ is one a later run reads, under a stable name
-    overwritten in place; snapshots and screenshots only this run needed are deleted before
-    finishing. Machinery that failed or misled you and that you worked around goes to its owner
-    with `report`."""
-    ledger.append("today's effect, requests handled, periodic duties, what waits")
+    Write these files with the file actions or the routine's own scripts — a state update the run
+    repeats the same way every time is one of those scripts; a write made through a shell command is
+    invisible to the checks that read the run's actions. A file under state/ is one a later run
+    reads, under a stable name overwritten in place; snapshots and screenshots only this run needed
+    are deleted before finishing. Machinery that failed or misled you and that you worked around
+    goes to its owner with `report`."""

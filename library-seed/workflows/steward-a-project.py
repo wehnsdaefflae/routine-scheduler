@@ -41,7 +41,7 @@ project; decomposition turns the pattern into the routine's own recipe (main.md 
 # fix for THIS routine — its type and meaning live in the trailing comment.
 from routine.params import (
     PROJECT,        # dict       — the project: what it is, the principal's role, the counterparty, the canonical scope documents (the read-only source of obligations), the finish line
-    STATE_FILES,    # dict       — the curated state files: current truth + where things live, the obligations register (due, owner, status, evidence), the backlog, the work log
+    STATE_FILES,    # dict       — the curated state files: current truth + where things live, the obligations register (due, owner, status, evidence), the backlog
     CHANNELS,       # list[dict] — every channel the counterparty and the principal use (mailbox folders including Sent, messengers, calendar, shared drives): how each is read, whether it keeps a local mirror to sync first, how "new" is tracked
     DECISIONS,      # dict       — how the principal steers: the decisions he expects to be asked (a go or no-go on a gated act, a choice of scope or priority, a sign-off), which of them stop the work until answered and which wait for the one batched ask before the finish
     GATES,          # list[str]  — the outward acts that wait for the principal's go on that item (send, submit, sign, spend)
@@ -54,7 +54,7 @@ from routine.params import (
 from routine.actions import (read_file, write_file, edit_file, util, script, llm, spawn,
                              subtask, wait, view_image, memory_read, memory_write, ask_user,
                              report, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Steward a project",
@@ -77,7 +77,7 @@ META = {
     # published status page. His decisions are asked (blocking the moment the work cannot go on
     # without one, otherwise in one batched ask before the finish) and the run's two-part finish
     # summary carries what the page showed.
-    "version": 2,
+    "version": 3,
     "tags": ["stewardship", "project", "decisions", "feedback-loop", "obligations",
              "correspondence", "finish-line"],
     "includes": ["feedback-loop", "interface-craft", "write-as-the-principal", "correspondence",
@@ -109,16 +109,14 @@ DONE_WHEN = [
     "d3 · handle_obligation — every obligation due within WATCH's horizon is done, or prepared up "
     "to its gate with the principal's go asked",
     "d4 · execute — every backlog item this building run took is verified, with what was left at "
-    "the boundary named in the work log",
+    "the boundary named",
     "d5 · ask_decisions — every decision only the principal can make is asked: a blocking one the "
     "moment the run met it, every other one in the one batched ask before the finish",
-    "d6 · summarize — the finish summary's Process part says what was read, checked and out of "
-    "reach, and its Work part where the project stands, with what waits on the principal",
-    "d7 · record — the state files, the LEDGER entry and state/phase.json say where the project "
-    "stands",
-    "d8 · write_gate_state — state/gate.json holds the watch list, every open obligation with its "
+    "d6 · curate_state — the current-truth file, the backlog and the obligations register say "
+    "where the project stands",
+    "d7 · write_gate_state — state/gate.json holds the watch list, every open obligation with its "
     "due date, the decisions still unanswered and whether the next fire has work",
-    "d9 · close_out — the deliverable is verified against its primary source and the principal is "
+    "d8 · close_out — the deliverable is verified against its primary source and the principal is "
     "told where everything lives",
 ]
 
@@ -141,9 +139,9 @@ class ExternalBlocker(Exception):
 
 
 def main():
-    """One run: answers and messages first, every channel, the due obligations; a building run
-    works the list; every run asks what only the principal can decide, records, leaves the gate
-    its watch list and says where the project stands."""
+    """One run: answers and messages first, every channel, the due obligations; a building run works
+    the list; every run asks what only the principal can decide, curates its state files, leaves the
+    gate its watch list and says where the project stands."""
     orient()
 
     if phase.current() == "closing":
@@ -187,7 +185,7 @@ def main():
         fresh_eyes_audit()
 
     ask_decisions(closing)                      # ONE batched ask, just before the finish
-    record()
+    curate_state()
     write_gate_state()
 
     if finish_line_reached():
@@ -199,9 +197,9 @@ def main():
 def orient():
     """Read the state digest, the state files and the scope documents before any new work.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers;
-    the state files carry current truth, the obligations register, the backlog and the latest
-    work-log entries. Nothing done is redone and no recorded dead end is retried. A prior run that
+    The digest carries the phase, the last result and any messages or answers;
+    the state files carry current truth, the obligations register, and the backlog.
+    Nothing done is redone and no recorded dead end is retried. A prior run that
     was interrupted is recovered by re-verifying what it left, never by trusting or discarding it
     blindly."""
 
@@ -228,14 +226,14 @@ def bootstrap():
 
 
 def already_ran_today():
-    """True when today's full run already finished, read off the work log's newest entry."""
+    """True when today's full run already finished, read off the digest's last result."""
 
 
 def delta_pass():
     """Same-day re-fire: take in only what arrived since the earlier run, then stop.
 
     Read the answers, the messages and the channels for what is new since that run, handle
-    anything urgent, append a short LEDGER note and finish with a summary of only what changed."""
+    anything urgent and finish with a summary of only what changed."""
     return finish("ok", "Same-day re-fire: delta pass only.")
 
 
@@ -329,11 +327,11 @@ def execute(item):
 
 
 def room_to_finish_cleanly():
-    """True while the budget can execute and verify the next item and still ask, record and
-    summarize.
+    """True while the budget can execute and verify the next item and still ask, curate the
+    state files and summarize.
 
     A boundary check, never a ration: it keeps a run from starting what it cannot finish. When it
-    turns false, the work log names what is left so the next run starts there."""
+    turns false, the backlog names what is left so the next run starts there."""
 
 
 def fresh_eyes_audit():
@@ -355,23 +353,15 @@ def ask_decisions(closing):
     them first."""
 
 
-def record():
-    """Curate the state files, append the LEDGER entry, set the phase.
-
-    Bring the current-truth file up to date, move done items out of the backlog, tick the
-    obligations register, append one work-log entry and one LEDGER entry (answers consumed, what
-    advanced, obligations guarded, decisions asked, candidates rejected and why). Deliverables the
-    principal downloads also land in artifacts/. Record the phase under the key `phase`: the
-    lifecycle label from PHASES, never the stage the run is in. Write these files with the file
-    actions or the routine's own scripts; a write made through a shell command is invisible to the
-    checks that read the run's actions. Rotate LEDGER.md in the run its size passes the byte cap
-    the recipe names — derived from this routine's own entries, set above the size of the tail it
-    keeps with room for several more — and when a rotation leaves the file over the cap or within
-    one entry of it, fix the numbers with that measurement. A file under state/ is one a later run
-    reads, under a stable name overwritten in place; anything only this run needed is deleted
+def curate_state():
+    """Bring the current-truth file up to date, move done items out of the backlog and tick the
+    obligations register. Deliverables the principal downloads also land in artifacts/. Write
+    these files with the file actions or the routine's own scripts — a state update the run
+    repeats the same way every time is one of those scripts; a write made through a shell command
+    is invisible to the checks that read the run's actions. A file under state/ is one a later
+    run reads, under a stable name overwritten in place; anything only this run needed is deleted
     before finishing. Machinery that failed or misled you and that you worked around goes to its
     owner with `report`."""
-    ledger.append("answers consumed, what advanced, obligations, decisions asked, rejected + why")
 
 
 def write_gate_state():

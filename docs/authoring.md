@@ -161,14 +161,19 @@ Rules of the form:
   itself comes from the materialized routine's stage modules — the engine tracks the run's
   live position from its stage-module reads; CLAUDE.md "Phase, stage, state" holds the rule). Record it under the `phase` key of
   `state/phase.json`: that is what the composer reads; a routine that invents its own key
-  writes a file matching nothing.
+  writes a file matching nothing. The phase is a LIFECYCLE value set at a milestone (bootstrap
+  → steady, building → waiting), never a per-stage cursor: the engine already marks the stage
+  a run is in when it reads `stages/<name>.md`. A pattern imports `from routine.state import
+  phase` only when PHASES has more than one entry, and imports nothing else from there — see
+  "A contract names only the task" below.
 - **`DONE_WHEN`** is a literal naming what ONE finished run of this kind leaves behind, one
   `"d<n> · <step> — <outcome>"` line each. It is the skeleton decomposition turns into the
   routine's own `## Done when`, filled with THIS task's words (and the person's own, when
   creation collected them); every main finish accounts for each line (`engine/donewhen.py`,
   `engine/accounting.py`). Write outcomes the run's transcript can show, never "at least N",
   never a cap phrased as a quota, never a prohibition, and so that each line can honestly be
-  "not due" on a run where it does not apply. A harness (`meta` tag) carries none. A
+  "not due" on a run where it does not apply. Every line is a TASK outcome — never the run's
+  own record (below). A harness (`meta` tag) carries none. A
   materialized routine's `## Done when` must also carry at least one line NAMING a measure of its
   OUTCOME contract by id (`outcome:` in routine.yaml, docs/rules-permissions.md "The outcome
   row") — a recipe of process lines only can be met in full by a run that produced nothing for
@@ -182,6 +187,48 @@ Rules of the form:
 `workflows/lint.py` gates every save (the Library editor shows the findings inline). A new
 pattern is also drafted when the person picks `generate` while creating a routine — it lands in
 the same library, subject to the same lint; no run drafts one on its own initiative.
+
+## A contract names only the task
+
+A pattern's `DONE_WHEN`, a recipe's `## Done when` and the steps both describe are the routine's
+CONTRACT: every finish accounts for each Done-when line, so a line about the run's own record
+buys bookkeeping on every run and delivers nothing to anyone. The run's PROCESS RECORD is the
+engine's — it files each run's account from the finish summary into LEDGER.md (no run writes or
+rotates it), marks the stage a run is in when it reads a stage module, and files the free `note`
+side field — so a contract that also asks the run for it asks twice. Measured 2026-11-06 over 24
+routines' last runs: twelve spent more turns orienting on and recording themselves than on their
+task, and about 60% of the fleet's Done-when lines named a record. Hence:
+
+- no step whose job is recording the run — no record/log step, no ledger write or rotation, no
+  phase write between stages, no orient step that reads the whole ledger (the state digest
+  carries what the last run left);
+- a `state/` file holds the PRODUCT, or a cross-run cursor the TASK needs (what was already seen,
+  the lifecycle phase); a state update repeated the same way every run is a `script` call;
+- every Done-when line names what the WORK produced or established — never a LEDGER entry, a
+  state/phase/memory/notes write, a cursor advance as such, or what the finish summary must
+  contain. The routine's outcome-contract line (`engine/outcome_words.done_when_line`, the one
+  naming `scripts/outcome.py`) is the task by definition.
+
+The CAUSE is the generator, so the rule is stated first in its two prompts
+(`taskcontract.PATTERN_CONTRACT` in `generate.FORMAT_SPEC`, `taskcontract.RECIPE_CONTRACT` in
+`pipeline_prompts.SELF_CONTAINED`, which rides the main call and every stage call). Unlike the
+util-name rule below, its defects have a FIXED vocabulary — the run's ledger by its capitalised
+name or as a "ledger entry", the work log, `phase.json`, `.memory/` and notes, the finish summary
+or report, a cursor — so a machine check backs it at every gate (`workflows/taskcontract.py`):
+
+- `workflows/lint.py` fails a library pattern that imports `ledger`, tells a run to write or
+  rotate the ledger, or has a DONE_WHEN line naming the run's record in ANY clause (a pattern is
+  the skeleton every recipe starts from);
+- the materialization pipeline refuses a generated main whose Done-when line is about NOTHING
+  but the run's record, or a main or stage telling the run to write the ledger — an invalid
+  payload, retried like a malformed one;
+- `rsched validate` prints both as `FAIL  recipe ·` rows that turn the command red, and a
+  Done-when line that names a record in only SOME clause as a `NOTE  recipe ·` row (it still
+  names a task outcome, and may carry the person's own words).
+
+The vocabulary deliberately leaves out `state/` files and a lower-case "the ledger": a watchlist,
+a manifest or an evaluation ledger's rows are PRODUCT, and no word list can tell them from
+bookkeeping — a false positive there is what would get the check switched off.
 
 ## No named utils — a recipe says WHAT, never which tool
 
@@ -198,8 +245,8 @@ day it is renamed or removed, and it pre-empts the discovery that would have fou
 There is no exemption for meta or maintenance routines.
 
 The rule is enforced where the prose is WRITTEN, not by a check over the finished file.
-`workflows/adapt.py` states it in the prompt that compiles a workflow + instruction into
-main.md and the stage modules, and `workflows/generate.py` states it in the prompt that drafts
+`workflows/pipeline_prompts.py` states it in the prompt that compiles a workflow + instruction
+into main.md and the stage modules, and `workflows/generate.py` states it in the prompt that drafts
 a new library pattern — so a recipe is born clean instead of being swept afterwards. Both
 prompts spell out the forbidden forms rather than describing them, because that is what an
 LLM can actually comply with.

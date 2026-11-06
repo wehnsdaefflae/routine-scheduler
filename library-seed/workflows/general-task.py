@@ -1,7 +1,7 @@
 """General task — the sane default workflow.
 
-Orient, do the instruction's work in verified steps, record, commit. This file is a
-PATTERN, not a program: the orchestrator never executes it —
+Orient, do the instruction's work in verified steps, keep the state the next run reads. This
+file is a PATTERN, not a program: the orchestrator never executes it —
 it *acts it out*, one engine action per turn, following the control flow below (its branches,
 loops, and error handling). The dummy imports name the parameters this routine works with; the
 clarifier pins them down for the concrete task, and `decompose` turns this pattern into the
@@ -21,23 +21,24 @@ from routine.params import (
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import (read_file, write_file, util, write_util, llm, spawn, subruns,
                              wait, ask_user, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "General task",
     "slug": "general-task",
-    "description": "The sane default — orient, do the work in verified steps, record, commit.",
+    "description": "The sane default — orient, do the work in verified steps, keep the state "
+                   "the next run reads.",
     "when_to_use": "Most recurring instructions with no more specific pattern: collect / produce "
                    "/ maintain something on a schedule, tend a long-running goal, run a periodic "
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
-    "version": 19,
+    "version": 20,
     "tags": ["general", "research", "tool-use"],
     "includes": ["ask-policy", "web-research", "decision-record"],
     "tools": None,          # None = every action kind is allowed
 }
 
-PHASES = ["bootstrap", "steady", "wrap-up"]     # tracked in state/phase.json
+PHASES = ["bootstrap", "steady", "wrap-up"]     # the cross-run lifecycle, in state/phase.json
 
 # What one finished run leaves behind — accounted line by line at every finish.
 DONE_WHEN = [
@@ -46,7 +47,6 @@ DONE_WHEN = [
     "showed",
     "d3 · recheck — the sources were asked once more before finishing and what they showed is "
     "recorded",
-    "d4 · record — state/ and the LEDGER say what changed, why, and what the next run picks up",
 ]
 
 
@@ -92,14 +92,15 @@ def main():
                 continue                        # can't proceed now; move to the next item
 
     recheck()                                   # more is often due once this pass lands — look before finishing
-    record()                                    # update state/phase.json + append the LEDGER entry
+    own_tooling()                               # a helper this run wrote is indexed in the recipe
+    update_state()                              # what a later run reads; phase only at a milestone
     return finish("ok", "what was delivered, decisions taken, open ends")
 
 
 def orient():
-    """Consume the state digest (phase, last result, LEDGER tail, user messages/answers) before
-    exploring anything new — so you never re-try a known dead end. The digest already carries the
-    LEDGER tail and says when there is more; read the file only if it says so."""
+    """Consume the state digest (phase, last result, user messages/answers) before exploring
+    anything new — so you never re-try a known dead end. It already carries what the last run
+    left; never re-read the run's history to orient."""
 
 
 def own_tooling():
@@ -219,72 +220,23 @@ def collect_children():
     Read what you need from there before finishing; a child's context is gone once it exits."""
 
 
-def record():
-    """RESERVE THE TURNS THIS STEP NEEDS BEFORE YOU SPEND THEM, because a budget wall always
-    arrives at whichever step is last, and that is this one. Measured 2026-09-23 across one
-    instance: four routines finished `ok` having skipped their own record step, one of them at
-    exactly zero turns remaining after a full day of real work. Every one of those runs did the
-    job and then left no durable account of it — the finish summary survives, the ledger entry
-    that the NEXT run reads does not, and the findings the run raised about itself were never
-    acted on because the step that acts on them is the step the wall ate.
+def update_state():
+    """Bring the state files a later run reads up to date — what was delivered and
+    SINCE_MARKER — and advance the phase to 'wrap-up' once the routine's FINISH LINE is reached
+    (the operator's own terms for when this ROUTINE is finished, shown in the digest), so the next
+    fire closes the job out instead of looking for more.
 
-    So from the midpoint of the run onward, before beginning any further piece of work, compare
-    the turns left against what recording costs. If recording no longer fits, stop the work in
-    hand and record instead, naming what was unfinished. An unfinished piece of work that is
-    recorded is a queue the next run picks up; an unfinished piece of work that is unrecorded
-    happened to nobody. A run that ends without its ledger entry has failed its record, whatever
-    else it delivered: name that in the summary — and if owning it ever feels unfair, the remedy
-    is the reserve, not a quieter account. It is a shortfall of your own, not a blocker, so the
-    status stays `ok` with the gap named; `partial` is for something you cannot unblock
-    yourself.
-
-    Update state/phase.json and any state files; append exactly one LEDGER entry for the run
-    (what changed, why, decisions, and candidates rejected + why). Advance phase.json to
-    'wrap-up' once the routine's FINISH LINE is reached — the operator's own terms for when this
-    ROUTINE is finished, shown in the digest — so the next fire closes the job out instead of
-    looking for more. Then sweep the run once for
-    machinery friction you merely worked around — an action or tool that failed or misled you, a
-    consent flow that asked for too much or too little — and file each real hitch with the
-    `report` action before finishing (leave `target` unset if you cannot name the owner; triage
-    routes it). A finish summary is read as the task's outcome, not as a defect stream.
-    Rotate LEDGER.md THAT run, as a required part of recording rather than deferrable
-    housekeeping, whenever it exceeds the SIZE IN BYTES the recipe names: archive the
-    older entries with a one-line rollup note pointing at the archive, keeping only the
-    recent tail — an unbounded LEDGER is its own defect.
-    MEASURE THE THRESHOLD IN BYTES, AND DERIVE IT FROM THIS ROUTINE'S OWN ENTRIES. A
-    trigger counting lines or entries cannot see the thing that costs a reader anything:
-    entries grow from one-liners into narratives, so the same count means a 20 KB file one
-    month and a 130 KB file the next. Measured across a 33-routine instance on 2026-09-21,
-    every ledger over 100 KB was inside its own count-based limit — one was 112 KB at 30
-    entries against a 40-entry trigger, so a fully compliant run correctly did nothing.
-    THE CAP AND THE KEPT TAIL ARE ONE PAIR, AND A CROSSED PAIR IS WORSE THAN NO TRIGGER.
-    The cap is a byte CEILING; keeping the last N entries is a count FLOOR worth N x the
-    mean entry size, and whichever is LARGER is the one that actually binds. Setting the
-    cap at "about N entries" therefore makes ceiling and floor equal by construction, and
-    the trigger is inert in one of two ways: a cap at or just above the floor rotates one
-    entry, lands the file just under, and re-trips on the very next append -- a rotation
-    every single run forever, the live file never holding more than the floor; a cap BELOW
-    the floor cannot be satisfied at all while keeping N entries, so a correct run's only
-    option is to skip it. Both failure modes were live on a 33-routine instance on
-    2026-09-21: five recipes paired a byte cap with a kept tail and four were already
-    crossed, one self-defeating by a single kilobyte, while a sixth sat at 2.8x a cap no
-    run had ever been able to honour. So set the cap ABOVE the floor with real headroom --
-    the mean of the last three entries, times the tail you keep, plus room for several more
-    runs -- and if a rotation leaves the file still over the cap, OR lands it within one
-    entry's size of the cap, the numbers are wrong: fix them with the measurement that
-    justifies it, raising the ceiling or lowering the floor, but never leaving them
-    crossed. A threshold you trip by complying with it is one every run learns to ignore --
-    that is how a ledger reached 9.5x its own stated limit.
-    The same discipline governs `state/`, and for the same reason. Before writing a file
-    there, apply the read-back test: will a LATER run read this? If yes it gets a STABLE
-    name and is overwritten in place; if no it is scratch, so write it outside the durable
-    state directory or delete it before finishing. A date or a record id embedded in a
+    Before writing a file under state/, apply the read-back test: will a LATER run read this? If
+    yes it gets a STABLE name and is overwritten in place; if no it is scratch, so write it outside
+    the durable state directory or delete it before finishing. A date or a record id embedded in a
     state filename is the signature of a file nobody will read again, because the next run
-    computes a new name and looks for one that does not exist — so the directory grows
-    without bound while every run reads only the handful of files the recipe actually
-    names. Keep what a future run consults; leave nothing whose only reader was the run
-    that wrote it."""
-    ledger.append("what changed, why, decisions, rejected candidates")
+    computes a new name and looks for one that does not exist — so the directory grows without
+    bound while every run reads only the handful of files the recipe actually names. A state
+    update the run repeats the same way every time is one of the routine's own scripts, written
+    once and called thereafter. Then sweep the run once for machinery friction you merely worked
+    around — an action or tool that failed or misled you, a consent flow that asked for too much
+    or too little — and file each real hitch with the `report` action before finishing (leave
+    `target` unset if you cannot name the owner; triage routes it)."""
 
 
 def wrap_up():

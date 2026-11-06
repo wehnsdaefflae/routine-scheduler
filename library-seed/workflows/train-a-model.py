@@ -45,7 +45,7 @@ from routine.params import (
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
 from routine.actions import (read_file, write_file, edit_file, util, script, llm, view_image,
                              memory_read, memory_write, ask_user, report, finish)
-from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
+from routine.state import phase    # the cross-run lifecycle phase (state/phase.json)
 
 META = {
     "name": "Train a model",
@@ -60,7 +60,7 @@ META = {
                    "runs, the principal may approve training data by hand. Each run resumes from "
                    "the manifests, never blocks on a running job and states the distance to the "
                    "target. Not for a fixed batch of files to process (drain-a-work-queue).",
-    "version": 1,
+    "version": 2,
     "tags": ["training", "model", "gpu", "remote-machine", "evaluation", "experiments"],
     "includes": ["make-failure-visible", "work-order", "verify-independently"],
     "tools": None,          # None = every action kind the routine's capabilities allow
@@ -91,8 +91,8 @@ DONE_WHEN = [
     "run is in the data manifest",
     "d5 · run_increment — every increment chosen this run is done and verified, or submitted with "
     "its job in JOBS",
-    "d6 · record — the manifests, JOBS, the decisions log and state/phase.json let the next run "
-    "resume; the distance to TARGET is stated from this run's numbers",
+    "d6 · update_jobs — JOBS, the manifests and the decisions log hold every job, candidate and "
+    "decision this run touched",
     "d7 · write_gate_state — state/gate.json holds the open jobs, the approval counts and the "
     "source cursors the gate compares",
 ]
@@ -114,7 +114,7 @@ class ExternalBlocker(Exception):
 
 def main():
     """One run: collect what the machine finished, score and promote, take in the principal's
-    decisions, choose and run the next increments, record where everything stands."""
+    decisions, choose and run the next increments, update JOBS and the manifests."""
     orient()
 
     if phase.current() == "bootstrap":
@@ -129,7 +129,7 @@ def main():
 
     increments = choose_increments()
     if not increments:
-        record()
+        update_jobs()
         write_gate_state()
         return finish("ok", "Nothing due: every job collected, no approval changed, no new "
                             "material; the distance to TARGET stated.")
@@ -146,7 +146,7 @@ def main():
         if not room_to_finish_cleanly():
             break
 
-    record()
+    update_jobs()
     write_gate_state()
     return finish("ok", "jobs collected, scores, promotion, increments run or submitted, the "
                         "distance to TARGET")
@@ -155,7 +155,7 @@ def main():
 def orient():
     """Read the state digest, JOBS, the manifests and the decisions log before touching the machine.
 
-    The digest carries the phase, the last result, the LEDGER tail and any messages or answers.
+    The digest carries the phase, the last result and any messages or answers.
     Memory holds how the machine is reached, where the pipeline lives on it and what each tool
     does. The decisions log holds what the principal decided and which axes are closed."""
 
@@ -230,21 +230,15 @@ def room_to_finish_cleanly():
     decisions log so the next run starts there."""
 
 
-def record():
-    """Update JOBS, the manifests and the decisions log; append one LEDGER entry; set the phase.
+def update_jobs():
+    """Bring JOBS, the manifests and the decisions log up to date.
 
-    The LEDGER entry names the jobs collected, the scores with their split, what was promoted,
-    the increments run or submitted, and the distance to TARGET from this run's numbers. Record
-    the phase under the key `phase`: the lifecycle label from PHASES, never the stage the run is
-    in. Write every state file with the file actions or the routine's own scripts; a write made
-    through a shell command is invisible to the checks that read the run's actions. Rotate
-    LEDGER.md in the run its size passes the byte cap the recipe names — derived from this
-    routine's own entries, set above the size of the tail it keeps with room for several more —
-    and when a rotation leaves the file over the cap or within one entry of it, fix the numbers
-    with that measurement. A file under state/ is one a later run reads, under a stable name
-    overwritten in place; anything only this run needed is deleted before finishing. Machinery
-    that failed or misled you and that you worked around goes to its owner with `report`."""
-    ledger.append("jobs collected, scores + split, promoted, increments, distance to TARGET")
+    Write these files with the file actions or the routine's own scripts — a state update the run
+    repeats the same way every time is one of those scripts; a write made through a shell command is
+    invisible to the checks that read the run's actions. A file under state/ is one a later run
+    reads, under a stable name overwritten in place; anything only this run needed is deleted
+    before finishing. Machinery that failed or misled you and that you worked around goes to its
+    owner with `report`."""
 
 
 def write_gate_state():
