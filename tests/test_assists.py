@@ -219,7 +219,7 @@ def test_an_observation_assist_rides_the_tail_of_the_second_failure(make_routine
     assert shown.count("[RULE fix-the-cause") == 1           # once per run, not per failure
     observations = [e for e in events if e["type"] == "observation"]
     assert "[RULE" not in json.dumps(observations[0])        # the FIRST failure is information
-    assert json.loads(lib.state_path(d).read_text())["fix-the-cause/m"] == 1
+    assert json.loads(lib.state_path(d).read_text())["fix-the-cause/m"]["fires"] == 1
     assert status == "ok"
 
 

@@ -322,25 +322,13 @@ def state_path(routine_dir: Path) -> Path:
 def record_fire(routine_dir: Path, assist: Assist) -> int:
     """Count one fire, and return the new count.
 
-    Deliberately just a counter, and deliberately engine-written: at the `remind` rung an
-    assist costs no turn, so there is no confusion matrix to fill in yet and no reason to
-    spend a model's attention labelling one. What this DOES answer is the question precision
-    is reviewed by — which assists fire, and how often — so a trigger that fires constantly is
-    visible before anyone promotes it to a rung that costs turns. Best-effort: a failed tally
-    must never fail the turn that produced it.
+    Engine-written, and the DENOMINATOR the four-way outcome label is read against (D239): at
+    the free rungs the count answers the whole question precision is reviewed by — which
+    assists fire, and how often — and at the turn-costing `hold` rung the labels beside it
+    answer how many of those turns bought anything. `rsched/assist_stats.py` owns the file's
+    shape and is its only writer, so a fire and a label cannot disagree about it; best-effort
+    there too, because a failed tally must never fail the turn that produced it.
     """
-    from .paths import atomic_write_json, read_json
+    from . import assist_stats
 
-    path = state_path(routine_dir)
-    raw = read_json(path, {})
-    counts = raw if isinstance(raw, dict) else {}
-    try:
-        n = int(counts.get(assist.key) or 0) + 1
-    except (TypeError, ValueError):
-        n = 1        # a count a hand edit broke starts over rather than failing the turn
-    counts[assist.key] = n
-    try:
-        atomic_write_json(path, dict(sorted(counts.items())))
-    except (OSError, ValueError):
-        pass
-    return n
+    return int(assist_stats.record(routine_dir, assist.key, "fires").get("fires") or 0)

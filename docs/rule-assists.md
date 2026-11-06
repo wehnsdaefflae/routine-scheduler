@@ -213,12 +213,14 @@ already deferred was deferred again.
 A predicate that raises is **inert, never fatal**. A library document names the check; the
 run's work is not this layer's to lose.
 
-Every fire is counted, per assist, in `state/assists.json`. Deliberately just a counter and
-deliberately engine-written: at the `remind` rung an assist costs no turn, so there is no
-confusion matrix to fill in and no reason to spend a model's attention labelling one. What the
-count does answer is the question precision is reviewed by — which assists fire, and how often
-— so a trigger that fires constantly is visible before anyone promotes it to a rung that costs
-turns. The four-way label lands with the hold payload, where a turn is actually spent.
+Every fire is counted, per assist, in `state/assists.json` — engine-written, in the same stat
+fields a reminder's tally keeps: `fires` plus the four-way outcome label (`rsched/assist_stats.py`
+owns the file and is its only writer). At the free rungs the count alone answers the question
+precision is reviewed by — which assists fire, and how often — so a trigger that fires
+constantly is visible before anyone promotes it to a rung that costs turns. At the `hold` rung
+a turn IS spent, and `fires` minus the labels is how many of those turns bought no evidence at
+all. One vocabulary on purpose: the read model, the console's table and the prune check all
+read `reminders.STAT_FIELDS`, so there is no second spelling of `could_not` to learn.
 
 ## Not a capability
 
@@ -334,25 +336,45 @@ rather than a search: it cannot fire on a run that has already replied, and it c
 that has not. It is carried across a resume like the counters, because a run held at its own
 finish and handed one more turn must still know what it owes.
 
-## What is still deferred
+## The outcome label for a hold
 
 The four-way outcome label (`could_not` / `would_have` / `did` / `didnt`) that tunes a
-consequence reminder is NOT wired to assists yet. At the `remind` rung there is nothing to
-weigh — no turn is spent — and the fire counter already answers which triggers fire and how
-often. The `hold` rung does spend a turn, and its wording asks the run to say in its next
-`say` when a rule turned out not to apply; a structured label there is the next increment, not
-a gap left by accident. `scaffold` and `do` need a helper channel that does not exist.
+consequence reminder is wired to the `hold` rung (D239). At the free rungs there is still
+nothing to weigh — no turn is spent, and the fire count answers which triggers fire and how
+often — so the label is asked for exactly where a turn IS spent.
 
-That increment now has a price on it. The one `hold`-payload assist in the library,
-`git-checkpoint/before-the-first-repo-edit`, stands at 31 / 31 / 10 fires in
-`llmsectest-weekday`, `self-audit` and `routine-improver` — 72 turns bought, and no way to tell
-a useful hold from a false positive, which is the one number that decides whether a trigger
-keeps a turn-costing rung. Wiring it is four coupled changes and not three: `remind_feedback`
-routed by id shape (an assist key carries `/`), `state/assists.json` growing from an int per key
-to the same stat fields a reminder keeps (with a one-shot migration), the health read model and
-its table gaining the four columns, and the `assist_hold` observation asking for the label the
-way `reminder_hold` does. Until all four land the label has nowhere to go: the tally file is an
-int, and `_apply_feedback` answers an assist key with "no reminder … is live for this run".
+The price that bought it: the one `hold`-payload assist in the library,
+`git-checkpoint/before-the-first-repo-edit`, stood at 31 / 31 / 10 fires in
+`llmsectest-weekday`, `self-audit` and `routine-improver` — 72 turns, with no way to tell a
+useful hold from a false positive, which is the one number that decides whether a trigger keeps
+a turn-costing rung.
+
+It is four coupled parts, and had to be all four together, because until every one landed the
+label had nowhere to go:
+
+- **`remind_feedback` routed by id SHAPE** (`engine/assist_label.py`). One side field carries
+  both layers' labels: a reminder id cannot contain `/` and an assist key always does
+  (`<rule>/<assist id>`), so the shape decides the route and an id of neither keeps the
+  reminder layer's refusal. Before this it answered an assist key with "no reminder … is live
+  for this run".
+- **`state/assists.json` in a reminder's stat fields** (`rsched/assist_stats.py`), grown from
+  an int per key by a one-shot boot migration that keeps the int as `fires`
+  (`migrate_assist_stats.py`) — the fires already counted are the denominator the labels are
+  read against, so they are not thrown away.
+- **the health read model and its table** carry the four columns beside `fires`
+  (`readmodels/run_health.cautions`, `static/views/routine-health.js`), the same columns a
+  reminder's row shows and reusing its classes.
+- **the `assist_hold` observation asks for the label** the way `reminder_hold` does
+  (`engine/obs_hold.py`): the hold names the assist key to carry, the four labels and their
+  gloss, on the turn the run is re-deciding the action anyway.
+
+A label answers one hold, once (`loop.assist_owed`, rebuilt across a resume beside the hold
+ledger it pairs with) — a label with no hold behind it is evidence about nothing. The channel
+is `remind_feedback`'s own, so a routine whose `reminders` dial is `none` cannot label an
+assist hold either: the field is projected out of its schema entirely, and its holds show as
+unlabelled fires.
+
+`scaffold` and `do` still need a helper channel that does not exist.
 
 **There is no `ledger-untouched` any more** (P1, 2026-11-06). `decision-record` used to hold a
 pre-finish assist that deferred a finish until the run had appended to `LEDGER.md` — which put

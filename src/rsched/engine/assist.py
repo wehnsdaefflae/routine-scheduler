@@ -42,7 +42,7 @@ from pathlib import Path
 from .. import assists as lib
 from ..assists import Assist
 from ..hooks import dispatch, points
-from . import assist_action, enginenote, notes
+from . import assist_action, assist_label, enginenote, notes
 from . import hold as hold_seam
 from .assist_predicates import PREDICATES, Situation
 
@@ -61,6 +61,7 @@ def configure(loop) -> None:
     loop.assist_user_replies = None     # the user-replies watermark, seeded at the 1st boundary
     loop.assist_undo_points = set()     # repos found clean this run: HEAD restores them
     loop.assist_undo_found = None       # …and the one found for the action in flight (`recorded`)
+    loop.assist_owed = {}               # key → holds this run not yet labelled (assist_label)
 
 
 def rebuild(loop, events: list[dict]) -> None:
@@ -75,6 +76,7 @@ def rebuild(loop, events: list[dict]) -> None:
     loop.assists_fired = set()
     loop.assist_finish_deferred = False
     loop.assist_undo_points = set()
+    assist_label.rebuild_owed(loop, events)   # the holds still owed a label (D239)
     for ev in events:
         if ev.get("type") not in ("observation", "user_injection"):
             continue
@@ -185,6 +187,8 @@ def hold(loop, action: dict, rendered: str) -> dict | None:
     if not fired:
         return None
     hold_seam.mark_held(loop, SOURCE, rendered)
+    for a in fired:     # one hold, one label owed — the ledger `assist_label` settles against
+        loop.assist_owed[a.key] = loop.assist_owed.get(a.key, 0) + 1
     return {"kind": "assist_hold", "action": rendered,
             "lines": [rendered_line(a) for a in fired],
             "assists": [a.key for a in fired]}

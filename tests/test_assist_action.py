@@ -207,7 +207,7 @@ def test_a_performed_action_fires_once_per_run_however_often_the_moment_recurs(
     performed = [e for e in events if e["type"] == "observation"
                  and e["payload"].get("hook_action")]
     assert len(performed) == 1
-    assert json.loads(lib.state_path(d).read_text())["fix-the-cause/m"] == 1
+    assert json.loads(lib.state_path(d).read_text())["fix-the-cause/m"]["fires"] == 1
     assert status == "ok"
 
 

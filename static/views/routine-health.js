@@ -153,7 +153,7 @@ export function mountHealth(box, slug, { onRecipeChanged = () => {}, land = "" }
     if (assists.length) {
       out.push(el("div", { class: "muted small mt" }, "rule assists that have fired"),
         el("div", { class: "tablewrap" }, el("table", { class: "list stack" },
-          el("thead", {}, el("tr", {}, ["rule", "moment", "payload", "fires"]
+          el("thead", {}, el("tr", {}, ["rule", "moment", "payload", "fires", ...labels]
             .map((x) => el("th", {}, x)))),
           el("tbody", {}, ...assists.map((a) => el("tr", {},
             el("td", { title: a.key }, a.rule,
@@ -161,7 +161,11 @@ export function mountHealth(box, slug, { onRecipeChanged = () => {}, land = "" }
                 " · no longer bound") : ""),
             el("td", { class: "muted" }, a.moment || "—"),
             el("td", { class: "muted" }, a.payload || "—"),
-            el("td", { class: "num" }, String(a.fires))))))));
+            el("td", { class: "num" }, String(a.fires)),
+            // the same four columns a reminder row shows, read the same way: a `hold` assist
+            // spends a turn, and could_not dominating says the trigger is too broad (D239)
+            ...labels.map((k) => el("td", { class: "num" },
+              (a.stats || {})[k] ? String(a.stats[k]) : "—"))))))));
     }
     return out;
   }

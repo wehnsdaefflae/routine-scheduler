@@ -300,17 +300,9 @@ def _by_version(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
             "regression": regression, "records": records, "tracked": bool(versions)}
 
 
-def _fires(n: object) -> int:
-    """An assist's tally as the engine writes it — or 0 for whatever a hand edit left there."""
-    try:
-        return int(n or 0)  # type: ignore[call-overload]
-    except (TypeError, ValueError):
-        return 0
-
-
 def cautions(server: ServerConfig, routine_dir: Path) -> dict:
     """What the between-turn feed has actually been doing here: every reminder in force with
-    this routine's own tally, and every rule assist that has fired, with its count.
+    this routine's own tally, and every rule assist that has fired, with its own tally too.
 
     These two stores are the feature's only evidence and they were WRITE-ONLY from the
     console — engine-written JSON under `state/`, read by nothing a person opens. A caution
@@ -321,23 +313,22 @@ def cautions(server: ServerConfig, routine_dir: Path) -> dict:
     Degrades to empty rather than raising: this rides the health payload, and a routine whose
     stores are missing or hand-broken is a routine with nothing to show, not a broken page.
     """
-    from .. import assists as assists_mod
-    from .. import remind_dead
+    from .. import assist_stats, remind_dead
     from .. import reminders as reminders_mod
-    from ..paths import read_json
 
     try:
         local, gstats = reminders_mod.load_local(routine_dir)
         shared = reminders_mod.load_global(server.reminders_home, gstats)
     except OSError:
         local, shared = [], []
-    fired = read_json(assists_mod.state_path(routine_dir), {})
-    counts = {key: _fires(n) for key, n in fired.items()} if isinstance(fired, dict) else {}
+    # the four outcome labels beside `fires`, in the field names a reminder's tally keeps
+    # (D239): at the turn-costing `hold` rung a bare count cannot say what the turn bought
+    tallies = assist_stats.read(routine_dir)
     known = {a.key: a for a in library_reads.assists(server.rules_home)}
     rows = []
-    for key, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
-        a = known.get(key)
-        rows.append({"key": key, "fires": n,
+    for key, stats in sorted(tallies.items(), key=lambda kv: (-kv[1]["fires"], kv[0])):
+        a, n = known.get(key), stats["fires"]
+        rows.append({"key": key, "fires": n, "stats": stats,
                      "rule": a.rule if a else key.split(":")[0],
                      "moment": a.moment if a else "",
                      "payload": a.payload if a else "",

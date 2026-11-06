@@ -90,7 +90,9 @@ def test_health_carries_the_cautions_the_run_was_held_by(api_client, make_routin
         id="rem-mv", regex="^util:fs-ops mv ", description="it overwrites the destination",
         scope="local", created_run="r:1",
         stats={**store.blank_stats(), "fires": 3, "could_not": 2, "did": 1})], {})
-    atomic_write_json(d / "state" / "assists.json", {"git-checkpoint:pre-action": 4})
+    atomic_write_json(d / "state" / "assists.json",
+                      {"git-checkpoint:pre-action": {"fires": 4, "could_not": 1,
+                                                     "would_have": 2, "did": 0, "didnt": 0}})
 
     cautions = c.get("/api/routines/cautious/health").json()["cautions"]
     row = next(r for r in cautions["reminders"] if r["id"] == "rem-mv")
@@ -99,6 +101,8 @@ def test_health_carries_the_cautions_the_run_was_held_by(api_client, make_routin
     assert cautions["labels"] == list(store.LABELS)
     assist = next(a for a in cautions["assists"] if a["key"] == "git-checkpoint:pre-action")
     assert assist["fires"] == 4 and assist["rule"] == "git-checkpoint"
+    # …and the four labels beside the count, the fields a reminder's tally keeps (D239)
+    assert assist["stats"]["could_not"] == 1 and assist["stats"]["would_have"] == 2
 
 
 def test_a_local_reminder_can_be_deleted_and_a_curated_one_cannot(api_client, make_routine):
