@@ -1456,7 +1456,10 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   turns a Python pattern into that markdown at scaffold; `materialize` renders it whole (sub-routines/fallback).
   A `tools:` list restricts action kinds (`finish` always allowed), and must COVER the pattern's
   action-import line — the schema is narrowed to `tools:`, so an imported-but-excluded kind is prose
-  for a channel the run cannot emit. A pattern's `DONE_WHEN` literal is the skeleton of what one finished
+  for a channel the run cannot emit. **An EMPTY list is a restriction, not an absent one** (D242):
+  `tools: []` means the always-kinds and nothing else, while NO `tools:` key means every kind.
+  `loopsetup.configure` tests `allowed_tools is not None` for that reason — under the falsy test it
+  shipped with, `[]` read as "unrestricted" and a workflow asking for nothing got the whole surface. A pattern's `DONE_WHEN` literal is the skeleton of what one finished
   run leaves behind, which decomposition turns into the routine's own `## Done when`; whether a ROUTINE
   ever finishes is its operator's finish line, never a pattern's. A CONTRACT NAMES ONLY THE TASK
   (`workflows/taskcontract.py`, docs/authoring.md): no pattern imports a ledger helper or has a
