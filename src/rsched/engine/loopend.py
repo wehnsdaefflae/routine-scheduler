@@ -19,8 +19,17 @@ from __future__ import annotations
 from .. import abortmark
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import (archival, assist, background, closingasks, inbox, jobops, ledgerentry,
-               recipeproposal, reviseleg)
+from . import (
+    archival,
+    assist,
+    background,
+    closingasks,
+    inbox,
+    jobops,
+    ledgerentry,
+    recipeproposal,
+    reviseleg,
+)
 from .autocommit import autocommit
 from .finish_guard import normalize_escaped_newlines
 from .run_context import RunContext
