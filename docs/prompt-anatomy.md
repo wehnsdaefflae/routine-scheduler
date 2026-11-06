@@ -268,6 +268,21 @@ what this follow-up changed). Anything left open waits for the user's next reply
 same conversation — never hand it to a 'next run'.
 ```
 
+Finished run resumed for an APPROVED RECIPE REVISION (the Decisions page's recipe-revision card,
+D200 — a NARROW leg, `engine/reviseleg.py`). It replaces the follow-up note, whose "finish again
+with the previous result plus what changed" is the opposite of this leg's job; the leg's schema
+holds only `read_file`/`edit_file`/`write_file` + `finish`/`report`, its window is a 12-turn
+backstop, its finish owes nothing, and its summary is appended to `result.md` instead of
+replacing it:
+
+```
+ENGINE NOTE: this run already ENDED (status ok) and is resumed for a RECIPE REVISION only — not
+a follow-up. Make the edit(s) the message below approves, read each changed file back once, and
+finish. This leg holds only the recipe edit kinds and a 12-turn backstop, owes no accounting and
+writes no records: the run's verdict (ok) and its result stand, and your summary is appended to
+that result — say only what you changed.
+```
+
 When the resuming message ONLY runs slash commands (the speaker turn is the user's after an
 authored finish), the leg is **command-only**: the engine executes the commands at boot,
 appends `USER COMMAND (executed directly)` + its observation to the transcript, and ends

@@ -19,7 +19,7 @@ from __future__ import annotations
 from .. import abortmark
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import archival, assist, background, closingasks, inbox, jobops, recipeproposal
+from . import archival, assist, background, closingasks, inbox, jobops, recipeproposal, reviseleg
 from .autocommit import autocommit
 from .finish_guard import normalize_escaped_newlines
 from .run_context import RunContext
@@ -138,8 +138,16 @@ def abort_fields(abort: abortmark.Abort) -> dict[str, object]:
 def finish_run(loop, status: str, summary: str, *, authored: bool = False,
                reply_to: str | None = None, final: bool | None = None,
                abort: abortmark.Abort | None = None) -> str:
-    """Close the run out — every ending, authored or not, through this one path."""
+    """Close the run out — every ending, authored or not, through this one path.
+
+    A NARROW revise leg (engine/reviseleg.py) closes out the LEG: `status` is the leg's own and
+    rides the finish event as `revise_leg`, while the run keeps the verdict its proposing leg
+    recorded — status.json, the returned status (the usage row's), the health stream (no row at
+    all) — and `result.md` gains the leg's line instead of losing the run's summary to it.
+    """
     ctx = loop.ctx
+    leg = reviseleg.active(loop)
+    run_status = reviseleg.run_status(loop, status)
     # R82: repair a summary whose newlines were double-escaped (literal ``\n`` and no real
     # newline) so result.md / the digest render real line breaks instead of verbatim "\n".
     summary = normalize_escaped_newlines(summary)
@@ -166,7 +174,7 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         summary += ("\n[A user message arrived as this run ended — it could not be "
                     "delivered this run; it stays queued and opens the next "
                     "run/reply.]")
-    if ctx.depth == 0:
+    if ctx.depth == 0 and not leg:   # a revise leg owes no job and proposes no revision
         # what the run owed its JOBS and never checkpointed is carried to the next run, and
         # the summary says so (engine/jobops.py)
         summary += jobops.close_out(ctx, status)
@@ -179,7 +187,9 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         if card := recipeproposal.maybe_propose(ctx, summary):
             summary += ("\n[Recipe revision(s) proposed to the operator — he applies them on "
                         f"the Decisions page ({card}).]")
-    finish_payload = {"status": status, "summary": summary, "authored": authored}
+    finish_payload = {"status": run_status, "summary": summary, "authored": authored}
+    if leg:
+        finish_payload["revise_leg"] = {"status": status}
     # D212 (b): the CLOSING asks ride the finish. A `closing` question is one the run finished
     # its work without (engine/askclass.py — the operator's own axis), so its reader is the
     # person reading what the run DID, with the answer one click away, rather than a card on a
@@ -197,24 +207,28 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         ctx.final = final
     ctx.transcript.event("finish", finish_payload,
                          usage_total=ctx.usage_total(), turns=ctx.turn)
-    if ctx.depth == 0:
+    if ctx.depth == 0 and not leg:   # the run's ending was filed by the leg that ran it
         _log_ending(loop, status, summary, abort)
     loop.final_summary = loop.final_summary or summary
     if ctx.depth == 0:
         from ..paths import atomic_write
-        atomic_write(ctx.run_dir / "result.md", summary + "\n")
+        atomic_write(ctx.run_dir / "result.md",
+                     reviseleg.result_text(ctx.run_dir, summary, status) if leg
+                     else summary + "\n")
         # D152 step 8: the `run-end` hook point. HERE — the point's own words are "the run is
         # over and its result is written" — and before the autocommit, so a line written for
         # the next run is committed with the run that learned it. Its carrier is the only one
         # in the registry that reaches a prompt nobody has composed yet (`state/notes.md`).
         assist.at_run_end(loop, {"status": status, "killed": killed, "run_id": ctx.run_id})
-        autocommit(ctx.routine.dir, f"{ctx.run_id}: {status}",   # routines never run git
+        autocommit(ctx.routine.dir,   # routines never run git
+                   f"{ctx.run_id}: recipe revision ({status})" if leg
+                   else f"{ctx.run_id}: {status}",
                    routines_home=ctx.server.routines_home, run_id=ctx.run_id)
         state = {"ok": "finished", "partial": "finished", "failed": "failed",
-                 "aborted": "aborted"}.get(status, "finished")
-        ctx.outcome = status   # `state` folds partial into finished — this keeps it visible
+                 "aborted": "aborted"}.get(run_status, "finished")
+        ctx.outcome = run_status   # `state` folds partial into finished — this keeps it visible
         ctx.write_status(state, question=None)
-    return status
+    return run_status
 
 
 def _log_ending(loop, status: str, summary: str,

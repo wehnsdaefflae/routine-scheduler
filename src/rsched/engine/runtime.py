@@ -219,19 +219,25 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     ctx.mounted_shares = {m.name for m in mounts}
     ctx.unavailable_shares = unavailable
     try:
-        status = EngineLoop(ctx, body, instruction,
-                            allowed_tools=allowed_tools, resume=bool(resume_from)).run()
-        from ..usage_log import log_workflow_usage
+        engine = EngineLoop(ctx, body, instruction,
+                            allowed_tools=allowed_tools, resume=bool(resume_from))
+        status = engine.run()
+        from ..usage_log import REVISE_LEG, log_workflow_usage
         from ..workflows import library
-        from . import obligations, outcome, runrecord
+        from . import obligations, outcome, reviseleg, runrecord
 
-        # what a person asked of it and this run did not finish waits for the next run
-        obligations.save(ctx)
-        # what the routine EXISTS to produce, measured after its last turn (engine/outcome.py)
-        # and recorded beside what the run cost — status.json and the usage row alike
-        ctx.outcome_measures = outcome.measure(ctx)
-        if ctx.outcome_measures is not None:
-            ctx.write_status()
+        # A narrow revise leg did no task (engine/reviseleg.py): the obligations, the outcome
+        # reading and the per-run telemetry are the proposing leg's, and stay as it left them.
+        leg = reviseleg.active(engine)
+        if not leg:
+            # what a person asked of it and this run did not finish waits for the next run
+            obligations.save(ctx)
+            # what the routine EXISTS to produce, measured after its last turn
+            # (engine/outcome.py) and recorded beside what the run cost — status.json and the
+            # usage row alike
+            ctx.outcome_measures = outcome.measure(ctx)
+            if ctx.outcome_measures is not None:
+                ctx.write_status()
 
         log_workflow_usage(server.routines_home, routine=cfg.slug, run_id=ctx.run_id,
                            workflow=prov.get("slug") or "", depth=0, status=status,
@@ -246,7 +252,10 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                            compression=ctx.compression_stats,
                            # what made the run and how it went (engine/runrecord.py)
                            fingerprint=runrecord.fingerprint(ctx, orch_ref),
-                           quality=runrecord.quality(ctx), outcome=ctx.outcome_measures)
+                           quality=runrecord.quality(ctx), outcome=ctx.outcome_measures,
+                           leg=REVISE_LEG if leg else "")
+        if leg:
+            return status, run_dir
         _log_cache_health(ctx, cfg.slug)
         # The cost-trend flag reads the stream this run's record just landed in, and is a
         # per-RUN judgement (this run against this routine's own history), so it belongs here.

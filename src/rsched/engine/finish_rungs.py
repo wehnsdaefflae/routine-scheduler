@@ -84,6 +84,10 @@ class Rung:
     top_level_only: bool = True
     skip_reserved: bool = True
     once: bool = False
+    #: Asked on a NARROW revise leg (engine/reviseleg.py)? False for every rung about the
+    #: run's TASK — its jobs, its accounting, its rules, its `met` claims — which the
+    #: proposing leg already answered; that leg's finish is where the gate's work was done.
+    on_revise_leg: bool = True
 
     @property
     def payload(self) -> str:
@@ -112,14 +116,15 @@ RUNGS: tuple[Rung, ...] = (
     # or `deferred` if the run sets the task aside), so it can never trap a run — which is the
     # reason the reserved turn is not exempt from it either.
     Rung("jobs_owed", "a task due this run has no checkpoint (gated processing)",
-         top_level_only=False, skip_reserved=False),
+         top_level_only=False, skip_reserved=False, on_revise_leg=False),
     Rung("final_undeclared",
          "a conversation reply leaves a goal open without declaring itself final"),
-    Rung("accounting", "the accounting field does not answer every line the finish owes"),
+    Rung("accounting", "the accounting field does not answer every line the finish owes",
+         on_revise_leg=False),
     # The rule layer's own rung. `once` is ITS state (`assist.at_finish`), declared here so the
     # ladder's shape is readable; see the module docstring for why it is not enforced here.
     Rung("assist", "a general rule the routine practises whose moment is the ending itself",
-         once=True),
+         once=True, on_revise_leg=False),
     Rung("no_actions",
          "a top-level ok-finish as the very first action, with no observation behind any claim"),
     # Not exempt on the reserved turn by SKIPPING the question: the gate asks it there and
@@ -129,7 +134,8 @@ RUNGS: tuple[Rung, ...] = (
     Rung("unbacked_claims", "the summary claims a high-signal action the run never took",
          skip_reserved=False),
     Rung("claims_unsupported",
-         "a `met` claim the run's own transcript does not support", once=True),
+         "a `met` claim the run's own transcript does not support", once=True,
+         on_revise_leg=False),
 )
 
 RUNG_BY_KEY: dict[str, Rung] = {r.key: r for r in RUNGS}
@@ -147,6 +153,8 @@ def _policy_ok(loop, ctx, rung: Rung) -> bool:
     guard. Defaulting explicitly keeps that decision here, where it is visible.
     """
     if rung.top_level_only and getattr(ctx, "depth", 0) != 0:
+        return False
+    if not rung.on_revise_leg and getattr(loop, "revise_leg", False):
         return False
     return not (rung.skip_reserved and getattr(loop, "_finish_reserved", False))
 

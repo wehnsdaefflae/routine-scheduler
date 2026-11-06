@@ -20,6 +20,7 @@ from . import (
     obligations,
     promptfloor,
     recipeproposal,
+    reviseleg,
     runkind,
     subsalvage,
 )
@@ -207,7 +208,9 @@ def boot(loop) -> None:
         # an authored finish means the model handed the speaker turn back to the user — a
         # command-only resume then keeps the turn with the user (loop.run's gate)
         loop.leg_after_authored = bool(fin_payload.get("authored"))
-        if fin_payload.get("authored"):
+        if reviseleg.active(loop):   # an approved recipe-revision card: an edit, not a run
+            enginenote.append(loop, reviseleg.boot(loop, fin_payload), replay=False)
+        elif fin_payload.get("authored"):
             # the model itself concluded this run (web converse on a finished run):
             # a follow-up conversation, not crash recovery
             status = fin_payload.get("status", "?")

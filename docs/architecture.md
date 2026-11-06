@@ -84,7 +84,9 @@ the limits (single-writer status.json preserved).
   **`write_recipe`** capability (the `recipe-authoring` permission; the model emits an ordinary
   write_file / edit_file and the engine decides from the PATH, `grantpolicy.is_recipe_path`) OR a
   per-leg **revise marker** (`engine/revise.py`: the run-view "revise recipe" mode drops one, the
-  loop reads it ONCE and grants recipe self-write + the file-edit kinds for that leg only). A
+  loop reads it ONCE and grants recipe self-write + the file-edit kinds for that leg only; an
+  approved recipe-revision card drops one marked `leg: "edit"`, whose leg is NARROW —
+  `engine/reviseleg.py`). A
   filesystem write root over the routine's own dir does NOT unlock it: that was the pre-0.261.0
   shape, where granting a routine write access to its working directory silently handed it the
   right to rewrite its own instructions.
@@ -2065,7 +2067,13 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   the reasoning is in that run's transcript, so it ARMS the unlock that already exists
   (`engine/revise.py`) and resumes the proposing run with its recipe writable — the "grant the
   capability at that moment" half of the same constraint, through one unlock path rather than a
-  second that can drift. A run that ALREADY holds recipe self-write is asked the same question
+  second that can drift. The leg it arms is NARROW (`engine/reviseleg.py`, the marker's
+  `leg: "edit"`): recipe edit kinds + `finish`/`report`, a 12-turn backstop, a finish that owes no
+  accounting, job checkpoint, verifier challenge or rule assist (`finish_rungs.Rung.on_revise_leg`),
+  and an ending that changes only the recipe and the leg's own record — the run keeps its
+  proposing leg's verdict, health record and outcome reading, `result.md` gains the leg's line
+  instead of losing the run's summary, and the usage fold reads the leg's `leg: "revise"` row as
+  spend only. A D198 invitation and the run view's checkbox keep the full leg. A run that ALREADY holds recipe self-write is asked the same question
   and files no card: it makes the edit, and the autocommit carries it. The card's lines are
   EDITABLE before approval (F790, operator requirement 2026-10-27: *"we need an edit option for
   the proposed revisions to a routine's own recipe at the end of its run"*) — prose has no patch
