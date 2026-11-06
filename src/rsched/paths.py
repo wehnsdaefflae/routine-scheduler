@@ -221,13 +221,62 @@ def directly_under(path: Path | str, home: Path | str | None) -> bool:
         return False
 
 
-def resolve_rel(base: Path, rel: str, extra_roots: Sequence[Path] = ()) -> Path:
-    """Resolve a path from an action: relative → under base; absolute → must fall inside
-    base or one of extra_roots. Raises PermissionError otherwise.
+def _first_existing(base: Path, rel: Path, roots: Sequence[Path]) -> Path | None:
+    """The first root that already holds `rel` — or, failing that, its parent directory — as
+    the path under that root; None when neither is on disk anywhere.
+
+    Two passes, in this order, because they answer different questions. A path that EXISTS
+    names the file the action means. A path whose PARENT exists names where a new file's
+    siblings already live — what makes a CREATING write land in the same root a read would,
+    decided on evidence on disk, never on which root is writable. A traversal climbing out of
+    the root it matched is not a hit (`within`), so `..` cannot pick a root and then escape it.
+
+    A root CONTAINING `base` is skipped: it is an ancestor, not an alternative, and `base` is
+    the more specific place for that name. Without it an open job's `state/x` resolved into the
+    ROUTINE's own dir — always a root, always holding `state/`, while a fresh workspace does
+    not — breaking the job-workspace contract (`run_context.work_dir`, tests/test_jobops.py).
+    """
+    base = base.resolve()
+    roots = [r for r in roots if not within(r, base) or r.resolve() == base]
+    for root in roots:
+        candidate = root / rel
+        if candidate.exists() and within(root, candidate):
+            return candidate
+    for root in roots:
+        candidate = root / rel
+        if candidate.parent.is_dir() and within(root, candidate):
+            return candidate
+    return None
+
+
+def resolve_rel(base: Path, rel: str, extra_roots: Sequence[Path] = (), *,
+                prefer_existing: bool = False) -> Path:
+    """Resolve a path from an action: relative → under base, or under the allowed root that
+    already holds it; absolute → must fall inside base or one of extra_roots. Raises
+    PermissionError otherwise.
+
+    `prefer_existing` is what the ACTION layer passes — `engine/run_context`'s
+    `resolve_action_path`, the one funnel every file action goes through — and what no other
+    caller does, so the web file APIs, pending edits, boot and authoring keep resolving a
+    relative path under `base` alone. With it, a relative path is looked for in `roots` order:
+    the first root holding the path, else the first root holding its parent directory, else
+    the plain `base` join (`_first_existing`). `base` comes first in every pass, so a path the
+    working directory holds always wins, and an ANCESTOR of it is never a fallback at all, so
+    nothing that already worked moves.
+
+    It exists because this resolver contradicted the action schema's own promise, mounted in
+    every run's prompt — "path relative to your working directory (or an allowed root)".
+    `extra_roots` was consulted only as a PERMISSION check on an absolute path, so a relative
+    one joined `base` and nowhere else: it could never land in a granted root and died at
+    open() with ENOENT while the file sat in one (R3233). Requiring the path or its directory
+    to EXIST is what keeps the write side safe — a genuinely new file in a new directory still
+    lands in the working directory.
     """
     p = expand(rel)
-    candidate = p if p.is_absolute() else (base / p)
     roots = [base, *extra_roots]
+    candidate = p if p.is_absolute() else (base / p)
+    if prefer_existing and not p.is_absolute():
+        candidate = _first_existing(base, p, roots) or candidate
     for root in roots:
         if within(root, candidate):
             return candidate.resolve()
