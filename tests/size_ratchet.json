@@ -16,7 +16,7 @@
     "src/rsched/engine/executor.py": 454,
     "src/rsched/engine/fileops.py": 586,
     "src/rsched/engine/ladder.py": 353,
-    "src/rsched/engine/loop.py": 437,
+    "src/rsched/engine/loop.py": 435,
     "src/rsched/engine/remind.py": 605,
     "src/rsched/engine/run_context.py": 587,
     "src/rsched/engine/window.py": 402,

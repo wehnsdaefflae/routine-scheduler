@@ -42,6 +42,43 @@ def grounds_a_finish(obs: dict) -> bool:
     return bool(obs) and not is_hold(obs) and obs.get("kind") not in NON_GROUNDING_KINDS
 
 
+def record_grounding(loop, action: dict, obs: dict) -> None:
+    """The LIVE counterpart of `grounding_from`: count this observation and remember its KIND.
+
+    One call from the dispatch site (`engine/loop._land`) rather than three lines there, because
+    `engine/loop.py` sits at its size-ratchet ceiling and because the live rule and the resume
+    rule belong in one place — the drift `hold.is_hold` was extracted to prevent. A `rejected`
+    observation (the reserved finish turn's refusal, `engine/chain.py`) ran nothing, so its kind
+    may not back a claim.
+    """
+    loop.executed_actions += 1
+    if not obs.get("rejected"):
+        loop.executed_kinds.add(action.get("kind", "?"))
+
+
+def grounding_from(events) -> tuple[int, set[str]]:
+    """What a transcript's observations ground: (how many, which KINDS) — D243.
+
+    The resume's counterpart to the live loop's two lines, asking `grounds_a_finish` once per
+    observation rather than twice. The KINDS half exists because the claim guard
+    (`engine/finish_guard.unbacked_action_claims`) asks what the run TOOK: a leg that rebuilt
+    the count alone would hand it an empty set and reject every claim the earlier leg's actions
+    legitimately back. A `rejected` observation counts for neither — the reserved finish turn's
+    refusal ran nothing.
+    """
+    count, kinds = 0, set()
+    for e in events:
+        if e.get("type") != "observation":
+            continue
+        payload = e.get("payload") or {}
+        if payload.get("rejected") or not grounds_a_finish(payload):
+            continue
+        count += 1
+        if kind := payload.get("kind"):
+            kinds.add(kind)
+    return count, kinds
+
+
 def handle(action: dict) -> dict:
     """Record the statement. The reasoning is echoed back so the run reads what it just
     recorded rather than a bare acknowledgement.

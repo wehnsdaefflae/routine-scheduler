@@ -152,6 +152,7 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop.dialog_qids = {}    # records an ask-back left open, by (type, subject) — askback.py;
     #                          a resumed leg re-keys them from the transcript
     loop.executed_actions = 0  # actions that produced an observation this run
+    loop.executed_kinds = set()   # …and their KINDS: what the claim guard may call taken (D243)
     chain.configure(loop)      # this reply's action queue and what it has read
     loop._schema_storm_streak = 0   # consecutive retry-burdened turns (D87, SCHEMA_STORM_TURNS)
     # This leg's wake, set in boot. The speaker turn is the USER's after the model hands

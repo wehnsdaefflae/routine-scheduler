@@ -141,22 +141,6 @@ own notes, kept so the trail can be followed.
 
 ---
 
-## The finish's claim guard counts held and refused actions as taken (E4.3)
-
-**Problem.** `finishgate` hands `unbacked_action_claims` `{r["kind"] for r in loop.turn_records}` —
-every action that landed a record, including one a reminder or rule HELD (it did not run,
-`engine/hold.py`) and one the reserved finish turn refused. A summary saying "reported the outage"
-passes on a `report` that was held and never re-emitted. Separately, `loop.assist_undo_points` and
-`loop.reminder_owed` are set by their layers' `configure` but not declared on `EngineLoop`.
-
-**Shape.** "Taken" is what EXECUTED: the predicate `boot` already uses for `executed_actions`
-(not rejected, not `hold.is_hold`). Declare the two attributes.
-
-**First increment.** Confirm `turn_records` holds held and refused actions; red-first test: a run
-whose only `report` was held, finishing `ok` with "reported …" in its summary, is deferred.
-
----
-
 ## A live budget raise withdraws a spent reserved finish turn (E1.4)
 
 **Problem.** The first budget violation grants a reserved finish turn (schema narrowed to

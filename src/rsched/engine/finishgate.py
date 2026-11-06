@@ -246,7 +246,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         # other runs' actions); see finish_guard.py.
         unbacked = unbacked_action_claims(
             action.get("summary", ""),
-            {r["kind"] for r in loop.turn_records},
+            loop.executed_kinds,     # D243: what EXECUTED, never what was merely emitted
             is_meta="meta" in (ctx.routine.tags or []))
         if unbacked and loop._finish_reserved:
             # On the reserved turn the summary is the only thing that survives, and a

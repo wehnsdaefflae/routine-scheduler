@@ -367,7 +367,13 @@ the limits (single-writer status.json preserved).
   a check sits outside of: `jobs_owed` is asked at any depth and on the reserved turn (a child
   can hold jobs and one action settles it), and `unbacked_claims` is asked on the reserved turn
   but records an `error` event there instead of deferring, because a rejection would lose the
-  summary.
+  summary. **What that guard counts as TAKEN is what EXECUTED** (D243): `loop.executed_kinds`,
+  maintained beside `executed_actions` through the one predicate `donothing.grounds_a_finish`
+  (live: `record_grounding`; resume: `grounding_from`). It used to be the kinds in
+  `loop.turn_records`, which is appended BEFORE dispatch — so an action a reminder or a rule
+  HELD, or one the reserved turn REFUSED, read as performed, and a summary claiming a report
+  that was held and never re-emitted passed the very guard that exists to catch narrated,
+  unperformed work.
 - **A hook can PERFORM an action, not only talk** (`rsched/hooks/perform.py`), which is the
   Claude-Code half of the same ask. The operator ruled on 2026-10-26: *"Any action. This includes
   utils and therefore scripts."* He named the ACTION VOCABULARY, so the payload is built on the
