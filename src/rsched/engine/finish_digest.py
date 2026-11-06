@@ -102,4 +102,21 @@ def digest_section(routine_dir: Path, *, goals: list[dict] | None = None,
     # the two seams cannot disagree about who has a recipe.
     if recipe_ask:
         out.append(recipeproposal.digest_ask(unlocked=recipe_unlocked))
+        # P4: the process-overhead invariant reaches the run at the ONE place it can act on it —
+        # beside the recipe-revision ask, said once at boot (readmodels/overhead_reading.py)
+        if line := _overhead_line(routine_dir):
+            out.append(line)
     return "\n".join(out)
+
+
+def _overhead_line(routine_dir: Path) -> str:
+    """One line when this routine's runs are over the process-overhead bar, else ""."""
+    from ..readmodels import overhead_reading
+
+    r = overhead_reading.reading(routine_dir.parent, routine_dir.name)
+    if r is None or not r["over"]:
+        return ""
+    return (f"PROCESS OVERHEAD: for this routine, {overhead_reading.describe(r)} — reading its "
+            "recipe, keeping its ledger, notes, phase and state files — rather than its task. "
+            "Make your recipe revisions the ones that remove that bookkeeping: a stage, a "
+            "record or a Done-when line the task does not need.")

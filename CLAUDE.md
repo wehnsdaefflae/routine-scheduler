@@ -843,6 +843,22 @@ by a test, by the engine, or by a past incident.
   measure all exist (readmodels/surface_outcome.py); it is the routine's own row, so it is never
   library drift and never in a boot note. Not the FINISH LINE: that says when a routine is done
   for good; this is what a routine that never finishes keeps producing.
+- **A run's turns belong to its task, and that is MEASURED, not hoped** (P4, 2026-11-06: a hand
+  count found 12 of 24 routines spending most of their runs on their own bookkeeping, and nothing
+  had said so). Every depth-0 run classifies its landed actions as task, process or friction
+  (`engine/overhead.py` — deterministic over the transcript, so a kept one measures the same) and
+  records `overhead` in status.json and `quality.overhead` in its usage row. The invariant is the
+  MEDIAN `process_share` of a routine's last 5 measured runs against `overhead.THRESHOLD` (0.27 —
+  CALIBRATED against that hand count, table in the module docstring; never move it without
+  re-running that calibration), read by ONE read model off the usage stream
+  (`readmodels/overhead_reading.py`, no transcript fallback — `migrate_overhead.py` measured the
+  kept runs once). Over the bar it reaches three places: `process_overhead_high` on the
+  blocked-work surface (`engine/overhead_alarm.py`, latched once a day in the stream itself), the
+  `recipe:overhead` NOTE on the setup surface (remedy `revise_recipe`, also `rsched validate`'s
+  line), and ONE line beside the D200 ask in the FINISH block — never the harness contract.
+  `report`/`ask_user` and product data written to `state/` stay TASK on purpose: for some
+  routines they ARE the product, and a classifier that learns one routine's file names is a
+  second hand classification nobody re-runs.
 - **What DONE means has three owners — none of them is a budget** (reports/goal.md).
   WHAT ONE FINISHED RUN LEAVES BEHIND is the recipe's `## Done when` (`engine/donewhen.py`,
   `- d<n> · <stage> — <outcome>`), re-asked every run and never "already met"; a run started by

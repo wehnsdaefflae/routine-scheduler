@@ -180,6 +180,7 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "GOALS NOW:",
         "At your finish, the `accounting` field carries",
         "THE LAST RUN LEFT UNMET",
+        "Make your recipe revisions the ones that remove that bookkeeping",   # P4 overhead line
         "your `accounting` is incomplete",
         "a check of your own transcript does not support",
         "GENERAL RULES you practise",

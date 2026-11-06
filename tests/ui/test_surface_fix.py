@@ -49,7 +49,7 @@ from rsched.oauth import store as oauth_store
 from rsched.oauth.store import Connection
 from rsched.readmodels.remedies import REMEDIES
 
-from .helpers import configure, stored_config, unfold
+from .helpers import configure, seed_overhead, stored_config, unfold
 
 # What an unmet row carries, in two parts. The FIX line is the offer as a whole — `data-fix`
 # holds the server's `kind`, which is the vocabulary the halves have to agree on, so it is
@@ -278,9 +278,8 @@ def _settings_post(request) -> bool:
 
 # ---- the binding: every kind the console renders lands on a control that performs it --------
 # One row per `fix` kind: the state that makes the server emit it, the ONE control. `landing` is
-# plain CSS (the flash and viewport check go through `document.querySelector`); `control` is a
-# locator, so it may address the thing by its label where no attribute names it. A kind no console can perform carries
-# neither: it renders as prose, a different promise from a dead link.
+# plain CSS (the flash and viewport check use `document.querySelector`); `control` a locator, so
+# it may name a label. A kind nothing can perform carries neither: prose, not a dead link.
 
 
 @dataclass(frozen=True)
@@ -403,6 +402,7 @@ CASES = (
     Case("fix_phase", "state:phase", _seed_fix_phase, control=None),
     Case("declare_outcome", "recipe:outcome", lambda ui, _: _configure(ui, outcome=None),
          control=None),
+    Case("revise_recipe", "recipe:overhead", lambda ui, _: seed_overhead(ui), control=None),
 )
 
 

@@ -32,7 +32,7 @@ these nodes as lines for an operator with no panel to click is `remedies.py`, a 
 audience rather than a different join.
 
 The JOIN is here; the things it joins are their own modules (the outcome row is
-`surface_outcome`), because a file that grew a
+`surface_outcome`, the process-overhead row `surface_overhead`), because a file that grew a
 `fix` kind every week reached 663 lines and every change re-read all of them to find the one
 it touched. `surface_nodes` is the row vocabulary (severities, `_node`, the merge rule),
 `surface_needs` the declared needs (util secrets, util stores, `expects:`),
@@ -49,6 +49,7 @@ from .surface_caps import _absent_util_node, _uncovered_nodes
 from .surface_needs import _expects_nodes, _fs_nodes, _secret_nodes
 from .surface_nodes import _ORDER, BLOCKS, INTERRUPTS, NOTE, _node, _one_row_per_entity
 from .surface_outcome import _outcome_nodes
+from .surface_overhead import _overhead_nodes
 from .surface_schedule import _phase_nodes, _schedule_nodes
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -105,6 +106,7 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     nodes += _schedule_nodes(server, cfg)
     nodes += _phase_nodes(server, cfg)
     nodes += _outcome_nodes(server, cfg)
+    nodes += _overhead_nodes(server, cfg)
 
     # The library's `requires:`, read once: the util join below asks it (a covering doc decides
     # an absent util's remedy), as do the checks after it.

@@ -29,6 +29,7 @@ from rsched.readmodels import remedies as remedies_mod
 from rsched.readmodels import surface as surface_mod
 from rsched.readmodels import surface_caps, surface_needs, surface_nodes, surface_schedule
 from rsched.readmodels import surface_outcome as outcome_mod
+from rsched.readmodels import surface_overhead as overhead_mod
 from rsched.readmodels.remedies import REMEDIES, surface_lines
 from rsched.readmodels.surface import (
     BLOCKS,
@@ -52,8 +53,7 @@ def _server(tmp_path: Path, machines: dict | None = None) -> SimpleNamespace:
 
 
 def _cfg(tmp_path: Path, **over) -> SimpleNamespace:
-    # a scheduled, enabled routine by default: the schedule join has something coherent to
-    # read, so a "ready" fixture keeps reporting nothing
+    # scheduled and enabled by default, so a "ready" fixture's schedule join reports nothing
     base = {"slug": "r", "dir": tmp_path / "r", "permissions": [], "rules": [],
             "capabilities": {"actions": [], "utils": []}, "grants": {},
             "fs_read_roots": [], "fs_write_roots": [], "machines": [], "connections": {},
@@ -671,7 +671,7 @@ def test_a_gap_fixed_off_this_page_still_says_what_settles_it(tmp_path):
 
 #: Every module that may emit a surface row. The scans below read SOURCE, so a join moved into
 #: its own file is listed here or its `fix` kinds stop being held to the vocabulary.
-_EMITTERS = (surface_mod, surface_needs, surface_schedule, surface_caps, outcome_mod)
+_EMITTERS = (surface_mod, surface_needs, surface_schedule, surface_caps, outcome_mod, overhead_mod)
 
 
 def _node_calls() -> list[ast.Call]:

@@ -150,6 +150,11 @@ const FIX = {
     act: `record ${f.expected || "phase"} in state/phase.json`, where: "the recipe" }),
   declare_outcome: (f) => ({
     act: `give it ${f.missing || "an outcome contract"}`, where: "routine.yaml and the recipe" }),
+  // The bookkeeping is built into the recipe (its stages, records and Done-when lines), so the
+  // act is a recipe revision — words, no link, like the two rows above it.
+  revise_recipe: (f) => ({
+    act: `revise the recipe so its runs stop spending ${f.share || "most"} of their actions on `
+         + "its own process", where: "the recipe" }),
 };
 
 /** Fully on screen. The second scroll is worth making only for a control the first one left off

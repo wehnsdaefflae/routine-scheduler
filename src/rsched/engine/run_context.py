@@ -99,8 +99,7 @@ class RunContext:
     # Shared tree-wide like the counter itself (childrun passes both to every child ctx).
     sub_lock: threading.Lock = field(default_factory=threading.Lock)
     # The run's grant policy, set by EngineLoop from the routine's capabilities mapping
-    # (+ the library's requires: index for denial wording).
-    # None (direct construction) = unrestricted.
+    # (+ the library's requires: index for denial wording). None (constructed directly) = open.
     grants: GrantPolicy | None = None
     # Whether this run is being stopped — its loop's own check, installed by
     # loopsetup.configure: the flag the daemon's abort SIGTERM raises, or the event a parent's
@@ -254,8 +253,9 @@ class RunContext:
     goals: list[dict] = field(default_factory=list)
     # A conversation reply's own declaration (finish `final`): None until a finish declares it.
     final: bool | None = None
-    # What scripts/outcome.py measured at the run's end (engine/outcome.py); None = undeclared.
-    outcome_measures: dict | None = None
+    # What scripts/outcome.py measured at the run's end (engine/outcome.py), None = undeclared;
+    outcome_measures: dict | None = None  # and its actions by task/process/friction (overhead.py)
+    overhead: dict | None = None
     # The run's QUALITY counters (engine/runrecord.py) — run-cumulative like asks_deferred, so a
     # resumed leg reseeds them (history.prior_counters): claims the verifier challenged and the
     # ones that stood disputed (the finish's and a goal check's), actions a caution held, and the
@@ -573,8 +573,8 @@ class RunContext:
             **({"goals": self.goals} if self.goals else {}),
             **({"final": self.final} if self.final is not None else {}),
             **({"outcome_measures": self.outcome_measures} if self.outcome_measures else {}),
-            # the task the run is working on right now (engine/jobops.py) — the live tail's
-            # "where is it" for a routine whose work is several jobs
+            **({"overhead": self.overhead} if self.overhead else {}),
+            # the job being worked on right now (engine/jobops.py): the live tail's "where is it"
             **({"job": self.job_id} if self.job_id else {}),
             # peak resident memory of the engine process (kB) — the rc=-9 post-mortem's
             # key datum (F348); the daemon reads the last write's value at close-out

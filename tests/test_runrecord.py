@@ -128,9 +128,11 @@ def test_quality_reads_only_done_when_and_goal_lines(tmp_path):
         usage_total=lambda: {"in": 1, "out": 1, "cached_in": 9, "cache_write": 3},
         stage_coverage=lambda: {"skipped": ["gather"]}, claims_challenged=1,
         claims_disputed=0, holds=2, schema_retries=1, interventions=0,
-        elapsed_total_s=lambda: 12.7)
+        elapsed_total_s=lambda: 12.7,
+        overhead={"task": 3, "process": 1, "friction": 0, "process_share": 0.25})
     assert runrecord.quality(ctx) == {
         "owed": 3, "met": 1, "unmet": 1, "not_due": 1, "stages_skipped": 1, "challenged": 1,
         "disputed": 0, "holds": 2, "schema_retries": 1, "interventions": 0, "elapsed_s": 12,
         "cache_read": 9, "cache_write": 3, "frictions": {"schema": 1},
-        "prompt_chars": {"harness": 30, "workflow": 5}}
+        "prompt_chars": {"harness": 30, "workflow": 5},
+        "overhead": {"task": 3, "process": 1, "friction": 0, "process_share": 0.25}}

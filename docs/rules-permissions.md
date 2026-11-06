@@ -126,9 +126,9 @@ or `note`.
 entity merge — is `readmodels/surface_nodes.py`, and the rows themselves come from four
 emitters speaking it: `surface_needs.py` (util secrets, util filesystem stores, `expects:`),
 `surface_schedule.py` (the suppressed cron, the started-by-nothing check, the phase key),
-`surface_caps.py` (capability coverage and the act that settles it) and `surface_outcome.py` (the
-OUTCOME row, below). "Where a `fix` kind is emitted" is therefore one of those five modules,
-never `surface.py` alone.
+`surface_caps.py` (capability coverage and the act that settles it), `surface_outcome.py` (the
+OUTCOME row, below) and `surface_overhead.py` (the PROCESS-OVERHEAD row, below). "Where a `fix`
+kind is emitted" is therefore one of those six modules, never `surface.py` alone.
 
 **The outcome row** (`recipe:outcome`, remedy `declare_outcome`) asks whether the routine says,
 and measures, what it exists to produce for its principal — three halves, each a `blocks` row
@@ -141,6 +141,18 @@ own row, never the library's: its `source` says `recipe`, so the library watch n
 as drift and the boot note never carries it (no run can declare its own success, and the gap
 fails no call a run makes). A conversation, a switched-off or retired routine, and a dir with
 no `main.md` owe none.
+
+**The process-overhead row** (`recipe:overhead`, remedy `revise_recipe` with `share`, the
+figure) says a routine's runs are dominated by its OWN PROCESS — the median `process_share` of
+its last runs (`readmodels/overhead_reading.py`, measured per run by `engine/overhead.py`, see
+docs/run-analytics.md "Process overhead") reached the fleet bar. A `note`, never `blocks`: nothing
+a run calls fails, and `rsched validate` prints it as its one `NOTE  recipe:overhead: …` line
+and stays green. It is UNMET, so it carries the fix, and the fix is the RECIPE — the bookkeeping
+is built in there (an orient and a record stage, a LEDGER, Done-when lines naming a record), so
+no setting removes it. The console renders it as words with no link, like `declare_outcome`.
+Routine-owned like the outcome row (`source.recipe`): never drift, never in the boot note — the
+run is told at the one place it can act, the FINISH block's recipe-revision ask
+(docs/prompt-anatomy.md). A switched-off routine owes none.
 
 Nothing is stored. The library MOVES — a run may revise the utils and rules its routine is made
 of, one copy each, reaching every holder at its next run — so a persisted resolution would be
