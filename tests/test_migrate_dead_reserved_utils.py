@@ -241,13 +241,6 @@ def test_the_daemons_boot_sequence_actually_runs_it(tmp_path, monkeypatch):
     d = _routine(server.routines_home, "booted")
     monkeypatch.setattr(bootstrap, "ensure_config", lambda: False)
     monkeypatch.setattr(cli_daemon, "load_server_config", lambda: (server, []))
-    # `migrate_enabled` is patched out for the same reason `tests/test_bootstrap.py` patches it
-    # out, and it is not cosmetic: that migration still reads `server.conversations_home` as a
-    # hard ATTRIBUTE (migrate_enabled.py:45), so against this stand-in it kills the whole boot
-    # with an AttributeError before any later step runs — measured here on 2026-11-01. It is a
-    # defect of that file, not of this one (reported separately); patching it is what lets this
-    # test reach the step it is about.
-    monkeypatch.setattr("rsched.migrate_enabled.run_migration", lambda s: {})
     monkeypatch.setattr("rsched.web.app.create_app", lambda s: None)
     monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
 

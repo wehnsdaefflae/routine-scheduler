@@ -34,10 +34,6 @@ def cmd_daemon(_args) -> int:
     from .utils_lib import ensure_library
     ensure_config()   # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
-    # MIGRATION(expires=2026-11-15): `schedule.disabled` folded into the one off switch,
-    # `enabled` — also before anything loads a routine.yaml, which no longer reads it
-    from .migrate_enabled import run_migration as fold_off_switch
-    fold_off_switch(server)
     # MIGRATION(expires=2026-12-31): F564/D155's run-spanning cap shipped INERT on 28 of 33
     # routines — the scaffold had written an explicit `max_total_turns: -1` and explicit wins.
     # The operator chose the migration (R2782/R2790); it rewrites only a line git shows was
@@ -47,7 +43,7 @@ def cmd_daemon(_args) -> int:
     # MIGRATION(expires=2026-12-31): the fau-mail/gmail -> mail consolidation left two dead
     # reserved-util names in six installed `capabilities.utils` lists, FAILing twice at the start
     # of every one of their runs — and routine.yaml is the operator's config, which no run may
-    # write (D228, his answer (a)). Here with the other two routine.yaml migrations: before
+    # write (D228, his answer (a)). Here with the other routine.yaml migration: before
     # anything loads one.
     from .migrate_dead_reserved_utils import run_migration as drop_dead_reserved_utils
     drop_dead_reserved_utils(server)
@@ -64,10 +60,6 @@ def cmd_daemon(_args) -> int:
     # utils added to util-seed since bootstrap, then workflows/rules/permissions added since too,
     # then out-of-band writes (user/conversation) get history
     sync_seed_utils(server.libraries_home, routines_home=server.routines_home)
-    # MIGRATION(expires=2026-11-15): this release's fixes to four utils the live library
-    # already has — the sync above only adds missing ones
-    from .migrate_seed_utils import run_migration as carry_seed_util_fixes
-    carry_seed_util_fixes(server)
     # MIGRATION(expires=2027-01-31): the `gu` dispatcher became a tracked repo file (util-seed/gu,
     # D225). `ensure_library` above installs the MINIMAL stub and never overwrites an existing
     # dispatcher, so only this carries the tracked one across — and only onto that stub, which it

@@ -255,10 +255,6 @@ carries `config.yaml`'s bearer tokens and the Secrets store beside it — check 
 script reports, since a network share may not honour it. `chrome-profile` carries the same
 torn-copy caveat as the tarball, and the script says so on every run.
 
-The first run on a root that still holds the old single mirror (every home directly under the
-root) **moves** it into `snapshots/<date of its last completed run>` — a rename, instant at any
-size — and links that night's snapshot against it.
-
 ### Restoring
 
 Restore with the service stopped, so nothing writes a home while it is copied back:
