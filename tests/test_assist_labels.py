@@ -130,6 +130,24 @@ def test_a_stand_in_server_without_the_homes_cannot_kill_the_boot():
     assert mig.run_migration(SimpleNamespace(routines_home="")) == {}
 
 
+def test_a_homeless_server_writes_NOTHING_rather_than_into_the_current_directory(tmp_path,
+                                                                                monkeypatch):
+    """The half the return value above does not cover, and it cost a release gate.
+
+    `routines_home` was read as `getattr(server, "routines_home", "") or "."`, so a stand-in
+    without a home resolved to the PROCESS's current directory — and a test run from the repo
+    wrote `.control/migrations/assist-stats.json` into the CHECKOUT. Gate
+    1793979003964198600 (0.505.0's first arming) duly reported its own worktree `dirty`.
+    Asserting the return value could never catch that: the write happens on the way to it.
+    """
+    from rsched import migrate_assist_stats as mig
+
+    monkeypatch.chdir(tmp_path)
+    assert mig.run_migration(SimpleNamespace()) == {}
+    assert not (tmp_path / ".control").exists(), "the migration wrote into the cwd"
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_the_daemons_boot_sequence_actually_runs_it():
     """A migration nothing CALLS is a silent no-op that passes its own suite."""
     import inspect

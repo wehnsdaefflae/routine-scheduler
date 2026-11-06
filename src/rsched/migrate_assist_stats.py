@@ -44,7 +44,16 @@ def _is_legacy(raw: object) -> bool:
 
 def run_migration(server) -> dict:
     """Convert every routine's tally once. Returns the record (empty when it already ran)."""
-    home = Path(str(getattr(server, "routines_home", "") or "."))
+    # `getattr` because the fresh-container boot test hands this a 4-attribute stand-in server
+    # and a hard attribute access there kills the whole daemon boot — but NO `or "."` fallback:
+    # the cwd of the process is not an instance home, and defaulting to it made a test's
+    # stand-in write `.control/migrations/assist-stats.json` into the REPO CHECKOUT. A release
+    # gate then reported its own worktree dirty (gate 1793979003964198600, 0.505.0's first
+    # arming). A migration with no home to migrate does nothing at all.
+    raw_home = str(getattr(server, "routines_home", "") or "")
+    if not raw_home:
+        return {}
+    home = Path(raw_home)
     if not home.is_dir():
         return {}
     record_path = home / RECORD
