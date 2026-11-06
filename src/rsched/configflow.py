@@ -121,6 +121,10 @@ ROUTINE_PATCH_FIELDS = frozenset({
 CONVERSATION_PATCH_FIELDS = frozenset({
     "title", "tags", "workdir", "budgets", "models", "efforts", "machines", "connections",
     "deliberation", "fs_read_roots", "fs_write_roots",
+    # D216 (d): the escalation ladder reaches a conversation too. The engine never gated it —
+    # `engine/ladder.ladder_settings` reads `ctx.routine.ladder` and a conversation IS a
+    # RoutineConfig — so only the surfaces were missing.
+    "ladder", "ladder_turn_interval", "oversight_turns",
 })
 
 #: The THIRD surface: the instance's own `config.yaml`, named by a patch as

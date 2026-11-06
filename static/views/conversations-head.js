@@ -8,6 +8,7 @@ import { connectionsCard } from "/static/components/connections.js";
 import { declinedAccessCard, heldGrantsCard } from "/static/components/declined-access.js";
 import { machinesCard } from "/static/components/machines.js";
 import { deliberationControl } from "/static/components/deliberation.js";
+import { ladderPanel } from "/static/components/ladder-settings.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { abilitiesPanel } from "/static/components/abilities.js";
@@ -36,6 +37,11 @@ function modelControl(detail, slug, isLive) {
   const mainSel = mkSel(detail.models?.main || "", `default · ${sysLabel}`, "main model");
   const uncSel = mkSel(detail.models?.uncensored || "", "none · uncensored off",
     "uncensored model — where refused requests are delivered");
+  // D216 (d): the SUPERVISOR role — the model an escalation-ladder rung's overseer runs on
+  // (D164). It falls back to this conversation's own `main`, so "default" is not the system
+  // model here; `config.base.supervisor_role` is the one place that rule lives.
+  const supSel = mkSel(detail.models?.supervisor || "", "default · this thread's main model",
+    "supervisor model — an escalation-ladder rung's overseer");
   // Each role's reasoning effort — its own setting, so any model takes any level. The tool-call
   // role keeps the effort it was created with (like its model, it is set before the first reply).
   const mkEffort = (cur, title) => el("select",
@@ -58,6 +64,7 @@ function modelControl(detail, slug, isLive) {
   const apply = el("button", { class: "btn small primary", hidden: true }, "apply");
   const show = () => { apply.hidden = false; };
   mainSel.onchange = show; uncSel.onchange = show; mainEff.onchange = show; uncEff.onchange = show;
+  supSel.onchange = show;
   if (decSel) decSel.onchange = show;
   apply.onclick = async () => {
     const mainName = mainSel.value, uncName = uncSel.value;
@@ -78,6 +85,11 @@ function modelControl(detail, slug, isLive) {
     if (mainName) { models.main = mainName; models.tool_call = ownTool || mainName; }
     else if (ownTool) models.tool_call = ownTool;   // clearing main keeps a chosen tool role
     if (uncName) models.uncensored = uncName;
+    // D216 (d): the supervisor role is SENT, not dropped. Before this picker existed the body
+    // was built from main/tool_call/uncensored/decision only — and `validate_models` replaces
+    // the block wholesale, so an omitted role is a DELETION: a `supervisor` set by hand in
+    // routine.yaml was erased by the next model save anyone made from this header.
+    if (supSel.value) models.supervisor = supSel.value;
     const decName = decSel ? decSel.value : detail.models?.decision;
     if (decName) models.decision = decName;
     if (detail.models?.decision_media) models.decision_media = detail.models.decision_media;
@@ -104,6 +116,7 @@ function modelControl(detail, slug, isLive) {
   return el("span", { class: "conv-model" },
     el("span", { class: "faint small" }, "model"), mainSel, mainEff,
     el("span", { class: "faint small" }, "uncensored"), uncSel, uncEff,
+    el("span", { class: "faint small" }, "supervisor"), supSel,
     ...(decSel ? [el("span", { class: "faint small" }, "decide"), decSel] : []), apply);
 }
 
@@ -208,6 +221,24 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     el("span", { class: "faint small", style: "min-width:150px;padding-top:4px" },
       "deliberation — thinking on paper"),
     delib.node));
+  // The ESCALATION LADDER (D216 part d): whether this thread's replies are supervised, how high
+  // the ladder may go, and its two turn knobs. The engine never gated it on being a routine —
+  // `engine/ladder.ladder_settings` reads the config object composed at each reply's boot, and a
+  // conversation IS a RoutineConfig — so only this surface and the PATCH vocabulary were missing.
+  // Saves on commit (no accept bar here) and reaches the NEXT reply, like every other field on
+  // this panel. One panel, the routine page's own controls, so the floors cannot drift.
+  capBody.append(el("div", { class: "faint small mt" }, "escalation ladder — whether a reply in "
+    + "this thread is supervised by a rung above it, how high the ladder may go, and how often "
+    + "a rung may be asked for. The switch and rung height are config; the two turn numbers are "
+    + "tuning. A change applies from the next reply"),
+    ladderPanel(detail, {
+      onPatch: async (body) => {
+        try {
+          await api(`/api/conversations/${slug}`, { method: "PATCH", body });
+          toast("ladder saved — applies from the next reply");
+        } catch (err) { toastError(err); }
+      },
+    }).node);
   capBody.append(abilitiesPanel(detail.permissions, detail.capabilities, {
     onSave: async (payload) => {
       try {
