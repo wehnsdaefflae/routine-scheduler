@@ -15,6 +15,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.507.0] — 2026-11-06
+
+### A resumed leg reads what the live leg read: a replayed observation keeps its tails
+
+**D245's first increment.** `EngineLoop._tails` appends everything that rides an observation
+message AFTER the result itself — the reminder note, the rule-assist line, the archived-history
+pointer, the spent once-grant notice, the repeat warning, the budget remainder. The observation
+EVENT was written before any of them existed, so `history.replay_messages` rebuilt that message
+WITHOUT them: **from the first such turn, a resumed leg's prompt differed from what the model had
+actually read.** Two costs, both already counted in this codebase — the provider cache misses
+from that message on (re-WRITTEN at 1.25x instead of re-read at 0.1x, which is exactly what
+`engine/enginenote.py` exists to avoid), and cautions the model was shown are simply gone from
+the leg that continues its work.
+
+New `engine/obstails.py` owns the payload key `tails`; `loop.py` renders the tails BEFORE writing
+the observation event and records the rendered string on it, **line-neutral at 435/435** (paid
+for by collapsing the event call and one statement); `replay_messages` appends it, so the
+replayed message is byte-identical to what the model read. An observation recorded before the key
+existed reads `""`, so a run resumed across this change degrades to the old behaviour instead of
+raising.
+
+It is the RENDERED text, never the facts behind it: re-rendering at replay would recompute
+`[BUDGET LEFT: …]` against the NEW leg's window and re-apply reminder ops that already ran, and
+one string keeps the ORDER of several tails on one message true by construction. A payload
+EXTENSION, not a new event type (`EVENT_TYPES` untouched) — the house rule `assist.recorded` and
+`engine/replyactions.py` already follow. One cost is documented rather than hidden, in
+`docs/prompt-anatomy.md` §3b: recording tails on the event forces rendering them before it is
+written, so a crash inside the rare blocking `remind` approval now records neither the
+observation nor its tails — the same window a pending `ask_user` already has. That §3b also
+asserted *"The tail itself is not in the transcript"*, which this change makes false, and it is
+corrected in it.
+
+Part (a) of the same entry — `loop.failures` and `_schema_off` surviving a resume — is **not** in
+this release and the designs entry stays. What it needs first is recorded: neither counter has a
+layer module of its own and `loop.py` is at its ceiling, so their `rebuild` needs a new sibling.
+
 ## [0.506.0] — 2026-11-06
 
 ### A raise gives a run its turns back, and the most expensive output a run buys stops losing its middle
