@@ -15,6 +15,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.505.0] — 2026-11-06
+
+### A hold can be labelled, a claim must have executed, and five migrations that had done their work are gone
+
+**A rule assist's HOLD can finally be told apart from a false positive** (D239) — the last of the
+six seams the 2026-09-22 review named and did not finish, and therefore the whole remainder of
+**D143**, the oldest live decision in the backlog (handed 2026-09-24, 44 days). What leaving it
+cost was measurable: the one `hold`-payload assist in the library,
+`git-checkpoint/before-the-first-repo-edit`, stood at **31 / 31 / 10 fires** across
+`llmsectest-weekday`, `self-audit` and `routine-improver` — 72 turns bought, with no way to tell
+a useful hold from a false positive, which is the one number that decides whether a trigger keeps
+a turn-costing rung. The entry's own first increment was "all four together: until every one
+lands the label has nowhere to go", and all four are here: `remind_feedback` routed by id SHAPE
+(a `/` means an assist key — `engine/assist_label.py`, with the one-label-per-hold ledger);
+`state/assists.json` grown from an int per key to the reminder's own `STAT_FIELDS` exactly, with
+a boot migration converting the live file in place; the health read model and its console table
+carrying the four label columns, reusing the reminder row's class so no new CSS was needed; and
+the `assist_hold` observation asking for the label the way `reminder_hold` does. Both files the
+seams live in — `engine/remind.py` at 605/605 and `readmodels/run_health.py` at 350/350 — were
+shrink-only, so two parts went into new siblings with line-neutral edits at the seams.
+Three limits are stated rather than left to be found: the label inherits `remind_feedback`'s
+`reminders` capability dial (so a routine with `reminders: none` cannot label a hold at all —
+that gate is the operator's and was not widened; all three firing routines carry `reminders:
+local`), `scaffold` and `do` still need a helper channel that does not exist, and
+`REMIND_FEEDBACK_FIELD`'s `id` description still says "the reminder that fired", which is now
+narrow.
+
+**The finish's claim guard counted HELD and REFUSED actions as taken** (D243, review item E4.3).
+`finishgate` handed it `{r["kind"] for r in loop.turn_records}` — and `turn_records` is appended
+at the assistant-action stage, BEFORE dispatch. So it held every kind the model EMITTED,
+including one a consequence reminder or a rule assist HELD (it never reached the dispatcher) and
+one the reserved finish turn REFUSED. A summary saying "filed report to self-audit" therefore
+**passed on a report that was held and never re-emitted**: the one guard whose whole job is
+catching narrated-but-unperformed work was reading an unperformed action as performed. "Taken"
+is now what EXECUTED — `loop.executed_kinds`, maintained beside `executed_actions` through the
+one predicate `donothing.grounds_a_finish`, live (`record_grounding`) and on resume
+(`grounding_from`), so a kind that cannot ground a finish cannot back a claim either. The
+reserved turn's refusal is NOT a hold, so it had to be excluded explicitly — half the defect the
+entry names. `loop.assist_undo_points` and `loop.reminder_owed`, set by their layers and
+undeclared on `EngineLoop`, are declared; `loop.py` was at 437/437, so the lines were paid for by
+dropping two DEAD `__all__` re-exports (`MAX_SCHEMA_ATTEMPTS` and `RunAborted` are defined in
+`completion.py` and `control.py`, and every importer in the tree takes them from there).
+
+**Five `MIGRATION(expires=2026-11-15)` markers are converged and deleted** (F841) — nine days
+before they would have redded the FAST stage of every release gate on this host, for a defect
+nobody created that day (the F701 precedent). They resolve to three migrations, two declaring
+twice: `migrate_enabled` (`enabled.json` folded 37 routines on 2026-10-01; the only surviving
+`schedule.disabled` key sits under `.archive/`, which its glob cannot reach), `migrate_seed_utils`
+(`replaced: {}`, every util already current) and `deploy/backup.sh`'s `migrate_single_mirror`
+(shipped 0.372.0, run before any rsync, so every attempt since performed it). Convergence was
+VERIFIED per migration against the live `.control/migrations/` records and the homes, not taken
+from the hand-over note — whose line number for `backup.sh` was already stale. Deleted with them:
+both modules, both `cli_daemon` call sites, the shell function, three migration-only test files,
+two now-impossible monkeypatch sites and six prose corrections. The end-state tests were kept
+(`test_disabled_schedule.py` pins the one off switch across 10 assertions), so no new test was
+written red-first — for a deletion the end state is the thing that must stay asserted. The boot
+test is now STRONGER: with the stale monkeypatches gone, the minimal-stand-in boot runs every
+surviving migration with nothing patched out. Proof: zero markers in `src/` or `deploy/` expire
+on or before 2026-11-15, with 22 remaining and the earliest 2026-11-30.
+
+**Two defects this release's own first gate exposed, both fixed here.** (1) The new boot
+migration resolved its home as `getattr(server, "routines_home", "") or "."`, so a stand-in
+server with no home wrote `.control/migrations/assist-stats.json` into the process's current
+directory — the REPO CHECKOUT during a test run, which made the gate report its own worktree
+dirty. The house pattern has no such fallback: a missing home now means do nothing. The existing
+stand-in test asserted the return value and so could never catch it, because the write happens on
+the way to that return; the new test asserts the directory is still EMPTY afterwards. (2) The
+conversation-ladder BROWSER test waited for "a PATCH to /api/conversations/" and so could match
+the PREVIOUS commit's in-flight response, then read `tuning.yaml` before its own write had
+landed — green twice on its own, red in the gate's parallel stage AND its serial re-run. Each
+commit now waits for the response to ITS OWN request, matched on the field that request's body
+carries. No shipped code changed for either half of (2).
+
 ## [0.504.0] — 2026-11-06
 
 ### A failure is classified from what it DECLARED, a relative path finds its root, and a conversation can be supervised
