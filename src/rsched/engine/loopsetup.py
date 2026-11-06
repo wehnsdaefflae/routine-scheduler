@@ -130,7 +130,14 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # A workflow may restrict which action kinds it may use (frontmatter `tools:`); `finish`
     # is always permitted so a run can end. None = every tool allowed. Enforced per turn by
     # validate_action, so the model is corrected within the schema-retry cycle.
-    loop.allowed_tools = set(allowed_tools) | {"finish"} if allowed_tools else None
+    # `is not None`, NOT a falsy test (D242): `tools: []` — the always-kinds and nothing else —
+    # is a RESTRICTION, and under `if allowed_tools` the empty list read as None, i.e. every
+    # kind allowed. A restriction that fails OPEN is the one direction it must never fail in,
+    # and nothing downstream could catch it: the other two readers of the allowlist already
+    # test `is None` (kindsurface.effective_kinds, workflows/lint._tools_problems), so the list
+    # reached them already turned into "unrestricted" here.
+    loop.allowed_tools = (set(allowed_tools) | {"finish"}
+                          if allowed_tools is not None else None)
     loop.abort_event = abort_event or threading.Event()
     # The same check, where the jailed runner can ask it: a util, script or shell command in
     # flight ends with this run (RunContext.aborted, utils_run.run_jailed).

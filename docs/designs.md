@@ -141,20 +141,6 @@ own notes, kept so the trail can be followed.
 
 ---
 
-## An empty `tools:` list in a workflow allows every action (E1.6)
-
-**Problem.** `engine/loopsetup.py`: `loop.allowed_tools = set(allowed_tools) | {"finish"} if
-allowed_tools else None` — an empty list is falsy, so a workflow declaring `tools: []` (nothing but
-the always-kinds) gets `None`, which means EVERY kind. A restriction fails open.
-
-**Shape.** `is not None`; check that `kindsurface.effective_kinds` and the linter's
-`_tools_problems` read `[]` the same way.
-
-**First increment.** The change, with a red-first test: a workflow with `tools: []` refuses
-`write_file` and allows `finish` and `report`.
-
----
-
 ## The finish's claim guard counts held and refused actions as taken (E4.3)
 
 **Problem.** `finishgate` hands `unbacked_action_claims` `{r["kind"] for r in loop.turn_records}` —
