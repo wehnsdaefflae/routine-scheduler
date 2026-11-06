@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 
 from ..endpoints.usage import fold_usage
-from . import enginenote
+from . import enginenote, obstails
 from .compaction import turn_record
 from .observations import format_observation
 
@@ -83,7 +83,12 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
                 # the replay rebuilds TEXT-only messages, so the media is not re-attached:
                 # say so instead of replaying "attached below for you to see" over nothing
                 p = {k: v for k, v in p.items() if k != "media"} | {"media_replayed": True}
-            messages.append({"role": "user", "content": format_observation(p)})
+            # …plus whatever RODE that message (engine/obstails.py): the reminder note, the
+            # rule-assist line, the history pointer, the spent once-grant, the budget
+            # remainder. Rendered live and recorded verbatim, so this is byte-identical to
+            # what the model read instead of a second rendering that could differ.
+            messages.append({"role": "user",
+                             "content": format_observation(p) + obstails.of(p)})
         elif kind_ev == "user_injection":
             if p.get("command"):
                 pending_command = str(p.get("text", ""))

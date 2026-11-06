@@ -35,6 +35,7 @@ from . import (
     loopnudge,
     loopsetup,
     mediaops,
+    obstails,
     recall,
     remind,
     requests,
@@ -338,9 +339,9 @@ class EngineLoop:
             if key := failure_tally_key(ctx, action, obs):
                 self.failures[key] = self.failures.get(key, 0) + 1
         fired = assist.at_observation(self, action, obs)
-        ctx.transcript.event("observation",
-                             assist.recorded(self, mediaops.without_bytes(obs), fired),
-                             turn=ctx.turn)
+        tails = self._tails(action, obs, fired, held=held, streak=streak)
+        ctx.transcript.event("observation", obstails.record(assist.recorded(
+            self, mediaops.without_bytes(obs), fired), tails), turn=ctx.turn)
         if obs.get("cancelled"):
             # F586 / D160-C's second half: a person reached into this run and stopped ONE call.
             # The observation above already carries the flag, but an observation records what
@@ -355,8 +356,7 @@ class EngineLoop:
             from .admin import log_admin_action
             log_admin_action(ctx.server.routines_home, run_id=ctx.run_id,
                              kind=action["kind"], brief=brief_value(action)[:200])
-        text = live_observation(obs, ctx) + self._tails(action, obs, fired, held=held,
-                                                     streak=streak)
+        text = live_observation(obs, ctx) + tails
         msg: dict = {"role": "user", "content": text}
         if obs.get("media"):  # view_image / auto-attach: the model sees it next turn
             msg["media"] = obs["media"]
