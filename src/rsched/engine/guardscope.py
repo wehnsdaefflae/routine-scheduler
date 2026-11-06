@@ -1,12 +1,12 @@
 """The SCOPE a run's once-only guards answer for — defined here, once — and their rebuild
 when a leg resumes.
 
-Several guards promise to intervene at most ONCE: one hold per source and action string
-(`loop.holds`, engine/hold.py), one fire per rule assist and one finish deferral across all of
-them, with the repos found clean remembered beside them (engine/assist.py), one challenge per
-claimed line (`loop._challenged`, engine/finishgate.py), one label per reminder hold and one
-application of a re-driven finish's reminder payload (engine/remind.py, read back by
-engine/remind_ledger.py), one warning before the window's middle is archived
+Several guards promise to intervene at most ONCE: one hold per reminder and per rule-held
+action string (`loop.holds`, engine/hold.py), one fire per rule assist and one finish deferral
+across all of them, with the repos found clean remembered beside them (engine/assist.py), one
+challenge per claimed line (`loop._challenged`, engine/finishgate.py), one label per reminder
+hold and one application of a re-driven finish's reminder payload (engine/remind.py, read back
+by engine/remind_ledger.py), one warning before the window's middle is archived
 (engine/window.py), one context-window correction per window a failover has substituted DOWN to
 (engine/substitution.py). Each is an in-memory ledger the loop
 builds at construction — so every resumed leg used to start them EMPTY: a hold the run had
@@ -35,10 +35,10 @@ words the model is given about its leg cannot disagree about which reply it is i
 exactly as `history.seen_paths` rebuilds the write-grounding set — never from a side file the
 transcript could contradict. Where an event did not record the decision, it now does, as a
 payload EXTENSION on the event that carried the intervention, never a new event type: a hold's
-observation names its source by its kind; `assists` names the rule assists whose line an
-event carried; `undo_point` the repo a write's pre-action check found clean; `evict_warning`
-marks the eviction warning's engine note, and `substitution_floor` the window a
-substitution note has already corrected the run down to.
+observation names its source by its kind and what it spent (its reminder ids, or `action`);
+`assists` names the rule assists whose line an event carried; `undo_point` the repo a write's
+pre-action check found clean; `evict_warning` marks the eviction warning's engine note, and
+`substitution_floor` the window a substitution note has already corrected the run down to.
 
 Each layer rebuilds its OWN fields (`rebuild(loop, events)`, the counterpart of the
 `configure(loop)` that built them — the reminder layer's in `remind_ledger`, beside the live

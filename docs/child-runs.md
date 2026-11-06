@@ -96,7 +96,9 @@ for it — `wait n=N` — before starting the next subtask, and fold its result 
 wait is **responsive**: it wakes on the child's completion (the finished-hook) but *yields* the
 moment a user message arrives, handing control back so the parent can reply, then you `wait` again.
 Its completion is delivered by the turn-boundary `CHILD RUN FINISHED` hook
-(`announce_finished_subruns`) whether you are waiting or doing other work. Unlike a plain workflow
+(`announce_finished_subruns`) whether you are waiting or doing other work. A wait without `n` also
+ends on a backgrounded call's landing, and `all` waits for those calls too (`engine/waitop.py`,
+docs/background-tasks.md) — the run's two kinds of in-flight work, one wait. Unlike a plain workflow
 step, a child run gets its own fresh context window and pattern; unlike the `parallel` mode
 (disjoint outputs) the `sequential` one is meant to run one-at-a-time with results forwarded.
 

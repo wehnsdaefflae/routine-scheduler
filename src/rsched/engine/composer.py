@@ -22,7 +22,7 @@ PLAN_MAX_LINES = 60
 
 #: How many files a directory listing in the digest may name. Every OTHER growing part of
 #: this digest is capped — the plan at PLAN_MAX_LINES, the notes tail, the LEDGER tail, the
-#: `.memory/` note cap — because the digest is re-read on EVERY turn of the run, so an
+#: `.memory/` INDEX's one line a note — because the digest is re-read on EVERY turn, so an
 #: unbounded part is a tax on every turn. These two listings were the exception: weightloss
 #: reached 285 state files and spent ~2 400 tokens per turn naming them (measured
 #: 2026-09-11, ~9% of that routine's whole prefix). 40 is chosen to orient, not to inventory

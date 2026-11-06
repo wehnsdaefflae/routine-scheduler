@@ -137,13 +137,12 @@ def test_valid_actions_pass_both_layers(action):
         # .memory/ is fenced off from the generic file actions …
         ({"say": "s", "kind": "read_file", "path": ".memory/INDEX.md"}, "memory_read"),
         ({"say": "s", "kind": "write_file", "path": "./.memory/x.md", "content": "y"}, "memory_write"),
-        # … and the memory actions enforce topic slugs, the reserved index, and the cap
+        # … and the memory actions enforce topic slugs and the reserved index (a note's size is
+        # advice, never a refusal — engine/memops.py)
         ({"say": "s", "kind": "memory_read", "name": "Not A Slug"}, "kebab-case"),
         ({"say": "s", "kind": "memory_write", "name": "index", "content": "x", "about": "a"}, "reserved"),
         ({"say": "s", "kind": "memory_write", "name": "t", "content": "x"}, "about"),
         ({"say": "s", "kind": "memory_write", "name": "t", "about": "a"}, "content"),
-        ({"say": "s", "kind": "memory_write", "name": "t", "about": "a",
-          "content": "\n".join(f"l{i}" for i in range(101))}, "capped at 100"),
     ],
 )
 def test_semantic_violations(action, fragment):

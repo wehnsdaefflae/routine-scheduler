@@ -83,6 +83,12 @@ def test_an_over_long_detail_says_it_was_cut_everywhere_it_lands(tmp_path):
     # it can still act — a count that disagreed with the message would be its own defect
     rendered = format_observation(obs)
     assert "truncated" in rendered.lower() and str(dropped) in rendered
+    # …and is told the engine already handled it (P3): the delivered copy points the reader at
+    # the whole row, so nothing needs re-filing — "re-file it as a short follow-up" had runs
+    # spending a turn and a second ledger row on a clipped tail
+    assert "Nothing needs re-filing" in rendered and "re-file it" not in rendered
+    # the delivered marker names only a route that exists (`rsched items` never did)
+    assert "rsched items" not in delivered["text"] and ".control/reports.jsonl" in delivered["text"]
 
     # a detail that fits is untouched and says nothing about truncation
     obs2 = handle_report(loop, {"target": "routine-improver", "title": "short", "detail": "d"})

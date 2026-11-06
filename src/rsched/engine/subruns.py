@@ -17,7 +17,7 @@ from __future__ import annotations
 import threading
 import time
 
-from . import child, inbox, subsalvage
+from . import child, subsalvage
 from .childrun import Subrun, build_child, claim_child
 from .observations import truncate
 
@@ -270,58 +270,13 @@ class SubrunManager:
                 "status": sub.status if sub.done.is_set() else "stopping"}
 
     def wait(self, action: dict, *, poll_s: float, aborted) -> dict:
-        """Block until a target child (n), all children, or any unreported exit. Wakes on the
-        child's completion event, not on a poll tick — and an exit the parent has not been
-        told about yet satisfies an any-wait immediately (a child that finished while the
-        parent was composing this very action must not cost a full timeout).
-        """
-        n = action.get("n")
-        want_all = bool(action.get("all"))
-        timeout = float(action.get("timeout_s") or 600)
-        deadline = time.monotonic() + timeout
-        if not self.subruns or (n is not None and int(n) not in self.subruns):
-            return {"kind": "wait", "error":
-                    subsalvage.no_such_child(self.parent.ctx.run_dir, int(n))
-                    if n is not None else "no sub-workflows have been spawned"}
+        """Block until a child exits or a backgrounded call lands — `engine/waitop.py`."""
+        from . import waitop
 
-        def satisfied() -> bool:
-            if n is not None:
-                return self.subruns[int(n)].done.is_set()
-            if want_all:
-                return all(s.done.is_set() for s in self.subruns.values())
-            # any-mode: an unreported exit satisfies at once; and once nothing is running
-            # any longer, no future exit can arrive — blocking would burn the whole timeout.
-            return (any(s.done.is_set() and not s.announced for s in self.subruns.values())
-                    or all(s.done.is_set() for s in self.subruns.values()))
-
-        while time.monotonic() < deadline:
-            if aborted():
-                break
-            # RESPONSIVE: a user message arriving mid-wait must not be starved. Yield control
-            # back to the turn loop (which drains it and lets the parent reply) instead of
-            # freezing the conversation until the child finishes — the child keeps running and
-            # is announced when it exits. Root runs only (children don't drain the routine inbox).
-            if (self.parent.ctx.depth == 0
-                    and inbox.has_pending_messages(self.parent.ctx.routine.dir,
-                                                   vias=inbox.LIVE_MESSAGE_VIAS)):
-                finished = self.take_finished_unannounced()
-                return {"kind": "wait", "interrupted_by_user": True, "timed_out": False,
-                        "finished": self._finished_rows(finished),
-                        "still_running": [s.n for s in self.subruns.values()
-                                          if not s.done.is_set()]}
-            self.exit_event.clear()
-            # re-check after clear: an exit between check and wait must not be lost
-            if satisfied():
-                break
-            self.exit_event.wait(timeout=min(poll_s, max(0.0, deadline - time.monotonic())))
-        sat = satisfied()   # before collection below flips `announced` on the exits we report
-        finished = self.take_finished_unannounced()
-        return {"kind": "wait", "timed_out": not sat,
-                "finished": self._finished_rows(finished),
-                "still_running": [s.n for s in self.subruns.values() if not s.done.is_set()]}
+        return waitop.wait(self, action, poll_s=poll_s, aborted=aborted)
 
     @staticmethod
-    def _finished_rows(finished: list) -> list[dict]:
+    def finished_rows(finished: list) -> list[dict]:
         return [{"n": s.n, "label": s.label, "status": s.status, "turns": s.ctx.turn,
                  "mode": s.mode, "summary": truncate(s.summary, cap=3000)[0],
                  **({"collected": list(s.collected_paths)} if s.collected_paths else {})}

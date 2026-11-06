@@ -99,14 +99,14 @@ no fallback and are refused, naming the 7 MiB raw cap (base64 inflates ~33%)."""
 notes under .memory/ — for what was \
 EXPENSIVE to find out (environment quirks, working solutions, constraints nobody wrote \
 down), not what the instruction or a plain look at the data would tell anyone. \
-memory_write(name, content, about) writes ONE kebab-named note of at most 100 lines and \
+memory_write(name, content, about) writes ONE kebab-named note (~100 lines advised) and \
 the engine maintains .memory/INDEX.md from `about`; delete: true removes a note. \
 To REVISE an existing note, pass `anchor` + `replacement` INSTEAD of content — a verbatim \
 in-place patch like edit_file, so adding two facts to a 95-line note never re-emits the other \
-93 (the cap is then measured against the RESULT). memory_read(name) returns one, and is where \
-you copy an anchor from. The state digest shows the INDEX at run start — consult it \
-before re-discovering anything; revise notes that turned out wrong instead of appending \
-contradictions. read_file / write_file are rejected on .memory/ paths."""),
+93. memory_read(name) returns one, and is where you copy an anchor from. The state digest \
+shows the INDEX at run start — consult it before re-discovering anything; revise notes that \
+turned out wrong instead of appending contradictions. read_file / write_file are rejected on \
+.memory/ paths."""),
     (("read_rule",), """- read_rule: read a GENERAL RULE from the shared library — \
 `name: "list"` for the catalog, `name: "<slug>"` for one rule's prose. The rules that bind you are \
 named in your digest beside when each applies; read one when its moment comes and apply it to \
@@ -253,9 +253,9 @@ override on llm/spawn/subtask so the name you pass is one the catalog actually c
     (("subruns",), """- subruns: a status table of your child runs, whatever mode each was \
 started in (state, turns, elapsed)."""),
     (("kill", "wait"), """- kill: terminate child run "n". wait: block until child run \
-"n" / "all": true / any unreported exit (timeout_s, default 600) — it returns AT ONCE when a \
-finished child hasn't been reported to you yet, or when nothing is running. Children never \
-outlive you — your finish kills them."""),
+"n" / "all": true / the next child exit or background-call landing (timeout_s, default 600) — \
+AT ONCE when one is unreported, or nothing is running. Children never outlive you — your \
+finish kills them."""),
     (("ask_user",), """- ask_user: mode "deferred" (default) files the question and CONTINUES \
 — plan around the missing \
 answer. Mode "blocking" pauses the run until answered; after {ask_timeout_min} minutes without \

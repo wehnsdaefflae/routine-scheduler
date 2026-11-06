@@ -275,8 +275,8 @@ def do_read_file(action: dict, ctx: RunContext) -> dict:
 
 
 MEMORY_REFUSAL = (".memory/ is reachable only through memory_read / memory_write — the engine "
-                  "owns .memory/INDEX.md (built from each note's 'about' line) and enforces "
-                  "the note cap there, and both are bypassed by a generic file action")
+                  "owns .memory/INDEX.md (built from each note's 'about' line), which a generic "
+                  "file action would bypass")
 
 
 def _memory_gate(ctx: RunContext, resolved) -> str | None:
@@ -285,8 +285,8 @@ def _memory_gate(ctx: RunContext, resolved) -> str | None:
     `engine/actions.py` also tests it, but LEXICALLY, on the string the model supplied: it is
     the cheap schema-retry correction that costs no turn. It is not a seal:
     `state/../.memory/INDEX.md` and the absolute form both walk straight past it and
-    `resolve_rel` puts them right back inside the own dir. The engine-owned index and the
-    100-line note cap went with them — and a child, whose roots reach the routine's tree,
+    `resolve_rel` puts them right back inside the own dir. The engine-owned index went with
+    them — and a child, whose roots reach the routine's tree,
     walked into the ROUTINE's `.memory/` the same way.
     """
     for d in routine_dirs(ctx):

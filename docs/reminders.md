@@ -365,8 +365,8 @@ The interception itself is shared. `engine/hold.py` computes the canonical strin
 each source in precedence order — reminders first, because a pattern this routine learned
 about this action is more specific than a standing principle — and returns the FIRST hold, so
 the model is stopped once per action however many sources match. The per-run ledger is keyed
-`(source, canon)`: on the bare string the two layers would cannibalise each other's single
-allowed hold. Its side fields ARE
+`(source, key)`: on a bare key the two layers would cannibalise each other's single allowed hold.
+A reminder's key is its ID, a rule hold's the canonical action string (below). Its side fields ARE
 applied, before that gate — the last turn of a run is very often the one the engine asked for a
 `did`/`didnt` label on; dropping it there would throw away the evidence the layer exists to
 collect. If a finish guard sets the finish aside, the engine note rides the guard's own message.
@@ -387,17 +387,27 @@ prompted the write.
 
 Two rules keep the layer from eating the run:
 
-- **One hold per action string per run.** A held `canon` string is remembered, so re-emitting the
-  SAME action IS the confirmation to proceed and cannot be held again. This is the shape the
-  claim VERIFIER already uses (at most one challenge per claimed line per run) and for the same
-  reason: a model and a gate that both refuse to yield would livelock a run into a dead budget.
+- **One hold per REMINDER per run.** A reminder that has held is remembered by its id, so
+  neither re-emitting the SAME action (the confirmation to proceed) nor a REWORDED one is held by
+  it again: after the first hold the caution is in the run's context, and a second hold on a
+  different string teaches nothing. Until this was keyed per reminder it was keyed per action
+  string, and a run that changed a command after a hold was held again on the new string
+  (scheduler-builder 20261105 T242: *"Changing the command changed its string, so both fired
+  again. Re-emitting verbatim"*; ~39 hold re-emits over four self-audit runs). A reminder that
+  has NOT held yet still holds an action an earlier one also matched, and the hold names only
+  the new caution — so `fires` counts the holds the run was actually shown, and each owes one
+  label. This is the shape the claim VERIFIER already uses (at most one challenge per claimed
+  line per run) and for the same reason: a model and a gate that both refuse to yield would
+  livelock a run into a dead budget. A RULE assist's pre-action hold keeps its per-string key:
+  each assist already fires at most once per run (`assist._fire`), so it never had this defect.
 - **One hold per action**, however many reminders match.
 
 "Per run" is the GUARD SCOPE every once-only guard shares (`engine/guardscope.py`): a routine's
 whole run, every leg of it — and a conversation's current REPLY, because each reply is a new task.
 The ledger lives in memory but is not reset when a run resumes: a resumed leg rebuilds it from the
 holds its transcript recorded (a hold's observation needs no extra field — its kind names the
-source, `action` the string), so a confirmation given before a restart still stands after it.
+source, its `reminders` the ids it spent, `action` a rule hold's string), so a confirmation given
+before a restart still stands after it.
 Before this, every resumed leg started the ledger empty and held the confirmed action again. In a
 conversation the leg after an authored finish — the reply the user read — opens the next reply,
 and its holds start fresh; a reply interrupted and resumed is still that reply.

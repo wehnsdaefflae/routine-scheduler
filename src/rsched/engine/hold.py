@@ -12,7 +12,11 @@ Two things go wrong if each layer owns its own interception:
 confirmation to proceed. Keyed on the bare action string, the two sources would cannibalise
 each other: a reminder holding `util:fs-ops mv a b` would silently spend the rule layer's one
 allowed hold on the same string, and the rule's caution would never be seen. The key carries
-the SOURCE, so each layer gets its own one-per-action-string budget.
+the SOURCE, and each source picks what it is once per: a REMINDER holds once per reminder id
+(its caution is in the run's context after the first hold, so a reworded action re-held by it
+taught nothing — "Changing the command changed its string, so both fired again", ~39 re-emits
+in four self-audit runs), the RULE layer once per action string (its assists already fire once
+each, `assist._fire`, so the string key is its re-emit confirmation and nothing more).
 
 **One interruption per action.** However many sources match, the model is stopped once. The
 anti-livelock reasoning — a model and a gate that both refuse to yield burn the budget between
@@ -26,7 +30,8 @@ the one it learned itself.
 "Already held" means within the GUARD SCOPE — the whole run for a routine, the current reply
 for a conversation (engine/guardscope.py). A resumed leg rebuilds the ledger from the holds
 its transcript recorded, so the confirmation a run gave before a restart still stands after
-it; the hold's observation IS the record, its kind naming the source and `action` the string.
+it; the hold's observation IS the record — its kind names the source, its `reminders` the ids
+a reminder hold spent and `action` the string a rule hold spent.
 """
 
 from __future__ import annotations
@@ -43,20 +48,32 @@ HOLD_KINDS = frozenset(HOLD_SOURCES)
 
 
 def configure(loop) -> None:
-    """This seam's run state: which (source, action) pairs have already been held."""
+    """This seam's run state: which (source, key) pairs have already held — the key is a
+    reminder id for the reminder layer, the canonical action string for the rule layer.
+    """
     loop.holds = set()
 
 
 def rebuild(loop, events: list[dict]) -> None:
     """Re-seed the ledger from the holds recorded inside the guard scope (engine/guardscope.py)
     — a resumed leg's counterpart of `configure`. A hold needs no extra record: its observation
-    is the hold, its kind names the source and its `action` the canonical string.
+    is the hold, and it already names what it spent (`hold_keys`).
     """
     loop.holds = set()
     for ev in events:
         payload = ev.get("payload") or {}
         if ev.get("type") == "observation" and is_hold(payload):
-            loop.holds.add((HOLD_SOURCES[payload["kind"]], str(payload.get("action") or "")))
+            source = HOLD_SOURCES[payload["kind"]]
+            loop.holds.update((source, key) for key in hold_keys(payload))
+
+
+def hold_keys(obs: dict) -> list[str]:
+    """What one recorded hold spent in its source's ledger: the reminder ids it listed, or the
+    action string a rule hold stopped.
+    """
+    if obs.get("kind") == "reminder_hold":
+        return [str(r.get("id") or "") for r in obs.get("reminders") or []]
+    return [str(obs.get("action") or "")]
 
 
 def is_hold(obs: dict) -> bool:
@@ -69,15 +86,15 @@ def is_hold(obs: dict) -> bool:
     return bool(obs) and obs.get("kind") in HOLD_KINDS
 
 
-def held_before(loop, source: str, rendered: str) -> bool:
-    """Has THIS source already held THIS action string in this guard scope — this run, or
-    this reply of a conversation?
+def held_before(loop, source: str, key: str) -> bool:
+    """Has THIS source already held on THIS key (a reminder id, a rule hold's action string)
+    in this guard scope — this run, or this reply of a conversation?
     """
-    return (source, rendered) in loop.holds
+    return (source, key) in loop.holds
 
 
-def mark_held(loop, source: str, rendered: str) -> None:
-    loop.holds.add((source, rendered))
+def mark_held(loop, source: str, key: str) -> None:
+    loop.holds.add((source, key))
 
 
 def before_dispatch(loop, action: dict) -> dict | None:

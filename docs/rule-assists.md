@@ -175,7 +175,9 @@ layer owns its own:
 **The ledger key.** A hold is remembered so re-emitting the action is the confirmation to
 proceed. Keyed on the bare action string, a reminder holding `util:fs-ops mv a b` would
 silently spend the rule layer's only hold on that same string, and the rule's caution would
-never be seen. The key carries the SOURCE, so each layer has its own budget.
+never be seen. The key carries the SOURCE, so each layer has its own budget — and each
+picks what it is once per: a reminder its id (once per caution per run, whatever the
+string), the rule layer the action string (its assists fire once each anyway).
 
 **One interruption per action.** However many sources match, the model is stopped once —
 the anti-livelock reasoning applies to the pair, not to each layer — so precedence resolves
@@ -191,7 +193,7 @@ three modules, one of them negatively — exactly the check a second hold kind w
 ## Guards
 
 An assist fires **at most once per run**. That is the rule the hold ledger `loop.holds` (one
-hold per source and action string) and the claim verifier's `_challenged` set (one challenge
+hold per reminder, and per rule-held action string) and the claim verifier's `_challenged` set (one challenge
 per claimed line) already apply to their own interventions, and it exists for the same
 reason: a trigger that can fire twice on one situation livelocks a stubborn model into a dead
 budget.

@@ -90,6 +90,14 @@ def list_scripts(routine_dir: Path) -> list[dict]:
     return out
 
 
+def usage(routine_dir: Path, name: str) -> str:
+    """The script's declared `usage:` block — what a failed call is shown, so a wrong call form
+    is corrected from the observation instead of a `--help` turn (the util model: a failed util
+    carries its catalog usage). "" when the header declares none.
+    """
+    return str((_header(routine_dir, name) or {}).get("usage") or "")
+
+
 def _header(routine_dir: Path, name: str) -> dict | None:
     try:
         return utils_header.parse_header(

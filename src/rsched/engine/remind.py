@@ -13,10 +13,10 @@ unintended effect (`rsched/reminders.py` owns the store). This file is the runti
 
 Two rules keep the layer from eating the run:
 
-- **one hold per action string per run.** A held canonical string is remembered, so re-emitting
-  the SAME action IS the confirmation to proceed and cannot be held again. The same shape the
-  claim VERIFIER uses (at most one challenge per claimed line per run) and for the same reason:
-  a model and a gate that both refuse to yield would otherwise livelock a run into a dead budget.
+- **one hold per REMINDER per run.** Once a caution has held, it is in the run's context, so
+  neither the SAME action re-emitted (the confirmation to proceed) nor a reworded one is held by
+  it again — keyed on the string, changing a command re-held it (~39 re-emits in 4 runs). The
+  claim VERIFIER's one challenge per line, for the same reason: a gate that never yields livelocks.
 - **one hold per action, however many reminders match.** Precedence never multiplies turns.
 
 "Per run" is the GUARD SCOPE (engine/guardscope.py) — every leg of a routine run, the current
@@ -43,10 +43,8 @@ from ..reminders import LABEL_HELP, Reminder
 from . import hold as hold_seam
 from . import hookmirror, remind_points, remind_write
 
-#: This layer's name in the shared hold ledger. Each source gets its own
-#: one-hold-per-action budget: keyed on the bare action string, a reminder hold would
-#: silently spend the rule layer's only hold on that string, and its caution would
-#: never be seen.
+#: This layer's name in the shared hold ledger, which this layer keys by REMINDER ID (one
+#: hold per caution per run) — the rule layer's own budget is never spent by a reminder.
 SOURCE = "reminder"
 
 
@@ -122,16 +120,18 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
     observation the model reads instead of the action's result, or None to let it execute.
 
     `rendered` is the canonical action string, computed ONCE by the seam and shared with
-    the other source, so the two can never disagree about what the action was. The hold
-    is recorded as a `fires` on every matching reminder: the denominator of the tally
-    that decides whether the reminder keeps its place.
+    the other source, so the two can never disagree about what the action was. Only a
+    reminder that has NOT held yet in this guard scope holds (its caution is already in the
+    context otherwise), and each one that does records a `fires` — one hold, one label owed.
     """
     if not loop.reminders:
         return None
-    hits = remind_points.matching_at(loop, "action", rendered)
-    if not hits or hold_seam.held_before(loop, SOURCE, rendered):
+    hits = [h for h in remind_points.matching_at(loop, "action", rendered)
+            if not hold_seam.held_before(loop, SOURCE, h.id)]
+    if not hits:
         return None
-    hold_seam.mark_held(loop, SOURCE, rendered)
+    for hit in hits:
+        hold_seam.mark_held(loop, SOURCE, hit.id)
     _count_fires(loop, hits)
     # the tally rides the observation: `store.looks_too_broad` is what turns a hold into the
     # moment its own evidence is readable, and obs_hold renders the line

@@ -292,8 +292,8 @@ def test_each_ledger_is_rebuilt_from_what_its_events_record(tmp_path):
     ]
     loop = SimpleNamespace(ctx=_ctx(tmp_path, conversation=False))
     guardscope.rebuild(loop, events)
-    assert loop.holds == {("reminder", "write_file path=state/x.txt"),
-                          ("rule", "write_file path=/p/repo/a.py")}
+    # a reminder hold spent its REMINDER id (once per run, whatever the string), a rule its string
+    assert loop.holds == {("reminder", "rem-1"), ("rule", "write_file path=/p/repo/a.py")}
     assert loop.assists_fired == {"git-checkpoint/m", "ask-policy/m", "fix-the-cause/m",
                                   "decision-record/m"}
     assert loop.assist_finish_deferred is True

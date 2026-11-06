@@ -257,15 +257,15 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             took = (f" It TAKES OVER {', '.join(obs['supersedes'])}: they leave triage now and "
                     f"settle when this one does, so do not route them again."
                     if obs.get("supersedes") else "")
-            # F660: a cut detail is named HERE, with the size of the loss, because this is
-            # the only moment the filer still holds the text it lost. D177: the loss is now
-            # only the DELIVERY's — the ledger row keeps the detail whole — so the warning
-            # says what the reader is missing without claiming the text is gone.
+            # F660: a cut detail is named HERE, with the size of the loss. D177: the loss is
+            # only the DELIVERY's — the ledger row keeps the detail whole and the delivered
+            # marker sends the reader there — so this says nothing needs re-filing. It once
+            # offered "re-file it as a short follow-up", and runs did: a mechanical fix the
+            # engine already applies, paid for again as a turn and a second ledger row (P3).
             cut = (f" Its detail was TRUNCATED IN DELIVERY: {obs['detail_truncated']} "
-                   "characters past the cap did not reach the reader's prompt. The ledger row "
-                   "keeps it whole and the marker names that row, so nothing is lost — but a "
-                   "question or a conclusion after the cut is not what the reader will act on; "
-                   "lead with it, or re-file it as a short follow-up."
+                   "characters past the cap did not reach the reader's prompt. Nothing needs "
+                   "re-filing: the ledger row keeps it whole and the delivered copy points the "
+                   "reader at that row for the rest."
                    if obs.get("detail_truncated") else "")
             # F621: options made it a decision for the OPERATOR too. Say that the card
             # exists and that his answer comes back HERE — a run told only "filed" would

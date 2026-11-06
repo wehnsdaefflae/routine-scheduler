@@ -137,6 +137,7 @@ def test_kill_refuses_an_orphaned_child_with_the_reason(tmp_path):
     assert "EARLIER LEG" in err
 
 
-def test_wait_with_no_children_at_all_keeps_its_plain_error(tmp_path):
+def test_wait_with_nothing_in_flight_keeps_a_plain_error(tmp_path):
+    # no child AND no background call (a background call alone is waited for — waitop.py)
     err = _mgr(tmp_path).wait({}, poll_s=0.01, aborted=lambda: False)["error"]
-    assert "no sub-workflows" in err
+    assert "nothing to wait for" in err and "no child runs" in err

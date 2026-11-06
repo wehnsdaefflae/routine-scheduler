@@ -57,12 +57,13 @@ DETAIL_MAX = 4000
 #:
 #: D177 moved WHERE the cap bites, which is what lets this note name the ledger row for the
 #: rest instead of telling the reader to go and ask the filer for text that no longer exists
-#: anywhere.
+#: anywhere. It names only routes that exist: it once also offered `rsched items`, a CLI verb
+#: there has never been, and a reader with no route to the row asked the filer to re-send.
 TRUNCATION_NOTE = ("\n\n[TRUNCATED: {dropped} more characters were cut here at the "
                    "{cap}-character cap on a DELIVERED report. The ledger row {item_id} in "
-                   ".control/reports.jsonl holds this detail WHOLE — read it there (the "
-                   "Messages page shows it, or `rsched items`) if the rest carries a question "
-                   "or a conclusion.]")
+                   ".control/reports.jsonl holds this detail WHOLE — read the rest there (the "
+                   "Messages page shows it too) if it carries a question or a conclusion; the "
+                   "sender does not re-file it.]")
 
 #: The id placeholder used while MEASURING a clip, before the row's real id is minted. Same
 #: width class as a real id, so the reserved width cannot come out short.

@@ -16,6 +16,10 @@ from ..reminders import LABEL_HELP, looks_too_broad
 _PROCEED = ("To go ahead anyway, emit the SAME action again — it runs this time (one hold per "
             "action string per run — per reply, in a conversation). To avoid the consequence, "
             "do something else instead.")
+#: A reminder holds once per run, whatever the action string: the caution is now in context.
+_PROCEED_REMINDER = ("To go ahead anyway, emit the action again — as it is or reworded: this "
+                     "caution will not hold again this run (per reply, in a conversation). To "
+                     "avoid the consequence, do something else instead.")
 
 
 def _caution(r: dict) -> str:
@@ -65,7 +69,7 @@ def reminder_hold(obs: dict) -> str:
     cautions = "\n".join(_caution(r) for r in obs.get("reminders") or [])
     return (f"{_held(obs)} matches a consequence "
             f"reminder left for exactly this moment:\n{cautions}\n"
-            f"Decide again with that in front of you. {_PROCEED}\n"
+            f"Decide again with that in front of you. {_PROCEED_REMINDER}\n"
             "Then LABEL what happened: carry `remind_feedback` with the id above and one of "
             "could_not / would_have / did / didnt on the action where you know the outcome — "
             "at once if you are changing course, on the turn AFTER the held action ran if you "

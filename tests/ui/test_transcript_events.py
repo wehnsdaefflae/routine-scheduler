@@ -106,6 +106,12 @@ EVENTS = [
     {"type": "assistant_action", "turn": 14,
      "payload": {"kind": "ask_user", "say": "one thing", "question": "Ship it?"}},
     {"type": "observation", "turn": 14, "payload": {"kind": "ask_user"}},
+    # a wait that ENDED on a background call's landing (engine/waitop.py): no child finished,
+    # so without the handle the row read "nothing new finished" about the one thing that did
+    {"type": "assistant_action", "turn": 15, "payload": {"kind": "wait", "say": "the gate"}},
+    {"type": "observation", "turn": 15,
+     "payload": {"kind": "wait", "timed_out": False, "finished": [], "still_running": [],
+                 "background_landed": ["bg3"]}},
 ]
 
 
@@ -157,6 +163,10 @@ def test_the_transcript_renders_every_event_shape_in_words(ui, ui_page):
 
     # a hold is once per run — per reply, in a conversation (engine/guardscope.py)
     assert "one hold per action string per run — per reply, in a conversation" in body
+    # a wait names the background call whose landing ended it
+    assert "background call bg3 landed" in body
+    # …and a reminder's is once per REMINDER: a reworded action is not held by it again
+    assert "one hold per reminder per run — per reply, in a conversation" in body
 
     # what the secret gate stopped: said in words, never as an exit code that does not exist
     assert "frob NOT run — secret exposure pending for FOO_KEY" in body

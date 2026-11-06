@@ -17,7 +17,8 @@ events the engine already writes — nothing here is a new judgement about a tur
 - `read_miss` — a `read_file` of a path that is not there;
 - `refused:<kind>` — any other error that action came back with (a gate, a missing grant, an
   edit that would break a JSON file);
-- `memory_cap` — a `memory_write` refused by the note cap;
+- `memory_cap` — a `memory_write` refused by the old 100-line note cap (retained transcripts
+  only: the size is advice now and never refuses, engine/memops.py);
 - `deferral:<rung>` — the finish was set aside by that rung of the finish gate;
 - `budget:<resource>` — that budget was spent and the run took its reserved finish turn;
 - `unmet:d<n>` — the run's final accounting left that Done-when line unmet.
