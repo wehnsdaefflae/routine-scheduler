@@ -167,6 +167,37 @@ def apply_config_change(loop) -> None:
             _adopt(loop, field, values.get(field))
     if note := change_note(fields, values):
         enginenote.append(loop, note)
+    if "budgets" in fields:
+        _withdraw_reserve(loop)
+
+
+def _withdraw_reserve(loop) -> None:
+    """A RAISE takes back the reserved finish turn — D244 (review item E1.4).
+
+    The first budget violation grants one more turn with the schema narrowed to `finish`
+    (`loopnudge.reserve_finish`), so the run ends in its own words. Budgets are LIVE config. The
+    two never met, for one reason: `EngineLoop.run` asks `ctx.budget_spent()` at the TOP of its
+    loop and calls `_turn_boundary()` after it — and the boundary is where the raise is adopted.
+    So the raise always arrived one step too late, and a run whose operator had just given it
+    another 40 turns still stood in a finish-only grammar until the next RUN.
+
+    Here, right after `budgets` has been adopted, the violation is re-asked. If nothing is over
+    its limit any more the reserve is given back: the flag cleared, the FULL action schema
+    restored (the narrowed grammar is the thing that actually stops the run working), and one
+    engine note saying so — a run told "this is your LAST turn" has to be told just as plainly
+    when that stops being true. A raise too small to clear the violation changes nothing, so
+    this cannot be used to walk past a budget by patching it upward by one.
+    """
+    if not getattr(loop, "_finish_reserved", False) or loop.ctx.budget_spent():
+        return
+    from .kindsurface import effective_kinds, schema_for_kinds
+
+    loop._finish_reserved = False
+    loop._budget_spent = None
+    loop.action_schema = schema_for_kinds(effective_kinds(loop.allowed_tools, loop.grants))
+    enginenote.append(loop, "the budget you were over has been RAISED, so the reserved finish "
+                            "turn is withdrawn: this is no longer your last turn and every "
+                            "action kind is available again. Carry on with the work.")
 
 
 def _adopt(loop, field: str, value: object) -> None:
