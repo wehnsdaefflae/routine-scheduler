@@ -70,14 +70,9 @@ from .switches import (
 )
 
 REPEAT_WARN = 3
-__all__ = [
-    "MAX_SCHEMA_ATTEMPTS",
-    "POLL_S",
-    "REPEAT_FAIL",
-    "REPEAT_WARN",
-    "EngineLoop",
-    "RunAborted",
-]
+# MAX_SCHEMA_ATTEMPTS and RunAborted are NOT re-exported: completion.py and control.py define
+# them and every importer in the tree takes them from there (D243 needed the lines).
+__all__ = ["POLL_S", "REPEAT_FAIL", "REPEAT_WARN", "EngineLoop"]
 
 
 class EngineLoop:
@@ -118,6 +113,7 @@ class EngineLoop:
     admin_leg: Any
     allowed_tools: Any
     assist_finish_deferred: Any
+    assist_undo_points: Any
     assist_user_replies: Any
     assists: Any
     assists_fired: set[str]
@@ -126,6 +122,7 @@ class EngineLoop:
     ctx: Any
     dialog_qids: dict[tuple[str, str], str]
     executed_actions: Any
+    executed_kinds: set[str]
     final_summary: Any
     grants: Any
     holds: set[tuple[str, str]]
@@ -135,6 +132,7 @@ class EngineLoop:
     leg_prose: Any
     messages: list[dict]
     reminder_nudge: Any
+    reminder_owed: Any
     reminder_pending: Any
     reminder_replayed: set[str]
     reminder_asked_back: bool
@@ -335,7 +333,7 @@ class EngineLoop:
         obs = {**obs, **chain.stop_fields(self, obs)}
         held = hold.is_hold(obs)
         if donothing.grounds_a_finish(obs):
-            self.executed_actions += 1   # a HELD or do_nothing action established nothing
+            donothing.record_grounding(self, action, obs)   # the count AND its kinds (D243)
             # F711: a DECLARED informational exit never counts (engine/exitgate.py)
             if key := failure_tally_key(ctx, action, obs):
                 self.failures[key] = self.failures.get(key, 0) + 1

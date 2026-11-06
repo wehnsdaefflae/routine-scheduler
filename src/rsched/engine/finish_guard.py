@@ -68,6 +68,18 @@ def unbacked_action_claims(summary: str, taken_kinds, is_meta: bool) -> list[str
     """Return the sorted action kinds the ``summary`` claims were performed but that are NOT in
     ``taken_kinds``. Empty for meta routines, an empty summary, or when every claimed action was
     actually taken this run.
+
+    WHAT "TAKEN" MEANS, and why the caller had it wrong (D243, review item E4.3). ``taken_kinds``
+    is ``loop.executed_kinds`` — the kinds that EXECUTED, maintained beside ``executed_actions``
+    and from the one predicate ``donothing.grounds_a_finish``. It used to be
+    ``{r["kind"] for r in loop.turn_records}``, and ``turn_records`` is appended at the
+    assistant-action stage, BEFORE dispatch: so it held every kind the model EMITTED, including
+    an action a consequence reminder or a rule assist HELD (``engine/hold.py`` — it never
+    reached the dispatcher) and one the reserved finish turn REFUSED (``engine/chain.py``'s
+    ``rejected`` observation). A summary saying "filed a report" therefore passed on a report
+    that was held and never re-emitted — the one guard whose whole job is catching
+    narrated-but-unperformed work, reading an unperformed action as performed. A kind that
+    cannot ground a finish cannot back a claim either, and now one predicate says both.
     """
     if is_meta or not summary:
         return []

@@ -175,12 +175,12 @@ def boot(loop) -> None:
         # exactly the evidence it exists to refuse. Asked as the one PREDICATE both legs ask
         # (engine/donothing.grounds_a_finish): this is the negative test a second
         # non-grounding kind would otherwise have walked straight past.
-        from .donothing import grounds_a_finish
+        # …and the KINDS behind that count (D243), from the same predicate in one pass: the
+        # claim guard asks what the run TOOK, so a leg that rebuilt the number without the
+        # kinds would reject every claim the earlier leg's actions legitimately back.
+        from .donothing import grounding_from
 
-        loop.executed_actions = sum(
-            1 for e in events if e.get("type") == "observation"
-            and not (payload := e.get("payload") or {}).get("rejected")
-            and grounds_a_finish(payload))
+        loop.executed_actions, loop.executed_kinds = grounding_from(events)
         # …and the once-only guards: a hold the run already confirmed, a rule assist that
         # already fired, a line the verifier already challenged stay spent for the rest of
         # the run — of the reply, in a conversation, whose next reply starts them fresh
