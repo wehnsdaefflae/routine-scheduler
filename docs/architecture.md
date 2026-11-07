@@ -1216,7 +1216,17 @@ and the capabilities digest's catalog listing):
   `control.drain_injections` opened: a child drains its own hooks, and nothing else. Two
   writers are deliberate for now: the report ledger and the reminders store have readers
   outside this engine (the Decisions page, self-audit's folds, the per-routine fire tallies),
-  and the duplication ends when the surfaces ride the one mechanism. Every finished
+  and the duplication ends when the surfaces ride the one mechanism.
+  TWO DECISIONS are taken from the stream so far (`hooks/reportinv`, D152 steps 7-8): the
+  open-thread cap that refuses a run's fourth parallel report to one owner, on the write path,
+  and the pre-finish hold that asks a run to answer a hand-off before it ends, at its finish.
+  Both ask BOTH stores and keep the LEDGER's answer when they differ, filing
+  `hook_stream_diverged` — while two writers exist, a refusal or a hold justified only by the
+  stream would be the mover's own defect reaching a run's work, and the event is what makes a
+  disagreement findable instead of silent. Both fold the stream through `reports.fold_rows`
+  before comparing: `reportproj` writes a filing and each lifecycle fact as separate rows,
+  while the predicates read flags only the fold puts on a filing row (F847 — five spurious
+  divergences in one day, one of them reading 19 open threads against the ledger's 3). Every finished
   (sub)run appends to
   `~/routines/.control/workflow-usage.jsonl` — the routine-improver routine's evidence stream
   for the shared library it owns — its `library-pass` stage reads this stream each sweep —

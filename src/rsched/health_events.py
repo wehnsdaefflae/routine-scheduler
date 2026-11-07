@@ -297,10 +297,10 @@ routine per day, `obligations` how many, detail naming each and what the last ru
 item_dropped_live: a finding/decision self-audit's report.json carried open or in_progress was
 rewritten out of it (`daemon/item_record_watch`); `items` names them. The index keeps it live.
 
-hook_stream_diverged: a decision taken from the hook stream disagreed with the report ledger it
-projects (`hooks/reportinv`, D152 step 7) — carrying `stream` and `ledger`, the two counts. The
-LEDGER's answer was used, because that is what the operator's backlog counts are built on; the
-event is what makes the disagreement findable while both stores are still written.
+hook_stream_diverged: a decision from the hook stream disagreed with the report ledger it
+projects (`hooks/reportinv`, D152 steps 7-8 — the write path's thread cap, the pre-finish hold
+to answer a hand-off): `stream`/`ledger` are the counts, `detail` names the asker. The LEDGER's
+answer was used (the operator's counts rest on it); the event makes a disagreement findable.
 
 process_overhead_high: a routine's median `process_share` over its last runs reached the bar —
 its runs go mostly to its own process (`engine/overhead_alarm`, `median`/`threshold`/`runs`).

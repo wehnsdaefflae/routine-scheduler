@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from rsched.hooks.reportinv import hook_of_row, open_threads_now
+from rsched.hooks.reportinv import hook_of_row, open_threads_now, still_owed_now
 from rsched.hooks.reportproj import rows_for
 from rsched.report_disposal import Disposal
 from rsched.reports import file_report, read_reports, reports_path
@@ -149,6 +149,77 @@ def test_a_divergence_keeps_the_ledgers_answer_and_files_the_event(tmp_path,
              "detail": "d", "target": "b"}]
     assert open_threads_now(home, rows, routine="a", target="b") == ["R9"]
     assert len(seen) == 1 and seen[0]["stream"] == 0 and seen[0]["ledger"] == 1
+
+
+def test_the_owed_reply_hold_agrees_with_the_ledger_over_the_stream(tmp_path, monkeypatch):
+    """D152 step 8, the second decision on the stream: which handed-in reports a run still owes
+    a reply to. The two stores must agree over a real filing-and-closure shape, with no event.
+
+    This is the first moved decision that reads rows OTHER routines wrote (step 7's cap reads
+    one sender's own filings), so it is the first use that depends on the backfill being
+    complete across the fleet rather than within a thread.
+    """
+    home = tmp_path / "routines"
+    (home / ".control").mkdir(parents=True, exist_ok=True)
+    seen: list[dict] = []
+    monkeypatch.setattr("rsched.hooks.reportinv.log_health_event",
+                        lambda *a, **k: seen.append(k))
+    _file(home, "a", "b", 1)                        # R1: a hands work to b
+    _file(home, "a", "b", 2)                        # R2: and another
+    # b answers R1 and closes it — so only R2 is still owed
+    assert file_report(home, routine="b", run_id="b:1", title="done", detail="d", target="a",
+                       disposal=Disposal(answers="R1", closes=True)) is not None
+    rows = read_reports(reports_path(home))
+    assert still_owed_now(home, rows, ["R1", "R2"], routine="b") == ["R2"]
+    assert seen == [], f"the stream and the ledger disagreed: {seen}"
+    # …and an empty owed list asks nothing of either store
+    assert still_owed_now(home, rows, [], routine="b") == []
+
+
+def test_an_owed_reply_divergence_keeps_the_ledgers_answer_and_files_the_event(tmp_path,
+                                                                              monkeypatch):
+    """A hold is placed on the LEDGER's answer, never on a stream-only reading: answering from
+    a stream missing history would ask a run again for a reply it already sent, which is the
+    exact failure R2086 fixed by re-reading the ledger at the moment of asking.
+    """
+    home = tmp_path / "routines"
+    seen: list[dict] = []
+    monkeypatch.setattr("rsched.hooks.reportinv.log_health_event",
+                        lambda *a, **k: seen.append(k))
+    monkeypatch.setattr("rsched.hooks.reportinv.stream_rows", lambda _h: [])
+    rows = [{"id": "R9", "ts": "t", "routine": "a", "run_id": "a:1", "title": "t",
+             "detail": "d", "target": "b"}]
+    assert still_owed_now(home, rows, ["R9"], routine="b") == ["R9"]
+    assert len(seen) == 1 and seen[0]["stream"] == 0 and seen[0]["ledger"] == 1
+    assert "still owes a reply" in seen[0]["detail"]
+
+
+def test_the_finish_hold_predicate_reads_the_stream(tmp_path, monkeypatch):
+    """THE pin on step 8's decision actually moving — the counterpart of the filing-path pin
+    below. `assist_predicates._unclosed_delivered_report` is what HOLDS a run's finish, and it
+    must consult the stream rather than the ledger alone.
+
+    Its answer is deliberately unchanged, so the observable difference is the divergence event:
+    against code that only reads the projection, nothing is filed here and this fails.
+    """
+    from types import SimpleNamespace
+
+    from rsched.engine import assist_predicates
+
+    home = tmp_path / "routines"
+    (home / ".control").mkdir(parents=True, exist_ok=True)
+    _file(home, "a", "b", 1)
+    seen: list[dict] = []
+    monkeypatch.setattr("rsched.hooks.reportinv.log_health_event",
+                        lambda *a, **k: seen.append(k))
+    monkeypatch.setattr("rsched.hooks.reportinv.stream_rows", lambda _h: [])
+    situation = SimpleNamespace(ctx=SimpleNamespace(
+        reports_open=["R1"], routine=SimpleNamespace(slug="b"),
+        server=SimpleNamespace(routines_home=home)), loop=SimpleNamespace())
+
+    assert assist_predicates._unclosed_delivered_report(situation) is True
+    assert len(seen) == 1, "the finish-hold predicate did not consult the hook stream"
+    assert seen[0]["routine"] == "b" and seen[0]["ledger"] == 1
 
 
 def test_the_live_filing_path_reads_the_stream(tmp_path, monkeypatch):
