@@ -99,6 +99,53 @@ def test_an_effort_the_loader_cannot_use_is_named_and_dropped(make_routine):
     assert any("efforts.main" in p and "low, medium, high, xhigh, max" in p for p in problems)
 
 
+def test_an_uncensored_effort_with_no_uncensored_model_is_reported_as_a_lost_role(make_routine):
+    """The shape a LOST role leaves behind (R3227/R3228, two incidents in seven days).
+
+    A `models:` PATCH replaces the map wholesale, so an edit that re-sends it without
+    `uncensored` clears that role while `efforts.uncensored` stays behind. `self-audit` ran that
+    way for three days and `routine-improver` for 27 minutes with every check on this instance
+    green — `load_routine` said nothing, no health event was filed, and `for_uncensored`
+    returning None is a legitimate "referral off". The consequence is a FAILED run: with no
+    uncensored target a classifier refusal advances the chain and `engine/degrade` raises.
+    """
+    d = make_routine(slug="lost-role")
+    _routine_yaml(d, efforts={"uncensored": "max"}, models={"main": "prime"})
+    cfg, problems = load_routine(d)
+    assert cfg is not None
+    named = [p for p in problems if "efforts.uncensored" in p]
+    assert len(named) == 1
+    assert "models.uncensored" in named[0]              # what is missing
+    assert "REPLACES" in named[0]                        # how it was lost
+    assert "FAILS" in named[0]                           # what it costs
+    assert cfg.efforts == {"uncensored": "max"}          # reported, never dropped
+
+
+def test_an_orphan_effort_for_a_role_that_still_resolves_is_not_reported(make_routine):
+    """The narrowing, pinned: `for_model` falls back to the instance `system_model`, so an
+    `efforts.main`/`tool_call`/`supervisor` with no model of its own is legitimate — six
+    routines on this instance were in exactly that state when the check was written, and firing
+    on them would have made it noise from day one. Only `uncensored` has no fallback.
+    """
+    d = make_routine(slug="no-main-model")
+    _routine_yaml(d, efforts={"main": "high", "tool_call": "low", "supervisor": "medium"},
+                  models={})
+    cfg, problems = load_routine(d)
+    assert cfg is not None
+    assert not [p for p in problems if "efforts." in p]
+
+
+def test_an_uncensored_role_deliberately_off_is_silent(make_routine):
+    """No model AND no effort is how "referral off" is said — it must stay sayable, and a
+    role that resolves must not be reported either."""
+    d = make_routine(slug="off-by-choice")
+    _routine_yaml(d, efforts={"main": "high"}, models={"main": "prime"})
+    assert not [p for p in load_routine(d)[1] if "uncensored" in p]
+    d2 = make_routine(slug="role-present")
+    _routine_yaml(d2, efforts={"uncensored": "max"}, models={"uncensored": "glm"})
+    assert not [p for p in load_routine(d2)[1] if "uncensored" in p]
+
+
 def test_a_catalog_row_still_carrying_effort_is_reported(tmp_path):
     from rsched.config import load_server_config
 

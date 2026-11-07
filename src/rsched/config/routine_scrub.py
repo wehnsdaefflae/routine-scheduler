@@ -39,7 +39,44 @@ def _scrub_models(cfg: RoutineConfig) -> list[str]:
         problems.append(f"efforts.{role}: expected a chat role ({', '.join(MODEL_KINDS)}) set to "
                         f"one of {', '.join(EFFORT_LEVELS)} (ignored)")
         del cfg.efforts[role]
+    problems += _orphan_uncensored_effort(cfg)
     return problems
+
+
+def _orphan_uncensored_effort(cfg: RoutineConfig) -> list[str]:
+    """`efforts.uncensored` with no `models.uncensored` — the shape a LOST role leaves behind.
+
+    A `models:` PATCH replaces the mapping wholesale, which is what makes "clear a role"
+    expressible at all (`web/patch_bindings.py`), so an edit that re-sends the map without one
+    key CLEARS that role — and nothing anywhere says so. Twice in the seven days to 2026-11-06 a
+    console `models` edit dropped `models.uncensored` while leaving `efforts.uncensored` behind:
+    `self-audit` ran that way for THREE DAYS, `routine-improver` for 27 minutes, and in both
+    cases the only reason anyone found out is that a config audit happened to resolve the role by
+    hand (config-optimizer, R3227/R3228). `load_routine` reported no problem, no health event was
+    filed, and `EndpointRegistry.for_uncensored` returning `None` is a legitimate value meaning
+    "referral off", so the engine cannot tell a deliberate off from a loss.
+
+    The consequence is a FAILED run, not a degradation: on a classifier refusal with no
+    uncensored target the fallback chain advances, every catalog model on this instance carries
+    `fallbacks: []`, and `engine/degrade.py` raises (`_switch_to_fallback` → None).
+
+    Narrowed to `uncensored` DELIBERATELY. `endpoints.for_model` falls back to the instance
+    `system_model`, so an `efforts.main` or `efforts.tool_call` with no model of its own is
+    legitimate and six routines on this instance are in exactly that state; `for_uncensored` has
+    no fallback at all. An orphan effort for a role that still resolves is not evidence of
+    anything, and a check that fires on it would be noise on six routines from its first day.
+
+    Reported, never dropped: the effort is correct again the moment the role is restored, and
+    deleting it would erase the only trace that the role was ever configured.
+    """
+    if "uncensored" not in cfg.efforts or cfg.models.get("uncensored"):
+        return []
+    return [("efforts.uncensored is set to "
+             f"{cfg.efforts['uncensored']!r} but models.uncensored names no model — the role "
+             "does not resolve, so a classifier refusal has no uncensored target to refer to "
+             "and the run FAILS rather than degrading. A `models:` edit REPLACES the whole map, "
+             "so re-sending it without this key clears the role: name a model for it, or "
+             "remove efforts.uncensored to say the referral is deliberately off")]
 
 
 def _scrub_ladder(cfg: RoutineConfig) -> list[str]:

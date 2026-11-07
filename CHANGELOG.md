@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.509.0] — 2026-11-07
+
+### Twice in seven days a routine lost its `uncensored` model role and every check on this instance stayed green
+
+- A `models:` PATCH replaces the mapping wholesale — which is what makes "clear a role"
+  expressible at all (`web/patch_bindings.py`, deliberately not merging) — so a console edit that
+  re-sends the map without one key CLEARS that role. Nothing said so. `self-audit` ran for
+  **three days** (commit `ede1738`, 2026-10-30 → 11-02) and `routine-improver` for **27 minutes**
+  (`9181e0f`, 2026-11-06) with no `models.uncensored`, and the only reason either was found is
+  that a config audit happened to resolve the role by hand (config-optimizer, R3227/R3228).
+- Nothing could have told anyone: `load_routine` reported no problem for either routine, no
+  health event was filed, and `EndpointRegistry.for_uncensored` returning `None` is a legitimate
+  value meaning "referral off" — so the engine cannot distinguish a deliberate off from a loss.
+  The one trace left behind was `efforts.uncensored` sitting there for a role that no longer
+  resolved, and it is a tell only to somebody already looking.
+- The consequence is a FAILED run rather than a degradation: with no uncensored target a
+  CLASSIFIER refusal advances the fallback chain, every model in this instance's catalog carries
+  `fallbacks: []`, `_switch_to_fallback` returns `None` and `engine/degrade` raises.
+- `config/routine_scrub` now reports that exact shape — `efforts.uncensored` set with
+  `models.uncensored` naming nothing — as a loader problem, which reaches the routine's own page
+  and card through `RoutineInfo.problems` at its next load. It REPORTS and does not drop: the
+  effort is correct again the moment the role is restored, and deleting it would erase the only
+  evidence the role was ever configured.
+- **Narrowed to `uncensored` on purpose.** `endpoints.for_model` falls back to the instance
+  `system_model`, so an `efforts.main` or `efforts.tool_call` with no model of its own is
+  legitimate — six routines on this instance are in that state — while `for_uncensored` has no
+  fallback at all. Measured over all 30 installed routines before commit: **zero** fires, so it
+  ships silent and only speaks when a role is actually lost.
+- `tests/test_effort_setting.py`: the lost-role shape reported once and naming what is missing,
+  how it was lost and what it costs; the three fallback-backed roles NOT reported; a deliberate
+  off (no model, no effort) silent; and the effort surviving the report. Shown red with the check
+  unwired before commit.
+
 ## [0.508.0] — 2026-11-07
 
 ### Nine wasted *approve & apply* clicks in nine minutes: a `config_patch`'s VALUES were judged only when the operator pressed the button
