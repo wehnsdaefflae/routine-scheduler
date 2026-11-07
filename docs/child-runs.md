@@ -78,6 +78,14 @@ A child's exit is announced under ONE headline whatever its mode —
 the noun. Only the follow-on instruction differs, because only that genuinely differs: a
 sequential child's result feeds the next one.
 
+That headline is `child.finished_headline`, and it is shared by BOTH paths that report an exit:
+the turn-boundary hook and a `wait` the parent was already in. Which of the two gets there first
+is a timing race, so a second wording would mean one exit reading two ways depending on what the
+parent happened to be doing — and it did, until D246: the wait rendered `SUB-WORKFLOW 1 'x'
+FINISHED` off a mode table (`MODE_SHOUT`) that existed for that one call site and contradicted
+the rule above. The table is gone. The hook's headline carries the child's `pattern` as well,
+which a wait does not know.
+
 ## The `subtask` action
 
 ```json

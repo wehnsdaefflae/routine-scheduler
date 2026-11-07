@@ -39,6 +39,44 @@ def test_a_note_is_recorded_verbatim_and_replays_as_an_engine_note():
     assert replayed == loop.messages          # byte-identical on resume
 
 
+def test_a_resumed_leg_with_nothing_above_it_is_framed_as_a_kickoff():
+    """D246. `boot`'s resume note said "the conversation above is the run so far — continue
+    from the last observation; do NOT restart from step 1" on EVERY resumed leg. But
+    `rewind_transcript`'s `before_reply` cut keeps everything BEFORE the message that opened a
+    reply, and for a conversation's FIRST reply that is "the very start, the header alone" —
+    which is precisely what the operator's ⚑ refusal flag does: it discards the reply and
+    re-sends its message to another model. So the commonest way to reach an empty window was
+    also the one case where the sentence was false twice over, telling the run to continue
+    from a last observation that does not exist AND not to start from step 1 — leaving it no
+    permitted action at all.
+
+    Fails if the two cases collapse back into one wording, or if the empty one ever tells a
+    run to continue from what is above it.
+    """
+    from rsched.engine.rewind import resume_framing
+
+    carried = resume_framing([{"role": "user", "content": "task"},
+                              {"role": "assistant", "content": "did a thing"}])
+    empty = resume_framing([{"role": "user", "content": "task"}])
+
+    assert carried != empty
+    # the ordinary leg keeps its own history and must not restart
+    assert "continue from the last observation" in carried
+    assert "do NOT restart from step 1" in carried
+    # the emptied one is a kickoff: it NEGATES both halves of the sentence above rather than
+    # merely dropping them (the words "continue from" do appear — inside "no conversation to
+    # continue from", which is the point), and sends the run to step 1 instead of forbidding it
+    assert "continue from the last observation" not in empty
+    assert "no conversation to continue from" in empty
+    assert "step 1" in empty and "do NOT restart" not in empty
+    # …and it says WHY the window is empty, so the run does not read it as a malfunction
+    assert "discarded" in empty
+    # the predicate is the ASSISTANT turn, not the message count: a cut leaves the header and
+    # the engine may already have appended notes of its own above the user's message
+    assert resume_framing([{"role": "user", "content": "a"},
+                           {"role": "user", "content": "b"}]) == empty
+
+
 def test_a_note_the_resume_re_authors_is_not_replayed():
     """`replay=False` marks the notes `boot` writes afresh on every leg — the resume framing
     and the setup-gap list. Replaying them too stacked one copy per leg: a 40-reply

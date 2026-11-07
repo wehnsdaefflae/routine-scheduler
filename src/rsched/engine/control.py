@@ -301,8 +301,8 @@ def child_finished_message(*, mode: str, n: int, label: str, workflow: str, stat
     """
     head, _ = truncate(summary, cap=4000)
     return child.handback_text(
-        headline=(f"CHILD RUN FINISHED ({child.mode_noun(mode)}) — #{n} {label!r} "
-                  f"(pattern {workflow}, status {status}, {turns} turns)"),
+        headline=child.finished_headline(mode=mode, n=n, label=label, status=status,
+                                         turns=turns, workflow=workflow),
         summary=head, paths=collected,
         follow_on=("Fold this result into your next child run's brief, or finish."
                    if mode == child.SEQUENTIAL else ""))

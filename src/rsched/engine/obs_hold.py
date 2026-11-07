@@ -15,13 +15,22 @@ from __future__ import annotations
 
 from ..reminders import LABEL_HELP, looks_too_broad
 
-_PROCEED = ("To go ahead anyway, emit the SAME action again — it runs this time (one hold per "
-            "action string per run — per reply, in a conversation). To avoid the consequence, "
-            "do something else instead.")
+#: Each layer's promise is about ITS OWN ledger key and says so, because the two keys are
+#: different and `hold.before_dispatch` returns at the FIRST source that matches: a re-emit
+#: spends only the hold it was told about, and the other layer is still asked. "It runs this
+#: time" was therefore false whenever a reminder AND a rule matched one action — the run was
+#: held twice having been promised once, which reads as the seam ignoring its own confirmation
+#: (D246). Naming the source is also what makes the sentence usable: a second hold whose head
+#: names the other layer is then an expected step, not a malfunction.
+_PROCEED = ("To go ahead anyway, emit the SAME action again — this RULE will not hold it again "
+            "(one hold per action string per run — per reply, in a conversation); a consequence "
+            "reminder matching the same action is a separate hold and may still fire once. To "
+            "avoid the consequence, do something else instead.")
 #: A reminder holds once per run, whatever the action string: the caution is now in context.
 _PROCEED_REMINDER = ("To go ahead anyway, emit the action again — as it is or reworded: this "
-                     "caution will not hold again this run (per reply, in a conversation). To "
-                     "avoid the consequence, do something else instead.")
+                     "caution will not hold again this run (per reply, in a conversation); a "
+                     "general RULE whose moment is the same action is a separate hold and may "
+                     "still fire once. To avoid the consequence, do something else instead.")
 
 
 def _caution(r: dict) -> str:

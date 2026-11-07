@@ -21,6 +21,7 @@ from . import (
     promptfloor,
     recipeproposal,
     reviseleg,
+    rewind,
     runkind,
     subsalvage,
 )
@@ -226,10 +227,9 @@ def boot(loop) -> None:
                 "next reply in this same conversation — never hand it to a 'next run'.",
                 replay=False)
         else:
-            enginenote.append(loop,
-                "this run was interrupted (budget/error) and is now RESUMED. The "
-                "conversation above is the run so far — continue from the last observation; "
-                "do NOT restart from step 1. Re-orient briefly, then proceed.", replay=False)
+            # which framing depends on whether anything of the run IS above (rewind.py: the
+            # ⚑ refusal flag's cut can leave a first reply's transcript at its header alone)
+            enginenote.append(loop, rewind.resume_framing(replayed), replay=False)
         if loop.util_reminder:   # one-shot, on the resume note (the kickoff's counterpart)
             loop.messages[-1] = {"role": "user",
                                  "content": loop.messages[-1]["content"] + loop.util_reminder}

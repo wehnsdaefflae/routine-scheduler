@@ -203,14 +203,21 @@ export function observationText(o) {
   } else if (o.kind === "reminder_hold") {
     text = `HELD — "${o.action}" did NOT run. It matches a consequence reminder:\n`
       + (o.reminders || []).map((r) => `· [${r.id} · ${r.scope}] ${r.description}`).join("\n")
-      + "\nEmitting it again, as it is or reworded, runs it (one hold per reminder per run — "
-      + "per reply, in a conversation).";
+      // D246: not "runs it". `hold.before_dispatch` returns at the FIRST source that matches
+      // and each layer spends only its OWN ledger key, so a re-emit the reminder layer has
+      // released can still be held by a general rule whose moment is the same action. The
+      // engine's own sentence (engine/obs_hold._PROCEED_REMINDER) says the same thing; this
+      // is the transcript's copy of it and drifted into the stronger claim.
+      + "\nEmitting it again, as it is or reworded, is not held by this caution again (one "
+      + "hold per reminder per run — per reply, in a conversation); a general rule whose "
+      + "moment is the same action is a separate hold and may still fire once.";
   } else if (o.kind === "assist_hold") {
     text = `HELD — "${o.action}" did NOT run. A general rule this routine practises `
       + `governs this moment:\n`
       + (o.lines || []).map((l) => `· ${l}`).join("\n")
-      + "\nEmitting the same action again runs it (one hold per action string per run — per "
-      + "reply, in a conversation).";
+      + "\nEmitting the same action again is not held by this RULE again (one hold per action "
+      + "string per run — per reply, in a conversation); a consequence reminder matching the "
+      + "same action is a separate hold and may still fire once.";
   } else if (o.kind === "finish" && o.rejected) {
     // SIX rungs reach this observation and each hands the turn back for its own reason, so
     // each is named — a run deferred for its accounting is not a hallucinated completion,

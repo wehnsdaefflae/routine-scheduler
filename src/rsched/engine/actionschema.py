@@ -446,9 +446,9 @@ ACTION_SCHEMA: dict = {
             "type": "string",
             "description": "ask_user: OPTIONAL — a typed ACCESS REQUEST, one grant-entity id "
                            '"<class>:<name>" (e.g. "util:discord", "fs-write:~/project", '
-                           '"secret:FOO_KEY", "machine:gpu-box"). The user decides allow/deny, '
-                           "once (this run) or forever; the engine applies the decision — your "
-                           "question just says WHY. Use it when a denial names an entity.",
+                           '"secret:FOO_KEY", "machine:gpu-box"). The user denies, or allows it '
+                           "for this run, for ONE action, or forever; the engine applies it — "
+                           "your question just says WHY. Use it when a denial names one.",
         },
         # report — the ungated channel every routine holds
         "title": {
