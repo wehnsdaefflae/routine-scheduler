@@ -159,26 +159,6 @@ with it.
 
 ---
 
-## Model-facing wording that drifted (E3.6, E3.10, E4.5, T2.9, E2.5)
-
-Each changes what the model reads, so `docs/prompt-anatomy.md` and its test move in the same commit.
-
-- The `wait` observation's mode wording and the `CHILD RUN FINISHED (<mode>)` notification say the
-  same thing two ways; `engine/child.py` owns the mode vocabulary — one wording.
-- `docs/prompt-anatomy.md` §5's full verbatim example is stale: regenerate it from a composed prompt.
-- The hold observation's proceed sentence (`obs_hold._PROCEED`) when a reminder AND a rule match
-  the same action.
-- The action schema's `request` description names allow-now where the decisions include
-  allow-once (D76).
-- An `llm` reply over the observation cap loses its middle: spill it like util output
-  (`engine/outputs.py`) and name the path.
-- After a ⚑ refusal flag on a conversation's FIRST reply, the resumed leg is told it was
-  "interrupted… continue from the last observation" over an empty history; a kickoff-style note fits.
-
-**First increment.** The `llm` spill — the only item that loses information.
-
----
-
 ## Abort by run id; the runner's active map keyed per home (T3.2, W1.3, D1.3)
 
 **Problem.** `runner.abort(slug)` aborts whichever run of that routine is live, and `runner.active`

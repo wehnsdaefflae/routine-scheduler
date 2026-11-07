@@ -33,6 +33,7 @@ choose which routine it portrays; what it cannot do is portray it inaccurately.
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 from rsched.engine.kindprose import KIND_PROSE
 from rsched.engine.kindsurface import schema_for_kinds
@@ -84,6 +85,64 @@ def _contains_around_placeholders(haystack: str, prose: str) -> bool:
             return False
         pos = found + len(seg)
     return True
+
+
+def test_the_rest_of_section_5_quotes_the_engine_verbatim_too():
+    """§5.1's dump is held byte-for-byte above — this holds the REST of the section, which
+    quotes the other three things a run reads: its kickoff (§5.2), the tail every ordinary
+    turn carries (§5.3) and the conditional tails near the end (§5.4).
+
+    D246 ordered "regenerate §5's full verbatim example from a composed prompt" on the
+    assumption it had drifted. Measured 2026-11-07, it had not: every one of these strings
+    still matched its composer, because F672's fix plus the two tests above had closed the
+    gap §5.1 was the symptom of. So the work left was not a regeneration but the MISSING
+    PIN — the reason the first drift went unseen for a month was that nothing compared these
+    quotes to anything, and a section that calls itself verbatim and is checked in one of its
+    four parts is exactly as trustworthy as the unchecked three.
+
+    Each entry is (where, the composer that makes it, what §5.x quotes). Substituted values
+    (a run id, a count, a path) are cut at the first placeholder — what is pinned is the
+    engine's own words around them, the same bargain `_contains_around_placeholders` strikes
+    for a bullet carrying `{util_confirm}`.
+    """
+    from rsched.engine.turnwindow import converge
+
+    section = TEXT[TEXT.index("### 5.2"):TEXT.index("## Command-output previews")]
+
+    # the kickoff: its own composer, with the run id substituted
+    from rsched.engine.composer import kickoff_message
+
+    kickoff = kickoff_message(SimpleNamespace(run_id="job-radar:20260712-070000"))
+    assert kickoff in section, "§5.2's kickoff is no longer composer.kickoff_message"
+    # …and EVERY copy of it in the document, not just this section's. Found while proving this
+    # test red: perturbing "the kickoff quote" hit line 187 instead of §5.2's at 1285 and the
+    # test passed — the doc quotes the kickoff TWICE, and a pin on one copy leaves the other
+    # free to drift, which is the same one-of-four-parts gap this test exists to close.
+    begins = [ln for ln in TEXT.splitlines() if ln.startswith("Begin run ")]
+    assert len(begins) >= 2, begins        # both the earlier walk-through and §5.2
+    for ln in begins:
+        assert ln.strip() == kickoff.strip(), f"a kickoff quote drifted: {ln[:120]!r}"
+
+    # the ONE-SHOT util pointer that rides it (engine/loopnudge.build_util_reminder), for the
+    # routine §5.1's preamble describes: `write_util` granted, confirm always
+    from rsched.engine.loopnudge import build_util_reminder
+
+    stand_in = SimpleNamespace(allowed_tools=None, grants=SimpleNamespace(
+        allows_kind=lambda kind: kind == "write_util",
+        needs_confirm=lambda creating=False: True))
+    assert build_util_reminder(stand_in).strip() in section, \
+        "§5.2's util reminder is no longer loopnudge.build_util_reminder's"
+
+    # the wind-down tail: its warning text is the caller's, the rest is converge()'s own
+    warn = converge("W")
+    for part in warn.replace("[BUDGET: W — ", "").strip(" ]\n").split(" — "):
+        assert part in section, f"§5.4 no longer quotes converge(): {part!r}"
+
+    # …and the two per-turn tails, whose values vary but whose shapes do not
+    for shape in ("[BUDGET LEFT: ", "[history: earlier turns are archived under ",
+                  "read_file the index and the relevant files before relying on memory.]",
+                  "OBSERVATION (write_file): wrote "):
+        assert shape in section, f"§5.3/5.4 no longer quotes {shape!r}"
 
 
 def test_the_quoted_bullets_are_the_composer_s_own_prose():
