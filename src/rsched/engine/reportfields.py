@@ -32,8 +32,23 @@ def field_problems(obj: dict) -> list[str]:
     if (obj.get("closes")
             and not str(obj.get("answers") or "").strip()
             and not obj.get("settles")):
-        problems.append("kind=report: 'closes' is valid only together with 'answers' or "
-                        "'settles' — it marks the disposal as completing those exchanges")
+        from .runtree import is_runtree  # local: runtree imports inbox, this does not
+        if is_runtree(obj.get("target") or ""):
+            # The refusal was accurate and UNACTIONABLE here. A run-tree address is a MESSAGE to
+            # a live run, which gets no R id at all (`runtree`: "it is not an item and owes the
+            # ledger nothing") — so there is no id `answers` could ever name, and a run told to
+            # supply one cannot. Measured 2026-10-19 → 2026-11-06: 19 of these refusals across
+            # 11 routines, and of the five whose action was recoverable from the transcript
+            # THREE were `parent` or `child:<label>` replies to a hand-back the run was trying
+            # to close in the same run. `llmsectest-weekday` met it in five separate runs.
+            problems.append(
+                "kind=report: drop 'closes' — a run-tree message (target "
+                f"{str(obj.get('target')).strip()!r}) is read at that run's next turn boundary "
+                "and is not a ledger row, so there is nothing to close and no report id "
+                "'answers' could name. Say in 'detail' that no reply is needed")
+        else:
+            problems.append("kind=report: 'closes' is valid only together with 'answers' or "
+                            "'settles' — it marks the disposal as completing those exchanges")
     # `answers` is ONE report id, held to the grammar `settles` and `supersedes` are. The ledger
     # matches it against ids, so free text there disposed of nothing — while the run, and its
     # observation, believed the exchange answered (the settled-in-prose, open-in-the-ledger

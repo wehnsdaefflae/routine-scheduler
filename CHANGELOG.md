@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.511.0] — 2026-11-07
+
+### Nineteen refusals in eleven routines told a run to supply a report id that cannot exist
+
+- `kind=report: 'closes' is valid only together with 'answers' or 'settles'` is the most common
+  schema rejection on this instance — **19 events across 11 routines** between 2026-10-19 and
+  2026-11-06, with `llmsectest-weekday` meeting it in **five separate runs**. Each one costs the
+  routine its turn.
+- The refusal was accurate for a routine target and **unactionable for a run-tree one**. A
+  `target: parent` or `child:<label>` report is a MESSAGE to a live run, read at its next turn
+  boundary — `engine/runtree` says it "is not an item and owes the ledger nothing", so it never
+  gets an `R` id. There is therefore no id `answers` could name, and a run told to supply one
+  cannot comply: of the five rejected actions still recoverable from their transcripts, **three
+  were `parent`/`child:` replies to a hand-back the run was trying to close inside the same
+  run**, which is exactly the behaviour the contract asks for elsewhere.
+- The refusal is now target-aware: for a run-tree address it says to **drop `closes`**, names
+  the target that makes it so, says there is no report id to name, and points at saying "no
+  reply needed" in `detail` instead. For a routine slug — and for no target at all — the
+  original sentence is byte-identical, because a refusal a run has learned to read is a surface
+  too (`reportfields`' own rule). **No grammar changed**: the same shapes are refused and
+  accepted as before.
+- `tests/test_report_closes_refusal.py` carries both: the run-tree refusal asserted for
+  `parent` AND `child:<label>` (naming the action, the target and the absent id, and asserting
+  it does NOT read as a demand for a field the shape cannot have), and a pin that a slug target
+  and an absent target still get the original wording. Shown red with the branch removed.
+  `tests/test_reports.py` is at its size-ratchet ceiling (760), so the cases went to the file
+  that already owns this refusal.
+
 ## [0.510.0] — 2026-11-07
 
 ### A release gate was running the daemon's own memory cgroup to its ceiling for two minutes at a time

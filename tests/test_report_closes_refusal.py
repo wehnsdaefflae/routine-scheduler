@@ -19,7 +19,45 @@ from __future__ import annotations
 
 import pytest
 
+from rsched.engine.actions import validate_action
 from rsched.reports import Disposal, file_report, read_reports, reports_path
+
+# -- the ACTION entrance, where the target decides what the refusal can ask for --------------
+
+
+def test_a_runtree_message_is_told_to_drop_closes_not_to_supply_an_id():
+    """The refusal was accurate and UNACTIONABLE for a message to a live run.
+
+    A run-tree address (`parent`, `child:<label>`) is read at that run's next turn boundary and
+    gets no R id at all — `engine/runtree` says it "is not an item and owes the ledger nothing".
+    So there is no id `answers` could name, and a run told to supply one cannot comply. Measured
+    2026-10-19 → 2026-11-06: NINETEEN of these refusals across ELEVEN routines, and of the five
+    whose rejected action was still recoverable from a transcript, THREE were `parent` or
+    `child:<label>` replies to a hand-back the run was trying to close in the same run.
+    `llmsectest-weekday` met it in five separate runs.
+    """
+    for target in ("parent", "child:ragapi-standup"):
+        problems = validate_action({"say": "s", "kind": "report", "title": "answering the "
+                                    "hand-back", "target": target, "closes": True})
+        assert len(problems) == 1, problems
+        why = problems[0]
+        assert "drop 'closes'" in why                  # the one action that resolves it
+        assert target in why                           # which target made it so
+        assert "no reply is needed" in why             # what to write instead
+        # and it must NOT read as a demand for a field this shape cannot have
+        assert "is valid only together with" not in why
+        assert "no report id" in why                   # it says WHY none can be given
+
+
+def test_a_routine_target_still_gets_the_original_sentence():
+    """The grammar is unchanged — only the explanation is target-aware. A slug target CAN carry
+    an id, so it is still told what `closes` needs."""
+    problems = validate_action({"say": "s", "kind": "report", "title": "t",
+                                "target": "scheduler-builder", "closes": True})
+    assert any("closes" in p and "answers" in p and "settles" in p for p in problems)
+    # and with no target at all (triage) the original sentence stands too
+    assert any("answers" in p for p in validate_action(
+        {"say": "s", "kind": "report", "title": "t", "closes": True}))
 
 
 def test_a_bare_closure_is_refused_with_what_closes_needs():
