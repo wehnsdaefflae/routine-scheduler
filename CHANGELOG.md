@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.516.1] — 2026-11-07
+
+### Fixed — a "docs-only release needs no restart" claim that cannot be true of any release
+
+0.515.0's commit message concluded that because the release changed only docs and tests it
+"needs no daemon restart". `ship_row` contradicted it in the same breath by requesting one, and
+`ship_row` was right: every release bumps `src/rsched/__init__.py`, which is the version the
+running daemon reports at `/api/status` and renders in the console header — so a docs-only
+release does not exist, and the version a reader is shown stays stale until the restart. Nothing
+was mis-shipped; the sentence was wrong, and a pushed commit message cannot be corrected, so the
+correction is recorded in 0.515.0's own CHANGELOG entry where a reader meets the claim.
+
 ## [0.516.0] — 2026-11-07
 
 ### Changed — the pre-finish hold that asks a run to answer a hand-off decides from the hook stream (D152 step 8)
@@ -67,6 +79,15 @@ document equals `kickoff_message`'s output, and that there is more than one of t
 With this, every item of the **"Model-facing wording that drifted"** order is shipped — (5) in
 0.506.0, (1)(3)(4)(6) in 0.514.0, (2) here — and its `docs/designs.md` entry is deleted in this
 release. 28 entries remain.
+
+> **Correction to this release's own commit message**, recorded here because a pushed message
+> cannot be fixed without rewriting history. It ends *"Docs and tests only: no src/ or static/
+> change, so this release needs no daemon restart."* The first half is true of the item; the
+> conclusion is false, and `ship_row` was right to contradict it by requesting a restart. **Every**
+> release changes `src/rsched/__init__.py` — the version bump itself — and that is the string the
+> running daemon reports at `/api/status` and renders in the console header. A "docs-only release"
+> therefore does not exist: the version a reader is shown stays stale until the daemon restarts.
+> Nothing was mis-shipped (the restart was requested); the sentence was simply wrong.
 
 ## [0.514.0] — 2026-11-07
 
