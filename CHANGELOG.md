@@ -15,6 +15,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.513.0] — 2026-11-07
+
+### Fixed
+- **The escalation-ladder switch on a CONVERSATION said it was supervising "runs of this
+  routine".** D216(d) (0.504.0) mounted the routine page's `ladderSwitch` on a conversation's
+  capabilities panel and shipped its wording with it, so all three of its strings named the
+  wrong subject: a conversation has REPLIES, not runs of a routine, and the control therefore
+  asserted something false about the very thing it switches on. `ladderSwitch` now takes a
+  `subject` (a key of a `SUBJECTS` table, defaulting to `runs`, so the routine page is
+  byte-identical) and `ladderPanel` — whose only home is a conversation — passes `replies`.
+  Pinned in the BROWSER on the text a person reads, in both homes and in both directions (the
+  old words must be absent), because the three existing browser tests for that panel all passed
+  over the wrong prose: every one of them asserts a `data-ladder-*` hook or a file that was
+  written.
+- **`daemon/backup_watch` reported a backup root it may not LOOK at as one with no stamp**
+  (F846, the operator's "build the ENOENT/EACCES split"). `newest_stamp` swallowed every
+  `OSError` into `continue`, so "the file is not there" and "I am not allowed to read it"
+  produced identical output — and the detail then asserted one cause out of three ("the share
+  may not be mounted"), which for the local tier was simply wrong. It now returns the roots this
+  process was REFUSED (`EACCES`/`EPERM`; `FileNotFoundError` stays the ordinary "it did not run"
+  path) and says so instead of naming a cause it cannot know. `unknown` is still the state and
+  `cli_postdeploy.backup_freshness` still FAILs on it, deliberately. Measured rather than
+  assumed, because a fix firing for no reader would be inert while looking shipped: the daemon
+  runs as uid 1000 and OWNS `/mnt/usb500` (`drwx------`), so the refused branch is a RUN's (and
+  `cli_postdeploy` inside one), never the daemon's tick.
+
+### Changed
+- **The five regression-alarm constants that were never measured, measured** (R3245, accepted:
+  *"Yeah. Do that!"*). D181 computed the distribution for `BALLOON_RATIO` alone; its siblings
+  carried plausible prose. Over this instance's own stream (4,877 records → 1,997 folded depth-0
+  runs, 227 actors, as adjacent same-actor window pairs where nothing changed between the halves)
+  **no constant had to move**, and three turned out to carry load nobody had written down:
+  `FAIL_RATE_JUMP` +0.4 sits at the **p99** and is the only value distinct from 0.2 (a 5-run fail
+  rate moves in 0.2 steps, so 0.3 flags the same 40 of 1,412 windows); `MIN_RUNS` 3 is what stops
+  ONE failure deciding a verdict (at a window of 2 it is a delta of 0.5 and clears the threshold
+  alone); `VOLUME_FLOOR` is the WHOLE decision for the 66 windows whose before half has no
+  reading, where any growth satisfies the ratio. `TURNS_FLOOR` is **inert** — every candidate from
+  3 to 13 flags the same 4 windows. Each number is now in its own comment, the three load-bearing
+  facts are pinned in `tests/test_balloon_ratio.py` (each proven red by perturbing its constant),
+  and `docs/run-analytics.md` states when these should be re-measured.
+
+### Added
+- **`rsched reports --wrongly-settled`: which reports a non-owner disposed of** (R3246,
+  accepted). D182 closed the gate in `report_threads.disposable` but left the rows settled
+  deliberately — and "do not re-open them" and "nobody can ever see which ones they were" are
+  different decisions, only the first of which was taken; until now the sole artefact that knew
+  the number was a docstring. `report_threads.disposed_by_non_owner` asks `disposable`'s own
+  question backwards, one call per disposer, so the listing can never disagree with the refusal a
+  run would get today. It is a READ: no row re-opens, no verdict changes. On the live ledger it
+  lists **236 rows, 69 never routed**, including the operator's own `R2552`; the raw predicate
+  still gives D182's **495/319**, and the difference is 246 claims that F840 made triage's own act
+  plus 22 later re-claims — `docs/items.md` carries that arithmetic so the two numbers cannot read
+  as a contradiction.
+
 ## [0.512.0] — 2026-11-07
 
 ### Fixed
