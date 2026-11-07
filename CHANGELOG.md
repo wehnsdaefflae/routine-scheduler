@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.508.0] — 2026-11-07
+
+### Nine wasted *approve & apply* clicks in nine minutes: a `config_patch`'s VALUES were judged only when the operator pressed the button
+
+- `engine/config_bridge` judged a proposal's KEYS — which surface it is for, which fields that
+  surface has, which inner keys each mapping field takes — and one VALUE, the model trial's. So a
+  patch whose names were all real reached the Decisions page wearing an apply button that could
+  not work, and the operator found that out by pressing it.
+- Measured on this instance 2026-11-06, `.ui-traces/20261106.jsonl`, every toast `view=questions`:
+  **`measures: List should have at most 6 items after validation, not 7` five times** between
+  02:25 and 02:34 (an `outcome` contract one measure over `config/outcome.MAX_MEASURES`), and
+  **`models.tool_call: must be a catalog model name` four times** between 02:33 and 02:34 (a role
+  bound to a model this instance does not serve). `outcome` is a real `RoutinePatch` field, so the
+  key check passed it and nothing looked inside; `patch_nested` judged the role NAME and stopped.
+- Both are now refused on the turn that FILES the ask, with the vocabulary named: the outcome
+  shape and its cap, or the catalog this instance actually serves. New module
+  `engine/config_values.py` holds the value half — `config_bridge` was at 254 lines and the two
+  checks took it to 355, over the house bar, so it was split rather than grown
+  (`tests/test_file_size.py` rule 1). `config_bridge` re-exports them, so every existing caller
+  and `tests/test_trials.py` are untouched by the move.
+- **Deliberately no stricter than the apply**, which is its own failure mode — a filing check
+  that refuses a proposal the click would have taken loses a change nobody can see was lost. So
+  the two DECISION roles are judged against `server.decision_models` and not the chat catalog
+  (which is why `trials.roles_problem` is *not* reused: it checks every role against the chat
+  catalog and would refuse a valid `decision` proposal), a blank role still means "clear it back
+  to the instance default", `{"outcome": null}` still clears the contract, and a model's
+  context-window fit stays with the click because the engine may not import the web layer.
+- `tests/test_config_patch_values.py`: the two measured cases, the catalog distinction both ways,
+  a pin that every role in `ROUTINE_MODEL_ROLES` stays proposable through its own catalog, the
+  standing "what the apply accepts is never refused here" property, and the end-to-end `ask_user`
+  proof that no pending question file is written — shown red with the wiring removed (the pending
+  record reappears) before it was committed.
+
 ## [0.507.1] — 2026-11-07
 
 ### `hook_stream_diverged` fired five times in a day and every one was spurious: the comparison folded one side only

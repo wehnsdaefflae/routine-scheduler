@@ -9,6 +9,12 @@ record must never reach the operator wearing an apply button that cannot work.
 Split out of `interact.py`, whose one responsibility is the ask itself — filing a decision record
 and turning the reply back into an answer. Whether one optional field of that record is
 well-formed is a different question, and it is this module's.
+
+This file holds the KEY half — which surface the patch is for (`patch_target`), which fields
+that surface has (`patch_shape`, `server_shape`), which inner keys each mapping field takes
+(`patch_nested`). The VALUE half — a real field whose VALUE the apply would refuse — is
+`config_values.py`, split off when the second and third such check pushed this file over the
+350-line house bar. `resolve` composes both halves and is still the one entry point.
 """
 
 from __future__ import annotations
@@ -16,6 +22,20 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import runkind
+
+# The VALUE half of the same filing check — the fields whose value the apply would refuse, and
+# which this file grew past the house size bar trying to hold (`config_values.py` says why).
+# Re-exported here because `resolve` composes them and every existing caller imports them from
+# this module: the split is a file boundary, not an interface change.
+from .config_values import (
+    TRIAL_SHAPE,
+    outcome_value,
+    role_value,
+    trial_value,
+)
+
+__all__ = ["TRIAL_SHAPE", "live_fields", "outcome_value", "patch_nested", "patch_shape",
+           "patch_target", "resolve", "role_value", "server_shape", "trial_value"]
 
 
 def resolve(ctx, cpatch: dict | None) -> tuple[str, str]:
@@ -27,7 +47,8 @@ def resolve(ctx, cpatch: dict | None) -> tuple[str, str]:
     conversation = runkind.lands_in_conversation(ctx)
     target, error = patch_target(ctx, cpatch, conversation=conversation)
     return target, (error or patch_shape(cpatch, target, conversation=conversation)
-                    or patch_nested(cpatch) or trial_value(ctx.server, cpatch))
+                    or patch_nested(cpatch) or outcome_value(cpatch)
+                    or role_value(ctx.server, cpatch) or trial_value(ctx.server, cpatch))
 
 
 def live_fields(ctx, cpatch: dict | None, target: str = "") -> dict:
@@ -53,39 +74,6 @@ def live_fields(ctx, cpatch: dict | None, target: str = "") -> dict:
     return {"config_patch": cpatch, "routine": ctx.routine.slug,
             **({"config_target": target} if target else {}),
             **({"conversation": True} if runkind.lands_in_conversation(ctx) else {})}
-
-
-#: What a model trial looks like, said in the refusal so the next filing gets it right.
-TRIAL_SHAPE = ('{"trial": {"id": "t-<yyyymmdd>-<model>", "models": {"main": "<catalog model '
-               'name>"}, "efforts": {"main": "<low|medium|high|xhigh|max>"} (optional), '
-               '"runs": <1-20>, "reason": "<what the trial should show>"}}')
-
-
-def trial_value(server, patch: dict | None) -> str:
-    """Refuse a `trial` VALUE the apply would refuse — the one key whose value is judged at
-    filing, because a trial is a proposal config-optimizer files for routines it does not
-    run, and a malformed one or a model the catalog lacks is a 422/400 on the operator's click.
-    The shape is `config/trialconf.TrialConfig`, the catalog is `rsched.trials`; the window fit
-    the PATCH also checks lives in the web layer and is left to the click. `null` (clear the
-    trial) always passes.
-    """
-    if not patch or patch.get("trial") is None:
-        return ""
-    from pydantic import ValidationError
-
-    from ..config.trialconf import TrialConfig
-    from ..trials import catalog_problem
-
-    try:
-        trial = TrialConfig.model_validate(patch["trial"])
-    except ValidationError as exc:
-        why = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'trial'}: "
-                        f"{e['msg'].removeprefix('Value error, ')}" for e in exc.errors())
-        return (f"config_patch trial: {why}. A trial is {TRIAL_SHAPE}; "
-                '{"trial": null} clears one.')
-    if problem := catalog_problem(server, trial):
-        return f"config_patch {problem}. `list_models` names the catalog."
-    return ""
 
 
 def patch_shape(patch: dict | None, target: str = "", *, conversation: bool = False) -> str:
