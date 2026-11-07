@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.516.0] — 2026-11-07
+
+### Changed — the pre-finish hold that asks a run to answer a hand-off decides from the hook stream (D152 step 8)
+
+The hooks campaign's claim since step 4 is that the hook stream is the SOURCE and
+`reports.jsonl` is its projection. Step 7 made one decision answer from the stream (the write
+path's open-thread cap); this is the **second**, and it is the one that tests the claim where it
+matters: `assist_predicates._unclosed_delivered_report` asks, at a run's finish, which handed-in
+reports it still owes a reply to — over rows **every other routine wrote**, not one sender's own
+filings. So it is the first use that depends on the pre-stream backfill being complete across
+the fleet rather than within a thread, which is exactly what step 7 measured (5,016 rows, zero
+round-trip mismatches) and could not otherwise exercise.
+
+`hooks/reportinv.still_owed_now` mirrors `open_threads_now`: both stores asked, the stream
+folded through `reports.fold_rows` before comparing (F847's trap — the projection writes a
+filing and each lifecycle fact as separate rows, while the open/closed predicate reads flags
+only the fold puts on a filing row), and the **ledger's answer kept** whenever they differ, with
+`hook_stream_diverged` filed instead. That conservatism is the point rather than a hedge: this
+decision HOLDS a run's finish, so answering from a stream missing history would ask a run again
+for a reply it had already sent — the exact failure R2086 fixed by re-reading the ledger at the
+moment of asking. The filing of that event is now one shared function, because the diagnosis is
+identical for every decision moved and a second copy would be a second thing to keep true.
+
+`docs/architecture.md` now names which decisions read the stream — a reader could not previously
+tell that the campaign had begun closing the gap `hooks/store.py`'s own docstring describes
+("nothing reads this stream to make a decision yet"), and ten modules still fold the projection.
+
 ## [0.515.0] — 2026-11-07
 
 ### Added — §5 of `docs/prompt-anatomy.md` is verbatim in all four of its parts (D246 item 2, closing the entry)
