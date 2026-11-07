@@ -255,6 +255,24 @@ above is the run so far — continue from the last observation; do NOT restart f
 Re-orient briefly, then proceed.
 ```
 
+…unless there is no conversation above it. `rewind_transcript`'s `before_reply` cut keeps
+everything BEFORE the message that opened a reply, and for a conversation's FIRST reply that is
+the header alone — which is exactly what the operator's ⚑ refusal flag does (discard the reply,
+re-send its message to another model). The framing is therefore chosen by whether the replayed
+window holds an ASSISTANT turn at all (`rewind.resume_framing`), because the sentence above is
+false in both halves when it does not: there is no last observation to continue from, and step 1
+is the only place left to start (D246).
+
+```
+ENGINE NOTE: this run is RESUMED, but NOTHING of it is above: the leg that ran before this one
+was discarded, so there is no conversation to continue from and no last observation to re-orient
+in. Treat this as the KICKOFF it now is — the user's message follows and is the whole task;
+start from step 1 of the workflow. (A reply the operator flags as a refusal, ⚑, is discarded
+with everything after it and its message re-sent to another model; on a conversation's first
+reply that leaves the transcript at its header.) Anything an earlier attempt wrote to disk
+survives — read before you rewrite.
+```
+
 Finished run continued (web "converse" on a run the model concluded itself — the replayed
 observations count for the fabrication guard, so answering with an immediate re-finish is
 allowed):
@@ -1119,7 +1137,7 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   },
   "request": {
    "type": "string",
-   "description": "ask_user: OPTIONAL \u2014 a typed ACCESS REQUEST, one grant-entity id \"<class>:<name>\" (e.g. \"util:discord\", \"fs-write:~/project\", \"secret:FOO_KEY\", \"machine:gpu-box\"). The user decides allow/deny \u2014 for this run, for ONE action, or forever; the engine applies it \u2014 your question just says WHY. Use it when a denial names an entity."
+   "description": "ask_user: OPTIONAL \u2014 a typed ACCESS REQUEST, one grant-entity id \"<class>:<name>\" (e.g. \"util:discord\", \"fs-write:~/project\", \"secret:FOO_KEY\", \"machine:gpu-box\"). The user denies, or allows it for this run, for ONE action, or forever; the engine applies it \u2014 your question just says WHY. Use it when a denial names one."
   },
   "title": {
    "type": "string",

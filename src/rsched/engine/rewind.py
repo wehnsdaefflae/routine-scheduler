@@ -111,6 +111,45 @@ def reply_opening(events: list[dict], turn: int, ts: str) -> dict | None:
             "served_by": str(usage.get("model") or "") if isinstance(usage, dict) else ""}
 
 
+#: The ordinary case: a leg that ran out of budget or died, whose own work is above it.
+_RESUMED = ("this run was interrupted (budget/error) and is now RESUMED. The conversation "
+            "above is the run so far — continue from the last observation; do NOT restart "
+            "from step 1. Re-orient briefly, then proceed.")
+#: …and the case where that sentence is addressed to nothing. `rewind_transcript`'s
+#: `before_reply` cut keeps everything BEFORE the message that opened a reply, and for a
+#: conversation's FIRST reply "that is the very start, the header alone" — so a resumed leg
+#: can have no turn above it at all. The ⚑ refusal flag cuts exactly there (it discards the
+#: reply and re-sends its message to another model), which makes this the normal outcome of a
+#: flag on a first reply, not an edge case: the run is told to continue from a last
+#: observation that does not exist and to re-orient in a conversation it cannot see (D246).
+_RESUMED_EMPTY = ("this run is RESUMED, but NOTHING of it is above: the leg that ran before "
+                  "this one was discarded, so there is no conversation to continue from and "
+                  "no last observation to re-orient in. Treat this as the KICKOFF it now is — "
+                  "the user's message follows and is the whole task; start from step 1 of the "
+                  "workflow. (A reply the operator flags as a refusal, ⚑, is discarded with "
+                  "everything after it and its message re-sent to another model; on a "
+                  "conversation's first reply that leaves the transcript at its header.) "
+                  "Anything an earlier attempt wrote to disk survives — read before you "
+                  "rewrite.")
+
+
+def resume_framing(replayed: list[dict]) -> str:
+    """What a resumed leg is told about the history above it — which depends on there BEING
+    one. `boot` sets this afresh on every leg (`replay=False`).
+
+    One sentence for a run whose own turns are above it, another for a run whose predecessor
+    was cut away entirely. The alternative — one sentence for both — is what shipped, and it
+    told a run with an empty window to "continue from the last observation", i.e. to continue
+    from nothing and not restart, which leaves it no action that is not forbidden.
+
+    The predicate is the ASSISTANT turn, not the message count: a cut leaves the header and
+    the engine may already have appended notes of its own, so "the window is short" and "the
+    run has nothing of its own above it" are different questions and only the second one
+    changes what the leg should do.
+    """
+    return _RESUMED if any(m.get("role") == "assistant" for m in replayed) else _RESUMED_EMPTY
+
+
 def rewind_transcript(run_dir: Path, keep_through_turn: int | None = None, *,
                       before_reply: tuple[int, str] | None = None) -> dict | None:
     """D69: rewind a conversation so a dead/derailed run can be RE-OPENED and continued from a
