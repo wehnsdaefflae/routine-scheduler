@@ -20,11 +20,27 @@ that command is a person standing at the box he just deployed, and "I could not 
 is a finding for him even when it is not evidence that a backup failed. The gain is that the
 DETAIL now tells him which of the two he is looking at, so he reaches for `sudo` or for the unit
 log rather than guessing.
+
+WHICH READER ACTUALLY HITS THE REFUSED BRANCH, measured 2026-11-07 rather than assumed — because
+a fix that only ever fires for a reader this code does not have would be inert while looking
+shipped:
+
+* the DAEMON (`daemon/scheduler.BackupWatch`) runs as **uid 1000**, and `/mnt/usb500` is
+  `drwx------ uid=1000` — it OWNS the mount point, and the Landlock jail wraps run subprocesses,
+  not the daemon itself. So the daemon is not refused: for its tick an `unknown` local tier means
+  the stamp is genuinely ABSENT, and the finding there belongs to `backup.sh` not having
+  completed, not to this module.
+* a ROUTINE RUN reading the same root — and `cli_postdeploy` invoked from inside one — gets
+  EACCES on the open while `os.stat` still answers, which is the conflation that produced
+  `postdeploy.jsonl`'s wrong sentence and R3234.
+
+So the split's value is: the sentence stops ASSERTING one cause out of three, and the two readers
+stop being told the same thing when they are standing in different places. The next
+`backup_stale` event the daemon files is itself the instrument that confirms which branch it
+takes — if it still reads "may not be mounted", the local tier's stamp really is absent.
 """
 
 from __future__ import annotations
-
-import os
 
 import pytest
 
@@ -42,12 +58,12 @@ def test_a_stamp_that_cannot_be_read_is_reported_as_unreadable_not_as_absent(tmp
     """The defect: an EACCES and an ENOENT produced the same (None, None)."""
     root = tmp_path / "usb"
     _stamp(root)
-    os.chmod(root, 0o000)        # noqa: S103 — the point is that the read is refused
+    root.chmod(0o000)
     try:
         when, which, blocked = backup_watch.newest_stamp(
             backup_watch.COMPLETED_STAMP, [root])
     finally:
-        os.chmod(root, 0o700)
+        root.chmod(0o700)
 
     assert when is None and which is None
     assert blocked, "an unreadable root reported nothing about WHY it could not be read"
@@ -74,13 +90,13 @@ def test_the_verdict_detail_says_which_of_the_two_it_hit(tmp_path, monkeypatch):
     """
     root = tmp_path / "usb"
     _stamp(root)
-    os.chmod(root, 0o000)        # noqa: S103
+    root.chmod(0o000)
     monkeypatch.setattr(backup_watch, "backup_tiers", lambda env=None: [("local", root)])
     monkeypatch.setattr(backup_watch, "backup_roots", lambda env=None: [root])
     try:
         state, detail = backup_watch.staleness()
     finally:
-        os.chmod(root, 0o700)
+        root.chmod(0o700)
 
     assert state == "unknown"
     assert "could not be read" in detail
@@ -103,18 +119,28 @@ def test_an_absent_stamp_keeps_its_own_wording(tmp_path, monkeypatch):
     assert "could not be read" not in detail
 
 
-@pytest.mark.parametrize("mode", [0o000, 0o100])
-def test_a_root_whose_directory_cannot_be_entered_is_blocked_too(tmp_path, mode):
-    """A refused directory and a refused FILE both raise on the read, and both mean the same
-    thing here: this process cannot look. Parametrized because the two reach `read_text` by
-    different errno paths (the open itself, and the traversal)."""
+@pytest.mark.parametrize("refuse", ["the directory", "the stamp file"])
+def test_both_a_refused_directory_and_a_refused_file_are_blocked(tmp_path, refuse):
+    """A refused directory and a refused FILE both mean the same thing here — this process cannot
+    look — and they reach `read_text` by DIFFERENT errno paths: the path traversal, and the open
+    itself. Either way the reader must be told about the ROOT, which is the thing a person can
+    act on.
+
+    What is deliberately NOT a case here, because it asserts a refusal that cannot happen: mode
+    `0o100` on the directory. The first draft of this file parametrized it beside `0o000` and got
+    an empty `blocked` — a directory carrying only the execute bit is TRAVERSABLE, so the open of
+    a mode-0o644 stamp inside it SUCCEEDS. Reading a stamp never lists its directory, so the
+    directory's READ bit is irrelevant to this code path.
+    """
     root = tmp_path / "usb"
-    _stamp(root)
-    os.chmod(root, mode)         # noqa: S103
+    stamp = _stamp(root)
+    target = root if refuse == "the directory" else stamp
+    target.chmod(0o000)
     try:
         _when, _which, blocked = backup_watch.newest_stamp(
             backup_watch.COMPLETED_STAMP, [root])
     finally:
-        os.chmod(root, 0o700)
+        target.chmod(0o700)
 
-    assert blocked
+    assert blocked, f"{refuse} was unreadable and newest_stamp reported nothing blocked"
+    assert [p for p, _ in blocked] == [root]
