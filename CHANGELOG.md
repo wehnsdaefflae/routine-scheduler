@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.512.0] — 2026-11-07
+
+### Fixed
+- **A `config_patch` granting a capability no held permission requires is refused at filing,
+  instead of applying successfully and writing the mapping without it.** `capabilities` is a
+  real `RoutinePatch` field, so `patch_shape` passed it and `patch_nested` never looked inside;
+  the apply routes it to the permissions surface, which RAISES the mapping to cover every held
+  doc's `requires:` and FLOORS it back to them (D8) — a gated action survives only while a held
+  permission names it. A patch naming only `capabilities` keeps the routine's current docs, so
+  a gated action with no permission behind it could never land, and nothing said so.
+  `engine/config_values.capability_value` now compares the patch against the apply's own floor
+  (`grants.floor_capabilities` over `grants.capabilities_for`, same doc set) and names the
+  permission that would carry the capability, so the correct filing is one patch away.
+  *Measured, and this is the shape that makes it worse than a dead button:* on 2026-11-06 at
+  03:25:57 a patch `{"capabilities": {"actions": ["write_recipe"]}}` for `deficit-coach` (which
+  holds `util-authoring` alone) was applied and recorded `config_patch_applied: true`. The
+  written file came out `actions: [write_util, revise_util]`. The asking routine reported to the
+  target that the capability had been granted; the target's next run tried `edit_file main.md`,
+  was refused for want of it, and filed a **blocking** question asking for a grant it had
+  already been told it had (`q-20261106-230001-55`). The button was not dead — it lied.
+  Never stricter than the apply, by construction: the floor compared against IS the apply's.
+  Two cases plus the standing no-stricter property in `tests/test_config_patch_values.py`,
+  proven to discriminate (with the check neutered, exactly those two fail and the other 12 pass).
+
 ## [0.511.0] — 2026-11-07
 
 ### Nineteen refusals in eleven routines told a run to supply a report id that cannot exist

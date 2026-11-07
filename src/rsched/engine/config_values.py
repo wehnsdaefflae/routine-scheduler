@@ -90,6 +90,73 @@ def outcome_value(patch: dict | None) -> str:
     return ""
 
 
+def capability_value(ctx, patch: dict | None, target: str = "") -> str:
+    """Refuse a `capabilities` VALUE the apply would silently FLOOR AWAY — the one dead-button
+    shape where the button is not dead: it works, reports success, and does not do what the
+    patch said.
+
+    `capabilities` is a real `RoutinePatch` field, so `patch_shape` passes it and
+    `patch_nested` does not look inside. The apply routes it to the permissions surface
+    (`api_routine_patch._apply_permissions_fields` → `write_permission_layers`), which RAISES
+    the mapping to cover every held doc's requires and FLOORS it back to them (D8): a gated
+    action survives only while some HELD permission's `requires:` names it. A patch naming
+    only `capabilities` keeps the routine's current docs, so a gated action with no permission
+    behind it cannot land — and nothing says so.
+
+    Measured 2026-11-06: a proposal carrying `{"capabilities": {"actions": ["write_recipe"]}}`
+    for `deficit-coach` (which holds `util-authoring` alone) was applied at 03:25:57 and
+    recorded `config_patch_applied: true`. The written file came out
+    `actions: [write_util, revise_util]` — `write_recipe` floored away. The asking routine
+    reported to the target that the capability had been granted; the target's next run tried
+    `edit_file main.md`, was refused for want of it, and filed a BLOCKING question (qid
+    q-20261106-230001-55) asking for a grant it had already been told it had.
+
+    No stricter than the apply, by construction: the floor this compares against IS the apply's
+    own (`grants.floor_capabilities` over `grants.capabilities_for`), run against the same doc
+    set the apply would use. A patch that also carries the covering `permissions` passes, which
+    is the correct filing and what the refusal asks for.
+    """
+    if not patch or not isinstance(patch.get("capabilities"), dict):
+        return ""
+    from pathlib import Path
+
+    from ..config.routine import load_routine
+    from ..grants import _DEFAULT_KIND_SOURCE, capabilities_for, floor_capabilities
+    from ..readmodels import library_reads
+
+    home = Path(ctx.server.routines_home)
+    rdir = home / target if target else ctx.root_routine_dir
+    cfg, _ = load_routine(rdir)
+    if cfg is None:
+        return ""
+    want_docs = patch.get("permissions")
+    if not isinstance(want_docs, list):
+        want_docs = list(cfg.permissions or [])
+    available = set(library_reads.doc_slugs(ctx.server.permissions_home))
+    active = [p for p in want_docs if isinstance(p, str) and p in available]
+    lib = library_reads.requires(ctx.server.permissions_home)
+    asked = patch["capabilities"]
+    kept = floor_capabilities(active, lib, capabilities_for(active, lib, dict(asked)))
+    for key in ("actions", "utils"):
+        survived = set(kept.get(key) or [])
+        for name in asked.get(key) or []:
+            if not isinstance(name, str) or name in survived:
+                continue
+            carriers = sorted(s for s, req in lib.items() if name in (req.get(key) or []))
+            doc = _DEFAULT_KIND_SOURCE.get(name) if key == "actions" else None
+            if doc and doc not in carriers:
+                carriers.append(doc)
+            which = " or ".join(repr(c) for c in carriers) or "no library permission"
+            return (f"config_patch capabilities.{key}: {name!r} would be floored away — a "
+                    f"gated capability survives only while a HELD permission requires it, and "
+                    f"{(target or rdir.name)!r} holds {active or 'none'}. The apply would "
+                    f"report success and write the mapping without it. Carry the covering "
+                    "permission in the same patch: "
+                    f'{{"permissions": {[*active, carriers[0]] if carriers else active}, '
+                    f'"capabilities": …}} — {which} requires {name!r}.')
+    return ""
+
+
 def role_value(server, patch: dict | None) -> str:
     """Refuse a `models` role VALUE this instance cannot serve — the same dead apply button as
     the trial's catalog check, one layer in.

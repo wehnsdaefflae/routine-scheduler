@@ -29,12 +29,14 @@ from . import runkind
 # this module: the split is a file boundary, not an interface change.
 from .config_values import (
     TRIAL_SHAPE,
+    capability_value,
     outcome_value,
     role_value,
     trial_value,
 )
 
-__all__ = ["TRIAL_SHAPE", "live_fields", "outcome_value", "patch_nested", "patch_shape",
+__all__ = ["TRIAL_SHAPE", "capability_value", "live_fields", "outcome_value", "patch_nested",
+           "patch_shape",
            "patch_target", "resolve", "role_value", "server_shape", "trial_value"]
 
 
@@ -48,7 +50,8 @@ def resolve(ctx, cpatch: dict | None) -> tuple[str, str]:
     target, error = patch_target(ctx, cpatch, conversation=conversation)
     return target, (error or patch_shape(cpatch, target, conversation=conversation)
                     or patch_nested(cpatch) or outcome_value(cpatch)
-                    or role_value(ctx.server, cpatch) or trial_value(ctx.server, cpatch))
+                    or role_value(ctx.server, cpatch) or trial_value(ctx.server, cpatch)
+                    or capability_value(ctx, cpatch, target))
 
 
 def live_fields(ctx, cpatch: dict | None, target: str = "") -> dict:
