@@ -2,7 +2,8 @@
 run now, streaming events), `validate` (server config + routine.yaml checks), `lint`
 (workflow library), `suggest` (rank library workflows for an instruction), `scaffold`
 (create a routine dir from a library workflow), `abort` (stop a run), `drain` (quiesce before a
-deploy) and `postdeploy` (check the LIVE instance after one, and record the session) — plus the
+deploy), `postdeploy` (check the LIVE instance after one, and record the session) and `reports`
+(read the report ledger — which rows a non-owner disposed of) — plus the
 internal `engine-run` the daemon spawns for each run. `rsched <cmd> --help` lists per-command
 flags.
 """
@@ -10,6 +11,7 @@ flags.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import signal
 import sys
@@ -192,6 +194,32 @@ def cmd_scaffold(args) -> int:
     return 0
 
 
+def cmd_reports(args) -> int:
+    """`rsched reports --wrongly-settled` — the rows a NON-OWNER disposed of (R3246).
+
+    D182 closed the write gate (`report_threads.disposable`) and deliberately left the rows it
+    would now refuse settled, because re-deriving them would hand triage hundreds at once. That
+    left no way to ASK which ones they were: the only artefact that knew the number was a
+    docstring. This is that question, and nothing more — a read over the folded ledger
+    (`reports.read_reports`, the canonical view every read surface uses), printing id, sender,
+    date and title. No row re-opens and no verdict changes.
+    """
+    from .report_threads import disposed_by_non_owner
+    from .reports import read_reports, reports_path
+
+    server, _ = load_server_config()
+    found = disposed_by_non_owner(read_reports(reports_path(server.routines_home)))
+    if args.json:
+        print(json.dumps({"wrongly_settled": found, "count": len(found)}, indent=2))
+        return 0
+    for row in found:
+        print(f"{row['id']:>6}  {row['ts'][:10]}  {row['sender']:<22}  {row['title']}")
+        print(f"        disposed of by {row['disposed_by']} ({row['disposer']}) — owner: "
+              f"{row['owner'] or 'nobody (never routed)'}")
+    print(f"non-owner disposals: {len(found)}", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rsched", description="LLM agent routine scheduler")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -277,6 +305,13 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--read-root", action="append", help="extra fs read root (repeatable)")
     sc.add_argument("--write-root", action="append", help="extra fs write root (repeatable)")
     sc.set_defaults(fn=cmd_scaffold)
+
+    rp = sub.add_parser("reports", help="read the report ledger")
+    rp.add_argument("--wrongly-settled", action="store_true", required=True,
+                    help="list the rows a NON-OWNER disposed of (D182/R3246): id, sender, "
+                         "date, title — a READ, so no row re-opens")
+    rp.add_argument("--json", action="store_true", help="one JSON document instead of lines")
+    rp.set_defaults(fn=cmd_reports)
 
     args = p.parse_args(argv)
     return args.fn(args)

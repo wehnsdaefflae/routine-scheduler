@@ -252,7 +252,9 @@ process), `run-once` (`--model kind=name` overrides a model role with a catalog 
 `engine-run` (internal — the daemon spawns it with `--config` and `--homes`, both
 required, so the child can never adopt a config nobody pointed it at, plus `--model` for a model
 trial's run), `validate`,
-`lint`, `suggest`, `scaffold`, `abort`.
+`lint`, `suggest`, `scaffold`, `abort`, `drain` and `postdeploy` (the two that BRACKET a deploy),
+and `reports --wrongly-settled` (read the report ledger: the rows a non-owner disposed of before
+D182 closed that gate — a READ, so no row re-opens).
 
 ## Development
 
