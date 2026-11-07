@@ -227,10 +227,21 @@ def _unclosed_delivered_report(s: Situation) -> bool:
     if not owed:
         return False
     from .. import reports
-    from ..report_threads import still_owed
+    from ..hooks.reportinv import still_owed_now
 
-    rows = reports.read_reports(reports.reports_path(s.ctx.server.routines_home))
-    return bool(still_owed(rows, owed))
+    home = s.ctx.server.routines_home
+    rows = reports.read_reports(reports.reports_path(home))
+    # Asked of the HOOK STREAM as well as the ledger (D152 step 8): the stream is the source
+    # every new report is written to and the ledger is computed from it, so a decision that
+    # only ever reads the projection leaves the claim untested. The ANSWER is still the
+    # ledger's while both stores are written — a hold placed on a stream-only reading would be
+    # this seam's defect reaching a run's finish — and a disagreement files
+    # `hook_stream_diverged` instead.
+    # `routine` only labels the health event, so it is read defensively like `reports_open`
+    # above: a raising predicate is INERT (the assist layer swallows it), which would disable
+    # this hold silently rather than loudly — the one failure mode worse than a wrong label.
+    slug = str(getattr(getattr(s.ctx, "routine", None), "slug", "") or "")
+    return bool(still_owed_now(home, rows, owed, routine=slug))
 
 
 def _rendered_output_unseen(s: Situation) -> bool:

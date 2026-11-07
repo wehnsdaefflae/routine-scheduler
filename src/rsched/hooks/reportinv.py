@@ -40,7 +40,7 @@ import logging
 from pathlib import Path
 
 from ..health_events import log_health_event
-from ..report_threads import open_threads
+from ..report_threads import open_threads, still_owed
 from . import Hook, addressee
 from .reportproj import TERMINAL_EVENTS, stream_rows
 
@@ -119,14 +119,64 @@ def open_threads_now(routines_home: Path, rows: list[dict], *, routine: str,
     except OSError:
         log.exception("report-hooks: reading the hook stream for the thread cap raised")
         return ledger
-    if sorted(stream) != sorted(ledger):
-        detail = (f"the hook stream and the report ledger disagree about {routine}'s open "
-                  f"threads to {target or 'triage'}: the stream says "
-                  f"{sorted(stream) or 'none'}, the ledger says {sorted(ledger) or 'none'}. "
-                  "The ledger's answer was used. Either a report was written without going "
-                  "through the hook (hooks/reportproj is the one writer), or the backfill of "
-                  "the pre-stream history is incomplete (migrate_report_hooks)")
-        log_health_event(routines_home, "hook_stream_diverged", routine=routine, run_id="",
-                         detail=detail, stream=len(stream), ledger=len(ledger))
-        log.warning("report-hooks: %s", detail)
+    _compare(routines_home, stream, ledger, routine=routine,
+             about=f"{routine}'s open threads to {target or 'triage'}")
     return ledger
+
+
+def still_owed_now(routines_home: Path, rows: list[dict], owed: list[str], *,
+                   routine: str) -> list[str]:
+    """Which handed-in reports this run still owes a reply to, DECIDED FROM THE HOOK STREAM.
+
+    Campaign step 8, and the second decision to move. The first (`open_threads_now`) answers on
+    the WRITE path, where the stream's reach is one sender's own filings; this one answers at a
+    run's FINISH, over rows every other routine wrote — so it is the first use that depends on
+    the backfill being complete across the whole fleet rather than within one thread, which is
+    the property step 7 measured (5,016 rows, zero mismatches) and could not otherwise exercise.
+
+    It is also the decision whose wrongness a person would feel. `_unclosed_delivered_report`
+    HOLDS a run's finish: answer from a stream missing history and a run is asked again for a
+    reply it already sent — the exact failure R2086 fixed by re-reading the ledger here in the
+    first place. Hence the same conservatism as step 7, for the same reason: the ledger's answer
+    is returned whenever the two differ, and the disagreement is filed rather than acted on.
+
+    `rows` is the ledger the caller already read, passed in so both sides judge the same bytes.
+    """
+    ledger = still_owed(rows, owed)
+    if not owed:
+        return ledger
+    try:
+        # FOLDED, like step 7 and for the reason F847 found: `stream_rows` is the raw
+        # projection (a filing and each lifecycle fact as separate rows), while `_is_open`
+        # reads the `retracted`/`superseded` flags only the fold writes onto a filing row.
+        # Comparing unfolded rows made every event-disposed row read as still open.
+        from ..reports import fold_rows
+
+        stream = still_owed(fold_rows(stream_rows(routines_home)), owed)
+    except OSError:
+        log.exception("report-hooks: reading the hook stream for the owed-reply hold raised")
+        return ledger
+    _compare(routines_home, stream, ledger, routine=routine,
+             about=f"which of {sorted(owed)} {routine} still owes a reply to")
+    return ledger
+
+
+def _compare(routines_home: Path, stream: list[str], ledger: list[str], *, routine: str,
+             about: str) -> None:
+    """File `hook_stream_diverged` when the two stores disagree — the one place that says it.
+
+    Shared by every decision moved onto the stream (step 7's thread cap, step 8's owed-reply
+    hold), because the diagnosis is the same for all of them and a second copy of this sentence
+    would be a second thing to keep true. The event is what makes a disagreement findable; the
+    caller has already decided to keep the ledger's answer.
+    """
+    if sorted(stream) == sorted(ledger):
+        return
+    detail = (f"the hook stream and the report ledger disagree about {about}: the stream says "
+              f"{sorted(stream) or 'none'}, the ledger says {sorted(ledger) or 'none'}. "
+              "The ledger's answer was used. Either a report was written without going "
+              "through the hook (hooks/reportproj is the one writer), or the backfill of "
+              "the pre-stream history is incomplete (migrate_report_hooks)")
+    log_health_event(routines_home, "hook_stream_diverged", routine=routine, run_id="",
+                     detail=detail, stream=len(stream), ledger=len(ledger))
+    log.warning("report-hooks: %s", detail)
