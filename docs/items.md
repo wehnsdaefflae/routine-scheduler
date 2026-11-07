@@ -283,6 +283,18 @@ so the ordinary route-then-reply pass is unaffected. The READ model is deliberat
 the rows already disposed of this way stay settled, because re-deriving them would hand triage
 hundreds of rows at once.
 
+**Which rows were they?** "Do not re-open them" and "nobody can ever see which ones they were"
+are two different decisions, and only the first was taken — for a year the only artefact that
+knew the number was a docstring comment. `rsched reports --wrongly-settled` is the question
+(`report_threads.disposed_by_non_owner`, R3246): every row a non-owner disposed of, with id,
+sender, date, title, the report that disposed of it and the owner it belonged to — `""` for
+exactly the ones that were never routed, which is how they went with nobody having read them.
+The listing is built from `disposable` itself, one call per disposer, so it can never disagree
+with the refusal a run would get today: triage disposing of an unaddressed row is its owner's
+act (F840) and is not listed, the FIRST disposal decides as it does everywhere else, and a
+retracted reply disposed of nothing. The ledger is append-only, so no data was lost — the
+capability to ask was. It is a READ: no row re-opens and no verdict changes.
+
 **The fold: one thread, one owner.** A report may declare `supersedes: ["R<n>", …]` beside its
 `target` — "these rows are now this thread". Each named row gets a `superseded` event
 (`{ts, by, to}`), and from then on reads whatever the carrier reads: `settled` when the carrier

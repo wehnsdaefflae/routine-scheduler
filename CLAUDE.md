@@ -249,14 +249,18 @@ one you are about to touch, not all of them.
 - `uv run rsched run-once <slug>` — execute one run from the CLI (slug under `routines_home`, or a dir
   path), streaming events. `--model kind=catalog-name` overrides a model role (catalog names, not endpoint:model pairs) and `--effort kind=level` a role's reasoning effort (effort is its own setting, `routine.yaml` `efforts:` — never a catalog row per level); `--quiet` drops the stream.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
-- `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>] | drain | postdeploy`
+- `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>] | drain | postdeploy | reports --wrongly-settled`
   — see `rsched --help`. `validate` checks every routine's `routine.yaml`, lints its recipe
   prose (`main.md`, `stages/`) AND reports its SETUP SURFACE (`readmodels/surface.py` joined with
   `readmodels/remedies.py`: what the held docs, bound rules and reserved utils still need, each
   unmet line ending in the remedy that settles it — a `blocks` row fails the command, a
   `warn`/`note` row is reported only — and so does a recipe CONTRACT defect, the one recipe
   finding that is not a phrasing: `FAIL  recipe ·`, see "A contract names only the task"); `lint`
-  covers the library. `engine-run` is internal
+  covers the library. `reports --wrongly-settled` reads the report LEDGER — the rows a
+  non-owner disposed of before D182 closed that gate (`report_threads.disposed_by_non_owner`,
+  R3246): id, sender, date and title, `--json` for one document. It is a READ, so no row
+  re-opens and no verdict changes — the rows stay settled, deliberately; what was missing was
+  the ability to ASK which ones they were. `engine-run` is internal
   (daemon-spawned). `drain` and `postdeploy` BRACKET A DEPLOY and are the only two commands that
   are about the instance rather than about its config: drain quiesces the box before the restart
   (F746), postdeploy checks the box AFTER it (R2428) — served build vs the checkout, backup

@@ -19,6 +19,12 @@ than a path — they are pure questions about a stream the caller already holds 
 ledger lock, on the write path), and a second read inside the lock would be a second answer to
 the same question.
 
+`disposed_by_non_owner` answers the write gate's own question BACKWARDS, over the rows already
+in the ledger: which ones did a non-owner dispose of, before D182 made that impossible? It is
+`disposable`'s verdict read historically (`rsched reports --wrongly-settled`, R3246) — the gate
+left those rows settled on purpose, and that is a different decision from leaving them
+invisible.
+
 `undisposed_claims` (and with it `opening_sentence`) answers a THIRD question, asked from the
 READ side rather than the write side: `readmodels/prose_closures.py` runs the same claim check
 over the SETTLED ledger, so a live row a finished report's prose claimed to dispose of is visible
@@ -230,6 +236,55 @@ def disposable(rows: list[dict], ids: list[str], *,
         else:
             unrouted.append(rid)
     return allowed, elsewhere, unrouted
+
+
+def disposed_by_non_owner(rows: list[dict]) -> list[dict]:
+    """Every row some OTHER routine's report disposed of — in ledger order, one record each:
+    `{id, ts, sender, title, owner, disposer, disposed_by}`.
+
+    `disposable` asks this of a report being WRITTEN ("may I settle these?"); this asks it of
+    the rows already in the ledger ("which ones did it happen to?"). Nothing enforced the
+    relationship before D182, so 492 of the 2,110 rows measured then had left on someone
+    else's word, 317 of them never routed to anyone — and the gate that closed the hole left
+    the READ model alone deliberately, because re-deriving those rows would hand triage
+    hundreds at once. That decision stands. It is not the same decision as making them
+    invisible, which nobody took: until this predicate the only artefact that knew the number
+    was a docstring comment. So nothing here re-opens a row or changes a verdict, and `owner`
+    is `""` for exactly the rows that went with nobody owning them.
+
+    The verdict is `disposable`'s own, one call per disposer, so this listing can never
+    disagree with the refusal a run would get today — F840 included, where an unaddressed row
+    is TRIAGE's to dispose of, so triage settling one is its owner's act and not a stranger's.
+
+    FIRST disposal decides, as the read model's "an earlier settlement wins over a later one"
+    does: a row its owner settled stays settled however many later reports go on naming it,
+    and a retracted reply disposed of nothing at all (`_disposed`).
+    """
+    first: dict[str, str] = {}                  # row id → the report id that disposed of it
+    for row in rows:
+        if row.get("retracted"):
+            continue
+        for raw in (str(row.get("answers") or ""), *(row.get("settles") or [])):
+            if (claimed := str(raw).strip().upper()) and claimed not in first:
+                first[claimed] = str(row.get("id") or "").strip().upper()
+    by_id = {str(r.get("id") or "").strip().upper(): r for r in rows}
+    per_disposer: dict[str, list[str]] = {}
+    for claimed, by in first.items():
+        per_disposer.setdefault(str(by_id.get(by, {}).get("routine") or ""), []).append(claimed)
+    wrong: set[str] = set()
+    for disposer, ids in per_disposer.items():
+        _allowed, elsewhere, unrouted = disposable(rows, ids, replier=disposer)
+        # An id the ledger does not have reads `unrouted` to the write gate — correctly, there
+        # is nothing to own — but here it would invent a victim, so it is not a lost row.
+        wrong |= {i for i in (*elsewhere, *unrouted) if i in by_id}
+    return [{"id": rid, "ts": str(row.get("ts") or ""),
+             "sender": str(row.get("routine") or ""),
+             "title": str(row.get("title") or ""),
+             "owner": owner_of(rows, rid) or "",
+             "disposer": str(by_id.get(first[rid], {}).get("routine") or ""),
+             "disposed_by": first[rid]}
+            for row in rows
+            if (rid := str(row.get("id") or "").strip().upper()) in wrong]
 
 
 def supersedable(rows: list[dict], ids: list[str]) -> tuple[list[str], list[str]]:
