@@ -25,14 +25,27 @@ export function derivedTurns(interval) {
   return Math.max(Math.floor(interval / 2) + 1, MIN_TURNS);
 }
 
+//: What the ladder watches, as a person reads it — the ROUTINE page's wording, and the default
+//: because that page is the older home. A conversation has replies, not runs of a routine, so
+//: mounting this control there with the default made the control say something false about the
+//: thing it was switching on (shipped in 0.504.0, found by looking at the rendered page).
+const SUBJECTS = {
+  runs: { on: "runs of this routine", off: "no run of this routine is supervised",
+          reads: "this routine's runs and may redirect them" },
+  replies: { on: "replies in this thread", off: "no reply in this thread is supervised",
+             reads: "this thread's replies and may redirect them" },
+};
+
 /**
  * `ladder.enabled` + `ladder.rung_height` (config) — the ladder's height in RUNGS, which is the
  * recursion limit. `value` is the stored block; `onCommit` receives the whole merged block,
  * since the endpoint validates it merged. `depthCeiling` is budgets.max_subrun_depth, which
  * floors it at run time — named here so a setting that cannot take effect says so where it is
- * set.
+ * set. `subject` names what is being supervised in the three strings that say so — a key of
+ * SUBJECTS, defaulting to `runs` so the routine page is unchanged.
  */
-export function ladderSwitch(value, { onCommit, depthCeiling } = {}) {
+export function ladderSwitch(value, { onCommit, depthCeiling, subject } = {}) {
+  const words = SUBJECTS[subject] || SUBJECTS.runs;
   const cur = { enabled: false, rung_height: 3, ...(value || {}) };
   const commit = () => onCommit?.({ ...cur });
 
@@ -47,8 +60,8 @@ export function ladderSwitch(value, { onCommit, depthCeiling } = {}) {
 
   const paint = () => {
     state.textContent = cur.enabled
-      ? `on — a rung reads this routine's runs and may redirect them`
-      : "off — no run of this routine is supervised";
+      ? `on — a rung reads ${words.reads}`
+      : `off — ${words.off}`;
     heightIn.disabled = !cur.enabled;
     // A depth the tree's own ceiling already caps is a setting with no effect: say it here,
     // where it is being chosen, rather than leaving it to be discovered in a transcript.
@@ -71,7 +84,7 @@ export function ladderSwitch(value, { onCommit, depthCeiling } = {}) {
   return {
     node: el("div", { class: "ladder-set" },
       el("label", { class: "row", style: "gap:8px;align-items:center" }, onoff,
-        el("span", {}, "supervise runs of this routine"), state),
+        el("span", {}, `supervise ${words.on}`), state),
       el("div", { class: "row mt", style: "gap:8px;align-items:center" },
         el("span", { class: "muted small", style: "min-width:92px" }, "rung height"), heightIn,
         el("span", { class: "muted small" },
@@ -93,8 +106,12 @@ export function ladderSwitch(value, { onCommit, depthCeiling } = {}) {
  * while the LABELS still have to say which half is which, since that is the authority boundary.
  */
 export function ladderPanel(detail, { onPatch } = {}) {
+  // `subject: "replies"` is not cosmetic: this panel's ONLY home is a conversation, which has
+  // replies and no runs of a routine, so the default wording asserts the wrong thing about what
+  // the switch turns on.
   const sw = ladderSwitch(detail.ladder, { onCommit: (ladder) => onPatch?.({ ladder }),
-                                           depthCeiling: detail.max_subrun_depth });
+                                           depthCeiling: detail.max_subrun_depth,
+                                           subject: "replies" });
   const iv = ladderIntervals({ interval: detail.ladder_turn_interval,
                                turns: detail.oversight_turns },
                              { onCommit: (one) => onPatch?.(one) });
