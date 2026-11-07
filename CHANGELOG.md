@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.515.0] — 2026-11-07
+
+### Added — §5 of `docs/prompt-anatomy.md` is verbatim in all four of its parts (D246 item 2, closing the entry)
+
+The order read *"§5's full verbatim example is stale: regenerate it from a composed prompt"*.
+Measured before editing, the premise was void: §5.2's kickoff and util-reminder tail, §5.3's
+budget-left line and §5.4's `converge()` and history tails all still matched their composers
+exactly — F672's fix plus this file's two existing tests had closed the gap §5.1 was the symptom
+of, and a regeneration would have changed nothing.
+
+So the real remainder was the **missing pin**, which is also why the first drift went a month
+unseen: the section calls itself verbatim and exactly one of its four parts was checked.
+`test_the_rest_of_section_5_quotes_the_engine_verbatim_too` now holds the other three against
+`composer.kickoff_message`, `loopnudge.build_util_reminder`, `turnwindow.converge` and the two
+per-turn tail shapes.
+
+A finding from proving it red: the kickoff is quoted **twice** in that document (an earlier
+walk-through and §5.2), and the first perturbation hit the other copy, so the test passed on a
+doc that had been changed. A pin on one copy leaves the other free to drift — the same
+one-of-N gap at a smaller scale — so the test asserts that EVERY `Begin run …` line in the
+document equals `kickoff_message`'s output, and that there is more than one of them.
+
+With this, every item of the **"Model-facing wording that drifted"** order is shipped — (5) in
+0.506.0, (1)(3)(4)(6) in 0.514.0, (2) here — and its `docs/designs.md` entry is deleted in this
+release. 28 entries remain.
+
 ## [0.514.0] — 2026-11-07
 
 ### Fixed — one child exit, one headline (D246 item 1)
