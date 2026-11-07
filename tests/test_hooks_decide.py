@@ -106,6 +106,35 @@ def test_the_thread_cap_now_decides_from_the_hook_stream(tmp_path, monkeypatch):
     assert seen == [], "the stores agree, so nothing should have been filed"
 
 
+def test_folding_the_stream_is_what_makes_the_two_agree(tmp_path, monkeypatch):
+    """A thread DISPOSED OF by a lifecycle fact must read the same on both sides.
+
+    The regression this pins, measured on the live instance 2026-11-06: five
+    `hook_stream_diverged` events in one day across three sender/owner pairs, every one
+    spurious. `stream_rows` is the RAW projection — a filing row and each lifecycle fact as
+    separate rows — while `rows` is already folded, and `_is_open` reads `retracted` /
+    `superseded` keys that only the fold writes onto a filing row. So an unfolded comparison
+    counts every disposed-of row as still open: scheduler-builder -> self-audit read 19 open
+    threads on the stream against the ledger's 3.
+
+    Three filings where the third folds the first two is the live shape: the ledger holds one
+    open thread, and the stream must say so too.
+    """
+    home = tmp_path / "routines"
+    (home / ".control").mkdir(parents=True, exist_ok=True)
+    seen: list[dict] = []
+    monkeypatch.setattr("rsched.hooks.reportinv.log_health_event",
+                        lambda *a, **k: seen.append(k))
+    _file(home, "a", "b", 1)
+    _file(home, "a", "b", 2)
+    out = file_report(home, routine="a", run_id="a:3", title="t3", detail="d", target="b",
+                      supersedes=("R1", "R2"))
+    assert out is not None and sorted(out[2]) == ["R1", "R2"], out
+    rows = read_reports(reports_path(home))
+    assert open_threads_now(home, rows, routine="a", target="b") == ["R3"]
+    assert seen == [], f"the fold was not applied to the stream: {seen}"
+
+
 def test_a_divergence_keeps_the_ledgers_answer_and_files_the_event(tmp_path,
                                                                    monkeypatch):
     """When the stream cannot account for a thread the ledger shows (an unmirrored write, or an

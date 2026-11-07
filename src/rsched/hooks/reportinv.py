@@ -103,7 +103,19 @@ def open_threads_now(routines_home: Path, rows: list[dict], *, routine: str,
     """
     ledger = open_threads(rows, routine=routine, target=target)
     try:
-        stream = open_threads(stream_rows(routines_home), routine=routine, target=target)
+        # FOLDED by the ledger's OWN fold, exactly as `reportproj.rebuild` does it. `rows` is
+        # already folded (`read_reports`), and `stream_rows` is the raw projection — filings and
+        # lifecycle facts as separate rows. Comparing the two directly asked `_is_open` for
+        # `retracted`/`superseded` flags that only the fold writes onto a filing row, so every
+        # row disposed of by an EVENT read as still open on the stream side and the two could
+        # not agree. Measured 2026-11-06: five `hook_stream_diverged` events in one day across
+        # three sender/owner pairs, every one spurious — scheduler-builder -> self-audit read
+        # 19 open threads on the stream against the ledger's 3, and folding the same stream
+        # gave 3. Over the whole live stream, 5,102 rows fold to 2,753: the ledger's own count.
+        from ..reports import fold_rows
+
+        stream = open_threads(fold_rows(stream_rows(routines_home)),
+                              routine=routine, target=target)
     except OSError:
         log.exception("report-hooks: reading the hook stream for the thread cap raised")
         return ledger

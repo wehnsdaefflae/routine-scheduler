@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.507.1] — 2026-11-07
+
+### `hook_stream_diverged` fired five times in a day and every one was spurious: the comparison folded one side only
+
+- `hooks/reportinv.open_threads_now` compared the FOLDED report ledger against the UNFOLDED hook
+  stream. `read_reports` gives the caller folded rows — a filing row carrying the
+  `retracted`/`superseded`/`delivered` facts its lifecycle events wrote onto it — while
+  `reportproj.stream_rows` is the raw projection, where those facts are separate rows. So
+  `report_threads._is_open` could never see them on the stream side, and every thread disposed of
+  by an event counted as still open there. The comparison was structurally incapable of agreeing
+  for any sender with a folded or settled row.
+- Measured on this instance 2026-11-06: **five `hook_stream_diverged` events in one day across
+  three sender/owner pairs**, every one of them false. `scheduler-builder` → `self-audit` read
+  **19** open threads on the stream against the ledger's **3**; folding the same stream gave 3.
+  Over the whole live stream, 5,102 rows fold to 2,753 — the ledger's own row count. The
+  divergence event exists to make a real unmirrored write findable (D152 step 7), so a check that
+  cries wolf on healthy instances retires the signal it was built to carry.
+- Fixed by folding the stream with the ledger's OWN fold (`reports.fold_rows`), which is exactly
+  what `reportproj.rebuild` already documents as the only safe composition: *"never a second
+  implementation of it, which is how two readings of one stream come to disagree."* The cap's
+  ANSWER is unchanged — the ledger still decides — and an unreadable stream still never breaks a
+  filing.
+- `tests/test_hooks_decide.py::test_folding_the_stream_is_what_makes_the_two_agree` pins it
+  through the live write path: three filings where the third supersedes the first two, the live
+  shape that produced today's events. Proven to discriminate — with the fold removed it fails
+  with `the stream says ['R1', 'R2', 'R3'], the ledger says ['R3']`.
+
 ## [0.507.0] — 2026-11-06
 
 ### A resumed leg reads what the live leg read: a replayed observation keeps its tails
