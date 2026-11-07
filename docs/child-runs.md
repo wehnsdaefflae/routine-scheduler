@@ -219,13 +219,17 @@ from the event can name them too.
 
 Concrete subtasks are never known statically — you can't put them in the workflow file. Instead
 the workflow pattern carries a **decomposition decision**: a step that decides *whether* to split
-the current work and *how*. The default `general-task` pattern's `decompose_decision()` returns
-one of:
+the current work and *how*. The default `general-task` pattern puts that decision in
+`separable(work)` — *"True when the work splits into independent chunks whose own context or
+budget would crowd out the rest of this run if done inline. Judge the shape of the work, not its
+length."* — and its `main()` routes on the answer. The three shapes it chooses between:
 
-- **inline** — do it directly in this run's turns (the common case; most runs are small);
+- **inline** — do it directly in this run's turns (the common case; most runs are small), which
+  is what `separable()` returning false means;
 - **sequential** — one large task that splits into ORDERED steps where each depends on the
   previous (research → draft → review) → a `subtask` per step;
-- **parallel** — many INDEPENDENT items with disjoint outputs → `spawn` per item.
+- **parallel** — many INDEPENDENT items with disjoint outputs → `spawn` per item, which is the
+  branch `separable()` returning true takes (`for chunk in batches(work): spawn(chunk)`).
 
 Decompose only when it earns the coordination cost; a few steps you can verify inline should stay
 inline.

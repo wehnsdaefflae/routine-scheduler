@@ -1019,8 +1019,11 @@ and the capabilities digest's catalog listing):
   and a subtask does NOT survive a conversation reply-finish — a job that must outlive a reply is
   the separate **`detach`** capability below, not a subtask.
   Decomposition is recursive (a child hits its own decompose gate; depth ≤ `max_subrun_depth`) and
-  the `general-task` seed workflow carries a standardized `decompose_decision()` gate
-  (inline | sequential | parallel); `converse` handles decomposition as inline prose.
+  the `general-task` seed workflow carries its gate as `separable(work)` — true when the work
+  splits into independent chunks whose own context would crowd out the rest of the run, which
+  routes it to a `spawn` per chunk, and false keeps it inline (ordered steps that each depend on
+  the previous are `subtask`s, the shape the task-specific patterns carry);
+  `converse` handles decomposition as inline prose.
   Children are killed at parent finish (never outlive it); exits fold usage into the parent. The
   recursive tree is visualized live in the run/conversation rail (`rsched/readmodels/subruntree.py` →
   `static/components/subruntree.js`). `subrun_start`/`subrun_end` events carry `mode` (sequential/parallel)
@@ -1567,9 +1570,10 @@ every copy it left (`migrate_converse_goals` carries this release's `converse` r
   `confirm` governs. There is deliberately no `remove_rule`: deleting a rule silently un-binds every
   holder with nothing to catch it, so a run reports it and the user deletes it.
   The routine defaults (`DEFAULT_RULES`): `evidence-discipline / ask-policy / fix-the-cause /
-  problem-routing / decision-record / web-research` — the conduct every kind of work meets;
+  problem-routing / decision-record / web-research / outcome-first` — the conduct every kind of
+  work meets;
   conversations drop decision-record and add `git-checkpoint` (external-repo undo points). The
-  rules of a KIND of work are bound by its settings pattern. The shipped inventory of 16 rules is
+  rules of a KIND of work are bound by its settings pattern. The shipped inventory of 17 rules is
   the table in docs/rules-permissions.md; where each came from is docs/curated-rules.md.
   Holding a rule IS its on/off switch — an unheld rule contributes nothing — and
   docs/curated-rules.md records each one's provenance, its evidence strength, and the candidates

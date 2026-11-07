@@ -379,7 +379,7 @@ per-routine setting.
 
 Every rule lives at `<libraries_home>/rules/<slug>.md` — a heading line
 `# rule: <name> — <summary>`, `tags:` frontmatter (three minimum), **no requires** (a rule
-carrying one is a lint error). One copy each; routines hold slugs. The shipped set — 16 rules, one file each in
+carrying one is a lint error). One copy each; routines hold slugs. The shipped set — 17 rules, one file each in
 `library-seed/rules/`, the authority this table is written from ([curated rules](curated-rules.md)
 records where each came from):
 
@@ -391,6 +391,7 @@ records where each came from):
 | `problem-routing` | a problem goes to its owner as a diagnosis; a hand-off is answered in the run that gets it |
 | `decision-record` | keep the reasoning the artefacts cannot carry, where the next run reads it first |
 | `web-research` | look it up — facts and existing solutions — before relying on memory or building from scratch |
+| `outcome-first` | a routine is judged by what its principal gets; a complaint about results is answered with the outcome and a change to what produces it, never with another self-check |
 | `verify-independently` | check an outward-facing deliverable from outside the reasoning that made it |
 | `audit-coverage` | report everything found and everything not examined; a narrowed scan must not read like a clean one |
 | `change-scope` | change exactly what the task needs, then finish the change — every reference to a removed thing settled |
@@ -402,8 +403,9 @@ records where each came from):
 | `interface-craft` | design for this brief and reader, then look at what you built |
 | `git-checkpoint` | an undo point before you edit a project repo |
 
-`evidence-discipline`, `ask-policy`, `fix-the-cause`, `problem-routing`, `decision-record` and
-`web-research` are the routine `DEFAULT_RULES`: the conduct every kind of work meets.
+`evidence-discipline`, `ask-policy`, `fix-the-cause`, `problem-routing`, `decision-record`,
+`web-research` and `outcome-first` are the routine `DEFAULT_RULES`: the conduct every kind of
+work meets.
 Conversations take all but `decision-record` (their spine is the plan file) and add
 `git-checkpoint`. The rest are the rules of a KIND of work, bound by the settings pattern for
 that kind ([patterns](patterns.md)) — a steward's `feedback-loop` and `correspondence`, a
@@ -629,7 +631,7 @@ expects:                       # the SOFT edge — presumed, never enforced (see
 (No setting in `requires:` — an approval level, a history depth, the reminder or task layer is your
 choice per routine, never a doc's demand; the linter refuses one.)
 
-The shipped set — 19 docs, one file each in `library-seed/permissions/`, which is what a fresh
+The shipped set — 18 docs, one file each in `library-seed/permissions/`, which is what a fresh
 install seeds and the authority this table is written from. A permission exists only where
 holding it is a DECISION: a channel that reaches a person, an act that changes what every
 routine shares, a reach outside the routine's own world.
