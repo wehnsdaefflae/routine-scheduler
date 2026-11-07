@@ -50,8 +50,18 @@ def test_the_ladder_switch_is_in_limits_and_saves_through_the_one_accept(ui, ui_
     # the LABEL a person reads beside the rung count, not a turn count (D189)
     expect(ui_page.locator(".ladder-set", has=height)).to_contain_text("rung height")
 
+    # The PROSE of the ROUTINE page's half, pinned in the same breath as the conversation's
+    # (tests/ui/test_conversation_ladder_card.py). `ladderSwitch` takes a `subject` because one
+    # component now has two homes that supervise different things; this side asserts the default
+    # did not follow the new caller, which is the way that change breaks silently.
+    card = ui_page.locator(".ladder-set", has=onoff)
+    expect(card).to_contain_text("supervise runs of this routine")
+    expect(card).to_contain_text("no run of this routine is supervised")
+    expect(card).not_to_contain_text("replies in this thread")
+
     onoff.check()
     expect(height).to_be_enabled()
+    expect(card).to_contain_text("a rung reads this routine's runs")
     height.fill("2")
     height.blur()
     ui_page.locator(".accept-bar [data-accept]").click()

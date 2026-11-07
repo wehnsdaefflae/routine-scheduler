@@ -99,6 +99,35 @@ def test_the_rung_height_and_the_turn_interval_land_in_their_own_files(ui, ui_pa
     assert "ladder" not in tuning, "the config half leaked into the recipe-classed file"
 
 
+def test_the_switch_says_what_it_supervises_in_a_conversation(ui, ui_page):
+    """The PROSE, which is the half every other test in this file cannot see.
+
+    0.504.0 mounted the routine page's `ladderSwitch` here and shipped its wording with it: the
+    label read "supervise runs of this routine" and the off-state "no run of this routine is
+    supervised". A conversation has REPLIES, not runs of a routine, so the control said something
+    false about the very thing it switches on — live for three days, and invisible to the three
+    browser tests above because every one of them asserts a `data-ladder-*` hook or a file that
+    was written, never a string a person reads.
+
+    Both directions are pinned. Asserting only the new words would still pass if the old ones
+    were printed BESIDE them, and the off-state is a separate string from the label.
+    """
+    start_conversation(ui, ui_page, "decide the rollout order")
+    _open_caps(ui_page)
+
+    card = ui_page.locator(".ladder-set", has=ui_page.locator("[data-ladder-enabled]"))
+    expect(card).to_have_count(1)
+    expect(card).to_contain_text("supervise replies in this thread")
+    expect(card).to_contain_text("no reply in this thread is supervised")
+    expect(card).not_to_contain_text("runs of this routine")
+    expect(card).not_to_contain_text("no run of this routine")
+
+    # and the ON state, which is a third string and the one a person sees after pressing it
+    ui_page.locator("[data-ladder-enabled]").check()
+    expect(card).to_contain_text("a rung reads this thread's replies")
+    expect(card).not_to_contain_text("this routine's runs")
+
+
 def test_the_supervisor_picker_is_on_the_model_row(ui, ui_page):
     """The overseer's model is a ROLE (D164) that falls back to this thread's own `main`. The
     picker had to exist here for a second reason: `validate_models` replaces the role block
