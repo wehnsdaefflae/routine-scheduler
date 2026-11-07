@@ -38,38 +38,47 @@ from .incarnations import live_runs
 from .stamps import instant
 from .usage_stream import fold_legs, reading, usage_runs
 
-# --- regression heuristic constants (each with its reason) ---------------------------
-# Runs compared on each side of the newest recipe change. 5 ≈ one week of a daily
-# routine — long enough that a single flaky run is only 20% of the sample, short enough
-# to catch a degradation before it burns a month of spend.
+# --- regression heuristic constants (each with its MEASURED number) -----------------
+# All six measured against this instance's own stream 2026-11-07 (R3245): 4,877 records →
+# 1,997 folded depth-0 runs over 227 actors, as adjacent before/after window pairs of ONE
+# actor stepped by one run — NOTHING changed between the halves, so every figure here is
+# ordinary variation and every flag it reports a FALSE one. None of the six moved; five of
+# them stopped being plausible prose. Re-measure: scheduler-builder scripts/regression_constants.
+# Runs on each side of the newest recipe change; 5 ≈ a week of a daily routine. MEASURED: the
+# noise band hardly moves with the window (volume-ratio p95 2.48/2.51/2.59 at 3/5/7, turns
+# 1.82/1.79/1.83; false flags 7.5%/9.3%/8.4%) — a wider window buys no quiet.
 REGRESSION_WINDOW = 5
-# Below 3 runs on either side a comparison is a coin flip, not evidence — don't judge.
+# Below 3 runs a comparison is a coin flip. MEASURED, and load-bearing in a way nobody had
+# written down: at a window of 2 ONE failure is a fail-rate delta of 0.5, which clears
+# FAIL_RATE_JUMP by itself, and the ordinary tails widen (turns max 5.0→6.98×, volume
+# 8.29→10.14×). This floor is what stops a single flaky run being a regression.
 MIN_RUNS = 3
-# Fail-rate must jump by ≥ 0.4 (2 extra failures in a 5-run window) to flag: one extra
-# bad run in 5 (+0.2) is within normal flake; two is a pattern.
+# MEASURED: ordinary 5-vs-5 deltas run median 0.0, p90 0.2, p95 0.2, p99 0.4, max 0.6 — +0.4
+# sits at the p99 and flags 40 of 1,412 unchanged windows (2.8%). It is also the only value
+# distinct from 0.2 (a 5-run fail rate moves in 0.2 steps): 0.3 flags the same 40, 0.2 flags 201.
 FAIL_RATE_JUMP = 0.4
 # Turn/volume medians must grow ≥ BALLOON_RATIO× AND by an absolute floor to flag
 # "ballooning": the ratio alone would flag a 2→3-turn routine (noise), the floor alone would
 # miss a small routine tripling. VOLUME is the whole context the model processed (usage_log:
-# fresh + output + cache reads + cache writes) — what a run costs; `tokens` leaves the cache
-# out, so a routine re-reading a 400k prefix every turn never ballooned by it. Floors: 5 turns
-# is a real extra work phase; 2,000,000 volume is the MEDIAN absolute change between adjacent
-# 5-run windows (2,179,949 over 740 windows of 76 actors, 2026-10-17) — growth smaller than the
-# ordinary drift of a window is not a regression whatever its ratio.
-# 2.7 is MEASURED, not guessed (D181, decided 2026-10-15): it is the p95 of ADJACENT-WINDOW
-# variation on this instance — 1063 adjacent 5-vs-5 windows over .control/workflow-usage.jsonl
-# (1594 folded depth-0 runs, 210 actors, measured 2026-10-13) gave median 1.04, p75 1.38,
-# p90 2.09, p95 2.73, max 7.16. The former 1.5 sat INSIDE that ordinary spread: 20.4% of
-# windows cleared it with nothing having changed, so the flag reported routine variation as
-# regression. The regression this rule exists for is 6.8× (49,409 → 338,024 tokens, self-audit
-# 2026-09), far above either figure. Choosing the p95 means ~5% of ordinary windows still
-# clear it — that is what a p95 IS, and the floors below carry the rest. Re-measured on VOLUME
-# when the heuristic moved to it (2026-10-17, 740 windows over the backfilled stream): median
-# 1.10, p75 1.42, p90 2.04, p95 2.51, max 5.76 — 2.7 stays outside that band too.
-# Lowering this back under 2.7 re-enters the measured noise band; tests/test_balloon_ratio.py
-# fails if it is.
+# fresh + output + cache reads + cache writes) — `tokens` leaves the cache out, so a routine
+# re-reading a 400k prefix every turn never ballooned by it.
+# 2.7 is MEASURED (D181, operator 2026-10-15): the p95 of adjacent-window variation. 1063
+# token windows (2026-10-13) gave median 1.04, p95 2.73, max 7.16 — the former 1.5 sat INSIDE
+# that spread, 20.4% of unchanged windows clearing it. Re-measured on VOLUME 2026-10-17 (740
+# windows) p95 2.51, and CONFIRMED 2026-11-07 (1,110 windows): median 1.09, p75 1.40, p90
+# 1.99, p95 2.51, max 5.88 — unmoved in three weeks. The regression it exists for is 6.8×
+# (49,409 → 338,024 tokens, self-audit 2026-09). Lowering it under 2.7 re-enters the measured
+# band; tests/test_balloon_ratio.py fails if it is.
 BALLOON_RATIO = 2.7
+# MEASURED and INERT: every candidate from 3 to 13 flags the same 4 windows of 1,412 — no pair
+# clears 2.7× turns with a delta under 13 (ordinary |delta| median 13). The ratio decides turns
+# alone today; this floor costs nothing and still guards the 1→3-turn case it cannot see.
 TURNS_FLOOR = 5
+# MEASURED and load-bearing, unlike TURNS_FLOOR: 1M flags 98 unchanged windows, 2M 94, 3M 87,
+# 5M 71, 10M 43. 2M is still the median ABSOLUTE adjacent change — 2,217,034 over 1,110 windows
+# (2026-11-07) against D181's 2,179,949 over 740. It is also the WHOLE decision for the 66 of
+# 1,412 windows whose BEFORE half has no volume reading: growth from nothing satisfies any
+# ratio, so only this floor stands there.
 VOLUME_FLOOR = 2_000_000
 
 # recipe_log depth for bucketing — far beyond any real routine's recipe-change count
