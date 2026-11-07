@@ -26,6 +26,9 @@ decide them, which is what makes them a test of this constant rather than of the
 
 from rsched.readmodels.run_health import (
     BALLOON_RATIO,
+    FAIL_RATE_JUMP,
+    MIN_RUNS,
+    REGRESSION_WINDOW,
     TURNS_FLOOR,
     VOLUME_FLOOR,
     regression_flag,
@@ -109,3 +112,70 @@ def test_a_window_just_over_the_bar_still_flags():
     before, after = 4_000_000, 11_000_000
     assert after / before > BALLOON_RATIO and after - before > VOLUME_FLOOR
     assert regression_flag(_window(volume=before), _window(volume=after))["flagged"]
+
+
+# --- the five siblings, measured 2026-11-07 (R3245) --------------------------------------
+# Same harness, same stream, three weeks later: 4,877 records → 1,997 folded depth-0 runs over
+# 227 actors. BALLOON_RATIO's own band was unmoved (volume-ratio p95 2.51 over 1,110 windows),
+# and none of the five siblings had to move either. What DID change is that three of them turned
+# out to carry load nobody had written down, and the tests below are those three facts. They are
+# behavioural pins, not assertions about the stream: each one goes red if its constant moves.
+MEASURED_FAIL_RATE_P99 = 0.4          # 5-vs-5 deltas: median 0.0, p90 0.2, p95 0.2, p99 0.4
+MEASURED_TURNS_ABSDELTA_MEDIAN = 13   # ordinary |turn-median change| over 1,110 windows
+
+
+def test_one_extra_failure_in_a_window_is_flake_and_two_is_a_pattern():
+    """FAIL_RATE_JUMP's stated reason, as behaviour rather than arithmetic in a comment.
+
+    MEASURED: +0.4 sits at the p99 of ordinary 5-vs-5 variation and flags 40 of 1,412 unchanged
+    windows. It is also the only value distinct from 0.2 — a 5-run fail rate can only move in
+    steps of 0.2, so a threshold of 0.3 flags exactly the same 40 windows while 0.2 flags 201.
+    So this pin is on the STEP, which is what the constant actually selects.
+    """
+    ok = _window()
+    one_bad = [_rec(status="failed"), *[_rec() for _ in range(4)]]
+    two_bad = [*[_rec(status="failed") for _ in range(2)], *[_rec() for _ in range(3)]]
+
+    assert not regression_flag(ok, one_bad)["flagged"], "one bad run in five is flake"
+    assert any("fail rate" in r for r in regression_flag(ok, two_bad)["reasons"])
+    assert FAIL_RATE_JUMP > 1 / REGRESSION_WINDOW, (
+        f"FAIL_RATE_JUMP={FAIL_RATE_JUMP} would flag a SINGLE extra failure in a "
+        f"{REGRESSION_WINDOW}-run window — the p90 and p95 of ordinary variation are both 0.2")
+    # BALLOON_RATIO's guard shape, for the same reason: it may RISE, it may not fall back into
+    # the band. The step argument is what makes the p99 the floor here — the only value below
+    # 0.4 that a 5-run fail rate can take is 0.2, which flags 14.2% of unchanged windows.
+    assert FAIL_RATE_JUMP >= MEASURED_FAIL_RATE_P99, (
+        f"FAIL_RATE_JUMP={FAIL_RATE_JUMP} is under the measured p99 "
+        f"({MEASURED_FAIL_RATE_P99}) of ordinary adjacent-window fail-rate variation")
+
+
+def test_min_runs_is_what_stops_one_flaky_run_being_a_regression():
+    """MIN_RUNS = 3 was the one constant whose reason ("below 3 a comparison is a coin flip")
+    said nothing measurable. MEASURED: it is load-bearing, and this is why. At the smallest
+    window it allows, one failure is a delta of 1/3 = 0.333 and stays under FAIL_RATE_JUMP. One
+    run lower it would be 0.5 and clear the threshold ALONE — a single flaky run reported as a
+    recipe regression. The ordinary tails widen there too (turns max 5.0× → 6.98×, volume
+    8.29× → 10.14× at a window of 2).
+    """
+    smallest = [_rec() for _ in range(MIN_RUNS)]
+    one_bad = [_rec(status="failed"), *[_rec() for _ in range(MIN_RUNS - 1)]]
+    assert not regression_flag(smallest, one_bad, window=MIN_RUNS)["flagged"]
+    assert 1 / MIN_RUNS < FAIL_RATE_JUMP <= 1 / (MIN_RUNS - 1), (
+        f"with MIN_RUNS={MIN_RUNS} and FAIL_RATE_JUMP={FAIL_RATE_JUMP}, one failure in the "
+        "smallest evaluated window decides the verdict by itself")
+
+
+def test_growth_from_an_unmeasured_half_is_decided_by_the_floor_alone():
+    """VOLUME_FLOOR is load-bearing where TURNS_FLOOR is not, and this is the class that makes
+    it so. MEASURED: 302 of 1,412 adjacent windows have a BEFORE half with no volume reading at
+    all, and in 66 of them the after half grew. There the ratio test is vacuous — any growth
+    satisfies `after >= 2.7 * 0` — so this floor is the whole decision, and that is a property
+    of the heuristic, not of the stream.
+    """
+    unmeasured = [{"status": "ok", "turns": 10, "volume": None} for _ in range(5)]
+    assert regression_flag(unmeasured, _window(volume=VOLUME_FLOOR + 1))["flagged"]
+    assert not regression_flag(unmeasured, _window(volume=VOLUME_FLOOR - 1))["flagged"]
+    assert TURNS_FLOOR < MEASURED_TURNS_ABSDELTA_MEDIAN, (
+        f"TURNS_FLOOR={TURNS_FLOOR} is below the ordinary |delta| median "
+        f"({MEASURED_TURNS_ABSDELTA_MEDIAN}): the ratio decides turns, and every candidate "
+        "floor from 3 to 13 flagged the same 4 of 1,412 unchanged windows")

@@ -120,11 +120,22 @@ just after the newest recipe change with the runs just before it
 
 | constant | value | reason |
 |---|---|---|
-| `REGRESSION_WINDOW` | 5 | ≈ a week of a daily routine; one flaky run is only 20% of the sample |
-| `MIN_RUNS` | 3 | fewer runs on either side is a coin flip, not evidence |
-| `FAIL_RATE_JUMP` | +0.4 | one extra failure in 5 (+0.2) is flake; two is a pattern |
-| `BALLOON_RATIO` | 2.7× | median turns/volume growth that marks real ballooning — the MEASURED p95 of adjacent-window variation on this instance (1063 adjacent 5-vs-5 windows of tokens, 2026-10-13: median 1.04, p75 1.38, p90 2.09, p95 2.73, max 7.16; re-measured on VOLUME 2026-10-17 over 740 windows: median 1.10, p90 2.04, p95 2.51, max 5.76), not a guess |
-| `TURNS_FLOOR` / `VOLUME_FLOOR` | +5 / +2M | absolute floors so a 2→3-turn routine's ratio never flags noise; 2M is the median absolute change between adjacent windows' volume |
+| `REGRESSION_WINDOW` | 5 | ≈ a week of a daily routine; one flaky run is only 20% of the sample. MEASURED 2026-11-07: the noise band barely moves with the window (volume-ratio p95 2.48 / 2.51 / 2.59 at 3 / 5 / 7, turns 1.82 / 1.79 / 1.83; false flags 7.5% / 9.3% / 8.4%) — a wider window buys no quiet |
+| `MIN_RUNS` | 3 | fewer runs on either side is a coin flip. MEASURED 2026-11-07, and load-bearing: at a window of 2 ONE failure is a fail-rate delta of 0.5 and clears `FAIL_RATE_JUMP` by itself, while at 3 it is 0.333 and does not — this floor is what stops a single flaky run being a regression. Ordinary tails widen there too (turns max 5.0→6.98×, volume 8.29→10.14×) |
+| `FAIL_RATE_JUMP` | +0.4 | one extra failure in 5 (+0.2) is flake; two is a pattern. MEASURED 2026-11-07: ordinary 5-vs-5 deltas run median 0.0, p90 0.2, p95 0.2, p99 0.4, max 0.6 — so +0.4 sits at the **p99** and flags 40 of 1,412 unchanged windows (2.8%). It is the only value distinct from 0.2, since a 5-run fail rate moves in 0.2 steps: 0.3 flags the same 40, 0.2 flags 201 (14.2%) |
+| `BALLOON_RATIO` | 2.7× | median turns/volume growth that marks real ballooning — the MEASURED p95 of adjacent-window variation on this instance (1063 adjacent 5-vs-5 windows of tokens, 2026-10-13: median 1.04, p75 1.38, p90 2.09, p95 2.73, max 7.16; re-measured on VOLUME 2026-10-17 over 740 windows: median 1.10, p90 2.04, p95 2.51, max 5.76; CONFIRMED 2026-11-07 over 1,110 windows: median 1.09, p75 1.40, p90 1.99, p95 2.51, max 5.88 — unmoved in three weeks), not a guess |
+| `TURNS_FLOOR` / `VOLUME_FLOOR` | +5 / +2M | absolute floors so a 2→3-turn routine's ratio never flags noise. MEASURED 2026-11-07, and they are NOT alike: `TURNS_FLOOR` is **inert** — every candidate from 3 to 13 flags the same 4 of 1,412 unchanged windows, because no pair clears 2.7× turns with a delta under 13 (ordinary \|delta\| median 13), so the ratio decides turns alone today. `VOLUME_FLOOR` is load-bearing: 1M flags 98 windows, 2M 94, 3M 87, 5M 71, 10M 43, it is still the median absolute adjacent change (2,217,034 over 1,110 windows, against D181's 2,179,949 over 740) — and it is the WHOLE decision for the 66 windows whose before half has no volume reading, where growth from nothing satisfies any ratio |
+
+**When these numbers should be re-measured.** They are a snapshot of one instance's variation, and
+the instance changes: re-run the measurement when the fleet's size changes materially (227 actors
+on 2026-11-07, 210 when D181 first measured), when the engine changes what a run COSTS (the
+tokens → volume move of 2026-10-17 shifted the whole band and forced a re-measurement), or
+annually, whichever comes first. The harness is `scheduler-builder`'s `scripts/regression_constants`,
+which builds the window pairs with `run_health`'s OWN helpers inside the tree being measured, so a
+figure can never disagree with the code it is about; it prints the distribution, the threshold
+sweep and the false-flag rate of the live constants, and it decides nothing. Which percentile a
+constant should sit at is the operator's call — he chose the p95 for `BALLOON_RATIO` on 2026-10-15.
+What must not happen is 2.7 becoming the new 1.5 by sitting still.
 
 The cost half reads VOLUME — the whole context the model processed (below, "What a run
 costs") — not `tokens`, which leaves the prompt cache out: a routine re-reading a 400k prefix
