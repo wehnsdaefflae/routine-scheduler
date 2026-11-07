@@ -295,6 +295,19 @@ act (F840) and is not listed, the FIRST disposal decides as it does everywhere e
 retracted reply disposed of nothing. The ledger is append-only, so no data was lost — the
 capability to ask was. It is a READ: no row re-opens and no verdict changes.
 
+**What it answers today, measured on the live ledger (2026-11-07), and why the number is not
+492.** Over 2,768 folded rows the verb lists **236 rows, 69 of them never routed** — while the
+raw predicate D182 quoted still gives **495 non-owner disposal claims, 319 of them unrouted**,
+which is that measurement reproduced. The difference is not a change of mind about which rows
+were wronged; it is two rules decided since. **246** of those claims are `self-audit` disposing
+of an UNROUTED row — and `self-audit` *is* `TRIAGE_READER`, so **F840 made exactly that its
+owner's act**: an unaddressed row's recipient is triage. Another **22** are later reports
+re-naming an id whose first disposal already settled it. 495 − 246 − 22 = 236. So the listing
+answers "which rows would today's gate have refused", not "which claims did the old gate let
+through" — the second is a historical fact about a gate that no longer exists, the first is what
+a person can act on. `R2552`, the operator's own report disposed of by its sender 14 seconds
+after he filed it, is in the 236 with `owner: ""`.
+
 **The fold: one thread, one owner.** A report may declare `supersedes: ["R<n>", …]` beside its
 `target` — "these rows are now this thread". Each named row gets a `superseded` event
 (`{ts, by, to}`), and from then on reads whatever the carrier reads: `settled` when the carrier
