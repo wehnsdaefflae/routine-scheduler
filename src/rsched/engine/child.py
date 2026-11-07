@@ -71,13 +71,7 @@ MODE_NOUN = {
 HANDBACK_SUBDIR = "artifacts"
 
 
-#: The SHOUTED form, for an observation that announces a child's exit — and the lower-case
-#: form the CLI transcript renders. Both were spelled inline at their call sites as
-#: `"SUBTASK" if mode == "sequential" else "SUB-WORKFLOW"`, which is the drift this module
-#: exists to prevent: a fourth mode would have read as a sub-workflow in one place, a subrun in
-#: another, and by its real name only here.
-MODE_SHOUT = {PARALLEL: "SUB-WORKFLOW", SEQUENTIAL: "SUBTASK", BRANCH: "BRANCH",
-              OVERSIGHT: "OVERSIGHT"}
+#: The lower-case form the CLI transcript renders in its one-line rows.
 MODE_SHORT = {PARALLEL: "subrun", SEQUENTIAL: "subtask", BRANCH: "branch",
               OVERSIGHT: "oversight"}
 
@@ -89,9 +83,26 @@ def mode_noun(mode: str) -> str:
     return MODE_NOUN.get(mode, "child run")
 
 
-def mode_shout(mode: str) -> str:
-    """The mode as an observation headline names it (`SUBTASK 2 'x' FINISHED`)."""
-    return MODE_SHOUT.get(mode, "CHILD RUN")
+def finished_headline(*, mode: str, n: int, label: str, status: str, turns: int,
+                      workflow: str = "") -> str:
+    """THE headline for a child's exit — one wording, whichever reporter gets there first.
+
+    A child's exit is announced by two paths and which one wins is a timing race: the
+    turn-boundary hook (`control.announce_finished_subruns`) and a `wait` the parent was
+    already in (`obs_children`). They said the same thing two ways — the hook
+    `CHILD RUN FINISHED (parallel child run) — #1 'x' (pattern p, status ok, 7 turns)`, the
+    wait `SUB-WORKFLOW 1 'x' FINISHED (status ok, 7 turns)` — off a SECOND mode vocabulary
+    (`MODE_SHOUT`, whose only caller that was) that contradicted the documented rule for the
+    first: *one headline whatever the mode, with the mode named INSIDE it rather than changing
+    the noun* (docs/child-runs.md, F338). So the shout table is gone rather than re-worded, and
+    this is the only place the sentence exists (D246).
+
+    `workflow` is the hook's extra — a wait does not carry the child's pattern — and is simply
+    left out when it is not known, rather than printed as an empty field.
+    """
+    what = f"pattern {workflow}, " if workflow else ""
+    return (f"CHILD RUN FINISHED ({mode_noun(mode)}) — #{n} {label!r} "
+            f"({what}status {status}, {turns} turns)")
 
 
 def mode_short(mode: str) -> str:

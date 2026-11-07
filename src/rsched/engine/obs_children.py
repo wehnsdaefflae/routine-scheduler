@@ -90,15 +90,17 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
             return f"OBSERVATION (wait FAILED): {obs['error']}"
         parts = []
         for f in obs.get("finished", []):
-            noun = child.mode_shout(str(f.get("mode") or ""))
             # F338: name the deliverables the engine copied up. The WAIT is one of the two
             # paths that report a child's exit (the turn-boundary announcement is the other),
             # and which one wins is a timing race — so both say where the files landed, in
-            # the ONE spelling, or a parent reads two wordings of one hand-back.
+            # the ONE spelling, or a parent reads two wordings of one hand-back. D246: the
+            # HEADLINE is shared for the same reason, and for a second one — this path used to
+            # render it off `MODE_SHOUT`, a mode vocabulary that existed only here.
             got = child.handback_paths_line(tuple(f.get("collected") or ()))
-            parts.append(f"{noun} {f['n']} {f['label']!r} FINISHED "
-                         f"(status {f['status']}, {f['turns']} turns):\n{f['summary']}"
-                         + (f"\n{got}" if got else ""))
+            parts.append(child.finished_headline(
+                mode=str(f.get("mode") or ""), n=f["n"], label=f["label"],
+                status=f["status"], turns=f["turns"])
+                + f":\n{f['summary']}" + (f"\n{got}" if got else ""))
         # a landed background call is DELIVERED by the turn boundary right after this (the one
         # path every landing takes, background.collect) — the wait only names it (waitop.py)
         if landed := obs.get("background_landed"):

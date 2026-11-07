@@ -246,3 +246,55 @@ def test_a_held_run_labels_the_hold_and_the_label_lands_in_the_tally(make_routin
     row = next(r for r in cautions(server, d)["assists"] if r["key"] == KEY)
     assert row["stats"]["would_have"] == 1 and row["fires"] == 1
     assert status == "ok"
+
+
+def test_neither_hold_promises_that_a_re_emit_runs():
+    """D246. `hold.before_dispatch` returns at the FIRST source that matches (reminders before
+    rules) and each layer spends only its OWN ledger key, so a re-emit released by one layer
+    can still be held by the other. Both sentences said "it runs this time" / "runs it", which
+    is false exactly when a reminder AND a rule match one action: the run is held twice having
+    been promised once, and reads that as the seam ignoring its own confirmation.
+
+    Fails if either promise comes back, in EITHER of the two places that make it — which is
+    the second half of why this is a pin and not a one-line fix: the engine composes the hold a
+    run reads (`engine/obs_hold`) and the console composes the hold a PERSON reads in the
+    transcript (`static/components/obs-text.js`), and nothing compared the two. The console's
+    copy had drifted to the stronger claim on its own.
+    """
+    import re
+    from pathlib import Path
+
+    from rsched.engine import obs_hold
+
+    static = (Path(__file__).resolve().parents[1] / "static" / "components"
+              / "obs-text.js").read_text(encoding="utf-8")
+    # the RENDERED prose, not the source's line breaks: `"a" + "b"` is one sentence to a
+    # reader, and a pin keyed on where the author happened to wrap would fail on a reflow
+    rendered = re.sub(r'"\s*\+\s*"', "", static)
+    console = re.findall(r'\\nEmitting (.*?)";', rendered, re.DOTALL)
+    assert len(console) == 2, console   # one per hold kind; a third copy is a third drift
+    # which is which, so the two assertions below cannot silently swap on a source reorder
+    by_kind = {("reminder" if "per reminder per run" in c else "rule"): c for c in console}
+    assert set(by_kind) == {"reminder", "rule"}, console
+
+    engine = [obs_hold._PROCEED, obs_hold._PROCEED_REMINDER]
+    for text, where in ([(t, "engine/obs_hold") for t in engine]
+                        + [(t, "static/obs-text.js") for t in console]):
+        low = text.lower()
+        assert "runs it" not in low, where
+        assert "runs this time" not in low, where
+        # and each says what IS true: the other layer is a hold of its own
+        assert "separate hold" in low, where
+
+    # the two surfaces agree on the scope words a reader keys on — and the console's are the
+    # strings tests/ui/test_transcript_events.py asserts a PERSON sees in the transcript
+    both = "\n".join(engine + console)
+    # the RULE layer's scope is the action string, and both surfaces say so in those words
+    assert both.count("one hold per action string per run — per reply, in a conversation") == 2
+    # the REMINDER layer's is once per reminder however the action is reworded: the console
+    # says it in those words (what tests/ui/test_transcript_events.py asserts a person sees),
+    # the engine says the same thing to the run it is holding
+    assert "one hold per reminder per run — per reply, in a conversation" \
+        in by_kind["reminder"]
+    assert "will not hold again this run (per reply, in a conversation)" \
+        in obs_hold._PROCEED_REMINDER
