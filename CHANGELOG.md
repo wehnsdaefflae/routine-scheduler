@@ -15,6 +15,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.514.0] — 2026-11-07
+
+### Fixed — one child exit, one headline (D246 item 1)
+
+A child's exit is reported by two paths — the turn-boundary hook and a `wait` the parent was
+already sitting in — and which one gets there first is a timing race. They said it two ways:
+the hook `CHILD RUN FINISHED (parallel child run) — #1 'x' (pattern p, status ok, 7 turns)`,
+the wait `SUB-WORKFLOW 1 'x' FINISHED (status ok, 7 turns)`, off a second mode vocabulary
+(`MODE_SHOUT`) whose only caller that was. `docs/child-runs.md` already stated the rule the
+wait broke — *one headline whatever its mode, with the mode named inside it rather than
+changing the noun* (F338) — so the table is **deleted** rather than re-worded, and
+`child.finished_headline` is now the only place that sentence exists. The hook's one extra is
+the child's `pattern`, which a wait does not carry. Pinned over every mode, asserting the
+hook's line IS the shared sentence with the pattern named inside it.
+
+### Fixed — neither hold promises that a re-emit runs (D246 item 3)
+
+`hold.before_dispatch` returns at the FIRST matching source (consequence reminders before
+general rules) and each layer spends only its own ledger key, so "emit the SAME action again
+— **it runs this time**" was a promise the other layer could still break: a run held twice
+having been promised once, which reads as the seam ignoring its own confirmation. Both
+sentences now name their own layer and say the other is a separate hold that may still fire
+once. A **second copy** of the same false promise was found and fixed in
+`static/components/obs-text.js`, which composes the hold a *person* reads in the transcript
+and had drifted to "runs it" on its own — `tests/ui/test_transcript_events.py` pinned the
+console's copy, so fixing the engine alone would have left the page asserting the defect. The
+new pin compares the two surfaces against each other, on the rendered prose rather than the
+source's line breaks.
+
+### Fixed — the `request` field named two allow shapes where there are three (D246 item 4)
+
+The action schema said the user decides "once (this run) or forever". `requests.DECISIONS`
+carries five decisions and **three** allow shapes — `allow_now` (this run), `allow_once` (ONE
+action), `allow_forever` — and `allow_once` is offered for exactly `entities.ONCE_CLASSES`,
+which is what a `request` takes. Paid line-neutrally at `actionschema.py` 629/629, and its
++10 chars of always-on prompt contract were paid back **inside the same description** rather
+than by raising the budget ceiling (which this release's first gate arming caught as a red):
+the contract is locked one char lower at 64396, with the reason in `tests/prompt_budget.json`.
+§5.1's schema dump re-rendered from source.
+
+### Fixed — a resumed leg with nothing above it is framed as the kickoff it is (D246 item 6)
+
+The resume note told EVERY resumed leg *"the conversation above is the run so far — continue
+from the last observation; do NOT restart from step 1"*. But `rewind_transcript`'s
+`before_reply` cut keeps everything BEFORE the message that opened a reply, and for a
+conversation's FIRST reply that is the header alone — which is exactly what the operator's ⚑
+refusal flag does (discard the reply, re-send its message to another model). So the commonest
+route to an empty window was the one case where both halves of the sentence were false,
+leaving the run no permitted action at all. `rewind.resume_framing` now picks between two
+sentences on whether the replayed window holds an ASSISTANT turn; the empty one negates both
+halves, says why the window is empty so the leg does not read it as a malfunction, and notes
+that anything an earlier attempt wrote to disk survives.
+
+### Added — every guide in `docs/` is claims-checked (R3247)
+
+`tests/test_doc_claims.py` extends what `tests/test_doc_counts.py` did for two documents to
+all **39** guides, for the claim types a machine can settle: a written-out count against the
+`len()` of what it counts, a backticked identifier against the source, and a cited path or
+`path:line` against the file. Four non-vacuity guards back it — including one that reds when
+an allowlist exemption outlives its reason — because a claims-check that silently stops
+finding anything is worse than none. Out of scope and declared: `designs.md`'s symbols (it is
+the unshipped work queue), `status-pages.md` (a foreign codebase), and whether a cited line
+still *says* what the prose claims.
+
+It found **5 drifted claims across 3 guides, 8 sites**, fixed prose-to-source: `16 rules` →
+17 (`library-seed/rules/` holds 17), `19 docs` → 18, the `DEFAULT_RULES` sentence naming 6 of
+7 slugs (`outcome-first` missing, in both guides), the rules table missing its `outcome-first`
+row, and **`decompose_decision()`** — a function that exists nowhere in the repo — cited in
+`architecture.md` and `child-runs.md`, where `general-task.py:189` actually carries
+`separable(work)`.
+
+### Changed — `docs/items.md` records what `--wrongly-settled` answers today (R3246)
+
+0.513.0 shipped the verb; this adds the arithmetic behind its count, which is **236 rows, 69
+never routed** and not D182's 492. The raw predicate still reproduces 495/319 — the
+difference is two rules decided since: **246** of those claims are `self-audit` disposing of
+an UNROUTED row, which F840 made its own act as `TRIAGE_READER`, and **22** are later reports
+re-naming an id whose first disposal already settled it.
+
 ## [0.513.0] — 2026-11-07
 
 ### Fixed
