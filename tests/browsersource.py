@@ -42,12 +42,36 @@ SIDECAR_CONNECT_TIMEOUT_MS = 60_000
 _LOOPBACK = ("127.0.0.1", "::1", "localhost")
 
 
-#: The FAST suite's worker ceiling (2026-11-05). `-n auto` meant cpu_count-1 = 11 workers on
-#: this 12-core box, ~250 MB each, inside the daemon's own 5 GiB container cgroup (self-audit's
-#: and the builder's gates run there) on a host with no memory to spare. Six workers ran the
-#: suite in 110 s against 72 s at eleven, for ~1.3 GB less at peak; tests/memgate.py is the
+#: The FAST suite's worker ceiling. `-n auto` meant cpu_count-1 = 11 workers on this 12-core
+#: box, ~250 MB each, inside the daemon's own 5 GiB container cgroup (self-audit's and the
+#: builder's gates run there) on a host with no memory to spare. Six workers (2026-11-05) ran
+#: the suite in 110 s against 72 s at eleven, for ~1.3 GB less at peak; tests/memgate.py is the
 #: other half (the session waits for the host to have the memory at all).
-FAST_WORKERS = 6
+#:
+#: FOUR, not six (2026-11-07). Six ran the cgroup to its ceiling on nearly every gate. From the
+#: gate's own sampler (`.gate-evidence/memory-peaks.jsonl`, 27 covering fast stages since
+#: 2026-11-01): the peak was 89-100 % of `memory.max` EVERY time, exactly 100.0 % on 14 of them,
+#: and the `memory.events max` count DURING one 95-340 s stage ran 238, 306, 385, 700, 803,
+#: 902, 1203, 1254, 1918, 2696, 2889, 3458 — and once 6,399. That matters because this cgroup is
+#: the ENGINE container's, shared with the daemon and every live run, so a stage that sits at the
+#: ceiling for three minutes is the whole box's allocation failure, not the gate's own.
+#:
+#: Measured on the same tree and selection:
+#:
+#:     -n 6   141-173 s   96-100 % of 5 GiB   287-1254 ceiling events (release gates)
+#:     -n 4   213 s        78.0 %             attached `tests` run
+#:     -n 4   200 s        88.5 %             the RELEASE gate that shipped this change
+#:
+#: Honest about what that proves: one production gate, no ceiling events recorded in it, peak
+#: down from a hard 100.0 % to 88.5 % — and two SIX-worker gates also recorded none (96.2 %
+#: with none, 98.9 % with 8), so zero events is not yet a property of four workers alone. The
+#: peak is the sounder signal and it moved; the next gates decide whether the bound holds.
+#:
+#: It buys headroom no other knob was providing: `memgate` guards the HOST's MemAvailable and
+#: `FAST_WORKERS` had been chosen for wall clock, so neither bounded the container the stage
+#: actually runs in. Same reasoning memgate states — a gate is the one heavy load on this host
+#: that can wait, and nobody is watching it run.
+FAST_WORKERS = 4
 
 #: How many browsers may run at once when each worker launches its own. A browser worker costs
 #: a Chromium AND a uvicorn AND the test itself, so it is not the arithmetic the fast suite uses.

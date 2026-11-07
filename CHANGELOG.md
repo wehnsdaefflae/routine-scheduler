@@ -15,6 +15,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.510.0] — 2026-11-07
+
+### A release gate was running the daemon's own memory cgroup to its ceiling for two minutes at a time
+
+- The FAST stage has peaked at **89–100 % of `memory.max`** (5 GiB) on every one of the **27
+  covering stages recorded since 2026-11-01** — exactly **100.0 % on 14 of them** — and the
+  stage's own sampler counted the cgroup hitting its ceiling 238, 306, 385, 700, 803, 902,
+  1,203, 1,254, 1,918, 2,696, 2,889, 3,458 and once **6,399** times inside a single 95–340 s
+  stage. That cgroup is the ENGINE container's: the daemon and every live run share it, so a
+  stage sitting at the ceiling for three minutes is the whole box's allocation failure, not the
+  gate's own. The `ui` stage was never part of this (43–55 % of its own 4 GiB `uitest`
+  container).
+- Neither existing guard bounded it, which is why six workers looked safe: `FAST_WORKERS` was
+  chosen for WALL CLOCK (2026-11-05: "six workers ran the suite in 110 s against 72 s at
+  eleven"), and `tests/memgate.py` waits on the HOST's `MemAvailable`, not on the container the
+  stage actually runs in. Both can be satisfied while the stage runs its own cgroup dry.
+- `FAST_WORKERS` 6 → **4**, on the same tree and selection: `-n 6` 141–173 s at 96–100 % with
+  287–1,254 ceiling events; `-n 4` 213 s at **78.0 %** attached, and **199.9 s at 88.5 % with no
+  ceiling events** on the release gate that shipped this very change. It costs ~40–70 s per fast
+  stage and buys headroom no other knob was providing. Same reasoning `memgate` already states:
+  a gate is the one heavy load on this host that can wait, and nobody is watching it run.
+- **What that does and does not prove**, since one gate is one gate: the peak moved off a hard
+  100.0 % to 88.5 %, which is the sounder signal. Zero ceiling events is NOT yet a property of
+  four workers — two six-worker gates also recorded none (96.2 % with none, 98.9 % with 8). The
+  next few gates decide whether the bound holds, and the evidence to judge them by is already
+  written per gate in `.gate-evidence/memory-peaks.jsonl`.
+- `tests/test_memgate.py` pins the RELATION between the two, not the numbers: `memgate`'s own
+  docstring says its budgets ARE "the measured peaks of the selections: the fast suite at
+  FAST_WORKERS workers (~250 MB each)", which makes `NEED_MB` arithmetic over a constant in
+  another module that nothing checked — and a too-small budget does not fail, it simply stops
+  waiting when it should have waited. Either number may be re-tuned now, but not alone: shown
+  red at `FAST_WORKERS = 9` before commit. **Not a past violation**, stated plainly because the
+  tempting story is wrong: at six workers the floor was 1,500 MB against a 2048 MB budget, so
+  the relation held throughout. What the measurement really shows is that the ~250 MB
+  per-worker figure understates the cost about **fourfold** (3.90 GiB peak at four workers), so
+  the floor is deliberately a weak lower bound and the cgroup headroom is what the gate's own
+  evidence measures per run.
+- No causal claim about run deaths: the 2026-11-05 `rc=-9` orphan burst does not overlap any
+  gate window measured here, and `memory.events oom_kill` reads 0 from inside the container,
+  where that counter is not meaningful.
+
 ## [0.509.0] — 2026-11-07
 
 ### Twice in seven days a routine lost its `uncensored` model role and every check on this instance stayed green
