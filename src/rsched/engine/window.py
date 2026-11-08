@@ -15,11 +15,10 @@ seam in the engine appends.
 from __future__ import annotations
 
 import dataclasses
-import json
 from pathlib import Path
 
 from ..endpoints.base import EndpointError
-from . import archival, boundary, enginenote, mediaops
+from . import archival, boundary, enginenote, mediaops, promptsegments
 from .compaction import (
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
@@ -67,23 +66,15 @@ def _override_window(loop, ref):
         return dataclasses.replace(ref, context_tokens=shrunk)
     return ref
 
-def _schema_tokens(loop) -> int:
-    """The action schema's own cost. It travels BESIDE the message list — the provider
-    counts it in the prompt, `estimate_input_tokens(loop.messages)` never sees it.
-    """
-    schema = getattr(loop, "action_schema", None)
-    if not schema or getattr(loop, "_schema_off", False):
-        return 0
-    return estimate_input_tokens([{"content": json.dumps(schema, ensure_ascii=False)}])
-
-
 def _reserved_tokens(loop, ref) -> int:
     """Reserve output plus the separately transmitted action schema."""
-    return ref.max_tokens + _schema_tokens(loop)
+    return ref.max_tokens + promptsegments.schema_tokens(loop)
 
 
 def note_prompt_size(loop, ref, usage: dict | None) -> None:
-    """Calibrate this run's token ESTIMATE against what the provider just counted.
+    """Calibrate this run's token ESTIMATE against what the provider just counted, and record
+    the same prompt's SEGMENT breakdown (D270, engine/promptsegments.py) — one writer for both
+    readings of the prompt the provider has just counted, taken before anything appends.
 
     `estimate_input_tokens` is 3.5 UTF-8 bytes per token — a packing guess, not a tokenizer
     — and every gate in this file compares it against a real window. When it runs light the
@@ -103,6 +94,7 @@ def note_prompt_size(loop, ref, usage: dict | None) -> None:
     German transcript packs differently from JSON), and every completion re-measures it, so a
     chain step onto a different tokenizer carries the old ratio for exactly one turn.
     """
+    promptsegments.note(loop)     # D270: the same prompt BY SEGMENT, diagnostic, read-only
     reported = sum(int((usage or {}).get(k) or 0) for k in ("in", "cached_in", "cache_write"))
     if reported <= 0:
         return
@@ -110,7 +102,8 @@ def note_prompt_size(loop, ref, usage: dict | None) -> None:
     if estimate <= 0 or estimate < _CALIBRATE_ABOVE * ref.context_tokens:
         return
     low, high = _RATIO_BOUNDS
-    loop._token_ratio = min(max((reported - _schema_tokens(loop)) / estimate, low), high)
+    ratio = (reported - promptsegments.schema_tokens(loop)) / estimate
+    loop._token_ratio = min(max(ratio, low), high)
 
 
 def _calibrated_window(loop, ref):

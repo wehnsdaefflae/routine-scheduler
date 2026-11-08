@@ -20,6 +20,7 @@ from . import (
     mediaops,
     obligations,
     promptfloor,
+    promptsegments,
     recipeproposal,
     reviseleg,
     rewind,
@@ -147,8 +148,10 @@ def boot(loop) -> None:
                                [m["text"] for m in prose if not m.get("report")],
                                allowed_kinds=loop.allowed_tools,
                                report_msgs=[m["text"] for m in prose if m.get("report")])
-    # what each section of the always-on prompt weighs, for the run record (runrecord.quality)
-    ctx.prompt_chars = {name: len(text) for name, text in sections}
+    # what each section of the always-on prompt weighs — in chars for the run record
+    # (runrecord.quality), and in the WINDOW's own unit for the per-turn breakdown (D270)
+    ctx.prompt_chars, ctx.prompt_segments = ({n: len(t) for n, t in sections},
+                                             promptsegments.of_sections(sections))
     system = join_sections(sections)
     if resuming:
         replayed, last_turn, records = replay_messages(events)

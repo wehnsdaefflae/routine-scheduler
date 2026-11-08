@@ -559,7 +559,7 @@ class RunContext:
             # the recipe version that produced this run (null: unversioned dir) — the
             # health view's bucket key; survives retention via the workflow-usage record
             "recipe_commit": self.recipe_commit,
-            "utils": self.util_stats,
+            "utils": self.util_stats, "prompt_segments": getattr(self, "prompt_segments", {}),
             "asks_deferred": self.asks_deferred,
             "claims_challenged": self.claims_challenged,
             "claims_disputed": self.claims_disputed,

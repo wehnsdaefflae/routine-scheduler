@@ -226,6 +226,17 @@ the limits (single-writer status.json preserved).
   through that one line. The ratio is run-local rather than per-model: what it mostly measures is
   how this CONTENT packs. Before it the estimate was corrected only BY a provider's oversize
   400 — the overflow nets in `engine/overflow.py`, which remain the backstop.
+- **…and the same prompt is measured BY SEGMENT** (D270, `engine/promptsegments.py`): on the
+  same turn and by the same writer (`note_prompt_size`), the prompt's make-up is recorded in
+  those calibrated tokens — the composer's own `(name, text)` sections (harness, schema,
+  example, workflow, instruction, capabilities, digest, messages, reports) plus the two
+  segments the message list grows, `history` (what the model said) and `observations` (what the
+  engine handed back). It is the composer's segmentation and not a second one, so the breakdown
+  cannot disagree with what `join_sections` actually sends. Written to status.json as
+  `prompt_segments`, read by the console; **diagnostic only — it never enters the prompt**,
+  because the composed prompt is a caching contract and a mutated byte invalidates the
+  provider's cache for the rest of the run (`tests/test_prompt_segments.py` holds the
+  measurement to byte identity on both the joined system prompt and the message list).
 - **`maybe_compact` takes the cap as an ARGUMENT** (`compaction.maybe_compact(messages,
   turn_records, cap_tokens)`): the caller's decision is the only one. A second gate inside it
   re-testing its own fraction meant every pass triggered below that fraction spent the
