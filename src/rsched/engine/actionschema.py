@@ -11,7 +11,7 @@ and cost the small-model support the whole design is built around.
 
 from __future__ import annotations
 
-from . import roleswap, schema_background, schema_questions, schema_remind, schema_routine
+from . import notemeta, roleswap, schema_background, schema_questions, schema_remind, schema_routine
 
 READ_PATHS_MAX = 8
 
@@ -321,14 +321,13 @@ ACTION_SCHEMA: dict = {
                                   "record appended to a `.jsonl`/`.ndjson` file gets the "
                                   "newline it needs so it cannot merge into the row before "
                                   "it (every other file is appended byte-faithfully)"},
-        # memory_write (memory_read needs only `name`)
-        "about": {"type": "string",
-                  "description": "memory_write: one-line INDEX entry — what this note holds + "
-                                 "when to consult it (the engine maintains .memory/INDEX.md "
-                                 "from it)"},
-        "delete": {"type": "boolean",
-                   "description": "memory_write: remove the note and its INDEX line "
-                                  "(content/about not needed)"},
+        # memory_write (memory_read needs only `name`). The four specs live in
+        # engine/notemeta.py beside the INDEX rendering that reads them — this file is over the
+        # repo's size bar and may only shrink, the same split schema_remind.py was made by.
+        "about": notemeta.ABOUT_FIELD,
+        "delete": notemeta.DELETE_FIELD,
+        "stale_after": notemeta.STALE_AFTER_FIELD,   # D268: a note's expiry, as data
+        "verified": notemeta.VERIFIED_FIELD,         # D268: who last checked it, and when
         # llm / spawn / subtask / detach / view_image
         "prompt": {"type": "string",
                    "description": "llm: the prompt · spawn/subtask/detach: the child's full "

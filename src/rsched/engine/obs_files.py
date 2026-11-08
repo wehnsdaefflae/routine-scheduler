@@ -8,7 +8,7 @@ an edit, and — for `.memory/` and the rule library — that the engine owns th
 
 from __future__ import annotations
 
-from . import docread, thenscript
+from . import docread, notemeta, thenscript
 
 
 def _with_script(obs: dict) -> str:
@@ -164,6 +164,13 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         over = (f" It is {obs['over_advised']} line(s) over the advised ~100 — when this topic "
                 "next changes, split part of it into a new note." if obs.get("over_advised")
                 else "")
+        if meta := obs.get("meta"):
+            # D268: what notemeta RECORDED — a value it could not render was left out rather
+            # than refused, so naming the kept set is how a run learns one was dropped
+            over += " INDEX line records " + ", ".join(
+                f"stale after {meta['stale_after']}" if key == "stale_after"
+                else notemeta.verified_mark(meta[key]) for key in notemeta.FIELDS
+                if key in meta) + "."
         if obs.get("edited"):
             # edit mode: say what was replaced and where the note now stands, so the next
             # edit's anchor can be chosen without re-reading the whole note (R2456)

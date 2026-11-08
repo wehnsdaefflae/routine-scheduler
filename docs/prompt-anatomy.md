@@ -757,6 +757,8 @@ doesn't teach the correct call wastes every future caller's turn). The engine ru
 `anchor`/`replacement` INSTEAD of content — a verbatim in-place patch like edit_file, so a small fix never re-emits the whole script (read the current source first: `util name=show args=["<name>", "--full"]`). A util may call sibling utils via `gu <name>` — declare those on a `calls: <name>, …` header line. If it needs a secret (token, password, API key), read it env-first — `os.environ["NAME"]` — never hardcode or prompt for it, AND declare the names in a header `secrets: NAME1, NAME2` line so the UI tells the user what to set (they set it once in the Secrets store; the engine injects it — ONLY declared secrets reach the util). A credential ONE VERB needs binds to it — `secrets: DEEPL_API@credentials`, a verb your `usage:` block lists — and reaches that verb's calls alone. Declare network use with a `net: outbound` (or `net: none`) header line: utils run in a filesystem/network sandbox and an undeclared network need fails. Declare filesystem use the same way, on an `fs:` header line — `fs: roots` when the util opens paths its CALLER passes it (the common case), `fs: none` when it touches no file outside its own temp space, or `fs: rw <path>` / `fs: ro <path>` for a private store the util reaches on its own (a session directory, a state file). A declared path is mounted only when the routine was already granted it, so declaring one asks for nothing — it narrows what this util sees, and keeps a store like that out of every OTHER util's jail. Creating/revising a util needs the user's approval (a blocking question is filed automatically) before it takes effect.
 - read_file / write_file / delete / move / mkdir / edit_file: read or write a file (within the working dir or an allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related reads instead of spending a turn per file); a directory path returns its listing (one entry per line, paged like a file); a PDF or an Office document (docx/pptx/xlsx) returns its text CONVERTED to Markdown, paged like a file — the observation names the pages and any page with no text layer (a scan, not transcribed); any other binary or oversized file only its size — page those with shell or a util. edit_file replaces an exact `anchor` string with `replacement` IN PLACE — for touching a few lines of a large file, use it instead of re-emitting the whole document through write_file. write_file REPLACES wholesale: overwriting an existing file outside your working dir is rejected until this run has read it. delete removes a file, or a whole directory with recursive: true — deleting a path outside your working dir that this run has not read is rejected, like write_file's overwrite gate (a listing or a size read counts). move relocates src to dst (both inside the same write-root jail): it refuses to overwrite an existing dst. mkdir creates a directory — parents: true makes intermediates and treats an existing path as success.
 - memory_read / memory_write: your persistent topic notes under .memory/ — for what was EXPENSIVE to find out (environment quirks, working solutions, constraints nobody wrote down), not what the instruction or a plain look at the data would tell anyone. memory_write(name, content, about) writes ONE kebab-named note (~100 lines advised) and the engine maintains .memory/INDEX.md from `about`; delete: true removes a note. To REVISE an existing note, pass `anchor` + `replacement` INSTEAD of content — a verbatim in-place patch like edit_file, so adding two facts to a 95-line note never re-emits the other 93. memory_read(name) returns one, and is where you copy an anchor from. The state digest shows the INDEX at run start — consult it before re-discovering anything; revise notes that turned out wrong instead of appending contradictions. read_file / write_file are rejected on .memory/ paths.
+
+(D268) A write may also carry `stale_after` — the date after which the note should not be trusted unchecked — and `verified: {by: run|human:<who>, at}`, who last checked it against reality. The engine renders both as ` · `-markers on that note's INDEX line (`stale after 2026-12-01`, `operator-verified 2026-10-02`, `engine/notemeta.py`), and the digest lists a note PAST its `stale_after` under its own heading (§7, above) instead of among the notes it tells the run to consult. The markers merge, so a later revision that says nothing about expiry keeps the date an earlier run recorded; a value the engine cannot render (a duration where a date belongs, a `by` that is neither `run` nor `human:<who>`) is left out rather than refused — the note still lands, and the `memory_write` observation names what was actually recorded.
 - llm: one scoped, stateless LLM subcall (default: this routine's tool-call model; `model` overrides per call — a role or a catalog model name, `list_models` shows them). It sees ONLY your prompt/system — include everything it needs; set response_schema for structured replies.
 - spawn: start a CHILD RUN scheduled in PARALLEL with you. Every child run — however scheduled — works the same way: its OWN directory (runs/<ts>/sub/<n>/, NOT your working tree — R405/R406), its OWN budget sliced from your remainder, its own fresh context and pattern, and it sees NOTHING of your conversation beyond the "prompt" you give it. So relative paths resolve THERE: name absolute paths (within the allowed roots) for anything it must read. It hands back its finish summary always, and hands back FILES by writing them into its own artifacts/ — the engine copies those into YOUR artifacts/from-sub-<n>/ when it exits and names the landed paths, so you never go looking in its dir. Parallel is the mode where you KEEP WORKING while it runs and are notified when it exits. Pick its "workflow" for the child's PURPOSE from the patterns listed under CAPABILITIES (default general-task) and give it a fully self-contained "prompt". A child runs on your MAIN model unless `model` picks a role or a catalog model for it.
 - subtask: start a CHILD RUN scheduled SEQUENTIALLY — the same child run `spawn` starts (own directory, own budget, own fresh context and pattern, hands files back through its own artifacts/ into your artifacts/from-sub-<n>/), differing ONLY in how you schedule it. Use it to decompose a large task into ordered steps. It does NOT block you: to keep the order, `wait` for it (n=N) before starting the next one and fold its result into that brief — the wait YIELDS if the user writes (so the conversation stays live) and you are notified when it finishes; or do other work meanwhile. Pick its "workflow" for that step's purpose from the catalog (or omit for the default); give a self-contained "prompt"; "turns" bounds it (default: half your remaining). It runs on the routine's MAIN model unless `model` picks a role or a catalog model for it.
@@ -1005,6 +1007,25 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
   "delete": {
    "type": "boolean",
    "description": "memory_write: remove the note and its INDEX line (content/about not needed)"
+  },
+  "stale_after": {
+   "type": "string",
+   "description": "memory_write: OPTIONAL \u2014 the date (YYYY-MM-DD) after which this note should not be trusted unchecked (a price, a roster, a page's shape). Past it the digest lists it under its own heading instead of among the notes to consult"
+  },
+  "verified": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "by": {
+     "type": "string",
+     "description": "`run` (this run checked it) or `human:<who>` \u2014 `human:operator` for the user's own confirmation"
+    },
+    "at": {
+     "type": "string",
+     "description": "the date of that check (YYYY-MM-DD)"
+    }
+   },
+   "description": "memory_write: OPTIONAL \u2014 who last checked this note against reality and when, rendered in its INDEX line ('operator-verified 2026-10-02')"
   },
   "prompt": {
    "type": "string",
@@ -1264,8 +1285,11 @@ Accounting:
 - d1 met: 3 portals scanned, portal X recorded unreachable (Cloudflare)
 
 .memory/ index (notes from earlier work — memory_read the relevant topic before re-discovering anything):
-- portal-quirks.md: per-portal scraping gotchas (Cloudflare, pagination, rate limits) — read before scanning.
-- scoring-calibration.md: examples the user rated; what 8/10 actually means — read before scoring.
+- portal-quirks.md: per-portal scraping gotchas (Cloudflare, pagination, rate limits) — read before scanning. · stale after 2026-12-31
+- scoring-calibration.md: examples the user rated; what 8/10 actually means — read before scoring. · operator-verified 2026-10-02
+
+.memory/ notes PAST THEIR stale_after (the run that wrote each named the date it stops being trustworthy — re-check it against the live thing and revise the note, or delete it; do not rely on it as it stands):
+- rate-floor.md: the rate floor and what the user flags above it. · stale since 2026-06-30
 
 Open deferred questions (still unanswered):
 - [q-20260711-070000-t18] Portal X blocks headless scraping. Should I try the captcha-browser util (slower), or drop portal X? (asked 20260711-070000)

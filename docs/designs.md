@@ -542,17 +542,6 @@ first routine on predator's GPU for the GPT-2 demo track (its 6 GB only fits tha
 
 ---
 
-## Memory notes carry `stale_after` and `verified` (decided 2026-10-08, in conversation)
-
-**Shape.** `memory_write` gains two optional fields (from the Open Knowledge Format): `stale_after`
-(YYYY-MM-DD) and `verified: {by: run|human:<who>, at}`. The engine renders them in the note's INDEX
-line ("stale since …", "operator-verified 2026-10-02"), and a note past its `stale_after` is listed
-under its own heading in the digest. Notes today write "verified live 2026-07-30" in prose; this
-makes it data. **First increment:** the fields, the INDEX rendering, the digest heading,
-prompt-anatomy.
-
----
-
 ## Undo a run, and per-reply artifact snapshots (decided 2026-10-08, in conversation)
 
 Carries item 4 of "adopt the list".

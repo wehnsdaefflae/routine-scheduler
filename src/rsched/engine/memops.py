@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from ..ids import is_slug
 from ..paths import atomic_write
+from . import notemeta
 from .authoring import anchor_edit
 from .observations import truncate
 from .run_context import RunContext, work_dir
@@ -33,20 +34,34 @@ def _memory_topics(mem_dir) -> list[str]:
         return []
     return sorted(p.stem for p in mem_dir.glob("*.md") if p.name != "INDEX.md")
 
-def _memory_index_upsert(mem_dir, name: str, about: str | None) -> None:
+def _memory_index_upsert(mem_dir, name: str, about: str | None,
+                         meta: dict | None = None) -> None:
     """INDEX.md is engine-owned: one `- <name>.md: <about>` line per note, updated in the
     same operation as the note itself so the catalog can never drift. about=None removes.
 
     ONE line is the invariant every later upsert relies on — the replace finds a note's entry
     by its prefix — so `about` is folded onto a single line: a line break in it left the
     continuation behind as an orphan line no revision or delete could ever reach.
+
+    `meta` is the note's expiry and provenance (D268, engine/notemeta.py), rendered onto the
+    SAME line for the same reason: a second store for a note's freshness could drift from the
+    catalog, and this one cannot. A note carrying none renders exactly as it always did.
     """
     index = mem_dir / "INDEX.md"
     lines = index.read_text(encoding="utf-8").splitlines() if index.exists() else []
     prefix = f"- {name}.md:"
+    previous = next((ln for ln in lines if ln.startswith(prefix)), "")
     lines = [ln for ln in lines if not ln.startswith(prefix)]
+    if about is None and meta and previous:
+        # marking an existing note verified without restating its SUBJECT: carry the `about`
+        # forward off the line being replaced, markers stripped, so the catalog keeps saying
+        # what the note is about
+        about = notemeta.about_of(previous)
     if about is not None:
-        lines.append(f"{prefix} {' '.join(about.split())}")
+        # MERGE, never replace: a revision that says nothing about expiry keeps the date an
+        # earlier run recorded, and a write stating only `verified` leaves it standing
+        merged = {**notemeta.meta_of(previous), **(meta or {})}
+        lines.append(f"{prefix} {' '.join(about.split())}{notemeta.index_suffix(merged)}")
     atomic_write(index, "\n".join(lines) + ("\n" if lines else ""))
 
 def do_memory_read(action: dict, ctx: RunContext) -> dict:
@@ -127,12 +142,19 @@ def do_memory_write(action: dict, ctx: RunContext) -> dict:
     else:
         data = str(action["content"]).rstrip() + "\n"
     atomic_write(path, data)
-    if action.get("about") is not None or not action.get("anchor"):
+    meta = notemeta.from_action(action)
+    if action.get("about") is not None or not action.get("anchor") or meta:
         # an edit does not change the note's SUBJECT, so `about` is optional there; a revised
-        # one still updates the engine-owned INDEX line
-        _memory_index_upsert(mem_dir, name, str(action["about"]))
+        # one still updates the engine-owned INDEX line — and so does metadata alone (D268),
+        # which is how a run marks an unchanged note verified
+        about = action.get("about")
+        _memory_index_upsert(mem_dir, name, None if about is None else str(about), meta)
     lines = len(data.splitlines())
     out = {"kind": "memory_write", "name": name, "created": created, "lines": lines}
+    if meta:
+        # named in the observation because what notemeta could not render was LEFT OUT: a run
+        # that sent `stale_after: "soon"` sees that nothing was recorded (notemeta's docstring)
+        out["meta"] = meta
     if lines > MEMORY_NOTE_ADVISED_LINES:
         out["over_advised"] = lines - MEMORY_NOTE_ADVISED_LINES
     if action.get("anchor") is not None:

@@ -696,7 +696,15 @@ one you are about to touch, not all of them.
   `memory_*` are the ONLY way into `.memory/` for a RUN (generic file actions are rejected
   there); the engine owns `.memory/INDEX.md` (built from each write's `about`); a note's ~100-line
   size is ADVICE — a longer write lands and its observation names the overrun, never a refusal
-  to trim against (`engine/memops.py`). The operator's file endpoint agrees about the files the engine owns:
+  to trim against (`engine/memops.py`). A note's FRESHNESS is data, not prose (D268,
+  `engine/notemeta.py`): `stale_after` (a date) and `verified` (`{by: run|human:<who>, at}`)
+  render as ` · `-markers on that same INDEX line — one line per note stays the invariant, so
+  there is no second store to drift — and `engine/composer.py` lists a note past its date under
+  its OWN digest heading instead of among the notes a run is told to consult. The markers MERGE
+  (`notemeta.meta_of` reads them back off the line): a revision that does not restate an expiry
+  keeps it, which is what stops an ordinary write silently dropping what an earlier run knew.
+  A value the engine cannot render is LEFT OUT, never refused — the note is the payload, and the
+  observation names what was recorded. The operator's file endpoint agrees about the files the engine owns:
   `PUT /api/routines/{slug}/file` refuses `routine.yaml`, `state/finish-line.json`,
   `.memory/INDEX.md`, `LEDGER.md`, `.ledger/`, `.git/`, `runs/`, `inbox/` and `questions/` BY NAME
   (`api_routine_files.NOT_EDITABLE_HERE`), each refusal naming the endpoint or owner that holds
