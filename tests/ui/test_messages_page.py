@@ -151,6 +151,39 @@ def test_messages_composer_queues_edits_and_withdraws_feedback(ui, ui_page, make
     assert list(inbox.glob("msg-*.json")) == []
 
 
+def test_a_queued_messages_attachment_is_shown_back_on_this_page(ui, ui_page, make_routine):
+    """D275's second half, on the GLOBAL page. The operator's scope answer was "page too:
+    also serve it back for viewing/downloading on the Messages page", and this page lists
+    the whole inbox queue — so a file he attached has to be visible HERE, not only on the
+    routine's own panel. `naturalWidth` is the assertion: non-zero only if the browser
+    decoded real bytes fetched through the authenticated attachment route, where an
+    element-exists check would pass over a thumbnail that never loaded.
+    """
+    import base64
+
+    _seed(ui, make_routine)
+    rdir = ui.routines / "self-audit"
+    (rdir / "attachments").mkdir(parents=True, exist_ok=True)
+    # a 1×1 PNG, so a decoded width of 1 is proof the bytes arrived
+    (rdir / "attachments" / "shot.png").write_bytes(base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="))
+    (rdir / "inbox").mkdir(parents=True, exist_ok=True)
+    (rdir / "inbox" / "msg-20261108-150000-att.json").write_text(json.dumps(
+        {"text": "have a look at this\n\n[attached files] attachments/shot.png",
+         "ts": "2026-11-08T15:00:00+00:00", "via": "user", "source": "user",
+         "attachments": ["attachments/shot.png"]}), encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
+    row = ui_page.locator(".pending-item", has_text="have a look at this")
+    expect(row).to_be_visible()
+    thumb = row.locator("img.att-thumb")
+    expect(thumb).to_have_count(1)
+    ui_page.wait_for_function(
+        "() => { const i = document.querySelector('.pending-item img.att-thumb');"
+        "        return i && i.naturalWidth === 1; }")
+    assert thumb.get_attribute("src").startswith("blob:")
+
+
 def test_messages_note_is_a_plain_inbox_message(ui, ui_page, make_routine):
     """The Messages page's own composer is retired (user order 2026-08-12: it duplicated
     the generic channel) — a plain message is queued from the ROUTINE page's Messages

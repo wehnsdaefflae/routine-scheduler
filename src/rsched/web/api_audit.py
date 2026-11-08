@@ -52,6 +52,11 @@ def queued_messages(routine_dir: Path) -> list[dict]:
                 "kind": str(obj.get("kind") or ""), "target": str(obj.get("target") or ""),
                 "choice": str(obj.get("choice") or ""), "raw": str(obj.get("raw") or ""),
                 "from": str(obj.get("from") or obj.get("source") or obj.get("via") or "user"),
+                # D275: the files the operator attached, so the GLOBAL Messages page shows
+                # them back the way the routine's own panel does. Absent when there are none,
+                # like every other optional key of this row.
+                **({"attachments": [str(a) for a in obj["attachments"]]}
+                   if obj.get("attachments") else {}),
                 **({"report": str(obj["report"])} if obj.get("report") else {})}
         out.append(item)
     return out

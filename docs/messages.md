@@ -199,6 +199,15 @@ message belongs to the transcript record.
   only the structured feedback kinds (finding comments, decision answers) keep the tagged
   `api_audit` channel, because their text is re-formatted from fields.
 
+  A queued message's ATTACHMENTS are shown back here too (D275 — the operator's scope answer
+  named "the Messages page", and this is the page that lists the whole queue): the row carries
+  the rels (`api_audit.queued_messages`) and renders through
+  `components/queued-attachments.js`, which owns the object URLs. Its own module because
+  `views/messages.js` is over the size bar and frozen at its ratchet ceiling — and because the
+  LIFETIME is the real work: this page reloads its whole queue on every submit, edit,
+  withdrawal and filter change, so each pass revokes the one before it (`newPass`) and the
+  view's teardown revokes the rest.
+
 ## API summary
 
 ```

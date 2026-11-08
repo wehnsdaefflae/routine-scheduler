@@ -20,6 +20,7 @@ import { clampedBody, md, summaryLine } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { ACTIVE, backlogChips } from "/static/components/backlog-chips.js";
 import { itemCard } from "/static/components/itemcard.js";
+import { newPass, queuedAttachmentRow, revokeQueued } from "/static/components/queued-attachments.js";
 import { orphanBanner } from "/static/components/orphan-banner.js";
 import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, toastError, when } from "/static/util.js";
@@ -29,17 +30,15 @@ const TYPES = [["summary", "summaries"], ["finding", "findings"], ["decision", "
 const STATUSES = ["open", "in_progress", "addressed", "settled", "dropped", "unknown"];
 
 export async function render(view, query = {}) {
-  // Default to the ACTIVE backlog (open + in_progress) — the page is a worklist first,
-  // an archive on request: `?status=all` (or any explicit status) overrides (D75).
-  // A ?focus=<id> deep-link exists to show THAT card, which may be archived — so it
-  // defaults to the whole set, not the active slice.
+  // Default to the ACTIVE backlog (open + in_progress) — a worklist first, an archive on
+  // request: `?status=all` or any explicit status overrides (D75). A ?focus=<id> deep-link
+  // exists to show THAT card, which may be archived, so it defaults to the whole set.
   const defaultStatus = query.focus ? "" : "open,in_progress";
-  // …and default to SUMMARIES, which is what replaced the Summary page (operator order
-  // 2026-09-05). Landing here now answers "what did everything I run last tell me" and the
-  // maintenance backlog is one chip away — a deliberate reversal of D75's "worklist first",
-  // because the backlog is a producer's view and the summaries are the reader's.
-  // `status` and `type` need the SAME explicit-`all` sentinel: without it, clicking the
-  // active summary chip off would silently come back on the next reload.
+  // …and to SUMMARIES, what replaced the Summary page (operator order 2026-09-05): landing
+  // here answers "what did everything I run last tell me", with the backlog one chip away —
+  // a deliberate reversal of D75, because the backlog is a producer's view and the summaries
+  // are the reader's. `status` and `type` need the SAME explicit-`all` sentinel, or clicking
+  // the active summary chip off comes back on at the next reload.
   const defaultType = query.focus ? "" : "summary";
   // A row another report TOOK OVER is off every list by default — it is not a peer item, it
   // settles with its carrier, and the carrier's card names it. A ?focus deep-link must still
@@ -147,17 +146,15 @@ export async function render(view, query = {}) {
       row.replaceChildren(chip("queued", "idle"), ta, save, cancel, drop);
       ta.focus();
     };
-    // A queued message waits on the routine's NEXT RUN — a machine, not a person. It wore the
-    // summons chip (and its pulse), so the console's one "answer me" colour marked seven things
-    // that needed nothing from anybody.
-    //
-    // The body is model or operator prose and is rendered as such: a 40-line report used to
-    // push the items below it two screens down, so it is clamped to two lines with an expander.
-    // Nothing is lost — edit and withdraw are unmoved, and the full text is one click away.
+    // A queued message waits on the routine's NEXT RUN — a machine, not a person — so it wears
+    // `queued`, not the summons chip the console keeps for "answer me". The body is model or
+    // operator prose, clamped to two lines with an expander: a 40-line report used to push the
+    // items below it two screens down. Edit and withdraw are unmoved.
     const { node: text, toggle: more } = clampedBody(p.text);
     // filter(Boolean): append stringifies a null argument into the text "null" (el() drops
     // null children, append does not) — a queued item with no ts rendered a literal "null".
-    row.append(...[chip("queued", "idle"), text,
+    // D275: and the files he attached, shown back here as on the routine's own panel.
+    row.append(...[chip("queued", "idle"), text, queuedAttachmentRow(p, routineSlug),
       p.ts ? when(p.ts) : null, more, edit, drop].filter(Boolean));
     return row;
   }
@@ -300,7 +297,7 @@ export async function render(view, query = {}) {
     renderFilterBar(data);
 
     routineSlug = data.routine || routineSlug;
-    const pending = data.queued || [];
+    const pending = newPass(data.queued || []);   // D275: last pass's thumbnails are dead
     // which decision ids already have an answer queued, and which findings a comment —
     // structured fields when present, text parse for messages queued before they existed
     const queuedDecisions = new Map();
@@ -370,5 +367,5 @@ export async function render(view, query = {}) {
   if (query.focus) focusRef(String(query.focus));
   // The search debounce is the one thing here that outlives a click: left pending, it would
   // fetch for a page nobody is on and write these filters into the NEXT page's URL.
-  return () => clearTimeout(searchTimer);
+  return () => { clearTimeout(searchTimer); revokeQueued(); };
 }
