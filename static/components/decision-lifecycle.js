@@ -20,6 +20,7 @@
 
 import { api } from "/static/api.js";
 import { chip, el, toast, toastError } from "/static/util.js";
+import { proofState } from "/static/views/questions-taxonomy.js";
 
 const SNOOZES = [["60", "1 hour"], ["240", "4 hours"], ["1440", "1 day"], ["10080", "1 week"]];
 //: The one decision VALUE a refusal carries, on the API row and in the answer file alike
@@ -144,4 +145,51 @@ export function declinedChip(q) {
   return q.decision === DECLINED
     ? chip(`declined${q.reason ? ` · ${q.reason}` : ""}`, "failed")
     : null;
+}
+
+/** What this decision's PROOF says, or null — the chip on an answered-but-unproven card (D220).
+ *
+ *  `negative` is the only loud one, and it is the one thing this page shouts about a decision
+ *  already answered: the actions were performed and the proof is STILL absent, which is the
+ *  operator's own "unexpected event" state. `in_progress` is the ordinary waiting case and
+ *  wears the muted treatment, because nothing is wrong yet — the work simply has not shown
+ *  up. A `positive` proof is not chipped at all: the row has left this band for Settled, where
+ *  an answered decision belongs, and a chip saying so would be noise on every settled card the
+ *  instance ever shows.
+ *
+ *  Reads the stored map through the taxonomy's `proofState`, the same reduction
+ *  `rsched/proofs.state_of` makes server-side, so the chip and the band can never disagree
+ *  about which state a row is in. */
+export function proofChip(q) {
+  const state = proofState(q);
+  if (state === "negative") {
+    return chip("proof absent — the work was authorized and has not shown up", "failed");
+  }
+  return state === "in_progress" ? chip("proof pending", "waiting") : null;
+}
+
+/** What is being CHECKED, as the card's own line — or [] so a spread adds nothing.
+ *
+ *  An array rather than a node-or-null because `replaceChildren` stringifies a null argument
+ *  into the text "null" (only `el()` drops them), which is the defect the Messages page's queue
+ *  row carries a comment about. */
+export function proofNote(q) {
+  const entry = Object.values(q.proof || {}).find(
+    (e) => e?.state === "in_progress" || e?.state === "negative");
+  return entry ? [el("div", { class: "small faint" },
+    `proof: \`${entry.predicate}\` over ${entry.reads} is what shows this landed`)] : [];
+}
+
+/** Every chip an ANSWERED card's meta row carries: what the answer WAS, and what became of it.
+ *
+ *  One function because there are now three overlapping facts and the host was composing them
+ *  inline in a file that has no room (`views/questions.js` is frozen at its ratchet ceiling):
+ *  a DECLINE replaces the answered chip (R2197 — a refusal rendered as an ordinary answer is
+ *  what the decline verb exists to end), while a PROOF rides BESIDE it (D220 — the answer
+ *  stands; whether the work it authorized landed is a second fact, and `negative` is the one
+ *  thing this page shouts about a decision already made). */
+export function answeredChips(q) {
+  const via = q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : "";
+  const fate = q.settled ? "acted on" : q.ran_now ? "run started" : "queued";
+  return [declinedChip(q) || chip(`answered${via} · ${fate}`, "ok"), proofChip(q)];
 }
