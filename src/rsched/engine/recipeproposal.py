@@ -70,6 +70,27 @@ _NULL = frozenset({
 })
 
 
+#: What ends a revision line's VERDICT clause. The null set is matched against what stands
+#: BEFORE the first of these, never against the whole line (his instruction, 2026-11-07: *"if a
+#: routine decides it doesn't need to change its recipe, I don't want a "no change" message
+#: /decision, I want no message"*). The ask asks what THIS run showed, so a complying run writes
+#: its verdict AND its reason — `none — the recipe served this run as written; …` — and the
+#: whole-line match only ever caught the bare wording: four of the five cards filed on
+#: 2026-11-06/07 were null ones that got through. A real revision's opening clause names the
+#: FILE it would change, which is why reading only that clause cannot eat one.
+_CLAUSE_END = ("—", "–", ";", ":", ".", ",", " - ")
+
+
+def _verdict(text: str) -> str:
+    """A revision line's opening clause, normalised the way `_NULL` is written."""
+    cut = len(text)
+    for mark in _CLAUSE_END:
+        found = text.find(mark)
+        if found != -1:
+            cut = min(cut, found)
+    return text[:cut].strip(" \t.!*_`-—–").casefold()
+
+
 def asks_for_revisions(ctx) -> bool:
     """Whether THIS run is asked for its own recipe revisions at all — the ONE predicate both
     seams read, so the ask and the card can never disagree about who has a recipe.
@@ -137,7 +158,7 @@ def extract(summary: str) -> list[str]:
         if not sep or head.strip(" \t-*>#"):
             continue
         text = rest.strip()
-        if text and text.strip(" \t.!*_`-—–").casefold() not in _NULL:
+        if text and _verdict(text) not in _NULL:
             out.append(text)
     return out[:MAX_LINES]
 

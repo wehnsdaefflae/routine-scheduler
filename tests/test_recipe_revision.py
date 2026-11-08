@@ -149,6 +149,49 @@ def test_a_real_revision_that_merely_starts_like_a_null_one_is_filed(line):
     assert recipeproposal.extract(f"Done.\n{MARKER} {line}") == [line]
 
 
+@pytest.mark.parametrize("line", [
+    # every one of these is VERBATIM from a card that reached his Decisions page in 2026-11
+    ("none — the recipe served this run as written; the shortfall was a missing util"
+     " capability (file upload), already reported."),
+    "none.** The recipe served this run as written — the stage modules routed correctly.",
+    ("none needed — `stages/verify-models.md` and `scripts/radar.py` served this run well"
+     " once extended; the `probe` verb addition is a durable capability."),
+    "Recipe unchanged: nothing this run contradicted.",
+    "no change needed; main.md's stages all held.",
+    "none - the recipe served this run as written.",
+])
+def test_a_null_revision_with_its_reason_files_nothing(line):
+    """His instruction, 2026-11-07: *"if a routine decides it doesn't need to change its recipe,
+    I don't want a "no change" message /decision, I want no message"*.
+
+    R3086's fix matched the closed null set against the WHOLE line, which only ever held for the
+    bare wording. A run complying with the ask writes its verdict AND why — "none — the recipe
+    served this run as written; …" — because the ask asks what THIS run showed. So four of the
+    five cards filed between 2026-11-06 and 2026-11-07 were null ones that got through:
+    `freelance-hunter` twice (`pc-20261106-035912-25f373`, `pc-20261107-034039-63e52e`),
+    `moltbook-heartbeat` (`pc-20261106-182114-88aa94`) and `uncensored-model-radar`
+    (`pc-20261107-035802-22ca7c`). The verdict is the line's FIRST CLAUSE; the rest is its
+    reason, and a reason never makes a null verdict into a proposal.
+    """
+    assert recipeproposal.extract(f"Done.\n{MARKER} {line}") == []
+
+
+@pytest.mark.parametrize("line", [
+    # a real revision's first clause is the FILE it names, never a null verdict
+    "main.md — drop step 4.",
+    "stages/scan.md: read the cursor before the feed.",
+    "stages/gather-evidence.md — step 4 should fold the health stream, not sample it.",
+    "`scripts/radar.py` — none of its probes record the model id; add it.",
+    "nothing in stages/scan.md says which feed is authoritative — name it",
+    "none of the stages name the cursor, so step 2 re-reads it",
+])
+def test_a_real_revision_survives_the_first_clause_read(line):
+    """The guard that keeps the clause read from eating proposals: splitting a line at its first
+    clause must not turn a named file, or a sentence that merely OPENS with a null word, into a
+    null verdict. These are the lines the operator most needs to see."""
+    assert recipeproposal.extract(f"Done.\n{MARKER} {line}") == [line]
+
+
 # ---- reading the answer ---------------------------------------------------------------------
 
 @pytest.mark.parametrize(("summary", "expected"), [

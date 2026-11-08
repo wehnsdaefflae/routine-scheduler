@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.516.2] — 2026-11-07
+
+### Fixed — a "no change" recipe revision still filed a decision card when it gave its reason
+
+- `engine/recipeproposal.extract` matched its closed null-verdict set against the **whole**
+  revision line, so it only ever caught the bare wording. The ask asks what THIS run showed, so
+  a complying run writes its verdict **and** its reason — `RECIPE REVISION: none — the recipe
+  served this run as written; …` — and those got through: **four of the five cards filed on
+  2026-11-06/07 were null ones** (`freelance-hunter` twice, `moltbook-heartbeat`,
+  `uncensored-model-radar`), each an empty decision the operator had to edit and approve.
+  R3086's fix (0.482.0) was right in kind and too narrow in reach.
+- The null set is now matched against the line's **opening clause** (`_verdict`, cut at the
+  first `—`/`–`/`;`/`:`/`.`/`,`/` - `), because a revision line's verdict is its first clause
+  and the rest is its reason. A real revision's opening clause names the FILE it would change,
+  which is why reading only that clause cannot eat one — pinned both ways, including the lines
+  that merely OPEN with a null word (`none of the stages name the cursor, …`).
+- Both seams `extract` feeds are fixed at once: the Decisions-page card (`engine/loopend.py`)
+  and the `Recipe revisions:` block of the routine's `LEDGER.md` (`engine/ledgerentry.py`).
+- Operator, 2026-11-07: *"if a routine decides it doesn't need to change its recipe, I don't
+  want a "no change" message /decision, I want no message"*.
+
 ## [0.516.1] — 2026-11-07
 
 ### Fixed — a "docs-only release needs no restart" claim that cannot be true of any release
