@@ -79,6 +79,39 @@ def test_collect_handback_copies_and_names_what_landed(tmp_path):
     assert child.collect_handback(tmp_path / "nothing", parent, child.SUB, 3) == ()
 
 
+def test_a_child_hands_back_what_it_wrote_not_what_the_slot_accumulated(tmp_path):
+    """The landing directory is namespaced by the child's NUMBER, not by its run, so every
+    run's child #1 lands in the same `artifacts/from-sub-1/` — and listing the DESTINATION
+    hands the parent every file that slot ever accumulated.
+
+    Measured on 2026-11-07 (`self-audit:20261107-233235`): a child that wrote **2** files was
+    announced as having handed back **66**, the other 64 dating from 2026-09-11 to 2026-10-27
+    including whole nested `from-sub-2`…`from-sub-6` trees of earlier runs. The real
+    deliverable was the 36th name in the list. The copy is right to be additive — a child may
+    hand back more than once as it goes — but the ANSWER must be about this child.
+    """
+    src, parent = tmp_path / "kid" / "artifacts", tmp_path / "parent"
+    src.mkdir(parents=True)
+    (src / "verdict.md").write_text("what this child found", encoding="utf-8")
+    (src / "deep").mkdir()
+    (src / "deep" / "data.json").write_text("{}", encoding="utf-8")
+    # what earlier runs' child #1 left in the very same slot
+    slot = parent / "artifacts" / "from-sub-1"
+    (slot / "old" / "deeper").mkdir(parents=True)
+    (slot / "stale-sweep.md").write_text("from 2026-09-11", encoding="utf-8")
+    (slot / "old" / "deeper" / "ancient.json").write_text("{}", encoding="utf-8")
+
+    paths = child.collect_handback(src, parent, child.SUB, 1)
+
+    assert paths == ("artifacts/from-sub-1/deep/data.json",
+                     "artifacts/from-sub-1/verdict.md")
+    # the older files are NOT removed — another run's deliverables are not this run's to delete
+    assert (slot / "stale-sweep.md").is_file()
+    assert (slot / "old" / "deeper" / "ancient.json").is_file()
+    # and what this child wrote did land
+    assert (slot / "verdict.md").is_file()
+
+
 def test_one_finished_headline_for_every_mode():
     """ONE headline, the mode named INSIDE it. Before F338 each mode announced itself under a
     different noun, which is how the copy drifted apart."""

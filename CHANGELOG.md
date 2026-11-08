@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.516.3] — 2026-11-07
+
+### Fixed — a child's hand-back named every file its slot had ever accumulated
+
+- `engine/child.collect_handback` listed the DESTINATION (`dst.rglob("*")`) to answer what a
+  child handed back. The landing slot is namespaced by the child's **number**, not its run, so
+  every run's child #1 lands in the same `artifacts/from-sub-1/` and that directory accumulates
+  across runs. Measured on 2026-11-07: a child that wrote **2** files was announced to its
+  parent as having handed back **66**, the other 64 dating from 2026-09-11 to 2026-10-27 and
+  including whole nested `from-sub-2`…`from-sub-6` trees of earlier runs — the real deliverable
+  was the 36th name in the list.
+- The answer is now enumerated from the SOURCE and confirmed against the destination. The copy
+  stays additive and nothing is deleted: a child may hand back more than once as it goes, and
+  another run's deliverables are not this run's to remove. Only what the parent is TOLD is
+  narrowed to this child.
+- This reached every routine that spawns a child, in `wait` observations and turn-boundary
+  announcements alike (`handback_paths_line` has one spelling for both).
+
 ## [0.516.2] — 2026-11-07
 
 ### Fixed — a "no change" recipe revision still filed a decision card when it gave its reason

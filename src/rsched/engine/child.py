@@ -141,6 +141,14 @@ def collect_handback(src_dir: Path, parent_dir: Path, noun: str, key: str | int)
 
     Returns PATHS, not a count, because that is the difference between a parent that can read
     what it was given and one that has to go and list a directory to find out.
+
+    The answer is enumerated from the SOURCE and confirmed against the destination, never
+    listed from the destination: the landing slot is namespaced by the child's NUMBER, so every
+    run's child #1 lands in the same directory and that directory accumulates. Measured
+    2026-11-07 — a child that wrote 2 files was announced as handing back 66, the other 64 from
+    earlier runs between 2026-09-11 and 2026-10-27, burying the real deliverable at position 36.
+    The copy stays additive (a child may hand back more than once as it goes, and another run's
+    deliverables are not this one's to delete); only the ANSWER is narrowed to this child.
     """
     if not src_dir.is_dir() or not any(src_dir.iterdir()):
         return ()
@@ -151,8 +159,9 @@ def collect_handback(src_dir: Path, parent_dir: Path, noun: str, key: str | int)
     except OSError as exc:
         log.warning("hand-back %s: could not collect artifacts: %s", rel, exc)
         return ()
-    return tuple(sorted(f"{rel}/{p.relative_to(dst).as_posix()}"
-                        for p in dst.rglob("*") if p.is_file()))
+    mine = sorted(p.relative_to(src_dir).as_posix()
+                  for p in src_dir.rglob("*") if p.is_file())
+    return tuple(f"{rel}/{p}" for p in mine if (dst / p).is_file())
 
 
 def handback_paths_line(paths: tuple) -> str:
