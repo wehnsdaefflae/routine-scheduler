@@ -246,16 +246,22 @@ the file may lag a finish by up to 60 s.
 
 ---
 
-## Console: engine timeouts served not copied; the finish line's "today"; the digest's rule_confirm
+## Console: the settings digest never names rule_confirm
 
-(a) `static/components/actiontime.js` copies the engine's action timeouts (and `wait`'s 600): serve
-them in `/api/status`, built from the engine's constants (name the `wait` one), and read them there.
-(b) `finish-line.js` computes "today" on the viewer's clock: `api_finishline.payload` returns the
-scheduler's local day and the client uses it — a date outcome near midnight otherwise reads
-differently from another zone.
-(c) `settings-digest.js` never names `rule_confirm`, so an override on it shows no difference.
+(a) and (b) SHIPPED in 0.519.0 — the engine's action timeouts are served in `/api/status` from
+its own constants and `actiontime.js` keeps no copy; `api_finishline.payload` returns the
+scheduler's local day and `finish-line.js` judges a date outcome against it.
 
-**First increment.** (b) — a wrong date is a wrong judgement — with red-first UI tests.
+What is left: `settings-digest.js`'s `describe("capabilities")` names `confirm` ("util
+approval"), `remind_confirm`, `config_confirm` and `revise_confirm`, but never `rule_confirm` —
+so an override on who approves a rule change shows no difference in a changed-field note, an
+override note, a closed "more" menu or the Library's pattern settings. Name it on the same rule
+the other dials follow: only when it departs from the `always` every routine defaults to
+(`grantpolicy.GrantPolicy.rule_confirm`).
+
+**First increment.** With a red-first UI test beside the `config_confirm` / `revise_confirm`
+ones in `tests/ui/test_ability_settings.py` — that file has only **+4 lines of slack** at the
+350-line bar, so the test is bought line-neutrally or goes in a sibling file.
 
 ---
 
