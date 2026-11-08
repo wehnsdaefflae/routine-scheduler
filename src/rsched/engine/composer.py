@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .. import decline, patchreceipt
+from .. import answerlines, patchreceipt
 from ..runledger import digest_tail
 from . import notes, outputs
 from .actionschema import example_action
@@ -216,9 +216,10 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         # R2197: and whether the answer is a REFUSAL — the Decisions page's first-class "no"
         # (rsched/decline.py). A declined proposal arrives as a value, so a run never has to
         # read a polite sentence and guess; without the line it would read one and guess wrong.
+        # D220: and whether the answer SETTLES the decision or only starts it. All three in
+        # one order, shared with the mid-run door (rsched/answerlines.py).
         alines = "\n".join(f"- Q: {p['question']}\n  A: {p['answer']}"
-                           + patchreceipt.digest_suffix(p) + decline.digest_suffix(p)
-                           for p in deferred_qa)
+                           + answerlines.suffixes(p) for p in deferred_qa)
         parts.append(f"ANSWERS received to earlier questions (consume now):\n{alines}")
     return "\n\n".join(p for p in parts if p)
 

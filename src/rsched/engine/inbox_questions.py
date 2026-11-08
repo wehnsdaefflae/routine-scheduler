@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .. import answerfile, decline, patchreceipt
+from .. import answerfile, decline, patchreceipt, proofs
 from ..ids import now_iso
 from ..paths import read_json
 from . import askclass
@@ -113,6 +113,11 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
         # an ordinary proposal reached the run as prose and nothing else — which is the whole
         # thing the decline verb exists to stop.
         decline.carry(pair, obj)
+        # D220: …and the PROOF the decision was filed with, with the chosen option moved on.
+        # Without it the run reads an answer and nothing tells it the decision is settled only
+        # once the proof turns up (rsched/proofs.py).
+        proofs.carry(pair, {**q, "proof": proofs.answered(q.get("proof") or {},
+                                                          str(obj["text"]).strip())})
         if q.get("request") and obj.get("decision"):
             pair["request"] = [str(r) for r in q["request"]]
             pair["decision"] = str(obj["decision"])
@@ -256,7 +261,7 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
                   default: str = "", expires: str = "", config_patch: dict | None = None,
                   config_target: str = "", request: list[str] | None = None,
                   report: str = "", report_target: str = "", batch: str = "",
-                  blocks_work: object = False) -> Path:
+                  blocks_work: object = False, proof: dict | None = None) -> Path:
     """The ONE decision record every kind of required user feedback funnels into —
     plain asks, util approvals and access requests, deferred and blocking alike. Blocking
     records carry `expires` (when the run continues without an answer) and are rewritten
@@ -295,6 +300,13 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
         # engine/config_bridge.py at ask time, so the Decisions page can PATCH this slug
         # directly; absent means the patch is for the asking routine.
         record["config_target"] = config_target
+    if proof:
+        # D220: what would have to be TRUE for each option's answer to have been carried out,
+        # authored at filing (`rsched/proofs.py`). Answering moves the chosen option to
+        # `in_progress` and the rest to `declined`; only a positive proof — or the operator's
+        # are-you-sure-gated override — settles the decision. Absent on every ask filed
+        # before this existed, which keeps behaving exactly as it did.
+        record["proof"] = proofs.filed(proof)
     if request:
         record["request"] = list(request)
     if report:
