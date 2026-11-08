@@ -8,7 +8,10 @@ challenge per claimed line (`loop._challenged`, engine/finishgate.py), one label
 hold and one application of a re-driven finish's reminder payload (engine/remind.py, read back
 by engine/remind_ledger.py), one warning before the window's middle is archived
 (engine/window.py), one context-window correction per window a failover has substituted DOWN to
-(engine/substitution.py). Each is an in-memory ledger the loop
+(engine/substitution.py). Two COUNTERS answer for the same scope (D245,
+engine/resumedcounters.py): how often each call has failed this run — the repair hint fires at
+the SECOND failure of one call — and whether repeat-streak shedding has already turned the
+provider's response format off for the rest of it. Each is an in-memory ledger the loop
 builds at construction — so every resumed leg used to start them EMPTY: a hold the run had
 already confirmed stopped the same action again after a restart, a finish deferral recurred,
 the verifier argued a line it had already conceded, and a repo the run had found clean read
@@ -72,8 +75,9 @@ def rebuild(loop, events: list[dict]) -> None:
     """Seed every once-only ledger from the events inside this leg's scope. Called by `boot`
     on a resumed leg, after `configure` built them empty — a fresh run has nothing to read.
     """
-    from . import assist, finishgate, hold, remind_ledger, substitution, window
+    from . import assist, finishgate, hold, remind_ledger, resumedcounters, substitution, window
 
     scoped = in_scope(loop.ctx, events)
-    for layer in (hold, remind_ledger, assist, finishgate, window, substitution):
+    for layer in (hold, remind_ledger, assist, finishgate, window, substitution,
+                  resumedcounters):
         layer.rebuild(loop, scoped)
