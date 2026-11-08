@@ -6,6 +6,9 @@ person may look at or change from the console — and the answer is not "all of 
 
 - the deliverable dirs (`artifacts.ARTIFACT_DIRS`: artifacts/, reports/, output/) are
   servable raw and deletable, and ONLY those;
+- `attachments/` — what the USER uploaded with an inbox message (D275) — is servable raw and
+  never deletable from here (a deletable upload is the operator's own words taken out of the
+  queue behind the run's back), on its own route so each one admits exactly one dir;
 - the recipe tree is readable and writable as JSON, and the files with a validated OWNER are
   refused by name (`NOT_EDITABLE_HERE`).
 """
@@ -48,6 +51,23 @@ def get_artifact(request: Request, slug: str, path: str):
     """
     info = _info(request, slug)
     return artifacts.serve_file(info.cfg.dir, path)
+
+
+@router.get("/routines/{slug}/attachment")
+def get_attachment(request: Request, slug: str, path: str):
+    """Serve one file the user ATTACHED to an inbox message (D275), so the Messages page can
+    show it back: the thumbnail or the open chip fetches this with the auth header and
+    renders from a blob URL (the conversation chat's pattern, `components/obs-attachments.js`).
+
+    `attachments/` AND NOTHING ELSE. The confinement is the route — the same property the
+    conversation file route has, resolved before the open and proven again on the opened
+    descriptor (`artifacts` module docstring), because this dir holds bytes a jailed util may
+    write and a traversal out of it would read the routine's own config for whoever asked.
+    It stays a route of its own rather than a widening of `artifact` above, so that each one
+    admits exactly one dir: a deliverable the ROUTINE wrote, or a file the USER uploaded.
+    """
+    info = _info(request, slug)
+    return artifacts.serve_file(info.cfg.dir, path, subdirs=("attachments",))
 
 
 @router.get("/routines/{slug}/file")

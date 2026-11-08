@@ -27,14 +27,14 @@ def test_inbox_message_create_edit_delete(client):
     c, tmp = client
     inbox = tmp / "routines" / "apir" / "inbox"
 
-    r = c.post("/api/routines/apir/messages", json={"text": "check the portals\r\n"})
+    r = c.post("/api/routines/apir/messages", data={"text": "check the portals\r\n"})
     assert r.status_code == 200
     mid = r.json()["id"]
     assert mid.startswith("msg-") and r.json()["delivery"] == "next-run"
     rec = read_json(inbox / f"{mid}.json")
     assert rec["text"] == "check the portals" and rec["source"] == "web-routine-queue"
-    assert c.post("/api/routines/apir/messages", json={"text": "  "}).status_code == 400
-    assert c.post("/api/routines/nope/messages", json={"text": "x"}).status_code == 404
+    assert c.post("/api/routines/apir/messages", data={"text": "  "}).status_code == 400
+    assert c.post("/api/routines/nope/messages", data={"text": "x"}).status_code == 404
 
     ts0 = rec["ts"]
     assert c.put(f"/api/routines/apir/messages/{mid}",
@@ -82,7 +82,7 @@ def test_an_edit_racing_the_drain_never_resurrects_the_consumed_message(client, 
 
     c, tmp = client
     rdir = tmp / "routines" / "apir"
-    mid = c.post("/api/routines/apir/messages", json={"text": "once"}).json()["id"]
+    mid = c.post("/api/routines/apir/messages", data={"text": "once"}).json()["id"]
     resolve = routines_common.queued_message
 
     def resolve_then_drain(*args, **kwargs):
@@ -126,3 +126,94 @@ def test_outbox_retract(client):
     assert c.delete(f"/api/routines/peer/outbox/{rid2}").status_code == 404  # not the filer
     assert c.delete("/api/routines/apir/outbox/R99").status_code == 404
 
+
+def test_an_inbox_message_carries_its_attachments_and_serves_them_back(client):
+    """D275: the inbox composer takes FILES, the way a conversation message already does.
+    The uploads land in the ROUTINE dir's `attachments/` (so the rels resolve for read_file
+    / view_image inside the run's own working dir), the record carries them under
+    `attachments` — which is what drives the engine's auto-attach — the text carries the
+    `[attached files]` block, and each one is served back for the Messages page."""
+    from rsched.engine.inbox import drain_messages
+
+    c, tmp = client
+    rdir = tmp / "routines" / "apir"
+
+    r = c.post("/api/routines/apir/messages", data={"text": "look at this\r\n"},
+               files=[("files", ("shot.png", b"\x89PNG-bytes", "image/png")),
+                      ("files", ("notes.txt", b"plain", "text/plain"))])
+    assert r.status_code == 200, r.text
+    rels = r.json()["attachments"]
+    assert len(rels) == 2 and all(rel.startswith("attachments/") for rel in rels)
+
+    rec = read_json(rdir / "inbox" / f"{r.json()['id']}.json")
+    assert rec["attachments"] == rels and rec["source"] == "web-routine-queue"
+    assert rec["text"].startswith("look at this")
+    assert "[attached files" in rec["text"] and rels[0] in rec["text"]
+    assert (rdir / rels[0]).read_bytes() == b"\x89PNG-bytes"
+
+    # an EDIT rewrites `text` only, and the `[attached files]` block lives in the text — so
+    # the rels must survive on the record, or rewording a message would strip its files from
+    # the run (the engine reads them off the record, and so does the page)
+    assert c.put(f"/api/routines/apir/messages/{r.json()['id']}",
+                 json={"text": "actually: compare it with yesterday's"}).status_code == 200
+    rec = read_json(rdir / "inbox" / f"{r.json()['id']}.json")
+    assert rec["attachments"] == rels and rec["text"] == "actually: compare it with yesterday's"
+
+    # the run really receives them: the drain reads `attachments` off ANY msg-* record
+    # (engine/inbox.py), so this channel needed nothing engine-side
+    drained = drain_messages(rdir, rdir / "runs" / "r1" / "consumed")
+    assert [d["attachments"] for d in drained] == [rels]
+
+    for rel in rels:
+        got = c.get("/api/routines/apir/attachment", params={"path": rel})
+        assert got.status_code == 200, got.text
+        assert got.content == (rdir / rel).read_bytes()
+
+
+def test_the_attachment_route_serves_attachments_and_nothing_else(client):
+    """Path confinement IS this route (the conversation file route's property, kept): only
+    `attachments/` is reachable and the check is made on the RESOLVED path, so a traversal
+    out of it answers 400 instead of handing over the routine's own config. A deliverable
+    stays on the `artifact` route — one route, one allowed dir."""
+    c, tmp = client
+    rdir = tmp / "routines" / "apir"
+    (rdir / "attachments").mkdir(parents=True, exist_ok=True)
+    (rdir / "attachments" / "ok.txt").write_text("fine", encoding="utf-8")
+    (rdir / "artifacts").mkdir(parents=True, exist_ok=True)
+    (rdir / "artifacts" / "deliverable.md").write_text("mine", encoding="utf-8")
+
+    assert c.get("/api/routines/apir/attachment",
+                 params={"path": "attachments/ok.txt"}).content == b"fine"
+    for bad in ("attachments/../routine.yaml", "routine.yaml", "artifacts/deliverable.md",
+                "/etc/passwd", "attachments/../../peer/attachments/x.png"):
+        assert c.get("/api/routines/apir/attachment",
+                     params={"path": bad}).status_code == 400, bad
+    assert c.get("/api/routines/apir/attachment",
+                 params={"path": "attachments/gone.png"}).status_code == 404
+    assert c.get("/api/routines/nope/attachment",
+                 params={"path": "attachments/ok.txt"}).status_code == 404
+
+
+def test_an_attachment_with_no_words_is_a_message(client):
+    """The D275 decision, pinned: dragging a screenshot in and saying nothing is a REAL
+    message, so an attachment-only POST is ALLOWED and the `[attached files]` block becomes
+    the body. It may not be left empty — `engine/inbox._drain_locked` injects only a record
+    with a truthy `text`, so an empty-text record would be logged "not a message file" and
+    consumed without the run ever seeing the file, which reads as a broken upload. Nothing
+    at all (no words, no file) is still the 400 it is today."""
+    from rsched.engine.inbox import drain_messages
+
+    c, tmp = client
+    rdir = tmp / "routines" / "apir"
+
+    r = c.post("/api/routines/apir/messages",
+               files=[("files", ("screenshot.png", b"img", "image/png"))])
+    assert r.status_code == 200, r.text
+    rec = read_json(rdir / "inbox" / f"{r.json()['id']}.json")
+    assert rec["text"].startswith("[attached files")      # never an empty body
+    assert rec["attachments"] == r.json()["attachments"]
+
+    drained = drain_messages(rdir, rdir / "runs" / "r2" / "consumed")
+    assert len(drained) == 1 and drained[0]["attachments"] == rec["attachments"]
+
+    assert c.post("/api/routines/apir/messages", data={"text": " "}).status_code == 400

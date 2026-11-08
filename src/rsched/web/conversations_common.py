@@ -1,6 +1,12 @@
 """Shared conversation-endpoint plumbing: home/info lookups, streamed attachment
-saving, and the list-item shaping — used by the conversation routers and by api_run_control,
-whose run-page messages save their attachments the same way.
+saving, and the list-item shaping — used by the conversation routers, by api_run_control,
+whose run-page messages save their attachments the same way, and by api_messages, whose
+routine-page inbox composer does too (D275).
+
+`_save_attachments` is therefore the ONE saver for every channel that takes a file: its
+count and size caps, its 413s and its safe-basename rule are the same wherever a message
+carries one, and the dir it writes under is the message's own home — a conversation dir, or
+a ROUTINE dir (the run's working dir, so the rels resolve for read_file / view_image).
 """
 
 from __future__ import annotations

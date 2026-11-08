@@ -167,7 +167,7 @@ export async function render(view, slug, query = {}) {
   if (settings.error) {
     view.append(el("h2", { id: "sec-settings" }, "Settings"),
       el("div", { class: "panel err" }, `the settings could not be read: ${settings.error}`));
-    return () => { dev.dispose(); };
+    return () => { dev.dispose(); messagesPane?.destroy(); };
   }
   const cfg = renderSettings(view, d, settings, {
     slug, titleH1, chipHost, runChip, recipeFile: query.file || "",
@@ -205,7 +205,10 @@ export async function render(view, slug, query = {}) {
     }
   };
   window.addEventListener("rsched-bus", onBus);
-  return () => { window.removeEventListener("rsched-bus", onBus); cfg.dispose(); dev.dispose(); };
+  // messagesPane holds the object URLs of its message attachments (D275) — a thumbnail keeps
+  // its decoded image in memory until the URL is revoked, so it dies with the page.
+  return () => { window.removeEventListener("rsched-bus", onBus); cfg.dispose(); dev.dispose();
+    messagesPane?.destroy(); };
 }
 
 // The Runs table is capped (user order 2026-08-15, F345): with keep_runs at 30+ the full
