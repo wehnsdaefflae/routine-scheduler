@@ -15,6 +15,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.519.0] — 2026-11-08
+
+### Added — a routine's inbox message takes ATTACHMENTS, and both pages serve them back (D275)
+
+The operator, 2026-11-07: *"I wanna be able to add an attachment to a routine's inbox message
+field"*, with his scope answer of 2026-11-08: *"page too: also serve it back for
+viewing/downloading on the Messages page"*. Both halves ship.
+
+`POST /api/routines/{slug}/messages` takes MULTIPART (`text` + `files`), reusing the saver the
+conversation composer already uses (`conversations_common._save_attachments`, its per-message
+count cap and per-file size cap, 413 on either) and `conversations.attachment_note`, filing the
+rels through `inbox.file_message(extra={"attachments": …})`. **Nothing engine-side changed** —
+`engine/inbox.py` already read that key off any `msg-*` record and already auto-attached images
+and PDFs to the run that receives it. New `GET /api/routines/{slug}/attachment?path=` serves
+`attachments/` and nothing else, through the same confinement the conversation file route uses
+(traversals, cross-routine paths, `artifacts/`, `routine.yaml` and `/etc/passwd` all 400).
+
+The files are shown back on the routine's own Messages panel AND on the global `#/messages`
+queue, as thumbnails or open chips, fetched with the auth header and rendered from blob URLs
+whose lifetime each mounting component owns.
+
+**An attachment with no words IS a message**, with the `[attached files]` block as the body —
+not taste, but the engine: `inbox._drain_locked` injects only a truthy `text`, so an empty-text
+record would be consumed with the run never seeing the file, and a refusal would hand the
+operator a 400 for the real case of dragging in a screenshot and saying nothing. No words AND
+no file is still a 400.
+
+### Added — a decision's option carries a PROOF, and recording the answer is not the end of it (D220)
+
+The operator, 2026-10-29: *"You need to come up with a proof at creation and accept / decline my
+response based on the result of you checking the proof"*. The first three increments of that
+lifecycle, as a complete and inert mechanism:
+
+- `rsched/proofs.py` — his five states (`open`, `in_progress`, `declined`, `positive`,
+  `negative`), his two categories (`operator_act` / `routine_act`), the state machine, and the
+  three derived questions a surface needs: the decision's state, whether it is ANSWERED BUT
+  UNPROVEN (F795's predicate), and whether it must render louder than an unanswered question
+  (`negative` does — the actions were performed and the proof is still absent).
+- `rsched/proofcheck.py` — the check that moves a proof on, swept daily by the owed-work watch,
+  whose subject is already "work a person asked for that nobody finished". One predicate is
+  implementable today: `config_patch_live`, compared key by key against the config the patch
+  targeted. A predicate id with no registry entry leaves the state ALONE — a check that cannot
+  run must never read as a check that failed.
+- `rsched/answerlines.py` — the ONE order in which an answer's verdicts reach the asking run
+  (the patch receipt, the decline, the proof), shared by both delivery doors, so a verdict can
+  no longer reach a run at boot and not mid-run.
+
+A decision carrying no `proof` behaves exactly as it always did, which is every ask the fleet
+has ever filed. **Not yet shipped**: the Decisions page's answered-but-unproven band, the
+are-you-sure-gated override control, and `in_progress` ceasing to hide a row.
+
+### Fixed — a resumed leg keeps the failure tally and the schema-off switch (D245)
+
+`loop.failures` and `loop._schema_off` reset on every leg, so a call that failed once before a
+restart and once after it read as two FIRST failures — and the fix-the-cause repair hint, which
+fires at the second failure of one call, never fired in the runs most likely to resume into the
+same wall. Both are now rebuilt from the transcript as a `guardscope` layer
+(`engine/resumedcounters.py`), with no payload extension needed: the failure key is a pure
+function of an action and its own observation, and the schema-off decision was already recorded
+as an `error` event nobody read back. A HELD action is not tallied, because the rebuild asks the
+same `grounds_a_finish` gate the live loop does.
+
+### Documentation — three conventions the review found missing (D254)
+
+CLAUDE.md now carries the blob-URL rule behind 0.371.0's token-theft fix (a `blob:` document
+inherits the console's origin, so a new tab opens only through `components/blobtab.js`; whoever
+mints an object URL revokes it), that `~/.credentials` is optional in the deploy inventory, and
+that `tests/test_deploy_state.py` pins that inventory against compose. Each claim was verified
+against the tree before it was written down.
+
 ## [0.518.0] — 2026-11-08
 
 ### Changed — the gate for the next fire is the last run's to write; closures stop buying fires
