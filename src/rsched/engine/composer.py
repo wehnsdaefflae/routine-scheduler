@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .. import answerlines, patchreceipt
 from ..runledger import digest_tail
-from . import notes, outputs
+from . import notemeta, notes, outputs
 from .actionschema import example_action
 from .capabilities import capabilities_digest
 from .harness import harness_contract
@@ -166,12 +166,11 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         parts.append(ledger)
     mem_index = routine_dir / ".memory" / "INDEX.md"
     if mem_index.exists():
-        lines = mem_index.read_text(encoding="utf-8").strip().splitlines()
-        shown = "\n".join(lines[:60])
-        more = (f"\n[... read .memory/INDEX.md for the full {len(lines)} lines]"
-                if len(lines) > 60 else "")
-        parts.append(".memory/ index (notes from earlier work — memory_read the relevant "
-                     "topic before re-discovering anything):\n" + shown + more)
+        # D268: a note whose `stale_after` has passed is listed under its OWN heading, not
+        # among the notes a run is told to consult — the whole point of the date is that the
+        # run which wrote it predicted this day, and the digest is where that has to land.
+        # Notes carrying no date yield the one block this always was, byte for byte.
+        parts.extend(notemeta.digest_blocks(mem_index.read_text(encoding="utf-8")))
     elif (mem_dir := routine_dir / ".memory").is_dir():
         names = [p.name for p in sorted(mem_dir.glob("*.md"))]
         if names:

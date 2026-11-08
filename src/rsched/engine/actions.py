@@ -168,7 +168,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "edit_file": (("path", "anchor"), ("replacement", "all", "then_script", "background")),
     "memory_read": (("name",), ("background",)),
     "memory_write": (("name",), ("content", "about", "delete", "anchor", "replacement", "all",
-                                 "background")),
+                                 "stale_after", "verified", "background")),   # D268: notemeta
     "read_rule": (("name",), ("background",)),
     "write_rule": (("name",), ("content", "anchor", "replacement", "all")),
     "llm": (("prompt",), ("system", "response_schema", "model", "background")),
