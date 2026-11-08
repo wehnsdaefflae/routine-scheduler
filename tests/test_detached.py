@@ -40,12 +40,14 @@ class DetachedFakeRunner(FakeRunner):
         atomic_write_json(run_dir / "status.json",
                           {"run_id": f"{cfg.slug}:{ts}", "state": "running",
                            "pid": os.getpid(), "updated": now_iso()})
-        self.active[cfg.slug] = ts
+        self.active["background", cfg.slug] = ts   # D247: a task's run lives there
         self.fired.append((cfg.slug, reason))
         return f"{cfg.slug}:{ts}"
 
     async def resume(self, cfg, ts, *, reason="resume") -> str | None:
-        if self.draining or cfg.slug in self.active:
+        # `fire` here serves background TASKS; `resume` serves the conversation OWNER a task
+        # is handed back to — different homes, so the keys differ (D247).
+        if self.draining or ("conversations", cfg.slug) in self.active:
             return None
         self.resumed.append((cfg.slug, ts, reason))
         return f"{cfg.slug}:{ts}"
@@ -272,7 +274,7 @@ async def test_wake_skips_live_owner(tmp_path):
     owner = _owner(server, last_state="running")   # a reply is live
     _task(server, "bg-1", owner)
     fr = DetachedFakeRunner()
-    fr.active["c-1"] = "20260715-110000"            # owner is active → resume must be skipped
+    fr.active["conversations", "c-1"] = "20260715-110000"   # owner active → resume is skipped
     await DetachedManager(server, fr).tick()
     assert fr.resumed == []
     assert list((owner / "inbox").glob("msg-bg-*.json"))   # message left for the live reply

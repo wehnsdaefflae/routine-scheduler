@@ -63,7 +63,9 @@ def when_words(ends: str | None) -> str:
 
 
 def _active(request, info: registry.RoutineInfo) -> bool:
-    return bool(info.active_run or request.app.state.runner.is_active(info.slug))
+    from .routines_common import run_is_active  # D247: one home-keyed liveness predicate
+
+    return bool(info.active_run or run_is_active(request, info))
 
 
 def hold_or_refuse(request, info: registry.RoutineInfo, *, changes: dict,

@@ -2322,7 +2322,14 @@ every copy it left (`migrate_converse_goals` carries this release's `converse` r
   live instance; the I/O (one GET, the stats, the append) is the CLI module's alone.
 - **Aborting a run** (`runner.abort` → `runner_state.abort_process`, behind the run page's abort,
   a conversation's stop, a background task's cancel and `rsched abort`): SIGTERM to the engine's
-  process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. A pid read from a
+  process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. It names the RUN —
+  `abort(run_id, home)`, the id and home the web route already resolved (`daemon/active_map.py`,
+  D247). By slug it aborted whichever run of that routine the active map held, and that map was
+  keyed by slug across the three homes, so a routine, a conversation and a background task
+  sharing a slug were one entry: the second to fire was refused as an overrun of the first, and
+  one abort could stop the other's run. The map is keyed `(home, slug)`; the run id is not the
+  key, because each home claims its run dirs independently and `slug:run-ts` can name a run in
+  two of them at once — an id no home was given for aborts nothing rather than guessing. A pid read from a
   status.json can outlive its process, so it is signalled only while it still names a process
   (not a thread the kernel gave that id since) outside the caller's own process group — an
   engine leads a session of its own, and a stale pid once aimed both signals at the daemon. The

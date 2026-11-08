@@ -25,6 +25,7 @@ from ..config import load_routine
 from ..engine import child, inbox
 from ..ids import now_iso
 from ..paths import atomic_write_json
+from . import active_map
 from .runner_state import _pid_alive
 
 log = logging.getLogger("rsched.daemon.detached_delivery")
@@ -60,7 +61,7 @@ def terminal_state(mgr, info: registry.RoutineInfo) -> str | None:
         return None
     if last.state in registry.TERMINAL_STATES:
         return last.state
-    if info.slug not in mgr.runner.active and not _pid_alive(last.pid):
+    if not mgr.runner.is_active("background", info.slug) and not _pid_alive(last.pid):
         return "failed"
     return None
 
@@ -130,7 +131,9 @@ async def wake(mgr, catalog: dict[str, registry.RoutineInfo]) -> None:
 
 
 async def wake_owner(mgr, owner_dir: Path, slug: str) -> None:
-    if mgr.runner.is_active(slug) or mgr.runner.draining:
+    # The owner is a conversation or a routine, so its home is read off its dir (D247).
+    if mgr.runner.is_active(active_map.home_of(mgr.server, owner_dir), slug) or (
+            mgr.runner.draining):
         return
     # the ONE inbox predicate (engine/inbox), asked about exactly what the wake's RESUMED leg
     # drains: LIVE_MESSAGE_VIAS — the user's own messages, a background result, a branch

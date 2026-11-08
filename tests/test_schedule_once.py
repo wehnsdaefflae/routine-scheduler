@@ -179,7 +179,7 @@ async def test_tick_defers_while_active_and_draining_then_fires(tmp_path):
     schedule_once.arm(server.routines_home, "oneshot", fire_at=past, reason="x",
                       requested_by="x")
     runner = FakeRunner()
-    runner.active["oneshot"] = "20260717-110000"
+    runner.active["routines", "oneshot"] = "20260717-110000"
     mgr = _up(server, runner)
     catalog = registry.scan(server)
     await mgr.tick(catalog)

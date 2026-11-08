@@ -11,7 +11,7 @@ import yaml
 
 import rsched.daemon.scheduler as sched_mod
 from conftest import FakeRunner
-from helpers import health_events, tmp_server
+from helpers import abort_live, health_events, live, tmp_server
 from rsched.config import ServerConfig, load_routine
 from rsched.daemon import restart, runner_reap, runner_state
 from rsched.daemon.events import EventBus
@@ -160,11 +160,11 @@ async def test_fire_reap_and_overrun(make_routine, tmp_path, monkeypatch):
     _stub_engine(monkeypatch, "sleep 0.2")
     runner = Runner(_server(tmp_path), EventBus())
     run_id = await runner.fire(cfg)
-    assert run_id and runner.is_active("stub")
+    assert run_id and runner.is_active("routines", "stub")
     st = read_json(d / "runs" / run_id.split(":")[1] / "status.json")
     assert st["state"] == "queued"
     assert await runner.fire(cfg) is None  # overrun skipped
-    assert await _wait_for(lambda: not runner.is_active("stub"))
+    assert await _wait_for(lambda: not runner.is_active("routines", "stub"))
     # stub never wrote a real status → daemon closed it out with a synthetic finish
     run_dir = d / "runs" / run_id.split(":")[1]
     info = read_run(run_dir, "stub")
@@ -182,10 +182,10 @@ async def test_concurrency_cap_queues_spawn(make_routine, tmp_path, monkeypatch)
     runner = Runner(_server(tmp_path, max_concurrent=1), EventBus())
     await runner.fire(cfg1)
     await runner.fire(cfg2)
-    assert await _wait_for(lambda: runner.active["one"].proc is not None)
-    assert runner.active["two"].proc is None  # queued: no process until a slot frees
-    assert await _wait_for(lambda: "one" not in runner.active)
-    assert await _wait_for(lambda: runner.active["two"].proc is not None)
+    assert await _wait_for(lambda: live(runner, "one").proc is not None)
+    assert live(runner, "two").proc is None  # queued: no process until a slot frees
+    assert await _wait_for(lambda: not runner.is_active("routines", "one"))
+    assert await _wait_for(lambda: live(runner, "two").proc is not None)
     assert await _wait_for(lambda: not runner.active)
 
 
@@ -200,11 +200,11 @@ async def test_waiting_user_releases_slot(make_routine, tmp_path, monkeypatch):
                  '&& mv runs/{TS}/status.json.tmp runs/{TS}/status.json && sleep 0.6')
     runner = Runner(_server(tmp_path, max_concurrent=1), EventBus())
     await runner.fire(cfg1)
-    assert await _wait_for(lambda: runner.active["asker"].proc is not None)
+    assert await _wait_for(lambda: live(runner, "asker").proc is not None)
     await runner.fire(cfg2)
     # asker parks in waiting_user → its slot frees → worker spawns while asker still lives
-    assert await _wait_for(lambda: runner.active.get("worker") and runner.active["worker"].proc)
-    assert runner.is_active("asker")
+    assert await _wait_for(lambda: live(runner, "worker") and live(runner, "worker").proc)
+    assert runner.is_active("routines", "asker")
     assert await _wait_for(lambda: not runner.active, wait_s=8)
 
 
@@ -215,10 +215,10 @@ async def test_abort_active_run(make_routine, tmp_path, monkeypatch):
     monkeypatch.setattr(runner_state, "KILL_GRACE_S", 1)
     runner = Runner(_server(tmp_path), EventBus())
     await runner.fire(cfg)
-    assert await _wait_for(lambda: runner.active["abortee"].proc is not None)
-    assert await runner.abort("abortee") is True
+    assert await _wait_for(lambda: live(runner, "abortee").proc is not None)
+    assert await abort_live(runner, "abortee") is True
     assert await _wait_for(lambda: not runner.active)
-    assert await runner.abort("abortee") is False
+    assert await abort_live(runner, "abortee") is False   # nothing of that slug is live
 
 
 async def test_the_engines_stderr_is_kept_as_a_bounded_tail(make_routine, tmp_path,
@@ -384,7 +384,7 @@ async def test_reap_surfaces_clean_exit_diagnostics(make_routine, tmp_path, monk
     runner = Runner(_server(tmp_path), EventBus())
     with caplog.at_level(logging.WARNING, logger="rsched.runner"):
         await runner.fire(cfg)
-        assert await _wait_for(lambda: not runner.is_active("warner"))
+        assert await _wait_for(lambda: not runner.is_active("routines", "warner"))
     surfaced = [r.getMessage() for r in caplog.records if "finished but logged" in r.getMessage()]
     assert surfaced and "util-stats snapshot write failed" in surfaced[0]
 
@@ -485,8 +485,8 @@ async def test_user_cancel_logs_run_canceled_not_orphaned(make_routine, tmp_path
     server = _server(tmp_path)
     runner = Runner(server, EventBus())
     await runner.fire(cfg)
-    assert await _wait_for(lambda: runner.active["cancelee"].proc is not None)
-    assert await runner.abort("cancelee") is True
+    assert await _wait_for(lambda: live(runner, "cancelee").proc is not None)
+    assert await abort_live(runner, "cancelee") is True
     assert await _wait_for(lambda: not runner.active)
     mine = health_events(server.routines_home, routine="cancelee")
     assert mine and mine[-1]["event"] == "run_canceled"
@@ -561,9 +561,9 @@ async def test_user_cancel_sigkill_never_retries(make_routine, tmp_path, monkeyp
     server = _server(tmp_path)
     runner = Runner(server, EventBus())
     await runner.fire(cfg)
-    assert await _wait_for(lambda: runner.active["cancelee2"].proc is not None)
+    assert await _wait_for(lambda: live(runner, "cancelee2").proc is not None)
     assert await _wait_for((d / "legs").exists)
-    assert await runner.abort("cancelee2") is True
+    assert await abort_live(runner, "cancelee2") is True
     assert await _wait_for(lambda: not runner.active)
     await asyncio.sleep(0.3)
     assert len((d / "legs").read_text().splitlines()) == 1       # no retry leg
@@ -585,13 +585,13 @@ async def test_refused_scheduled_fire_logs_health_event(make_routine, tmp_path, 
     runner = Runner(server, EventBus())
     first = await runner.fire(cfg, reason="schedule")
     assert first is not None
-    assert await _wait_for(lambda: runner.active["overfirer"].proc is not None)
+    assert await _wait_for(lambda: live(runner, "overfirer").proc is not None)
     # second scheduled fire collides with the still-active first → refused
     assert await runner.fire(cfg, reason="schedule") is None
     mine = health_events(server.routines_home, routine="overfirer")
     assert mine and mine[-1]["event"] == "fire_refused"
     assert mine[-1]["run_id"] == "" and "overrun" in mine[-1]["detail"]
-    await runner.abort("overfirer")
+    await abort_live(runner, "overfirer")
 
 
 async def test_non_scheduled_overrun_stays_quiet(make_routine, tmp_path, monkeypatch):
@@ -603,12 +603,12 @@ async def test_non_scheduled_overrun_stays_quiet(make_routine, tmp_path, monkeyp
     server = _server(tmp_path)
     runner = Runner(server, EventBus())
     assert await runner.fire(cfg, reason="schedule") is not None
-    assert await _wait_for(lambda: runner.active["resumer"].proc is not None)
+    assert await _wait_for(lambda: live(runner, "resumer").proc is not None)
     assert await runner.fire(cfg, reason="trigger") is None
     hpath = server.routines_home / ".control" / "health-events.jsonl"
     events = health_events(server.routines_home, routine="resumer") if hpath.exists() else []
     assert all(e["event"] != "fire_refused" for e in events)
-    await runner.abort("resumer")
+    await abort_live(runner, "resumer")
 
 
 # --- F643: a routine whose model role names an absent model is refused BEFORE a run dir ---
@@ -648,7 +648,7 @@ async def test_fire_refuses_a_routine_whose_role_names_an_absent_model(
     runner = Runner(server, EventBus())
 
     assert await runner.fire(cfg, reason="schedule") is None
-    assert not runner.is_active("staler")
+    assert not runner.is_active("routines", "staler")
     # no run dir was claimed — the whole point: nothing half-booted to account for later
     assert not (d / "runs").exists() or not list((d / "runs").iterdir())
 
@@ -701,7 +701,7 @@ async def test_a_role_the_run_may_never_resolve_does_not_refuse_the_fire(
 
     assert runner.fire_blocker(cfg) is None, "a stale uncensored role must not block a fire"
     assert await runner.fire(cfg, reason="schedule") is not None
-    await runner.abort("reorgish")
+    await abort_live(runner, "reorgish")
     # …and `validate` still tells the whole truth about it, which is where it belongs
     from rsched import trials as trials_mod
     assert "models.uncensored" in trials_mod.roles_problem(server, cfg.models)
@@ -716,13 +716,13 @@ async def test_a_servable_role_fires_normally(make_routine, tmp_path, monkeypatc
     server = _catalog(_server(tmp_path), "Sonnet medium", "Sonnet high")
     runner = Runner(server, EventBus())
     assert await runner.fire(cfg, reason="schedule") is not None
-    assert runner.is_active("fine")
-    await runner.abort("fine")
+    assert runner.is_active("routines", "fine")
+    await abort_live(runner, "fine")
 
     d2 = make_routine(slug="noroles")
     cfg2, _ = load_routine(d2)
     assert await runner.fire(cfg2, reason="schedule") is not None
-    await runner.abort("noroles")
+    await abort_live(runner, "noroles")
 
 
 async def test_fire_blocker_names_the_cause_so_a_caller_cannot_invent_one(
@@ -746,7 +746,7 @@ async def test_fire_blocker_names_the_cause_so_a_caller_cannot_invent_one(
     assert rid is not None
     cause, why = runner.fire_blocker(ok)
     assert cause == "overrun" and rid in why
-    await runner.abort("unblocked")
+    await abort_live(runner, "unblocked")
 
     # and draining outranks everything but the operator's own off switch
     runner.draining = True
@@ -855,8 +855,8 @@ async def test_abort_while_queued_releases_the_slug(make_routine, tmp_path, monk
     """Aborting a run that is still QUEUED must leave nothing behind in `runner.active`.
 
     The regression (2026-09-14): `_supervise` early-returned on `run.cancelled`, skipping
-    `runner_reap.reap` — the only caller of `runner.active.pop`. The slug stayed registered
-    forever, which silently disabled the routine (`resume` refuses on `slug in active`) AND
+    `runner_reap.reap` — the only caller of `runner.active.pop`. The run stayed registered
+    forever, which silently disabled the routine (`resume` refuses while it is active) AND
     wedged the restart drain (`active_states` reads the same dict, so the daemon believed
     runs were live and never restarted) — and the restart was the only thing that could have
     cleared it.
@@ -869,11 +869,11 @@ async def test_abort_while_queued_releases_the_slug(make_routine, tmp_path, monk
     runner = Runner(_server(tmp_path, max_concurrent=1), EventBus())
     await runner.fire(cfg1)
     await runner.fire(cfg2)
-    assert await _wait_for(lambda: runner.active["holder"].proc is not None)
-    assert runner.active["queued"].proc is None      # no slot yet → never spawned
-    queued_ts = runner.active["queued"].run_ts
+    assert await _wait_for(lambda: live(runner, "holder").proc is not None)
+    assert live(runner, "queued").proc is None       # no slot yet → never spawned
+    queued_ts = live(runner, "queued").run_ts
 
-    assert await runner.abort("queued") is True
+    assert await abort_live(runner, "queued") is True
     assert read_run(d2 / "runs" / queued_ts, "queued").state == "aborted"
 
     # the whole point: both slugs drain out of `active` once the slot frees
@@ -897,7 +897,7 @@ async def test_resume_blocker_names_the_real_cause(make_routine, tmp_path, monke
     assert "gone" in (runner.resume_blocker(cfg, "20260101-000000") or "")
 
     await runner.fire(cfg)
-    ts = runner.active["blocked"].run_ts
+    ts = live(runner, "blocked").run_ts
     assert "already active" in (runner.resume_blocker(cfg, ts) or "")
     assert await runner.resume(cfg, ts) is None       # and resume agrees with the blocker
 

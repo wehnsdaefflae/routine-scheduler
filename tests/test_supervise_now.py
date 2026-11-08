@@ -4,7 +4,7 @@ supervise is live — the whole point of a supervisor is to act on a run in flig
 The friction this fixes, measured: two UI toasts on 2026-10-16 (11:18:24 and 11:58:56), both
 "routine fau is busy", the operator pressing run-now with the brief "rung" while
 `fau:20261016-125013` was live. The busy rule (`runner.fire_blocker`) is RIGHT for that door —
-`runner.active` is keyed by slug and two concurrent runs of one routine would race its state —
+one run per (home, slug), and two concurrent runs of one routine would race its state —
 so this does not exempt the manual fire. It opens the door the ladder already has: a rung runs
 IN-PROCESS at the live run's own turn boundary (`ladder.escalate` → an OVERSIGHT child), which
 is exactly "a supervisory run against a run in flight" and costs the worker no turns of its own.

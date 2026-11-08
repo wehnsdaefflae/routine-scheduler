@@ -428,7 +428,7 @@ class Scheduler:
         """For /api/status and the dashboard."""
         return {
             "routines": len(self.catalog),
-            "active_runs": {slug: run.run_id for slug, run in self.runner.active.items()},
+            "active_runs": {f"{h}/{s}": r.run_id for (h, s), r in self.runner.active.items()},
             "next_fires": {s: t.isoformat() for s, t in sorted(self.next_fires.items())},
             "lane_next_fires": {lane_id: t.isoformat()
                                 for lane_id, t in sorted(self.lane_next_fires.items())},

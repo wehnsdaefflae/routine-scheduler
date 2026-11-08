@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from .. import abortmark
 from ..config import DELIBERATION_LEVELS, EFFORT_LEVELS, load_routine
+from ..daemon import active_map
 from ..daemon.runner_state import abort_process
 from ..ids import now_iso
 from ..paths import read_json
@@ -221,7 +222,7 @@ def supervise_now(request: Request, run_id: str) -> dict:
 
     A person could not start a supervisory run by hand while the run it would supervise was
     live: `runner.fire_blocker` refuses a second run of a routine, and that refusal is right
-    (`runner.active` is keyed by slug; two concurrent runs of one routine would race its
+    (one run per (home, slug): two concurrent runs of one routine would race its
     state). This is not an exemption from it. The ladder already supervises a live run the only
     way that is safe — in-process, at the worker's next turn boundary, as an OVERSIGHT child
     whose turns are its own — so what a person needs is a request ON the run, which is what
@@ -309,7 +310,7 @@ async def rewind_run(request: Request, run_id: str, body: Rewind) -> dict:
         raise HTTPException(409, "rewound, but could not resume (already running or draining)")
     return {"ok": True, "run_id": rid, **info}
 
-async def abort_with_fallback(runner, slug: str, run_dir: Path,
+async def abort_with_fallback(runner, run_id: str, run_dir: Path,
                               reason: str = "cancelled from the console") -> bool:
     """Abort via the runner (daemon-owned runs) with a recorded-pid fallback for runs the
     daemon doesn't track (a CLI run, a pre-restart orphan) — the ONE abort sequence the
@@ -325,10 +326,9 @@ async def abort_with_fallback(runner, slug: str, run_dir: Path,
     Only a run its own status still calls ACTIVE is aborted, by either path. A finished run's
     status.json keeps the last pid it had, and the kernel is free to hand that number to any
     later process: the fallback SIGTERMed whatever process GROUP held it now — another run's
-    engine, or one the daemon leads — which is what deleting a conversation with an old
-    finished background task, or an abort fired at a finished run, used to do. And the
-    runner aborts by SLUG, so the same abort used to stop whichever OTHER run of that routine
-    was live at the time.
+    engine, or one the daemon leads (deleting a conversation with an old finished background
+    task did exactly that). The runner half aborts BY RUN ID in the home this run dir sits
+    in (D247): by slug it stopped whichever other run of that routine was live at the time.
     """
     if run_state(run_dir) in TERMINAL_STATES:
         return False
@@ -337,14 +337,14 @@ async def abort_with_fallback(runner, slug: str, run_dir: Path,
     # The engine writes its OWN pid into status.json, so this stamps the mark for exactly the
     # process about to be signalled — a mark a later leg finds names another pid and is ignored.
     abortmark.write(run_dir, actor="user", reason=reason, pid=pid)
-    if await runner.abort(slug):
+    if await runner.abort(run_id, active_map.home_of(runner.server, run_dir.parent.parent)):
         return True
     return await abort_process(pid)
 
 @router.post("/runs/{run_id}/abort")
 async def abort(request: Request, run_id: str) -> dict:
-    slug, run_dir = _run_dir(request, run_id)
-    if not await abort_with_fallback(request.app.state.runner, slug, run_dir,
+    _, run_dir = _run_dir(request, run_id)
+    if not await abort_with_fallback(request.app.state.runner, run_id, run_dir,
                                      "aborted from the run page"):
         raise HTTPException(409, "no live process for this run")
     return {"ok": True}

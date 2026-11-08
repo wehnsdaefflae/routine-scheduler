@@ -53,7 +53,7 @@ async def test_disabled_members_are_skipped_not_counted_as_runs(tmp_path):
     for _ in range(12):                       # fire/collect each live member, skip the off ones
         await mgr.tick(catalog)
         for d in on.values():
-            if runner.active and d.name in runner.active:
+            if runner.is_active("routines", d.name):   # D247: keyed (home, slug)
                 mk_run(d, runner.ts, "finished", outcome="ok")
                 runner.active.clear()
     (ev,) = health_events(server.routines_home, event="lane_chain_done")

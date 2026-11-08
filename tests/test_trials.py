@@ -202,7 +202,7 @@ async def _fire_and_capture(monkeypatch, server, cfg, *, resume_ts=""):
     else:
         await runner.fire(cfg, reason="manual")
     for _ in range(250):
-        if seen and not runner.is_active(cfg.slug):
+        if seen and not runner.is_active("routines", cfg.slug):
             break
         await asyncio.sleep(0.02)
     assert seen

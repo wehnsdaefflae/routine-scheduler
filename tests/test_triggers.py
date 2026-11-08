@@ -171,7 +171,7 @@ async def test_tick_coalesces_while_active_and_draining(tmp_path):
     d = _routine(server, trig=[dict(WEBHOOK)])
     triggers.write_event(server.routines_home, "webby", trigger_id="t-aaaa1111", payload="x")
     runner = FakeRunner()
-    runner.active["webby"] = "20260717-110000"
+    runner.active["routines", "webby"] = "20260717-110000"
     mgr = TriggerManager(server, runner)
     catalog = registry.scan(server)
     await mgr.tick(catalog)
@@ -402,7 +402,7 @@ async def test_report_trigger_respects_disabled_active_closures_and_answers(tmp_
     atomic_write_json(d_defer / "inbox" / "answer-q-2.json", {"qid": "q-2", "defer": True})
 
     runner = FakeRunner()
-    runner.active["busy"] = "20260805-090000"
+    runner.active["routines", "busy"] = "20260805-090000"
     mgr = TriggerManager(server, runner)
     await mgr.tick(registry.scan(server))
     assert runner.fired == []

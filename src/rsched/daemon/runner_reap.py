@@ -40,7 +40,7 @@ log = logging.getLogger("rsched.daemon.runner_reap")
 
 
 def reap(runner, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
-    runner.active.pop(run.slug, None)
+    runner.active.pop((run.home, run.slug), None)   # D247: keyed per home
     if run.cancelled and run.proc is None:
         return   # aborted while queued: status already closed out, nothing ran
     rc = run.proc.returncode if run.proc else None

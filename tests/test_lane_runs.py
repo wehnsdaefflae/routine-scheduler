@@ -417,7 +417,7 @@ async def test_a_pending_restart_does_not_hold_a_chain_while_a_person_is_running
                         on_failure="continue")
     lane_runs.arm(server.routines_home, lane, default_on_failure="continue")
     runner = FakeRunner()
-    runner.active["someone-else"] = "20260717-120000"
+    runner.active["routines", "someone-else"] = "20260717-120000"
     sentinel = restart.sentinel_path(server)
     sentinel.parent.mkdir(parents=True, exist_ok=True)
     sentinel.write_text("{}", encoding="utf-8")

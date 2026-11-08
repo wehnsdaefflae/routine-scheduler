@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import HTTPException, Request
 
 from .. import registry
+from ..daemon import active_map
 from ..grants import CAPABILITY_ACTIONS, EMPTY_CAPABILITIES
 from ..ids import now_iso, parse_run_id
 from ..paths import atomic_write_json, atomic_write_yaml, read_json
@@ -102,12 +103,23 @@ def _info(request: Request, slug: str) -> registry.RoutineInfo:
     return info
 
 
+def run_is_active(request: Request, info: registry.RoutineInfo) -> bool:
+    """Is a run of THIS routine (or conversation) live in the runner right now?
+
+    D247: the runner's active map is keyed by (home, slug), so the home has to be named. It is
+    read off the dir — the same rule everything else tells a conversation from a routine by
+    (`daemon.active_map.home_of`) — because this helper serves both worlds.
+    """
+    state = request.app.state
+    return state.runner.is_active(active_map.home_of(state.server, info.cfg.dir), info.slug)
+
+
 def guard_not_active(request: Request, info: registry.RoutineInfo,
                      noun: str = "routine") -> None:
     """409 while a run is active — the web layer edits config/files only between runs
     (shared with conversations, where the 'run' is a live reply).
     """
-    if info.active_run or request.app.state.runner.is_active(info.slug):
+    if info.active_run or run_is_active(request, info):
         raise HTTPException(409, f"{noun} {info.slug!r} is busy (a run is active) "
                                  "— try again after it ends")
 
@@ -126,7 +138,7 @@ def queue_or_apply(request: Request, info: registry.RoutineInfo, kind: str,
     """
     from .. import pending_edits
 
-    if not (info.active_run or request.app.state.runner.is_active(info.slug)):
+    if not (info.active_run or run_is_active(request, info)):
         return apply_now()
     home = request.app.state.server.routines_home
     if pending_edits.pending_count(home, info.slug) >= pending_edits.MAX_PENDING_EDITS:

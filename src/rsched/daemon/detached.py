@@ -152,7 +152,7 @@ class DetachedManager:
         """Idempotency is keyed on RUN existence, not dir existence: a crash between
         materialize and fire leaves a dir but no run, and must still be fired.
         """
-        if self.runner.is_active(taskid):
+        if self.runner.is_active("background", taskid):
             return True
         runs = task_dir / "runs"
         return runs.is_dir() and any((d / "status.json").exists()

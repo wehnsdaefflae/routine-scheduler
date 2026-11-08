@@ -48,14 +48,14 @@ async def test_delayed_engine_handle_owned_and_reaped(setup_gate, monkeypatch, c
         return proc
     monkeypatch.setattr(asyncio, "create_subprocess_exec", delayed)
     await runner.fire(cfg, reason="manual")
-    run = runner.active[cfg.slug]
+    run = runner.active["routines", cfg.slug]   # D247: the map is keyed (home, slug)
     task = next(iter(runner._supervisors))
     try:
         await asyncio.wait_for(acquired.wait(), 5)
         assert run.proc is None
         descendant = int(child_file.read_text())
         if cancel == "abort":
-            assert await runner.abort(cfg.slug)
+            assert await runner.abort(run.run_id, "routines")
         else:
             task.cancel()
             await asyncio.sleep(0)
@@ -141,7 +141,7 @@ async def test_actual_refusal_is_strict_in_every_server_mode(setup_gate, monkeyp
     monkeypatch.setattr(run_gate, "_bootstrap_cmd", command)
     monkeypatch.setattr(runner_state, "engine_cmd", lambda *a, **k: pytest.fail("engine boot"))
     await runner.fire(cfg)
-    run = runner.active[cfg.slug]
+    run = runner.active["routines", cfg.slug]
     await asyncio.gather(*runner._supervisors)
     st = read_json(run.run_dir / "status.json")
     assert st["state"] == "failed"

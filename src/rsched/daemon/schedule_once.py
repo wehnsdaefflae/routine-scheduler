@@ -140,7 +140,7 @@ class OneShotManager:
         # one-run-per-routine: fire the EARLIEST-due request; any others fire on later ticks
         # once the routine is free again (the one-shot analog of trigger coalescing).
         first = self._due_request(slug, paths)
-        if first is None or self.runner.draining or self.runner.is_active(slug):
+        if first is None or self.runner.draining or self.runner.is_active("routines", slug):
             return
         await self._fire(slug, info.cfg, first[0], first[1], resume_ts=None)
 
@@ -157,7 +157,8 @@ class OneShotManager:
                            reason="conversation missing")
             return
         first = self._due_request(spool_slug, paths)
-        if first is None or self.runner.draining or self.runner.is_active(cfg.slug):
+        if first is None or self.runner.draining or self.runner.is_active(
+                "conversations", cfg.slug):
             return
         # a conversation continues its ONE run in place (finish-per-reply): wake it by
         # resuming the latest run; a conversation with no run yet fires fresh

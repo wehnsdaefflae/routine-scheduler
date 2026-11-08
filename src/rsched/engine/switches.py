@@ -69,8 +69,8 @@ def person_asked(loop) -> str | None:
     THE DOOR THIS OPENS (F750). A person could not start a supervisory run by hand while the run
     it would supervise was live: `runner.fire_blocker` refuses a second run of a routine (two UI
     toasts on 2026-10-16, "routine fau is busy", the operator pressing run-now with the brief
-    "rung" while `fau:20261016-125013` was going), and that refusal is RIGHT — `runner.active` is
-    keyed by slug and two concurrent runs of one routine would race its state. The ladder already
+    "rung" while `fau:20261016-125013` was going), and that refusal is RIGHT — one run per
+    (home, slug), because two concurrent runs of one routine race its state. The ladder already
     supervises a live run the only way that is safe: in-process, at the worker's own turn
     boundary, as an OVERSIGHT child whose turns are its own (`engine/ladder.escalate`). So the
     door is a REQUEST ON THE RUN, not a second run of the routine.

@@ -178,7 +178,7 @@ class StubRunner:
         # the run page's converse path passes the run ts positionally (api_run_control.converse)
         return f"{cfg.slug}:20260715-120001"   # the wake itself is enough - nothing asserts on it
 
-    def is_active(self, slug: str) -> bool:
+    def is_active(self, home: str, slug: str) -> bool:   # D247: keyed per home
         return False
 
 

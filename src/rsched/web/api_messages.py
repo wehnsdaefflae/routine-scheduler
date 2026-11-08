@@ -77,7 +77,7 @@ def _delivery(request: Request, slug: str) -> str:
     """Whether the message reaches a RUNNING run's next turn boundary or waits for the
     next run — the toast wording the console shows on create/edit.
     """
-    return "mid-run" if _state(request).runner.is_active(slug) else "next-run"
+    return "mid-run" if _state(request).runner.is_active("routines", slug) else "next-run"
 
 
 @router.get("/routines/{slug}/messages")
