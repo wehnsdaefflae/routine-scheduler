@@ -70,6 +70,12 @@ def verdict_history(routine_dir: Path, limit: int = VERDICT_RUNS) -> list[dict]:
 def payload(routine_dir: Path) -> dict:
     doc = finishline.load(routine_dir)
     return {**doc, "reached": finishline.reached(doc),
+            # `today` is the SCHEDULER's own local day (`finishline.today`) — the day the party
+            # that actually judges a date outcome and retires the routine is on. The editor
+            # renders what this says instead of computing a day on the viewer's clock: for the
+            # hours between two midnights those are different days, so a console open in
+            # another zone called a date outcome reached against the scheduler's verdict (D252).
+            "today": finishline.today().isoformat(),
             "done_when": donewhen.read(routine_dir),
             "verdicts": verdict_history(routine_dir)}
 
