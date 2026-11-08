@@ -28,6 +28,7 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+from .. import proofcheck
 from ..config import ServerConfig, load_routine
 from ..engine import finishline, obligations
 from ..health_events import log_health_event
@@ -118,6 +119,14 @@ class OwedWatch:
             log_health_event(home, "obligation_overdue", routine=slug, run_id="",
                              detail=detail, obligations=len(owed))
         self._file_unowned(home, today)
+        # D220: and the proofs. An answered decision whose authorized work never landed is
+        # owed work of exactly this kind — the operator's own framing ("accept / decline my
+        # response based on the result of you checking the proof"), and the reason this watch
+        # is where the sweep lives rather than in a watcher of its own: same daily cadence,
+        # same subject, and `daemon/scheduler.py` is over the size bar.
+        moved = proofcheck.sweep_home(home)
+        if moved:
+            log.info("owed-watch: %d decision proof(s) moved state", moved)
 
     def _file_unowned(self, home: Path, today: date) -> None:
         from .. import pending

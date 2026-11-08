@@ -646,6 +646,20 @@ one you are about to touch, not all of them.
   Decisions page with the asks that are holding work up. Three bounds: this run's own qids only
   (`q-<run-ts>-<turn>`), nothing already answered, and a record written before the class existed
   reads as `closing`.
+  A decision may also carry a PROOF per option (D220, `rsched/proofs.py`): what would have to be
+  true for that option's answer to have been carried out — a `predicate` id, what it `reads`, and
+  its `category` (`operator_act` = an act only he can perform, `routine_act` = one of the
+  routine's own). Filed with the record (`file_question(..., proof=…)`), it starts `open` per
+  option; answering moves the chosen one to `in_progress` and the rest to `declined`; the daily
+  owed-work sweep (`rsched/proofcheck.sweep_home`, called from `daemon/owed_watch`) runs the
+  predicate and writes `positive` (it landed) or `negative` (performed, proof still absent —
+  which renders LOUDER than an unanswered question). Only `positive`, or his are-you-sure-gated
+  override, settles the item; `proofs.unproven` is the one derived question a surface asks. A
+  predicate with no registry entry leaves the state ALONE — a check that cannot run must never
+  read as a check that failed. A record carrying no `proof` behaves exactly as it always did,
+  which is every ask filed before this existed. The verdicts riding an ANSWER — the patch
+  receipt, the decline, the proof — are composed in ONE order (`rsched/answerlines.suffixes`) for
+  both delivery doors, the boot digest and the live turn boundary.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
   and an optional `request` ("<class>:<name>" entity id, entities.py): a typed ACCESS REQUEST the
   Decisions page settles with one of four decisions (allow/deny × now/forever). A `util:` request

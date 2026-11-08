@@ -107,3 +107,28 @@ def test_owed_work_past_a_week_reaches_the_operator(tmp_path, make_routine):
     # owned now: the next sweep files nothing new for it
     OwedWatch(server).check(datetime.now(UTC).date())
     assert pending.load_all(home) == []
+
+
+def test_the_daily_check_also_checks_decision_proofs(tmp_path, make_routine):
+    """D220: an answered decision whose authorized work never landed is owed work of exactly
+    this watch's kind, so the proof sweep runs here — and a proof nobody checks is the promise
+    this decision exists to replace."""
+    from rsched import proofs
+
+    server = seeded_server(tmp_path)
+    d = make_routine(slug="subject")
+    proof = {"a: raise it": {"predicate": "config_patch_live", "reads": "routine.yaml",
+                             "category": "operator_act"}}
+    atomic_write_json(d / "questions" / "answered" / "q-1.json",
+                      {"qid": "q-1", "question": "Raise the budget?", "answered": True,
+                       "answer": "a: raise it", "options": list(proof),
+                       "config_patch": {"budgets": {"max_turns": 9999}},
+                       "proof": proofs.answered(proofs.filed(proof), "a: raise it")})
+
+    OwedWatch(server).check(datetime.now(UTC).date())
+
+    record = json.loads((d / "questions" / "answered" / "q-1.json").read_text(encoding="utf-8"))
+    # the patch is NOT live in that routine's config, and he was the one who had to apply it
+    assert record["proof"]["a: raise it"]["state"] == proofs.NEGATIVE
+    assert proofs.unproven(record) is True
+    assert proofs.louder_than_open(record) is True
