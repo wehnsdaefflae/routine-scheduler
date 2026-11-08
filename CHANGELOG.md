@@ -15,6 +15,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.520.0] — 2026-11-08
+
+### Added — an answered-but-unproven decision stays on the Decisions page (D220 step 4 / F795)
+
+0.519.0 shipped the proof lifecycle and nothing rendered it. The page now holds a decision he
+ANSWERED whose authorized work nothing has yet shown to have landed, in a band of its own
+between what waits on a person and what is settled — above Settled because the item is not
+finished, below everything that waits because it is not a question. His hard constraint is
+honoured: **a row whose proof is unproven is never re-presented as an unanswered question** —
+the card keeps his answer and its revise control, nothing offers it an answer box, and the
+group's count wears the muted modifier rather than the console's "a person is waited on"
+colour.
+
+A `negative` proof — the actions were performed and the proof is STILL absent, his own
+"unexpected event" state — is the one thing this page says loudly about a decision already
+made: *"proof absent — the work was authorized and has not shown up"*. An `in_progress` one is
+muted, because nothing is wrong yet. A `positive` one clears the row into Settled. A decision
+carrying no proof map behaves exactly as it always did, which is every row the instance has.
+
+Each card in the band says WHAT is being checked — the predicate and what it reads — so the
+band can be read rather than guessed at. No new CSS class: the two chip treatments already
+exist, and both stylesheets are at their size ceilings.
+
+**Still owed, deliberately:** `web/decisions_read._DECIDED_STATUSES` still contains
+`in_progress`, so a self-audit REPORT decision at that status stays hidden. Those rows come
+from `audit/report.json` and carry no proof map yet, so removing the status today would hide
+nothing less and would re-ask six already-addressed decisions — the F659 regression its own
+docstring records. They need proofs first.
+
+### Added — a memory note carries `stale_after` and `verified` (D268)
+
+`memory_write` gained two optional fields from the Open Knowledge Format: `stale_after`
+(YYYY-MM-DD) and `verified: {by: run|human:<who>, at}`. Notes have been writing "verified live
+2026-07-30" in PROSE; this makes it data. The engine renders both in the note's INDEX line, and
+a note past its `stale_after` is listed under its own heading in the state digest — so a run
+reads which of its own notes have expired instead of trusting all of them equally.
+
+The INDEX rendering extends the one engine-owned writer rather than adding a second, and both
+fields are declared in `ACTION_SCHEMA` **and** in `actions.KIND_FIELDS` — a new sub-field
+missing from the second is silently stripped. `docs/prompt-anatomy.md` §5.1 was re-rendered by
+its own script.
+
+The always-on prompt contract grew **+824 characters**, all in the schema section, and its
+ceiling was re-locked by hand with the reason: that budget exists to make exactly this cost
+visible and deliberate.
+
+**Beyond the literal order, kept on purpose:** a later `memory_write` MERGES these markers
+rather than replacing them. Replace-only semantics made any ordinary revision silently drop an
+expiry an earlier run had set, and losing an operator-visible marker on an unrelated edit is
+the worse failure.
+
+### Changed — the settings digest names rule approval (D252c)
+
+`components/settings-digest.js` named four of the five approval dials and never
+`rule_confirm`, whose value always arrived (it is in `grants.APPROVAL_DIALS`). So turning rule
+approval DOWN — the only direction that matters, `always` being every routine's default —
+showed no difference in a changed-field note, an override note, a closed "more" menu or the
+Library's pattern settings. It is now named on the same departs-from-default rule the config
+and recipe dials follow, and a second test checks the digest against `APPROVAL_DIALS` ITSELF,
+so a sixth dial added with no digest line fails a test instead of shipping silent. This
+completes D252 and its `docs/designs.md` entry is deleted.
+
 ## [0.519.0] — 2026-11-08
 
 ### Added — a routine's inbox message takes ATTACHMENTS, and both pages serve them back (D275)
