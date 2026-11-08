@@ -77,6 +77,39 @@ function of an action and its own observation, and the schema-off decision was a
 as an `error` event nobody read back. A HELD action is not tallied, because the rebuild asks the
 same `grounds_a_finish` gate the live loop does.
 
+### Fixed — abort by run id, and the runner's active map keyed per home (D247)
+
+`runner.active` was keyed by slug across all three homes, so a routine, a conversation and a
+background task sharing a slug collided — and the web abort named a run id the runner resolved
+back to a slug. The map is now keyed `(home, slug)`; `Runner.abort(run_id, home="")` takes the
+id the route already had and aborts NOTHING when two homes answer to it, because run ids are
+not unique across homes; `is_active(home, slug)` makes a missed caller break loudly rather than
+read the wrong home. No slug-keyed path is left alive. New `daemon/active_map.py`, because
+`runner.py` was at its size ceiling.
+
+**`/api/status`'s `active_runs` is now keyed `home/slug`** — a payload shape change. Every
+consumer found reads the key count or the values rather than the key text.
+
+### Changed — the engine's action deadlines are SERVED, and the finish line's day is the scheduler's (D252)
+
+`static/components/actiontime.js` carried its own copy of the engine's action timeouts
+(`{util: 300, script: 300, shell: 120, wait: 600}`), so a console row could contradict the
+engine that would actually kill the call. `/api/status` now serves `action_limits`, built in
+`web/actionlimits.py` from the engine's own constants with no number typed in it — which
+required naming the one that was a bare literal, `waitop.WAIT_DEFAULT_TIMEOUT_S`, now read by
+the deadline itself. `static/action-limits.js` is the console's one reader (an action's own
+`timeout_s` still wins) and the copy is gone with no fallback; a row distinguishes a limit, a
+known absence of one, and not knowing yet.
+
+`finish-line.js` computed "today" on the VIEWER's clock, so a date outcome near midnight read
+differently from another zone than from the box that retires the routine. `api_finishline`
+serves the scheduler's own local day and the client judges against it. The pre-existing test
+pinned the defect and was replaced; the two new ones sit in opposite zones (UTC+14, UTC-10) so
+neither can pass by accident of the host's zone.
+
+The third part of that entry — the settings digest never naming `rule_confirm` — is NOT built;
+its `docs/designs.md` entry is shortened to that remainder rather than deleted.
+
 ### Documentation — three conventions the review found missing (D254)
 
 CLAUDE.md now carries the blob-URL rule behind 0.371.0's token-theft fix (a `blob:` document
