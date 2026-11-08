@@ -155,6 +155,13 @@ const FIX = {
   revise_recipe: (f) => ({
     act: `revise the recipe so its runs stop spending ${f.share || "most"} of their actions on `
          + "its own process", where: "the recipe" }),
+  // A gate check that has answered "work" on every ask has never let a fire skip
+  // (readmodels/gate_yield.py). The act is on its row in the Run gate section — narrow its
+  // parameters or remove it — so the landing is that section's check list.
+  edit_gate: (f) => ({
+    act: named(f.check) ? `narrow or drop the gate check ${f.check}` : "narrow or drop the check",
+    where: "Run gate", section: "sec-run-gate",
+    focus: byAttr("data-gate-check-id", named(f.check)) }),
 };
 
 /** Fully on screen. The second scroll is worth making only for a control the first one left off

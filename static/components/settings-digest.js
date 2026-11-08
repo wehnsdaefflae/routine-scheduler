@@ -42,7 +42,8 @@ export function gateLine(gate) {
   const checks = (gate?.checks || []).map((c) => String(c.kind || "?").replaceAll("_", " "));
   if (!checks.length) return "off — every scheduled fire starts a run";
   return `${gate.enabled ? "on" : "off"} · ${checks.length} check${checks.length === 1 ? "" : "s"}: `
-    + `${list(checks)}${gate.enabled ? ` · answers within ${gate.timeout_s}s` : ""}`;
+    + `${list(checks)}${gate.enabled ? ` · answers within ${gate.timeout_s}s` : ""}`
+    + (gate.enabled && gate.run_written === false ? " · runs do not write the next fire's" : "");
 }
 
 export function triggerLine(t) {

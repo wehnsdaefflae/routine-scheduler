@@ -28,6 +28,7 @@ from helpers import write_util
 from rsched.readmodels import remedies as remedies_mod
 from rsched.readmodels import surface as surface_mod
 from rsched.readmodels import surface_caps, surface_needs, surface_nodes, surface_schedule
+from rsched.readmodels import surface_gate as gate_mod
 from rsched.readmodels import surface_outcome as outcome_mod
 from rsched.readmodels import surface_overhead as overhead_mod
 from rsched.readmodels.remedies import REMEDIES, surface_lines
@@ -669,9 +670,9 @@ def test_a_gap_fixed_off_this_page_still_says_what_settles_it(tmp_path):
         "kind": "fix_phase", "expected": "phase"}
 
 
-#: Every module that may emit a surface row. The scans below read SOURCE, so a join moved into
-#: its own file is listed here or its `fix` kinds stop being held to the vocabulary.
-_EMITTERS = (surface_mod, surface_needs, surface_schedule, surface_caps, outcome_mod, overhead_mod)
+#: Every surface-row emitter: the scans read SOURCE, so a join moved to its own file joins this.
+_EMITTERS = (surface_mod, surface_needs, surface_schedule, surface_caps, outcome_mod, overhead_mod,
+             gate_mod)
 
 
 def _node_calls() -> list[ast.Call]:
@@ -712,8 +713,7 @@ def test_every_remedy_can_be_said_in_words():
     need no sentence can name, `:doc` for a drop a held doc would put straight back — so the two
     sides are compared on the kind each variant belongs to. Which payload selects which wording
     is behaviour, pinned by the tests that render both."""
-    kinds = {value.value
-             for call in _node_calls() for arg in _fix_args(call)
+    kinds = {value.value for call in _node_calls() for arg in _fix_args(call)
              for d in ast.walk(arg) if isinstance(d, ast.Dict)
              for key, value in zip(d.keys, d.values, strict=True)
              if getattr(key, "value", None) == "kind"}

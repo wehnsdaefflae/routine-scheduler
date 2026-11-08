@@ -62,6 +62,7 @@ REMEDIES: dict[str, str] = {
     "revise_recipe": "revise its recipe so its runs stop spending {share} of their actions on "
                      "its own process — drop the stages, records and Done-when lines the task "
                      "does not need",
+    "edit_gate": "narrow or drop the gate check {check} — it has never let a fire skip",
 }
 
 #: Which param decides between a kind's named and `:any` wording.
@@ -74,7 +75,7 @@ _ANY_PARAM = {"add_root": "path", "bind_machine": "name", "bind_connection": "pr
 #: directions, so neither the words nor the params can grow past the other unnoticed.
 #:
 #: A list param joins with commas (`missing`); everything else is said as it stands.
-_PARAMS = ("missing", "name", "mode", "path", "provider", "expected", "doc", "share")
+_PARAMS = ("missing", "name", "mode", "path", "provider", "expected", "doc", "share", "check")
 
 
 def _params(fix: dict) -> defaultdict[str, str]:

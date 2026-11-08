@@ -51,7 +51,8 @@ def test_the_detail_payload_carries_the_gate_so_the_page_can_render_it(client):
     c, _cfg = client
     d = c.get("/api/routines/gated", headers=AUTH).json()
     assert "run_gate" in d, "the config page cannot render a field the API never returns"
-    assert d["run_gate"] == {"enabled": False, "timeout_s": 30, "checks": []}   # the default
+    assert d["run_gate"] == {"enabled": False, "timeout_s": 30, "checks": [],
+                           "run_written": True}   # the default
 
 
 def test_enabling_the_gate_from_the_page_persists_it(client):
@@ -62,7 +63,8 @@ def test_enabling_the_gate_from_the_page_persists_it(client):
     assert "run_gate" in r.json()["updated"], r.json()
 
     stored = read_yaml(cfg.routines_home / "gated" / "routine.yaml", {})
-    assert stored["run_gate"] == {"enabled": True, "timeout_s": 45, "checks": QUIET}
+    assert stored["run_gate"] == {"enabled": True, "timeout_s": 45, "checks": QUIET,
+                                 "run_written": True}
     assert c.get("/api/routines/gated", headers=AUTH).json()["run_gate"]["enabled"] is True
 
 
@@ -79,7 +81,8 @@ def test_one_save_carries_the_schedule_and_the_gate_without_clobbering_either(cl
     assert "run_gate" in updated and "schedule" in updated, updated
 
     d = c.get("/api/routines/gated", headers=AUTH).json()
-    assert d["run_gate"] == {"enabled": True, "timeout_s": 20, "checks": QUIET}
+    assert d["run_gate"] == {"enabled": True, "timeout_s": 20, "checks": QUIET,
+                           "run_written": True}
     assert d["schedule_friendly"]["frequency"] == "daily"
 
 

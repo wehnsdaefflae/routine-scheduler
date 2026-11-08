@@ -49,7 +49,7 @@ from rsched.oauth import store as oauth_store
 from rsched.oauth.store import Connection
 from rsched.readmodels.remedies import REMEDIES
 
-from .helpers import configure, seed_overhead, stored_config, unfold
+from .helpers import GATE_ROW, configure, seed_gate, seed_overhead, stored_config, unfold
 
 # What an unmet row carries, in two parts. The FIX line is the offer as a whole — `data-fix`
 # holds the server's `kind`, which is the vocabulary the halves have to agree on, so it is
@@ -293,10 +293,6 @@ class Case:
     arrive: str = ""                            # plain CSS that must exist once it lands
 
 
-def _seed_switch_on(ui, mp) -> None:
-    _hold_needs_shell(ui)
-
-
 def _seed_cover_or_drop(ui, mp) -> None:
     write_util(ui.server_cfg, "poster")
     _configure(ui, capabilities={"utils": ["poster"]})
@@ -367,7 +363,7 @@ def _needed_secret_set(page):
 
 
 CASES = (
-    Case("switch_on", "permission:needs-shell", _seed_switch_on,
+    Case("switch_on", "permission:needs-shell", lambda ui, _: _hold_needs_shell(ui),
          landing=ABILITY, control=lambda p: p.locator(SWITCH)),
     Case("cover_or_drop", "util:poster", _seed_cover_or_drop,
          landing=_orphan_row("util:poster"),
@@ -403,6 +399,8 @@ CASES = (
     Case("declare_outcome", "recipe:outcome", lambda ui, _: _configure(ui, outcome=None),
          control=None),
     Case("revise_recipe", "recipe:overhead", lambda ui, _: seed_overhead(ui), control=None),
+    Case("edit_gate", "gate:queue", lambda ui, _: seed_gate(ui), landing=GATE_ROW,
+         control=lambda p: p.locator(f"{GATE_ROW} button.danger")),
 )
 
 

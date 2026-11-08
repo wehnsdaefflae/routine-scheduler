@@ -114,7 +114,7 @@ def test_the_verdict_is_bounded_and_leaks_no_gate_bookkeeping(gated):
     carries the decision, not a copy of gate.json.
     """
     gate = _rows(gated)[SKIP_TS]["gate"]
-    assert set(gate) == {"decision", "fire_reason", "reason", "checks"}
+    assert set(gate) == {"decision", "fire_reason", "reason", "checks", "source", "rejected"}
     assert set(gate["checks"][0]) == {"id", "kind", "work", "reason"}
 
 

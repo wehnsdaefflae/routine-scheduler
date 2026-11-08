@@ -12,6 +12,7 @@ from . import (
     askback,
     enginenote,
     freightnote,
+    gate_digest,
     goals,
     guardscope,
     inbox,
@@ -133,7 +134,8 @@ def boot(loop) -> None:
                               # its own is (recipeproposal.asks_for_revisions — the same
                               # predicate the card seam reads, so neither can ask what the
                               # other would refuse to file)
-                              recipe_ask=recipeproposal.asks_for_revisions(ctx))
+                              recipe_ask=recipeproposal.asks_for_revisions(ctx)) \
+            + gate_digest.block(ctx)   # the checks for the NEXT fire (rsched/gatecompose.py)
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"

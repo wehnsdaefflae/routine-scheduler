@@ -121,7 +121,7 @@ async def _execute(
                 raise GateError(f"gate exited rc={proc.returncode}")
             value = json.loads(stdout.decode("utf-8"))
             allowed = {"version", "decision", "reason"} | (
-                {"checks"} if mode == "checks" else set())
+                {"checks", "source"} if mode == "checks" else set())
             if (
                 not isinstance(value, dict)
                 or not {"version", "decision", "reason"} <= set(value) <= allowed
@@ -196,6 +196,10 @@ async def _decide(run: ActiveRun, cfg: RoutineConfig, server: ServerConfig, reas
     The checks' fingerprints are recorded whatever the decision, because an ADMITTED run's
     gate.json is the baseline the next fire compares against — a skip records them too, so the
     Test button and a reader of gate.json see what the source looked like.
+
+    WHOSE checks were asked is the kit's `source` (`rsched/gatecompose.py`), recorded as is. A
+    gate the last run wrote REPLACES the routine's checks, `scripts/admit.py` among them, so
+    the script is not asked behind it.
     """
     checks = cfg.run_gate.checks
     declarative = [c for c in checks if c.get("kind") != "script"]
@@ -207,8 +211,12 @@ async def _decide(run: ActiveRun, cfg: RoutineConfig, server: ServerConfig, reas
         prints = {r["id"]: r["fingerprint"] for r in meta["checks"] if r.get("fingerprint")}
         if prints:
             meta["fingerprints"] = prints
+        if isinstance(res.get("source"), dict):
+            meta["source"] = res["source"]
         decisions.append(res)
-    if wants_script and not (decisions and decisions[-1]["decision"] == "run"):
+    run_written = meta.get("source", {}).get("kind") == "run"
+    if wants_script and not run_written and not (
+            decisions and decisions[-1]["decision"] == "run"):
         res = await _execute(run, cfg, server, reason, mode="script")
         meta.setdefault("checks", []).append(
             {"id": "script", "kind": "script", "work": res["decision"] == "run",

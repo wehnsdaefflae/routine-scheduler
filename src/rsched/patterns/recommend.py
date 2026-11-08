@@ -173,7 +173,7 @@ def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
         f"FIELDS YOU MAY CHANGE: {', '.join(allowed)}.\n"
         'finish_line is {"outcomes": [{"text", "judge": "run"|"you"|"date", '
         '"date": "YYYY-MM-DD" (date only)}], "until": "YYYY-MM-DD" or ""}. '
-        'run_gate is {"enabled", "timeout_s", "checks": [{"id", "kind", …params}]}. '
+        'run_gate is {"enabled", "timeout_s", "checks": [{"id", "kind", …params}], "run_written"}. '
         'schedule is {"friendly": {"frequency": "hourly"|"daily"|"weekly"|'
         '"monthly"|"manual", "time": "HH:MM", "weekdays": [0-6, 0=Sunday]}}.\n'
         f'connections is {{provider: "account-label"}} and names an OAUTH provider only — '

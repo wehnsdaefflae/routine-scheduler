@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 from rsched import lanes
-from rsched.paths import append_jsonl
+from rsched.paths import append_jsonl, atomic_write_json
 from rsched.readmodels.overhead_reading import current_recipe
 from rsched.usage_log import WORKFLOW_USAGE_FILE
 
@@ -83,6 +83,26 @@ def seed_overhead(ui, slug: str = "uir", share: float = 0.5, runs: int = 3) -> N
             "recipe_commit": recipe,
             "quality": {"overhead": {"task": 5, "process": 5, "friction": 0,
                                      "process_share": share}}})
+
+
+#: The surface row `seed_gate` produces lands on this check's row in the Run gate section.
+GATE_ROW = '[data-gate-check-id="queue"]'
+
+
+def seed_gate(ui, slug: str = "uir", asks: int = 5) -> None:
+    """A gate whose `queue` check answered work on every one of `asks` fires — the record the
+    gate's yield reading names (readmodels/gate_yield.py). Both permission layers are written
+    explicitly so no other surface row appears. Here because test_surface_fix.py is held at its
+    size ceiling."""
+    configure(ui, slug, permissions=[], capabilities={"actions": [], "utils": []},
+              run_gate={"enabled": True, "checks": [
+                  {"kind": "weekdays", "days": [0], "id": "queue"},
+                  {"kind": "max_quiet", "days": 14, "id": "heartbeat"}]})
+    for n in range(asks):
+        run_dir = ui.seed_run(slug, f"2026090{n}-070000", "finished", summary="done")
+        atomic_write_json(run_dir / "gate.json", {
+            "decision": "run", "reason": "a Monday", "source": {"kind": "routine"},
+            "checks": [{"id": "queue", "kind": "weekdays", "work": True, "reason": "a Monday"}]})
 
 
 def start_conversation(ui, page, text: str) -> tuple[str, Path]:

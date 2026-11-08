@@ -2,8 +2,8 @@
 
 `daemon/run_gate.py` owns admission: the deadline, the process group, the protocol and what a
 decision does to the run. This module owns what happens between the child's start and the
-predicate's exec: the built-in run reasons (freight in the inbox, an answer waiting to be read, a
-note waiting in a store it shares, a TASK due by its own clock), the BASELINE a check compares
+predicate's exec: the built-in run reasons (`daemon/gate_builtin.py`), WHICH checks this fire
+asks (the last run's own gate or the routine's — `gatecompose.py`), the BASELINE a check compares
 against (the last run that finished ok), and the two jails — one for the declarative checks
 (`gatekit.py`, built from what the listed check kinds need and nothing else) and one for a
 custom `scripts/admit.py` (built from that script's own header).
@@ -23,11 +23,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .. import gatekit, sandbox, scriptenv, scripts, secrets, utils_header, utils_run
+from .. import gatecompose, gatekit, sandbox, scriptenv, scripts, secrets, utils_header, utils_run
 from ..config import RoutineConfig, ServerConfig
-from ..engine import inbox as inbox_mod
 from ..paths import read_json
 from ..registry import TERMINAL_STATES
+from . import gate_builtin
 
 RUN_DIR_RE = re.compile(r"\d{8}-\d{6}")
 #: The custom predicate's script name. Not `gate`: three routines already run a `scripts/gate.py`
@@ -37,43 +37,6 @@ ADMIT = "admit"
 
 class GateError(Exception):
     """Admission failed: never interpret an error as permission to skip or run."""
-
-
-def pending_answers(directory: Path) -> bool:
-    """Does a person's answer to one of this routine's questions wait to be read?
-
-    An answer never STARTS a run — nothing fires on it (the operator reversed that on
-    2026-09-12). But once the schedule has fired, an unread answer IS work for that fire: the
-    routine asked because it could not go on without it. A gate that skipped here left the
-    answer waiting for whatever else admitted a run, which for a quiet routine is never (two
-    routines held one each on 2026-09-29, one of them unblocking a parked job).
-    """
-    inbox = directory / "inbox"
-    if not inbox.is_dir():
-        return False
-    # Only an answer the next run would actually CONSUME counts: one carrying text, to a
-    # question still pending (engine/inbox_questions.collect_deferred_answers). A stray answer
-    # file whose question is gone is never read by any run; counting it would admit every
-    # fire forever (one had sat in a routine's inbox for sixteen days).
-    for path in inbox.glob("answer-*.json"):
-        obj = read_json(path)
-        if not isinstance(obj, dict) or "text" not in obj:
-            continue
-        qid = str(obj.get("qid") or path.stem.removeprefix("answer-"))
-        if (directory / "questions" / "pending" / f"{qid}.json").is_file():
-            return True
-    return False
-
-
-def pending_notes(cfg: RoutineConfig, server: ServerConfig) -> bool:
-    """Does a note from a routine sharing one of its stores wait for this one? The engine
-    delivers a note at the addressee's next boot (`sharedstores.drain`), so a gate that skipped
-    here would hold a teammate's hand-off until something else admitted a run.
-    """
-    from .. import sharedstores
-
-    return any(any(sharedstores.notes_dir(store, cfg.slug).glob("note-*.json"))
-               for store in sharedstores.stores_of(server.routines_home, cfg.fs_write_roots))
 
 
 def last_ok(routine_dir: Path, current_run_id: str) -> tuple[dict | None, str]:
@@ -258,33 +221,10 @@ def _within(path: Path, roots: list[Path]) -> bool:
     return any(path == r or path.is_relative_to(r) for r in roots)
 
 
-def keeps_jobs(cfg: RoutineConfig) -> bool:
-    """Does this routine keep TASKS (rsched/jobs.py)? Then its checks are asked even when a
-    built-in reason already decided "run": which jobs have work is what its run needs from
-    them (`gate.json` → engine/jobops.py).
-    """
-    from ..grants import effective_settings, normalize_capabilities
-
-    return effective_settings(normalize_capabilities(cfg.capabilities)[0])["jobs"] == "on"
-
-
-def jobs_clock_reason(cfg: RoutineConfig) -> str:
-    """A task due by its OWN clock — work an earlier run left, a wake date that came, a quiet
-    limit passed, a task no check watches — admits the fire, whatever the checks would say:
-    nothing else would ever bring the routine back for it.
-    """
-    from .. import jobs
-
-    now = datetime.now(ZoneInfo(cfg.tz))
-    due = jobs.clock_due(cfg.dir, list(cfg.run_gate.checks), today=now.date(), now=now)
-    if not due:
-        return ""
-    return "job(s) due by their own clock: " + "; ".join(f"{tid} ({why})" for tid, why in due)
-
-
 def prepare_checks(cfg: RoutineConfig, server: ServerConfig, context: dict,
-                   current_run_id: str, *, admit: str = "",
-                   keep_going: bool = False) -> tuple[list[str], dict, str]:
+                   current_run_id: str, *, admit: str = "", keep_going: bool = False,
+                   asked: list[dict] | None = None,
+                   source: dict | None = None) -> tuple[list[str], dict, str]:
     """The jail for the declarative checks and the argv context `gatekit.py` reads.
 
     The jail is exactly what the listed kinds need: the network only when a mail or url check
@@ -296,8 +236,12 @@ def prepare_checks(cfg: RoutineConfig, server: ServerConfig, context: dict,
 
     `keep_going` (a routine that keeps jobs) asks the checks even then, carrying the reason
     that already decided — `admit`, or the baseline's — as the kit's `admit_reason`.
+
+    `asked` are the checks this fire asks (`gatecompose.compose`; the routine's when None), and
+    `source` says whose they are — the kit echoes it, so gate.json records it.
     """
-    checks = [c for c in cfg.run_gate.checks if c.get("kind") != "script"]
+    checks = [c for c in (cfg.run_gate.checks if asked is None else asked)
+              if c.get("kind") != "script"]
     base, why_run = baseline_says_run(cfg, current_run_id)
     if why_run and not keep_going:
         return [], {}, why_run
@@ -327,7 +271,7 @@ def prepare_checks(cfg: RoutineConfig, server: ServerConfig, context: dict,
            "now": datetime.now(ZoneInfo(cfg.tz)).isoformat(),
            "last_ok": base, "checks": [{**c, "id": str(c.get("id") or f"c{i + 1}")}
                                        for i, c in enumerate(checks)],
-           **({"admit_reason": admit} if admit else {})}
+           **({"admit_reason": admit} if admit else {}), **({"source": source} if source else {})}
     cmd = _wrap([sys.executable, "-I", str(gatekit.ENTRY), json.dumps(ctx)], policy, server,
                 net=gatekit.needs_net(checks), fs_roots=True)
     return cmd, _scrubbed_env(injected, declared), ""
@@ -340,31 +284,35 @@ def child_main() -> None:
         cfg = RoutineConfig.model_validate(payload["routine"])
         server = ServerConfig.model_validate(payload["server"])
         mode = payload.get("mode") or "script"
-        # inbox freight: the ONE predicate, fail-open like every gate read (a file it cannot
-        # parse is WORK) and counting closures — once a fire is due, any message is the run's
-        # to read. `msg-*.json` only, so `atomic_write`'s in-flight temp is not freight.
-        pending = inbox_mod.has_pending_messages(cfg.dir, on_unparseable=True)
+        pending = gate_builtin.pending_inbox(cfg.dir)      # closures are not freight
         if mode == "inbox":
             sys.stdout.write(json.dumps({
                 "version": 1, "decision": "run" if pending else "skip",
                 "reason": "pending inbox" if pending else "inbox empty"}))
             return
-        jobs_on = keeps_jobs(cfg)
-        builtin = ("pending inbox" if pending
-                   else "an answer to one of its questions is waiting to be read"
-                   if pending_answers(cfg.dir)
-                   else "a note from a routine sharing one of its stores is waiting"
-                   if pending_notes(cfg, server)
-                   else jobs_clock_reason(cfg) if jobs_on else "")
+        # the last run's own gate when it stands, else the routine's — never on a Test, which
+        # asks the checks the operator is looking at (POST …/gate/test)
+        asked, source = (gatecompose.compose(cfg) if payload["context"].get("reason") != "test"
+                         else (list(cfg.run_gate.checks), {"kind": "routine"}))
+        jobs_on = gate_builtin.keeps_jobs(cfg)
+        builtin = gate_builtin.reason(cfg, server, asked, inbox=pending, jobs_on=jobs_on)
         if builtin and not (jobs_on and mode == "checks"):
             sys.stdout.write(json.dumps({
                 "version": 1, "decision": "run", "reason": builtin,
                 **({"checks": []} if mode == "checks" and not pending else {})}))
             return
         if mode == "checks":
-            cmd, env, early = prepare_checks(cfg, server, payload["context"],
-                                             payload["context"]["run_id"],
-                                             admit=builtin, keep_going=jobs_on)
+            def jail(asked: list[dict], source: dict) -> tuple[list[str], dict, str]:
+                return prepare_checks(cfg, server, payload["context"],
+                                      payload["context"]["run_id"], admit=builtin,
+                                      keep_going=jobs_on, asked=asked, source=source)
+            try:
+                cmd, env, early = jail(asked, source)
+            except GateError as exc:
+                if source["kind"] != "run":      # an ungranted path or secret in a RUN's gate
+                    raise                        # hands the fire back to the routine's
+                cmd, env, early = jail(list(cfg.run_gate.checks),
+                                       {"kind": "routine", "rejected": str(exc)[:600]})
             if early:
                 sys.stdout.write(json.dumps({"version": 1, "decision": "run",
                                              "reason": early, "checks": []}))

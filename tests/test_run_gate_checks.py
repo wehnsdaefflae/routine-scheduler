@@ -159,13 +159,13 @@ async def test_a_note_waiting_in_a_shared_store_admits_the_fire(setup_gate, monk
 
 
 def test_a_stray_answer_whose_question_is_gone_is_not_work(tmp_path):
-    from rsched.daemon import gate_prepare
+    from rsched.daemon import gate_builtin
     (tmp_path / "inbox").mkdir()
     atomic_write_json(tmp_path / "inbox" / "answer-q-1.json", {"qid": "q-1", "text": "x"})
-    assert not gate_prepare.pending_answers(tmp_path)
+    assert not gate_builtin.pending_answers(tmp_path)
     (tmp_path / "questions" / "pending").mkdir(parents=True)
     atomic_write_json(tmp_path / "questions" / "pending" / "q-1.json", {"question": "?"})
-    assert gate_prepare.pending_answers(tmp_path)
+    assert gate_builtin.pending_answers(tmp_path)
 
 
 def test_a_changed_recipe_since_the_last_ok_run_is_work(tmp_path):

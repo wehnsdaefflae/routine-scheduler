@@ -1128,10 +1128,19 @@ by a test, by the engine, or by a past incident.
   (`rsched/gatekit/`) reads what it cannot establish — a refused login, a timeout, a file that
   does not parse, no earlier ok run to compare against — as WORK; a fire is skipped only when
   EVERY check said no work. Built-in reasons run before any check and cannot be configured away:
-  inbox freight, an answer waiting to be read, a note in a shared store, a last run that did not
-  finish ok, a changed config or recipe (`daemon/gate_prepare.py`). A wrong run costs one fire; a
-  wrong skip silently loses work — prefer a gate over none, never a check that guesses
-  (docs/run-gates.md).
+  inbox freight (never a `closes: true` closure, which waits for the next admitted run), an
+  answer waiting to be read, a note in a shared store, a last run that did not finish ok, a
+  changed recipe (`daemon/gate_builtin.py`, `daemon/gate_prepare.py`). A wrong run costs one
+  fire; a wrong skip silently loses work — prefer a gate over none, never a check that guesses
+  (docs/run-gates.md). **The checks for the next fire are the LAST RUN's to write** (operator,
+  2026-11-08: general checks skipped 1 of 118 fires): a run writes `state/next-gate.json` in the
+  same vocabulary and it REPLACES the routine's checks for that fire (`rsched/gatecompose.py`,
+  asked in the digest's NEXT FIRE'S GATE block) — under three floors a run cannot move: the
+  built-in reasons, the routine's own `max_quiet` (shortened, never lengthened; none → no written
+  gate at all), and a set-aside — never a failed fire — when the file is unusable, recorded in
+  `gate.json`'s `source.rejected`. A routine check that answered work on every ask has never let a
+  fire skip; `readmodels/gate_yield.py` names it on the setup surface (`edit_gate`). The operator's
+  off switch is `run_gate.run_written: false` (on by default), and nothing else turns it off.
 - **An inbox message's `via` is not a label — it is the delivery POLICY.** It decides when the
   message is consumed, whether the post-finish reap may resume a finished run for it, whether the
   conversation surface offers it as the operator's own editable text, and whether it counts as the

@@ -54,11 +54,18 @@ def _project(raw: object) -> dict | None:
          "work": bool(c.get("work")), "reason": str(c.get("reason") or "")[:REASON_MAX]}
         for c in (checks if isinstance(checks, list) else []) if isinstance(c, dict)
     ]
+    source = raw.get("source")
+    source = source if isinstance(source, dict) else {}
     return {"decision": str(raw["decision"]),
             # why the fire happened at all: schedule | lane | report | trigger | …
             "fire_reason": str(raw.get("fire_reason") or ""),
             "reason": str(raw.get("reason") or "")[:REASON_MAX],
-            "checks": rows}
+            "checks": rows,
+            # whose checks were asked — `run` (the gate the last run wrote) or `routine`; ""
+            # when no check was asked or the fire predates gatecompose.py — and why a run's
+            # own gate was set aside, when one was
+            "source": str(source.get("kind") or ""),
+            "rejected": str(source.get("rejected") or "")[:REASON_MAX]}
 
 
 def verdict(run_dir: Path) -> dict | None:

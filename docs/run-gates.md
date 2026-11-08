@@ -43,6 +43,55 @@ midnight whenever the two differ.
 enabled gate needs at least one check — with nothing to ask, either answer would be a lie.
 Malformed gate settings reject loading, even when disabled.
 
+## Checks a run writes for the next fire
+
+A routine's own checks are written once, for every fire, by someone who cannot know what the
+routine will be doing next week — and measured on 2026-11-08 they had skipped ONE of 118 gated
+fires. The checks that were asked answered "work" on every fire because each watched a level no
+run drained: a request queue waiting on air dates (14 of 14), models nobody could test (13 of
+13), a phase value the idle list did not know (7 of 7), a state key that did not exist (4 of
+5). The run that just did the work is the one party that knows what would make the NEXT fire
+worth having, so it writes that down (`rsched/gatecompose.py`):
+
+```json
+// state/next-gate.json
+{"why": "the three queued shows air on the 14th; nothing else is pending",
+ "checks": [{"kind": "dates", "from": "2026-11-14", "id": "air-date"},
+            {"kind": "mail", "host": "…", "user_secret": "…", "password_secret": "…",
+             "mode": "new", "from_any": ["seedbox"], "id": "seedbox-mail"}]}
+```
+
+An ordinary state file in the check vocabulary above. On by default for every gate; the operator
+switches it off per routine with the Run gate section's *let each run write the checks for the
+next fire* box (`run_gate.run_written: false`), after which the routine's own checks are asked on
+every fire, the file is ignored, and no run is asked to write it. Every depth-0 routine run of a routine whose
+gate is on and carries a `max_quiet` is asked for it at boot, in the digest's NEXT FIRE'S GATE
+block (`engine/gate_digest.py`, docs/prompt-anatomy.md): what is in force for the next fire, how
+the gate has been doing, the routine's own checks to copy secret and path names from, and the
+check kinds. The run writes the file, leaves it when it is still right, or deletes it.
+
+**Its checks REPLACE the routine's for the next scheduled fire** — `scripts/admit.py` included.
+A fire is skipped only when every check answers "no work", so specific checks added BESIDE
+general ones could only make skips rarer. Deleting the file, or an empty `checks` list, hands
+the next fire back to the routine's own gate.
+
+**What a run cannot change.** A written check is a model's guess about where its next work will
+come from, and a guess that forgets one source loses that work silently — the one failure a gate
+must not have. So:
+
+- every built-in reason below is asked first, whoever wrote the checks;
+- the routine's own `max_quiet` is the FLOOR: always asked (as the check `backstop`), a run may
+  shorten it and never lengthen it, and a routine whose gate carries none takes no written gate
+  at all — the floor is what bounds the cost of that one mistake;
+- `script` is not a run's to name, and a written gate holds at most 12 checks.
+
+**A written gate that cannot be used is set aside, never fatal.** It does not parse, a check
+fails validation, it would lengthen the floor, or — judged at preparation, which alone holds the
+grants — it reads a path outside the routine's roots or names a secret the routine is not
+granted: the fire asks the routine's own checks instead and records why in `gate.json`'s
+`source.rejected`, which the next run's digest shows it. The *Test the gate now* button never
+reads the file: it asks the checks the operator is looking at.
+
 **The baseline.** "Since the last ok run" means the newest ADMITTED run that finished ok (a
 skipped fire processed nothing and is passed over); the checks that compare contents keep a
 FINGERPRINT per check in that run's `gate.json`. No such run is itself work.
@@ -62,8 +111,12 @@ every check still answers — because WHICH tasks have work is what the run need
 Built in, never configured, because each one is work by construction:
 
 - freight waits in the inbox (a message, a report addressed to the routine) — the ONE inbox
-  predicate (`engine/inbox.has_pending_messages`), fail-open like every gate read: a `msg-*`
-  file it cannot parse counts as work;
+  predicate (`engine/inbox.has_pending_messages`, read by `daemon/gate_builtin.pending_inbox`),
+  fail-open like every gate read: a `msg-*` file it cannot parse counts as work. A CLOSURE is
+  not freight — a `closes: true` reply ends a thread and asks nothing, so it waits unconsumed
+  for the next admitted run (the report trigger has always excluded it). Counted, closures had
+  been the gate's biggest single leak: 10 of the 43 fires the inbox admitted up to 2026-11-08
+  held nothing else, nine of them rules-review's;
 - an answer to one of its questions waits to be read (an answer never STARTS a run, but a fired
   one must not be skipped past it);
 - a note from a routine sharing one of its stores waits (`rsched/sharedstores.py`);
@@ -154,10 +207,27 @@ aborted status and releases ownership once.
 ## What a decision leaves behind
 
 A skip writes `state: finished`, `outcome: skipped`, zero usage and turns, `result.md` and
-`gate.json` (the decision, its reason and each check's answer). It advances a lane even under
+`gate.json` (the decision, its reason, each check's answer, and — when checks were asked —
+`source`: `{"kind": "run", "why", "written", "checks"}` for a written gate, `{"kind": "routine"}`
+otherwise, plus `rejected` when a written one was set aside). The routine page's run history
+shows both in each verdict's hover, and the job ledger maps a written check's `job:` tag from
+`source.checks` (`gatecompose.checks_in_force`). It advances a lane even under
 stop-on-failure. An admitted run's `gate.json` carries the fingerprints the next fire compares
 against. Errors write failed status and gate metadata; bypasses record their reason. There is
 no second agent loop and no gate retry.
+
+## What the gate has done
+
+A check that has answered "work" on every ask has never let a fire skip: while it stands, the
+gate costs its seconds and saves nothing. `readmodels/gate_yield.py` reads the last 20 judged
+fires' `gate.json` and counts, per ROUTINE check, how often it was asked and how often it found
+work (a written check's ids are that run's own, so written gates get a skip count instead). A
+routine check asked at least 5 times that answered work every time is a NOTE on the setup surface
+(`gate:<id>`, `readmodels/surface_gate.py`, remedy `edit_gate`: narrow or drop it, landing on its
+row in the Run gate section) with its newest reason, which is usually the diagnosis — and the
+same reading heads the run's NEXT FIRE'S GATE block, so the run writing the next gate sees which
+of the routine's checks it should not copy. The `max_quiet` backstop is never named: "no work" is
+its normal answer.
 
 An error also writes a **`run_failed` health event** (a cancel writes `run_canceled`). It has to
 be written here: no engine ever started, so the engine's own event cannot fire and the reap

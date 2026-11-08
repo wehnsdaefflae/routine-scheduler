@@ -49,7 +49,8 @@ def test_enabled_gate_rejects_exhausted_recovery(make_routine, monkeypatch):
 def test_absent_defaults_off(make_routine):
     cfg, _ = load_routine(make_routine())
     assert cfg is not None
-    assert cfg.run_gate.model_dump() == {"enabled": False, "timeout_s": 30, "checks": []}
+    assert cfg.run_gate.model_dump() == {"enabled": False, "timeout_s": 30, "checks": [],
+                                         "run_written": True}
 
 
 @pytest.mark.parametrize("checks", [

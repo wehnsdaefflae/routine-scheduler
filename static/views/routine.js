@@ -242,6 +242,10 @@ const GATE_CLS = { run: "ok", skip: "idle", bypass: "ok", error: "failed" };
 // checks — so the hover carries why the fire happened at all, then each check's own answer.
 function gateTitle(g) {
   return [`fire reason: ${g.fire_reason || "unrecorded"}`,
+    // whose checks these were (rsched/gatecompose.py): the next-fire gate a run wrote, or the
+    // routine's own, which takes over when a run's could not be used
+    ...(g.source === "run" ? ["checks: the gate the last run wrote for this fire"] : []),
+    ...(g.rejected ? [`the last run's own gate was set aside: ${g.rejected}`] : []),
     ...(g.checks || []).map((c) => `${c.id}${c.kind && c.kind !== c.id ? ` (${c.kind})` : ""}: `
       + `${c.work ? "work" : "no work"}${c.reason ? ` — ${c.reason}` : ""}`)].join("\n");
 }

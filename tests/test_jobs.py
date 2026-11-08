@@ -1,6 +1,6 @@
 """The job STORE and the due computation (rsched/jobs.py), the setting that switches the layer
 on (grants), and the gate pieces that feed it: a check's `job:` tag and the kit's
-`admit_reason` (gatekit), and the job clock admitting a fire (daemon/gate_prepare).
+`admit_reason` (gatekit), and the job clock admitting a fire (daemon/gate_builtin).
 """
 
 from __future__ import annotations
@@ -181,7 +181,7 @@ def test_an_admit_reason_runs_whatever_the_checks_say_and_keeps_their_answers(tm
 
 def test_a_job_due_by_its_clock_admits_a_fire_its_checks_would_skip(tmp_path):
     from rsched.config.routine import RoutineConfig
-    from rsched.daemon import gate_prepare
+    from rsched.daemon import gate_builtin
 
     (tmp_path / "state").mkdir()
     cfg = RoutineConfig.model_validate({
@@ -189,13 +189,13 @@ def test_a_job_due_by_its_clock_admits_a_fire_its_checks_would_skip(tmp_path):
         "capabilities": {"jobs": "on"},
         "run_gate": {"enabled": True, "checks": [{"kind": "weekdays", "days": [0], "job": "a"}]},
     })
-    assert gate_prepare.keeps_jobs(cfg)
-    assert gate_prepare.jobs_clock_reason(cfg) == ""
+    assert gate_builtin.keeps_jobs(cfg)
+    assert gate_builtin.jobs_clock_reason(cfg) == ""
     jobs.save(tmp_path, _doc(_job("a", carry="deferred by r:1: later")))
-    assert gate_prepare.jobs_clock_reason(cfg) == (
+    assert gate_builtin.jobs_clock_reason(cfg) == (
         "job(s) due by their own clock: a (carried over: deferred by r:1: later)")
     off = cfg.model_copy(update={"capabilities": {}})
-    assert not gate_prepare.keeps_jobs(off)
+    assert not gate_builtin.keeps_jobs(off)
 
 
 def test_parse_day_reads_a_date_or_nothing():

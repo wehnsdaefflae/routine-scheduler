@@ -258,6 +258,11 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "Job(s) carried to the next run",
         # A message for a routine that reads nothing is refused WITH where to send it instead
         # (rsched/recipients.py): the report refusal's last sentence and the note gate's words
+        # the NEXT FIRE'S GATE block (engine/gate_digest.py): its heading, the ask's rule, and
+        # the line that tells a run which of the routine's checks never let a fire skip
+        "NEXT FIRE'S GATE (",
+        "Its checks REPLACE the routine's own for the next fire.",
+        "A routine check that never let a fire skip:",
         "Routines that would read it: ",
         "No routine that would read it is related to this one.",
         "so it would never read this note. Nothing was written.",

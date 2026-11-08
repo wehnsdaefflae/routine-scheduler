@@ -27,7 +27,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from .. import jobs
+from .. import gatecompose, jobs
 from ..ids import now_iso
 from ..paths import read_json
 from . import accounting, buildskew, donewhen
@@ -94,7 +94,9 @@ def boot(ctx: RunContext) -> str:
             gate = read_json(ctx.run_dir / "gate.json")
             due, resting = jobs.due_for_run(
                 doc, gate=gate if isinstance(gate, dict) else None,
-                checks=list(ctx.routine.run_gate.checks), today=today, now=now)
+                checks=gatecompose.checks_in_force(list(ctx.routine.run_gate.checks),
+                                                   gate if isinstance(gate, dict) else None),
+                today=today, now=now)
             ledger = {"run_id": ctx.run_id, "started": now_iso(), "due": due,
                       "resting": resting, "done": {}, "open": ""}
             doc["run"] = ledger

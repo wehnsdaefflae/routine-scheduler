@@ -70,6 +70,11 @@ export function gateEditor({ slug, value, onChange }) {
       checked: gate.enabled || null,
       disabled: gate.checks.length ? null : "",
       onchange: () => { gate.enabled = enabled.checked; change(); } });
+    // whether the LAST RUN may write the next fire's checks (rsched/gatecompose.py) — on by
+    // default; off, the checks below are asked on every fire and no run is asked for its own
+    const written = el("input", { type: "checkbox", "data-gate-run-written": "",
+      checked: gate.run_written ? "" : null,
+      onchange: () => { gate.run_written = written.checked; change(); } });
     const timeout = el("input", { type: "number", min: "1", max: "300", "data-nopersist": true,
       value: String(gate.timeout_s), style: "width:76px", "data-gate-timeout": "",
       onchange: () => { gate.timeout_s = clamp(Number(timeout.value) || 30); change(); } });
@@ -88,6 +93,9 @@ export function gateEditor({ slug, value, onChange }) {
       el("label", { class: "row", style: "gap:8px" }, enabled,
         el("span", {}, "gate scheduled fires — start a run only when a check finds work")),
       el("div", { class: "faint small gate-explain" }, ALWAYS_RUNS),
+      el("label", { class: "row", style: "gap:8px" }, written,
+        el("span", {}, "let each run write the checks for the next fire (state/next-gate.json) — "
+          + "they replace the checks below for that fire; this gate's max_quiet stays the floor")),
       gate.checks.length
         ? el("div", { class: "gate-checks" }, ...gate.checks.map((c, i) => checkRow(c, i)))
         : el("div", { class: "muted small mt" },
@@ -107,7 +115,10 @@ export function gateEditor({ slug, value, onChange }) {
   function checkRow(check, index) {
     const spec = kinds[check.kind] || { meaning: "unknown check", params: {} };
     const params = Object.entries(spec.params).map(([name, p]) => field(check, name, p));
-    return el("div", { class: "gate-check panel", "data-gate-check": check.kind },
+    // the id the gate records each answer under — gatekit's `c<n>` when the check names none —
+    // so a setup-surface row about ONE check (`edit_gate`) lands on that check's row
+    return el("div", { class: "gate-check panel", "data-gate-check": check.kind,
+      "data-gate-check-id": check.id || `c${index + 1}` },
       el("div", { class: "row spread", style: "gap:8px" },
         el("div", {},
           el("span", { class: "ref-tag" }, label(check.kind)),
@@ -239,7 +250,7 @@ export function gateEditor({ slug, value, onChange }) {
 function normalize(value) {
   const v = structuredClone(value || {});
   return { enabled: !!v.enabled, timeout_s: clamp(Number(v.timeout_s) || 30),
-           checks: Array.isArray(v.checks) ? v.checks : [] };
+           checks: Array.isArray(v.checks) ? v.checks : [], run_written: v.run_written !== false };
 }
 
 function clamp(n) { return Math.min(300, Math.max(1, Math.round(n))); }

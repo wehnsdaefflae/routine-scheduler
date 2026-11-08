@@ -296,3 +296,22 @@ def test_the_predicate_is_saved_once_and_a_queued_write_is_named(ui, ui_page):
     expect(row).not_to_contain_text("saved scripts/admit.py")
     ui_page.wait_for_timeout(400)
     assert puts == ["scripts/admit.py"], f"one press, {len(puts)} writes"
+
+
+def test_run_written_gates_can_be_switched_off_and_the_switch_rides_the_accept(ui, ui_page):
+    """On by default (rsched/gatecompose.py); unticked, the routine's own checks are asked on
+    every fire and no run is asked to write the next fire's."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = _gate(ui_page)
+    panel.locator("[data-gate-add]").select_option("max_quiet")
+    quiet = panel.locator('[data-gate-check="max_quiet"] .gate-param input')
+    quiet.fill("7")
+    quiet.press("Tab")
+    written = panel.locator("[data-gate-run-written]")
+    expect(written).to_be_checked()
+    written.uncheck()
+    ui_page.locator(".accept-bar [data-accept]").click()
+    until(lambda: (stored_config(ui).get("run_gate") or {}).get("run_written") is False,
+          what="the run-written switch")
+    ui_page.reload()
+    expect(_gate(ui_page).locator("[data-gate-run-written]")).not_to_be_checked()

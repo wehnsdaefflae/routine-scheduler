@@ -127,8 +127,9 @@ entity merge — is `readmodels/surface_nodes.py`, and the rows themselves come 
 emitters speaking it: `surface_needs.py` (util secrets, util filesystem stores, `expects:`),
 `surface_schedule.py` (the suppressed cron, the started-by-nothing check, the phase key),
 `surface_caps.py` (capability coverage and the act that settles it), `surface_outcome.py` (the
-OUTCOME row, below) and `surface_overhead.py` (the PROCESS-OVERHEAD row, below). "Where a `fix`
-kind is emitted" is therefore one of those six modules, never `surface.py` alone.
+OUTCOME row, below), `surface_overhead.py` (the PROCESS-OVERHEAD row, below) and
+`surface_gate.py` (the GATE rows, below). "Where a `fix` kind is emitted" is therefore one of
+those seven modules, never `surface.py` alone.
 
 **The outcome row** (`recipe:outcome`, remedy `declare_outcome`) asks whether the routine says,
 and measures, what it exists to produce for its principal — three halves, each a `blocks` row
@@ -153,6 +154,16 @@ no setting removes it. The console renders it as words with no link, like `decla
 Routine-owned like the outcome row (`source.recipe`): never drift, never in the boot note — the
 run is told at the one place it can act, the FINISH block's recipe-revision ask
 (docs/prompt-anatomy.md). A switched-off routine owes none.
+
+**The gate rows** (`gate:<check id>`, remedy `edit_gate` with `check`) name a check of the
+routine's own run gate that answered "work" on every one of at least 5 asks among its last 20
+judged fires (`readmodels/gate_yield.py`, docs/run-gates.md "What the gate has done"): a fire is
+skipped only when every check says "no work", so that check has never let one skip. A `note` —
+the work it admits may be real, and nothing fails — carrying the check's newest reason, which is
+usually the diagnosis. The console lands on that check's row in the Run gate section
+(`data-gate-check-id`), where it is narrowed or removed. Its `source` is `gate`: never drift,
+never in the boot note; the run hears the same reading in its NEXT FIRE'S GATE block. A
+switched-off routine and a routine with no gate on owe none.
 
 Nothing is stored. The library MOVES — a run may revise the utils and rules its routine is made
 of, one copy each, reaching every holder at its next run — so a persisted resolution would be

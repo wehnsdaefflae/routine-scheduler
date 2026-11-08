@@ -6,8 +6,9 @@ this directory on the import path, so the entry puts it there itself — the `ki
 the only code the jail mounts.
 
 Protocol: argv[1] is `{version: 2, routine, routine_dir, routines_home, libraries_home, now,
-last_ok: {run_id, started, ended, fingerprints} | null, checks: [...], admit_reason?}`; stdout
-is `{version: 1, decision, reason, checks: [{id, kind, work, reason, fingerprint?}]}`. An
+last_ok: {run_id, started, ended, fingerprints} | null, checks: [...], admit_reason?, source?}`;
+stdout is `{version: 1, decision, reason, checks: [{id, kind, work, reason, fingerprint?}],
+source?}` — `source` (whose checks these are, `rsched/gatecompose.py`) is echoed untouched. An
 `admit_reason` is a built-in reason the daemon already found (a routine that keeps jobs asks its
 checks anyway, to learn WHICH jobs have work): the decision is then "run" whatever they say.
 """
@@ -87,7 +88,10 @@ def _cap(text: str) -> str:
 
 def main(argv: list[str]) -> int:
     try:
-        out = evaluate(json.loads(argv[1]))
+        ctx = json.loads(argv[1])
+        out = evaluate(ctx)
+        if isinstance(ctx.get("source"), dict):
+            out["source"] = ctx["source"]
     except Exception as exc:
         out = {"version": 1, "decision": "run", "checks": [],
                "reason": _cap(f"the gate could not read its own configuration ({exc}) — "

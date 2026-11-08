@@ -51,6 +51,7 @@ class RunGateConfig(BaseModel):
     enabled: bool = False
     timeout_s: int = Field(default=30, ge=1, le=300)
     checks: list[dict] = Field(default_factory=list)
+    run_written: bool = True   # a run's state/next-gate.json may replace `checks` (gatecompose)
 
     @field_validator("checks")
     @classmethod
@@ -79,6 +80,7 @@ class RunGatePatch(BaseModel):
     enabled: bool | None = None
     timeout_s: int | None = Field(default=None, ge=1, le=300)
     checks: list[dict] | None = None
+    run_written: bool | None = None
 
 
 class RoutineConfig(_Config):
@@ -105,16 +107,14 @@ class RoutineConfig(_Config):
     workflow_slug: BlankableStr = Field("", validation_alias=AliasPath("workflow", "library_slug"))
     workflow_commit: BlankableStr = Field(
         "", validation_alias=AliasPath("workflow", "library_commit"))
-    # Conversations only: the library playbook this conversation was seeded from (the
-    # `playbook: {slug, commit}` binding). Empty = a fresh conversation. Drives the
-    # Update-playbook button; a Save-as-playbook always creates a new one regardless.
+    # Conversations only: the library playbook it was seeded from (`playbook: {slug, commit}`),
+    # empty for a fresh one; drives Update-playbook (Save-as-playbook always makes a new one).
     playbook_slug: BlankableStr = Field("", validation_alias=AliasPath("playbook", "slug"))
     # Detached background tasks only: the spawning conversation ({slug, dir}) DetachedManager
     # delivers the result back to. None elsewhere (declared, so extra="ignore" keeps it).
     owner: dict | None = None
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
-    # What this dir IS when not an ordinary routine: "conversation" (under conversations_home).
-    kind: BlankableStr = ""
+    kind: BlankableStr = ""  # what this dir IS when not a routine: "conversation"
     # Role → catalog model NAME (main/tool_call/uncensored/supervisor — the last resolving
     # through MAIN while unset, D164). Another unset role takes the server system_model.
     # Resolved live via EndpointRegistry, so editing a catalog model updates every namer.

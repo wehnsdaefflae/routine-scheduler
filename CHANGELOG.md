@@ -15,6 +15,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.518.0] — 2026-11-08
+
+### Changed — the gate for the next fire is the last run's to write; closures stop buying fires
+
+Measured on the instance before the change: 118 gated fires across 8 routines, ONE skip. About
+half were admitted before any check was asked — 43 by the inbox, 10 of those by nothing but
+`closes: true` report replies (nine of them rules-review's). The checks that WERE asked answered
+"work" every time because each watched a level no run drained: a request queue waiting on air
+dates (14 of 14), models nobody could test (13 of 13), a phase value the idle list did not know
+(7 of 7), a state key that did not exist (4 of 5). The operator's design (2026-11-08): after each
+run, the routine writes the gates for the next one from its own work context.
+
+- **Closures are not freight.** The gate's inbox predicate (`daemon/gate_builtin.pending_inbox`)
+  leaves out `closes: true` replies, as the report trigger always has: a closure asks nothing
+  and waits unconsumed for the next admitted run, bounded by the `max_quiet` backstop.
+- **Run-written gates** (`rsched/gatecompose.py`). A run writes `state/next-gate.json` —
+  `{"why", "checks"}` in the gate's own check vocabulary — and for the next scheduled fire those
+  checks REPLACE the routine's (`scripts/admit.py` included; adding specific checks beside
+  general ones could only make skips rarer). Asked once at boot, in the digest's new NEXT FIRE'S
+  GATE block (`engine/gate_digest.py`): what is in force, how the gate has done, the routine's
+  own checks and the check kinds. Floors no run moves: the built-in reasons; the routine's own
+  `max_quiet`, always asked as `backstop`, which a run may shorten and never lengthen (a gate
+  with none takes no written gate at all); `script` is not a run's to name. An unusable file —
+  unparseable, invalid, lengthening the floor, an ungranted path or secret — is SET ASIDE, never
+  a failed fire: the routine's checks are asked and `gate.json` records `source.rejected`, which
+  the next run is shown. `gate.json` now records `source` (whose checks were asked), the run
+  history's verdict hover shows it, and the job ledger maps a written check's `job:` tag from it
+  (`gatecompose.checks_in_force`). *Test the gate now* never reads the file. **On by default,
+  with an off switch per routine**: `run_gate.run_written` (the Run gate section's *let each run
+  write the checks for the next fire* box) — off, the routine's checks are asked on every fire
+  and no run is asked to write any.
+- **What the gate has done** (`readmodels/gate_yield.py`): per routine check, how often it was
+  asked and found work over the last 20 judged fires. A check that answered work on every one
+  of at least 5 asks has never let a fire skip — a setup-surface NOTE `gate:<id>` with its newest
+  reason and the new remedy `edit_gate` (lands on that check's row, `data-gate-check-id`), and a
+  line in the run's NEXT FIRE'S GATE block.
+- The built-in reasons moved out of `daemon/gate_prepare.py` (at its size ceiling) into
+  `daemon/gate_builtin.py`; `gate_prepare.py` is back under the bar (383 → 331).
+
 ## [0.517.1] — 2026-11-08
 
 ### Fixed — the ungated-write marker flagged read-only commands two ways (F855)
