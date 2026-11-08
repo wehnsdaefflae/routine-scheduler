@@ -628,3 +628,103 @@ Carries item 6 of "adopt the list".
 capabilities, history, observations) beside `window.note_prompt_size`, written to status.json and
 shown as one stacked bar on the run view and in Stats — diagnostic only, never in the cached
 prompt. **First increment:** the measurement and the run-view bar.
+
+---
+
+## Claude quota: the scoped weekly limits in `limits[]` (decided 2026-11-08, in conversation)
+
+From a review of getpaseo/paseo (its `plugins/claude-usage-source/server/usage.ts`).
+
+**Problem.** `endpoints/subscription_quota.WINDOWS` reads four fixed top-level keys of
+`/api/oauth/usage` (`five_hour`, `seven_day`, `seven_day_sonnet`, `seven_day_opus`), and
+`static/components/quota.js` labels exactly those four. The API is moving model- and
+surface-scoped weekly limits into a `limits[]` array — entries `{kind: "weekly_scoped", percent,
+resets_at, scope: {model|surface: {id, display_name}}}` — while still sending some as legacy
+`seven_day_<model>` keys (Paseo also sees `seven_day_omelette`). Once a scoped limit exists only
+in `limits[]`, our card's weekly Opus/Sonnet line disappears with no error: a limit we cannot
+read reads as a limit that is not there, against the one-authoritative-source rule.
+
+**Shape.** `normalize` keeps the two unscoped windows and adds the scoped weekly limits from
+BOTH shapes, reconciled once into one representation (`{dimension: model|surface, id, name,
+used_pct, resets_at}`) keyed by scope so a limit sent both ways is one row. Each `limits[]` entry
+is validated on its own, so a malformed or newly shaped entry costs that entry, never the
+windows already parsed; an entry of a `kind` we do not know is reported as an unknown limit
+(named, no figure), never dropped. `quota.js` renders the rows from their own names instead of
+a fixed label map. A 429 from the quota read honours `Retry-After` per credential and the card
+says when it will read again, rather than retrying on the next poll.
+
+**First increment.** `normalize` over both shapes with tests built from both payload shapes
+(legacy-only, `limits[]`-only, both for the same model, a malformed entry, an unknown kind), and
+the card rendering scoped rows by name.
+
+---
+
+## A resumed leg is told when its last action's outcome is unknown (decided 2026-11-08, in conversation)
+
+From a review of getpaseo/paseo: its daemon journals every agent message as `pending` before
+sending and `completed` after, and a retry that finds `pending` after a restart reports
+`agent_request_outcome_unknown` instead of sending again, because the provider may already have
+acted.
+
+**Problem.** The engine records `assistant_action` BEFORE dispatch (`engine/loop.py:262`) and the
+`observation` after it (`:343`). A process killed between the two — a deploy, the D99 SIGKILL
+auto-resume, `daemon/reap_resume.py` after a restart — leaves the transcript ending in an action
+with no result. `history.replay_messages` replays that action as the last assistant message, and
+the only framing the resumed leg gets is `rewind._RESUMED`: "continue from the last observation".
+Nothing says the last action may or may not have happened. For an outward action that is the
+costly case: freelance-hunter sending mail, vodafone-outage-claims filing a claim, do-my-taxes
+submitting a return, predatory-publisher-tarpit replying — a model that sees no result is likely
+to issue the action again.
+
+**Shape.** At boot, when the replayed events end in an `assistant_action` with no answering
+`observation` (per element for a chained reply — `engine/replyactions.py` — so the note names
+which elements have results and which do not), the engine writes an `observation` for each
+unanswered element saying the outcome is UNKNOWN: the process ended while it ran, it may or may
+not have taken effect, check its effect before repeating it. Written as a real transcript event
+(not an engine note), so the prompt stays append-only and a later resume replays it verbatim.
+The guards the resume rebuilds (`grounding_from`, `seen_paths`) treat it as executing nothing.
+`docs/prompt-anatomy.md` gains the wording.
+
+**First increment.** The boot-time detection and the unknown-outcome observation, with a test
+that kills a scripted run between the two events and resumes it, and a replay test proving a
+second resume does not add a second observation.
+
+---
+
+## Catalog models carry a "when to use" note; a second opinion from another model family (decided 2026-11-08, in conversation)
+
+From a review of getpaseo/paseo: its agent profiles carry a "When to use" note that its
+orchestration tools return, so an orchestrating agent picks settings for a delegated task from
+the note instead of from a model id; and its advisor/committee skills get an independent read
+from a DIFFERENT provider family, with no edit rights, before a contested decision.
+
+**Shape.** (a) `ModelConfig` (`config/modelconf.py`) gains an optional one-line `note` — what this
+model is good for and what it is not — edited on the model's catalog row and returned by
+`list_models` beside each name, so a run choosing a `model` for `spawn`/`subtask`/`llm` or a
+`role_swap` position reads why, not just what exists. Unset prints nothing; it is advice, never
+a routing rule. (b) A library rule, `second-opinion`, whose operative line asks a run facing an
+irreversible or contested judgment (a release decision, a triage verdict, a reply that cannot be
+unsent) for one independent read from a child run on a model of a different family, briefed
+self-contained and with no write rights, and to name in its finish where the two disagreed. It
+names the capability, never a model or a util, and is bound per routine like every rule.
+
+**First increment.** (a) the field, its catalog-row control and the `list_models` rendering; (b)
+the rule in the library seed, bound to self-audit first, its runs' use read back by rules-review.
+
+---
+
+## Web Push holds back while the operator is at the console (decided 2026-11-08, in conversation)
+
+From a review of getpaseo/paseo: its daemon pushes to the phone only when no client has been
+active for 180 s (`PRESENCE_THRESHOLD_MS`), shows an in-app notice to an active client instead,
+and sends nothing when that client is already looking at the agent concerned.
+
+**Shape.** `web/push.py`'s decision sender skips a push for a question or proposal while a
+console tab has reported activity within a presence window, and pushes it once that window
+lapses with the ask still open — the existing `push-notified.json` dedupe and the withdrawal on
+settle are unchanged, so a deferred push is sent at most once and withdrawn like any other.
+Presence is a heartbeat the console already open on any page sends; a tab in the background
+does not count as present. A push is never DROPPED for presence, only deferred.
+
+**First increment.** The presence heartbeat and the deferral in the sender, with tests for: no
+push while present, one push after the window lapses, none if the ask was settled meanwhile.
