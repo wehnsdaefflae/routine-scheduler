@@ -82,6 +82,14 @@ export function describe(key, v) {
       return [(c.actions || []).length ? `actions ${list(c.actions)}` : "",
         (c.utils || []).length ? `utils ${list(c.utils)}` : "",
         c.confirm ? `util approval: ${c.confirm}` : "",
+        // D252(c): the fifth approval dial, which this line named for none of its life. Its
+        // value always arrived (`rule_confirm` is in grants.APPROVAL_DIALS, so
+        // effective_settings carries it), so turning rule approval DOWN — the only direction
+        // that matters, `always` being every routine's default — showed no difference in a
+        // changed-field note, an override note, a closed "more" menu or the Library's pattern
+        // settings. Named on the same rule as the two below: only when it departs.
+        c.rule_confirm && c.rule_confirm !== "always"
+          ? `rule approval: ${c.rule_confirm}` : "",
         c.runs ? `previous runs: ${c.runs}` : "",
         c.reminders ? `reminders: ${c.reminders}` : "",
         // named where its dial is shown: only `global` writes a reminder anyone approves
