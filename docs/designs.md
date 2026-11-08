@@ -214,25 +214,6 @@ the file may lag a finish by up to 60 s.
 
 ---
 
-## Console: the settings digest never names rule_confirm
-
-(a) and (b) SHIPPED in 0.519.0 — the engine's action timeouts are served in `/api/status` from
-its own constants and `actiontime.js` keeps no copy; `api_finishline.payload` returns the
-scheduler's local day and `finish-line.js` judges a date outcome against it.
-
-What is left: `settings-digest.js`'s `describe("capabilities")` names `confirm` ("util
-approval"), `remind_confirm`, `config_confirm` and `revise_confirm`, but never `rule_confirm` —
-so an override on who approves a rule change shows no difference in a changed-field note, an
-override note, a closed "more" menu or the Library's pattern settings. Name it on the same rule
-the other dials follow: only when it departs from the `always` every routine defaults to
-(`grantpolicy.GrantPolicy.rule_confirm`).
-
-**First increment.** With a red-first UI test beside the `config_confirm` / `revise_confirm`
-ones in `tests/ui/test_ability_settings.py` — that file has only **+4 lines of slack** at the
-350-line bar, so the test is bought line-neutrally or goes in a sibling file.
-
----
-
 ## Deploy leftovers (SD2.5–6) and a pinned claude CLI
 
 - `deploy/` chrome entrypoint: supervise Xvfb and Chrome with `wait -n`, so one dying ends the
