@@ -19,7 +19,8 @@ import { pendingBand } from "/static/components/pending.js";
 import { answerForm } from "/static/components/answerform.js";
 import { linkifyRefs } from "/static/components/reflinks.js";
 import { configProposal } from "/static/components/configproposal.js";
-import { declinedChip, lifecycleControls } from "/static/components/decision-lifecycle.js";
+import { answeredChips, lifecycleControls, proofNote }
+  from "/static/components/decision-lifecycle.js";
 import { md, summaryLine } from "/static/md.js";
 import { act, chip, el, emptyState, fmtAbs, groupHead, skeleton, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
@@ -198,6 +199,7 @@ export async function render(view, query = {}) {
       const body = el("div", {});
       const say = (text, note) => body.replaceChildren(
         el("div", { class: "flow-note" }, el("span", {}, `“${text}” ${note}`)),
+        ...proofNote(q),                 // D220: what is being CHECKED, so the band reads
         el("div", { class: "row mt" }, reviseBtn));
       const editor = () => {
         const box = el("textarea", { class: "answer-input", rows: "3",
@@ -248,11 +250,9 @@ export async function render(view, query = {}) {
           q.type === "util-approval" ? chip("util approval", "partial") : null,
           q.type === "request" ? chip("access request", "partial") : null,
           reportChip(q),
-          // R2197: a DECLINED decision says so, in place of the "answered" chip — a refusal
-          // rendered as an ordinary answer is exactly what the decline verb exists to end.
-          declinedChip(q)
-          || chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""}`
-            + ` · ${q.settled ? "acted on" : q.ran_now ? "run started" : "queued"}`, "ok"),
+          // What the answer WAS and what became of it — a decline in place of the answered chip
+          // (R2197), a proof verdict beside it (D220); composed in decision-lifecycle.js.
+          ...answeredChips(q),
           sourceLink(q),
           q.asked ? el("span", {}, "asked ", when(q.asked)) : null,
           q.consumed ? el("span", { class: "faint small" }, "read ", when(q.consumed)) : null),

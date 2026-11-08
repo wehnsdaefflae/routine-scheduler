@@ -35,19 +35,51 @@ export const waitsOnYou = (q) => {
   return Boolean(q.run_state) && !TERMINAL.has(q.run_state);
 };
 
+/** The proof state a decision's options have reached, or "" — the client's reading of the map
+ *  `rsched/proofs.py` stores on the record (D220). The RANK is that module's `_RANK`: a
+ *  positive proof clears the row, so it outranks everything; `negative` is the loud case;
+ *  `declined` says nothing about the decision, because nobody chose that option.
+ *
+ *  Derived here rather than served as a word, for the reason `waitsOnYou` is: the record
+ *  carries the map and the map is the fact, so a second field saying what it means would be a
+ *  copy to keep in sync. The order below is the only thing duplicated, and the engine test
+ *  `tests/test_proofs.py` pins the same one.
+ */
+const PROOF_RANK = ["declined", "open", "in_progress", "negative", "positive"];
+export const proofState = (q) => {
+  const states = Object.values(q.proof || {})
+    .map((e) => String(e?.state || "")).filter((s) => PROOF_RANK.includes(s));
+  return states.length
+    ? states.reduce((a, b) => (PROOF_RANK.indexOf(b) > PROOF_RANK.indexOf(a) ? b : a))
+    : "";
+};
+
+/** Was this decision ANSWERED while nothing yet shows the work landed? (F795)
+ *
+ *  `rsched/proofs.unproven`, client-side. A row with no proof map is FALSE — every decision
+ *  filed before D220 is in that state, and this band must not re-open the instance's whole
+ *  settled history. His rule: a decision stays open and visible until one option has a
+ *  positive proof, or it is actively discarded or overridden.
+ */
+export const unproven = (q) => Boolean(q.answered)
+  && ["open", "in_progress", "negative"].includes(proofState(q));
+
 export const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"],
-                        ["meta", "Meta"], ["proposal", "Proposals"], ["snoozed", "Snoozed"]];
+                        ["meta", "Meta"], ["proposal", "Proposals"], ["unproven", "Unproven"],
+                        ["snoozed", "Snoozed"]];
 export const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"],
                       ["routine", "routine"]];
 
 /** The one filter bucket a decision belongs to — so a proposal is filterable on its own
  *  instead of swelling Deferred's count with items nothing is waiting for. */
-export const kindOf = (q) => (q.meta ? "meta"
+export const kindOf = (q) => (unproven(q) ? "unproven"
+  : q.meta ? "meta"
   : q.mode !== "blocking" && !waitsOnYou(q) ? "proposal"
   : q.mode);
 
 const PROPOSAL = 3;
-export const rank = (q) => (q.answered ? 4
+export const rank = (q) => (unproven(q) ? 4
+  : q.answered ? 5
   : q.mode === "blocking" ? 0
   : q.meta ? 2
   : waitsOnYou(q) ? 1
@@ -65,7 +97,14 @@ export const GROUPS = [
   // console's one colour for a person being waited on off this count.
   ["Proposals", "considered ideas, decide when you like",
    (q) => !q.answered && q.mode !== "blocking" && !q.meta && !waitsOnYou(q), false],
-  ["Settled", "what you answered, and what became of it", (q) => q.answered, false],
+  // D220/F795: ANSWERED, and nothing has yet shown the work landed. Above Settled because the
+  // item is not finished, below everything that waits because it is not a question — his hard
+  // constraint is that a row whose proof is unproven is never re-presented as an unanswered
+  // one. `waits: false` keeps the console's "a person is waited on" colour off a count of
+  // decisions he has already made.
+  ["Unproven", "answered, and nothing yet shows the work landed", unproven, false],
+  ["Settled", "what you answered, and what became of it",
+   (q) => q.answered && !unproven(q), false],
 ];
 
 export const EXPIRING_MS = 30 * 60 * 1000;   // a blocking ask this close to its timeout is LOUD
