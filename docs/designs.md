@@ -255,17 +255,6 @@ differently from another zone.
 
 ---
 
-## CLAUDE.md gaps the review found
-
-- A blob URL carries the console's ORIGIN: a new tab opens only through `components/blobtab.js`
-  (`newTabHref`) — the rule behind 0.371.0's token-theft fix, nowhere in CLAUDE.md.
-- Deploy: `~/.credentials` is optional (bundle and backup tolerate its absence);
-  `tests/test_deploy_state.py` pins compose against `deploy/state-paths.sh`.
-
-**First increment.** All three in one commit.
-
----
-
 ## After 0.372.2 reaches the instance (self-audit housekeeping)
 
 Self-audit's own items for the first run after the deploy that brings 0.372.2 — none needs the

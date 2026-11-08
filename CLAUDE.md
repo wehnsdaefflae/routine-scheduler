@@ -1404,6 +1404,14 @@ by a test, by the engine, or by a past incident.
   the newline byte alone (`str.splitlines` also breaks on U+2028, which these streams keep raw)
   and skip a torn or non-object row without hiding the rest. The engine's own transcript writer
   and the gate kit (a standalone script that cannot import the package) keep their own.
+- **A BLOB URL carries the console's ORIGIN, so a new tab opens only through
+  `components/blobtab.js`** (`newTabHref`). This is the rule behind 0.371.0's token-theft fix: a
+  `blob:` document inherits the page's origin, so an attachment opened as a page of its own runs
+  AS the console — an SVG's script read the operator token out of local storage. `newTabHref` is
+  the one decision point: a passive type opens as itself, anything that can carry script opens
+  inside a sandboxed frame. A thumbnail may still SHOW an SVG, because an `<img>` runs no script.
+  Every caller that mints an object URL also OWNS its lifetime and revokes it in its `destroy()`
+  — a decoded image stays in memory until then.
 - `static/` is no-build vanilla-JS ES modules (no bundler, no node, no external assets). Keep it
   that way. **A NEW button's action goes through `util.js`'s `act()`** — it disables the control,
   awaits the call, toasts the outcome and re-enables in a `finally`, which is the only way the
@@ -1509,7 +1517,12 @@ converging mirror copied a night's damage over the last good copy. Never edit in
 a linked file is ONE file every snapshot shares. **The tarball is not a backup** — `routines` and
 `conversations` are rewritten by every run, so it is stale within minutes, and a nightly re-tar
 moves gigabytes to capture megabytes. Keep the two lists in the one file: a second copy is how five
-data homes went unbundled for a release. **Every compose command runs bare, from the checkout's
+data homes went unbundled for a release. `~/.credentials` in that inventory is OPTIONAL — the
+file-based `key_env_file` mechanism is used on some hosts and not others, so both consumers
+tolerate its absence and neither may treat a missing one as a failure. And the inventory is
+PINNED against compose by `tests/test_deploy_state.py`: every bind under `RSCHED_HOME` is
+carried by it, so a new volume that nothing bundles or backs up reds the gate rather than
+shipping. **Every compose command runs bare, from the checkout's
 root**: the host's file set and profiles live in `.env` (`COMPOSE_FILE`, which `deploy/nat64.sh`
 writes while NAT64 is on; `COMPOSE_PROFILES=desktop` on a host running the agent desktops), which
 Compose reads on every command.
