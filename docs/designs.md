@@ -141,24 +141,6 @@ own notes, kept so the trail can be followed.
 
 ---
 
-## A resumed leg keeps two more counters, and a replayed observation keeps its tails
-
-**Problem.** (a) `loop.failures` (the "failed twice this run" count behind the repair hint) and
-`_schema_off` ("schema off for the rest of the run") reset on every leg, so after a resume a call's
-second failure reads as its first. (b) A replayed observation loses its TAILS — the reminder note,
-rule-assist line, history pointer and once-grant note `EngineLoop._tails` appended after the
-observation was recorded — so a resumed leg's prompt differs from what the model read: the provider
-cache misses from the first such message, and cautions the model was shown are gone.
-
-**Shape.** (a) rebuild both in their layers' `rebuild`, the `engine/guardscope.py` pattern; (b)
-record the rendered tails on the observation event as a payload key and have
-`history.replay_messages` append them.
-
-**First increment.** (b), red-first: an observation that carried a `[REMINDERS: …]` tail replays
-with it.
-
----
-
 ## Abort by run id; the runner's active map keyed per home (T3.2, W1.3, D1.3)
 
 **Problem.** `runner.abort(slug)` aborts whichever run of that routine is live, and `runner.active`

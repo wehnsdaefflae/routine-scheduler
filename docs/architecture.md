@@ -418,7 +418,11 @@ the limits (single-writer status.json preserved).
 - **"Once" survives a resume** (`engine/guardscope.py`). The once-only guards — the hold
   ledger, each rule assist's single fire and the one assist finish deferral, the repos found
   clean, the verifier's one challenge per line, a reminder hold's one label and a re-driven
-  finish's one payload, the eviction warning — are in-memory ledgers, and boot REBUILDS each
+  finish's one payload, the eviction warning — plus two COUNTERS of the same scope (D245,
+  `engine/resumedcounters.py`): how often each call has failed this run (the repair hint fires
+  at the SECOND failure of one call, so a leg that forgets the first never fires it) and
+  whether repeat-streak shedding has already disabled the provider's response format for the
+  rest of the run — are in-memory ledgers, and boot REBUILDS each
   from the transcript events inside its GUARD SCOPE, the way `history.seen_paths` rebuilds the
   grounding set; each layer reads its own (`rebuild`, the counterpart of `configure`). The
   scope is one helper (operator decision, 2026-10-01): a routine's whole run, every leg of it;
