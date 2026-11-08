@@ -22,8 +22,8 @@ from ..config import RoutineConfig, ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..ids import run_ts as make_run_ts
-from ..paths import atomic_write_json, directly_under, read_json
-from . import run_gate, runner_reap, runner_state
+from ..paths import atomic_write_json, read_json
+from . import active_map, run_gate, runner_reap, runner_state
 from .events import EventBus
 from .llm_tailer import tail_llm_sidecar
 from .runner_state import (
@@ -94,32 +94,25 @@ class Runner:
         self._supervisors: set[asyncio.Task] = set()
         self.interactive_semaphore = asyncio.Semaphore(INTERACTIVE_SLOTS)
         self.background_semaphore = asyncio.Semaphore(BACKGROUND_SLOTS)
-        self.active: dict[str, ActiveRun] = {}  # slug → run
+        self.active: dict[tuple[str, str], ActiveRun] = {}  # (home, slug) → run — D247
         self.draining = False  # set while quiescing for a self-update restart: no new runs fire
 
-    def _under_home(self, cfg: RoutineConfig, home_attr: str) -> bool:
-        """True if the run's dir is a direct child of the named server home. The pools are
-        chosen by HOME, not by `cfg.kind`: a detached task's routine.yaml carries no kind at
-        all, and the home is where the run actually lives.
+    def home_of(self, cfg: RoutineConfig) -> str:
+        """Which run home this run's dir sits in (`active_map.home_of`) — the other half of
+        the active map's key, and what chooses the slot pool it draws from.
         """
-        return directly_under(cfg.dir, getattr(self.server, home_attr, None))
-
-    def is_background(self, cfg: RoutineConfig) -> bool:
-        """A detached background task — its dir sits directly under background_home."""
-        return self._under_home(cfg, "background_home")
+        return active_map.home_of(self.server, cfg.dir)
 
     def _sem_for(self, cfg: RoutineConfig) -> asyncio.Semaphore:
         """Detached background tasks draw from their own pool; conversations (dirs under
         conversations_home) from the reserved interactive pool; everything else from cron.
         """
-        if self.is_background(cfg):
-            return self.background_semaphore
-        if self._under_home(cfg, "conversations_home"):
-            return self.interactive_semaphore
-        return self.semaphore
+        return {"background": self.background_semaphore,
+                "conversations": self.interactive_semaphore}.get(
+                    self.home_of(cfg), self.semaphore)
 
-    def is_active(self, slug: str) -> bool:
-        return slug in self.active
+    def is_active(self, home: str, slug: str) -> bool:
+        return (home, slug) in self.active
 
     def active_states(self) -> list[str]:
         """Current state of each active run (read from status.json) — for the drain check.
@@ -202,10 +195,9 @@ class Runner:
             return ("disabled", f"{cfg.slug} is disabled — choose a schedule before starting it")
         if self.draining:
             return ("draining", "the daemon is draining for a restart")
-        if cfg.slug in self.active:
+        if live := self.active.get((self.home_of(cfg), cfg.slug)):
             return ("overrun",
-                    (f"another run of {cfg.slug} is already active "
-                     f"({self.active[cfg.slug].run_id})"))
+                    f"another run of {cfg.slug} is already active ({live.run_id})")
         blocking = {role: name for role, name in (cfg.models or {}).items()
                     if role in FIRE_BLOCKING_ROLES}
         if problem := trials.roles_problem(self.server, blocking):
@@ -234,9 +226,9 @@ class Runner:
             brief_mod.write(run_dir, brief)
         trials.arm(self.server, cfg, run_dir)
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
-                        sem=self._sem_for(cfg), background=self.is_background(cfg))
+                        home=self.home_of(cfg), sem=self._sem_for(cfg))
         atomic_write_json(run_dir / "status.json", _queued_status(run.run_id, ts))
-        self.active[cfg.slug] = run
+        self.active[run.home, cfg.slug] = run
         self._spawn_supervisor(run, cfg, reason)
         return run.run_id
 
@@ -251,8 +243,8 @@ class Runner:
         """
         if self.draining:
             return "the daemon is draining for a restart"
-        if cfg.slug in self.active:
-            return f"another run of {cfg.slug} is already active ({self.active[cfg.slug].run_id})"
+        if live := self.active.get((self.home_of(cfg), cfg.slug)):
+            return f"another run of {cfg.slug} is already active ({live.run_id})"
         if not (cfg.dir / "runs" / ts).is_dir():
             return f"run directory for {ts} is gone"
         return None
@@ -265,14 +257,14 @@ class Runner:
             return None
         run_dir = cfg.dir / "runs" / ts
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
-                        sem=self._sem_for(cfg), background=self.is_background(cfg))
+                        home=self.home_of(cfg), sem=self._sem_for(cfg))
         # RESUME reuses the run dir: status.json still holds the prior leg's cumulative
         # telemetry. Carry it forward (F140) so the boot-time prior_counters reseed sees it
         # instead of the clobbered file — otherwise a finish->reopen drops the pre-finish
         # leg's util histogram and integer counters.
         atomic_write_json(run_dir / "status.json",
                           _queued_status(run.run_id, ts, read_json(run_dir / "status.json")))
-        self.active[cfg.slug] = run
+        self.active[run.home, cfg.slug] = run
         self._spawn_supervisor(run, cfg, reason, resume=True)
         return run.run_id
 
@@ -318,13 +310,13 @@ class Runner:
             run.holds_slot = True
             # `run.cancelled` = aborted while still queued: never spawn, but FALL THROUGH to
             # the reap. An early `return` here skipped it, and reap() is the only caller of
-            # `runner.active.pop(run.slug)` — so the slug stayed registered forever. That
+            # `runner.active.pop(key)` — so the run stayed registered forever. That
             # leak is worse than a stale dict entry, because two other checks read the same
-            # dict: `resume()` refuses on `cfg.slug in self.active` (so the routine could
+            # dict: `resume()` refuses while its (home, slug) is active (so the routine could
             # never be resumed or fired again), and `active_states()` feeds the restart
             # drain (so the daemon believed runs were live and never restarted). The only
             # way out was the restart the leak itself prevented. reap() has always handled
-            # this case — it pops the slug, then returns early on `cancelled and proc is
+            # this case — it pops the key, then returns early on `cancelled and proc is
             # None` — it was simply never reached.
             if (not run.cancelled
                     and await run_gate.admit(run, cfg, self.server, reason, resume)
@@ -451,8 +443,15 @@ class Runner:
         return _on
 
 
-    async def abort(self, slug: str) -> bool:
-        run = self.active.get(slug)
+    async def abort(self, run_id: str, home: str = "") -> bool:
+        """Abort the run `run_id` names — the id the web route already holds (D247).
+
+        By SLUG this stopped whichever run of that routine was live, which across the three
+        homes could be a different run entirely, and after a resume was a run the operator
+        had not been looking at. `home` is the home the caller resolved the run in; without
+        it an id two homes answer to aborts nothing (`active_map.find`).
+        """
+        run = active_map.find(self.active, run_id, home)
         if not run:
             return False
         if run.proc is None:

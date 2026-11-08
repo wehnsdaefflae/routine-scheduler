@@ -24,6 +24,7 @@ from ..config import ServerConfig
 from ..ids import now_iso
 from ..paths import config_file, read_json
 from ..registry import homes_fingerprint
+from .active_map import DEFAULT_HOME
 
 # WARNING/ERROR/CRITICAL/traceback markers in an engine subprocess's stderr. The engine's
 # stdout is DEVNULL and its stderr is only surfaced by _reap on a CRASH — so a non-fatal
@@ -146,21 +147,33 @@ def _queued_status(run_id: str, ts: str, prior: object = None) -> dict:
 class ActiveRun:
     """A run the daemon tracks: queued for a slot, running as a subprocess, or parked on
     a user question (a parked run releases its slot — `holds_slot`).
+
+    `home` and `slug` together are what the runner's active map is keyed by (D247,
+    `daemon/active_map.py`): the three homes are independent namespaces, so the slug alone
+    named a routine, a conversation and a background task at once.
     """
 
     slug: str
     run_id: str
     run_ts: str
     run_dir: Path
+    home: str = DEFAULT_HOME  # "routines" | "conversations" | "background"
     proc: asyncio.subprocess.Process | None = None  # None while queued for a slot
     holds_slot: bool = False
     sem: asyncio.Semaphore | None = None  # the pool this run draws from (cron vs interactive)
-    background: bool = False  # a detached task — its own slot pool, and no gate corrections
     cancelled: bool = False   # aborted while still QUEUED — the supervisor spawns nothing
     # user-requested abort of a RUNNING process (F188): the kill leaves no engine finish, so
     # the reap closes the run out itself — and logs `run_canceled` rather than `orphaned_run`,
     # because a deliberate cancel must not masquerade as a crash in the health stream.
     user_cancel: bool = False
+
+    @property
+    def background(self) -> bool:
+        """A detached task — its own slot pool, and no run-gate corrections. DERIVED from the
+        home rather than stored beside it: two fields saying the same thing is two fields that
+        can disagree, and the home is the one the map is keyed by.
+        """
+        return self.home == "background"
 
 def _last_vm_hwm_kb(run_dir: Path) -> int | None:
     """The dead engine's peak resident memory, from its LAST status.json write (the

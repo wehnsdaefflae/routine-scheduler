@@ -51,7 +51,7 @@ def test_runner_active_states_reads_status(tmp_path):
     rd = tmp_path / "r" / "runs" / "ts"
     rd.mkdir(parents=True)
     (rd / "status.json").write_text(json.dumps({"state": "waiting_user"}))
-    runner.active["r"] = ActiveRun(slug="r", run_id="r:ts", run_ts="ts", run_dir=rd)
+    runner.active["routines", "r"] = ActiveRun(slug="r", run_id="r:ts", run_ts="ts", run_dir=rd)
     assert runner.active_states() == ["waiting_user"]
 
 
@@ -147,7 +147,9 @@ def test_a_background_task_holds_the_drain_like_any_other_run(tmp_path):
     rd = tmp_path / "scrape" / "runs" / "ts"
     rd.mkdir(parents=True)
     (rd / "status.json").write_text(json.dumps({"state": "running"}))
-    runner.active["scrape"] = ActiveRun(slug="scrape", run_id="scrape:ts", run_ts="ts",
-                                        run_dir=rd, background=True)
+    run = ActiveRun(slug="scrape", run_id="scrape:ts", run_ts="ts", run_dir=rd,
+                    home="background")
+    runner.active["background", "scrape"] = run
+    assert run.background is True   # D247: derived from the home, not a second field
     assert runner.active_states() == ["running"]
     assert restart.restart_action(True, runner.active_states(), True) == "wait"

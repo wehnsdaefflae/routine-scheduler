@@ -737,22 +737,22 @@ def test_abort_never_signals_a_finished_runs_pid(client):
 
 
 def test_abort_of_a_finished_run_leaves_the_routines_live_run_alone(client, monkeypatch):
-    """The runner aborts by SLUG, so an abort naming an old, finished run stopped whichever
-    other run of the routine happened to be live."""
+    """Aborting by SLUG, an abort naming an old, finished run stopped whichever other run of
+    that routine was live. It names the RUN now (D247): the id, in its own home."""
     c, tmp = client
     _mk_run(tmp / "routines", "apir", "20260708-120000", "finished")
-    aborted: list[str] = []
+    aborted: list[tuple[str, str]] = []
 
-    async def abort_live(slug):
-        aborted.append(slug)
+    async def abort_run(run_id, home):
+        aborted.append((run_id, home))
         return True
 
-    monkeypatch.setattr(c.app.state.runner, "abort", abort_live)
+    monkeypatch.setattr(c.app.state.runner, "abort", abort_run)
     assert c.post("/api/runs/apir:20260708-120000/abort").status_code == 409
     assert aborted == []
     _mk_run(tmp / "routines", "apir", "20260708-130000", "running")
     assert c.post("/api/runs/apir:20260708-130000/abort").status_code == 200
-    assert aborted == ["apir"]
+    assert aborted == [("apir:20260708-130000", "routines")]
 
 
 def test_run_reads_validate_their_query(client):
@@ -1246,7 +1246,7 @@ def test_answer_run_now_fires_one_manual_run_and_a_plain_answer_fires_nothing(cl
     assert r.json()["run_id"] == "apir:20260912-120000" and fired == [("apir", "manual")]
     assert read_json(tmp / "routines" / "apir" / "inbox" / "answer-q-r2.json")["text"] == "Do it"
     # a run already active: the answer is filed, nothing more is fired
-    runner.is_active = lambda slug: slug == "apir"
+    runner.is_active = lambda home, slug: (home, slug) == ("routines", "apir")   # D247
     r = c.post("/api/questions/q-r3/answer", json={"text": "now", "run_now": True})
     assert r.status_code == 200 and "run_id" not in r.json() and len(fired) == 1
 
@@ -2255,7 +2255,7 @@ def test_a_converse_that_cannot_resume_leaves_no_unlock_behind(client, monkeypat
     run_dir = _mk_run(tmp / "routines", "apir", "20260709-130000", "finished")
     monkeypatch.setenv(ADMIN_TOKEN_ENV, "admin-secret")
     # another run of the routine is live, so the runner refuses the resume
-    monkeypatch.setitem(c.app.state.runner.active, "apir",
+    monkeypatch.setitem(c.app.state.runner.active, ("routines", "apir"),
                         SimpleNamespace(run_id="apir:20260709-140000"))
     r = c.post("/api/runs/apir:20260709-130000/converse",
                data={"text": "rewrite the gather stage", "recipe_edit": "1"},
@@ -2872,8 +2872,8 @@ def test_global_pause_marks_active_routines_without_overwriting_manual_pause(cli
     atomic_write_json(root / "control.json", {"pause": True, "switch_model": "kept"})
     runner = c.app.state.runner
     survivor = _mk_run(tmp / "routines", "apir", "20260912-000000", "running")
-    runner.active.update({"apir": SimpleNamespace(run_dir=root),
-                          "chat": SimpleNamespace(run_dir=conversation)})
+    runner.active.update({("routines", "apir"): SimpleNamespace(run_dir=root),
+                          ("conversations", "chat"): SimpleNamespace(run_dir=conversation)})
     try:
         assert c.post("/api/settings/pause").status_code == 200
         assert read_json(root / "control.json") == {

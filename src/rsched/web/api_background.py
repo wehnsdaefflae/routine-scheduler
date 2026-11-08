@@ -74,7 +74,7 @@ def launch_background(request: Request, slug: str, prompt: Annotated[str, Form()
     return {"ok": True, "taskid": taskid}
 
 
-async def _abort(request: Request, taskid: str, ti: registry.RoutineInfo,
+async def _abort(request: Request, ti: registry.RoutineInfo,
                  reason: str = "a background task was cancelled") -> bool:
     """Abort one detached task through the run abort path, falling back to its recorded pid
     when it outlived a daemon restart (no longer in the runner's active set). True when a
@@ -86,10 +86,12 @@ async def _abort(request: Request, taskid: str, ti: registry.RoutineInfo,
     """
     from .api_run_control import abort_with_fallback
 
-    runner = request.app.state.runner
     last = ti.last_run
-    return (await abort_with_fallback(runner, taskid, last.dir, reason) if last
-            else await runner.abort(taskid))
+    if last is None:
+        # D247: the runner aborts by RUN ID — a task with no run yet has no id to name, and
+        # nothing of it is running either, so there is nothing to abort.
+        return False
+    return await abort_with_fallback(request.app.state.runner, last.run_id, last.dir, reason)
 
 
 @router.post("/conversations/{slug}/background/{taskid}/cancel")
@@ -99,7 +101,7 @@ async def cancel_background(request: Request, slug: str, taskid: str) -> dict:
     ti = registry.info(server, server.background_home, taskid)
     if ti is None or (ti.cfg.owner or {}).get("slug") != slug:
         raise HTTPException(404, f"no background task {taskid!r} for conversation {slug!r}")
-    if not await _abort(request, taskid, ti):
+    if not await _abort(request, ti):
         # honesty: the UI used to toast "cancelling…" off ok:true while nothing died
         raise HTTPException(409, "no live process for this task — it may already be done")
     return {"ok": True, "cancelled": True}
@@ -107,6 +109,6 @@ async def cancel_background(request: Request, slug: str, taskid: str) -> dict:
 
 async def teardown_background(request: Request, slug: str) -> None:
     """On conversation delete: abort + remove its detached tasks."""
-    for taskid, ti in _background_tasks(request, slug):
-        await _abort(request, taskid, ti, f"the owning conversation {slug!r} was deleted")
+    for _taskid, ti in _background_tasks(request, slug):
+        await _abort(request, ti, f"the owning conversation {slug!r} was deleted")
         await asyncio.to_thread(shutil.rmtree, ti.cfg.dir, ignore_errors=True)

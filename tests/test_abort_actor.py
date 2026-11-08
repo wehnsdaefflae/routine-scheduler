@@ -9,8 +9,7 @@ Pinned here: each actor's finish text and its machine-readable pair on the finis
 + `cause`, the latter in `runner_reap.classify_cause`'s vocabulary so the health stream stays
 countable by one filter); the honest fallback when nothing was recorded; the breadcrumb's pid
 stamp (a resume reuses the run dir, so a foreign mark must never speak for a later leg); and
-that every door writes the breadcrumb BEFORE it signals, since after the signal there is no
-later moment in which to say who asked.
+that every door writes the breadcrumb BEFORE it signals — afterwards there is no moment left.
 """
 
 from __future__ import annotations
@@ -316,15 +315,16 @@ async def test_the_web_door_marks_the_run_before_signalling(tmp_path):
     order: list[str] = []
 
     class _Runner:
-        async def abort(self, slug: str) -> bool:
-            order.append(f"abort:{slug}")
-            # the mark must already be on disk when the signal goes out
+        server = SimpleNamespace()   # no homes set → active_map.home_of reads "routines"
+
+        async def abort(self, run_id: str, home: str) -> bool:   # D247: by run id, per home
+            order.append(f"abort:{run_id}@{home}")
             order.append("marked" if (run_dir / abortmark.MARK_FILE).exists() else "unmarked")
             return True
 
     assert await api_run_control.abort_with_fallback(
-        _Runner(), "webbed", run_dir, "aborted from the run page") is True
-    assert order == ["abort:webbed", "marked"]
+        _Runner(), f"webbed:{TS}", run_dir, "aborted from the run page") is True
+    assert order == [f"abort:webbed:{TS}@routines", "marked"]
     mark = read_json(run_dir / abortmark.MARK_FILE)
     assert (mark["actor"], mark["reason"], mark["pid"]) == (
         "user", "aborted from the run page", 4242)
@@ -343,8 +343,8 @@ async def test_a_terminal_run_is_neither_marked_nor_signalled(tmp_path):
                                                 "outcome": "ok", "pid": 4242})
 
     class _Runner:
-        async def abort(self, slug: str) -> bool:
+        async def abort(self, run_id: str, home: str) -> bool:
             raise AssertionError("a terminal run must never be signalled")
 
-    assert await api_run_control.abort_with_fallback(_Runner(), "donezo", run_dir) is False
+    assert await api_run_control.abort_with_fallback(_Runner(), f"donezo:{TS}", run_dir) is False
     assert not (run_dir / abortmark.MARK_FILE).exists()

@@ -197,7 +197,7 @@ def audit_feedback(request: Request, body: Feedback) -> dict:
     if not routine_dir.is_dir():
         raise HTTPException(404, "the self-audit routine is not set up yet")
     msg_id = write_feedback(routine_dir, body)
-    active = request.app.state.runner.is_active(SELF_AUDIT_SLUG)
+    active = request.app.state.runner.is_active("routines", SELF_AUDIT_SLUG)
     return {"ok": True, "id": msg_id, "delivery": "mid-run" if active else "next-run"}
 
 
@@ -213,7 +213,7 @@ def audit_feedback_edit(request: Request, msg_id: str, body: Feedback) -> dict:
                            lambda prev: _message_payload(body, str(prev.get("ts") or now_iso()),
                                                          edited=now_iso()),
                            via="web-audit", noun="feedback")
-    active = request.app.state.runner.is_active(SELF_AUDIT_SLUG)
+    active = request.app.state.runner.is_active("routines", SELF_AUDIT_SLUG)
     return {"ok": True, "id": msg_id, "delivery": "mid-run" if active else "next-run"}
 
 

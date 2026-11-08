@@ -73,6 +73,19 @@ def idle_socket(client, url: str, *, hold_s: float = 0.0) -> None:
 # ---- servers ----------------------------------------------------------------------------
 
 
+def live(runner, slug: str, home: str = "routines"):
+    """The runner's ActiveRun for this run, or None. `runner.active` is keyed by (home, slug)
+    — D247 — so the key is a pair, and a test asking about one home says which."""
+    return runner.active.get((home, slug))
+
+
+async def abort_live(runner, slug: str, home: str = "routines") -> bool:
+    """Abort whatever run of `slug` is live, BY ITS RUN ID — what the web route does with the
+    id it already holds (D247). False when nothing of that slug is live in that home."""
+    run = live(runner, slug, home)
+    return bool(run) and await runner.abort(run.run_id, home)
+
+
 def server_config(**attrs: object) -> ServerConfig:
     """`ServerConfig()` with `attrs` assigned after construction — the way every hand-built
     test server is made. A home it does not name stays the hermetic default

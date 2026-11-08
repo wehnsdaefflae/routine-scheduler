@@ -69,13 +69,13 @@ async def test_abort_during_preparation_leaves_no_child(setup_gate, monkeypatch)
     cfg, _, runner = setup_gate
     bootstrap_patch(monkeypatch, "import time; time.sleep(30)")
     await runner.fire(cfg)
-    run = runner.active[cfg.slug]
+    run = runner.active["routines", cfg.slug]   # D247: the map is keyed (home, slug)
     for _ in range(100):
         if run.proc:
             break
         await asyncio.sleep(.01)
     pid = run.proc.pid
-    await runner.abort(cfg.slug)
+    await runner.abort(run.run_id, "routines")
     await asyncio.gather(*runner._supervisors)
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)

@@ -19,9 +19,9 @@ def script(cfg, body):
 
 async def finish(runner, cfg, reason="schedule"):
     rid = await runner.fire(cfg, reason=reason)
-    run = runner.active[cfg.slug]
+    run = runner.active["routines", cfg.slug]   # D247: the map is keyed (home, slug)
     await asyncio.gather(*runner._supervisors)
-    assert cfg.slug not in runner.active
+    assert not runner.is_active("routines", cfg.slug)
     assert runner.semaphore._value == runner.server.max_concurrent_runs
     return rid, run, read_json(run.run_dir / "status.json")
 
@@ -184,13 +184,13 @@ async def test_abort_gate_reaps_and_releases(setup_gate):
     cfg, _, runner = setup_gate
     script(cfg, "import time; time.sleep(30)")
     await runner.fire(cfg)
-    run = runner.active[cfg.slug]
+    run = runner.active["routines", cfg.slug]
     for _ in range(100):
         if run.proc is not None:
             break
         await asyncio.sleep(.01)
     assert run.proc is not None
-    await runner.abort(cfg.slug)
+    await runner.abort(run.run_id, "routines")
     await asyncio.gather(*runner._supervisors)
     assert not runner.active and not run.holds_slot
     assert read_json(run.run_dir / "status.json")["state"] == "aborted"

@@ -141,20 +141,6 @@ own notes, kept so the trail can be followed.
 
 ---
 
-## Abort by run id; the runner's active map keyed per home (T3.2, W1.3, D1.3)
-
-**Problem.** `runner.abort(slug)` aborts whichever run of that routine is live, and `runner.active`
-is keyed by slug across the three homes, so a routine, a conversation and a background task with
-the same slug collide; the web abort names a run id that the runner resolves to a slug.
-
-**Shape.** Key the active map by home and slug (or run id); `abort` takes the run id the web route
-already has.
-
-**First increment.** Red-first test: two homes, one slug, both active — aborting one leaves the
-other running.
-
----
-
 ## Conversation branches: inherited child numbering, and a branch of a branch (E3.7)
 
 (a) A branch copies its parent's transcript, `subrun_start` events included. Verify whether the

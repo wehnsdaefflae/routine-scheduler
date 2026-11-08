@@ -881,14 +881,14 @@ def test_cancel_background(client, monkeypatch):
     _bg_task(server, f"bg-{slug}-cccc", slug)
     aborted = []
 
-    async def fake_abort(taskid):
-        aborted.append(taskid)
+    async def fake_abort(run_id, home):   # D247: the runner aborts by run id, per home
+        aborted.append((run_id, home))
         return True
 
     c.app.state.runner.abort = fake_abort
     r = c.post(f"/api/conversations/{slug}/background/bg-{slug}-cccc/cancel")
     assert r.status_code == 200 and r.json()["cancelled"] is True
-    assert aborted == [f"bg-{slug}-cccc"]
+    assert aborted == [(f"bg-{slug}-cccc:20260712-130000", "background")]
     # a task the conversation does not own → 404
     _bg_task(server, "bg-foreign-dddd", "other-conv")
     assert c.post(f"/api/conversations/{slug}/background/bg-foreign-dddd/cancel").status_code == 404

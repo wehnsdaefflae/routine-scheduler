@@ -203,7 +203,7 @@ class LaneRunManager:
             else:
                 lane_runs.save(self.home, rec)
             return
-        if self.runner.is_active(slug):
+        if self.runner.is_active("routines", slug):
             return  # the member is already running (another fire) — wait for it to free up
         # The fire REASON is broadcast on the run-started event and read in the activity
         # stream: it is how an operator tells a chained member run from a cron one.
@@ -230,13 +230,13 @@ class LaneRunManager:
         run_dir = (info.cfg.dir if info else self.home / slug) / "runs" / ts
         st = read_json(run_dir / "status.json")
         if not isinstance(st, dict):
-            return None if self.runner.is_active(slug) else ("failed", "failed")
+            return None if self.runner.is_active("routines", slug) else ("failed", "failed")
         state = str(st.get("state") or "unknown")
         if state in registry.TERMINAL_STATES:
             outcome = st.get("outcome") or ("ok" if state == "finished" else state)
             return (state, str(outcome))
         # not terminal yet: still live, or crashed without a finish (pid dead, not tracked)
-        if slug not in self.runner.active and not _pid_alive(st.get("pid")):
+        if not self.runner.is_active("routines", slug) and not _pid_alive(st.get("pid")):
             return ("failed", "failed")
         return None
 

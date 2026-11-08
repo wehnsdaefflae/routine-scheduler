@@ -178,7 +178,7 @@ async def _run_now(request: Request, match: dict, brief: str = "") -> str | None
         return None
     state = request.app.state
     info = registry.info(state.server, state.server.routines_home, str(match["routine"]))
-    if info is None or state.runner.is_active(info.cfg.slug):
+    if info is None or state.runner.is_active("routines", info.cfg.slug):
         return None
     return await state.runner.fire(info.cfg, reason="manual", brief=brief)
 

@@ -494,20 +494,20 @@ def wait_(n=None, all_=False, timeout_s=None, say="Waiting for children."):
 
 
 class FakeRunner:
-    """Runner double: records fire/resume, marks the slug active, returns the run id.
-    active_states satisfies the scheduler's restart check as a no-op (orphan recovery is
-    `runner_reap.recover_orphans(runner, …)`, a function over the runner, not a method)."""
+    """Runner double: records fire/resume, marks the run active (keyed (home, slug) as the real
+    one is — D247 — and firing into `routines`), returns the run id. active_states satisfies the
+    scheduler's restart check as a no-op (orphans: `runner_reap.recover_orphans(runner, …)`)."""
 
     def __init__(self, *, ts: str = "20260717-120000"):
         self.fired: list[tuple[str, str]] = []
         self.briefs: list[str] = []
         self.resumed: list[tuple[str, str, str]] = []
-        self.active: dict[str, str] = {}
+        self.active: dict[tuple[str, str], str] = {}
         self.draining = False
         self.ts = ts
 
-    def is_active(self, slug: str) -> bool:
-        return slug in self.active
+    def is_active(self, home: str, slug: str) -> bool:
+        return (home, slug) in self.active
 
     def active_states(self):
         return []
@@ -515,12 +515,12 @@ class FakeRunner:
     async def fire(self, cfg, *, reason="schedule", brief="") -> str:
         self.fired.append((cfg.slug, reason))
         self.briefs.append(brief)
-        self.active[cfg.slug] = self.ts
+        self.active["routines", cfg.slug] = self.ts
         return f"{cfg.slug}:{self.ts}"
 
     async def resume(self, cfg, ts, *, reason="resume") -> str | None:
         self.resumed.append((cfg.slug, ts, reason))
-        self.active[cfg.slug] = ts
+        self.active["routines", cfg.slug] = ts
         return f"{cfg.slug}:{ts}"
 
 

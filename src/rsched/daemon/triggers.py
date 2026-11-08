@@ -89,7 +89,7 @@ class TriggerManager:
         if not inbox_mod.has_pending_messages(info.cfg.dir, include_closures=False,
                                               on_unparseable=True):
             return
-        if self.runner.draining or self.runner.is_active(slug):
+        if self.runner.draining or self.runner.is_active("routines", slug):
             return
         state = triggers.read_state(self.home, slug)
         raw_per = state.get("triggers")
@@ -149,7 +149,7 @@ class TriggerManager:
         if not live:
             return
         # coalesce: the spool holds the events; ONE fire once the routine is free again
-        if self.runner.draining or self.runner.is_active(slug):
+        if self.runner.draining or self.runner.is_active("routines", slug):
             return
         state = triggers.read_state(self.home, slug)
         raw_per = state.get("triggers")
