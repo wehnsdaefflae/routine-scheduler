@@ -102,6 +102,61 @@ def test_the_interpreter_clause_is_reachable_at_all() -> None:
     assert marks_a_write(command) is True
 
 
+def test_a_read_chain_is_not_joined_across_and_into_one_apparent_write() -> None:
+    """`&&` ENDS a command, so a shape's scan must not reach past it (measured 2026-11-07).
+
+    The git/patch shape excluded `|` and `;` but not `&`, so it matched across `&&` and joined
+    two read-only subcommands into one apparent `git … stash`. The specimen is verbatim from
+    `self-audit:20261107-233235` turn 4 — a pure read (log, status, worktree list, stash list,
+    tail, cat) that filed an `ungated_write` health event at 2026-11-08T00:33:27. One of the
+    five such events in that window was this false positive, and the module's own docstring is
+    why that matters: a detector a reader learns to discount is worse than none.
+    """
+    command = (
+        'cd /home/mark/git-repos/routine-scheduler && echo "=== HEAD ===" && '
+        'git log --oneline -8 && echo "=== STATUS ===" && git status --porcelain=v1 | head -30'
+        ' && echo "=== UNPUSHED ===" && git log --oneline origin/main..HEAD && '
+        'echo "=== WORKTREES ===" && git worktree list && echo "=== STASH ===" && '
+        'git stash list'
+    )
+    assert marks_a_write(command) is False
+
+
+@pytest.mark.parametrize("command", [
+    "git stash push -u -m wip",                      # the write this shape exists to catch
+    "git worktree list && echo done && git add -- src/x.py",   # a real write AFTER a read
+    "cd /tmp && git apply fix.diff && echo ok",       # a write mid-chain, after a `cd`
+    'wc -l f && sed -i "s/a/b/" f',                   # the in-place sed, after a read
+])
+def test_a_real_write_still_flags_wherever_it_sits_in_the_chain(command: str) -> None:
+    """The guard on the narrowing: ending a shape's scan at `&` must not let a genuine write
+    through just because a read came first. Each subcommand is judged on its own merits."""
+    assert marks_a_write(command) is True
+
+
+@pytest.mark.parametrize(("command", "writes"), [
+    ("git stash list", False),           # inspects the stack
+    ("git stash show stash@{0}", False),  # ditto — and `stash@{0}` is a REF, not a verb
+    ("git stash", True),                 # the bare form STASHES: it writes
+    ("git stash push -u -m wip", True),
+    ("git stash pop", True),
+    ("git stash apply stash@{1}", True),  # a write form carrying a ref still flags
+    ("git stash drop stash@{2}", True),   # ditto: the ref guard must not excuse the verb
+])
+def test_only_the_writing_forms_of_git_stash_are_marked(command: str, writes: bool) -> None:
+    """`stash` is the one verb in this shape's set with read-only subcommands of its own, and
+    `git stash list` is how a run is supposed to inspect the stack before popping anything —
+    so marking it taught exactly the wrong lesson about a command the house rules encourage."""
+    assert marks_a_write(command) is writes
+
+
+def test_a_filtering_sed_beside_a_grep_flag_is_not_a_write() -> None:
+    """The same `&&` bug in the in-place-sed shape, and the commonest way to trip it: `\\bsed\\b`
+    followed by anything up to ` -i` matched `sed -n …  && grep -i …`, where the `-i` belongs to
+    grep. A filtering sed is a read, which is exactly what that shape's comment says."""
+    assert marks_a_write("sed -n '1,5p' notes.md && grep -i error log.txt") is False
+
+
 def test_the_marker_stays_conservative_where_it_cannot_parse() -> None:
     """A bare `>` outside quotes still flags, even when it means "greater than".
 

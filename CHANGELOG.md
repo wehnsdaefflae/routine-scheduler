@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.517.1] — 2026-11-08
+
+### Fixed — the ungated-write marker flagged read-only commands two ways (F855)
+
+- **A shape's scan read past `&&`.** `engine/shellwrite._WRITE_SHAPES` bounded its multi-token
+  shapes with `[^|;]`, which excludes a pipe and a semicolon but not an ampersand — so `&&`,
+  which ends a command as surely as either, was scanned straight through. Measured on
+  `self-audit:20261107-233235` turn 4: a pure read ending `… && git worktree list && echo
+  "=== STASH ===" && git stash list` matched as one apparent `git … stash` and filed an
+  `ungated_write` health event (1 of the 5 in that window). The same hole sat in the in-place-sed
+  shape, where `sed -n '1,5p' f && grep -i x log` took grep's `-i` for sed's.
+- **`git stash list` and `git stash show` are reads.** `stash` is the only verb in that shape's
+  set with read-only subcommands of its own, and `git stash list` is precisely what the house
+  rules tell a run to do before popping anything — so marking it taught the opposite lesson.
+  Bare `git stash`, `push`, `pop`, `apply` and `drop` still flag, including when they carry a
+  `stash@{n}` ref, which is itself now pinned: the ref contains the word `stash` and must not
+  be read as the verb.
+- The interpreter clause is bounded only up to its `-c`/`-`/`<<` flag. The program body after
+  it may legitimately contain `&&`, so bounding that would lose real writes — the separator rule
+  is about which COMMAND a flag belongs to, never about what the program may say.
+- Bidirectional probe: with the ampersand and the stash guard removed, exactly the 4 new pins
+  failed and the 39 pre-existing shape tests held; restored, 43/43 green.
+
 ## [0.517.0] — 2026-11-07
 
 ### Added — a `kind` that is really a field or a util is told so, instead of getting the enum

@@ -48,13 +48,31 @@ _WRITE_SHAPES = (
     r">",                                   # redirect + append (also catches >>)
     r"\b(?:tee|dd|truncate|install)\b",
     r"\b(?:cp|mv|rm|rmdir|mkdir|ln|touch|chmod|chown)\b",
-    r"\bsed\b[^|;]*\s-i",                   # in-place sed only; a filtering sed is a read
-    r"\b(?:patch|git)\b[^|;]*\b(?:apply|checkout|reset|commit|add|restore|stash)\b",
+    # The scan of a multi-token shape stops at every SEPARATOR, `&` included: `&&` ends a
+    # command as surely as `|` or `;` does, and a scan that reads past it joins two commands
+    # into one that was never run. Measured 2026-11-07: a pure read ending
+    # `… && git worktree list && echo "=== STASH ===" && git stash list` matched the git shape
+    # as one apparent `git … stash` and filed an `ungated_write` event, 1 of the 5 in that
+    # window. The same hole sat in the sed shape (`sed -n … && grep -i …`, where the `-i` is
+    # grep's) and in the interpreter clause below.
+    r"\bsed\b[^|;&]*\s-i",                  # in-place sed only; a filtering sed is a read
+    # `stash` is the one verb in this set with READ-ONLY subcommands of its own: `git stash
+    # list` and `git stash show` inspect the stack and change nothing, while bare `git stash`
+    # and `git stash push` write. Measured 2026-11-07 on the same false positive as the `&`
+    # hole above: the specimen's last subcommand WAS `git stash list`, so bounding the scan
+    # alone did not clear it. Every other verb here writes in every form it takes.
+    (r"\b(?:patch|git)\b[^|;&]*"
+     r"\b(?:apply|checkout|reset|commit|add|restore"
+     r"|stash(?!@)(?!\s+(?:list|show)\b))\b"),
     # An interpreter running an INLINE program that writes. The program arrives three ways —
     # `-c`/`-e`, stdin (`python3 -`) or a heredoc — and a routine's state edits use all three,
     # so all three are matched; the needle is then a WRITE verb, not merely `open`, because
     # `json.load(open(p))` is how every routine READS its own state.
-    (r"\b(?:python3?|perl|ruby|node)\b[^|;]*?(?:(?<![\w-])-[ce]\b|(?<![\w-])-\s|<<).*?"
+    # `&` bounds the span up to the FLAG only. The `.*?` after it is the inline program's own
+    # body, which may legitimately contain `&&` (`python3 -c "a() and b() && …"`), so bounding
+    # THAT would lose real writes — the separator rule is about which COMMAND the flag belongs
+    # to, not about what the program may say.
+    (r"\b(?:python3?|perl|ruby|node)\b[^|;&]*?(?:(?<![\w-])-[ce]\b|(?<![\w-])-\s|<<).*?"
      r"(?:\b(?:write\w*|unlink|rmtree|makedirs|mkdir|rename|replace|dump)\b"
      r"|open\([^),]*,\s*['\"][^'\"]*[wax])"),
 )
