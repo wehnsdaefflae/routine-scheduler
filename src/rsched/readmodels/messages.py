@@ -41,6 +41,12 @@ def _msg_row(path: Path, *, folder: str, editable: bool, run_ts: str = "") -> di
     return {"folder": folder, "file": path.name, "ts": str(rec.get("ts") or ""),
             "text": str(rec.get("text") or ""),
             "from": str(rec.get("from") or rec.get("source") or rec.get("via") or "user"),
+            # What the user attached (D275), rels under the routine dir — the page renders
+            # them through `/routines/{slug}/attachment`. Carried on a CONSUMED row too: the
+            # message moves into `runs/<ts>/consumed/`, the files never move, so history
+            # shows what a run was actually given rather than a block of paths.
+            **({"attachments": [str(a) for a in rec["attachments"]]}
+               if isinstance(rec.get("attachments"), list) and rec["attachments"] else {}),
             **({"report": rec.get("report")} if rec.get("report") else {}),
             **({"run_ts": run_ts} if run_ts else {}),
             "editable": editable}

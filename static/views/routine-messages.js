@@ -1,17 +1,21 @@
 // The four message folders of one routine (D74): every text FOR or FROM this routine, on
 // its own page. inbox — waiting for the next run; yours to write, edit and withdraw until
 // a run drains it (engine-filed deliveries included: the inbox file IS the delivery
-// vehicle). outbox — reports this routine addressed to a sibling that the recipient has
+// vehicle), WITH FILE ATTACHMENTS (D275): the same picker and the same multipart endpoint a
+// conversation message uses, and each attached file shown back on the message — a thumbnail
+// for an image, an open chip otherwise — fetched through the authenticated attachment route. outbox — reports this routine addressed to a sibling that the recipient has
 // NOT picked up yet; retractable, never editable — the ledger is append-only and a report
 // is the RUN's utterance, so a correction is a new message YOU write to the target's inbox
 // (docs/messages.md). read — what this routine's runs consumed, newest first. received —
 // addressed reports the recipient's run picked up. The last two are history, read-only.
 
-import { api } from "/static/api.js";
+import { api, apiUpload } from "/static/api.js";
 import { clampedBody } from "/static/md.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { el, tagChip, toast, toastError, when } from "/static/util.js";
+import { filePicker } from "/static/components/filepicker.js";
 import { forgetField } from "/static/formpersist.js";
+import { attachmentRow, revokeBlobs } from "/static/components/obs-attachments.js";
 import { refHref } from "/static/components/reflinks.js";
 
 const FOLDERS = [
@@ -38,6 +42,13 @@ export function mountMessages(host, slug) {
   host.append(el("div", { class: "panel" }, tabs, hint, body));
   let data = { inbox: [], outbox: [], read: [], received: [] };
   let folder = "inbox";
+  // Every attachment thumbnail holds its decoded bytes until its object URL is revoked, and
+  // this panel re-renders on every folder click and every run lifecycle event — so the
+  // MOUNTER owns the array and revokes it (obs-attachments.js: "the component that mounted
+  // the row revokes them in its destroy(), exactly once").
+  const blobs = [];
+  const fileUrl = (rel) =>
+    `/api/routines/${slug}/attachment?path=${encodeURIComponent(rel)}`;
 
   async function load() {
     try { data = await api(`/api/routines/${slug}/messages`); }
@@ -50,6 +61,7 @@ export function mountMessages(host, slug) {
   }
 
   function render() {
+    revokeBlobs(blobs);          // the rows about to be replaced held these
     tabs.replaceChildren(...FOLDERS.map(([name]) =>
       tagChip(`${name} · ${(data[name] || []).length}`, {
         active: folder === name,
@@ -74,13 +86,24 @@ export function mountMessages(host, slug) {
       placeholder: "a message the routine reads at the start of its next run — a priority, "
         + "a correction, something to do or check" });
     const send = el("button", { class: "btn primary mt" }, "queue for the next run");
+    // D275: files ride along, exactly as they do on a conversation message and the run
+    // page's injection — the same picker (chips, paste-to-attach for a dragged-in
+    // screenshot) and the same multipart endpoint. A file WITHOUT words is a real message
+    // (the API makes the `[attached files]` block the body), so the guard below admits it.
+    const { picker, files, clearFiles, wirePaste } = filePicker();
+    wirePaste(box);
     send.onclick = async () => {
       const text = box.value;
-      if (!text.trim()) return;
+      const picked = files();
+      if (!text.trim() && !picked.length) return;
       send.disabled = true;
       box.value = ""; forgetField(box);   // clear before load() re-mounts the box
       try {
-        const r = await api(`/api/routines/${slug}/messages`, { method: "POST", body: { text } });
+        const fd = new FormData();
+        fd.append("text", text);
+        for (const f of picked) fd.append("files", f);
+        const r = await apiUpload(`/api/routines/${slug}/messages`, fd);
+        clearFiles();
         toast(r.delivery === "mid-run"
           ? "queued — the RUNNING run picks it up at its next turn"
           : "queued — the next run reads it at boot");
@@ -89,7 +112,7 @@ export function mountMessages(host, slug) {
       finally { send.disabled = false; }
     };
     return el("div", { class: "msg-composer" },
-      box, el("div", { class: "row mt" }, send),
+      box, el("div", { class: "row mt" }, send, picker),
       el("div", { class: "flow-note" },
         el("span", {}, "queue"), el("span", { class: "arrow" }, "→"),
         el("span", {}, "inbox"), el("span", { class: "arrow" }, "→"),
@@ -139,7 +162,18 @@ export function mountMessages(host, slug) {
       m.ts ? when(m.ts) : null,
       el("span", { class: "msg-ops" }, ...[more, edit, drop].filter(Boolean)));
     card.append(head(), text);
+    // What the user attached (D275): images as thumbnails, everything else as an open chip,
+    // both fetched through the authenticated attachment route and opened from a blob URL
+    // via components/blobtab.js — the console's one rule for handing a fetched file a tab.
+    attach(card, m);
     return card;
+  }
+
+  // el() drops a null child; the native append would stringify it into a literal "null"
+  // text node (the warning below), so the row is appended only when there IS one.
+  function attach(card, m) {
+    const row = attachmentRow(m.attachments, fileUrl, blobs);
+    if (row) card.append(row);
   }
 
   // ---- outbox / read / received: ledger rows and consumed history -----------------------
@@ -158,6 +192,7 @@ export function mountMessages(host, slug) {
           title: "the run that consumed it" }, "consumed by run ↗") : null,
         more ? el("span", { class: "msg-ops" }, more) : null),
         text);
+      attach(card, m);     // a consumed message keeps its rels; the files never moved
       return card;
     }
     // outbox + received: an addressed report row (title + detail, ledger-derived)
@@ -194,5 +229,5 @@ export function mountMessages(host, slug) {
   }
 
   load();
-  return { reload: load };
+  return { reload: load, destroy: () => revokeBlobs(blobs) };
 }

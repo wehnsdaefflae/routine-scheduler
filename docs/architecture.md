@@ -1338,7 +1338,13 @@ meet. A conversation's spine is its own **working plan**
   path on which the uncensored model answers and acts; since the 2026-10-16 takeover order the automatic path does too - a refused request is handed to the routine's uncensored model whole, with the exponential back-off (docs/endpoints.md).
 - Web: `web/api_conversations.py` (create/message are multipart — **attachments** land in
   `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
-  images, `read_file`'s Markdown conversion for a PDF or an Office document). **Artifacts**:
+  images, `read_file`'s Markdown conversion for a PDF or an Office document). The same upload
+  path serves a ROUTINE: the run page's injection (`api_run_control`) and a routine-page queued
+  inbox message (`api_messages`, D275) are multipart too, saved by the one saver
+  (`conversations_common._save_attachments`) into the ROUTINE dir's `attachments/` — the run's
+  own working dir, so the recorded rels resolve for `read_file`/`view_image` — and served back
+  by `api_routine_files` `/attachment` (that dir and nothing else) for the Messages panel.
+  **Artifacts**:
   deliverables the model `write_file`s into a DELIVERABLE DIR —
   `artifacts/`, `reports/` or `output/` (`web/artifacts.py` `ARTIFACT_DIRS`, one list governing
   listing, serving and deletion; R339/F336 — scanning `artifacts/` alone left the panel empty for

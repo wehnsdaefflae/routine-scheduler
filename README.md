@@ -139,7 +139,9 @@ endpoints, the central Secrets store, GitHub, the library repo.
   `F`/`D`/`R` mention anywhere in the console is a link to the item card it names, and
   each routine's own page carries its four message folders (inbox · outbox · read ·
   received) — inbox messages are yours to write, edit and withdraw until a run drains
-  them; an undelivered hand-off can be retracted from the outbox.
+  them, with FILES attached (drag a screenshot in, or paste one straight into the box) and
+  shown back on the message for viewing or download; an undelivered hand-off can be
+  retracted from the outbox.
 - **Help** — documentation generated from this very source at every boot: hand-written
   guides (`docs/*.md`, e.g. endpoint setup) plus an API reference rendered from the
   code's docstrings by pdoc.

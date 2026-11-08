@@ -50,7 +50,8 @@ correcting an answer a run already drained cannot re-file it as fresh for the ne
 
 Every `msg-*.json` file is written by `engine/inbox.file_message` and by nothing else. The
 channels differ only in what they pass it: a `via` (which decides WHEN the message is
-consumed — see below), the extra keys that channel adds (`attachments` + `command` for a
+consumed — see below), the extra keys that channel adds (`attachments` for a conversation
+message, the run page's injection and a routine-page queued message alike, `command` for a
 conversation message, `report`/`from`/`closes` for a delivered report, the audit editor's
 structured feedback fields), and — for the channels whose filename is a KEY rather than a
 timestamp — a deterministic `name`.
@@ -112,9 +113,25 @@ gets told is the user's call right up until a run drains it. That covers every `
 file — user-filed, engine-filed (trigger events, schedule-once notices, background
 results) and delivered reports alike, because the inbox file IS the delivery vehicle.
 
-- `POST /api/routines/{slug}/messages` `{text}` — queue a message for the next run (the
-  routine-bound home of the old "note for the next run", F233). Returns the message id and
-  a `delivery` hint (`mid-run` when a live run will drain it at its next turn boundary).
+- `POST /api/routines/{slug}/messages` — MULTIPART `text` + `files` — queue a message, with
+  optional file ATTACHMENTS, for the next run (the routine-bound home of the old "note for
+  the next run", F233; attachments D275). Returns the message id, the saved `attachments`
+  rels and a `delivery` hint (`mid-run` when a live run will drain it at its next turn
+  boundary).
+
+  Uploads go through the ONE saver every channel shares
+  (`web/conversations_common._save_attachments`: streamed to disk, at most
+  `MAX_ATTACHMENTS_PER_MESSAGE` per message and `MAX_ATTACHMENT_BYTES` each, 413 on either)
+  into the ROUTINE dir's `attachments/` — the run's own working dir, so each recorded rel
+  resolves for `read_file` and `view_image`. The rels ride the record under `attachments`,
+  which the drain already reads off any `msg-*` file to auto-attach images and PDFs, and the
+  text carries the readable `[attached files]` block. Nothing engine-side was needed.
+
+  **An attachment with no words is a message** (the D275 decision): dragging a screenshot in
+  and saying nothing is the ordinary case, so `text` may be empty when files came with it and
+  the attachment block becomes the body. It is never left literally empty — the drain injects
+  only a record with a truthy `text` and logs anything else as "not a message file",
+  consuming it without the run ever seeing the file. No words AND no file is still a 400.
 - `PUT /api/routines/{slug}/messages/{msg_id}` `{text}` — rewrite the text in place: the
   SAME file, so the queue position holds; the original `ts` is kept, `edited` stamped.
   Engine keys (`report`, `from` — delivery stamping matches on them) survive; structured
@@ -161,9 +178,20 @@ message belongs to the transcript record.
 ## The page surfaces
 
 - **Routine page → Messages** (`static/views/routine-messages.js`): the four folders as
-  tabs with counts, the inbox composer ("queue for the next run"), per-message edit /
-  withdraw, outbox retract (confirm dialog), run links on read/received rows. Live-refreshed
-  on the routine's own run lifecycle events (a run drains the inbox at boot).
+  tabs with counts, the inbox composer ("queue for the next run") with its ATTACHMENT picker
+  (D275 — the same `components/filepicker.js` the chat composer uses: chips, and
+  paste-to-attach so a copied screenshot becomes a file), per-message edit / withdraw, outbox
+  retract (confirm dialog), run links on read/received rows. Live-refreshed on the routine's
+  own run lifecycle events (a run drains the inbox at boot).
+
+  An attached file is shown BACK on the queued message and on its consumed `read` row —
+  images as thumbnails, anything else as an open chip (`components/obs-attachments.js`,
+  shared with the chat's user bubbles). The bytes come through
+  `GET /api/routines/{slug}/attachment` with the auth header and render from a blob URL,
+  because an `<img src>` cannot carry it; a new tab goes through `components/blobtab.js`, the
+  console's one rule for that (a blob URL carries this origin, so a type that can hold script
+  opens inside a sandboxed frame). The panel owns those object URLs and revokes them on every
+  re-render and in its `destroy()` — a thumbnail holds its decoded image until then.
 - **Messages page** (`static/views/messages.js`, docs/items.md): the maintenance index,
   plus self-audit's whole inbox queue ("waiting for the next run" — every queued message,
   editable and withdrawable until a run consumes it) and the note composer. The note is a
@@ -171,14 +199,26 @@ message belongs to the transcript record.
   only the structured feedback kinds (finding comments, decision answers) keep the tagged
   `api_audit` channel, because their text is re-formatted from fields.
 
+  A queued message's ATTACHMENTS are shown back here too (D275 — the operator's scope answer
+  named "the Messages page", and this is the page that lists the whole queue): the row carries
+  the rels (`api_audit.queued_messages`) and renders through
+  `components/queued-attachments.js`, which owns the object URLs. Its own module because
+  `views/messages.js` is over the size bar and frozen at its ratchet ceiling — and because the
+  LIFETIME is the real work: this page reloads its whole queue on every submit, edit,
+  withdrawal and filter change, so each pass revokes the one before it (`newPass`) and the
+  view's teardown revokes the rest.
+
 ## API summary
 
 ```
 GET    /api/routines/{slug}/messages              the four folders (rsched/web/api_messages.py)
-POST   /api/routines/{slug}/messages              create an inbox message
-PUT    /api/routines/{slug}/messages/{msg_id}     edit a queued inbox message
+POST   /api/routines/{slug}/messages              create an inbox message — MULTIPART
+                                                  (text + files), attachments included
+PUT    /api/routines/{slug}/messages/{msg_id}     edit a queued inbox message (text only)
 DELETE /api/routines/{slug}/messages/{msg_id}     withdraw a queued inbox message
 DELETE /api/routines/{slug}/outbox/{report_id}    retract an undelivered addressed report
+GET    /api/routines/{slug}/attachment?path=      serve one attached file back, attachments/
+                                                  only (rsched/web/api_routine_files.py)
 ```
 
 All writes take the operator's primary token (mutating routes are primary-only by default,
