@@ -18,7 +18,13 @@ from __future__ import annotations
 
 import re
 
-from .actionschema import PSEUDO_UTILS
+from .actionschema import ACTION_SCHEMA, KINDS, PSEUDO_UTILS
+
+#: How much of a field's own contract description the correction quotes. Same bound and same
+#: reason as `schemamemo.HELP_CHARS`: a correction that pastes a paragraph buries the one line
+#: it exists to explain. Both read `ACTION_SCHEMA` at CALL time, so neither can drift from the
+#: contract — that, not a shared constant, is what keeps the two corrections honest.
+UNKIND_HELP_CHARS = 200
 
 #: A name that could BE a util: the library's kebab-case rule, narrowed by the one thing
 #: `ids.is_slug` does not require — at least one LETTER. Every util in the catalog satisfies
@@ -99,3 +105,51 @@ def field_shift_diagnosis(obj: dict) -> str:
             f"above is a symptom rather than the fault. Rebuild the action from scratch: "
             f"`name` is the util's name, `args` is a list of strings, `timeout_s` is a number "
             f"of seconds. Do not patch the one field you were told about.")
+
+
+def unkind_diagnosis(obj: dict) -> str:
+    """What a `kind` that is NOT a kind really was — "" when nothing specific can be said.
+
+    `kind` is the one field whose rejection the enum cannot answer: the validator lists all 34
+    current kinds and the thing the run actually wanted is not among them, so the correction
+    has to name the OTHER place that word belongs. `renamedkinds.hint` already does this for a
+    kind that was renamed; these are the two kinds that never existed, measured on 2026-11-07
+    in one evening, one turn each:
+
+    * a FIELD used as a kind — `tv-show-tracker-seedbox-manager:20261107-170000` turn 27 sent
+      `kind: "note"`. `note` rides any action and costs no turn, so the correction is that the
+      intent was a rider, not an action.
+    * a UTIL used as a kind — `deficit-coach:20261107-230003` turn 10 sent
+      `kind: "code-search"`. The shape is `kind="util", name="<util>"`.
+
+    The util branch rests on a property of the vocabulary, asserted by its test: NO action kind
+    contains a hyphen. The field branch reads `ACTION_SCHEMA` at call time, so a field renamed
+    in the contract cannot leave this pointing at one that is gone — and a word that is both a
+    real kind and a field name (`delete`) is never diagnosed, because the first test here is
+    that the kind is unknown. Returns "" for anything else: a diagnosis that fires on ordinary
+    mistakes teaches the model to ignore it (`field_shift_diagnosis` says the same).
+
+    WHY THE THREE DIAGNOSES CANNOT OVERLAP, which is what lets `completion.diagnose` compose
+    them in reading order rather than choosing between them: a renamed kind is in
+    `renamedkinds.RENAMED` (so it IS a known word with a replacement), an unkind is by its first
+    test NOT in `KINDS`, and a field shift requires `kind == "util"` — a valid kind. At most one
+    of the three can have anything to say about any one object.
+    """
+    kind = str(obj.get("kind") or "").strip()
+    if not kind or kind in KINDS:
+        return ""
+    if (prop := ACTION_SCHEMA.get("properties", {}).get(kind)) is not None:
+        text = str((prop or {}).get("description") or "").strip()
+        head = text.split(". ")[0].rstrip(".")
+        quoted = (head if len(head) <= UNKIND_HELP_CHARS
+                  else head[: UNKIND_HELP_CHARS - 1].rstrip() + "…")
+        said = f' The contract says of it: "{quoted}".' if quoted else ""
+        return (f"`{kind}` IS A FIELD, NOT A KIND. It is a property an action CARRIES, so it "
+                f"belongs beside `kind`, never in it.{said} Re-send the action whose kind is "
+                f"the thing you are actually doing, with `{kind}` as one of its fields.")
+    if could_be_util(kind) and "-" in kind:
+        return (f"`{kind}` LOOKS LIKE A UTIL, NOT A KIND — no action kind contains a hyphen. "
+                f'To run it: kind="util", name="{kind}", args=[…]. If no util of that name '
+                f'exists, `util name=list args=["{kind}"]` shows its usage, or '
+                f"`util name=search` finds one by need.")
+    return ""

@@ -31,7 +31,7 @@ from .degrade import (
 )
 from .renamedkinds import hint as renamed_kind_hint
 from .replyactions import reply_actions
-from .shiftedfields import field_shift_diagnosis, util_rejection_outcome
+from .shiftedfields import field_shift_diagnosis, unkind_diagnosis, util_rejection_outcome
 from .window import _override_window, compact_if_needed, note_prompt_size
 
 MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
@@ -47,11 +47,12 @@ REFUSAL_STOPS = frozenset({"refusal", "content_filter"})
 
 
 def diagnose(obj: dict) -> str:
-    """Everything we can say about an INVALID action object beyond the schema's own lines — a
-    renamed kind first (it is the one thing that fixes the action outright), then a field shift.
+    """Everything we can say about an INVALID action beyond the schema's lines, in reading
+    order: a renamed kind, a kind that is really a field or a util, then a field shift
+    (`shiftedfields.unkind_diagnosis` records why these three cannot overlap).
     """
-    return "\n\n".join(part for part in (renamed_kind_hint(obj), field_shift_diagnosis(obj))
-                       if part)
+    return "\n\n".join(part for part in (renamed_kind_hint(obj), unkind_diagnosis(obj),
+                                         field_shift_diagnosis(obj)) if part)
 
 
 def fold_usage(usage_sum: dict, completion) -> None:

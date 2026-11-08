@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.517.0] — 2026-11-07
+
+### Added — a `kind` that is really a field or a util is told so, instead of getting the enum
+
+- `kind` is the one field whose rejection the enum cannot answer: the validator lists all 34
+  current kinds and the thing the run actually wanted is not among them. Two fleet runs lost a
+  turn to this in one evening (`wrong_turn_detected`, reason `schema_rejected`):
+  `tv-show-tracker-seedbox-manager:20261107-170000` turn 27 sent `kind: "note"` — a rider that
+  costs no turn — and `deficit-coach:20261107-230003` turn 10 sent `kind: "code-search"`, a util.
+- `shiftedfields.unkind_diagnosis` now names the other place that word belongs: for a FIELD it
+  quotes the contract's own first sentence about it and says a rider belongs beside `kind`, never
+  in it; for a util it gives the call shape `kind="util", name="<util>"` plus how to look its
+  usage up. Wired into `completion.diagnose`, the one composer every schema-rejection path reads
+  — beside `renamedkinds.hint`, which has done this since 0.416.0 for a kind that was RENAMED.
+- Narrow on purpose, because a diagnosis that fires on ordinary mistakes teaches the model to
+  ignore it: the kind must be UNKNOWN first (so `delete`, which is both a real kind and a schema
+  field, is never diagnosed), the field branch reads `ACTION_SCHEMA` at call time (so a renamed
+  field cannot leave a correction pointing at one that is gone), and the util branch rests on a
+  property of the vocabulary that its own test asserts — **no action kind contains a hyphen**.
+
 ## [0.516.3] — 2026-11-07
 
 ### Fixed — a child's hand-back named every file its slot had ever accumulated
