@@ -35,6 +35,12 @@ import time
 
 from . import inbox, subsalvage
 
+#: How long a `wait` blocks when the action names no `timeout_s`. NAMED because it is served:
+#: `/api/status`'s `action_limits` (`web/actionlimits.py`) publishes the engine's own default
+#: operation limits so the console measures against them instead of its own copy (D252). The
+#: other three defaults already had names; this one was a literal inside the deadline.
+WAIT_DEFAULT_TIMEOUT_S = 600
+
 
 def _background(loop) -> list:
     """The run's live background calls — landed-but-uncollected ones included (a READ of the
@@ -48,7 +54,7 @@ def wait(subs, action: dict, *, poll_s: float, aborted) -> dict:
     loop = subs.parent
     n = action.get("n")
     want_all = bool(action.get("all"))
-    deadline = time.monotonic() + float(action.get("timeout_s") or 600)
+    deadline = time.monotonic() + float(action.get("timeout_s") or WAIT_DEFAULT_TIMEOUT_S)
     if n is not None and int(n) not in subs.subruns:
         return {"kind": "wait", "error": subsalvage.no_such_child(loop.ctx.run_dir, int(n))}
     if n is None and not subs.subruns and not _background(loop):

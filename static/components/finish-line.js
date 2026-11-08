@@ -12,7 +12,7 @@
 // read-only, beside the verdict each of the last runs gave it, because those verdicts are what
 // tell a person whether the recipe does what it says.
 
-import { el, fmtAbs, when } from "/static/util.js";
+import { el, when } from "/static/util.js";
 
 const JUDGE_OPTIONS = [["run", "the run proves it"], ["you", "you decide"], ["date", "on its date"]];
 const MAX_OUTCOMES = 12;                  // engine/finishline.problems — a readable finish line
@@ -20,11 +20,13 @@ const EMPTY = "This routine runs until you switch it off. Add a finish line if i
   + "date, an outcome the run can prove, or an outcome only you can judge. When it is reached, "
   + "scheduling stops and a Decisions card asks you to confirm retiring it.";
 
-// The LOCAL calendar day. The scheduler judges a date outcome by its own local day
-// (engine/finishline.today), and the console is read in the server's zone; the UTC day this
-// used matched it in no zone but UTC, so for the hours between the two midnights the editor
-// said "reached" (or not) against the scheduler's verdict.
-const today = () => fmtAbs(new Date()).slice(0, 10);
+// The day a date outcome is judged against is the SCHEDULER's own local day, served as
+// `today` by the finish-line read (api_finishline.payload → engine/finishline.today). It is
+// never computed here: a day taken from the VIEWER's clock is a different day for the hours
+// between the two midnights, so a console open in another zone called an outcome reached — or
+// not — against the verdict of the party that actually retires the routine (D252).
+// Unknown (the read has not landed, or failed) says nothing rather than guessing: the editor
+// is redrawn when it does.
 
 function reachedWhen(o) {
   if (o.judge === "date") return o.date ? `${o.date} arrives` : "its date arrives (set one)";
@@ -63,7 +65,8 @@ export function finishLineEditor({ value, info, set }) {
 
   function statusCell(o) {
     if (o.judge === "date") {
-      return o.date && o.date <= today()
+      const today = info?.today || "";
+      return today && o.date && o.date <= today
         ? el("span", { class: "fl-reached" }, "reached") : null;
     }
     if (o.status === "met") {

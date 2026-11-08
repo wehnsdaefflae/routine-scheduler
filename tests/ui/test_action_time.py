@@ -2,6 +2,79 @@
 from playwright.sync_api import expect
 
 
+def _serve_limits(page, limits):
+    """Serve the REAL /api/status with `action_limits` replaced.
+
+    Only that one field is overridden, so the test proves the row reads what the SERVER
+    published — numbers the component cannot have had a copy of.
+    """
+    def patched(route):
+        resp = route.fetch()
+        body = resp.json()
+        body["action_limits"] = limits
+        route.fulfill(response=resp, json=body)
+
+    page.route("**/api/status", patched)
+
+
+def test_the_operation_limit_is_the_served_engine_default_not_a_copy(ui, ui_page):
+    """The row compares elapsed time with the limit THE ENGINE would apply, so the engine's
+    constants are served (`/api/status.action_limits`, web/actionlimits.py) and read here.
+
+    actiontime.js carried its own `{util: 300, script: 300, shell: 120, wait: 600}`. Nothing
+    tied that copy to the engine: raising `shell`'s default in shellrun.py left every console
+    drawing its bar against 120 s with nothing failing (D252). Served values that differ from
+    the old copy are what prove the copy is gone — a `shell` row must read the served 300 and
+    a `wait` row the served 42.
+    """
+    _serve_limits(ui_page, {"util": 300, "script": 300, "shell": 300, "wait": 42})
+    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.wait_for_selector("h1")
+    ui_page.evaluate("""async () => {
+      const {createTranscript} = await import('/static/components/transcript.js');
+      const box = document.createElement('div'); box.dataset.limits = '';
+      document.body.append(box);
+      const t = createTranscript(box, {isLive: () => true});
+      t.add({type:'assistant_action', turn:1, ts:new Date().toISOString(),
+        payload:{kind:'shell', command:'sleep 1', say:'Served shell limit'}});
+      t.add({type:'assistant_action', turn:2, ts:new Date().toISOString(),
+        payload:{kind:'wait', all:true, say:'Served wait limit'}});
+    }""")
+    rows = ui_page.locator("[data-limits] .action-time")
+    expect(rows).to_have_count(2)                     # present before anything about them
+    expect(rows.nth(0)).to_contain_text("5m 0s operation limit")
+    expect(rows.nth(1)).to_contain_text("42s operation limit")
+    # the bar is scaled to the served limit too, not only the words
+    bar = rows.nth(0).locator("progress")
+    expect(bar).to_have_count(1)
+    assert bar.evaluate("node => node.max") == 300
+
+
+def test_the_actions_own_timeout_still_wins_over_the_served_default(ui, ui_page):
+    """Two halves of the same contract, in one load. An action that NAMES its `timeout_s` is
+    measured against that, not against the served default — the served map answers only for an
+    action that named none. And a kind the server does not name has no operation limit at all,
+    which the row says instead of inventing one.
+    """
+    _serve_limits(ui_page, {"shell": 300})
+    ui_page.goto(f"{ui.url}/#/routines")
+    ui_page.wait_for_selector("h1")
+    ui_page.evaluate("""async () => {
+      const {createTranscript} = await import('/static/components/transcript.js');
+      const box = document.createElement('div'); box.dataset.own = '';
+      document.body.append(box);
+      const t = createTranscript(box, {isLive: () => true});
+      t.add({type:'assistant_action', turn:1, ts:new Date().toISOString(),
+        payload:{kind:'shell', command:'sleep 1', timeout_s:900, say:'Its own timeout'}});
+      t.add({type:'assistant_action', turn:2, ts:new Date().toISOString(),
+        payload:{kind:'util', name:'slowpoke', say:'A kind the server did not name'}});
+    }""")
+    rows = ui_page.locator("[data-own] .action-time")
+    expect(rows).to_have_count(2)
+    expect(rows.nth(0)).to_contain_text("15m 0s operation limit")
+    expect(rows.nth(1)).to_contain_text("no fixed action deadline")
+
+
 def test_action_time_advances_and_stops_on_observation(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("h1")

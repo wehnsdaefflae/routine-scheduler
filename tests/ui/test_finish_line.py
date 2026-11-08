@@ -239,15 +239,60 @@ def test_a_run_started_with_a_brief_says_so_and_accounts_for_it(ui, ui_page):
         ["what was asked of this run"])
 
 
-@pytest.mark.browser_context_args(timezone_id="Pacific/Kiritimati")
-def test_a_date_outcome_is_reached_on_the_local_day(ui, ui_page):
-    """The scheduler judges a date by its LOCAL day (engine/finishline.today); the editor used
-    the UTC day. At 12:00 UTC it is already 02:00 on the next day at UTC+14, so a date outcome
-    for that day has come — the editor said it had not."""
-    ui_page.clock.set_fixed_time("2026-07-15T12:00:00Z")
-    atomic_write_json(ui.routines / "uir" / "state" / "finish-line.json", {
+def _seed_date_outcome(ui, date, slug="uir"):
+    atomic_write_json(ui.routines / slug / "state" / "finish-line.json", {
         "outcomes": [{"id": "g1", "text": "the submission deadline", "judge": "date",
-                      "date": "2026-07-16", "status": "open"}], "until": ""})
+                      "date": date, "status": "open"}], "until": ""})
+
+
+def _serve_day(page, day, slug="uir"):
+    """Serve the REAL finish-line read with the scheduler's day set to `day`.
+
+    Only that one field is overridden, so a test proves the client takes the served day
+    verbatim — rather than proving something about the host's own zone, which is the thing
+    neither side may depend on.
+    """
+    def patched(route):
+        resp = route.fetch()
+        body = resp.json()
+        body["today"] = day
+        route.fulfill(response=resp, json=body)
+
+    page.route(f"**/api/routines/{slug}/finish-line", patched)
+
+
+@pytest.mark.browser_context_args(timezone_id="Pacific/Kiritimati")
+def test_a_date_outcome_is_judged_on_the_schedulers_day_not_the_viewers(ui, ui_page):
+    """The scheduler judges a date outcome by ITS OWN local day (engine/finishline.today), so
+    the payload carries that day and the editor uses it verbatim.
+
+    The editor computed "today" on the VIEWER's clock, which is a different day for the hours
+    between two midnights: at 12:00 UTC it is already the 16th at UTC+14, so a console open in
+    Kiritimati called an outcome dated the 16th reached while the scheduler — the party that
+    actually retires the routine — still had it open. A wrong date is a wrong judgement.
+    """
+    ui_page.clock.set_fixed_time("2026-07-15T12:00:00Z")
+    _seed_date_outcome(ui, "2026-07-16")
+    _serve_day(ui_page, "2026-07-15")                 # the scheduler is still on the 15th
     ui_page.goto(f"{ui.url}/#/routine/uir")
     panel = _section(ui_page, "sec-goal")
-    expect(panel.locator('.fl-row[data-outcome="g1"] .fl-reached')).to_have_text("reached")
+    row = panel.locator('.fl-row[data-outcome="g1"]')
+    expect(row).to_have_count(1)                      # present before anything about it
+    expect(row.locator(".fl-date")).to_have_value("2026-07-16")
+    expect(row.locator(".fl-reached")).to_have_count(0)
+
+
+@pytest.mark.browser_context_args(timezone_id="Pacific/Honolulu")
+def test_a_date_outcome_the_schedulers_day_has_reached_says_so(ui, ui_page):
+    """The other half, and the other direction: at UTC-10 the viewer's clock is still on the
+    15th while the scheduler is on the 16th. The served day decides, so the editor says reached.
+    """
+    ui_page.clock.set_fixed_time("2026-07-16T06:00:00Z")
+    _seed_date_outcome(ui, "2026-07-16")
+    _serve_day(ui_page, "2026-07-16")
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = _section(ui_page, "sec-goal")
+    row = panel.locator('.fl-row[data-outcome="g1"]')
+    expect(row).to_have_count(1)
+    expect(row.locator(".fl-reached")).to_have_count(1)
+    expect(row.locator(".fl-reached")).to_have_text("reached")

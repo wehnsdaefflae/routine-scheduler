@@ -5,6 +5,7 @@
 // knows the two things it needs: whether the view is LIVE (`isLive`) and whether this particular
 // call is still running (`stop()` has not been called for it). A button rendered from anywhere
 // else would have to re-derive both and would go stale the moment the observation arrived.
+import { known, limitFor, onLimits } from "/static/action-limits.js";
 import { el } from "/static/util.js";
 
 //: The kinds a cancel can reach: the three that run a jailed child process the engine polls
@@ -14,12 +15,12 @@ const CANCELLABLE = ["util", "script", "shell"];
 
 export function actionTime(ev, isLive = () => false, cancelAction = null) {
   const action = ev.payload || {};
-  const defaults = { util: 300, script: 300, shell: 120, wait: 600 };
-  const discovery = action.kind === "util" && ["list", "show", "search"].includes(action.name);
-  const limit = !discovery && defaults[action.kind]
-    ? Number(action.timeout_s || defaults[action.kind]) : null;
+  // The engine's own default, served on /api/status (action-limits.js) — never a copy of it.
+  // `limit` is read at every draw rather than captured, because the first draw can happen
+  // before that read lands; `onLimits` redraws a row that was drawn without it.
+  const limit = () => limitFor(action);
   const started = Date.parse(ev.ts);
-  const bar = el("progress", { class: "action-time-bar", max: limit || 1, value: 0,
+  const bar = el("progress", { class: "action-time-bar", max: limit() || 1, value: 0,
     "aria-label": "Elapsed action time compared with operation timeout" });
   const label = el("span", { class: "action-time-label" });
   // The turn is what the cancel travels as (the endpoint keys it, so a cancel can never land on
@@ -43,13 +44,24 @@ export function actionTime(ev, isLive = () => false, cancelAction = null) {
   let stopped = false;
   const duration = (seconds) => seconds < 60 ? `${Math.floor(seconds)}s`
     : `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
+  let last = null;                      // the arguments of the last draw, for a redraw
   function draw(end, complete = false) {
+    last = [end, complete];
+    const cap = limit();
     const elapsed = Number.isFinite(started) ? Math.max(0, (end - started) / 1000) : null;
+    // Three states, not two: a limit, a known absence of one, and not knowing yet. Saying
+    // "no fixed action deadline" before the served limits land would be as wrong as a number.
+    const deadline = cap ? ` · ${duration(cap)} operation limit`
+      : (known() ? " · no fixed action deadline" : "");
     label.textContent = `${complete ? "completed · " : ""}${elapsed === null ? "time unavailable" : `${duration(elapsed)} elapsed`}`
-      + (limit ? ` · ${duration(limit)} operation limit` : " · no fixed action deadline");
-    bar.hidden = !limit || elapsed === null;
-    if (limit && elapsed !== null) bar.value = Math.min(limit, elapsed);
+      + deadline;
+    bar.max = cap || 1;
+    bar.hidden = !cap || elapsed === null;
+    if (cap && elapsed !== null) bar.value = Math.min(cap, elapsed);
   }
+  // A row drawn before the limits arrived is redrawn once they do — including a REPLAYED row,
+  // which draws once and never again.
+  onLimits(() => { if (last) draw(...last); });
   function stop(ts, complete = true) {
     stopped = true;
     clearInterval(timer);

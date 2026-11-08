@@ -21,7 +21,7 @@ from ..daemon.runner import Runner
 from ..daemon.scheduler import Scheduler
 from ..ids import now_iso
 from ..llm_tasks import TaskCenter
-from . import assetskew
+from . import actionlimits, assetskew
 from .appwiring import _add_middlewares, _include_api_routers, _make_lifespan
 from .ioload import attach_state
 from .screen_proxy import screen_for_path
@@ -242,6 +242,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
                 "desktop_broker_url": server.desktop_broker_url,
                 "desktop_view_url": server.desktop_view_url,
                 "desktops": server.desktops_configured,
+                "action_limits": actionlimits.LIMITS,   # web/actionlimits.py — D252
                 "meta_routines": meta_routines, **scheduler.snapshot()}
 
     @app.post("/api/setup/complete", dependencies=deps)
