@@ -117,14 +117,27 @@ def test_no_route_scrolls_sideways_on_a_phone(ui, ui_page):
 #: report on 2026-09-18: "there's only a chip for claude ... and it breaks the horizontal
 #: viewport on mobile. if we have this info at the respective endpoint on the settings page,
 #: that would be enough actually."
+#: The quota payload as the server sends it since D277: the two UNSCOPED windows under
+#: `windows`, and every weekly per-model/per-surface limit under `scoped`, keyed
+#: `<dimension>:<id>` and carrying its own display name. The four figures are unchanged from
+#: the shape this fixture had before — what moved is WHERE the two weekly model limits live,
+#: because the API is moving them out of top-level keys into a `limits[]` array and a fixed
+#: label map cannot name a model it was not compiled with.
 FOUR_WINDOW_QUOTA = {
     "supported": True, "ok": True,
     "windows": {
         "five_hour": {"remaining": 61.0, "seconds_until_reset": 7800},
         "seven_day": {"remaining": 68.0, "seconds_until_reset": 305000},
-        "seven_day_sonnet": {"remaining": 54.0, "seconds_until_reset": 305000},
-        "seven_day_opus": {"remaining": 88.0, "seconds_until_reset": 305000},
     },
+    "scoped": {
+        "model:sonnet": {"dimension": "model", "id": "sonnet", "name": "sonnet",
+                         "used_pct": 46.0, "remaining": 54.0,
+                         "resets_at": "", "seconds_until_reset": 305000},
+        "model:opus": {"dimension": "model", "id": "opus", "name": "opus",
+                       "used_pct": 12.0, "remaining": 88.0,
+                       "resets_at": "", "seconds_until_reset": 305000},
+    },
+    "unknown": [],
 }
 
 
