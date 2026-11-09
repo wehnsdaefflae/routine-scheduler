@@ -25,6 +25,15 @@ those are `archive_only` and carry no prose of their own. The self-audit
 routine writes a `status` on every finding; one still reading `unknown` was written before it
 did, and an absent status is NEVER recovered from title prose.
 
+This model and `priorities.flagged_item_owner` MUST AGREE on who owns a finding or decision
+(D240): a card's `owner` is the one self-audit wrote into the row (`item_rows.report_item`,
+never inferred from status or prose), and the ⚑ resolver reads the hand-over marker in that
+same row to pick the digest the flag lands in — so a row being built names
+`scheduler-builder` on the Messages page and in the builder's digest alike
+(`tests/test_priorities.py` pins the pair). Self-audit writes the marker line and the `owner`
+field in one act; written apart, this page would show the field while the flag followed the
+marker, and the two surfaces would name different routines.
+
 Read-model discipline: nothing here writes, and the merge is memoized behind the stat
 fingerprint of those files plus the ⚑ priorities store (`priorities.py`), whose flags float
 an item to the top of the list. An item's AGE is NOT from here (`origin.ts` is its source's own
