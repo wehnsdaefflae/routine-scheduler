@@ -133,8 +133,7 @@ def test_the_event_is_in_the_documented_vocabulary():
     `prompt_oversize_shrunk` failure, which tests/test_health_events.py exists to catch. Pinned
     here too, next to the thing that emits it, so the registration is not a separate chore.
     """
-    from rsched import health_events
+    from rsched import health_vocab
 
-    head = (health_events.__doc__ or "").split('"routine": <slug>')[0]
-    assert "prompt_floor_over_window" in head
-    assert "prompt_floor_over_window" in (health_events.__doc__ or "")
+    assert "prompt_floor_over_window" in health_vocab.EVENTS
+    assert "prompt_floor_over_window:" in (health_vocab.__doc__ or "")

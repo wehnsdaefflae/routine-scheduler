@@ -15,14 +15,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 
-from ..readmodels.health_stream import (
-    DEFAULT_LIMIT,
-    DEFAULT_WINDOW_DAYS,
-    MAX_LIMIT,
-    MAX_WINDOW_DAYS,
-    blocked_fleet,
-    recent_events,
-)
+from ..readmodels.health_reads import DEFAULT_LIMIT, MAX_LIMIT, recent_events
+from ..readmodels.health_stream import DEFAULT_WINDOW_DAYS, MAX_WINDOW_DAYS, blocked_fleet
 from ..readmodels.operator_blocks import annotate
 
 router = APIRouter(tags=["health"])

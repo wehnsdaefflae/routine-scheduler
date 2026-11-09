@@ -864,7 +864,7 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. 20 health events record the opposite —
+Everything above measures runs that HAPPENED. 21 health events record the opposite —
 `postdeploy_failed` (the daemon's own post-boot checklist found that what it serves, or what it
 can write or back up, is not what the deploy intended — most sharply a build that did not
 relaunch, which is a deploy that was due and did not land; `daemon/postdeploy_watch.py`),
@@ -874,7 +874,8 @@ relaunch, which is a deploy that was due and did not land; `daemon/postdeploy_wa
 `backup_stale`, `migration_expired`, `migration_due_soon`, `obligation_overdue`,
 `finish_gate_failed`, `wrong_turn_detected`, `item_dropped_live`, `model_chain_exhausted` and
 `process_overhead_high` (a routine's run time going to its own process rather than its task —
-"Process overhead" above) — and no run page, Items row or Stats slice can carry any of them: the first six produce
+"Process overhead" above), and `answer_undelivered` (an answer of yours that no run will
+ever read — `readmodels/answer_pickup`) — and no run page, Items row or Stats slice can carry any of them: the first six produce
 no run at all; a commit that did not land happens after a run's finish is written, or
 outside any run (a web edit, a boot seed sync, a migration); a finish gate that RAISED
 (F678) leaves a run that reads as finished on every surface, because it did finish — on its own

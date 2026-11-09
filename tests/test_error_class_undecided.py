@@ -215,11 +215,10 @@ def test_the_notifiers_never_raise():
 
 
 def test_the_event_is_in_the_documented_vocabulary():
-    """An event at a call site but not in the header enum is invisible by construction — the
+    """An event at a call site but not in `health_vocab.EVENTS` is invisible by construction — the
     `prompt_oversize_shrunk` failure `tests/test_health_events.py` exists to catch. Pinned next
     to the thing that emits it, so the registration is not a separate chore."""
-    from rsched import health_events
+    from rsched import health_vocab
 
-    head = (health_events.__doc__ or "").split('"routine": <slug>')[0]
-    assert EVENT in head
+    assert EVENT in health_vocab.EVENTS
     assert errorclass.EVENT == EVENT

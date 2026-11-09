@@ -48,7 +48,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-#: The health event this module files. In `health_events.py`'s machine-checked header enum;
+#: The health event this module files. In the machine-checked `health_vocab.EVENTS`;
 #: deliberately NOT in `health_cooldown.REPEAT_COOLDOWN_HOURS` (a suppressed correction leaves
 #: the original ending standing on every surface) and NOT in
 #: `readmodels/health_stream.BLOCKED_EVENTS` (a corrected run did its work — it is the opposite

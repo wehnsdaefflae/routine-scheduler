@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.2] — 2026-11-09
+
+### Changed
+- **No file is frozen because it reached the size bar — four were split along their seams.**
+  The operator, 2026-11-09: *"files should never be frozen just because they hit their line
+  limit."* The health vocabulary lived in `health_events.py`'s DOCSTRING, read back by seven
+  tests through `__doc__`, so the next event could be documented nowhere ("the next event cannot
+  be documented there", 0.511.0's CHANGELOG). It is now DATA: `rsched/health_vocab.py`'s
+  `EVENTS`, with each event's paragraph beside it, and every test reads the tuple
+  (`health_events.py` 350 → 75 lines). `readmodels/health_stream.py`'s two per-question reads,
+  `recent_events` and `budget_endings`, moved to `readmodels/health_reads.py` (350 → 288), so
+  `BLOCKED_EVENTS` stays where every reference points and has room. The router list left
+  `web/appwiring.py` for `web/routers.py` (350 → 230), undoing the line-merge 0.525.1 used to
+  register its route.
+
+### Added
+- **`answer_undelivered` on the blocked-work surface.** The daily owed-work sweep
+  (`daemon/owed_watch`) files one row per routine or conversation holding an answer that NO run
+  will read and that has waited past a day. Who reads an answer is one derivation,
+  `readmodels/answer_pickup`, shared by the Decisions page and the sweep, so the daemon reads it
+  without importing the web layer.
+- **The test memory gate waits on the container's own ceiling too** (`tests/memgate.py`,
+  accepted proposal q-20261107-020004-53). It admitted a selection on the HOST's free memory
+  alone, while the fast stage runs in the engine container's cgroup. It now waits for both, the
+  smaller deciding, and names which refused. The container figure is `memory.max` minus
+  `anon` + swap: `memory.current` counts page cache the kernel drops at the limit, which is why
+  51 gates read 96-100% of it while nothing was ever killed. `NEED_MB` and `FAST_WORKERS` are
+  unchanged and are re-tuned from the new figure later, not from the old one.
+
 ## [0.525.1] — 2026-11-09
 
 ### Fixed

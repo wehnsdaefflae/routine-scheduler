@@ -9,6 +9,10 @@ that nothing on the instance would ever bring back:
   accounting. So once an obligation is open longer than `obligations.OVERDUE_DAYS`, this files
   `obligation_overdue` on the blocked-work surface (readmodels/health_stream.BLOCKED_EVENTS): one
   row per routine per day, naming each owed item, how long, and what the last run left unmet.
+- an ANSWER the operator gave that no run will ever read (2026-11-09: two sat seven weeks,
+  filed during their conversation's last turn). Past `UNDELIVERED_DAYS` this files
+  `answer_undelivered` on the blocked-work surface, one row per routine per day — the Decisions
+  page already lists them as UNDELIVERED; this is the reminder for the ones nobody went to see.
 - a report nobody owned sat three weeks (R2044: "nobody owns deploying the Steward kit"). A
   report addressed to no one, or to a routine that starts no run, is read by triage at best. So
   once one has waited longer than `UNOWNED_DAYS`, this files ONE `unowned-report` decision on the
@@ -25,18 +29,24 @@ on a 5 s tick. Never raises into the tick.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from .. import proofcheck
+from .. import lanes, proofcheck
 from ..config import ServerConfig, load_routine
 from ..engine import finishline, obligations
 from ..health_events import log_health_event
+from ..readmodels import answer_pickup
 
 log = logging.getLogger("rsched.daemon")
 
 #: How long a report may wait without an owner before it becomes the operator's decision.
 UNOWNED_DAYS = 7
+#: How long an ANSWER may wait with no run that will ever read it before the operator is told
+#: again on the blocked-work surface. A day, because the Decisions page says it at once; this
+#: is the reminder for an answer nobody went back to look at (two sat seven weeks, 2026-09-21).
+UNDELIVERED_DAYS = 1
 #: The routines a homeless report is usually someone's — offered after the routine that filed it.
 _LIKELY = ("scheduler-builder", "self-audit", "routine-improver")
 
@@ -94,8 +104,9 @@ def unowned(home: Path, today: date) -> list[dict]:
 class OwedWatch:
     """The daemon's owed-work check, once a day."""
 
-    def __init__(self, server: ServerConfig) -> None:
+    def __init__(self, server: ServerConfig, scheduler=None) -> None:
         self.server = server
+        self.scheduler = scheduler   # its fire tables + runner say who reads a waiting answer
         self._checked: date | None = None
 
     async def tick(self) -> None:
@@ -119,6 +130,7 @@ class OwedWatch:
             log_health_event(home, "obligation_overdue", routine=slug, run_id="",
                              detail=detail, obligations=len(owed))
         self._file_unowned(home, today)
+        self._file_undelivered(home)
         # D220: and the proofs. An answered decision whose authorized work never landed is
         # owed work of exactly this kind — the operator's own framing ("accept / decline my
         # response based on the result of you checking the proof"), and the reason this watch
@@ -127,6 +139,31 @@ class OwedWatch:
         moved = proofcheck.sweep_home(home)
         if moved:
             log.info("owed-watch: %d decision proof(s) moved state", moved)
+
+    def _file_undelivered(self, home: Path) -> None:
+        """`answer_undelivered`, one row per routine or conversation holding an answer that NO
+        run will read and that has waited past UNDELIVERED_DAYS (`readmodels/answer_pickup`).
+        """
+        sched = self.scheduler
+        if sched is None:
+            return
+        lane_of = lanes.scheduled_lane_by_member(home)
+        cutoff = time.time() - UNDELIVERED_DAYS * 86400
+        stuck: dict[str, list[str]] = {}
+        for waiting in answer_pickup.waiting_answers(self.server):
+            if waiting["since"] > cutoff:
+                continue
+            pick = answer_pickup.pickup_of(
+                self.server, waiting["home"], waiting["slug"], next_fires=sched.next_fires,
+                lane_next_fires=sched.lane_next_fires, is_active=sched.runner.is_active,
+                lane_of=lane_of)
+            if pick and pick["state"] == "never":
+                stuck.setdefault(waiting["slug"], []).append(f"{waiting['qid']} ({pick['why']})")
+        for slug, qids in stuck.items():
+            log_health_event(home, "answer_undelivered", routine=slug, run_id="",
+                             detail="no run will read: " + "; ".join(qids)
+                             + " — deliver or settle it on the Decisions page",
+                             answers=len(qids))
 
     def _file_unowned(self, home: Path, today: date) -> None:
         from .. import pending

@@ -33,7 +33,7 @@ from pathlib import Path
 
 from ..config import ServerConfig
 from ..recipes import recipe_log
-from . import health_stream, library_reads, memo
+from . import health_reads, library_reads, memo
 from .incarnations import live_runs
 from .stamps import instant
 from .usage_stream import fold_legs, reading, usage_runs
@@ -227,7 +227,7 @@ def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
             "untracked": by_version["untracked"],
             "regression": by_version["regression"],
             "trend": recent_trend(by_version["records"]),
-            "endings": health_stream.budget_endings(server, slug),
+            "endings": health_reads.budget_endings(server, slug),
             "cautions": cautions(server, routine_dir),
             "tracked": by_version["tracked"]}
 

@@ -23,14 +23,16 @@ def _fake(readings):
 def test_it_starts_at_once_when_the_host_has_the_memory(monkeypatch):
     monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
     read, sleep, clock = _fake([9000])
-    memgate.wait_for_memory("browser", read=read, sleep=sleep, clock=clock)
+    memgate.wait_for_memory("browser", read=read, read_cgroup=lambda: None, sleep=sleep,
+                            clock=clock)
     assert clock() == 0
 
 
 def test_it_waits_until_memory_frees(monkeypatch):
     monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
     read, sleep, clock = _fake([1000, 1200, 4000])
-    memgate.wait_for_memory("browser", read=read, sleep=sleep, clock=clock)
+    memgate.wait_for_memory("browser", read=read, read_cgroup=lambda: None, sleep=sleep,
+                            clock=clock)
     assert clock() == 30, "two waits of 15 s, then it started"
 
 
@@ -39,8 +41,42 @@ def test_it_refuses_to_start_past_the_deadline(monkeypatch):
     monkeypatch.setenv("RSCHED_TEST_MEM_WAIT_S", "30")
     read, sleep, clock = _fake([500] * 10)
     with pytest.raises(pytest.exit.Exception) as exc:
-        memgate.wait_for_memory("fast", read=read, sleep=sleep, clock=clock)
+        memgate.wait_for_memory("fast", read=read, read_cgroup=lambda: None, sleep=sleep,
+                            clock=clock)
     assert "500 MB available" in str(exc.value) and "2048 MB" in str(exc.value)
+
+
+def test_the_containers_own_ceiling_holds_the_gate_back_on_a_quiet_host(monkeypatch):
+    """Accepted proposal q-20261107-020004-53: host headroom and cgroup headroom are independent
+    numbers, and waiting on the first cannot change the second."""
+    monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
+    _host, sleep, clock = _fake([])
+    cgroup = iter([1000, 3000])
+    memgate.wait_for_memory("fast", read=lambda: 9000, read_cgroup=lambda: next(cgroup),
+                            sleep=sleep, clock=clock)
+    assert clock() == 15, "one wait on the cgroup, then it started"
+
+
+def test_the_refusal_names_the_resource_that_refused(monkeypatch):
+    monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
+    monkeypatch.setenv("RSCHED_TEST_MEM_WAIT_S", "30")
+    _host, sleep, clock = _fake([])
+    with pytest.raises(pytest.exit.Exception) as exc:
+        memgate.wait_for_memory("fast", read=lambda: 9000, read_cgroup=lambda: 500,
+                                sleep=sleep, clock=clock)
+    assert "this container's cgroup: 500 MB available" in str(exc.value)
+
+
+def test_cgroup_headroom_counts_what_is_held_never_the_cache(tmp_path):
+    """`memory.current` includes page cache the kernel drops at the limit; the headroom is the
+    ceiling minus anon and swapped pages, and there is none to read without a numeric ceiling."""
+    (tmp_path / "memory.max").write_text("5368709120\n")
+    (tmp_path / "memory.stat").write_text("anon 1073741824\nfile 4000000000\n")
+    (tmp_path / "memory.swap.current").write_text("536870912\n")
+    assert memgate.cgroup_headroom_mb(tmp_path) == 3584
+    (tmp_path / "memory.max").write_text("max\n")
+    assert memgate.cgroup_headroom_mb(tmp_path) is None
+    assert memgate.cgroup_headroom_mb(tmp_path / "missing") is None
 
 
 def test_an_unreadable_meminfo_waits_for_nothing(tmp_path):
@@ -51,7 +87,8 @@ def test_an_unreadable_meminfo_waits_for_nothing(tmp_path):
 
 def test_the_switch_turns_it_off(monkeypatch):
     monkeypatch.setenv("RSCHED_TEST_MEM_WAIT", "0")
-    memgate.wait_for_memory("browser", read=lambda: 1, sleep=lambda _s: None, clock=lambda: 0)
+    memgate.wait_for_memory("browser", read=lambda: 1, read_cgroup=lambda: 1,
+                            sleep=lambda _s: None, clock=lambda: 0)
 
 
 def test_the_fast_budget_still_covers_the_worker_count_it_claims_to():

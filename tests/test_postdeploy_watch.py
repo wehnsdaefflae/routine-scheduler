@@ -163,12 +163,12 @@ def test_the_event_is_on_the_blocked_work_fold_and_in_the_vocabulary():
     """A health event the console is not compiled for is read by nobody — `trigger_capped` went
     unread for weeks that way.
     """
-    from rsched import health_events as he
+    from rsched import health_vocab
     from rsched.readmodels.health_stream import BLOCKED_EVENTS
 
     assert "postdeploy_failed" in BLOCKED_EVENTS
     assert BLOCKED_EVENTS["postdeploy_failed"].strip()
-    assert '"postdeploy_failed"' in (he.__doc__ or "")
+    assert "postdeploy_failed" in health_vocab.EVENTS
 
 
 def test_a_record_that_cannot_be_written_does_not_take_the_instance_down(tmp_path, monkeypatch):

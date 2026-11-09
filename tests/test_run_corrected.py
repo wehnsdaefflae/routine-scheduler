@@ -20,7 +20,8 @@ from conftest import finish, write_file
 from helpers import health_events, server_for, tmp_server
 from rsched.engine.runtime import run_routine
 from rsched.readmodels import memo
-from rsched.readmodels.health_stream import blocked_fleet, budget_endings
+from rsched.readmodels.health_reads import budget_endings
+from rsched.readmodels.health_stream import blocked_fleet
 
 TS = "20260708-070000"
 
@@ -253,11 +254,10 @@ def test_an_uncorrected_lane_close_is_unchanged(tmp_path):
 
 def test_the_event_is_in_the_documented_vocabulary():
     """The vocabulary is machine-checked (tests/test_health_events.py) and a reader keyed on
-    the header enum sees nothing of an event missing from it."""
-    from rsched import health_events as he
-    from rsched import runcorrection
+    `health_vocab.EVENTS` sees nothing of an event missing from it."""
+    from rsched import health_vocab, runcorrection
 
-    assert f'"{runcorrection.EVENT}"' in (he.__doc__ or "")
+    assert runcorrection.EVENT in health_vocab.EVENTS
 
 
 def test_the_correction_is_never_cooled_down():

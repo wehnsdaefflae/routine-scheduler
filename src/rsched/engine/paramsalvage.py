@@ -56,7 +56,7 @@ from .actionschema import ACTION_SCHEMA
 if TYPE_CHECKING:                                  # pragma: no cover - typing only
     from .run_context import RunContext
 
-#: The health event this module files. In `health_events.py`'s machine-checked header enum.
+#: The health event this module files. In the machine-checked `health_vocab.EVENTS`.
 EVENT = "tool_param_salvaged"
 
 #: Every real action field name — condition 2. A name outside this set is prose, not a field.

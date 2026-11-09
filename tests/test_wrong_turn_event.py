@@ -158,15 +158,14 @@ def test_a_clean_run_files_nothing(make_routine, scripted):
 
 
 def test_the_event_is_in_the_documented_vocabulary():
-    """`health_events.py`'s header enum IS the vocabulary and is machine-checked both ways
+    """`health_vocab.EVENTS` IS the vocabulary and is machine-checked both ways
     (tests/test_health_events.py). An event missing from it is read by nobody — the
     `prompt_oversize_shrunk` failure, written for weeks past every documented filter."""
-    from rsched import health_events as he
+    from rsched import health_vocab
 
-    doc = he.__doc__ or ""
-    head = doc.split('"routine": <slug>')[0]
-    assert f'"{wrongturn.EVENT}"' in head, "the event is not in the header enum's event list"
-    assert wrongturn.EVENT in doc, "the enum entry carries no paragraph saying what it means"
+    assert wrongturn.EVENT in health_vocab.EVENTS, "the event is not in the vocabulary"
+    assert f"{wrongturn.EVENT}:" in (health_vocab.__doc__ or ""), (
+        "the vocabulary carries no paragraph saying what it means")
 
 
 def test_the_event_reaches_the_blocked_work_surface():

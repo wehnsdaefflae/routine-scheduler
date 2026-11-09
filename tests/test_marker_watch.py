@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from rsched import health_events, migration_markers
+from rsched import health_events, health_vocab, migration_markers
 from rsched.daemon import marker_watch
 from rsched.readmodels import health_stream
 
@@ -47,11 +47,10 @@ def _marker_file(tmp_path: Path, expires: str) -> Path:
 
 
 def test_both_events_are_in_the_documented_vocabulary():
-    """`health_events.py`'s header enum IS the vocabulary and is machine-checked both ways; an
-    event missing from it is read by nobody — the `prompt_oversize_shrunk` failure."""
-    doc = health_events.__doc__ or ""
+    """`health_vocab.EVENTS` IS the vocabulary and is machine-checked both ways; an event
+    missing from it is read by nobody — the `prompt_oversize_shrunk` failure."""
     for event in EVENTS:
-        assert f'"{event}"' in doc, f"{event} is emitted and not in the header enum"
+        assert event in health_vocab.EVENTS, f"{event} is emitted and not in the vocabulary"
 
 
 def test_both_events_reach_the_blocked_work_surface():

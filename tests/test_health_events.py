@@ -2,7 +2,7 @@
 
 Every reader of `.control/health-events.jsonl` — the audit recipe's evidence stage, the
 `health-events` library util's `--event` filter — is keyed on names a person read out of
-`health_events.py`'s header enum. An event added at a call site and not there is therefore
+`health_vocab.EVENTS`. An event added at a call site and not there is therefore
 invisible by construction, not by accident: `prompt_oversize_shrunk` and `trigger_capped` were
 both written to the stream for weeks while every documented filter looked past them.
 
@@ -13,18 +13,16 @@ sites, the way tests/test_surface.py pins the remedy vocabulary.
 from __future__ import annotations
 
 import ast
-import re
 from pathlib import Path
 
-from rsched import health_events
+from rsched import health_events, health_vocab
 
 SRC = Path(health_events.__file__).parent
 
 
 def _documented() -> set[str]:
-    """The names quoted in the header enum — the list a reader builds a filter from."""
-    head = (health_events.__doc__ or "").split('"routine": <slug>')[0]
-    return set(re.findall(r'"([a-z_]+)"', head)) - {"ts", "event"}
+    """`health_vocab.EVENTS` — the list a reader builds a filter from."""
+    return set(health_vocab.EVENTS)
 
 
 def _literal_strings(node: ast.AST) -> set[str]:
@@ -80,7 +78,7 @@ def test_every_emitted_event_is_in_the_documented_vocabulary():
     unknown = {n for n in _emitted()
                if n not in documented and not any(d.startswith(n) for d in documented)}
     assert not unknown, (
-        f"health events emitted but absent from health_events.py's header enum: "
+        f"health events emitted but absent from health_vocab.EVENTS: "
         f"{sorted(unknown)} — every reader filters on that list, so an undocumented event "
         f"is written and read by nobody")
 

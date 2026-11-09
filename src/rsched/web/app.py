@@ -21,8 +21,8 @@ from ..daemon.runner import Runner
 from ..daemon.scheduler import Scheduler
 from ..ids import now_iso
 from ..llm_tasks import TaskCenter
-from . import actionlimits, assetskew
-from .appwiring import _add_middlewares, _include_api_routers, _make_lifespan
+from . import actionlimits, assetskew, routers
+from .appwiring import _add_middlewares, _make_lifespan
 from .ioload import attach_state
 from .screen_proxy import screen_for_path
 
@@ -200,7 +200,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     app.state.search = SearchIndex(server)    # the FTS cache; this process is its one writer
 
     deps = [Depends(require_auth)]
-    _include_api_routers(app, deps)
+    routers.include_api_routers(app, deps)
 
     def _setup_marker():
         return (server.source.parent / ".setup-complete") if server.source else None

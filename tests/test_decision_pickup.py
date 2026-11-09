@@ -13,7 +13,7 @@ import pytest
 
 from conftest import authed_client, make_test_server
 from rsched.paths import atomic_write_json
-from rsched.web.decision_pickup import routine_pickup
+from rsched.readmodels.answer_pickup import routine_pickup
 
 AT = datetime(2026, 11, 11, 3, 0, tzinfo=UTC)
 

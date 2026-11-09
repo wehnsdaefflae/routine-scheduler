@@ -26,6 +26,7 @@ from pathlib import Path
 
 from helpers import tmp_server
 from rsched import health_events as health_events_mod
+from rsched import health_vocab
 from rsched.readmodels import memo
 from rsched.readmodels.health_stream import BLOCKED_EVENTS, blocked_fleet
 
@@ -106,7 +107,7 @@ def test_a_resumed_run_does_not_erase_a_chain_outage(tmp_path):
 def test_the_event_is_in_the_writers_vocabulary():
     """The set is a subset of `health_events.py`'s enum — the header docstring is what every
     other reader of the stream is compiled against."""
-    assert '"model_chain_exhausted"' in (health_events_mod.__doc__ or "")
+    assert "model_chain_exhausted" in health_vocab.EVENTS
 
 
 def test_it_is_not_repeat_suppressed(tmp_path):

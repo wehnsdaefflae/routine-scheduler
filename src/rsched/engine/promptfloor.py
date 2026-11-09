@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from typing import Any
 
-#: The event name. Registered in `health_events`' header enum in the same change — an event at a
+#: The event name. Registered in `health_vocab.EVENTS` in the same change — an event at a
 #: call site and absent from that enum is invisible to every documented filter, which is the
 #: `prompt_oversize_shrunk` failure `tests/test_health_events.py` exists to catch.
 EVENT = "prompt_floor_over_window"

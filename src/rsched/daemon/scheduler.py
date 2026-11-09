@@ -86,7 +86,7 @@ class Scheduler:
         # migration deadline (F702), owed work (owed_watch), a live item dropped from report.json.
         self.backup = BackupWatch(server)
         self.markers = MarkerWatch(server)
-        self.owed = OwedWatch(server)
+        self.owed = OwedWatch(server, self)
         self.item_records = ItemRecordWatch(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}

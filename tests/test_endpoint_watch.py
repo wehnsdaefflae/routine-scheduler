@@ -277,11 +277,11 @@ def test_the_event_is_in_the_writers_vocabulary_and_deliberately_not_in_the_read
     the misses and inflate "what is the fleet not doing" with work that has not come due. When a
     run does then fail, `fire_refused`/`run_failed` already say so.
     """
-    from rsched import health_events
+    from rsched import health_vocab
     from rsched.readmodels.health_stream import BLOCKED_EVENTS
 
     assert endpoint_watch.EVENT == "endpoint_needs_reauth"
-    assert endpoint_watch.EVENT in (health_events.__doc__ or "")
+    assert endpoint_watch.EVENT in health_vocab.EVENTS
     assert endpoint_watch.EVENT not in BLOCKED_EVENTS
 
 

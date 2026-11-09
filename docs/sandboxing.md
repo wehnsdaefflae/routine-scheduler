@@ -322,7 +322,7 @@ Three costs, all accepted and all consequences of the mechanism rather than choi
 R2654 connected that marker to a reader. For two years its only consumer was its own test — no
 read model, no endpoint, no console case — and a compensating control nothing reads is not one.
 The first write-shaped command of a run now also files ONE `ungated_write` health event
-(`.control/health-events.jsonl`, the machine-checked vocabulary in `health_events.py`), naming
+(`.control/health-events.jsonl`, the machine-checked vocabulary in `health_vocab.py`), naming
 the routine, the run and the turn. One row per run, not per command: a run working in a repo
 makes dozens of such calls, the per-call record is already on every observation the marker
 rode, and what the stream answers is WHICH RUN to open. It is not blocked work — nothing was

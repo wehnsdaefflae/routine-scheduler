@@ -167,6 +167,6 @@ def test_the_event_is_not_counted_as_blocked_work():
 
 
 def test_the_event_is_in_the_documented_vocabulary():
-    import rsched.health_events as he
+    from rsched import health_vocab
 
-    assert f'"{paramsalvage.EVENT}"' in (he.__doc__ or "")
+    assert paramsalvage.EVENT in health_vocab.EVENTS

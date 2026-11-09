@@ -56,7 +56,7 @@ from typing import Any
 
 from ..endpoints import errorsignal
 
-#: The event name. Registered in `health_events`' header enum in the same change — an event at a
+#: The event name. Registered in `health_vocab.EVENTS` in the same change — an event at a
 #: call site and absent from that enum is invisible to every documented filter, which is the
 #: `prompt_oversize_shrunk` failure `tests/test_health_events.py` exists to catch. It is an
 #: INCIDENT, not a standing condition, so it is deliberately absent from

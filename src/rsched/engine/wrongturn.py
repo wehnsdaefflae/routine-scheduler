@@ -67,7 +67,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:                                  # pragma: no cover - typing only
     from .run_context import RunContext
 
-#: The health event this module files. In `health_events.py`'s machine-checked header enum and
+#: The health event this module files. In the machine-checked `health_vocab.EVENTS` and
 #: in `readmodels/health_stream.BLOCKED_EVENTS`; deliberately NOT in `REPEAT_COOLDOWN_HOURS`.
 EVENT = "wrong_turn_detected"
 

@@ -12,11 +12,11 @@ from datetime import UTC, datetime, timedelta, timezone
 from helpers import tmp_server
 from rsched.health_events import log_health_event
 from rsched.readmodels import memo
+from rsched.readmodels.health_reads import budget_endings
 from rsched.readmodels.health_stream import (
     BLOCKED_EVENTS,
     MAX_WINDOW_DAYS,
     blocked_fleet,
-    budget_endings,
     health_records,
 )
 
@@ -38,11 +38,10 @@ def test_every_blocked_event_is_in_the_writers_vocabulary():
     docstring would make the console blind to that event exactly the way it was blind to all
     six.
     """
-    from rsched import health_events
+    from rsched import health_vocab
 
-    documented = health_events.__doc__ or ""
     for name in BLOCKED_EVENTS:
-        assert f'"{name}"' in documented, name
+        assert name in health_vocab.EVENTS, name
 
 
 def test_a_finish_gate_that_did_not_run_reaches_the_blocked_fold(tmp_path):
