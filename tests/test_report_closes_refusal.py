@@ -25,28 +25,25 @@ from rsched.reports import Disposal, file_report, read_reports, reports_path
 # -- the ACTION entrance, where the target decides what the refusal can ask for --------------
 
 
-def test_a_runtree_message_is_told_to_drop_closes_not_to_supply_an_id():
-    """The refusal was accurate and UNACTIONABLE for a message to a live run.
+def test_a_runtree_message_is_not_refused_at_all():
+    """SUPERSEDED BY F859 (0.522.0) — this case used to assert a target-aware REFUSAL.
 
-    A run-tree address (`parent`, `child:<label>`) is read at that run's next turn boundary and
-    gets no R id at all — `engine/runtree` says it "is not an item and owes the ledger nothing".
-    So there is no id `answers` could name, and a run told to supply one cannot comply. Measured
-    2026-10-19 → 2026-11-06: NINETEEN of these refusals across ELEVEN routines, and of the five
-    whose rejected action was still recoverable from a transcript, THREE were `parent` or
-    `child:<label>` replies to a hand-back the run was trying to close in the same run.
-    `llmsectest-weekday` met it in five separate runs.
+    The refusal was accurate and unactionable, and the clearer wording 0.511.0 shipped did not
+    stop it being paid for: 19 of these refusals across 11 routines by 2026-11-06, then THREE
+    MORE in a single `scheduler-builder` run on 2026-11-08 (turns 67, 223, 110 — all three of
+    the event's all-time fires). `closes` on a run-tree target is INERT: the hook has no ledger
+    row, `runtree.send` never reads the field, so refusing the action changed nothing except
+    costing the turn.
+
+    So the rule moved rather than being softened: the disposal grammar governs ledger rows, and
+    `reportfields.field_problems` returns early for a run-tree target. What a sender is told
+    instead lives in `tests/test_report_runtree_disposal.py` — the hook is delivered, and the
+    observation NAMES any `answers`/`settles`/`supersedes` it ignored, which is the half this
+    refusal never covered (those three validated and were then dropped unread).
     """
     for target in ("parent", "child:ragapi-standup"):
-        problems = validate_action({"say": "s", "kind": "report", "title": "answering the "
-                                    "hand-back", "target": target, "closes": True})
-        assert len(problems) == 1, problems
-        why = problems[0]
-        assert "drop 'closes'" in why                  # the one action that resolves it
-        assert target in why                           # which target made it so
-        assert "no reply is needed" in why             # what to write instead
-        # and it must NOT read as a demand for a field this shape cannot have
-        assert "is valid only together with" not in why
-        assert "no report id" in why                   # it says WHY none can be given
+        assert validate_action({"say": "s", "kind": "report", "title": "answering the "
+                                "hand-back", "target": target, "closes": True}) == []
 
 
 def test_a_routine_target_still_gets_the_original_sentence():

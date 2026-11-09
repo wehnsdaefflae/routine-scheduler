@@ -184,8 +184,42 @@ def inject_message(loop, m: dict) -> None:
     inject_user_message(loop, {**m, "via": VIA})
 
 
-def send(loop, *, target: str, title: str, detail: str) -> dict:
+#: The `report` fields that dispose of LEDGER rows, in the order a reader meets them. A run-tree
+#: message has no row (this module's own docstring: "it is not an item and owes the ledger
+#: nothing"), so each one is inert here — and `reportfields` deliberately no longer refuses them,
+#: because refusing cost the turn without disposing of anything (F859).
+DISPOSAL_FIELDS = ("answers", "settles", "supersedes")
+
+
+def ignored_disposal(disposal: dict | None) -> str:
+    """What to tell a sender that named ledger rows on a hook — "" when it named none.
+
+    `closes` is left out on purpose: it names no row, so there is nothing a sender could be
+    mistaken ABOUT, and a line that scolds every terminal reply would teach runs to stop
+    replying. The other three DO name rows, and until F859 they were dropped unread by
+    `admin_handlers.report` — so the sender's own belief that a row was answered, settled or
+    taken over was false and nothing said so. It is said here, in the observation of the action
+    that wrote them, with the ids, because a correction that names no row cannot be acted on.
+    """
+    named: list[str] = []
+    for field in DISPOSAL_FIELDS:
+        value = (disposal or {}).get(field)
+        if not value:
+            continue
+        ids = [value] if isinstance(value, str) else list(value)
+        named.append(f"{field} {', '.join(str(i) for i in ids)}")
+    if not named:
+        return ""
+    return (f"IGNORED: {'; '.join(named)} — a run-tree message is a hook, not a ledger row, so "
+            "it disposes of nothing. Those rows are still open: dispose of them in a separate "
+            "`report` with `target: <slug>` (or no target for triage)")
+
+
+def send(loop, *, target: str, title: str, detail: str, disposal: dict | None = None) -> dict:
     """File a run-tree hook, or refuse it. The observation for the `report` action, either way.
+
+    `disposal` is the ledger-disposal fields the action carried, if any: they cannot act here
+    and are NAMED back rather than silently dropped (`ignored_disposal`).
 
     Best-effort on the WRITE, like every other hook: a failed delivery reports `delivered:
     False` and never aborts the sending run, whose real work is elsewhere.
@@ -209,7 +243,12 @@ def send(loop, *, target: str, title: str, detail: str) -> dict:
     store.record_runtree(ctx.server.routines_home, hook_id=hid, routine=ctx.routine.slug,
                          run_id=ctx.run_id, turn=ctx.turn, addressee=address,
                          title=title, delivered=delivered)
+    note = ("delivered at that run's next turn boundary; it is a hook, not an item, so "
+            "it has no R id and nothing is owed to the ledger")
+    # The warning rides the EXISTING note rather than a new observation key: `obs_admin` renders
+    # this note verbatim and that module sits exactly at the repo's size bar, so a second branch
+    # there would have to buy its own room. One key, one renderer, no new wording to keep aligned.
+    if warning := ignored_disposal(disposal):
+        note = f"{note}. {warning}"
     return {"kind": "report", "target": target, "runtree": True, "delivered": delivered,
-            "hook": hid, "addressee": address,
-            "note": ("delivered at that run's next turn boundary; it is a hook, not an item, so "
-                     "it has no R id and nothing is owed to the ledger")}
+            "hook": hid, "addressee": address, "note": note}

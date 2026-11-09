@@ -15,6 +15,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.522.0] — 2026-11-09
+
+### Changed — a run-tree message's disposal fields are NAMED, not refused and not swallowed (F859)
+
+A `report` addressed to `parent` or `child:<label>` is a hook delivered at that run's next turn
+boundary. `engine/runtree` is explicit that it "is not an item and owes the ledger nothing" — it
+gets no `R<n>` at all. The four disposal fields were handled in two opposite, and both wrong,
+ways:
+
+- **`closes` was refused.** Accurate, and paid for with the whole turn, for a field
+  `runtree.send` never reads. 0.511.0 made that refusal target-aware after 19 of them across 11
+  routines — and then **three more landed in a single `scheduler-builder` run on 2026-11-08**
+  (turns 67, 223 and 110, at 16:14, 16:15 and 17:18; all three of the event's all-time fires,
+  two of them in children). A clearer refusal is still a refusal.
+- **`answers`, `settles` and `supersedes` were swallowed.** They validated, and
+  `admin_handlers.report` returns at its run-tree branch *before* the ledger is read — so a run
+  that wrote `answers: R123` had its hook delivered and believed a row disposed of. That half
+  cost more than the refusal: a refusal costs a turn, a false belief leaves a row nobody closes,
+  reading as open in every backlog.
+
+Both are answered in one direction now. `reportfields.field_problems` returns early for a
+run-tree target — the disposal grammar governs ledger rows, and there is none — so the turn
+happens and the hook goes out. `runtree.send` takes the disposal fields and `ignored_disposal`
+names them back in the observation of the action that wrote them, with the ids, and says what
+would actually dispose of them (a separate `report` with a slug target, or none for triage).
+`closes` is deliberately left out of that warning: it names no row, so there is nothing to be
+mistaken about, and a line that scolds every terminal reply would teach runs to stop replying.
+
+The warning rides the existing `note` key rather than a new observation field, because
+`engine/obs_admin.py` sits exactly at the repo's 350-line size bar and a second branch there
+would have to buy its own room — one key, one renderer, no second wording to keep aligned.
+
+**D196 is untouched**: a ledger target still refuses a bare `closes` with the operator's own
+message, and that is pinned in both test files. 20 new tests; the superseded refusal case in
+`test_report_closes_refusal.py` is rewritten to assert the new behaviour and says in its
+docstring what changed and why. Bidirectional probe run at each site separately: removing the
+early return reds 4 of the 12 disposal cases, removing the observation fold reds exactly 1, and
+the remaining 19 stay green either way.
+
 ## [0.521.0] — 2026-11-09
 
 ### Added — the console records how long its own requests take, and how long a page takes to load (F858)

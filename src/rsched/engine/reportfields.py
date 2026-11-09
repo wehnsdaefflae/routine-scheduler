@@ -24,6 +24,22 @@ def field_problems(obj: dict) -> list[str]:
     run already reads refusals in.
     """
     problems: list[str] = []
+    # EVERY rule below is about a LEDGER ROW, and a run-tree message has none (F859). A `report`
+    # addressed to `parent` or `child:<label>` is a hook delivered at that run's next turn
+    # boundary and gets no `R<n>` at all — `runtree`: "it is not an item and owes the ledger
+    # nothing". So there is nothing here to govern, and refusing the turn taught nothing a run
+    # could use: 19 such refusals across 11 routines by 2026-11-06 made 0.511.0's wording
+    # target-aware, and THREE MORE landed in one `scheduler-builder` run on 2026-11-08 anyway
+    # (turns 67, 223, 110). A clearer refusal is still a refusal, and the field was inert.
+    # The three fields `closes` rides with were never refused here at all — they validated and
+    # were then dropped unread by `admin_handlers.report`, which returns at its run-tree branch
+    # before reading them, so a run that wrote `answers: R123` believed a row disposed of. That
+    # is the costlier half: a refusal costs a turn, a false belief costs a row nobody closes.
+    # Both are answered in one place instead — `runtree.send` delivers the hook and NAMES the
+    # disposal fields it ignored, in the observation of the action that wrote them.
+    from .runtree import is_runtree  # local: runtree imports inbox, this does not
+    if is_runtree(obj.get("target") or ""):
+        return []
     # `closes` is a property OF a disposal — a terminal acknowledgment. `answers` disposes of
     # ONE exchange, `settles` of several; with neither there is nothing to complete, so a bare
     # closes is a contradiction, not a no-op. Before D134 only `answers` counted, which is why
@@ -32,23 +48,8 @@ def field_problems(obj: dict) -> list[str]:
     if (obj.get("closes")
             and not str(obj.get("answers") or "").strip()
             and not obj.get("settles")):
-        from .runtree import is_runtree  # local: runtree imports inbox, this does not
-        if is_runtree(obj.get("target") or ""):
-            # The refusal was accurate and UNACTIONABLE here. A run-tree address is a MESSAGE to
-            # a live run, which gets no R id at all (`runtree`: "it is not an item and owes the
-            # ledger nothing") — so there is no id `answers` could ever name, and a run told to
-            # supply one cannot. Measured 2026-10-19 → 2026-11-06: 19 of these refusals across
-            # 11 routines, and of the five whose action was recoverable from the transcript
-            # THREE were `parent` or `child:<label>` replies to a hand-back the run was trying
-            # to close in the same run. `llmsectest-weekday` met it in five separate runs.
-            problems.append(
-                "kind=report: drop 'closes' — a run-tree message (target "
-                f"{str(obj.get('target')).strip()!r}) is read at that run's next turn boundary "
-                "and is not a ledger row, so there is nothing to close and no report id "
-                "'answers' could name. Say in 'detail' that no reply is needed")
-        else:
-            problems.append("kind=report: 'closes' is valid only together with 'answers' or "
-                            "'settles' — it marks the disposal as completing those exchanges")
+        problems.append("kind=report: 'closes' is valid only together with 'answers' or "
+                        "'settles' — it marks the disposal as completing those exchanges")
     # `answers` is ONE report id, held to the grammar `settles` and `supersedes` are. The ledger
     # matches it against ids, so free text there disposed of nothing — while the run, and its
     # observation, believed the exchange answered (the settled-in-prose, open-in-the-ledger

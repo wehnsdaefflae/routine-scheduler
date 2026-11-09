@@ -158,7 +158,12 @@ def handle_report(loop, action: dict) -> dict:
     # gets no `R<n>`, because an item is owed an answer by a routine and both of these runs are
     # gone in minutes (F695 as a case of D152 — engine/runtree.py says why).
     if runtree.is_runtree(target):
-        return runtree.send(loop, target=target, title=title, detail=detail)
+        # The disposal fields travel WITH it (F859). They cannot act on a hook — there is no row
+        # — but this branch returns before the ledger is read, so dropping them here is what let
+        # a run write `answers: R123`, have its hook delivered, and believe a row was disposed
+        # of. `send` names them back instead of swallowing them.
+        return runtree.send(loop, target=target, title=title, detail=detail,
+                            disposal={f: action.get(f) for f in runtree.DISPOSAL_FIELDS})
     if target:
         if target == ctx.routine.slug:
             return {"kind": "report", "target": target, "self_target": True}
