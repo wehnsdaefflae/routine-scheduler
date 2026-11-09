@@ -15,6 +15,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.0] — 2026-11-09
+
+### Added
+- **A block only you can clear reaches the rail**, not one Stats panel inside a 7-day window.
+  The blocked-work fold answers "what did the fleet owe and not deliver" and had exactly ONE
+  reader, so a block that waits for a PERSON waited on a page nobody has reason to open:
+  `backup_stale` ran nineteen unnoticed nights, and a pause that ate eight due fires was found
+  by an audit reading the ABSENCE of run directories. The second question it never answered is
+  **who can clear it** — `readmodels/operator_blocks.py` holds that judgement and nothing else.
+  Five of the twenty events are blocks nothing inside the system will clear: a stale backup (a
+  host unit), dropped fires under a pause (never made up — D237), a one-shot consumed unfired,
+  a lane naming a member that is not a routine. Everything else clears itself and is
+  deliberately left off, including the stream's three loudest events — 202 `wrong_turn_detected`
+  in three weeks here — because a badge that is never dark is the same as no badge; each
+  exclusion's reason is in the module's docstring. `/api/health/blocked` marks each row
+  (`operator`, `waiting_on_you`) and serves `operator_total`, so the console renders a
+  judgement it was not compiled with and adding an event lights the badge with no JS change.
+  The count is DISTINCT ROWS, one per thing to go and fix. (F796)
+- **The daemon runs the post-deploy checklist itself, a short while after boot** — "no human
+  step ever again" (operator, 2026-11-09). `rsched postdeploy` shipped in 0.445.0 and nothing
+  ever called it: it is a command a person types, while the path this instance takes several
+  times a week is the restart SENTINEL, which exits for the supervisor and verifies nothing.
+  Measured: the daemon came up on 0.520.0 while the record's newest row was two days old, and
+  that row's own backup-freshness check was a FAIL nothing re-checked for sixty hours. The new
+  `daemon/postdeploy_watch.py` waits for our own `/api/status` to answer, runs the command's
+  OWN checks (never a second implementation — two checklists disagree) and appends the same row
+  shape with `trigger: "daemon boot"`, so automatic and typed rows stay comparable. A FAIL now
+  reaches a surface: the new `postdeploy_failed` health event is on the blocked-work fold. What
+  this shape cannot catch is "the wrong host answered" — the right host always answers when it
+  is the one asking — and the module says so, so no reader over-reads the automatic row. (F854)
+- **A per-run context breakdown**: what each turn's prompt is MADE OF — the composer's own
+  sections, plus `history` and `observations` as they grow — recorded beside
+  `window.note_prompt_size` and shown as a stacked bar on the run view
+  (`components/promptsegbar.js`). Diagnostic only and byte-identical to what is sent: the
+  composed prompt is a caching contract, and a cold window of this size has cost over $100
+  here. Measured in the engine's own `estimate_input_tokens` units, so a segment and the window
+  it is measured against read in the same currency. (D270)
+
+### Changed
+- **The Decisions page splits by CLASS**, not by whose process happens to be parked. Increment
+  (a) put a class on every record in 0.465.0 — `blocking` means the run could not do the work it
+  was fired to do without the answer, `closing` that it finished and the answer shapes the next
+  run — but the page still grouped by `mode`, and over the 282 records this instance has filed
+  `mode: "blocking"` was used **0 times**. So the band promising "a run is waiting on you" was
+  structurally empty, while a run that declared `blocks_work: true` and then ended was demoted
+  to Proposals, the band whose own caption says nobody is waiting on it. The bands, the filter
+  chips, the rank and the captions now read one derivation (`questions-taxonomy.classOf`): a
+  parked run is blocking whatever the key says, else the recorded class, else the subject
+  default — a typed access request is blocking, anything else closing. (D212 increment (c);
+  the revisability half of (b) is still owed.)
+- **A ⚑ priority flag on handed-over work now reaches the builder**, not the ledger keeper.
+  Every flagged `F`/`D` resolved to `self-audit` because every such row lives in its
+  `report.json` — so a star on a decision BEING BUILT landed in the digest of the routine that
+  may not build it, for exactly the items a flag is most likely to be set on. Ownership is now
+  read from the row (`priorities.flagged_item_owner`): the builder while the hand-over marker is
+  in `detail` and the row is `in_progress`, the ledger keeper otherwise, so a flag on finished
+  work still reaches someone who can clear it. One module owns the marker constant, so the
+  recipes' wording and the resolver cannot drift apart silently. (D240)
+
 ## [0.524.0] — 2026-11-09
 
 ### Added
