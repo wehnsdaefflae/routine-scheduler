@@ -141,6 +141,7 @@ def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None,
             "audio": mc.audio, "video": mc.video,
             "context_tokens": mc.context_tokens,
             "max_tokens": mc.max_tokens, "fallbacks": list(mc.fallbacks),
+            "note": mc.note,            # D279(a): when to use this model, for a run choosing one
             "multimodal_effective": mc.multimodal if mc.multimodal is not None
             else (kind in NATIVE_MM_KINDS),
             "context_effective": (mc.context_tokens or limits.window_tokens(found)
@@ -288,6 +289,10 @@ class ModelBody(BaseModel):
     temperature: float | None = None  # None = inherit the endpoint's temperature
     max_tokens: int | None = None     # None = inherit the endpoint's max_tokens
     fallbacks: list[str] = []         # ordered failover chain (catalog model names)
+    # D279(a) — WHEN TO USE THIS MODEL, one line, returned by `list_models` so a run choosing
+    # a `model` reads why rather than only what exists. Advice, never a routing rule: nothing
+    # in the engine reads it to decide anything, and blank is dropped like every unset field.
+    note: str = ""
 
 
 @router.post("/settings/models")

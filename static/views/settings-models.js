@@ -63,6 +63,9 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, tool
       temperature: f.tempIn.value.trim() ? Number(f.tempIn.value) : null,
       max_tokens: f.mtIn.value.trim() ? Number(f.mtIn.value) : null,
       fallbacks: f.fbIn.value(),
+      // D279(a): WHEN TO USE THIS MODEL, in your words, returned by `list_models` so a run
+      // choosing a `model` for spawn/subtask/llm reads why rather than only what exists.
+      note: f.noteIn.value.trim(),
     };
   }
 
@@ -149,7 +152,14 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, tool
     const videoIn = el("input", { type: "checkbox",
       title: "this model takes VIDEO input natively (needs an endpoint whose wire carries it)" });
     videoIn.checked = !!m.video;
-    return { epSel, modelIn, mmSel, audioIn, videoIn, ctxIn, tempIn, mtIn, fbIn };
+    // D279(a): WHEN TO USE THIS MODEL, one line, in YOUR words — returned by `list_models`
+    // beside the name, so a run choosing a `model` for spawn/subtask/llm or a `role_swap`
+    // position reads why rather than only what exists. Advice, never a routing rule: nothing
+    // in the engine reads it to decide anything, and blank prints nothing at all.
+    const noteIn = el("input", { type: "text", value: m.note || "",
+      title: "advice for a run choosing a model — returned by list_models, read by nothing else",
+      placeholder: "when to use this model (optional) — e.g. cheap and blunt; the only one here with vision" });
+    return { epSel, modelIn, mmSel, audioIn, videoIn, ctxIn, tempIn, mtIn, fbIn, noteIn };
   }
 
   function modelFieldRows(f) {
@@ -166,7 +176,11 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, tool
           temperatureHint())),
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "max_tokens (output)"), f.mtIn),
-        el("label", { class: "field" }, el("span", {}, "fallbacks (failover order)"), f.fbIn.node)));
+        el("label", { class: "field" }, el("span", {}, "fallbacks (failover order)"), f.fbIn.node)),
+      // Its own row: it holds a sentence, and sharing a row would squeeze it to a few words.
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "when to use (for a run choosing a model)"),
+          f.noteIn)));
   }
 
   // Ask the endpoint for its model ids the first time the form is opened, not when the page
