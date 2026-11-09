@@ -18,7 +18,7 @@
     "src/rsched/engine/loop.py": 435,
     "src/rsched/engine/remind.py": 605,
     "src/rsched/engine/run_context.py": 587,
-    "src/rsched/engine/window.py": 402,
+    "src/rsched/engine/window.py": 395,
     "src/rsched/grantpolicy.py": 385,
     "src/rsched/grants.py": 376,
     "src/rsched/lanes.py": 388,

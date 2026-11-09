@@ -520,17 +520,6 @@ too, not only the transcript. **First increment:** the conversation artifact sna
 
 ---
 
-## A per-run context breakdown (decided 2026-10-08, in conversation)
-
-Carries item 6 of "adopt the list".
-
-**Shape.** Record the prompt's size by SEGMENT at each turn (system/recipe, rules, digest,
-capabilities, history, observations) beside `window.note_prompt_size`, written to status.json and
-shown as one stacked bar on the run view and in Stats — diagnostic only, never in the cached
-prompt. **First increment:** the measurement and the run-view bar.
-
----
-
 ## Claude quota: the scoped weekly limits in `limits[]` (decided 2026-11-08, in conversation)
 
 From a review of getpaseo/paseo (its `plugins/claude-usage-source/server/usage.ts`).
