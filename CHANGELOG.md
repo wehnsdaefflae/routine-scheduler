@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.523.1] — 2026-11-09
+
+### Fixed
+- **The directory picker overwrote the path you were typing.** `dirpicker.js` focuses its path
+  field on open — typing a path is the way in — but the opening listing is still in flight while
+  those first keystrokes happen, and its write-back replaced them with the daemon's home
+  directory. The next "go" then read the field it had just clobbered and browsed `/home/mark`
+  instead of the folder asked for. A listing now fills the field only when the field still holds
+  what it held when that listing began; `cur` and the list update as before, so "select this
+  folder", a folder row, Enter and ".." are unchanged.
+  The existing newest-listing-wins guard could not see this case: the opening listing is not
+  superseded, it is simply late, so it was never discarded. (F853, raised from
+  `scheduler-builder`'s R3262.)
+- **The flakiest node in the browser suite was this defect, not the harness.**
+  `test_the_folder_picker_keeps_its_height_whatever_the_folder_holds` was re-run 20 times across
+  eight release gates — the most re-run node in the suite — and on 2026-11-07 it defeated both
+  the parallel reruns and the gate's serial re-run, costing a release cycle. Its aria snapshot
+  showed the field holding `/home/mark`: neither what it typed nor a prefix of it, which is the
+  clobber rather than slowness, and is why more reruns could not help. Three new browser tests
+  pin it deterministically by HOLDING the opening `/api/fs/list` response with `page.route` and
+  releasing it at the moment that makes the defect certain, instead of waiting for a race:
+  the field survives, "go" browses what was typed, and the picker still fills the field when it
+  navigates itself.
+
 ## [0.523.0] — 2026-11-09
 
 ### Added — how long a VIEW takes to settle after a navigation, the cost this console mostly is (F861)

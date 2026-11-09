@@ -35,6 +35,14 @@ export function pickDirectory({ title = "Select a directory", start = "" } = {})
     let latest = 0;
     async function load(path) {
       const mine = ++latest;
+      // F853: and only a listing the reader has not typed over may FILL THE FIELD. The field
+      // is focused on open, so the first keystrokes land while the opening listing is still in
+      // flight — and its write-back used to replace them with the daemon's home directory,
+      // after which "go" browsed the folder the reader never asked for. The sequence guard
+      // above cannot see this: that listing is not superseded, it is simply late. So the
+      // field is written only when it still holds what it held when this load began, which
+      // leaves self-navigation (a folder row, Enter, "..") filling it exactly as before.
+      const unTyped = pathInput.value;
       listBox.replaceChildren(el("div", { class: "muted small", style: "padding:8px" }, "loading…"));
       note.textContent = "";
       let data;
@@ -46,7 +54,8 @@ export function pickDirectory({ title = "Select a directory", start = "" } = {})
       }
       if (mine !== latest) return;
       cur = data.path;
-      pathInput.value = data.path;
+      // the reader's own keystrokes win over a listing that was already in flight
+      if (pathInput.value === unTyped) pathInput.value = data.path;
       const rows = [];
       if (data.parent) rows.push(row("⤴", "..", () => load(data.parent)));
       for (const e of data.entries) {
