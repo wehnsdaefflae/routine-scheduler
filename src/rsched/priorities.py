@@ -10,8 +10,16 @@ them before it plans.
 
 Ownership is resolved at read time, never stored: an `R<n>`'s owner is its `target` — for
 a row another report took over (`supersedes`), the target the carrier handed it to — and an
-untargeted triage row belongs to self-audit, which owns triage; every
-`F<n>`/`D<n>` lives in self-audit's report.json, so self-audit owns those. The store
+untargeted triage row belongs to self-audit, which owns triage. Every `F<n>`/`D<n>` lives in
+self-audit's report.json whoever owns it, so its owner is read from the ROW
+(`flagged_item_owner`, D240): the BUILDER for a row self-audit has handed over and that is
+still in progress, self-audit otherwise — an `addressed` row back with the ledger keeper, so
+a flag on finished work still reaches someone who can clear or answer it. Before that split
+every flagged `F`/`D` resolved to self-audit, which is the routine that may not build them:
+the operator's "work this first" reached the wrong routine for exactly the items it is most
+likely to be set on. `readmodels/items.py` carries the same ownership on its cards (its
+`owner` field, verbatim from the row self-audit wrote), so the Messages page and this digest
+section name the same routine. The store
 itself is one small JSON map under `.control/` — NOT report.json (self-audit rewrites
 that wholesale every run, which would silently clobber a user's flag) and NOT
 reports.jsonl (the append-only ledger records what runs SAID, not UI state).
@@ -35,6 +43,46 @@ ITEM_ID_RE = re.compile(r"^[FDR]\d+$")
 #: its triage. The ONE definition: readmodels/items.py (and the web routes reading through
 #: it) import it from here, because the read model and this resolver must agree.
 SELF_AUDIT_SLUG = "self-audit"
+
+#: The routine that BUILDS what the ledger keeper hands over — feature development, split off
+#: from self-audit's maintenance mandate (operator, 2026-10-01: no overlap between the two).
+BUILDER_SLUG = "scheduler-builder"
+
+#: The marker, owned HERE so the recipes' wording and this resolver cannot drift apart
+#: silently: the literal line self-audit's `write-report` stage writes into a row's `detail`
+#: when it hands that row to the builder (`Handed to scheduler-builder <date>: <what to
+#: build>`, status `in_progress`). It is the only hand-over signal both sides read — a row
+#: carrying `owner: scheduler-builder` and no such line reached the builder through nothing,
+#: which is how eighteen handed rows sat unbuilt until 2026-10-23. tests/test_priorities.py
+#: pins it against the real `detail` text of a live row.
+HANDED_TO_BUILDER = f"Handed to {BUILDER_SLUG}"
+
+#: The two routines a flagged `F<n>`/`D<n>` can belong to — both read self-audit's report.json,
+#: which is where every such row lives whoever owns it.
+FD_OWNERS = (SELF_AUDIT_SLUG, BUILDER_SLUG)
+
+
+def flagged_item_owner(row: dict) -> str:
+    """Which routine a flagged `F<n>`/`D<n>` belongs to, read from its ledger row.
+
+    The BUILDER when self-audit has handed the row over and the work is still in progress: the
+    marker line in `detail` AND `status: in_progress`. Both are required — the marker alone
+    sits in the prose of rows self-audit has only written up (and in the prose of rows the
+    builder already shipped, which a later run appends to behind the marker), and
+    `in_progress` alone is self-audit's own ongoing work.
+
+    The KEEPER otherwise, including a row the report no longer holds (nothing to read a
+    hand-over from) and an `addressed` one: a flag on finished work still has to reach someone
+    who can clear or answer it, and that is the routine that owns the ledger.
+
+    Never stored, always read from the row — the module's rule for every id (the store holds
+    flags, not ownership), so a hand-over or a completion moves the flag with no migration.
+    """
+    detail = str(row.get("detail") or "")
+    status = str(row.get("status") or "").strip().lower()
+    if status == "in_progress" and HANDED_TO_BUILDER in detail:
+        return BUILDER_SLUG
+    return SELF_AUDIT_SLUG
 
 
 def priorities_path(routines_home: Path) -> Path:
@@ -76,8 +124,11 @@ def owned_priority_items(routines_home: Path, routine_slug: str) -> list[dict]:
 
     A flagged `R<n>` that no longer exists in the ledger resolves to no owner and is
     skipped (the flag stays until the user clears it — silently dropping it would hide
-    the user's signal). Titles are best-effort: an id is always enough to look the item
-    up on the Messages page.
+    the user's signal). An `F<n>`/`D<n>` is read from self-audit's report.json — which both
+    `FD_OWNERS` consult, since that is where every such row lives — and routed to exactly
+    one of them by `flagged_item_owner`; a row the report no longer holds still reaches the
+    ledger keeper, for the same reason. Titles are best-effort: an id is always enough to
+    look the item up on the Messages page.
     """
     flagged = read_priorities(routines_home)
     if not flagged:
@@ -87,13 +138,13 @@ def owned_priority_items(routines_home: Path, routine_slug: str) -> list[dict]:
     if any(item_id.startswith("R") for item_id in ordered):
         report_rows = {str(r.get("id") or "").upper(): r
                        for r in read_reports(reports_path(routines_home))}
-    titles: dict[str, str] = {}
-    if routine_slug == SELF_AUDIT_SLUG and any(item_id[0] in "FD" for item_id in ordered):
+    fd_rows: dict[str, dict] = {}
+    if routine_slug in FD_OWNERS and any(item_id[0] in "FD" for item_id in ordered):
         report = read_json(Path(routines_home) / SELF_AUDIT_SLUG / "audit" / "report.json")
         if isinstance(report, dict):
-            titles = {str(e.get("id") or "").upper(): str(e.get("title") or "")
-                      for field in ("findings", "decisions")
-                      for e in (report.get(field) or []) if isinstance(e, dict)}
+            fd_rows = {str(e.get("id") or "").upper(): e
+                       for field in ("findings", "decisions")
+                       for e in (report.get(field) or []) if isinstance(e, dict)}
     out: list[dict] = []
     for item_id in ordered:
         if item_id.startswith("R"):
@@ -108,8 +159,10 @@ def owned_priority_items(routines_home: Path, routine_slug: str) -> list[dict]:
             owner = str(row.get("target") or carrier_to or "") or SELF_AUDIT_SLUG
             if owner == routine_slug:
                 out.append({"id": item_id, "title": str(row.get("title") or "")})
-        elif routine_slug == SELF_AUDIT_SLUG:
-            out.append({"id": item_id, "title": titles.get(item_id, "")})
+        elif routine_slug in FD_OWNERS:
+            row = fd_rows.get(item_id) or {}
+            if flagged_item_owner(row) == routine_slug:
+                out.append({"id": item_id, "title": str(row.get("title") or "")})
     return out
 
 
