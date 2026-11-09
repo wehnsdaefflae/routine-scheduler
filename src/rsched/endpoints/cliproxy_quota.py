@@ -57,10 +57,15 @@ def read_quota(cfg: EndpointConfig, *, timeout: int = 15) -> dict:
             raw = envelope.get("body")
             if isinstance(raw, str):
                 raw = json.loads(raw)
-            windows = normalize(raw if isinstance(raw, dict) else {})
-            if not windows:
+            # D277: `scoped` carries the weekly per-model/per-surface limits, which the API is
+            # moving out of top-level keys into `limits[]`; `unknown` names a limit we could
+            # not read, so "we cannot see it" never renders as "it is not there".
+            quota = normalize(raw if isinstance(raw, dict) else {})
+            if not quota["windows"] and not quota["scoped"]:
                 raise EndpointError("Claude returned no recognisable quota windows.")
-            return {**base, "ok": True, "windows": windows, "auth_index": auth_index}
+            return {**base, "ok": True, "windows": quota["windows"],
+                    "scoped": quota["scoped"], "unknown": quota["unknown"],
+                    "auth_index": auth_index}
     except EndpointError as exc:
         return {**base, "ok": False, "error": str(exc)}
     except (httpx.HTTPError, ValueError, TypeError, OverflowError):

@@ -520,31 +520,19 @@ too, not only the transcript. **First increment:** the conversation artifact sna
 
 ---
 
-## Claude quota: the scoped weekly limits in `limits[]` (decided 2026-11-08, in conversation)
+## Claude quota: a 429 from the quota read honours `Retry-After` (decided 2026-11-08, in conversation)
 
-From a review of getpaseo/paseo (its `plugins/claude-usage-source/server/usage.ts`).
+The REMAINDER of "Claude quota: the scoped weekly limits in `limits[]`", whose first increment
+shipped in 0.526.0: `normalize` now reconciles both payload shapes into one representation keyed
+by scope (`endpoints/subscription_quota.py`), validates every `limits[]` entry on its own, and
+reports a limit it could not read as unknown rather than dropping it; `quota.js` renders scoped
+rows from their own display names and the header chip reads the tightest cap across every row.
 
-**Problem.** `endpoints/subscription_quota.WINDOWS` reads four fixed top-level keys of
-`/api/oauth/usage` (`five_hour`, `seven_day`, `seven_day_sonnet`, `seven_day_opus`), and
-`static/components/quota.js` labels exactly those four. The API is moving model- and
-surface-scoped weekly limits into a `limits[]` array — entries `{kind: "weekly_scoped", percent,
-resets_at, scope: {model|surface: {id, display_name}}}` — while still sending some as legacy
-`seven_day_<model>` keys (Paseo also sees `seven_day_omelette`). Once a scoped limit exists only
-in `limits[]`, our card's weekly Opus/Sonnet line disappears with no error: a limit we cannot
-read reads as a limit that is not there, against the one-authoritative-source rule.
-
-**Shape.** `normalize` keeps the two unscoped windows and adds the scoped weekly limits from
-BOTH shapes, reconciled once into one representation (`{dimension: model|surface, id, name,
-used_pct, resets_at}`) keyed by scope so a limit sent both ways is one row. Each `limits[]` entry
-is validated on its own, so a malformed or newly shaped entry costs that entry, never the
-windows already parsed; an entry of a `kind` we do not know is reported as an unknown limit
-(named, no figure), never dropped. `quota.js` renders the rows from their own names instead of
-a fixed label map. A 429 from the quota read honours `Retry-After` per credential and the card
-says when it will read again, rather than retrying on the next poll.
-
-**First increment.** `normalize` over both shapes with tests built from both payload shapes
-(legacy-only, `limits[]`-only, both for the same model, a malformed entry, an unknown kind), and
-the card rendering scoped rows by name.
+**Shape, still owed.** A 429 from the quota read honours `Retry-After` PER CREDENTIAL and the
+card says when it will read again, rather than retrying on the next poll. Today
+`cliproxy_quota.read_quota` turns any non-200 into one soft error string and the console simply
+re-asks — so a rate-limited account is hammered at the console's own cadence and the operator is
+told nothing about when a figure will exist again.
 
 ---
 
