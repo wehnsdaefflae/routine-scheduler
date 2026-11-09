@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.1] — 2026-11-09
+
+### Fixed
+- **An answered decision says who reads it — and one nobody will read waits on you again.**
+  Two conversation answers (2026-09-21) sat unread for seven weeks, filed under Settled as
+  "answered · queued" exactly like an answer a run reads that night. Both were filed during the
+  conversation's LAST turn: the answer route resumes only a finished conversation (F39), so it
+  left them for a next turn that never came. The post-finish sweep now re-opens a conversation
+  for a stranded answer as it does for a stranded message (`daemon/runner_state.stranded_input`;
+  a routine's answer still waits for its next fire, by design). Every answer in flight carries
+  `pickup` on `/api/questions` (`web/decision_pickup.py`): `live`, `scheduled` + `at`,
+  `trigger`, or `never` + `why`, the last stated only when known. The Decisions page shows a
+  chip saying which, lists `never` rows in a new **Undelivered** band that waits on you, the
+  header badge counts them, and each offers **deliver now** (one run reads it) or **settle
+  without a run** (archived like a consumption, starting nothing) —
+  `POST /api/questions/{qid}/deliver|settle`, both refusing a row that has a reader.
+- **A held backup lock fails the nightly instead of passing it, and no test reaches the live
+  backups** (`e1c9ec9a`, shipped ahead of this version). The 2026-11-09 01:09 snapshot was
+  skipped with exit 0 because a release gate's backup tests held `/tmp/rsched-backup.lock` —
+  the engine container shares the host's `/tmp`. `BACKUP_LOCK` moves the lock (the tests use
+  their own); a contended run waits `LOCK_WAIT_S` (1800 s) and exits 75, so `OnFailure` pushes.
+  The same tests mirrored fake homes into the LIVE off-box NAS share whenever they named no
+  `MIRROR_ROOT` (since 2026-11-05); the helper now defaults to local-only and refuses `/mnt/`.
+
 ## [0.525.0] — 2026-11-09
 
 ### Added

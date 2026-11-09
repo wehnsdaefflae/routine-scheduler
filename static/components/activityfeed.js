@@ -24,6 +24,7 @@ import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { chip, el, emptyState, fmtDur, fmtNum, skeleton, storage, toDate, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
+import { undelivered } from "/static/views/questions-taxonomy.js";
 
 const WINDOWS = { "24h": 86400, "7d": 604800, "30d": 2592000, all: Infinity };
 const WINDOW_KEY = "rsched_activity_window";
@@ -116,7 +117,7 @@ export function activityFeed({ isOpen = () => true } = {}) {
   // "Open" is what the header badge counts — unanswered and not snoozed. The tile counted
   // snoozed decisions too, so a snooze the badge honoured still read as waiting here.
   function onQuestions({ items }) {
-    openDecisions = items.filter((q) => !q.answered && !q.snoozed).length;
+    openDecisions = items.filter((q) => (!q.answered || undelivered(q)) && !q.snoozed).length;
     if (loaded) renderStats();
   }
 

@@ -96,8 +96,15 @@ export const proofState = (q) => {
 export const unproven = (q) => Boolean(q.answered)
   && ["open", "in_progress", "negative"].includes(proofState(q));
 
+/** Answered, and NO run will ever read the answer (`web/decision_pickup`, 2026-11-09): its
+ *  conversation finished during the turn it was filed in, or its routine is off or has no
+ *  clock. It waits on the operator again — deliver it to a run, or settle it without one. */
+export const undelivered = (q) => Boolean(q.answered) && !q.settled
+  && q.pickup?.state === "never";
+
 export const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["closing", "Closing"],
-                        ["meta", "Meta"], ["proposal", "Proposals"], ["unproven", "Unproven"],
+                        ["meta", "Meta"], ["proposal", "Proposals"], ["undelivered", "Undelivered"],
+                        ["unproven", "Unproven"],
                         ["snoozed", "Snoozed"]];
 export const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"],
                       ["routine", "routine"]];
@@ -106,13 +113,13 @@ export const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest",
  *  instead of swelling Closing's count with items nothing is waiting for. The two question
  *  buckets are the CLASS (D212 (c)); `proposal` stays what R2425 made it, a CLOSING ask no
  *  consumer is waiting on at all. */
-export const kindOf = (q) => (unproven(q) ? "unproven"
+export const kindOf = (q) => (undelivered(q) ? "undelivered" : unproven(q) ? "unproven"
   : q.meta ? "meta"
   : !isBlocking(q) && !waitsOnYou(q) ? "proposal"
   : classOf(q));
 
 const PROPOSAL = 3;
-export const rank = (q) => (unproven(q) ? 4
+export const rank = (q) => (undelivered(q) ? 1 : unproven(q) ? 4
   : q.answered ? 5
   : isBlocking(q) ? 0
   : q.meta ? 2
@@ -130,6 +137,9 @@ export const GROUPS = [
   ["Closing", "the run finished without it — your answer shapes the next one",
    (q) => !q.answered && !q.meta && !isBlocking(q) && waitsOnYou(q), true],
   ["Meta", "system-level decisions", (q) => !q.answered && q.meta, true],
+  // ANSWERED, but nothing will read the answer: it is the operator's again, so it WAITS.
+  ["Undelivered", "you answered, but no run will ever read it — deliver it or settle it",
+   undelivered, true],
   // Below everything that waits, above what is already answered: nobody is waiting, so it is
   // not urgent — but it is still OPEN, so it is not settled either. `waits: false` keeps the
   // console's one colour for a person being waited on off this count.
@@ -140,9 +150,10 @@ export const GROUPS = [
   // constraint is that a row whose proof is unproven is never re-presented as an unanswered
   // one. `waits: false` keeps the console's "a person is waited on" colour off a count of
   // decisions he has already made.
-  ["Unproven", "answered, and nothing yet shows the work landed", unproven, false],
+  ["Unproven", "answered, and nothing yet shows the work landed",
+   (q) => unproven(q) && !undelivered(q), false],
   ["Settled", "what you answered, and what became of it",
-   (q) => q.answered && !unproven(q), false],
+   (q) => q.answered && !unproven(q) && !undelivered(q), false],
 ];
 
 export const EXPIRING_MS = 30 * 60 * 1000;   // a blocking ask this close to its timeout is LOUD

@@ -11,7 +11,8 @@ So the route bounds what it sends, three ways, and memoizes nothing of its own (
 cuts is already memoized and single-flighted, `readmodels/memo`):
 
 - OPEN rows, and answers still in flight (`answered` but not `settled` — the run has not taken
-  them yet), are sent IN FULL, always. Everything that counts what waits reads exactly those.
+  them yet, and each carries its `pickup`: who reads it, when), are sent IN FULL, always.
+  Everything that counts what waits reads exactly those.
 - SETTLED rows (a run has consumed the answer) are a WINDOW: the `settled` newest across the
   whole instance, newest first by when a run took them, and NONE unless a caller asks.
   `settled_total` says how many exist, so the page that shows them says "newest k of N" and
@@ -32,6 +33,8 @@ from datetime import UTC, datetime
 
 from .. import patchreceipt
 from ..readmodels import stamps
+from .decision_pickup import annotate
+from .decisions_read import open_decisions
 
 #: The most settled rows one read may ask for. The archive is capped per dir already
 #: (`decisions_read.SETTLED_CAP`); this bounds one request against a fleet that keeps growing.
@@ -44,7 +47,7 @@ SETTLED_FIELDS = frozenset({
     "qid", "routine", "conversation", "background", "owner", "meta", "mode", "type",
     "report", "report_target", "question", "asked", "run_id", "run_state",
     "answered", "answer", "answer_source", "settled", "ran_now", "consumed",
-    "first_consumed", "revised", "decision", "reason",
+    "first_consumed", "revised", "decision", "reason", "settled_by",
     "config_patch", "config_target",
     patchreceipt.APPLIED, patchreceipt.TARGET, patchreceipt.NOTE,
 })
@@ -80,3 +83,10 @@ def window(items: list[dict], *, settled: int = 0, routine: str = "") -> dict:
             f"items — ask with ?settled=<n> (newest first, at most {SETTLED_MAX}) and "
             "?routine=<slug> for one routine's own")
     return page
+
+
+def open_window(state, *, settled: int = 0, routine: str = "") -> dict:
+    """The route's whole read: the catalog, every in-flight answer's READER stamped on it
+    (`decision_pickup` — an answer nothing will read is the operator's again), the window.
+    """
+    return window(annotate(state, open_decisions(state.server)), settled=settled, routine=routine)

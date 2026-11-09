@@ -19,8 +19,8 @@
 // that runs at CLICK time rather than through a node captured at build time.
 
 import { api } from "/static/api.js";
-import { chip, el, toast, toastError } from "/static/util.js";
-import { proofState } from "/static/views/questions-taxonomy.js";
+import { act, chip, el, toast, toastError } from "/static/util.js";
+import { proofState, undelivered } from "/static/views/questions-taxonomy.js";
 
 const SNOOZES = [["60", "1 hour"], ["240", "4 hours"], ["1440", "1 day"], ["10080", "1 week"]];
 //: The one decision VALUE a refusal carries, on the API row and in the answer file alike
@@ -190,6 +190,37 @@ export function proofNote(q) {
  *  thing this page shouts about a decision already made). */
 export function answeredChips(q) {
   const via = q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : "";
-  const fate = q.settled ? "acted on" : q.ran_now ? "run started" : "queued";
-  return [declinedChip(q) || chip(`answered${via} · ${fate}`, "ok"), proofChip(q)];
+  const fate = q.settled_by === "operator" ? "settled unread" : q.settled ? "acted on"
+    : q.ran_now ? "run started" : "queued";
+  return [declinedChip(q) || chip(`answered${via} · ${fate}`, "ok"), proofChip(q),
+          pickupChip(q), ...deliverControls(q)];
+}
+
+/** WHO reads the answer and when (`web/decision_pickup`) — or that nobody will, loudly. */
+export function pickupChip(q) {
+  const p = !q.settled && q.pickup;
+  if (!p) return null;
+  if (p.state === "never") return chip(`no run will read this — ${p.why}`, "failed");
+  if (p.state === "live") return chip("the live run reads it at its next turn", "waiting");
+  if (p.state === "trigger") return chip("read when one of its triggers fires", "waiting");
+  const at = new Date(p.at);
+  return chip(`read by its next run · ${at.toLocaleString([], { weekday: "short",
+    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`, "waiting");
+}
+
+/** An UNDELIVERED answer's two exits: one run reads it now, or it is archived unread. */
+function deliverControls(q) {
+  if (!undelivered(q)) return [];
+  const button = (verb, label, title, done, cls = "btn small") => {
+    const btn = el("button", { class: cls, title }, label);
+    btn.onclick = () => act(btn, () => api(`/api/questions/${encodeURIComponent(q.qid)}/${verb}`,
+      { method: "POST", body: {} }), done);
+    return btn;
+  };
+  return [
+    button("deliver", "deliver now", "start one run that reads your answer "
+      + "(a finished conversation resumes)", "delivered — a run reads it now"),
+    button("settle", "settle without a run", "archive it as answered without any run acting "
+      + "on it", "settled — no run read it", "btn small ghost"),
+  ];
 }

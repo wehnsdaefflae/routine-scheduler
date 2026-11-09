@@ -25,6 +25,7 @@
 
 import { api } from "/static/api.js";
 import { subscribeQuestions } from "/static/questions-store.js";
+import { undelivered } from "/static/views/questions-taxonomy.js";
 
 // How often the blocked count is re-read. These events are filed by daily watchers and by the
 // scheduler's own tick, so a minute is far finer than the thing it measures; the fold is
@@ -44,8 +45,9 @@ function paint(id, count, title) {
 // everything waiting on a person: the open questions and the standing proposals the Decisions
 // page shows in its own band.
 function paintDecisions({ items, proposals = [] }) {
-  // answered-but-unconsumed items are settled; snoozed ones wait silently by design
-  const open = items.filter((q) => !q.answered && !q.snoozed).length + proposals.length;
+  // an answer a run will read is settled, one NO run will read waits again; snoozes stay silent
+  const open = items.filter((q) => (!q.answered || undelivered(q)) && !q.snoozed).length
+    + proposals.length;
   paint("q-badge", open, open ? `${open} waiting on you` : "");
 }
 

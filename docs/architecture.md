@@ -1837,7 +1837,17 @@ every copy it left (`migrate_converse_goals` carries this release's `converse` r
   the parameters (`?routine=<slug>` narrows to one routine's own) for a routine that reads the API
   with no console in front of it. The Decisions page is the one console reader that asks
   (`questions-store.js` `wantSettled`): the newest 25, "showing the newest k of N" and a button for
-  more, released when the page unmounts. `registry.info(server, home, slug)` answers for ONE directory off the same
+  more, released when the page unmounts. Every answer still in flight also carries its READER
+  (`web/decision_pickup.py`, 2026-11-09): `pickup` is `live` (a run drains it at its next turn),
+  `scheduled` + `at` (the routine's own cron, its lane's, or an armed one-shot), `trigger`, or
+  `never` + `why` — stated only when KNOWN, so a clock the scheduler has not computed yet leaves
+  the row without one. A `never` answer is the operator's again: the page's UNDELIVERED band,
+  counted by the header badge, with `POST /api/questions/{qid}/deliver` (one run reads it: a
+  finished conversation resumes, a routine gets one manual fire) and `…/settle` (archived as a
+  run's consumption would, `settled_by: operator`, no run — `engine/answer_settle.py`), both
+  refusing any row that has a reader (`web/api_question_deliver.py`). Two conversation answers
+  sat seven weeks as "answered · queued" before this.
+  `registry.info(server, home, slug)` answers for ONE directory off the same
   four memos — exactly what `scan(server, home).get(slug)` answers, without walking the home to
   answer it. A row for an ANSWERED question whose record carried a `config_patch` also states
   whether the patch was applied (`config_patch_applied` — `rsched/patchreceipt.py` owns the field

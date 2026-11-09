@@ -132,7 +132,7 @@ async def test_cancel_after_admission_never_spawns(setup_gate, monkeypatch):
 async def test_skipped_reap_never_stranded_resumes(setup_gate, monkeypatch):
     cfg, _, runner = setup_gate
     script(cfg, skip_body())
-    monkeypatch.setattr(runner_reap, "_stranded_user_messages", lambda *_: True)
+    monkeypatch.setattr(runner_reap, "stranded_input", lambda *_: True)
     monkeypatch.setattr(reap_resume, "resume_for_stranded",
                         lambda *_: pytest.fail("skip resumed"))
     _, _, st = await finish(runner, cfg)

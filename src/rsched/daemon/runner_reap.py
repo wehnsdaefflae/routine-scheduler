@@ -33,7 +33,7 @@ from .runner_state import (
     _last_vm_hwm_kb,
     _notable_stderr,
     _pid_alive,
-    _stranded_user_messages,
+    stranded_input,
 )
 
 log = logging.getLogger("rsched.daemon.runner_reap")
@@ -91,8 +91,8 @@ def reap(runner, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
     # wake: each has its own contract (reports wait for the schedule or the routine's
     # own report trigger).
     if (info.state == "finished" and info.outcome != "skipped"
-            and _stranded_user_messages(cfg.dir)):
-        log.info("post-finish inbox sweep: user message stranded — resuming %s", run.slug)
+            and stranded_input(cfg.dir, run.home)):
+        log.info("post-finish inbox sweep: user input stranded — resuming %s", run.slug)
         reap_resume.resume_for_stranded(runner, cfg)
     # D78-A: a web routine edit made WHILE this run was active was held in the durable
     # pending-edit spool (the git index was contended). The reap is the one seam that

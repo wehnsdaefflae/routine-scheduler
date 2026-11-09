@@ -46,6 +46,21 @@ def _stranded_user_messages(routine_dir: Path) -> bool:
     from ..engine import inbox
     return inbox.has_pending_messages(routine_dir, vias=inbox.USER_MESSAGE_VIAS)
 
+
+def stranded_input(routine_dir: Path, home: str) -> bool:
+    """What the post-finish sweep re-opens a finished run for: a stranded USER message, or —
+    in a CONVERSATION only — an ANSWER to one of its questions filed while its last turn was
+    being taken. The answer route resumes only a FINISHED conversation; one answered during
+    the last turn was left for a next turn that never came (two sat seven weeks, 2026-09-21).
+    A routine's answer waits for its next fire by design, so routines are never woken here.
+    """
+    if _stranded_user_messages(routine_dir):
+        return True
+    pending = routine_dir / "questions" / "pending"
+    return home == "conversations" and any(
+        (pending / f"{a.name.removeprefix('answer-')}").is_file()
+        for a in (routine_dir / "inbox").glob("answer-*.json"))
+
 #: How much of an engine's stderr the daemon keeps: the TAIL, because the tail is all anything
 #: reads (`_notable_stderr`, the synthetic finish's excerpt). `communicate()` held every byte a
 #: run wrote, in the daemon, for as long as the run lasted.

@@ -134,6 +134,14 @@ it?") works on every one of them, approvals and requests included: the agent see
 once, answers, and asks again, and its new question replaces the open one. Nothing is approved
 or granted by an ask-back.
 
+An answer to a FINISHED conversation's question resumes it, so the answer is read (F39). One
+filed while its LAST turn is still being taken used to be lost: the answer route saw a live
+run and left the answer for a next turn that never came (two sat seven weeks, 2026-09-21).
+The daemon's post-finish sweep now re-opens the conversation for it, exactly as it does for a
+stranded message (`daemon/runner_state.stranded_input`) — and an answer that still has no
+reader shows on the Decisions page as **Undelivered**, with *deliver now* and *settle without
+a run*.
+
 A proposed CONFIG change rides a decision the same way (`ask_user` with `config_patch`), and
 **approve & apply** lands it where the engine resolved it: on this conversation when the patch
 names no target, on a routine when it names one (`"routine": "<slug>"`, checked against the

@@ -23,8 +23,8 @@ from starlette.concurrency import run_in_threadpool
 from .. import answerfile, patchreceipt, registry
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json, read_yaml
-from .decisions_read import _audit_decisions, _record_dir, find_question, open_decisions
-from .decisions_window import SETTLED_MAX, window
+from .decisions_read import _audit_decisions, _record_dir, find_question
+from .decisions_window import SETTLED_MAX, open_window
 
 router = APIRouter(tags=["questions"])
 
@@ -33,7 +33,7 @@ router = APIRouter(tags=["questions"])
 def list_questions(request: Request, routine: str = "",
                    settled: Annotated[int, Query(ge=0, le=SETTLED_MAX)] = 0) -> dict:
     """Open decisions whole; the settled archive only as the `settled` newest (F810)."""
-    return window(open_decisions(request.app.state.server), settled=settled, routine=routine)
+    return open_window(request.app.state, settled=settled, routine=routine)
 
 
 class Answer(BaseModel):

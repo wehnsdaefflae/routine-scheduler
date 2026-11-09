@@ -266,6 +266,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_playbooks,
         api_push,
         api_question_decline,
+        api_question_deliver,
         api_questions,
         api_recipe_revision,
         api_refusal_flag,
@@ -298,11 +299,10 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
                    # the deny tombstones, the grants it holds, and (part a) the shared-store
                    # exposure dial; only the routine page had any of the three
                    api_background, api_branches, api_browser, api_desktops, api_runs,
-                   api_run_control,
-                   api_refusal_flag,
+                   api_run_control, api_refusal_flag,
                    api_schedule, api_stats, api_changes, api_health, api_finishline,
                    api_credential_names,
-                   api_questions,
+                   api_questions, api_question_deliver,   # deliver/settle UNDELIVERED
                    api_patch_applied,   # /questions/{qid}/patch-applied — R2778's record fix
                    api_question_decline,   # /questions/{qid}/decline — R2197's first-class "no"
                    api_audit,
