@@ -1226,6 +1226,15 @@ and the capabilities digest's catalog listing):
   still own their stores and MIRROR their writes here (`engine/remind_write`,
   `engine/control.inject_user_message` through `engine/hookmirror`), best-effort — including
   the target's disposition of a foreign hook, which is a later row about the same id.
+  The FIFTH source is the `schedule` trigger's first user, which is what closed the campaign's
+  last gap: a ONE-SHOT is a `schedule`-triggered hook (`rsched/hooks/scheduleproj`, D152 gap 5),
+  armed from the routine page or by a routine's own `schedule_run` action, with its ending —
+  `fired` · `cancelled` · `skipped` — as a later row about the same id. The request spool
+  (`.control/schedule-once/`) stays the SOURCE here, unlike a report: the daemon fires from the
+  spool and consuming the request file IS the non-repeating guarantee, so the hook row is
+  best-effort and can never stop a one-shot being armed. What it adds is the answer to "what
+  will fire LATER", which no store could give across mechanisms — `scheduleproj.request_of_hook`
+  is the exact inverse, so the projection is testable rather than asserted.
   The FOURTH source is the one the store was built for: a RUN-TREE hook (`engine/runtree.py`,
   F695), which is the `report` action with `target: "parent"` or `"child:<label>"` and has no
   store of its own — delivered on the `hook` channel at the addressee's next turn boundary, with

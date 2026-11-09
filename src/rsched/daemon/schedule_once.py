@@ -34,6 +34,7 @@ from .. import registry, schedule_once, spool
 from ..config import ServerConfig
 from ..engine import inbox as inbox_mod
 from ..health_events import log_health_event
+from ..hooks import scheduleproj
 from ..ids import now_iso
 from .runner import Runner
 from .tickguard import ItemGuard
@@ -104,6 +105,10 @@ class OneShotManager:
                                     f"skipped, not made up: {why} (D237)",
                              reason="down" if fire_at < self.booted else "paused",
                              fire_at=str(rec.get("fire_at") or ""))
+            # D152 gap 5: the same fact on the hook stream, so a fold over `schedule`-triggered
+            # hooks shows what became of each one instead of only what is still armed.
+            scheduleproj.record_event(self.home, hook_id=str(rec.get("id") or ""),
+                                      event="skipped", detail=why)
 
     def _due_request(self, slug: str, paths: list[Path]) -> tuple[Path, dict] | None:
         """The earliest-due armed request, dropping corrupt files as it goes (an unreadable
@@ -182,6 +187,12 @@ class OneShotManager:
         state = schedule_once.read_state(self.home, slug)
         state.update(last_fired=now, fires=int(state.get("fires") or 0) + 1)
         schedule_once.write_state(self.home, slug, state)
+        # D152 gap 5: the fire as a later fact about the SAME hook id, carrying the run id —
+        # the one thing only this moment knows, and what makes "did this one-shot's run
+        # happen?" answerable from the stream alone.
+        scheduleproj.record_event(self.home, hook_id=str(rec.get("id") or ""), event="fired",
+                                  detail=f"fired {slug} as {rid}" if rid
+                                  else f"fire of {slug} was refused; the reason is in its inbox")
         if rid:
             log.info("schedule-once fired routine=%s run=%s req=%s", slug, rid, rec.get("id"))
         else:

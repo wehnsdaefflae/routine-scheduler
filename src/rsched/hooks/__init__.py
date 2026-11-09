@@ -50,8 +50,12 @@ from dataclasses import dataclass, field
 #: - `send`     — once, now: a message. A report, an injection, a hand-back.
 #: - `match`    — a pattern over something the run produced (see `TRIGGER_KINDS`).
 #: - `moment`   — a special turn of the run (see `TURN_MOMENTS`).
-#: - `schedule` — a time. Nothing uses this yet; the field costs nothing and naming it keeps
-#:                the next mechanism from being a fourth store.
+#: - `schedule` — a time: a ONE-SHOT, armed from the routine page or by a routine's own
+#:                `schedule_run` action (`hooks/scheduleproj.py`, D152 gap 5). Naming the field
+#:                at step 1 was meant to keep the next time-fired mechanism from becoming a
+#:                fourth store, and that is what it did: the spool is still the source the
+#:                daemon fires from, and the stream now answers what will fire LATER — the one
+#:                question none of the stores could answer across mechanisms.
 TRIGGERS = ("send", "match", "moment", "schedule")
 
 #: The special turns a `moment` trigger can name: `first` (the opening turn of a run),

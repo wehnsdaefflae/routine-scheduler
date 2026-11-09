@@ -15,6 +15,7 @@ import difflib
 from pathlib import Path
 
 from .. import recipients, registry, report_threads, reports, schedule_once
+from ..hooks import scheduleproj
 from . import runtree
 
 
@@ -96,6 +97,9 @@ def handle_schedule_run(loop, action: dict) -> dict:
     if action.get("cancel"):
         req_id = str(action.get("id")).strip() if action.get("id") else None
         removed = schedule_once.cancel(home, spool_slug, req_id)
+        if removed and req_id:
+            scheduleproj.record_event(home, hook_id=req_id, event="cancelled",
+                                      detail=f"cancelled by {ctx.run_id}")
         return {"kind": "schedule_run", "target": target, "cancelled": removed, "id": req_id}
     try:
         fire_at = schedule_once.parse_fire_at(str(action.get("fire_at") or ""))
@@ -104,6 +108,9 @@ def handle_schedule_run(loop, action: dict) -> dict:
     rec = schedule_once.arm(home, spool_slug, fire_at=fire_at,
                             reason=str(action.get("reason") or ""),
                             requested_by=ctx.run_id)
+    # D152 gap 5: also a `schedule`-triggered hook, so the stream can answer what will fire
+    # later. Best-effort — the spool is the source and arming must never fail on a diagnostic.
+    scheduleproj.record_armed(home, rec, spool_slug)
     return {"kind": "schedule_run", "target": target, "armed": rec["id"],
             "fire_at": rec["fire_at"]}
 

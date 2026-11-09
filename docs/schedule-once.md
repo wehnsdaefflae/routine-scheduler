@@ -42,6 +42,18 @@ gated engine action may write, and the daemon consumes.
 <routines_home>/.control/schedule-once/<slug>/state.json      # daemon fire ledger
 ```
 
+**Also on the hook stream, as a projection** (D152 gap 5, `rsched/hooks/scheduleproj.py`): an
+armed one-shot IS a `schedule`-triggered hook — the campaign's fourth trigger kind, declared at
+step 1 and unused until this one — with its ending (`fired` · `cancelled` · `skipped`) written
+as a later row about the same id. **The spool above stays the SOURCE**, which is the one
+difference from a report (where the hook is the source and a failed write refuses the filing):
+the daemon fires from the spool, consuming the request file IS the non-repeating guarantee, and
+a stream that is append-only would turn "has this fired?" into a fold over later rows — strictly
+worse than a file that is gone. So the hook row is best-effort and can never stop a one-shot
+being armed. What it adds is the answer to *what will fire later*, which no store could give
+across mechanisms; `scheduleproj.request_of_hook` is its exact inverse, so the projection is
+testable rather than asserted.
+
 ```jsonc
 // req-<id>.json  (atomic write, mirrors triggers.write_event)
 {

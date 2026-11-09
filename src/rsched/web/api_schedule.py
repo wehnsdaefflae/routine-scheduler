@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import firetimes, lanes, registry, schedule_once
+from ..hooks import scheduleproj
 from ..schedule import server_tz
 from .routines_common import _info
 
@@ -126,6 +127,11 @@ def arm_schedule_once(request: Request, slug: str, body: ScheduleOnceCreate) -> 
         raise HTTPException(422, str(exc)) from exc
     rec = schedule_once.arm(server.routines_home, slug, fire_at=fire_at,
                             reason=body.reason, requested_by="ui")
+    # D152 gap 5: the one-shot is also a `schedule`-triggered HOOK, so "what will fire later"
+    # is answerable from the hook stream instead of only from this spool. The spool stays the
+    # source — it is what the daemon reads and what consumption guarantees — so this row is
+    # best-effort and can never stop a one-shot being armed (hooks/scheduleproj.py).
+    scheduleproj.record_armed(server.routines_home, rec, slug)
     return {"ok": True, "one_shot": rec}
 
 
@@ -142,4 +148,6 @@ def cancel_schedule_once(request: Request, slug: str, req_id: str) -> dict:
     server = request.app.state.server
     if schedule_once.cancel(server.routines_home, slug, req_id) == 0:
         raise HTTPException(404, f"no armed one-shot {req_id!r} on {slug!r}")
+    scheduleproj.record_event(server.routines_home, hook_id=req_id, event="cancelled",
+                              detail=f"cancelled from the routine page ({slug})")
     return {"ok": True, "cancelled": 1}
