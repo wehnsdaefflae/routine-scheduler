@@ -40,7 +40,15 @@ set -euo pipefail
 DEFAULT_ROOT=/mnt/usb500/rsched-backup
 #: The off-box tier, brought up to date FROM the newest local snapshot. Empty disables the step.
 DEFAULT_MIRROR_ROOT=/mnt/sshd_volume1/rsched-backup
-LOCK="/tmp/rsched-backup.lock"
+#: The lock that keeps two runs from racing. BACKUP_LOCK moves it, and the test suite always does:
+#: the suite runs this very script inside the engine container, whose /tmp IS the host's /tmp, so on
+#: the shared default a release gate's test run held the nightly's lock and the 2026-11-09 01:09
+#: snapshot was skipped.
+LOCK="${BACKUP_LOCK:-/tmp/rsched-backup.lock}"
+#: How long a run waits for that lock before it FAILS. A held lock used to exit 0 "nothing to do",
+#: which systemd reads as a snapshot taken: no OnFailure push, no stamp, and nothing said until the
+#: backup watch noticed days later. Waiting covers a manual run that overlaps the timer.
+LOCK_WAIT_S="${LOCK_WAIT_S:-1800}"
 KEEP_DAILY=14
 KEEP_WEEKLY=8
 
@@ -119,6 +127,8 @@ TWO TIERS, in this order:
      complete and stamped. Its slowness or failure never fails or delays the local snapshot — it
      is sshfs at one round trip per file, which is why nothing completed for four days when it
      was the only tier. Set MIRROR_ROOT to move it, SKIP_OFFBOX=1 to run the local tier alone.
+Two runs never overlap: a second one waits up to LOCK_WAIT_S (1800) seconds for the first and
+then FAILS, never skips silently. BACKUP_LOCK moves the lock (the test suite uses its own).
 A disk in this box does not survive losing the box, so the off-box copy is not optional; it is
 second because a complete local snapshot every night is worth more than a half-finished remote
 one. BACKUP_ROOT names the LOCAL tier when given. BOTH tiers are refused unless their target is
@@ -369,7 +379,10 @@ case "${ROOT}" in /*) ;; *) ROOT="${PWD}/${ROOT}" ;; esac
 # Never let two runs overlap — a scheduled run that is still copying when the next fires would
 # have two rsyncs racing to build, rename and prune the same snapshots.
 exec 9>"${LOCK}"
-flock -n 9 || { echo "another backup is already running (${LOCK}) — nothing to do"; exit 0; }
+if ! flock -w "${LOCK_WAIT_S}" 9; then
+  echo "another backup still holds ${LOCK} after ${LOCK_WAIT_S}s — this run took NO snapshot" >&2
+  exit 75
+fi
 
 # Touch the path first: a direct autofs mount only attaches on access, so the off-box share must
 # be reached before anything can be learnt about it.

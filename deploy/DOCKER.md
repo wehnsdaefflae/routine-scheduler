@@ -250,7 +250,8 @@ side by side. Every snapshot starts **empty** — or, carried on from an interru
 `--delete-excluded` — so an exclude takes effect the very next night, even for a file an older
 snapshot still holds; the single mirror needed that flag after a stale Chrome `SingletonLock`
 survived being excluded on its first live run. A
-`flock` keeps two scheduled runs from racing, and the root is created mode 700 because it
+`flock` keeps two runs from racing — a second one waits up to `LOCK_WAIT_S` (30 min) and then
+FAILS, so `OnFailure=` pushes it; it used to exit 0 having taken no snapshot — and and the root is created mode 700 because it
 carries `config.yaml`'s bearer tokens and the Secrets store beside it — check the mode the
 script reports, since a network share may not honour it. `chrome-profile` carries the same
 torn-copy caveat as the tarball, and the script says so on every run.

@@ -12,7 +12,6 @@ on its home's device (the unmounted-share guard), which is why the root lives on
 """
 from __future__ import annotations
 
-import fcntl
 import os
 import shutil
 import subprocess
@@ -29,10 +28,6 @@ from test_deploy_state import DEPLOY, EXCLUDED, _bundle, _env, _home, _tar_files
 
 SHM = Path("/dev/shm")  # noqa: S108 — a second FILESYSTEM is the point; mkdtemp makes the dir
 REAL_DATE, REAL_RSYNC = shutil.which("date"), shutil.which("rsync")
-#: The script's own lock is host-wide, and a contended run exits 0 having done nothing — so the
-#: tests serialize their runs on a lock of their OWN, or two xdist workers would skip each
-#: other's runs. Only a real backup holding the script's lock still skips a test.
-TEST_LOCK = Path(tempfile.gettempdir()) / "rsched-backup-tests.lock"
 
 
 @pytest.fixture
@@ -79,13 +74,15 @@ def _backup(home: Path, root: Path, today: str, rsync: str | None = None,
         write_executable(bin_dir / "rsync", rsync)
     env = {**_env(home), **(overrides or {})}
     env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
-    with TEST_LOCK.open("w") as held:
-        fcntl.flock(held, fcntl.LOCK_EX)
-        proc = subprocess.run(["bash", str(DEPLOY / "backup.sh"), str(root)], env=env,
-                              capture_output=True, text=True, timeout=120, check=False)
-    if "another backup is already running" in proc.stdout:
-        pytest.skip("a real backup holds the script's lock")
-    return proc
+    # A lock of the test's OWN: the script's default is the host's /tmp, which the engine
+    # container shares, so a gate running this held the real nightly's lock (2026-11-09).
+    env["BACKUP_LOCK"] = str(home.parent / "backup.lock")
+    # And NO off-box tier unless the test names one: unset, the script mirrors to the LIVE NAS
+    # share, and every gate since 2026-11-05 wrote its fake homes there (2026-11-09).
+    env.setdefault("MIRROR_ROOT", "")
+    assert "/mnt/" not in env["MIRROR_ROOT"] + str(root), "a test may never reach a live share"
+    return subprocess.run(["bash", str(DEPLOY / "backup.sh"), str(root)], env=env,
+                          capture_output=True, text=True, timeout=120, check=False)
 
 
 def _ok(proc: subprocess.CompletedProcess) -> None:
