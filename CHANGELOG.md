@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.522.1] — 2026-11-09
+
+### Fixed — a trace kind the console emitted and the store rejected, for 115 days (F860)
+
+`static/views/run.js:344` has emitted `trace("run-question", qid, state)` since commit
+`5afed71b` on **2026-07-17** — the run page's own diagnostic for whether and when a blocking
+question actually reached the surface the operator reads, which the question ledger cannot tell
+from its own records. `run-question` was never in `api_traces.KINDS`, and `ingest` drops an
+unlisted kind silently by design: the POST answers 200, `recorded` counts it out, and
+`grep -rl run-question ~/routines/.ui-traces/` finds it in no day file. Not one row in 115 days.
+
+Found while answering the operator's question about what UI data the instance collects — the
+honest answer had to include a path that looks wired and discards everything.
+
+The kind is now accepted, with its reason recorded beside it. And the cause is pinned rather
+than the instance: `tests/test_trace_kinds_agree.py` reads the shipped source on both sides and
+compares the two lists **in both directions** — an emitted kind the allowlist rejects reds, and
+an accepted kind nothing emits reds unless its reason is recorded (`submit` is reserved and
+unused; `stream-close` is written server-side through `record_server_trace`). The two lists live
+100 lines apart in two languages and nothing had ever compared them.
+
+3 tests, red first: 2 of the 3 failed naming `run-question` exactly, and the mirror direction
+passed before the fix, which is what makes it a guard rather than a restatement.
+
 ## [0.522.0] — 2026-11-09
 
 ### Changed — a run-tree message's disposal fields are NAMED, not refused and not swallowed (F859)

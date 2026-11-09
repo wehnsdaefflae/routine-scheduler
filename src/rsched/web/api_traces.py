@@ -47,8 +47,14 @@ router = APIRouter(tags=["traces"])
 
 #: The allowlist — an event whose kind is not here is dropped at ingestion, so the store can
 #: never grow a field nobody reads. `slow` and `load` are the two DURATION kinds (F858): the
-#: only rows any latency question can be answered from.
-KINDS = ("nav", "click", "submit", "error", "reconnect", "freeze", "slow", "load")
+#: only rows any latency question can be answered from. `run-question` is the run page's own
+#: diagnostic (`views/run.js`, F93): whether and when a blocking question actually REACHED the
+#: surface the operator reads, which the question ledger cannot tell from its own records — it
+#: was emitted from 2026-07-17 and missing here for 115 days, so every one of those rows was
+#: discarded with a 200 (F860). `tests/test_trace_kinds_agree.py` now pins the two lists
+#: together in both directions, because they live 100 lines apart in two languages.
+KINDS = ("nav", "click", "submit", "error", "reconnect", "freeze", "slow", "load",
+         "run-question")
 MAX_BATCH = 100
 MAX_FIELD = 200
 KEEP_DAYS = 14
