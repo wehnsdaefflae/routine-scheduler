@@ -60,6 +60,48 @@ export function installTracing() {
   installFreezeObserver();
   installRequestTiming();
   installLoadTiming();
+  installRenderTiming();
+}
+
+// F861: how long a VIEW takes to settle after a navigation — the cost this console mostly is.
+// app.js is a hash router: only the FIRST page load of a session fires `load`, and every
+// navigation after it swaps #view's children in place. The store's own numbers say how lopsided
+// that is (752 `nav` rows against roughly one page load per session over 14 days), so `load` and
+// `slow` between them miss what the operator meets most: clicking through to a page and waiting
+// for it. A view can feel slow while every request it makes is fast — three sequential 400 ms
+// fetches, a large render, a skeleton that lingers.
+//
+// It lives HERE rather than in app.js for two reasons: that file is at its size-ratchet ceiling
+// and may not grow, and a tracer that watches the DOM needs nothing from the router — the app
+// does not know it is measured, which is the better seam.
+//
+// "Settled" is a QUIET PERIOD, not a paint: the row is filed once no mutation has arrived for
+// SETTLE_MS. The run view streams, so its mutations never truly stop — the observer disarms
+// after reporting, so one navigation yields at most one row and a live view cannot inflate it.
+const SETTLE_MS = 150;
+const RENDER_MAX_MS = 30000;   // a backgrounded tab resuming must not book its absence as render
+
+function installRenderTiming() {
+  const view = document.getElementById("view");
+  if (!view || typeof MutationObserver === "undefined") return;
+  let armed = false, startedAt = 0, quiet = null;
+  const obs = new MutationObserver(() => {
+    if (!armed) return;
+    clearTimeout(quiet);
+    quiet = setTimeout(() => {
+      if (!armed) return;
+      armed = false;                       // one row per navigation, whatever streams after
+      const ms = Math.round(performance.now() - startedAt) - SETTLE_MS;
+      if (ms < 0 || ms > RENDER_MAX_MS) return;   // implausible: dropped, never recorded
+      trace("render", currentView(), `${ms}ms to settle`);
+    }, SETTLE_MS);
+  });
+  obs.observe(view, { childList: true, subtree: true });
+  window.addEventListener("hashchange", () => {
+    clearTimeout(quiet);
+    armed = true;
+    startedAt = performance.now();
+  });
 }
 
 // F858: how long the console's own requests take, and how long a page takes to become usable.

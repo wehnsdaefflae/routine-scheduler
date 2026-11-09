@@ -19,8 +19,14 @@ inside a 5 s flush window (or a whole `pagehide` tail) to zero and manufactured 
 between events that merely shared a batch. Rows written then carry `ts` alone, so a reader
 takes `received`/`ts_src` with `.get` and treats a row without `ts_src` as batch-stamped.
 
-TWO of the kinds are DURATIONS rather than events, and they are why a "where is the console
-slow" question can be answered from this store at all (F858). `slow` is one row per request
+THREE of the kinds are DURATIONS rather than events, and they are why a "where is the console
+slow" question can be answered from this store at all (F858, F861). `render` is the one that
+covers what this console mostly IS: a hash router, where only the first page load of a session
+fires `load` and every navigation after it swaps `#view`'s children in place (752 `nav` rows
+against roughly one page load per session over the 14-day window to 2026-11-09). It carries the
+milliseconds from the `hashchange` until `#view` stops changing, per navigation — a view can
+feel slow while every one of its requests is fast, which neither of the two below would see.
+`slow` is one row per request
 that took longer than the tracer's floor, carrying the endpoint (query string stripped — it
 can hold what the operator typed), the milliseconds, the HTTP status and the concurrent
 stream count. `load` is one row per page load, carrying the browser's own Navigation Timing
@@ -54,7 +60,7 @@ router = APIRouter(tags=["traces"])
 #: discarded with a 200 (F860). `tests/test_trace_kinds_agree.py` now pins the two lists
 #: together in both directions, because they live 100 lines apart in two languages.
 KINDS = ("nav", "click", "submit", "error", "reconnect", "freeze", "slow", "load",
-         "run-question")
+         "run-question", "render")
 MAX_BATCH = 100
 MAX_FIELD = 200
 KEEP_DAYS = 14

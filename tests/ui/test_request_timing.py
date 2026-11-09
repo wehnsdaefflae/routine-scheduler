@@ -54,6 +54,27 @@ def test_a_slow_request_becomes_a_row_naming_the_endpoint_and_the_wait(ui, ui_pa
     assert "streams open" in row["detail"], row
 
 
+def test_a_navigation_becomes_a_render_row_naming_the_view(ui, ui_page):
+    """F861: the cost this console mostly is — a hash navigation, measured until #view settles.
+
+    Only the first page load fires `load`, so every click through the nav is invisible to the
+    other two duration kinds unless a request happens to cross the 1,000 ms floor. This drives a
+    REAL navigation in the real console and asserts the row exists, names the view it rendered,
+    and carries a plausible number.
+    """
+    ui_page.goto(ui.url)
+    ui_page.wait_for_selector(".topbar")
+    ui_page.click("#nav a[href='#/routines']")
+    ui_page.wait_for_selector("#view h1")
+
+    until(lambda: _rows(ui, "render"), what="the render trace to be stored", page=ui_page,
+          timeout_s=30)
+    (row, *_) = _rows(ui, "render")
+    assert row["view"] == "routines", row            # which page was rendered
+    ms = int(row["detail"].split("ms", 1)[0])
+    assert 0 <= ms < 30000, row                      # a real elapsed, inside the ceiling
+
+
 def test_the_page_load_becomes_a_row_with_its_milestones(ui, ui_page):
     """One `load` row per page load, carrying the three Navigation Timing milestones — so the
     cost of the page becoming usable is attributable to the server, the JS or the assets.

@@ -15,6 +15,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.523.0] — 2026-11-09
+
+### Added — how long a VIEW takes to settle after a navigation, the cost this console mostly is (F861)
+
+0.521.0 added request latency and page-load milestones, and a gap survived both: `static/app.js`
+is a **hash router**, so only the FIRST page load of a session fires `load`, and every
+navigation after it swaps `#view`'s children in place. The store's own numbers say how lopsided
+that is — **752 `nav` rows against roughly one page load per session** over the 14-day window.
+So the thing the operator meets most often (clicking Routines → Run → Questions and waiting for
+the page) was measured by neither kind, unless some request happened to cross the 1,000 ms
+floor. A view can feel slow while every one of its requests is fast: three sequential 400 ms
+fetches, a large render, a skeleton that lingers.
+
+A third duration kind, `render`: one row per navigation, carrying the view and the milliseconds
+from the `hashchange` until `#view` **stops changing**, read by a `MutationObserver`.
+
+Three honest properties, each pinned:
+
+- **"Settled" is a quiet period, not a paint.** The row is filed once no mutation has arrived
+  for `SETTLE_MS` (150), and that interval is subtracted from the figure.
+- **One row per navigation.** The run view streams, so its mutations never truly stop — the
+  observer disarms after reporting, so a live view cannot file a row per frame.
+- **An implausible figure is dropped, never recorded.** A backgrounded tab resuming minutes
+  later would otherwise book its whole absence as render time (`RENDER_MAX_MS` 30,000) — the
+  same class of lie 0.521.0's below-the-token-gate clock avoids.
+
+It lives in `static/trace.js`, not in the router: `app.js` sits at its size-ratchet ceiling
+(398) and may not grow, and a tracer that watches the DOM needs nothing from the router — the
+app does not know it is measured, which is the better seam.
+
+6 fast tests and 1 browser test, red first (5 of the 6 failed before the implementation; the
+app.js-size guard passed, which is the point of having it). The browser test drives a real
+navigation in the real console and asserts the row names the view it rendered.
+
 ## [0.522.1] — 2026-11-09
 
 ### Fixed — a trace kind the console emitted and the store rejected, for 115 days (F860)
