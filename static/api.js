@@ -116,11 +116,25 @@ function requestToken(message) {
 // fail a rotated token with a bare "401 Unauthorized" toast (or a silently removed image) and
 // re-gate nobody, so the operator had to trigger some OTHER call to be offered the token
 // field at all.
+// F858: ONE observer of request latency, registered by trace.js. api.js measures and reports;
+// it holds no policy — no floor, no store, no idea that a trace exists — because this module is
+// the console's transport and every view imports it. The hook is one-directional, like
+// openStreamCount: nothing here reads back, and an observer that throws is swallowed, since a
+// measurement must never be able to break the request it measured.
+let timingObserver = null;
+export function onRequestTiming(fn) { timingObserver = fn; }
+
 async function authedFetch(path, makeInit) {
   for (let attempt = 0; ; attempt++) {
     let token = getToken();
     if (!token) token = await requestToken("This console is token-protected. Sign in to continue.");
+    // The clock starts BELOW the token gate on purpose. `requestToken` waits on the operator
+    // typing — minutes, on a phone — and a clock started above it would make the slowest rows
+    // in the store the ones where somebody was signing in.
+    const started = performance.now();
     const resp = await fetch(path, makeInit(token));
+    try { timingObserver?.(path, Math.round(performance.now() - started), resp.status); }
+    catch { /* an observer may never break the request it observed */ }
     // 401 = no/garbage credential. 403 + insufficient_scope (app.py, RFC 6750) = a VALID
     // token of the wrong TIER: the routine bearer reads everything, so the console renders
     // whole and only the first mutation fails — without re-gating here that browser can

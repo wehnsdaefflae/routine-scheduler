@@ -15,6 +15,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.521.0] — 2026-11-09
+
+### Added — the console records how long its own requests take, and how long a page takes to load (F858)
+
+The UI trace store existed to answer "where is the console slow", and held no duration of any
+kind. Over its whole 14-day retention window it had 2,016 `click`, 819 `nav`, 654
+`stream-close`, 178 `reconnect` and 22 `error` rows — and not one number a latency question
+could be answered from. The operator has reported the console as slow since 2026-10-31 and
+nothing could measure it.
+
+Why the two existing instruments did not cover it, each for its own reason:
+
+- `static/trace.js`'s freeze observer reads the browser's **Long Tasks** API, which fires only
+  for work that BLOCKS the main thread. Time spent *waiting* on a request blocks nothing, so a
+  console that is slow because its requests are slow produced no event at all — which is why
+  `freeze` has **0 rows in 14 days** while the page feels slow.
+- the daemon's own `slow_requests` deque keeps the last 50 requests over 2.0 s **in RAM**, so
+  every restart erases it, and `/api/debug/slow` takes the operator's primary token — no run
+  can read it (403, `ROUTINE_TOKEN_DENIED_READS`).
+
+Two kinds are added to the store the rest of the friction evidence already lands in:
+
+- **`slow`** — one row per request over a floor of 1,000 ms, carrying the endpoint, the
+  milliseconds, the HTTP status and the concurrent open-stream count. `static/api.js` gains one
+  one-directional observer hook (`onRequestTiming`, the shape `openStreamCount` already has) at
+  `authedFetch`, the single authed-fetch loop every request shape shares. The clock starts
+  **below** the token gate: `requestToken` waits on the operator typing, and a clock above it
+  would make the slowest rows in the store the ones where somebody was signing in.
+- **`load`** — one row per page load, carrying the browser's own Navigation Timing milestones
+  (`response` / `dom` / `load`), so the cost of a page becoming usable is attributable to the
+  server, the JS, or the assets rather than guessed at.
+
+The policy lives in `trace.js`, not in `api.js`: the floor keeps the console's fifteen
+`setInterval` pollers out of the store (3 s, 20 s, 30 s, 120 s …), which would otherwise bury
+the signal under their own volume. A query string never reaches the store — it can carry what
+the operator typed — while the path is kept whole, because which endpoint is slow is the whole
+question.
+
+8 fast tests and 2 browser tests, red first. The browser pair drives the real console: a
+response genuinely held 1.8 s past the floor, and the real Navigation Timing entry — neither
+quantity exists under pytest, so a fast test can only read the source, and what would break in
+production is the instrument not being mounted.
+
 ## [0.520.0] — 2026-11-08
 
 ### Added — an answered-but-unproven decision stays on the Decisions page (D220 step 4 / F795)

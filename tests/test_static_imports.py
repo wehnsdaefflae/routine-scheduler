@@ -97,7 +97,8 @@ def test_md_helpers_are_imported_where_used():
 
 
 API_MODULE = "/static/api.js"
-API_HELPERS = ("openStreamCount",)   # F263 stream-count gauge — used by stream.js + trace.js
+API_HELPERS = ("openStreamCount",    # F263 stream-count gauge — used by stream.js + trace.js
+               "onRequestTiming")    # F858 request-latency hook — used by trace.js
 
 
 def _imported_from(text: str, module: str) -> set[str]:

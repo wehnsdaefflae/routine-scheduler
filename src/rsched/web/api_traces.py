@@ -18,6 +18,18 @@ and that inference is only as good as what the store preserves (F577):
 inside a 5 s flush window (or a whole `pagehide` tail) to zero and manufactured co-occurrence
 between events that merely shared a batch. Rows written then carry `ts` alone, so a reader
 takes `received`/`ts_src` with `.get` and treats a row without `ts_src` as batch-stamped.
+
+TWO of the kinds are DURATIONS rather than events, and they are why a "where is the console
+slow" question can be answered from this store at all (F858). `slow` is one row per request
+that took longer than the tracer's floor, carrying the endpoint (query string stripped — it
+can hold what the operator typed), the milliseconds, the HTTP status and the concurrent
+stream count. `load` is one row per page load, carrying the browser's own Navigation Timing
+milestones. Before them the store held 2,016 clicks and 819 navigations over its whole
+retention window and not one number: `freeze` reads the Long Tasks API, which fires for work
+that BLOCKS the main thread, and time spent waiting on a request blocks nothing — so a
+console that is slow because its requests are slow produced no row (0 `freeze` rows in 14
+days). The server's own `slow_requests` deque (`web/app.py`) is last-50, in RAM — a restart
+erases it — and `/api/debug/slow` takes the operator's primary token, so no run may read it.
 """
 
 from __future__ import annotations
@@ -33,7 +45,10 @@ from ..paths import append_jsonl
 log = logging.getLogger("rsched.traces")
 router = APIRouter(tags=["traces"])
 
-KINDS = ("nav", "click", "submit", "error", "reconnect", "freeze")
+#: The allowlist — an event whose kind is not here is dropped at ingestion, so the store can
+#: never grow a field nobody reads. `slow` and `load` are the two DURATION kinds (F858): the
+#: only rows any latency question can be answered from.
+KINDS = ("nav", "click", "submit", "error", "reconnect", "freeze", "slow", "load")
 MAX_BATCH = 100
 MAX_FIELD = 200
 KEEP_DAYS = 14

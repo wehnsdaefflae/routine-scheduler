@@ -6,7 +6,7 @@
 // Flushes every 5s / 20 events via fetch; on pagehide via fetch keepalive (sendBeacon
 // cannot carry the Authorization header).
 
-import { getToken, openStreamCount } from "/static/api.js";
+import { getToken, onRequestTiming, openStreamCount } from "/static/api.js";
 
 const FLUSH_MS = 5000;
 const FLUSH_AT = 20;
@@ -58,6 +58,52 @@ export function installTracing() {
     (e) => trace("error", "promise", String(e.reason).slice(0, 200)));
   window.addEventListener("pagehide", () => flush(true));
   installFreezeObserver();
+  installRequestTiming();
+  installLoadTiming();
+}
+
+// F858: how long the console's own requests take, and how long a page takes to become usable.
+// The store held 2,016 clicks and 819 navigations over its whole 14-day window and not one
+// duration — so "the console is slow" could be reported but never measured. The freeze observer
+// below does not cover it: Long Tasks fire for work that BLOCKS the main thread, and waiting on
+// a request blocks nothing (0 `freeze` rows in 14 days).
+//
+// Only requests OVER the floor become rows. Fifteen `setInterval` pollers run in this console
+// (app.js 30 s, run.js 3 s, conversations.js 20 s, ribbon.js 120 s …), so recording every
+// request would bury the signal under its own volume; a request the user waits on is the
+// subject. api.js measures and reports — the floor, the store and the wording live here,
+// because policy belongs to the tracer and not to the transport every view imports.
+const SLOW_REQUEST_MS = 1000;
+
+// The PATH only. A query string can carry what the operator typed (a search term, a filter) and
+// this module records no free-text input — while which endpoint is slow is the whole question.
+function endpointOf(path) { return String(path).split("?")[0]; }
+
+function installRequestTiming() {
+  onRequestTiming((path, ms, status) => {
+    if (ms < SLOW_REQUEST_MS) return;
+    trace("slow", endpointOf(path),
+          `${ms}ms, status ${status}, ${openStreamCount()} streams open`);
+  });
+}
+
+// One row per page load, from the browser's own Navigation Timing: `response` is when the
+// server had answered the document, `dom` when the console's modules had parsed and run, and
+// `load` when everything the page asked for was in. Which of the three is large says where the
+// cost is — the server, the JS, or the assets — and no guess can substitute for that split.
+function installLoadTiming() {
+  window.addEventListener("load", () => {
+    // After `load` the entry is final; a timeout lets the last milestone be written first.
+    setTimeout(() => {
+      const nav = performance.getEntriesByType?.("navigation")?.[0];
+      if (!nav) return;                       // unsupported browser → nothing to report
+      const ms = (v) => Math.round(v || 0);
+      trace("load", location.pathname,
+            `response ${ms(nav.responseEnd)}ms, dom ${ms(nav.domContentLoadedEventEnd)}ms, `
+            + `load ${ms(nav.loadEventEnd)}ms`);
+      flush();                                // a load row is worth its own POST
+    }, 0);
+  });
 }
 
 // F218: main-thread FREEZE telemetry. A UI freeze IS a long task — the browser's Long Tasks
