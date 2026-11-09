@@ -122,6 +122,8 @@ BLOCKED_EVENTS: dict[str, str] = {
     "process_overhead_high": "a routine's runs go mostly to its OWN PROCESS — recipe reads, "
                              "ledgers, notes, phase files, harness friction — rather than its "
                              "task: the median share is over the fleet bar (engine/overhead.py)",
+    "postdeploy_failed": "the post-boot deploy checklist FAILED — what this process serves, or "
+                         "what it can write or back up, is not what was deployed (F854)",
 }
 
 #: Partial finishes, split by whether a budget forced them (health_events.py's own
