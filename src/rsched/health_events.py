@@ -9,7 +9,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
         |"model_chain_exhausted"|"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_paused"|"fire_paused"|"scheduler_tick_error"
         |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
-        |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"
+        |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"|"boot_reaped"
         |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window"|"error_class_undecided"
         |"item_dropped_live"|"oneshot_skipped"|"hook_stream_diverged"|"process_overhead_high",
  "routine": <slug>, "run_id": <id>, "detail": <str>}

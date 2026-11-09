@@ -22,7 +22,7 @@ from .. import lane_runs as lane_runs_store
 from ..config import ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
-from . import pause, pause_skip, reap_resume, restart, runner_reap
+from . import containerbirth, pause, pause_skip, reap_resume, restart, runner_reap
 from .backup_watch import BackupWatch
 from .detached import DetachedManager
 from .endpoint_watch import EndpointWatch
@@ -200,11 +200,11 @@ class Scheduler:
             fixed = self._recover_orphans(resumable)
         except Exception as exc:     # a full disk at boot is exactly when orphans exist
             self._log_loop_failure("boot orphan recovery", exc)
-        reap_resume.resume_all(self.runner, resumable)    # F746: a restart is not an abort
+        woke = reap_resume.resume_all(self.runner, resumable)   # F746: a restart is not an abort
+        containerbirth.log_boot_reap(self.server.routines_home, fixed, woke)   # F799
         restart.clear_shutdown_mark(self.server.routines_home)   # a mark is ONE exit's evidence
         await self.detached.reconcile()
-        # crashed runs leave sshfs key dirs behind (clean exits remove their own)
-        from ..machine_mounts import sweep_stale_mount_keys
+        from ..machine_mounts import sweep_stale_mount_keys  # crashed runs leave key dirs
         sweep_stale_mount_keys()
         self._refresh_limits()
         self._refresh_machine_queues()

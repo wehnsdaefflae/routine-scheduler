@@ -152,6 +152,56 @@ def last_sign_of_life(run) -> datetime | None:
     return stamp if stamp.tzinfo else stamp.astimezone()
 
 
+def log_boot_reap(routines_home: Path, orphans: int, resumed: int,
+                  why: str | None = None) -> None:
+    """F799: one event per boot that REAPED something — so a clean recreate is countable.
+
+    Measured 2026-10-29: pid 1 restarted at 23:58:22 and run `self-audit:20261029-233250`
+    continued across it. The health stream held NOTHING: no `orphaned_run` (the run was
+    resumed, not orphaned), no resume row, no shutdown mark. So the instance's own count of
+    container recreates saw only the ones that left wreckage — the wrong bias in a number used
+    to judge whether the daemon is being killed, since it under-reports exactly the cases where
+    the engine coped.
+
+    It carries the four facts no single other place holds: pid 1's start (what distinguishes a
+    container REPLACEMENT from a daemon that died inside a living container), the deliberate-
+    shutdown mark's reason or its absence, how many dead-pid runs were closed out, and how many
+    of those a restart killed and were re-opened (F746).
+
+    A BOOT THAT REAPED NOTHING FILES NOTHING. Almost every boot reaps nothing — the daemon
+    restarts when it is idle, by design — so an event per boot would be a row per restart saying
+    "all quiet", and `health_cooldown` would then suppress the interesting ones behind the quiet
+    ones inside its window.
+
+    `why` defaults to READING the mark here rather than being passed, so the caller stays one
+    line; pass it explicitly to report a reason already resolved. Never raises: a diagnostic may
+    not be the reason a daemon fails to start, and a full disk at boot is exactly when orphans
+    exist.
+    """
+    if orphans <= 0 and resumed <= 0:
+        return
+    try:
+        from ..health_events import log_health_event
+        from . import restart
+        if why is None:
+            mark = restart.read_shutdown_mark(routines_home)
+            why = (f"daemon restart ({mark.get('reason') or 'requested'} at {mark.get('ts')})"
+                   if mark else "cause unrecorded (no deliberate-shutdown mark)")
+        started = pid1_started()
+        log_health_event(
+            routines_home, "boot_reaped", routine="(daemon)", run_id="",
+            detail=(f"this boot closed out {orphans} run(s) whose pid was gone and re-opened "
+                    f"{resumed} of them; {why}; pid 1 (this process tree's init) started at "
+                    f"{started.isoformat(timespec='seconds') if started else 'unknown'}"),
+            # FIELDS, not only prose: "how often was a run alive when the process tree was
+            # replaced, and did it survive?" is the question this event exists to answer, so a
+            # sweep can count and compare without parsing a sentence.
+            orphans=orphans, resumed=resumed,
+            pid1_started=started.isoformat(timespec="seconds") if started else "")
+    except Exception:
+        log.warning("boot reap event could not be filed", exc_info=True)
+
+
 def recreated_under(last_sign_of_life: datetime | None,
                     proc: Path = Path("/proc")) -> tuple[bool, str]:
     """Was the container recreated UNDER a run whose last sign of life is `last_sign_of_life`?

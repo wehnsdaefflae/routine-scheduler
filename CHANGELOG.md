@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.524.0] — 2026-11-09
+
+### Added
+- **A daemon boot that reaped something now reaches the health stream**, so a container
+  recreate that RESUMED its runs is countable. Measured 2026-10-29: pid 1 restarted at 23:58:22
+  and run `self-audit:20261029-233250` continued across it — and `health-events.jsonl` held
+  nothing at all. No `orphaned_run` (the run was resumed, not orphaned), no resume row, no
+  shutdown mark. So the instance's own count of recreates saw only the ones that left wreckage,
+  which is the wrong bias in a number used to judge whether the daemon is being killed: it
+  under-reported exactly the cases where the engine coped. (F799)
+- The new `boot_reaped` event carries the four facts no single place held: **pid 1's start**
+  (what tells a container REPLACEMENT from a daemon that died inside a living container), the
+  deliberate-shutdown mark's **reason or its absence**, how many dead-pid runs were **closed
+  out**, and how many of those a restart killed and were **re-opened** (F746). As fields, not
+  only prose, so a sweep can count without parsing a sentence.
+- **A boot that reaped nothing files nothing.** Almost every boot reaps nothing — the daemon
+  restarts when it is idle, by design — so a row per boot would say "all quiet" every time, and
+  `health_cooldown` would then suppress the interesting ones behind the quiet ones inside its
+  window. The emitter also never raises: it sits in the boot path, and a full disk at boot is
+  exactly when orphans exist.
+- It is emitted BEFORE `clear_shutdown_mark`, because the mark is the event's own `why` — pinned
+  by a test, since the ordering is invisible at the call site.
+
 ## [0.523.1] — 2026-11-09
 
 ### Fixed
