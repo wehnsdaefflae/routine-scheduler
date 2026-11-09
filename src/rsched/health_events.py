@@ -1,17 +1,17 @@
 """Health-events file: append-only JSONL log of key daemon/engine events for audit consumption.
 
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
-{"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"run_partial"|"orphaned_run"
-        |"run_canceled"|"oversize_state_file"|"prompt_oversize_shrunk"|"fire_refused"
-        |"wizard_build_degraded"|"trigger_capped"|"model_window_corrected"|"util_killed"
-        |"finish_gate_failed"|"observation_render_failed"|"endpoint_needs_reauth"
-        |"tool_param_salvaged"|"cache_read_degraded"|"cost_trend_degraded"|"model_failover"
-        |"model_chain_exhausted"|"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
-        |"lane_fire_refused"|"lane_fire_paused"|"fire_paused"|"scheduler_tick_error"
-        |"migration_due_soon"|"migration_expired"|"commit_failed"|"git_lock_cleared"
-        |"backup_stale"|"deprecated_route"|"obligation_overdue"|"ungated_write"|"boot_reaped"
-        |"wrong_turn_detected"|"run_corrected"|"prompt_floor_over_window"|"error_class_undecided"
-        |"item_dropped_live"|"oneshot_skipped"|"hook_stream_diverged"|"process_overhead_high",
+{"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"run_partial"|"orphaned_run"|"run_canceled"
+        |"oversize_state_file"|"prompt_oversize_shrunk"|"fire_refused"|"wizard_build_degraded"
+        |"trigger_capped"|"model_window_corrected"|"util_killed"|"finish_gate_failed"
+        |"observation_render_failed"|"endpoint_needs_reauth"|"tool_param_salvaged"
+        |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
+        |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"|"lane_fire_refused"
+        |"lane_fire_paused"|"fire_paused"|"scheduler_tick_error"|"migration_due_soon"
+        |"migration_expired"|"commit_failed"|"git_lock_cleared"|"backup_stale"|"deprecated_route"
+        |"obligation_overdue"|"ungated_write"|"boot_reaped"|"wrong_turn_detected"|"run_corrected"
+        |"prompt_floor_over_window"|"error_class_undecided"|"item_dropped_live"|"oneshot_skipped"
+        |"hook_stream_diverged"|"process_overhead_high"|"postdeploy_failed",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in

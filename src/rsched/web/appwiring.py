@@ -133,6 +133,23 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
 
         held_task = asyncio.create_task(held_accepts.maintain(app))
         _observe(held_task, "held settings-accept drain")
+        # F854: the post-deploy checklist, run by the daemon ITSELF a short while after boot
+        # (operator, 2026-11-09: "in-process, served-identity hitting its own port once it
+        # answers — no human step ever again"). `rsched postdeploy` existed since 0.445.0 and
+        # nothing ever called it, so the restart path this instance actually takes several times
+        # a week verified nothing: on 2026-11-08 the daemon came up on 0.520.0 while the newest
+        # record row was two days old, its own backup-freshness check a FAIL. HERE because the
+        # lifespan IS the moment "this process is now serving", and the check reads its own
+        # HTTP port — which is listening only once this half has yielded.
+        # Gated like the scheduler task above, and for a sharper reason: the checklist walks the
+        # state homes and asks our own port, so an app built WITHOUT a scheduler — every
+        # `make_test_server` client, hundreds per suite run — must never start it.
+        from ..daemon import postdeploy_watch
+
+        postdeploy_task = None
+        if with_scheduler and not os.environ.get("RSCHED_NO_SCHEDULER"):
+            postdeploy_task = asyncio.create_task(postdeploy_watch.after_boot(server))
+            _observe(postdeploy_task, "post-deploy checklist")
         yield
         # F746: the breadcrumb for THIS exit, written on the way out. uvicorn runs the lifespan's
         # shutdown half on ANY graceful SIGTERM — a deploy, `systemctl restart`, a container
@@ -158,7 +175,8 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         set_sink(None)
         await _stop(search_task)
         app.state.search.shutdown()
-        for running in (docs_task, push_task, utilstats_task, apply_task, held_task, task):
+        for running in (docs_task, push_task, utilstats_task, apply_task, held_task,
+                        postdeploy_task, task):
             await _stop(running)
         # The I/O pool LAST, once nothing is left to submit to it. `wait=False` so a shutdown is
         # never held hostage by an SSH call or a provider probe mid-flight (those threads finish

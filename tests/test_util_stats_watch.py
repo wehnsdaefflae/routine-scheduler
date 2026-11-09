@@ -146,5 +146,10 @@ def test_the_watch_is_mounted_in_the_daemons_lifespan():
     source = Path(appwiring.__file__).read_text(encoding="utf-8")
     assert "util_stats_watch.bus_listener(server, bus)" in source
     assert '_observe(utilstats_task, "util-stats snapshot watch")' in source
-    assert "utilstats_task" in source.split("yield")[1], (
-        "the watch is never stopped at shutdown")
+    # Split on the lifespan's own `yield` STATEMENT, not on the word: a comment anywhere in the
+    # startup half that merely contains "yield" used to split the file there, so this assertion
+    # read a few lines of prose instead of the shutdown half and failed on a correct tree
+    # (2026-11-09, gate 1794237038004256100 — a postdeploy comment ending "once this half has
+    # yielded"). The statement is unambiguous and is what the test means.
+    shutdown_half = source.split("\n        yield\n")[1]
+    assert "utilstats_task" in shutdown_half, "the watch is never stopped at shutdown"
