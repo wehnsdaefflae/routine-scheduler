@@ -1,6 +1,6 @@
 // Decisions inbox: everything open across routines — blocking questions, deferred ones,
 // standing proposals, and the self-audit report's open decisions (meta badge) — in ONE
-// answering surface, grouped by priority (blocking > deferred > meta > proposals > settled;
+// answering surface, grouped by CLASS and priority (blocking > closing > meta > proposals > settled;
 // asks about to hit their timeout are flagged "expiring" and sort first). Keyboard-first: the
 // first pending item autofocuses, Enter submits, ↑/↓ move, 1–9 pick an option. Toolbar: filter
 // by kind or routine, sort by priority/age/routine (non-priority sorts render flat).
@@ -24,7 +24,7 @@ import { answeredChips, lifecycleControls, proofNote }
 import { md, summaryLine } from "/static/md.js";
 import { act, chip, el, emptyState, fmtAbs, groupHead, skeleton, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
-import { FILTERS, GROUPS, SORTS, expiringSoon, kindOf, sortQuestions, waitsOnYou }
+import { FILTERS, GROUPS, SORTS, expiringSoon, isBlocking, kindOf, sortQuestions, waitsOnYou }
   from "/static/views/questions-taxonomy.js";
 
 // F621: a decision born as a REPORT — a routine routed work to another routine and the call
@@ -145,14 +145,14 @@ export async function render(view, query = {}) {
       list.append(state.items.length
         ? emptyState("◌", "Nothing matches this filter", "Widen the filter above — there are open items elsewhere.")
         : emptyState("✓", "No decisions to make right now",
-            "The routines are self-sufficient. Blocking questions pause their run here; deferred and meta ones wait for the next run; proposals wait for you, with no clock on them."));
+            "The routines are self-sufficient. Blocking decisions hold a run's work up until you answer; closing and meta ones shape the next run; proposals wait for you, with no clock on them."));
       return;
     }
     // Nothing open, but settled rows to show: say so at the top rather than leaving the reader
     // to scroll a page of answered proposals looking for one that is not.
     if (state.filter !== "snoozed" && !qs.some((q) => !q.answered))
       list.append(emptyState("✓", "Nothing waits on you",
-        "Every decision here is answered. Blocking questions pause their run here; deferred and meta ones wait for the next run; proposals wait for you, with no clock on them."));
+        "Every decision here is answered. Blocking decisions hold a run's work up until you answer; closing and meta ones shape the next run; proposals wait for you, with no clock on them."));
     if (state.sort === "priority") {
       let i = 0;
       for (const [noun, explain, match, waits] of GROUPS) {
@@ -382,7 +382,7 @@ export async function render(view, query = {}) {
       host: controls, clearWarn: () => configSlot.closest(".question-item")?.classList.remove("warn"),
     });
     if (configBar) configSlot.append(configBar);
-    const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
+    const panel = el("div", { class: `panel question-item${isBlocking(q) ? " warn" : ""}` },
       el("div", { class: "q-meta" },
         expiringSoon(q) ? chip("expiring", "failed") : null,
         q.meta ? chip("meta", "meta") : null,
