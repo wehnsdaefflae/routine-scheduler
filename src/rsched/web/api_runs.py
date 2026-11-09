@@ -114,6 +114,10 @@ def run_detail(request: Request, run_id: str) -> dict:
     # from the run's status — what the run page's goal section shows for THIS run, never the
     # live routine files
     accounting = st.get("accounting") if isinstance(st, dict) else None
+    # what the turn's prompt is MADE OF (D270, engine/promptsegments.py), in the composer's own
+    # prompt order — the run rail's stacked bar (components/promptsegbar.js). Empty for a run
+    # recorded before the measurement, so the bar's absence is the component's decision.
+    segments = st.get("prompt_segments") if isinstance(st, dict) else None
     brief = st.get("brief") if isinstance(st, dict) else ""
     goals = st.get("goals") if isinstance(st, dict) else None
     server = request.app.state.server
@@ -131,6 +135,7 @@ def run_detail(request: Request, run_id: str) -> dict:
             "summary": info.summary, "updated": info.updated, "subruns": subs,
             "home": home, "accounting": accounting if isinstance(accounting, list) else [],
             "brief": brief or "", "goals": goals if isinstance(goals, list) else [],
+            "prompt_segments": segments if isinstance(segments, dict) else {},
             "ladder": ladder}
 
 

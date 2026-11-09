@@ -18,9 +18,13 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from conftest import mk_run
 from rsched.engine import promptsegments
 from rsched.engine.compaction import estimate_input_tokens
 from rsched.engine.composer import join_sections
+from rsched.engine.window import note_prompt_size
+from rsched.paths import atomic_write_json, read_json
+from test_token_calibration import REF, _loop_with_prompt
 
 #: A stand-in for `composer.system_sections`' return: (name, text) in PROMPT ORDER.
 SECTIONS = [("harness", "h" * 7000), ("schema", "s" * 700), ("digest", "d" * 70)]
@@ -86,3 +90,56 @@ def test_the_measurement_changes_not_one_byte_of_what_is_sent() -> None:
     assert join_sections(SECTIONS) == sent_system
     assert json.dumps(loop.messages, sort_keys=True) == sent_messages
     assert loop.messages is messages          # measured in place, never rebuilt
+    # ...and the measurement RAN. Without this line every assertion above is "nothing
+    # changed", which a `note` that did nothing at all would satisfy perfectly.
+    assert loop.ctx.prompt_segments["observations"] > 0
+
+
+def test_the_turn_that_calibrates_the_window_records_the_breakdown(make_routine) -> None:
+    """The wiring, through the PRODUCTION entry point: `window.note_prompt_size` is the one
+    writer of both readings of the prompt the provider just counted, so the breakdown lands on
+    the run context on every turn that calibrates — not only when a test calls `note` itself.
+    """
+    loop = _loop_with_prompt(make_routine)
+    loop._schema_off = True
+    # not yet recorded: the attribute is written by boot and by this seam, and the fixture
+    # loop has had neither — so the assertions below are about a value THIS call produced
+    assert not getattr(loop.ctx, "prompt_segments", None)
+    note_prompt_size(loop, REF, {"in": 160_000})
+    segs = loop.ctx.prompt_segments
+    assert segs["observations"] > 0 and segs["history"] > 0
+    # the grown segments are the message list's own halves, measured in the window's unit
+    assert segs["history"] + segs["observations"] <= estimate_input_tokens(loop.messages)
+
+
+def test_the_run_detail_carries_the_breakdown_to_the_run_view(api_client, make_routine) -> None:
+    """The measurement is only diagnostic if a reader can SEE it: the run view's bar
+    (static/components/promptsegbar.js) reads `prompt_segments` off GET /api/runs/<id>, so the
+    route has to carry what status.json recorded — in the composer's prompt ORDER, which is
+    what makes the bar readable as the prompt rather than as a set of numbers.
+    """
+    c, tmp = api_client
+    make_routine(slug="segr")
+    run = mk_run(tmp / "routines" / "segr", "20260906-100000", "running")
+    status = read_json(run / "status.json")
+    status["prompt_segments"] = {"harness": 2000, "schema": 700, "digest": 70,
+                                 "history": 400, "observations": 9000}
+    atomic_write_json(run / "status.json", status)
+
+    detail = c.get("/api/runs/segr:20260906-100000").json()
+    assert list(detail["prompt_segments"]) == ["harness", "schema", "digest",
+                                               "history", "observations"]
+    assert detail["prompt_segments"]["observations"] == 9000
+
+
+def test_a_run_that_measured_nothing_carries_an_empty_breakdown(api_client,
+                                                                make_routine) -> None:
+    """A run recorded before D270 — or one no provider ever reported a prompt size for — has
+    no breakdown, and the route says so with an empty mapping rather than omitting the key:
+    the bar's own absence is then a decision the component makes, not a KeyError.
+    """
+    c, tmp = api_client
+    make_routine(slug="oldr")
+    mk_run(tmp / "routines" / "oldr", "20260906-110000", "finished")
+    detail = c.get("/api/runs/oldr:20260906-110000").json()
+    assert detail["prompt_segments"] == {}

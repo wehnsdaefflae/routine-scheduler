@@ -22,6 +22,7 @@
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createRail } from "/static/components/rail.js";
 import { createRoutineRail } from "/static/components/routine-rail.js";
+import { mountPromptSegments } from "/static/components/promptsegbar.js";
 import { mountRunScripts } from "/static/components/runscripts.js";
 import { createSubRunTree } from "/static/components/subruntree.js";
 import { wireTurnLinks } from "/static/components/turnlink.js";
@@ -69,6 +70,11 @@ export function createRunRail(view, { runId, isLive }) {
   const showScripts = (home) => (home === "background" ? null
     : mountRunScripts(rail, { slug, base: home === "conversation" ? "conversations" : "routines" }));
   const fileActivity = createFileActivity(filesBody, { url: `/api/runs/${runId}/files` });
+  // D270: WHAT THIS TURN'S PROMPT IS MADE OF, as one stacked bar — the diagnostic that answers
+  // "where is this run's window going" (components/promptsegbar.js). Added LAZILY by the
+  // component itself, only for a run that HAS a breakdown: a run from before the measurement
+  // gains no caption, which is what tests/ui/test_finish_line.py pins the caption list for.
+  const promptSegments = mountPromptSegments(rail, { runId, isLive, host: railHost });
   return { rail, artBody, filesBody, graphBody, goalBody, subRunTree, fileActivity, turnHref,
-           routineRail, showScripts };
+           routineRail, showScripts, promptSegments };
 }
