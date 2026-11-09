@@ -15,6 +15,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.526.0] — 2026-11-10
+
+### Added
+- **A one-shot is a hook**, which gives the `schedule` trigger its first user and closes the
+  hooks campaign's last gap. `hooks.TRIGGERS` has named four things that make a hook fire since
+  step 1 and three had users; `schedule` carried a note instead — *"a time. Nothing uses this
+  yet; the field costs nothing and naming it keeps the next mechanism from being a fourth
+  store."* That next mechanism already existed AND was a fourth store: the one-shot request
+  spool. So "what hooks exist in this instance" — the question the campaign exists to make
+  answerable — could not be answered for anything time-fired. The new
+  `hooks/scheduleproj.py` projects an armed one-shot onto the stream with its ending (`fired` ·
+  `cancelled` · `skipped`) as a later row about the same id, wired at all five sites, with an
+  EXACT inverse written in the same change. The spool stays the SOURCE, unlike a report: the
+  daemon fires from it and consuming the request file IS the non-repeating guarantee, so these
+  rows are best-effort and can never stop a one-shot being armed. (D152 gap 5)
+- **The Claude quota readout reads BOTH payload shapes.** The API is moving model- and
+  surface-scoped weekly limits into a `limits[]` array while still sending some as legacy
+  `seven_day_<model>` keys, and we read four fixed keys — so a scoped limit that existed only in
+  `limits[]` was invisible, and the card's weekly Opus/Sonnet line would have vanished with no
+  error: **a limit we cannot read reads as a limit that is not there**. `normalize` now returns
+  the two unscoped windows plus every scoped limit keyed by its SCOPE (so a limit sent both ways
+  is one row), and names a limit it could not read instead of dropping it. The console renders
+  scoped rows from their own display names, and the header chip takes the tightest cap across
+  EVERY row — before this it read only the unscoped windows, so a weekly Opus limit at 2% was
+  invisible on the page you actually look at. (D277, first increment; the `Retry-After` half is
+  still owed and stayed in `docs/designs.md`.)
+
+### Changed
+- **Web Push holds back while you are at the console.** Tier 2 exists for an operator who is
+  AWAY; while you are here the ask is already on your Decisions page and on the header badge, so
+  pushing your phone for it is the noise that trains a person to ignore the channel. The console
+  beats `POST /api/push/present` every 30 s — foreground tabs only, because a browser left open
+  on another desktop is not a person looking at the page — and a new push is held for 90 s after
+  the last beat. **Deferred, never dropped**: the ask stays out of the dedupe set, so the first
+  pass after your presence lapses pushes it exactly once, and if you answered it meanwhile
+  nothing is pushed at all. A withdrawal is never held — it clears an alert already on your
+  phone. (D280)
+
 ## [0.525.9] — 2026-11-10
 
 ### Added
@@ -223,6 +261,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their own); a contended run waits `LOCK_WAIT_S` (1800 s) and exits 75, so `OnFailure` pushes.
   The same tests mirrored fake homes into the LIVE off-box NAS share whenever they named no
   `MIRROR_ROOT` (since 2026-11-05); the helper now defaults to local-only and refuses `/mnt/`.
+
 
 ## [0.525.0] — 2026-11-09
 
