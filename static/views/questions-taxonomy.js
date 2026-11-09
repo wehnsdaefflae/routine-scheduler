@@ -8,6 +8,17 @@
 // noticed, a rename it would do — has no run parked on the answer, and "the next run picks these
 // up" was literally false for every item of that shape. They render BELOW the groups that wait,
 // with every urgency affordance off, because a proposal that has sat three weeks is not LATE.
+//
+// The groups split BY CLASS, not by whose process is parked — D212 increment (c), the operator's
+// *"Both axes: subject decides the default, the run may override it when the work is genuinely
+// blocked"*. `class` (engine/askclass.py) answers "could the run do the work it was fired to do
+// without this?"; `mode` only "did its process sit and wait?". Grouping by `mode` made the band
+// that promised "a run is waiting on you" structurally empty — measured over the 282 records
+// this instance had filed, `mode: "blocking"` was used 0 times — while a run that said
+// `blocks_work: true` and then ENDED was demoted all the way to Proposals, the band whose own
+// caption says nobody is waiting on it. So the two bands at the top are Blocking and Closing,
+// and what is left of the old Deferred/Proposals pair is the consumer question `waitsOnYou`
+// already answers.
 
 import { TERMINAL } from "/static/states.js";
 
@@ -34,6 +45,27 @@ export const waitsOnYou = (q) => {
   if (q.conversation || q.background) return true;   // read when that surface resumes
   return Boolean(q.run_state) && !TERMINAL.has(q.run_state);
 };
+
+/** The CLASS this decision carries — `"blocking"` or `"closing"` (D212 (c)).
+ *
+ *  `engine/askclass.of`, client-side, and the same three-step reading `engine/closingasks.of_record`
+ *  makes server-side — stated once here because the bands, the filter chips, the rank and the
+ *  captions must all read one derivation or the toolbar and the page can disagree about a card:
+ *
+ *  1. a record whose asking run is PARKED on it (`mode === "blocking"`) is blocking whatever the
+ *     key says — the run demonstrably could not go on without it;
+ *  2. otherwise the recorded `class`, which is the asking run's own claim (increment (a));
+ *  3. otherwise the SUBJECT default, for every record filed before the key existed: a typed
+ *     access `request` means the run cannot reach the thing at all, so it is blocking; anything
+ *     else is closing. That is `askclass.of`'s rule verbatim, and the conservative direction —
+ *     an unknown value reads as closing rather than shouting.
+ */
+export const classOf = (q) => {
+  if (q.mode === "blocking") return "blocking";
+  if (q.class === "blocking" || q.class === "closing") return q.class;
+  return Array.isArray(q.request) && q.request.length ? "blocking" : "closing";
+};
+export const isBlocking = (q) => classOf(q) === "blocking";
 
 /** The proof state a decision's options have reached, or "" — the client's reading of the map
  *  `rsched/proofs.py` stores on the record (D220). The RANK is that module's `_RANK`: a
@@ -64,23 +96,25 @@ export const proofState = (q) => {
 export const unproven = (q) => Boolean(q.answered)
   && ["open", "in_progress", "negative"].includes(proofState(q));
 
-export const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"],
+export const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["closing", "Closing"],
                         ["meta", "Meta"], ["proposal", "Proposals"], ["unproven", "Unproven"],
                         ["snoozed", "Snoozed"]];
 export const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldest"],
                       ["routine", "routine"]];
 
 /** The one filter bucket a decision belongs to — so a proposal is filterable on its own
- *  instead of swelling Deferred's count with items nothing is waiting for. */
+ *  instead of swelling Closing's count with items nothing is waiting for. The two question
+ *  buckets are the CLASS (D212 (c)); `proposal` stays what R2425 made it, a CLOSING ask no
+ *  consumer is waiting on at all. */
 export const kindOf = (q) => (unproven(q) ? "unproven"
   : q.meta ? "meta"
-  : q.mode !== "blocking" && !waitsOnYou(q) ? "proposal"
-  : q.mode);
+  : !isBlocking(q) && !waitsOnYou(q) ? "proposal"
+  : classOf(q));
 
 const PROPOSAL = 3;
 export const rank = (q) => (unproven(q) ? 4
   : q.answered ? 5
-  : q.mode === "blocking" ? 0
+  : isBlocking(q) ? 0
   : q.meta ? 2
   : waitsOnYou(q) ? 1
   : PROPOSAL);
@@ -88,15 +122,19 @@ export const rank = (q) => (unproven(q) ? 4
 // inbox groups, strongest first — the priority sort renders these as sections
 // [noun, what the group is, membership, does it wait on a person]
 export const GROUPS = [
-  ["Blocking", "a run is waiting on you", (q) => !q.answered && q.mode === "blocking", true],
-  ["Deferred", "the next run picks these up",
-   (q) => !q.answered && !q.meta && q.mode !== "blocking" && waitsOnYou(q), true],
+  // D212 (c): the CLASS, not the parked process. The captions state the class's own test, because
+  // "a run is waiting on you" was false of the band in both directions — a parked run is one way
+  // to be blocked, not the definition, and nothing waits on a run that already finished.
+  ["Blocking", "a run could not do its job without your answer",
+   (q) => !q.answered && isBlocking(q), true],
+  ["Closing", "the run finished without it — your answer shapes the next one",
+   (q) => !q.answered && !q.meta && !isBlocking(q) && waitsOnYou(q), true],
   ["Meta", "system-level decisions", (q) => !q.answered && q.meta, true],
   // Below everything that waits, above what is already answered: nobody is waiting, so it is
   // not urgent — but it is still OPEN, so it is not settled either. `waits: false` keeps the
   // console's one colour for a person being waited on off this count.
   ["Proposals", "considered ideas, decide when you like",
-   (q) => !q.answered && q.mode !== "blocking" && !q.meta && !waitsOnYou(q), false],
+   (q) => !q.answered && !isBlocking(q) && !q.meta && !waitsOnYou(q), false],
   // D220/F795: ANSWERED, and nothing has yet shown the work landed. Above Settled because the
   // item is not finished, below everything that waits because it is not a question — his hard
   // constraint is that a row whose proof is unproven is never re-presented as an unanswered

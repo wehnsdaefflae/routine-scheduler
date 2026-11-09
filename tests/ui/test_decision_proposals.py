@@ -52,7 +52,8 @@ def test_a_standing_proposal_gets_its_own_group_under_the_ones_that_wait(ui, ui_
     heads = ui_page.locator(HEADS)
     expect(heads).to_have_count(3)
     expect(heads.nth(0)).to_contain_text("Blocking")
-    expect(heads.nth(1)).to_contain_text("Deferred")
+    # D212 (c): the middle band is the CLOSING class — a question the run finished without.
+    expect(heads.nth(1)).to_contain_text("Closing")
     # the group, its noun and the operator's own caption — last, under both that wait
     expect(heads.nth(2)).to_contain_text("Proposals")
     expect(heads.nth(2)).to_contain_text(CAPTION)
@@ -135,17 +136,22 @@ def test_the_predicate_is_derived_from_the_payload_the_api_already_sends(ui, ui_
         "  ended_run: w({ mode: 'deferred', run_state: 'finished' }),"
         "  no_run_at_all: w({ mode: 'deferred' }),"
         "  kind_of_proposal: m.kindOf({ mode: 'deferred', run_state: 'failed' }),"
-        "  kind_of_deferred: m.kindOf({ mode: 'deferred', run_state: 'running' }) }; }")
+        "  kind_of_closing: m.kindOf({ mode: 'deferred', run_state: 'running' }),"
+        # D212 (c): the bucket is the CLASS. A `blocks_work` ask whose run has ENDED is still
+        # blocking — the work is blocked, so it is never demoted to a proposal.
+        "  kind_of_blocked_work: m.kindOf({ mode: 'deferred', class: 'blocking',"
+        "                                   run_state: 'finished' }) }; }")
     assert verdicts == {
         "blocking": True, "meta": True, "conversation": True, "background": True,
         "live_run": True, "waiting_run": True,
         "ended_run": False,          # the filing run is over — nobody is waiting
         "no_run_at_all": False,      # the run dir is gone; there is no consumer to name
-        "kind_of_proposal": "proposal", "kind_of_deferred": "deferred"}
+        "kind_of_proposal": "proposal", "kind_of_closing": "closing",
+        "kind_of_blocked_work": "blocking"}
 
 
 def test_proposals_have_their_own_filter_chip(ui, ui_page):
-    """Filterable like every other group — and its items are NOT counted into Deferred, which
+    """Filterable like every other group — and its items are NOT counted into Closing, which
     is the half that makes the count honest."""
     ui.seed_run("uir", "20260715-100000", "running")
     ui.seed_question("uir", "q-live", "Which exporter next?", asked="20260715-100000")
@@ -153,7 +159,7 @@ def test_proposals_have_their_own_filter_chip(ui, ui_page):
     ui.seed_question("uir", "q-prop", "Rename fau's two ladder keys?", asked="20260714-070000")
 
     ui_page.goto(f"{ui.url}/#/questions")
-    expect(ui_page.get_by_role("button", name="Deferred · 1")).to_be_visible()
+    expect(ui_page.get_by_role("button", name="Closing · 1")).to_be_visible()
     chip = ui_page.get_by_role("button", name="Proposals · 1")
     expect(chip).to_be_visible()
     chip.click()

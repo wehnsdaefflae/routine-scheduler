@@ -14,8 +14,20 @@ that record, and *you* choose which ones are on. The agent never picks a channel
 | background-task result (`detach`) | a durable message in the owner conversation's `inbox/` | the conversation |
 
 Everything that needs *a decision from you* is always on the **Decisions page** — blocking
-asks, deferred asks, and util approvals share one record shape (`{mode, type, default,
+asks, deferred asks, and util approvals share one record shape (`{mode, class, type, default,
 expires}`). Answering on any surface resolves the record everywhere.
+
+Two of those fields are easy to confuse, and the page is organized by the second (D212):
+
+| Field | The question it answers | Who sets it |
+|---|---|---|
+| `mode` | did the asking run's **process** sit and wait for the answer? | the action (`blocking` / `deferred`) |
+| `class` | could the run do **the work it was fired to do** without the answer? | its SUBJECT by default — a typed access `request` is `blocking`, a plain question `closing` — and the run may override it per question with `blocks_work: true` |
+
+The Decisions page groups by **`class`**, so the top band is what is holding work up and the
+one below it is what merely shapes the next run — not by whose process happens to be parked.
+A `closing` ask of a run that has already **finished** rides that run's finish banner too, so it
+is answerable where the result is read (`static/components/closing-asks.js`).
 
 ## The channel: the web console, and only the web console
 

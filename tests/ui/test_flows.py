@@ -86,7 +86,7 @@ def test_decisions_snooze_and_defer(ui, ui_page):
 
 
 def test_decisions_inbox_groups(ui, ui_page):
-    """Priority view renders SECTIONS (blocking > deferred), an about-to-expire blocking
+    """Priority view renders SECTIONS (blocking > closing — D212 (c)), an about-to-expire blocking
     ask carries the loud chip, and keyboard focus lands on the first (most urgent) input."""
     from datetime import UTC, datetime, timedelta
 
@@ -101,7 +101,7 @@ def test_decisions_inbox_groups(ui, ui_page):
     heads = ui_page.locator(".q-group-head")
     expect(heads).to_have_count(2)
     expect(heads.nth(0)).to_contain_text("Blocking")
-    expect(heads.nth(1)).to_contain_text("Deferred")
+    expect(heads.nth(1)).to_contain_text("Closing")   # D212 (c): the bands are the CLASS
     expect(ui_page.locator(".question-item.warn .chip", has_text="expiring")).to_be_visible()
     assert ui_page.evaluate("document.activeElement.dataset.persist") == "answer-q-b1"
 
