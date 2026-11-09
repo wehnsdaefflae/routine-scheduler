@@ -98,6 +98,34 @@ function b64ToBytes(b64url) {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
+// ---- presence: tell the daemon he is AT the console, so it holds a push back (D280) ----------
+//
+// Tier 2 exists for an operator who is AWAY. While he is HERE the ask is already on his
+// Decisions page and on the header badge, so pushing his phone for it is the noise that trains
+// a person to ignore the channel. The daemon holds a new push for `PRESENCE_S` after the last
+// beat and sends it once that lapses with the ask still open — deferred, never dropped, and a
+// withdrawal is never held (web/push.py).
+//
+// FOREGROUND ONLY, which is the whole point: `document.hidden` is true for a background tab,
+// and a browser left open on another desktop is not a person looking at this page. Only the
+// client knows that, which is why this is a POST of its own rather than a flag on the
+// `/api/status` poll every reader makes.
+const PRESENCE_MS = 30000;      // three beats inside the daemon's 90 s window
+
+function beat() {
+  if (document.hidden) return;
+  api("/api/push/present", { method: "POST", body: {} }).catch(() => {});
+}
+
+/** Start the heartbeat: now, on every visibility change back to the foreground, and on a
+ *  floor. Called once by the entry module.
+ */
+export function startPresence() {
+  beat();
+  document.addEventListener("visibilitychange", beat);
+  setInterval(beat, PRESENCE_MS);
+}
+
 export async function pushStatus() {
   if (!pushSupported()) return { supported: false, subscribed: false };
   const reg = await navigator.serviceWorker.getRegistration("/");

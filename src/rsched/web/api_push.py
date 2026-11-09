@@ -44,6 +44,21 @@ def unsubscribe(request: Request, body: UnsubscribeBody) -> dict:
     return {"ok": True, "subscriptions": n}
 
 
+@router.post("/push/present")
+def present(request: Request) -> dict:
+    """The console's presence heartbeat (D280): a tab that is OPEN AND IN THE FOREGROUND says
+    so, and the decision sender holds a push back for `push.PRESENCE_S` after the last one.
+
+    Here rather than on `/api/status` — which the console already polls on the same floor —
+    because status is read by the dashboard, by `postdeploy`, by the audit and by anything
+    that asks what this instance is: a GET that a reader can make must not record that a
+    PERSON is present. A background tab must not beat either (the ask is "is he looking at
+    this", not "is a browser running"), and only the client knows that.
+    """
+    at = push.note_presence(request.app.state.server)
+    return {"ok": True, "at": at, "window_s": push.PRESENCE_S}
+
+
 @router.post("/push/test")
 def test(request: Request) -> dict:
     """One test notification to every subscribed browser — the Settings page's proof."""

@@ -97,7 +97,20 @@ asleep or out of coverage rather than dropping it. (The library default is `ttl=
 deliver now to a connected device or discard — which loses precisely the notifications an
 away operator needs, and reports success while doing it.)
 
-Two consequences worth knowing:
+**A push holds back while he is AT the console** (D280). Tier 2 exists for an operator who is
+AWAY; while he is here the ask is already on his Decisions page and on the header badge, so
+pushing his phone for it is the noise that trains a person to ignore the channel. The console
+beats `POST /api/push/present` every 30 s — **foreground tabs only**, because a browser left
+open on another desktop is not a person looking at the page — and the sender holds a NEW push
+for `push.PRESENCE_S` (90 s, three missed beats) after the last beat. Held, never dropped: the
+ask stays out of the dedupe set, so the first pass after his presence lapses pushes it exactly
+once, and if he answered it at the console meanwhile nothing is pushed at all. A WITHDRAWAL is
+never held — it clears an alert already on his phone, and leaving that there after he answered
+is the same defect from the other side. Presence is its own POST rather than a flag on the
+`/api/status` poll every reader makes, because a GET anyone can make must not record that a
+PERSON is present.
+
+Two further consequences worth knowing:
 
 - **Subscribing takes the operator's primary token.** `POST /api/push/subscribe` is
   sealed like every other mutation (see the two tiers below). That is deliberate and must

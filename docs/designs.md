@@ -599,21 +599,3 @@ names the capability, never a model or a util, and is bound per routine like eve
 
 **First increment.** (a) the field, its catalog-row control and the `list_models` rendering; (b)
 the rule in the library seed, bound to self-audit first, its runs' use read back by rules-review.
-
----
-
-## Web Push holds back while the operator is at the console (decided 2026-11-08, in conversation)
-
-From a review of getpaseo/paseo: its daemon pushes to the phone only when no client has been
-active for 180 s (`PRESENCE_THRESHOLD_MS`), shows an in-app notice to an active client instead,
-and sends nothing when that client is already looking at the agent concerned.
-
-**Shape.** `web/push.py`'s decision sender skips a push for a question or proposal while a
-console tab has reported activity within a presence window, and pushes it once that window
-lapses with the ask still open — the existing `push-notified.json` dedupe and the withdrawal on
-settle are unchanged, so a deferred push is sent at most once and withdrawn like any other.
-Presence is a heartbeat the console already open on any page sends; a tab in the background
-does not count as present. A push is never DROPPED for presence, only deferred.
-
-**First increment.** The presence heartbeat and the deferral in the sender, with tests for: no
-push while present, one push after the window lapses, none if the ask was settled meanwhile.

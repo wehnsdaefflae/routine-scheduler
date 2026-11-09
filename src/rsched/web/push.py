@@ -40,6 +40,19 @@ _QUIET_S = 2.0
 #: decision waited for the WHOLE fleet to go quiet before its push left.
 _MAX_COALESCE_S = 10.0
 
+#: Where the console's presence heartbeat lands (D280). One file, one stamp: the question is
+#: "was anyone at the console recently", not which tab or which browser.
+_PRESENT_FILE = "push-presence.json"
+
+#: How long after a heartbeat the operator counts as PRESENT, and so how long a push is held.
+#: The console beats every 30 s (it already polls `/api/status` on that floor), so this is
+#: three missed beats — long enough that a tab switch or a sleeping laptop does not read as
+#: absence, short enough that a decision filed the moment he walks away is pushed within
+#: minutes rather than hours. A push is never DROPPED for presence, only DEFERRED: the ask
+#: stays out of the notified set while he is here, so the next pass after this window lapses
+#: pushes it exactly once, and the existing withdraw-on-settle path still retracts it.
+PRESENCE_S = 90.0
+
 
 def push_dir(server) -> Path:
     """Where push state lives: next to config.yaml (server.source), so a container keeps
@@ -143,6 +156,43 @@ def send_to_all(server, payload: dict) -> int:
     return sum(_send_one(server, s, payload) for s in subscriptions(server))
 
 
+# ---- presence: is the operator AT the console right now? (D280) --------------------------------
+
+
+def note_presence(server, *, now: float | None = None) -> float:
+    """Record that a console tab is open and in the foreground. Returns the stamp written.
+
+    A monotonic-free wall stamp on purpose: the writer is a web request and the reader is a
+    daemon thread in the same process, but the file survives a restart, and after one a stale
+    stamp must read as absence rather than as presence from a clock that reset. `time.time()`
+    compared against `PRESENCE_S` does that; `loop.time()` would not.
+    """
+    import time
+
+    stamp = float(now if now is not None else time.time())
+    atomic_write_json(push_dir(server) / _PRESENT_FILE, {"at": stamp})
+    return stamp
+
+
+def at_console(server, *, now: float | None = None) -> bool:
+    """Whether a heartbeat arrived within `PRESENCE_S` — "he is here, show him in the page".
+
+    False on every unreadable shape (no file, a dict without `at`, a stamp that is not a
+    number, a stamp in the FUTURE by more than the window — a clock that jumped forward must
+    not silence every push until it catches up). The conservative direction is PUSHING: a
+    notification he did not need costs him a glance, and one that never came costs a decision
+    sitting unanswered for a day.
+    """
+    import time
+
+    rec = read_json(push_dir(server) / _PRESENT_FILE)
+    at = rec.get("at") if isinstance(rec, dict) else None
+    if not isinstance(at, (int, float)):
+        return False
+    elapsed = float(now if now is not None else time.time()) - float(at)
+    return 0 <= elapsed <= PRESENCE_S
+
+
 def _open_asks(server) -> list[tuple[str, str, str]]:
     """What waits on a person, as (key, title, text): every open unanswered QUESTION (keyed by
     its qid) and every standing PROPOSAL (keyed by its `pc-` id — the two id spaces never
@@ -169,11 +219,19 @@ def notify_new_decisions(server) -> int:
         return 0
     asks = _open_asks(server)
     open_keys = {key for key, _, _ in asks}
+    # D280: he is AT the console, where the ask is already on his Decisions page and on the
+    # header badge. Pushing his own phone for something on the screen in front of him is the
+    # noise that trains a person to ignore the channel. So a NEW ask is held — and held
+    # correctly: it stays OUT of the notified set below, so the first pass after his presence
+    # lapses pushes it exactly once. A WITHDRAWAL is not held: it clears a tray notification
+    # that is already on his phone, and leaving it there after he answered at the console is
+    # the same defect from the other side.
+    present = at_console(server)
     with _lock:
         notified = read_json(push_dir(server) / _NOTIFIED_FILE)
         notified = notified if isinstance(notified, list) else []
         known = set(notified)
-        fresh = [ask for ask in asks if ask[0] not in known]
+        fresh = [] if present else [ask for ask in asks if ask[0] not in known]
         # An ask we already pushed that is no longer open has been answered, decided or
         # withdrawn: send a same-tag "close" push so the phone notification is retracted, and
         # drop the key so an ask that re-opens later notifies afresh.

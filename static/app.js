@@ -7,7 +7,7 @@ import { parseHash } from "/static/router.js";
 import { installTracing } from "/static/trace.js";
 import { installFormPersistence } from "/static/formpersist.js";
 import { el, fmtAbs, skeleton, startTimeTicker, storage, toast, toastError } from "/static/util.js";
-import { initNotifications } from "/static/notify.js";
+import { initNotifications, startPresence } from "/static/notify.js";
 import { loadQuestions } from "/static/questions-store.js";
 import { initHeaderBadges } from "/static/components/header-badges.js";
 import { initTaskManager } from "/static/components/taskmanager.js";
@@ -360,7 +360,7 @@ window.addEventListener("hashchange", route);
   initRailResize();
   const ribbonHost = document.getElementById("ribbon");
   if (ribbonHost) mountRibbon(ribbonHost);
-  initNotifications();
+  initNotifications(); startPresence();   // D280: a push is held while he is at the console
   initTaskManager();
   // The read-only screen previews (and their nav links) — each appears only when this instance
   // is pointed at that screen, so it self-hides on an install that never set one up.
