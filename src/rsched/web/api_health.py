@@ -23,6 +23,7 @@ from ..readmodels.health_stream import (
     blocked_fleet,
     recent_events,
 )
+from ..readmodels.operator_blocks import annotate
 
 router = APIRouter(tags=["health"])
 
@@ -35,8 +36,18 @@ def blocked(request: Request,
     (event, subject) with a count, first/last stamps and the newest detail, newest first;
     `vocabulary` is what each event name means, so the console renders a label it was not
     compiled with. `total` is 0 on a healthy instance — an empty list is the good reading.
+
+    Each row also says WHO can clear it (F796, `readmodels/operator_blocks`): `operator` is
+    true for a block nothing inside the system will clear — a stale backup, dropped fires
+    under a pause, a one-shot consumed unfired, a lane naming a member that is not a routine
+    — and those rows carry `waiting_on_you`, the sentence naming what only he can do.
+    `operator_total` counts them as DISTINCT ROWS, which is the number the header badge
+    carries: a pause that ate eight fires of one routine is one thing to go and fix, while
+    `total` keeps counting occurrences for the panel. The judgement is SERVED for the same
+    reason `vocabulary` is — one place decides it, and the console renders what it was not
+    compiled with.
     """
-    return blocked_fleet(request.app.state.server, days=days)
+    return annotate(blocked_fleet(request.app.state.server, days=days))
 
 
 @router.get("/health/events")

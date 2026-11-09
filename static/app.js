@@ -8,7 +8,8 @@ import { installTracing } from "/static/trace.js";
 import { installFormPersistence } from "/static/formpersist.js";
 import { el, fmtAbs, skeleton, startTimeTicker, storage, toast, toastError } from "/static/util.js";
 import { initNotifications } from "/static/notify.js";
-import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
+import { loadQuestions } from "/static/questions-store.js";
+import { initHeaderBadges } from "/static/components/header-badges.js";
 import { initTaskManager } from "/static/components/taskmanager.js";
 import { initBrowserDock } from "/static/components/browserdock.js";
 import { initDesktopDock } from "/static/components/desktopdock.js";
@@ -249,19 +250,6 @@ async function refreshStatus() {
   }
 }
 
-// The header badge is one READER of the shared questions store (questions-store.js), which
-// owns the bus listener, the cadence and the single in-flight fetch for every surface that
-// reads /api/questions. It counts everything waiting on a person: the open questions and
-// the standing proposals the Decisions page shows in its own band.
-function paintBadge({ items, proposals = [] }) {
-  // answered-but-unconsumed items are settled; snoozed ones wait silently by design
-  const open = items.filter((q) => !q.answered && !q.snoozed).length + proposals.length;
-  const badge = document.getElementById("q-badge");
-  if (!badge) return;
-  badge.textContent = open;
-  badge.hidden = open === 0;
-}
-
 function globalStream() {
   // The global event stream drives every view's live refresh (dashboard routine states,
   // decision badges, run toasts). A stream ticket opens ONE socket and every ticket is purged
@@ -390,7 +378,7 @@ window.addEventListener("hashchange", route);
   }
   route();
 })();
-subscribeQuestions(paintBadge);
+initHeaderBadges();   // the rail's two counts of work waiting on a person (header-badges.js)
 loadQuestions().catch(() => { /* the daemon lamp covers connectivity */ });
 globalStream();
 // The 30s floor under the bus: a dropped event (or a stream that never opened) must not

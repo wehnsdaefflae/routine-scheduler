@@ -81,6 +81,11 @@ export async function blockedSection() {
     el("td", {}, el("div", {}, r.event),
       r.corrected ? el("div", { class: "faint small" }, "corrected — the run behind this was "
         + "resumed and finished ok") : null,
+      // F796: the few rows nothing inside the system will clear say so HERE too, in the
+      // server's own words (`operator_blocks.OPERATOR_CLEARABLE`) — the rail's badge counts
+      // them, and a reader who follows the badge here must find out what to do, not just that
+      // something is wrong. The rest of the fold clears itself and says nothing extra.
+      r.operator ? el("div", { class: "small" }, `waiting on you — ${r.waiting_on_you}`) : null,
       el("div", { class: "faint small" }, r.means || "")),
     subjectCell(r.subject),
     el("td", { class: "num" }, fmtInt(r.count)),

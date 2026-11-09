@@ -85,7 +85,13 @@
     <div class="nav-zone dev" role="group" aria-labelledby="nav-dev-label">
       <span class="nav-group" id="nav-dev-label">Develop</span>
       <a href="#/changes" data-nav="changes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4V13a4 4 0 0 0 4 4h5.6"/><path d="M18 15.6V11a4 4 0 0 0-4-4H8.4"/></svg>Changes</a>
-      <a href="#/stats" data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Stats</a>
+      <!-- The badge counts BLOCKS ONLY THE OPERATOR CAN CLEAR (F796) — a stale backup, due
+           fires dropped by a pause, a one-shot consumed unfired, a lane naming a member that
+           is not a routine. The blocked-work panel this page carries lists the fleet's whole
+           blocked list; these few rows are the ones no run, watcher or cooldown will clear, so
+           they ride the rail like the Decisions count: `.badge` is the summons colour, and
+           nothing merely alive wears one. -->
+      <a href="#/stats" data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Stats<span id="blocked-badge" class="badge" hidden></span></a>
       <a href="#/library" data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5Z"/><path d="M13 4h5.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H13Z"/></svg>Library</a>
     </div>
     <span class="nav-group">System</span>

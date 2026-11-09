@@ -1807,7 +1807,10 @@ every copy it left (`migrate_converse_goals` carries this release's `converse` r
   `migration_expired`, `migration_due_soon`, `obligation_overdue`, `wrong_turn_detected`,
   `item_dropped_live`, `model_chain_exhausted`, `process_overhead_high` — one row per (event, subject) with a count and the newest
   detail, because none of them can reach a run page, Items row or Stats slice; the count and
-  the names are pinned by `tests/test_chain_exhausted_blocked.py`) — a read-model is a pure
+  the names are pinned by `tests/test_chain_exhausted_blocked.py`; `readmodels/operator_blocks`
+  then marks the five of them nothing inside the system will clear — a stale backup, dropped
+  fires under a pause, a one-shot consumed unfired, a lane naming a member that is not a
+  routine — and serves `operator_total`, the rail's blocked badge, F796) — a read-model is a pure
   derivation, deletable state, never a writer. The Decisions read model (`web/decisions_read.py` — what `/api/questions`, the
   badge, the tab-open notifier and Web Push all read) is memoized per home on the same fingerprint
   over the catalog's own sources (the home listing, every `routine.yaml`, every `questions/pending`

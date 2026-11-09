@@ -897,6 +897,23 @@ store, never by reading a prefix), the repo's directory name for a commit that d
 (a routine's slug, or the library's own directory), empty for a scheduler tick. `total: 0`
 is the healthy reading.
 
+**WHO CAN CLEAR IT is the second question, and the one a badge can carry** (F796,
+`readmodels/operator_blocks.py`). Every row of this fold also says whether it is a block
+NOTHING INSIDE THE SYSTEM WILL CLEAR: `operator: true` plus `waiting_on_you`, the sentence
+naming what only the operator can do, for `backup_stale` (a host unit did not complete),
+`fire_paused` / `lane_fire_paused` (scheduling is paused and due fires are being dropped, never
+made up — D237), `oneshot_skipped` (consumed unfired) and `lane_chain_member_skipped` (a lane
+names a member that is not a routine in any home). `operator_total` counts those as DISTINCT
+ROWS — one per thing to go and fix, so a pause that ate eight of one routine's fires is one —
+and that count is the rail's blocked badge beside Stats, on every page. Everything else clears
+itself and is deliberately left off: the next fire, the next tick, a daily cap reset, a
+cooldown lapsing, a later commit, a routine's own next run — and `wrong_turn_detected`,
+`process_overhead_high` and `finish_gate_failed` are measurements of runs that DID happen (202
+`wrong_turn_detected` in three weeks on this instance), so a badge counting them would never be
+dark, which is the same as not having one. The judgement is SERVED, exactly like `vocabulary`:
+one module decides it and the console renders what it was not compiled with, so adding an event
+to the set lights the badge with no console change.
+
 **A corrected run leaves this fold** (F637/F703). A run that ended not-ok, was resumed and
 finished `ok` files `run_corrected` (`rsched/runcorrection.py`), and the fold resolves it: the
 superseded row — the `attempts_exhausted` turn that ended the run, say — stops being counted,
