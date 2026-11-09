@@ -25,6 +25,12 @@ IN — nothing inside the system can clear these:
   - `lane_chain_member_skipped` — a lane names a member that is not a routine in any home.
     That is a standing misconfiguration of the lane, so it recurs at every fire until the
     membership is corrected, and lane membership is his.
+  - `answer_undelivered` — an answer he gave that no run will ever read. Only he can hand it
+    to a run or settle it (the Decisions page's deliver / settle).
+
+A row counts ONLY WHILE ITS CONDITION STILL HOLDS (2026-11-09): `annotate` asks a
+`still_holds(event, subject)` reader (`web/operator_conditions`) and a row whose condition is
+known to be over is marked `resolved` instead — kept on the panel as history, off the badge.
 
 OUT, with the reason, because a badge that cries wolf is worse than no badge:
   - `fire_refused`, `scheduler_tick_error` — the next fire or the next tick clears them.
@@ -55,6 +61,8 @@ is served, never duplicated in JS.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from .health_stream import BLOCKED_EVENTS
 
 #: event -> what only the operator can do about it, in the imperative, for the row's own
@@ -71,6 +79,18 @@ OPERATOR_CLEARABLE: dict[str, str] = {
                        "re-arm it if that work is still wanted",
     "lane_chain_member_skipped": "a lane names a member that is not a routine in any home, so "
                                  "every fire of that chain skips it — correct the membership",
+    "answer_undelivered": "you answered a decision that no run will ever read — deliver it or "
+                          "settle it on the Decisions page",
+}
+
+#: event -> what is true once its condition is over, for a `resolved` row's line on the panel.
+RESOLVED: dict[str, str] = {
+    "backup_stale": "a snapshot has completed since — the backup watch reads it current",
+    "fire_paused": "scheduling is no longer paused; the skipped fires are gone by design (D237)",
+    "lane_fire_paused": "scheduling is no longer paused; the skipped fires are gone by design "
+                        "(D237)",
+    "lane_chain_member_skipped": "no lane names that slug any more, or it is a routine again",
+    "answer_undelivered": "the answer has been read by a run, or settled",
 }
 
 
@@ -79,7 +99,8 @@ def is_operator_block(event: str) -> bool:
     return event in OPERATOR_CLEARABLE
 
 
-def annotate(payload: dict) -> dict:
+def annotate(payload: dict,
+             still_holds: Callable[[str, str], bool | None] | None = None) -> dict:
     """`blocked_fleet`'s payload with the operator's share marked, as a fresh dict.
 
     Each row gains `operator` (bool) and, when true, `waiting_on_you` — the sentence naming
@@ -92,6 +113,11 @@ def annotate(payload: dict) -> dict:
         event = str(row.get("event") or "")
         marked = dict(row)
         marked["operator"] = is_operator_block(event)
+        if marked["operator"] and still_holds is not None \
+                and still_holds(event, str(row.get("subject") or "")) is False:
+            marked["operator"] = False
+            marked["resolved"] = True
+            marked["resolved_note"] = RESOLVED.get(event, "the condition no longer holds")
         if marked["operator"]:
             marked["waiting_on_you"] = OPERATOR_CLEARABLE[event]
         rows.append(marked)

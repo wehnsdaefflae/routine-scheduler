@@ -18,6 +18,7 @@ from fastapi import APIRouter, Query, Request
 from ..readmodels.health_reads import DEFAULT_LIMIT, MAX_LIMIT, recent_events
 from ..readmodels.health_stream import DEFAULT_WINDOW_DAYS, MAX_WINDOW_DAYS, blocked_fleet
 from ..readmodels.operator_blocks import annotate
+from .operator_conditions import checker
 
 router = APIRouter(tags=["health"])
 
@@ -39,9 +40,11 @@ def blocked(request: Request,
     carries: a pause that ate eight fires of one routine is one thing to go and fix, while
     `total` keeps counting occurrences for the panel. The judgement is SERVED for the same
     reason `vocabulary` is — one place decides it, and the console renders what it was not
-    compiled with.
+    compiled with. A row counts only while its condition still HOLDS (`operator_conditions`):
+    one known to be over is `resolved`, keeps its place on the panel and leaves the badge.
     """
-    return annotate(blocked_fleet(request.app.state.server, days=days))
+    return annotate(blocked_fleet(request.app.state.server, days=days),
+                    still_holds=checker(request.app.state))
 
 
 @router.get("/health/events")

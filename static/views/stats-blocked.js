@@ -86,6 +86,7 @@ export async function blockedSection() {
       // them, and a reader who follows the badge here must find out what to do, not just that
       // something is wrong. The rest of the fold clears itself and says nothing extra.
       r.operator ? el("div", { class: "small" }, `waiting on you — ${r.waiting_on_you}`) : null,
+      r.resolved ? el("div", { class: "faint small" }, `resolved — ${r.resolved_note}`) : null,
       el("div", { class: "faint small" }, r.means || "")),
     subjectCell(r.subject),
     el("td", { class: "num" }, fmtInt(r.count)),

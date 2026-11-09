@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.3] — 2026-11-09
+
+### Fixed
+- **The blocked badge counts what still holds, not a week of history.** It read 10 on
+  2026-11-09: nine fires skipped under a pause lifted five days earlier, and a `backup_stale`
+  three snapshots after the backup came back. Every operator-only row is now asked about NOW
+  (`web/operator_conditions.py`: the pause file, the backup watch's own verdict, whether the
+  answer still has no reader, whether a lane still names the missing slug); one known to be over
+  is `resolved` — on the Stats panel with what is true now, off the badge. A condition that
+  cannot be told keeps counting. `answer_undelivered` joins the operator set: only the operator
+  delivers or settles an answer.
+
 ## [0.525.2] — 2026-11-09
 
 ### Changed

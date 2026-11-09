@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 from conftest import authed_client, make_test_server
 from helpers import tmp_server
+from rsched.daemon import pause
 from rsched.readmodels import memo, operator_blocks
 from rsched.readmodels.health_stream import BLOCKED_EVENTS, blocked_fleet
 from rsched.readmodels.operator_blocks import OPERATOR_CLEARABLE, annotate
@@ -141,6 +142,7 @@ def test_the_route_serves_the_operators_share(tmp_path):
     server = make_test_server(tmp_path)
     _write(server, [{"event": "lane_fire_paused", "routine": "grp-7a1c", "run_id": "",
                      "ts": _ago(5), "detail": "nightly: due lane fire skipped"}])
+    pause.set_paused(server, True)          # the pause still holds: it is his to lift
 
     with authed_client(server) as client:
         r = client.get("/api/health/blocked")
@@ -150,3 +152,31 @@ def test_the_route_serves_the_operators_share(tmp_path):
     assert body["operator_total"] == 1
     assert body["rows"][0]["operator"] is True
     assert "resume scheduling" in body["rows"][0]["waiting_on_you"]
+
+
+def test_a_block_whose_condition_is_over_leaves_the_badge_and_stays_as_history(tmp_path):
+    """2026-11-09: the badge read 10 — nine fires skipped under a pause lifted five days earlier
+    and a backup that had come back. A row whose condition is KNOWN to be over is `resolved`."""
+    server = make_test_server(tmp_path)
+    _write(server, [{"event": "fire_paused", "routine": "scheduler-builder", "run_id": "",
+                     "ts": _ago(5), "detail": "due fire skipped because scheduling is paused"}])
+    with authed_client(server) as client:          # no pause file: scheduling runs
+        body = client.get("/api/health/blocked").json()
+    [row] = body["rows"]
+    assert body["operator_total"] == 0
+    assert row["operator"] is False and row["resolved"] is True
+    assert "no longer paused" in row["resolved_note"]
+
+
+def test_a_condition_that_cannot_be_told_keeps_counting():
+    """Only a known `False` retires a row: an unknown backup verdict is not a fresh backup."""
+    payload = {"rows": [{"event": "backup_stale", "subject": "", "count": 1}]}
+    unknown = operator_blocks.annotate(payload, still_holds=lambda _e, _s: None)
+    assert unknown["operator_total"] == 1 and not unknown["rows"][0].get("resolved")
+    over = operator_blocks.annotate(payload, still_holds=lambda _e, _s: False)
+    assert over["operator_total"] == 0 and over["rows"][0]["resolved"] is True
+
+
+def test_an_undelivered_answer_is_his_to_clear():
+    assert operator_blocks.is_operator_block("answer_undelivered")
+    assert "Decisions page" in OPERATOR_CLEARABLE["answer_undelivered"]

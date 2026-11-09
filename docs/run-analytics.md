@@ -906,8 +906,15 @@ is the healthy reading.
 NOTHING INSIDE THE SYSTEM WILL CLEAR: `operator: true` plus `waiting_on_you`, the sentence
 naming what only the operator can do, for `backup_stale` (a host unit did not complete),
 `fire_paused` / `lane_fire_paused` (scheduling is paused and due fires are being dropped, never
-made up — D237), `oneshot_skipped` (consumed unfired) and `lane_chain_member_skipped` (a lane
-names a member that is not a routine in any home). `operator_total` counts those as DISTINCT
+made up — D237), `oneshot_skipped` (consumed unfired), `lane_chain_member_skipped` (a lane
+names a member that is not a routine in any home) and `answer_undelivered` (an answer of his no
+run will read). A row counts only WHILE ITS CONDITION STILL HOLDS (2026-11-09,
+`web/operator_conditions.py`): the pause is still on, the backup watch still reads it stale, the
+answer still has no reader, the lane still names the missing slug. One known to be over is
+`resolved` — kept on the panel with a line saying what is true now, off the badge — because on
+2026-11-09 the badge read 10 for a pause lifted five days earlier and a backup that had come
+back; a condition that cannot be told (an `unknown` backup verdict, `oneshot_skipped`) keeps
+counting. `operator_total` counts those as DISTINCT
 ROWS — one per thing to go and fix, so a pause that ate eight of one routine's fires is one —
 and that count is the rail's blocked badge beside Stats, on every page. Everything else clears
 itself and is deliberately left off: the next fire, the next tick, a daily cap reset, a
