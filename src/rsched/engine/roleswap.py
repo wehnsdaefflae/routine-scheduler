@@ -110,6 +110,38 @@ def cheap_model(ctx: RunContext) -> str | None:
     return None if cheap == strong else cheap
 
 
+#: Why a position could not be served — the two distinguishable causes of a None target, so
+#: the run is told the one that actually fired. `cheap_model` answers ONE question ("is there
+#: a cheaper model") and collapses both into None, which is right for its callers and wrong
+#: for the note: a run whose pair is EQUAL used to be told its routine "configures no
+#: tool_call model", a false fact about its own configuration, followed by "do not retry".
+UNSET = "unset"   # the role resolves to nothing: no routine model, no instance default
+SAME = "same"     # the role resolves to the model `main` is already being served from
+
+
+def cheap_unservable(ctx: RunContext) -> str:
+    """Which cause made `cheap_model` answer None — `UNSET`, `SAME`, or "" when it found one.
+
+    Not folded into `cheap_model`: `autoswap` and `_target` want the model or nothing, and a
+    tuple return would make every caller unpack a reason it does not read. This is the same
+    resolution run again for the one caller that needs the reason — the engine note.
+
+    `SAME` is the COMMON case rather than the corner: 14 of 30 routines on this instance set
+    `models.tool_call` to the same catalog model as `models.main` (measured 2026-11-10), which
+    is what the settings patterns ship. Naming it is also the only way the note can point at
+    the fix, because the two causes have opposite ones — set a cheaper model for the role,
+    versus set a DIFFERENT one.
+    """
+    models = ctx.routine.models
+    server = getattr(ctx, "server", None)
+    cheap = models.get("tool_call") or role_default_model(server, "tool_call")[0]
+    if not cheap:
+        return UNSET
+    strong = getattr(ctx, "configured_main", None) or models.get("main") \
+        or role_default_model(server, "main")[0]
+    return SAME if cheap == strong else ""
+
+
 def _target(ctx: RunContext, want: str) -> str | None:
     """The catalog model NAME `main` should resolve to for `want`, or None if it already does.
 
@@ -157,11 +189,22 @@ def apply(loop, action: dict) -> None:
                       "model for the main role again (this routine configures none of its "
                       "own), from this turn's observation on. Your context is unchanged.")
             return
-        enginenote.append(
-            loop, f"role_swap={want} could not be served: this routine configures no "
-                  f"{'tool_call' if want == 'cheap' else 'main'} model and this instance sets "
-                  "no fleet default for it, so your turns continue on the model that is "
-                  "answering them. Do not retry the swap.")
+        tail = ("so your turns continue on the model that is answering them. "
+                "Do not retry the swap.")
+        if want == "cheap" and cheap_unservable(ctx) == SAME:
+            # The cause that used to be reported as the other one. A run told "this routine
+            # configures no tool_call model" when it configures one — the same model as
+            # `main` — is being told a false fact about its own configuration, and the fix
+            # the note implies (set the role) is already done.
+            enginenote.append(
+                loop, f"role_swap={want} could not be served: this routine's tool_call model "
+                      f"is the same model as its main, so there is nothing cheaper to serve "
+                      f"your turns from — {tail}")
+        else:
+            enginenote.append(
+                loop, f"role_swap={want} could not be served: this routine configures no "
+                      f"{'tool_call' if want == 'cheap' else 'main'} model and this instance "
+                      f"sets no fleet default for it, {tail}")
         return
     if models.get("main") == target:
         return   # already there — a repeated swap is not an error and needs no note

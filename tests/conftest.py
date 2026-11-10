@@ -152,7 +152,7 @@ def pytest_configure(config) -> None:
     """
     _refuse_a_foreign_interpreter()
     markexpr = (getattr(config.option, "markexpr", "") or "").replace("  ", " ")
-    if not hasattr(config, "workerinput"):   # the controller waits; its workers are admitted
+    if memgate.should_wait(config):          # the controller waits; workers and stubs do not
         memgate.wait_for_memory("fast" if "not ui" in markexpr else "browser")
     if "not ui" in markexpr:
         return

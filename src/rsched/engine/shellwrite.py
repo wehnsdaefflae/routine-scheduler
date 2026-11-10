@@ -47,7 +47,31 @@ if TYPE_CHECKING:                                  # pragma: no cover - typing o
 _WRITE_SHAPES = (
     r">",                                   # redirect + append (also catches >>)
     r"\b(?:tee|dd|truncate|install)\b",
-    r"\b(?:cp|mv|rm|rmdir|mkdir|ln|touch|chmod|chown)\b",
+    # A write COMMAND, and only in command position. `\b<tok>\b` anywhere matched the token
+    # wherever it appeared — in an inline program's identifiers and in an `echo` of English —
+    # and `ln` is Python's commonest loop variable: `for ln in open(f)` read as the symlink
+    # command. Measured 2026-11-10 over 3,922 fleet shell commands: 64 flagged on an `ln`
+    # loop variable, 20 more on the word "touch" inside narration. That is not mere noise,
+    # because the health row is LATCHED one-per-run: in 6 of the 29 runs that flagged at all,
+    # the row named a read-only command and the run's 21-85 real write-shaped commands were
+    # named NOWHERE — the audit trail pointed at the wrong turn for exactly the two routines
+    # that write the most.
+    # Command position = the start, or after a separator / a line break / a RUNNER that takes
+    # the command as its argument (`sudo`, `time`, `env`, `nohup`, `xargs`, `find -exec`) or a
+    # shell keyword (`then`, `do`, `else`). The runner's OWN flags may sit in between, which is
+    # not a detail: `find … -print0 | xargs -0 -r rm -f` is how the fleet deletes in bulk, and
+    # a pattern demanding the verb immediately after `xargs` loses exactly that real delete
+    # (caught by diffing this change's verdicts against the old shape's over 3,930 commands).
+    # An `ssh host <<EOF` body still flags, because its commands begin their own lines.
+    # `tok=` is excluded: in shell AND in the inline Python this guards, `ln=ln.strip()` is an
+    # ASSIGNMENT, never an invocation.
+    # `-exec` is written WITHOUT a leading `\b`: a word boundary needs a word character on one
+    # side and both ` ` and `-` are non-word, so `\b-exec` can never match — the exact anchor
+    # bug that made the interpreter clause dead code for its whole life (F730). Pinned by the
+    # `find-exec-rm` case, which failed on the first draft of this very line.
+    (r"(?:^|[\n;&|(`{]|\b(?:sudo|time|env|nohup|xargs|then|do|else)\s|-exec\s)"
+     r"(?:\s*-{1,2}[\w-]+)*\s*"
+     r"(?:cp|mv|rm|rmdir|mkdir|ln|touch|chmod|chown)(?:\s|$)(?!=)"),
     # The scan of a multi-token shape stops at every SEPARATOR, `&` included: `&&` ends a
     # command as surely as `|` or `;` does, and a scan that reads past it joins two commands
     # into one that was never run. Measured 2026-11-07: a pure read ending

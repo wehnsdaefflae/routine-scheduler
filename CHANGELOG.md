@@ -15,6 +15,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.4] — 2026-11-10
+
+### Fixed
+- **The `ungated_write` marker spent its one row per run on a read in 6 of 29 runs.** The shape
+  that recognises a bare write command (`engine/shellwrite.marks_a_write`) matched its write
+  tokens ANYWHERE in the command line, so `for ln in open(f)` — Python's commonest loop variable
+  — read as the `ln` symlink command, and `echo "=== files I would touch ==="` as `touch`.
+  Measured over 3,941 shell commands in the fleet's own transcripts: 996 flagged before, 924
+  after, **72 changed from flagged to clear and none from clear to flagged** (64 `ln` loop
+  variables, 4 `touch` in narration, 4 `rm` inside a grep pattern or a `--help`). The harm is
+  not noise: the health event is latched ONE PER RUN, so in 6 of the 29 runs that filed one, the
+  row named a read-only command while 21 to 85 genuine write-shaped commands in the same run
+  were named nowhere — a compensating control defeated, which this module's own docstring calls
+  worse than none ("a detector a reader learns to discount"). The write token must now sit in
+  COMMAND POSITION, with runner flags allowed between (`xargs -0 -r rm -f` kept its flag, a
+  regression the first draft introduced and the fleet-wide diff caught). `-exec` is anchored
+  without a leading `\b`, which cannot match before a `-` — the dead-anchor class of F730, and
+  the `find-exec-rm` pin failed on the first draft of that very line.
+- **A release gate could hang for twenty minutes holding the lock every other gate waits
+  for — only when the box was loaded.** 0.525.2 made `tests/conftest.pytest_configure` wait on
+  the engine container's cgroup headroom as well as host memory, admitting any config without a
+  `workerinput` attribute as "the controller". A unit test that calls that hook directly to pin
+  the distribution logic passes a stub with an `option` namespace and nothing else — so
+  `tests/test_ui_harness.py`'s three such nodes entered the real memory wait, two of them asking
+  for the BROWSER need (3,584 MB). Measured on gate `1794268634309389266-release`: both blocked
+  for exactly the 300 s pytest timeout, were marked `rerun`, restarted, and the fast stage never
+  reported a verdict at 6,736 of 6,737 tests — while holding `/tmp/rsched-gates.lock`, so the
+  hang is not local to one gate. The same nodes pass in 0.0 s on a quiet box, which is why it
+  shipped: a gate hang that appears only under load appears only when the gate matters.
+  `memgate.should_wait` now requires a real pytest config (`pluginmanager`) as well as the
+  controller role, with the measurement in its docstring. `tests/test_memgate.py` had nine tests
+  and exercised this seam in none of them; it now drives the REAL hook with the REAL stub shape
+  and fails if the wait is entered at all, because asserting on the predicate alone would not
+  have caught a defect that lived at the call site.
+- **`role_swap` told 14 of 30 routines a false fact about their own configuration.**
+  `engine/roleswap.cheap_model` returns None for two causes — the `tool_call` role resolves to
+  nothing, or it resolves to the model `main` is already served from — and the engine note
+  enumerated only the first: *"this routine configures no tool_call model and this instance sets
+  no fleet default for it"*, followed by *"do not retry the swap"*. The equal pair is the COMMON
+  case, not the corner: 14 of 30 routines set `models.tool_call` to the same catalog model as
+  `models.main`, which is what the settings patterns ship, and only 2 can serve a cheap turn at
+  all. `cheap_unservable` now resolves which cause fired (`UNSET` / `SAME`) and the note names
+  it, because the two have opposite fixes — set a model for the role, versus set a *different*
+  one. One test per cause: the old wording was pinned nowhere, which is how it came to describe
+  one case while firing on both. Found by `config-optimizer`, measured and forwarded by
+  `scheduler-builder` (R3295 → R3297 → R3304); its fleet reading stands — `role_swap` was
+  attempted 3 times since 2026-10-20 and served 0 times.
+
 ## [0.525.3] — 2026-11-09
 
 ### Fixed

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import types
+
 import pytest
 
 import memgate
@@ -118,3 +120,48 @@ def test_the_fast_budget_still_covers_the_worker_count_it_claims_to():
         f"memgate's fast budget is {memgate.NEED_MB['fast']} MB but FAST_WORKERS={workers} at "
         f"~250 MB each needs at least {floor} MB — raise NEED_MB['fast'] or lower FAST_WORKERS")
     assert memgate.NEED_MB["browser"] >= browsersource.BROWSER_WORKERS * 250
+
+
+# ---- who may block: the controller only (2026-11-10, gate 1794268634309389266-release)
+#
+# `wait_for_memory` is correct and these tests do not touch it. What was wrong is WHO reached
+# it: the admission check was `not hasattr(config, "workerinput")`, which is true of a real
+# controller AND of the stub a unit test hands the hook directly. Two such nodes blocked for
+# the full 300 s pytest timeout inside the fast stage, were rerun, and the gate never reported
+# — while holding the shared gate lock, so every other gate on the box queued behind it.
+
+
+def test_a_worker_is_admitted_without_waiting():
+    config = types.SimpleNamespace(option=types.SimpleNamespace(markexpr=""),
+                                   workerinput={}, pluginmanager=object())
+    assert memgate.should_wait(config) is False
+
+
+def test_a_real_controller_waits():
+    config = types.SimpleNamespace(option=types.SimpleNamespace(markexpr=""),
+                                   pluginmanager=object())
+    assert memgate.should_wait(config) is True
+
+
+def test_a_unit_tests_config_stub_never_enters_the_wait():
+    """The regression itself, driven through the REAL hook with the REAL stub shape.
+
+    `tests/test_ui_harness.py` pins the distribution logic by calling `pytest_configure` with a
+    stub carrying only `option`. Asserting on `should_wait` alone would not have caught the
+    defect — the defect was in the hook's call site — so this drives the hook and fails if the
+    wait is entered at all, whatever the box's memory happens to be when the suite runs.
+    """
+    import conftest as root_conftest
+
+    entered: list[str] = []
+    original = memgate.wait_for_memory
+    memgate.wait_for_memory = lambda selection, **kw: entered.append(selection)
+    try:
+        stub = types.SimpleNamespace(
+            option=types.SimpleNamespace(dist="no", markexpr="", loadgroup=False))
+        root_conftest.pytest_configure(stub)
+    finally:
+        memgate.wait_for_memory = original
+    assert entered == [], (
+        f"a config stub reached the memory wait for {entered} — on a loaded box that blocks "
+        "for the pytest timeout and the gate holds the shared lock while it does")

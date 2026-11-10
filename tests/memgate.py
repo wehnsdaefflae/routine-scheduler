@@ -68,6 +68,35 @@ def cgroup_headroom_mb(cgroup: Path = CGROUP) -> int | None:
     return (int(limit) - anon - swap) // (1024 * 1024)
 
 
+def should_wait(config) -> bool:
+    """Is this the CONTROLLER of a real gate session — the one process that may block?
+
+    Two things must be true, and the second was missing until 0.525.4. A worker is admitted
+    without waiting (it carries `workerinput`; the controller already waited for the whole
+    selection). And the config must be a REAL pytest one: a unit test that calls the
+    `pytest_configure` hook directly to pin its distribution logic passes a stub with an
+    `option` namespace and nothing else, and a stub has no `workerinput` either — so it fell
+    into the controller branch and entered a twenty-minute memory wait inside a test.
+
+    MEASURED, because it cost a whole release gate (2026-11-10, gate
+    `1794268634309389266-release`): `tests/test_ui_harness.py` calls the hook three times with
+    such a stub. Two of those selections ask for the BROWSER need, and on a box already running
+    a 4-worker fast stage the cgroup headroom is below it — so both nodes blocked for exactly
+    the 300 s pytest timeout, were marked `rerun`, restarted, and the stage never reported. The
+    gate holds `/tmp/rsched-gates.lock` while that happens, so the hang is not local to one
+    gate: every other routine's gate on this box waits behind it, for up to
+    `RSCHED_TEST_MEM_WAIT_S` (20 min by default).
+    It was invisible until then because the same three nodes pass in 0.0 s on a quiet box: the
+    wait returns at once when the memory is there. A gate hang that appears only under load
+    appears only when the gate matters.
+
+    `pluginmanager` is the discriminator rather than a type check: every real `Config` has one
+    from its constructor, no stub in this suite does, and it stays true for a config a future
+    plugin wraps.
+    """
+    return not hasattr(config, "workerinput") and hasattr(config, "pluginmanager")
+
+
 def wait_for_memory(selection: str, *, read=available_mb, read_cgroup=cgroup_headroom_mb,
                     sleep=time.sleep, clock=time.monotonic) -> None:
     """Block until the host can take `selection` ("fast" | "browser"), or exit the session."""

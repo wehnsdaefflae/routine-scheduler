@@ -56,6 +56,17 @@ READS = [
     pytest.param("echo 'x > y'", id="quoted-gt-in-echo"),
     pytest.param("git status --short", id="git-read-verb"),
     pytest.param("wc -l main.md", id="wc"),
+    # `ln` is Python's commonest loop variable, and `\\bln\\b` read it as the symlink command:
+    # 64 of 3,934 fleet commands flagged on this alone (2026-11-10), every one a pure read.
+    pytest.param("python3 - <<'PY'\nfor ln in open('f.jsonl'):\n    ln = ln.strip()\n"
+                 "    print(ln)\nPY", id="ln-is-a-loop-variable"),
+    pytest.param('python3 -c "rows=[json.loads(ln) for ln in open(p) if ln.strip()]"',
+                 id="ln-in-a-comprehension"),
+    # A write verb inside NARRATION or a search pattern is text, not a command.
+    pytest.param('wc -l api.js && echo "=== files I would touch ==="', id="touch-in-prose"),
+    pytest.param('grep -n "def rm\\b" src/store.py; echo "=== cli rm impl ==="',
+                 id="rm-in-a-grep-pattern"),
+    pytest.param("tagfs --store /srv/data rm --help", id="rm-as-a-subcommands-help"),
 ]
 
 # Commands that MUST be marked. The `open`-family cases are the ones the dead anchor dropped.
@@ -76,6 +87,15 @@ WRITES = [
     pytest.param("sed -i s/a/b/ f.txt", id="sed-in-place"),
     pytest.param("git add -A && git commit -m x", id="git-commit"),
     pytest.param("rm -f /srv/videos/tmp/*", id="rm-glob"),
+    # Narrowing the bare-command shape to COMMAND POSITION must not lose a write that reaches
+    # it through a runner. These three are the forms the fleet really uses, and the first was
+    # genuinely lost by this fix's first draft — caught by diffing the new verdicts against
+    # the old shape's over 3,934 commands rather than by reading the pattern.
+    pytest.param("find $M -name '*.json' -print0 | xargs -0 -r rm -f", id="xargs-rm"),
+    pytest.param("cd /srv/x && ls; rm -rf build", id="rm-after-a-semicolon"),
+    pytest.param("find . -name '*.pyc' -exec rm -f {} +", id="find-exec-rm"),
+    pytest.param("sudo chown mark:mark /srv/x", id="sudo-chown"),
+    pytest.param("cp a.json b.json", id="cp-at-the-start"),
 ]
 
 

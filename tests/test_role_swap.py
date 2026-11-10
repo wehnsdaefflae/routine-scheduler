@@ -131,6 +131,44 @@ def test_a_routine_with_no_cheap_model_is_told_instead_of_silently_served():
     assert loop.ctx.routine.models["main"] == "opus"
     assert "could not be served" in loop.messages[-1]["content"]
     assert "Do not retry" in loop.messages[-1]["content"]
+    assert "configures no tool_call model" in loop.messages[-1]["content"], (
+        "the UNSET cause must say the role is unset — the fix is to set one")
+
+
+# A None target has TWO causes and they have OPPOSITE fixes, so the note must name the one
+# that fired. Until 0.525.4 it enumerated only the unset case, and the EQUAL case — 14 of 30
+# routines on this instance, because the settings patterns ship `main` and `tool_call` as the
+# same model — was told a false fact about its own configuration and then told not to retry
+# (reported by config-optimizer via scheduler-builder, R3295/R3297/R3304). One test per cause,
+# because the old wording was pinned nowhere and that is how it came to describe one case
+# while firing on both.
+
+
+def test_an_equal_pair_is_told_its_pair_is_equal_not_that_the_role_is_unset():
+    loop, _events = _loop({"main": "opus", "tool_call": "opus"})
+    sidefields.land(loop, {"say": "x", "kind": "wait", "role_swap": "cheap"})
+    note = loop.messages[-1]["content"]
+    assert loop.ctx.routine.models["main"] == "opus"
+    assert "could not be served" in note
+    assert "same model as its main" in note, (
+        "an equal pair was told the role is unset — a false fact about its own config")
+    assert "configures no tool_call model" not in note
+
+
+def test_the_two_causes_are_distinguishable_at_the_source():
+    """The reason is resolved by one function, so a future note cannot drift from it: the
+    applier asks `cheap_unservable` which cause fired rather than re-deriving it inline.
+    """
+    equal = SimpleNamespace(routine=SimpleNamespace(models={"main": "opus",
+                                                           "tool_call": "opus"}))
+    unset = SimpleNamespace(routine=SimpleNamespace(models={"main": "opus"}))
+    servable = SimpleNamespace(routine=SimpleNamespace(models={"main": "opus",
+                                                               "tool_call": "haiku"}))
+    assert roleswap.cheap_unservable(equal) == roleswap.SAME
+    assert roleswap.cheap_unservable(unset) == roleswap.UNSET
+    assert roleswap.cheap_unservable(servable) == ""
+    assert roleswap.cheap_model(equal) is None and roleswap.cheap_model(unset) is None
+    assert roleswap.cheap_model(servable) == "haiku"
 
 
 # ---- 4. the run is told, and so is the transcript
