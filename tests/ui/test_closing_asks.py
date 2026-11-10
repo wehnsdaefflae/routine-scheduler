@@ -99,3 +99,64 @@ def test_answering_on_the_banner_posts_to_the_one_answer_route(ui, ui_page):
             and r.url.endswith("/api/questions/q-20261101-153000-2/answer")) as sent:
         button.click()
     assert sent.value.post_data_json.get("text") == "left", sent.value.post_data_json
+
+
+# ---- the REVISABLE half of the brief (D212): "answered AND revisable in the final summary"
+
+
+def test_what_you_answered_stays_on_the_banner_with_a_way_to_change_it(ui, ui_page):
+    """Answering here used to be final the moment it posted: the form locked and nothing came
+    after it. The Decisions page has had a revise path since F525, and the operator's brief asks
+    for the answer to be *revisable in the run's final summary* — so the receipt keeps what you
+    said and offers the same affordance where you are already reading.
+    """
+    # On the harness's ONE real routine (`uir`): the record behind the banner payload has to be
+    # FINDABLE, and `decisions_read.find_question` walks only dirs carrying a routine.yaml —
+    # the other tests here need no record, so they can use a bare seeded slug.
+    ui.seed_question("uir", "q-20261101-154000-3", "which shape?", options=["left"])
+    _finished_run_with(ui, "uir", "20261101-154000", {"closing_asks": [
+        {"qid": "q-20261101-154000-3", "question": "which shape?", "options": ["left"]}]})
+    ui_page.goto(f"{ui.url}/#/run/uir:20261101-154000")
+    ask = ui_page.locator('.closing-ask[data-qid="q-20261101-154000-3"]')
+    expect(ask.get_by_role("button", name="left")).to_have_count(1)
+
+    ask.get_by_role("button", name="left").click()
+
+    expect(ask).to_contain_text("left")                      # your own words, kept
+    expect(ask).to_contain_text("it reaches the next run")
+    revise = ask.get_by_role("button", name="revise", exact=True)
+    expect(revise).to_have_count(1)
+    # …and the answer box is gone: the receipt REPLACES the form rather than sitting beside it,
+    # so one ask never shows an open box and a settled answer at the same time.
+    expect(ask.locator(".answer-input")).to_have_count(0)
+
+
+def test_revising_on_the_banner_posts_the_new_text_to_the_revise_route(ui, ui_page):
+    """The whole point of the affordance: answering one of three closing asks and then wanting
+    to extend it is ordinary. It goes to the SAME `/revise` route the Decisions page uses, which
+    rewrites a queued answer and re-queues one a run already read — not to a second route built
+    for this surface.
+    """
+    # The durable record BEHIND the banner payload, on the harness's one real routine: a live
+    # closing ask always has one (`inbox_questions.file_question` wrote it), `/revise` 404s
+    # without it, and `find_question` only walks dirs carrying a routine.yaml — so a test that
+    # seeded the finish event alone would prove the button posts and nothing more.
+    ui.seed_question("uir", "q-20261101-155000-6", "which shape?", options=["left"])
+    _finished_run_with(ui, "uir", "20261101-155000", {"closing_asks": [
+        {"qid": "q-20261101-155000-6", "question": "which shape?", "options": ["left"]}]})
+    ui_page.goto(f"{ui.url}/#/run/uir:20261101-155000")
+    ask = ui_page.locator('.closing-ask[data-qid="q-20261101-155000-6"]')
+    ask.get_by_role("button", name="left").click()
+    ask.get_by_role("button", name="revise", exact=True).click()
+
+    box = ask.locator(".answer-input")
+    expect(box).to_have_count(1)
+    expect(box).to_have_value("left")                  # it opens on what you said, not empty
+    box.fill("left, and keep the old one for a week")
+    with ui_page.expect_request(
+            lambda r: r.method == "POST"
+            and r.url.endswith("/api/questions/q-20261101-155000-6/revise")) as sent:
+        ask.get_by_role("button", name="save revision", exact=True).click()
+    assert sent.value.post_data_json == {"text": "left, and keep the old one for a week"}, \
+        sent.value.post_data_json
+    expect(ask).to_contain_text("keep the old one for a week")   # the receipt shows the new text
