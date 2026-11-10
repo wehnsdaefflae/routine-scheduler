@@ -553,5 +553,8 @@ unsent) for one independent read from a child run on a model of a different fami
 self-contained and with no write rights, and to name in its finish where the two disagreed. It
 names the capability, never a model or a util, and is bound per routine like every rule.
 
-**First increment.** The rule in the library seed, bound to self-audit first, its runs' use read
-back by rules-review. (It is a LIBRARY write, not a repo change, so it ships outside a release.)
+**THE RULE IS WRITTEN** — authored to the live library and seeded in `library-seed/rules/`
+(0.528.0), with its provenance and the honest note that it rests on an argument rather than on
+effectiveness data in `docs/curated-rules.md`. What remains is not code: a rule binds NO routine
+until the operator's config says so, so the open step is **binding it to `self-audit` first** and
+then having rules-review read its use back. This entry stays only to carry that one step.
