@@ -176,6 +176,35 @@ def _append(server, records: list[dict]) -> int:
     return len(rows)
 
 
+def record_slow_request(state, entry: dict) -> None:
+    """Record one slow request BOTH ways — the other half of the client's `slow` kind.
+
+    The client's `slow` rows say how long a request took as the BROWSER saw it: queueing on the
+    ~6-connections-per-origin ceiling, the network, and the server, with no way to separate
+    them. This row is the server's own elapsed for the same endpoint, so the two can be
+    subtracted — and it is the only one that exists when nobody had a tab open.
+
+    It is written because the in-RAM record is not evidence. `web/app.py` keeps the last 50 in a
+    deque and `/api/debug/slow` reads it, but the deque dies with the process — and this daemon
+    restarts several times a week for its own releases — while that endpoint takes the
+    operator's primary token, so no run may read it either. The log WARNING survives only as
+    long as the container's stdout. The morning-after question ("which endpoint was slow, and
+    was the server or the browser the cost") therefore had no answerable store, which is exactly
+    the gap the three duration kinds were added to close.
+
+    The kind stays `slow` and the VIEW is what distinguishes the two sides (`server` against a
+    real view name), so every existing reader folds these rows with no change, and `detail`
+    keeps the leading `<n>ms` shape those readers parse. `in_flight` is carried because a slow
+    request with nothing else in flight is a slow HANDLER, while one of thirty is CONTENTION —
+    the distinction that took a stack sample to make on 2026-09-12.
+    """
+    state.slow_requests.appendleft(entry)
+    ms = round(float(entry.get("seconds") or 0) * 1000)
+    record_server_trace(state.server, kind="slow", target=str(entry.get("path") or ""),
+                        detail=f"{ms}ms, {entry.get('method') or '?'}, "
+                               f"in_flight {entry.get('in_flight')}")
+
+
 def record_server_trace(server, *, kind: str, target: str = "", detail: str = "",
                         view: str = "server") -> None:
     """A SERVER-originated trace event, appended to the same day file the browser batches

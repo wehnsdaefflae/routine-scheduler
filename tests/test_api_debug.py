@@ -3,7 +3,9 @@ requests — read-only, operator-token only (web/api_debug.py + the timing middl
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
 
 import pytest
@@ -11,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from conftest import authed_client, make_test_server
 from helpers import idle_socket
+from rsched.web.api_traces import traces_dir
 from rsched.web.app import create_app
 
 
@@ -81,3 +84,28 @@ def test_live_streams_are_never_counted_as_slow(client):
     paths = [e["path"] for e in client.get("/api/debug/slow").json()["requests"]]
     assert "/api/stream-ticket" in paths
     assert "/api/events" not in paths
+
+
+def test_a_slow_request_leaves_a_durable_row_not_only_an_in_ram_one(client):
+    """The ring is not evidence: it is 50 entries in a deque that dies with the process, and
+    this daemon restarts several times a week for its own releases — while `/api/debug/slow`
+    takes the operator's primary token, so no run may read it either. The morning-after
+    question ("which endpoint was slow, and was the server or the browser the cost") needs a
+    row in the SAME 14-day store the browser's `slow` rows land in, which is what makes the
+    two subtractable.
+    """
+    app = client.app
+    app.state.slow_request_s = 0.0
+    client.get("/api/lanes")
+
+    rows = [json.loads(ln)
+            for p in sorted(traces_dir(app.state.server).glob("*.jsonl"))
+            for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    mine = [r for r in rows if r.get("kind") == "slow" and r.get("target") == "/api/lanes"]
+    assert mine, rows
+    row = mine[0]
+    # the SERVER side is distinguishable from the browser's, so a reader can subtract them
+    assert row["view"] == "server", row
+    # and it keeps the leading "<n>ms" shape every existing reader of this kind parses
+    assert re.match(r"\d+ms,", row["detail"]), row
+    assert "in_flight" in row["detail"], row

@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.7] — 2026-11-10
+
+### Added
+- **The server's own slow-request evidence is now durable, which is what a "why is the console
+  slow" question needs.** `web/app.py`'s timing middleware has recorded every request over 2.0 s
+  since 2026-09-12 — into a 50-entry in-RAM deque read by `/api/debug/slow`, which takes the
+  operator's PRIMARY token. So the record died at every restart (this daemon restarts several
+  times a week for its own releases), no run could ever read it, and `api_traces.py`'s own
+  docstring already said so. Each slow request now also appends one row to the same 14-day
+  `.ui-traces` store the browser's `slow` rows land in, through the existing
+  `record_server_trace` door: kind `slow`, `view: "server"`, and a `detail` that keeps the
+  leading `<n>ms` shape every reader of that kind parses, plus the method and the **in-flight
+  count** — the figure that separates a slow HANDLER (nothing else running) from CONTENTION (one
+  of thirty), which took a stack sample to tell apart on 2026-09-12. Because the kind is
+  unchanged and only the VIEW distinguishes the two sides, the browser-observed and
+  server-measured times for one endpoint can now be SUBTRACTED: the first real way to say
+  whether the cost is the server, the network or the browser's connection ceiling.
+  `record_slow_request` owns both halves (ring and row) so the middleware calls one function;
+  `/api/debug/slow` and its auth tier are untouched, and the existing four assertions still
+  hold. **Measured motivation, from the first day of client rows:** 388 `slow` rows, median
+  1,898 ms outside the 17-18h UTC bunching and 9,254 ms inside it, with unrelated endpoints
+  finishing in the same second to within 20 ms (`/api/llm-tasks`, which returns an in-memory
+  snapshot, took 34,396 ms) — the signature of a blocked event loop, which no client-side row
+  can ever attribute.
+
 ## [0.525.6] — 2026-11-10
 
 ### Fixed

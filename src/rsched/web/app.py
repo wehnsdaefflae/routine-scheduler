@@ -21,7 +21,7 @@ from ..daemon.runner import Runner
 from ..daemon.scheduler import Scheduler
 from ..ids import now_iso
 from ..llm_tasks import TaskCenter
-from . import actionlimits, assetskew, routers
+from . import actionlimits, api_traces, assetskew, routers
 from .appwiring import _add_middlewares, _make_lifespan
 from .ioload import attach_state
 from .screen_proxy import screen_for_path
@@ -314,10 +314,10 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         return response
 
     # Slow-request evidence (2026-09-12): every sync handler took 20-50 s for an hour while five
-    # runs were active, and nothing recorded it — no access log, no stack. The in-flight count
-    # and a ring of the slow ones are what /api/debug reads; the WARNING is what `docker logs`
-    # shows the morning after. The live streams cannot be counted here: they are WebSockets,
-    # and an http middleware never sees a websocket scope.
+    # runs were active, and nothing recorded it — no access log, no stack. The ring and the
+    # in-flight count are what /api/debug reads; the DURABLE row is api_traces' (see
+    # record_slow_request — the deque dies with the process). Live streams cannot be counted
+    # here: they are WebSockets, and an http middleware never sees a websocket scope.
     app.state.in_flight = 0
     app.state.slow_request_s = SLOW_REQUEST_S
     app.state.slow_requests = collections.deque(maxlen=SLOW_KEEP)
@@ -333,9 +333,9 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
             took = time.monotonic() - started
             if took >= app.state.slow_request_s:
                 entry = {"method": request.method, "path": str(request.url.path),
-                         "seconds": round(took, 2), "in_flight": app.state.in_flight,
-                         "ts": now_iso()}
-                app.state.slow_requests.appendleft(entry)
+                         "ts": now_iso(), "seconds": round(took, 2),
+                         "in_flight": app.state.in_flight}
+                api_traces.record_slow_request(app.state, entry)
                 log.warning("slow request: %s %s took %.1fs (in_flight=%d)",
                             request.method, request.url.path, took, app.state.in_flight)
 
