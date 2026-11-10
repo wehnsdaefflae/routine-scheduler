@@ -184,7 +184,12 @@ Two things follow from this that are worth knowing:
   fold — and a **↩ refer-to** button primes the composer with it, messenger-reply style: your next
   message leads with a quoted `> re …` line the agent reads naturally, and the sent bubble shows the
   reference as a compact quote chip (✕ on the chip drops it before sending). A reply's corner also
-  carries ⧉ copy, ⑂ branch from here, ⟲ rewind to here and ⚑ flag as refusal (below).
+  carries ⧉ copy, ⑂ branch from here, ⟲ rewind to here and ⚑ flag as refusal (below). **⟲ takes
+  the FILES back too**: a conversation is not a git repo, so each reply's close-out snapshots
+  `artifacts/` and a rewind restores the newest snapshot at or before the turn it keeps —
+  otherwise the conversation would go back while its deliverables kept whatever the discarded
+  replies wrote. What was live is copied aside first (a rewind is itself an act you may regret),
+  and the snapshots live in a dotted directory the artifact list never serves.
 - **Right — artifacts + phases.** The deliverables the agent produces, a live phase-graph card, and
   a **files** card — which files the run read / wrote / edited, per-path counts straight from the
   transcript (subtasks and your slash commands included), and a **scripts** card once the

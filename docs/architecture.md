@@ -1378,6 +1378,21 @@ meet. A conversation's spine is its own **working plan**
   actions (`POST …/branch`, `POST …/handback`, with `GET …/lineage` for the family in both
   directions): where two lines of work diverge, and whether a branch's result is worth the parent's
   attention, are decisions that cannot be inferred.
+- **A rewind restores a conversation's FILES too** (`engine/artsnap.py`). A routine's directory
+  is the git repo `autocommit` writes at every run end, so its deliverables have a history and a
+  run can be undone from it; a conversation is not versioned, and `artifacts/` holds exactly what
+  the newest reply left there. So a rewind put the transcript back and left the files as the
+  discarded replies wrote them — the conversation saying one thing and its deliverables another.
+  Each reply's close-out now copies `artifacts/` to `.artifact-snapshots/<run-ts>-t<turn>/`
+  (`artsnap.take`, called from `loopend.finish_run` for conversations only, best-effort so a lost
+  undo point can never fail a reply), and `rewind.rewind_transcript` restores the newest snapshot
+  at or before the turn it kept (`artsnap.restore`), reporting it as the result's `artifacts` key
+  — ABSENT when no snapshot covered that turn, so "nothing to put back" cannot read as a restore.
+  A copy rather than a diff, because the moment that matters is the one where the automation is
+  wrong and a person can act on a copied file with no tool at all; what was live is copied aside
+  as `pre-restore-…` first; the store keeps `artsnap.KEEP` snapshots per conversation and never
+  prunes a pre-restore copy. The directory is dotted, so `api_conversations`' artifact listing
+  never serves a snapshot as a deliverable.
 - **Refusal flag** (⚑, `web/api_refusal_flag.py`, operator decision 2026-10-01) — any reply of a
   settled conversation can be REDONE on its uncensored model, which then carries the conversation.
   One POST, validated whole before its first write: the reply and everything after it go through

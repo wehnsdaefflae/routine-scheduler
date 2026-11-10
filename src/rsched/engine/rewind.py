@@ -192,6 +192,7 @@ def rewind_transcript(run_dir: Path, keep_through_turn: int | None = None, *,
     """
     from ..ids import now_iso
     from ..paths import atomic_write
+    from . import artsnap
     from .transcript import read_events
 
     tpath = run_dir / "transcript.jsonl"
@@ -221,5 +222,14 @@ def rewind_transcript(run_dir: Path, keep_through_turn: int | None = None, *,
         (run_dir / "result.md").unlink(missing_ok=True)
     last = max((e["turn"] for e in kept if e.get("type") == "assistant_action"
                 and isinstance(e.get("turn"), int)), default=0)
-    return {"kept_events": len(kept), "dropped_events": len(dropped),
-            "kept_through_turn": last, "archive": archive}
+    out = {"kept_events": len(kept), "dropped_events": len(dropped),
+           "kept_through_turn": last, "archive": archive}
+    # …and the FILES, for a conversation (engine/artsnap.py). A conversation is not versioned,
+    # so until now a rewind put the transcript back and left `artifacts/` holding whatever the
+    # discarded replies had written — the conversation saying one thing and its deliverables
+    # another. Restores the newest snapshot taken at or before the turn we kept, after copying
+    # the current state aside. `artifacts` is reported only when a snapshot covered that turn:
+    # None means there was nothing to put back, which is not a failure and must not read as one.
+    if (snap := artsnap.restore(run_dir.parent.parent, last)) is not None:
+        out["artifacts"] = snap
+    return out

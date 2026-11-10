@@ -21,6 +21,7 @@ from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import (
     archival,
+    artsnap,
     assist,
     background,
     closingasks,
@@ -29,6 +30,7 @@ from . import (
     ledgerentry,
     recipeproposal,
     reviseleg,
+    runkind,
 )
 from .autocommit import autocommit
 from .finish_guard import normalize_escaped_newlines
@@ -225,6 +227,14 @@ def finish_run(loop, status: str, summary: str, *, authored: bool = False,
         atomic_write(ctx.run_dir / "result.md",
                      reviseleg.result_text(ctx.run_dir, summary, status) if leg
                      else summary + "\n")
+        # A CONVERSATION is not versioned, so ⟲ rewind had no way to put its FILES back: the
+        # transcript went to the chosen turn and `artifacts/` kept whatever the discarded
+        # replies wrote. Snapshot them per reply (engine/artsnap.py) so the rewind can restore
+        # them too. Conversations only — a routine's dir is the git repo the autocommit below
+        # writes, which already has every deliverable's history. Best-effort by construction: a
+        # lost undo point must never fail a reply.
+        if runkind.is_conversation(ctx):
+            artsnap.take(ctx.routine.dir, ctx.run_ts, ctx.turn)
         # P1: the process record is the ENGINE's — one LEDGER.md entry from what this leg
         # already produced, before the autocommit so it is committed with the run it records.
         ledgerentry.record(loop, status, summary)
