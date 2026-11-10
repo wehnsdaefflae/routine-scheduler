@@ -14,21 +14,41 @@ nothing in the engine READS it to decide anything. It is advice, not a routing r
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from helpers import tmp_server
+from rsched.config import ModelRef
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class _Registry:
+    """The registry shape `do_list_models` calls — the stub `test_model_role_override.py`
+    already uses, kept identical so one reading of it serves both files. `run_context`
+    leaves `registry` None, and `do_list_models` resolves every role and catalog row
+    through it, so a context without one raises before reaching the note at all.
+    """
+
+    def for_model(self, kind, _models, _efforts):
+        return SimpleNamespace(), ModelRef(f"{kind}-ep", f"{kind}-model")
+
+    def for_uncensored(self, _models, _efforts):
+        return None
+
+    def resolve(self, name):
+        return SimpleNamespace(), ModelRef("cat-ep", f"{name}-model", name=name)
+
+
 def _ctx(tmp_path, make_routine, **models):
-    """A run context whose server carries `models` as its catalog."""
+    """A run context whose server carries `models` as its catalog, with a registry that
+    resolves every row (see `_Registry`)."""
     from helpers import run_context
 
     d = make_routine(slug="chooser")
     server = tmp_server(tmp_path, create=False)
     for name, cfg in models.items():
         server.models[name] = cfg
-    return run_context(d, "20260714-070000", server=server)
+    return run_context(d, "20260714-070000", server=server, registry=_Registry())
 
 
 def test_the_field_exists_and_defaults_to_nothing():
@@ -51,9 +71,10 @@ def test_the_note_survives_the_settings_round_trip(api_client):
         "note": "cheap and blunt — fine for a long gate wait, never for a judgement"})
     assert r.status_code == 200, r.text
 
+    # the payload carries ONE flat `models` list beside `endpoints` (settings/endpoints.py:
+    # list_endpoints) — not a per-endpoint nesting, which is what this test first assumed
     rows = c.get("/api/settings/endpoints").json()
-    scribe = next(m for ep in rows["endpoints"] for m in ep.get("models") or []
-                  if m["name"] == "scribe")
+    scribe = next(m for m in rows["models"] if m["name"] == "scribe")
     assert scribe["note"].startswith("cheap and blunt")
 
 
@@ -67,9 +88,12 @@ def test_a_blank_note_is_dropped_rather_than_stored_as_empty(api_client):
         "name": "plain", "endpoint": "dummy", "model": "prov/plain", "note": ""}).status_code == 200
 
     rows = c.get("/api/settings/endpoints").json()
-    plain = next(m for ep in rows["endpoints"] for m in ep.get("models") or []
-                 if m["name"] == "plain")
+    plain = next(m for m in rows["models"] if m["name"] == "plain")
     assert plain["note"] == ""
+    # …and the config FILE keeps no key for it, which is what "dropped" means
+    saved = c.get("/api/settings/models").json()
+    entry = next(m for m in saved["models"] if m["name"] == "plain")
+    assert not entry.get("note")
 
 
 def test_list_models_returns_the_note_beside_the_name(tmp_path, make_routine):
