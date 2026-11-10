@@ -240,6 +240,20 @@ export async function renderEndpoints(view) {
       usageRow.textContent = "subscription quota: checking…";
       api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}/quota`).then((q) => {
         if (!q.supported) { usageRow.replaceChildren(); return; }
+        if (q.rate_limited) {
+          // A 429 is NOT the actionable case below: nothing is wrong with the account or the
+          // credential, so "unavailable — <fix>" sends the operator to repair something that
+          // is not broken. The server carries the upstream's own `Retry-After` as seconds
+          // (endpoints/cliproxy_quota.retry_after_seconds), so the card can say WHEN instead
+          // of leaving a dead line, and it re-reads ITSELF once that delay has passed rather
+          // than waiting for the next page visit.
+          const secs = Number(q.retry_after_s) || 0;
+          usageRow.replaceChildren(el("span", { class: "muted" },
+            secs ? `subscription quota: rate limited — reading again in ${secs}s`
+                 : "subscription quota: rate limited — it will read again later"));
+          if (secs) setTimeout(loadQuota, (secs + 1) * 1000);
+          return;
+        }
         if (!q.ok) {
           // The error is the actionable half here — it always names the one-line fix, because
           // the credential this needs expires; the proxy-account rows below carry the way back in.

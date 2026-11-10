@@ -66,7 +66,13 @@ export async function loadQuota(chip) {
     if (!q.ok) {
       chip.className = "chip disabled";
       chip.title = q.error || "";
-      chip.textContent = "subscription quota unavailable";
+      // A rate limit is not an outage, and this chip is the OTHER surface that re-asks: the
+      // dashboard reads the quota on every load, so saying "unavailable" here while the
+      // Settings card says "rate limited" would read as two different faults. The server's
+      // own figure is in the tooltip; the chip stays short because `.chip` is nowrap and this
+      // page is read on a phone.
+      chip.textContent = q.rate_limited ? "quota · rate limited"
+                                        : "subscription quota unavailable";
       chip.hidden = false;
       return;
     }

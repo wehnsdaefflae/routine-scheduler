@@ -677,6 +677,23 @@ The endpoint card and dashboard show the real account windows from Anthropic's u
 API through the proxy, including usage outside this scheduler. A failed quota read
 shows a soft error; it does not block inference. OAuth tokens remain in the proxy.
 
+**A rate-limited read is reported apart from every other failure**, because the two call for
+opposite behaviour: an ordinary error should be re-read the moment the operator has fixed
+something, while a rate-limited account must be left alone. A 429 — from the proxy itself, or
+carried inside its envelope as Claude's own status, which is the usual shape — comes back as
+`rate_limited: true` with `retry_after_s`, the upstream's own `Retry-After` converted to whole
+seconds by `cliproxy_quota.retry_after_seconds` (RFC 9110 allows a delta OR an HTTP date and
+Anthropic has sent both, so the conversion happens once on the server rather than in each
+renderer). The Settings card then says *rate limited — reading again in Ns* and re-reads itself
+when that delay has passed; the header chip reads `quota · rate limited` instead of
+`subscription quota unavailable`, whose wording exists to send you to a one-line fix that a
+rate limit does not have. An unusable header — blank, a word, a negative or absurd value, a date
+already past — yields NO figure rather than a plausible wrong one: *"reads again in 0s"* would
+invite exactly the immediate re-ask this avoids, so the fact is shown without a countdown.
+Before this, every non-200 became one soft error string and both surfaces simply re-asked on
+their own cadence, which hammers a rate-limited account and says nothing about when a figure
+will exist again.
+
 ### Noticing a DEAD credential before a run spends a turn
 
 The same binding is what the daemon watches. `daemon/endpoint_watch.py` asks each

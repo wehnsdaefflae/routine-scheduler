@@ -218,3 +218,47 @@ def test_a_gemini_endpoint_is_signed_in_to_antigravity_from_its_own_card(ui, ui_
     gem.get_by_role("button", name="finish sign-in", exact=True).click()
     expect(gem).to_contain_text("✓ Antigravity me@gmail.example: ok")
     assert completed == [("antigravity", "st-g", address)]
+
+
+def test_a_rate_limited_quota_says_when_it_will_read_again(ui, ui_page, monkeypatch):
+    """A 429 is not an outage and not a credential problem, so the card must not read as one.
+
+    The old branch rendered every `ok: false` as "subscription quota unavailable — <error>",
+    whose whole point is that the error names a one-line fix (the credential this needs
+    expires). For a rate limit there is nothing to fix: the operator needs to know that the
+    account is healthy and WHEN a figure will exist again — which is what the upstream's own
+    `Retry-After` says, carried out as seconds by `cliproxy_quota.retry_after_seconds`.
+    """
+    ui.server_cfg.endpoints["rl-proxy"] = EndpointConfig(
+        kind="anthropic", base_url="http://127.0.0.1:1", quota_source="cliproxy")
+    monkeypatch.setattr(cliproxy_quota, "read_quota", lambda cfg: {
+        "supported": True, "ok": False, "rate_limited": True, "retry_after_s": 90,
+        "error": "Claude is rate limiting the quota read — it may be read again in 90s. "
+                 "Nothing is wrong with the account or the credential."})
+
+    ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
+    card = ui_page.locator(".panel", has=ui_page.get_by_text("rl-proxy", exact=True)).first
+    expect(card).to_have_count(1)
+    expect(card).to_contain_text("rate limited")
+    expect(card).to_contain_text("reading again in 90s")
+    # …and NOT the actionable wording, which would send him to repair a healthy account
+    expect(card).not_to_contain_text("subscription quota unavailable")
+
+
+def test_a_rate_limit_without_a_figure_still_says_rate_limited(ui, ui_page, monkeypatch):
+    """`Retry-After` is optional, and a card that fell back to "unavailable" whenever the
+    header was missing would show the commonest 429 as a fault.
+    """
+    ui.server_cfg.endpoints["rl2-proxy"] = EndpointConfig(
+        kind="anthropic", base_url="http://127.0.0.1:1", quota_source="cliproxy")
+    monkeypatch.setattr(cliproxy_quota, "read_quota", lambda cfg: {
+        "supported": True, "ok": False, "rate_limited": True, "retry_after_s": None,
+        "error": "Claude is rate limiting the quota read and gave no Retry-After; the figure "
+                 "will reappear once it lets the account read again."})
+
+    ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
+    card = ui_page.locator(".panel", has=ui_page.get_by_text("rl2-proxy", exact=True)).first
+    expect(card).to_have_count(1)
+    expect(card).to_contain_text("rate limited")
+    expect(card).to_contain_text("read again later")
+    expect(card).not_to_contain_text("subscription quota unavailable")
