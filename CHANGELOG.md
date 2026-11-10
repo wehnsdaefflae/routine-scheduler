@@ -15,6 +15,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.527.0] — 2026-11-10
+
+### Added
+- **A resumed leg is TOLD when its last action's outcome is unknown** (D278). The engine
+  records `assistant_action` before dispatch and the `observation` after it, so a process
+  killed between the two — a deploy, the D99 SIGKILL auto-resume, `daemon/reap_resume.py`
+  after a restart — left the transcript ending in an action with no result, and the only
+  framing the resumed leg got was *"continue from the last observation"*. For an OUTWARD
+  action that is the costly case: freelance-hunter sending mail, vodafone-outage-claims
+  filing a claim, do-my-taxes submitting a return — a model that sees no result is likely to
+  issue the action AGAIN. `boot` now answers each unanswered trailing action with an ordinary
+  `observation` event (`engine/unknownoutcome.py`, payload kind `outcome_unknown`): *the
+  process ended while your `<kind>` action was running… it may or may not have taken effect —
+  check its effect before repeating it.* A real transcript event rather than an engine note,
+  written on the dead action's own turn and appended to the list boot replays from, so it
+  rides THIS leg's prompt and a second resume replays it instead of re-authoring it —
+  exactly-once falls out of that, with no stored flag, because after one resume the
+  transcript no longer ends unanswered.
+  **The trap this design exists around, pinned and proven:** `chain.take_turn` returns
+  `loop._finish(action)` without calling `_observe`, so a `finish` never writes an
+  observation — "the events end in an unanswered action" is therefore TRUE of every normally
+  finished run and of every conversation follow-up leg. `kind == "finish"` is excluded
+  EXPLICITLY, deliberately not by testing for a trailing `finish` event (a kill between the
+  finish action and the finish event leaves the same bare shape). With the exclusion removed,
+  the negative-control test fails with `action_kind: "finish"` recorded on a run that ended
+  normally — the defect this would otherwise have shipped to every resumed run. It grounds
+  nothing (`donothing.NON_GROUNDING_KINDS`), so a resumed leg cannot pass the fabrication
+  guard on an action nobody knows ran, and the dead action's kind is kept out of the payload's
+  `kind` field so `history.seen_paths` cannot read it as a file the run saw. No new transcript
+  event type. Paid for `boot.py`'s frozen 350-line ceiling by moving the `seen_paths`
+  rehydration into `history.py`, where every other transcript-derived fact already lives.
+- **A catalog model carries a "when to use" note, and `list_models` returns it** (D279(a)). A
+  run choosing a `model` for `spawn`/`subtask`/`llm`, or a `role_swap` position, saw a catalog
+  of NAMES: nothing told it that one model is cheap and blunt, that another is the only one
+  here with vision, or that a third is rate-limited to uselessness before noon — and the
+  operator knew all three with nowhere to write them. `ModelConfig.note` is that line, edited
+  on the model's own catalog row in Settings and returned as `when_to_use` beside the name,
+  **only when set** (an empty value would read as "no opinion recorded" where there is simply
+  no field, on every model of every catalog). **Advice, never a routing rule:** nothing in the
+  engine reads it to decide anything, and a test pins that by grepping `src/` for readers —
+  the only two allowed are the surface that stores it and the surface that serves it.
+
+### Fixed
+- Model stand-ins in `tests/test_model_role_override.py` carry `note`, which
+  `do_list_models` reads unconditionally — the stand-in trap a grep for a reading function's
+  callers cannot see (it broke two pre-existing tests the moment the field landed).
+
 ## [0.526.0] — 2026-11-10
 
 ### Added
