@@ -362,7 +362,9 @@ A branch forks the conversation at a turn you choose into a new one that inherit
 
 The original is **untouched**: a branch reads the same past but cannot rewrite it, so two lines of
 work can run side by side and neither can damage the other. The header of each shows the family —
-where a branch came from and at which turn, and which branches came off this conversation.
+where a branch came from and at which turn, and which branches came off this conversation. A
+branch OF a branch keeps the whole chain, not just its immediate parent, which is what lets ⚑ and
+⟲ address an inherited reply correctly however deep the branching goes.
 
 Branch a **finished** reply, not one in flight: the fork point has to be a settled turn.
 

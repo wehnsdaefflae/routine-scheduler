@@ -108,20 +108,6 @@ own notes, kept so the trail can be followed.
 
 ---
 
-## Conversation branches: inherited child numbering, and a branch of a branch (E3.7)
-
-(a) A branch copies its parent's transcript, `subrun_start` events included. Verify whether the
-branch's first child reuses a number the inherited transcript already holds (the sub-run tree and the
-hand-back paths key on it); fix it, or delete this half if it does not.
-(b) The ⚑ refusal flag and ⟲ rewind read a reply's opening from the transcript
-(`engine/rewind.reply_opening`); a branch records only its immediate fork point
-(`parent: {slug, turn}`), so in a branch of a branch a reply inherited from before the
-grandparent's fork can be misread. Record the whole lineage in the branch header and read it there.
-
-**First increment.** (b), red-first with a two-level branch.
-
----
-
 ## Every git write goes through libgit (C1.10)
 
 **Problem, CORRECTED while building the first increment.** All three wrappers were ALREADY

@@ -132,6 +132,15 @@ def fork_conversation(server: ServerConfig, *, parent_dir: Path, parent_slug: st
     raw["description"] = raw["name"]
     # The provenance the whole feature hangs on: which conversation, and where it split.
     raw["parent"] = {"slug": parent_slug, "turn": at_turn, "forked": now_iso()}
+    # …and the WHOLE chain, oldest first (E3.7(b)): a branch of a branch inherits more than one
+    # cut, and recording only the immediate one left an inherited reply with no bound before it
+    # — `rewind._leg_start` then read it as the conversation's first, so flagging it would have
+    # discarded the entire inherited history. The parent's own lineage plus this fork; a parent
+    # that is not itself a branch contributes nothing, which makes a first-level branch's
+    # lineage exactly its one fork.
+    lineage = [row for row in (raw.get("lineage") or [])
+               if isinstance(row, dict) and isinstance(row.get("turn"), int)]
+    raw["lineage"] = [*lineage, {"slug": parent_slug, "turn": at_turn}]
     atomic_write_yaml(branch_dir / "routine.yaml", raw)
 
     ts = run_ts()
@@ -140,8 +149,13 @@ def fork_conversation(server: ServerConfig, *, parent_dir: Path, parent_slug: st
     kept = [_strip_usage(e) for e in events[: cut + 1]]
     # The header names the run — copying the parent's verbatim would leave the branch's
     # transcript claiming to be the parent's run, which every read model keys off.
+    # `lineage` beside `branched_from`, because the HEADER is what `engine/rewind` reads and the
+    # turn numbers in it are this transcript's own (a branch copies the events verbatim, so an
+    # inherited fork turn still names the same event). `branched_from` stays for every reader
+    # that wants the immediate parent, and for every branch forked before `lineage` existed.
     kept[0] = {**kept[0], "run_id": f"{slug}:{ts}", "routine": slug,
-               "branched_from": {"slug": parent_slug, "turn": at_turn}}
+               "branched_from": {"slug": parent_slug, "turn": at_turn},
+               "lineage": list(raw["lineage"])}
     atomic_write(run_dir / "transcript.jsonl",
                  "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in kept))
     # A TERMINAL status is what makes the branch resumable: the user's first message in it goes
