@@ -568,22 +568,22 @@ second resume does not add a second observation.
 
 ---
 
-## Catalog models carry a "when to use" note; a second opinion from another model family (decided 2026-11-08, in conversation)
+## A second opinion from another model family, as a library rule (decided 2026-11-08, in conversation)
 
-From a review of getpaseo/paseo: its agent profiles carry a "When to use" note that its
-orchestration tools return, so an orchestrating agent picks settings for a delegated task from
-the note instead of from a model id; and its advisor/committee skills get an independent read
-from a DIFFERENT provider family, with no edit rights, before a contested decision.
+From a review of getpaseo/paseo, whose advisor/committee skills get an independent read from a
+DIFFERENT provider family, with no edit rights, before a contested decision.
 
-**Shape.** (a) `ModelConfig` (`config/modelconf.py`) gains an optional one-line `note` — what this
-model is good for and what it is not — edited on the model's catalog row and returned by
-`list_models` beside each name, so a run choosing a `model` for `spawn`/`subtask`/`llm` or a
-`role_swap` position reads why, not just what exists. Unset prints nothing; it is advice, never
-a routing rule. (b) A library rule, `second-opinion`, whose operative line asks a run facing an
+**(a) IS BUILT** — a catalog model carries a one-line `note` ("when to use this model"), edited
+on its catalog row and returned by `list_models` beside each name, so a run choosing a `model`
+for `spawn`/`subtask`/`llm` or a `role_swap` position reads why rather than only what exists.
+Advice, never a routing rule: nothing in the engine reads it to decide anything, and unset
+prints nothing at all. What remains is (b) alone.
+
+**Shape (b).** A library rule, `second-opinion`, whose operative line asks a run facing an
 irreversible or contested judgment (a release decision, a triage verdict, a reply that cannot be
 unsent) for one independent read from a child run on a model of a different family, briefed
 self-contained and with no write rights, and to name in its finish where the two disagreed. It
 names the capability, never a model or a util, and is bound per routine like every rule.
 
-**First increment.** (a) the field, its catalog-row control and the `list_models` rendering; (b)
-the rule in the library seed, bound to self-audit first, its runs' use read back by rules-review.
+**First increment.** The rule in the library seed, bound to self-audit first, its runs' use read
+back by rules-review. (It is a LIBRARY write, not a repo change, so it ships outside a release.)

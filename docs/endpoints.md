@@ -232,6 +232,16 @@ default. Routines and the system model reference a model by its catalog **name**
   glance.
 - `fallbacks` — the ordered **failover chain**: catalog model names tried in order when this
   model fails hard. See *Failover & cooldowns* below.
+- `note` — **when to use this model**, one line, in your words (D279(a)). A run choosing a
+  `model` for `spawn`/`subtask`/`llm`, or a `role_swap` position, otherwise sees a catalog of
+  NAMES: nothing told it that one model is cheap and blunt, that another is the only one here
+  with vision, or that a third is rate-limited to uselessness before noon. The `list_models`
+  action returns it as `when_to_use` beside the name — only when set, because an empty line
+  would read as "no opinion recorded" where there is simply no field, on every model of every
+  catalog. It is **advice, never a routing rule**: nothing in the engine reads it to decide
+  anything (`tests/test_model_when_to_use.py` pins that the only readers are the surface that
+  stores it and the surface that serves it), so a sentence here can mislead a run but can never
+  silently change what runs where.
 
 ### A listed model is not necessarily an enabled one
 
