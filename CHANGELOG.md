@@ -15,6 +15,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.529.0] — 2026-11-10
+
+### Added
+- **A rate-limited quota read now says when it will read again** (D277's remainder). Any non-200
+  from the subscription-quota read used to become one soft error string, so a 429 was
+  indistinguishable from a dead credential — and BOTH consoles simply re-asked on their own
+  cadence (the Settings card on every visit, the dashboard chip on every load), which hammers an
+  account that is already being throttled while telling the operator nothing. The two cases want
+  opposite behaviour: an ordinary error should be re-read the moment he has fixed something, a
+  rate limit must be left alone. A 429 now comes back as `rate_limited: true` with
+  `retry_after_s`, carried from the upstream's own header by `cliproxy_quota.retry_after_seconds`
+  — **both arrival shapes**, and the second is the one that matters, because the proxy usually
+  answers 200 and carries Claude's status and headers INSIDE the envelope, so a 429 from Claude
+  never touches the outer status at all. RFC 9110 allows a delta OR an HTTP date and Anthropic
+  has sent both, so the conversion to whole seconds happens once server-side rather than in two
+  renderers. **An unusable header yields NO figure** — blank, a word, negative, zero, absurd, or
+  a date already past — while still reporting the rate limit: a wrong countdown is worse than
+  none, because *"reads again in 0s"* invites exactly the immediate re-ask this exists to stop,
+  and a caller that backed off only when a number arrived would poll straight through the
+  commonest 429, which carries no header. The Settings card reads *rate limited — reading again
+  in Ns* and re-reads itself when the delay passes; the header chip reads `quota · rate limited`
+  rather than "subscription quota unavailable", whose wording exists to point at a one-line fix
+  that a rate limit does not have.
+- **A branch of a branch records its whole lineage** (E3.7(b)). `rewind._leg_start` bounds a
+  reply at the latest `finish` or fork cut before it, and a branch recorded only its immediate
+  fork point. A fork is indexed by TURN, so it can land MID-REPLY — the inherited reply it cut
+  then has no finish of its own. One level deep that is fine; two levels deep an INHERITED reply
+  lying before the immediate fork found no bound at all (the fork cut is after it, and the
+  grandparent's fork was nowhere in the header), so it read as the conversation's FIRST — and
+  flagging it with ⚑ would have discarded the ENTIRE inherited history and re-sent
+  `instruction.md` in place of the message that opened it. `fork_conversation` now writes
+  `lineage: [{slug, turn}, …]`, oldest first, in both `routine.yaml` and the transcript header;
+  `rewind._fork_turns` reads `branched_from` too, so every conversation forked before this keeps
+  working on its single cut.
+  Its sibling half — whether a branch's first CHILD reuses a number the inherited transcript
+  holds — **needed no fix and is pinned instead**: a branch copies `state` and `attachments`
+  only, never `runs/`, and `childrun.claim_child` numbers from the highest child directory ON
+  DISK rather than from the transcript. The order itself said "fix it, or delete this half if it
+  does not".
+
 ## [0.528.0] — 2026-11-10
 
 ### Fixed
