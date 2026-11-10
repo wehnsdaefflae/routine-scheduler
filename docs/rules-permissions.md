@@ -390,7 +390,7 @@ per-routine setting.
 
 Every rule lives at `<libraries_home>/rules/<slug>.md` — a heading line
 `# rule: <name> — <summary>`, `tags:` frontmatter (three minimum), **no requires** (a rule
-carrying one is a lint error). One copy each; routines hold slugs. The shipped set — 17 rules, one file each in
+carrying one is a lint error). One copy each; routines hold slugs. The shipped set — 18 rules, one file each in
 `library-seed/rules/`, the authority this table is written from ([curated rules](curated-rules.md)
 records where each came from):
 
@@ -413,6 +413,7 @@ records where each came from):
 | `feedback-loop` | act on what readers say in the run that reads it; notice when nobody responds |
 | `interface-craft` | design for this brief and reader, then look at what you built |
 | `git-checkpoint` | an undo point before you edit a project repo |
+| `second-opinion` | before a judgment that cannot be taken back, one independent read from a model of a different family — briefed without your conclusion, with no write rights — and the finish says where the two disagreed |
 
 `evidence-discipline`, `ask-policy`, `fix-the-cause`, `problem-routing`, `decision-record`,
 `web-research` and `outcome-first` are the routine `DEFAULT_RULES`: the conduct every kind of

@@ -16,9 +16,12 @@ gate could be satisfied by a quiet host while its own cgroup sat near `memory.ma
 proposal q-20261107-020004-53, 2026-11-09). So it waits for BOTH, the smaller deciding, and
 says which one refused. The container figure is `memory.max` minus what the cgroup HOLDS
 (`anon` + swapped pages) — never `memory.current`, which counts page cache the kernel drops at
-the limit, and which read 96-100% on gates that killed nothing. Where it does not exist (not Linux), nothing waits. The needs are the
-measured peaks of the selections: the fast suite at FAST_WORKERS workers (~250 MB each, plus the
-controller), the browser suite at BROWSER_WORKERS (a Chromium, a uvicorn and a test each).
+the limit, and which read 96-100% on gates that killed nothing. Where it does not exist (not
+Linux), nothing waits. The needs are the
+measured HOLD of the selections, read off the gate's own `held_peak_bytes` rows rather than
+estimated: the fast suite at FAST_WORKERS workers (~600 MB each, plus a ~900 MB controller),
+the browser suite at BROWSER_WORKERS in its own container (a Chromium, a uvicorn and a test
+each). `NEED_MB`'s comment holds the table and the dates.
 `RSCHED_TEST_MEM_WAIT=0` turns the wait off for a run someone is watching.
 """
 
@@ -31,8 +34,41 @@ from pathlib import Path
 
 import pytest
 
-#: MB of MemAvailable each selection needs before it may start.
-NEED_MB = {"fast": 2048, "browser": 3584}
+#: MB each selection needs free — of the host's MemAvailable AND of this cgroup's own headroom
+#: — before it may start.
+#:
+#: MEASURED, not estimated (2026-11-10, goal b8). Both figures used to rest on the docstring's
+#: "~250 MB each", which understates a fast worker about 2.4-fold. The gate's own sampler now
+#: records `held_peak_bytes` — anon + swapped pages, the part dropping page cache cannot free
+#: and the part an OOM is decided on — so the cost of a selection is readable instead of
+#: guessed. From `.gate-evidence/memory-peaks.jsonl`, every stage carrying that field:
+#:
+#:     stage       n   held of the 5 GiB cgroup        seconds
+#:     tests      27   0.79-1.20 GB (median 0.91)      1-93      controller alone, -n 0
+#:     fast        7   3.08-3.29 GB (median 3.16)      205-264   controller + 4 workers
+#:     ui          5   0.80-1.03 GB (median 0.99)      640-883   controller + 2 browsers
+#:
+#: So the fast stage's own increment over a bare controller is 2.25 GB median and **2.38 GB at
+#: its worst** — about **600 MB per worker**, against the 250 MB the old figure assumed — and
+#: the whole stage HOLDS at most 3,367 MB of the 5,120 MB cgroup, leaving 1,753 MB. `fast` is
+#: therefore 3584 MB: that worst measured hold rounded up to the next 256 MB. It is deliberately
+#: the WHOLE stage's hold rather than the increment, because the controller is part of what must
+#: fit — and it is rounded on the MB figure, not on the GB one (3.29 GB rounds to 3328 MB, which
+#: is BELOW the hold it has to cover; the new measured-hold test below caught exactly that).
+#:
+#: `browser` stays 3584 MB. It runs in the `uitest` container's own 4 GiB cgroup, not this one
+#: (the `ui` rows above are this cgroup's idle hold while that container works), so its budget
+#: is not comparable to the figures above and nothing measured here bears on it.
+#:
+#: WHY THE WORKER COUNT DID NOT MOVE. `peak_pct_of_limit` reads `memory.current`, which counts
+#: reclaimable page cache: 51 fast stages since 2026-11-01 read a median 96.6 % of the limit —
+#: 14 of them exactly 100.0 % — with `oom_kill` **0** throughout, and the live counter still at
+#: 0 with 197 reclaim events. On the figure that decides an OOM the same stages sit at 61.6-65.8
+#: %. Duration does not track it either: the highest hold (65.8 %) took 241 s and the highest
+#: peak (100.0 %) took 205 s, while the one 1,710 s stage was the `should_wait` hang below, not
+#: memory pressure. Lowering `FAST_WORKERS` would have cost every release gate wall clock
+#: against a ceiling the stage was never near on the deciding figure.
+NEED_MB = {"fast": 3584, "browser": 3584}
 
 MEMINFO = Path("/proc/meminfo")
 CGROUP = Path("/sys/fs/cgroup")

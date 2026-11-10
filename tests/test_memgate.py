@@ -45,7 +45,7 @@ def test_it_refuses_to_start_past_the_deadline(monkeypatch):
     with pytest.raises(pytest.exit.Exception) as exc:
         memgate.wait_for_memory("fast", read=read, read_cgroup=lambda: None, sleep=sleep,
                             clock=clock)
-    assert "500 MB available" in str(exc.value) and "2048 MB" in str(exc.value)
+    assert "500 MB available" in str(exc.value) and "3584 MB" in str(exc.value)
 
 
 def test_the_containers_own_ceiling_holds_the_gate_back_on_a_quiet_host(monkeypatch):
@@ -53,7 +53,7 @@ def test_the_containers_own_ceiling_holds_the_gate_back_on_a_quiet_host(monkeypa
     numbers, and waiting on the first cannot change the second."""
     monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
     _host, sleep, clock = _fake([])
-    cgroup = iter([1000, 3000])
+    cgroup = iter([1000, 4000])      # the second reading must clear NEED_MB["fast"]
     memgate.wait_for_memory("fast", read=lambda: 9000, read_cgroup=lambda: next(cgroup),
                             sleep=sleep, clock=clock)
     assert clock() == 15, "one wait on the cgroup, then it started"
@@ -102,24 +102,73 @@ def test_the_fast_budget_still_covers_the_worker_count_it_claims_to():
     `NEED_MB` leaves the guard describing a selection that no longer exists — silently, because
     a too-small budget does not fail, it merely stops waiting when it should have waited.
 
-    NOT a past violation, stated plainly because the tempting story is wrong: at six workers the
-    floor was 1,500 MB against a 2048 MB budget, so the relation held throughout. What the
-    2026-11-07 cgroup measurement DID show is that the ~250 MB figure understates the real cost
-    about fourfold — the fast stage peaked at 3.90 GiB on four workers, and at 96-100 % of the
-    5 GiB cgroup on six (F849). So this floor is deliberately a weak lower bound: it catches the
-    arithmetic going backwards, while the cgroup headroom `FAST_WORKERS` is really chosen for is
-    measured per gate in the gate's own evidence.
+    THE FLOOR IS NOW THE MEASURED COST (2026-11-10, goal b8), and the old one was too weak to
+    catch the violation that was live: at ~250 MB per worker the floor was 1,000 MB against a
+    2048 MB budget, so it passed while the fast stage was really HOLDING 3,367 MB — the guard
+    admitted a selection that could not fit in what it waited for. The gate's sampler now
+    records `held_peak_bytes` (anon + swap, what an OOM is decided on), and over every stage
+    carrying it the fast stage's increment above a bare controller is 2.25 GB median and 2.38 GB
+    at its worst — about 600 MB per worker. `memgate.NEED_MB`'s own comment holds the table.
 
-    Pins the RELATION, never the numbers — either may be re-tuned, but not alone.
+    So this pins the RELATION at a per-worker cost that is read rather than assumed: raising
+    `FAST_WORKERS` without raising `NEED_MB` now fails, which is the whole point of the test —
+    a too-small budget does not announce itself, it merely stops waiting when it should wait.
+    Either number may still be re-tuned, but not alone.
     """
     import browsersource
 
     workers = browsersource.FAST_WORKERS
-    floor = workers * 250                      # the per-worker cost memgate's docstring states
+    #: MB a fast xdist worker really holds, from the gate's `held_peak_bytes` rows: the fast
+    #: stage's increment over a `-n 0` controller, at its WORST, divided by the worker count.
+    #: Four-fold the ~250 MB this test used to assume.
+    per_worker = 600
+    floor = workers * per_worker
     assert memgate.NEED_MB["fast"] >= floor, (
         f"memgate's fast budget is {memgate.NEED_MB['fast']} MB but FAST_WORKERS={workers} at "
-        f"~250 MB each needs at least {floor} MB — raise NEED_MB['fast'] or lower FAST_WORKERS")
+        f"~{per_worker} MB each (measured, held_peak_bytes) needs at least {floor} MB — raise "
+        "NEED_MB['fast'] or lower FAST_WORKERS")
     assert memgate.NEED_MB["browser"] >= browsersource.BROWSER_WORKERS * 250
+
+
+#: What the fast stage was measured to HOLD, in MB — `held_peak_bytes` (anon + swapped pages)
+#: at its worst across every fast stage the gate has sampled since the field shipped
+#: (3.29 GB of the 5 GiB cgroup; the median is 3.16 GB). The figure an OOM is decided on, as
+#: distinct from `peak_pct_of_limit`, which counts reclaimable page cache and read 96-100 % on
+#: the same stages while `oom_kill` stayed 0.
+MEASURED_FAST_HOLD_MB = 3367
+
+
+def test_the_fast_budget_covers_what_the_stage_was_measured_to_hold():
+    """The check whose absence let the budget be wrong for a week, silently.
+
+    The worker-arithmetic test above pins `NEED_MB` against `FAST_WORKERS`, so it catches the
+    two constants drifting apart — but both can be jointly too small, which is what happened:
+    at the assumed ~250 MB per worker the floor was 1,000 MB, the budget was 2,048 MB, the
+    relation held, and the stage was really holding **3.29 GB**. The gate then waited for 2 GB
+    of headroom and admitted a selection needing 3.3 GB, which is a guard that reports safety
+    it has not checked.
+
+    So this asserts the budget against the MEASUREMENT rather than against the other constant.
+    When a future gate records a higher hold, this is the line to raise — and raising it is a
+    decision about `FAST_WORKERS` too, which is why the number lives here under its own name
+    instead of inside the assertion.
+    """
+    assert memgate.NEED_MB["fast"] >= MEASURED_FAST_HOLD_MB, (
+        f"memgate's fast budget is {memgate.NEED_MB['fast']} MB but the fast stage was measured "
+        f"holding {MEASURED_FAST_HOLD_MB} MB (held_peak_bytes, the figure an OOM is decided on) "
+        "— the gate would wait for less memory than the stage then takes")
+
+
+def test_the_fast_budget_still_fits_inside_the_cgroup_it_waits_for():
+    """A budget larger than the ceiling can never be satisfied: the gate would wait out
+    `RSCHED_TEST_MEM_WAIT_S` and exit 3 on every run, on an idle box, forever. The engine
+    container's cgroup is 5 GiB, so the budget must leave room for the daemon and the live runs
+    that share it — the whole reason the cgroup half of this guard exists.
+    """
+    cgroup_mb = 5 * 1024
+    assert memgate.NEED_MB["fast"] < cgroup_mb, (
+        f"the fast budget ({memgate.NEED_MB['fast']} MB) must fit inside the engine cgroup "
+        f"({cgroup_mb} MB) with room for the daemon beside it")
 
 
 # ---- who may block: the controller only (2026-11-10, gate 1794268634309389266-release)

@@ -1628,7 +1628,7 @@ every copy it left (`migrate_converse_goals` carries this release's `converse` r
   problem-routing / decision-record / web-research / outcome-first` — the conduct every kind of
   work meets;
   conversations drop decision-record and add `git-checkpoint` (external-repo undo points). The
-  rules of a KIND of work are bound by its settings pattern. The shipped inventory of 17 rules is
+  rules of a KIND of work are bound by its settings pattern. The shipped inventory of 18 rules is
   the table in docs/rules-permissions.md; where each came from is docs/curated-rules.md.
   Holding a rule IS its on/off switch — an unheld rule contributes nothing — and
   docs/curated-rules.md records each one's provenance, its evidence strength, and the candidates
