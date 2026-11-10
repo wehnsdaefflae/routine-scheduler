@@ -99,6 +99,18 @@ class ModelConfig(_Config):
     # this list first, then each entry's own fallbacks, each with its own endpoint and
     # attributes. See endpoints/failover.py.
     fallbacks: list[str] = Field(default_factory=list)
+    # D279(a) — WHEN TO USE THIS MODEL, in one line, for the run that is choosing one. A run
+    # picking a `model` for spawn/subtask/llm, or a `role_swap` position, sees a catalog of
+    # NAMES: nothing tells it that one is cheap and blunt, that another is the only one here
+    # with vision, or that a third is rate-limited to uselessness before noon. The operator
+    # knows all three and had nowhere to write them.
+    #
+    # It is ADVICE, never a routing rule: nothing in the engine reads it to decide anything,
+    # and unset prints nothing at all (an empty line in a catalog listing would be worse than
+    # no line, because it reads as "no opinion recorded" where there simply is no field). That
+    # is also why it is not a structured set of flags — a flag the engine does not read is a
+    # fact that drifts, while a sentence is read by the only thing that acts on it.
+    note: BlankableStr = ""
 
 
 @dataclass

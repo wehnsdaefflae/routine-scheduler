@@ -63,6 +63,7 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, tool
       temperature: f.tempIn.value.trim() ? Number(f.tempIn.value) : null,
       max_tokens: f.mtIn.value.trim() ? Number(f.mtIn.value) : null,
       fallbacks: f.fbIn.value(),
+      note: f.noteIn.value.trim(),            // D279(a), docs/endpoints.md: when to use it
     };
   }
 
@@ -149,7 +150,9 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, tool
     const videoIn = el("input", { type: "checkbox",
       title: "this model takes VIDEO input natively (needs an endpoint whose wire carries it)" });
     videoIn.checked = !!m.video;
-    return { epSel, modelIn, mmSel, audioIn, videoIn, ctxIn, tempIn, mtIn, fbIn };
+    // D279(a), docs/endpoints.md: when to use it, in your words — advice, never a routing rule.
+    const noteIn = el("input", { type: "text", value: m.note || "", title: "advice for a run choosing a model — returned by list_models, read by nothing else", placeholder: "when to use this model (optional) — e.g. cheap and blunt; the only one here with vision" });
+    return { epSel, modelIn, mmSel, audioIn, videoIn, ctxIn, tempIn, mtIn, fbIn, noteIn };
   }
 
   function modelFieldRows(f) {
@@ -166,7 +169,9 @@ export function modelPanels({ endpoints, models, systemModel, systemEffort, tool
           temperatureHint())),
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "max_tokens (output)"), f.mtIn),
-        el("label", { class: "field" }, el("span", {}, "fallbacks (failover order)"), f.fbIn.node)));
+        el("label", { class: "field" }, el("span", {}, "fallbacks (failover order)"), f.fbIn.node)),
+      // Its own row: it holds a sentence, which a shared row would squeeze to a few words.
+      el("div", { class: "field-row" }, el("label", { class: "field" }, el("span", {}, "when to use (for a run choosing a model)"), f.noteIn)));
   }
 
   // Ask the endpoint for its model ids the first time the form is opened, not when the page

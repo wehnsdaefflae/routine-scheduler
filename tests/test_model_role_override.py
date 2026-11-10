@@ -54,7 +54,11 @@ class _Registry:
 
 
 def _server(catalog=("glm-5", "opus-4")):
-    return SimpleNamespace(models={n: SimpleNamespace(fallbacks=[]) for n in catalog},
+    # `note` is read unconditionally by do_list_models (D279(a)), so a stand-in without it
+    # raises AttributeError there — the stand-in trap a grep for the function's callers
+    # cannot see. Kept as a stand-in rather than a real ModelConfig because these tests are
+    # about ROLE resolution and construct no catalog file.
+    return SimpleNamespace(models={n: SimpleNamespace(fallbacks=[], note="") for n in catalog},
                            decision_models={})
 
 

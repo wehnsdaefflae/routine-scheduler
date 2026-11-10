@@ -145,9 +145,17 @@ def do_list_models(ctx: RunContext) -> dict:
     for name in sorted(ctx.server.models):
         try:
             _, ref = ctx.registry.resolve(name)
-            models.append({"name": name, "endpoint": ref.endpoint, "model": ref.model,
-                           "multimodal": ref.multimodal, "context_tokens": ref.context_tokens,
-                           "fallbacks": list(ctx.server.models[name].fallbacks)})
+            row = {"name": name, "endpoint": ref.endpoint, "model": ref.model,
+                   "multimodal": ref.multimodal, "context_tokens": ref.context_tokens,
+                   "fallbacks": list(ctx.server.models[name].fallbacks)}
+            # D279(a): WHEN TO USE THIS MODEL, the operator's own line, so a run choosing a
+            # `model` reads why rather than only what exists. Added only when set — an empty
+            # value would read as "no opinion recorded" where there is simply no field. (The
+            # row's `when_to_use` is per MODEL; the payload's top-level `note` below is the
+            # action's own usage guidance, and the two must not be confused.)
+            if ctx.server.models[name].note:
+                row["when_to_use"] = ctx.server.models[name].note
+            models.append(row)
         except EndpointError as exc:
             models.append({"name": name, "error": str(exc)})
     out: dict = {"kind": "list_models", "roles": roles, "models": models,
