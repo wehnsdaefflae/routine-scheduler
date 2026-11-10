@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.5] — 2026-11-10
+
+### Fixed
+- **The page-load instrument shipped yesterday recorded a 71-minute page load.** A tab
+  BACKGROUNDED while loading does not finish loading: the browser defers timers, images and the
+  `load` event itself until the tab is looked at again, so `performance.getEntriesByType(
+  "navigation")[0].loadEventEnd` measures how long it sat in another window. The very first
+  production reading of the new `load` kind (F858, 0.521.0) held **4,271,306 ms** for that
+  reason — and nothing downstream can tell such a number from a real one, so it poisons any
+  median or worst-case it lands in, which is precisely the reading the instrument exists to
+  give. `static/trace.js` now latches `visibilitychange` from install (the event fires BEFORE
+  `load`, so by the time `load` runs the tab may be visible again and would look as if it had
+  been in the foreground all along) and reports a hidden document as `load unavailable
+  (backgrounded)` instead of with a false figure. `response` and `dom` are kept, because both
+  are normally past before a tab can be switched away from, and the audit reader parses
+  `load <n>ms`, which simply does not match. The sibling `render` kind already guarded this
+  class with `RENDER_MAX_MS` — this restores the consistency `load` was missing.
+  `tests/ui/test_request_timing.py` gains the backgrounded case (driven by overriding
+  `document.visibilityState`, since this Chromium build answers `wasn't found` to
+  `Emulation.setPageVisibilityOverride`), and the existing load test now parses the load
+  milestone as a NUMBER — asserting the substring `load ` alone, it would have passed with
+  every row suppressed.
+
 ## [0.525.4] — 2026-11-10
 
 ### Fixed

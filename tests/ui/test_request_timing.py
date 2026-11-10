@@ -13,6 +13,7 @@ in production is the instrument not being MOUNTED, and only a loaded page can sh
 from __future__ import annotations
 
 import json
+import re
 
 from .conftest import until
 
@@ -89,3 +90,41 @@ def test_the_page_load_becomes_a_row_with_its_milestones(ui, ui_page):
         assert milestone in row["detail"], (milestone, row)
     dom = int(row["detail"].split("dom ", 1)[1].split("ms", 1)[0])
     assert dom > 0, row                                # a real measurement, not a zeroed entry
+    # A VISIBLE load must carry the number. The substring `load ` alone is also satisfied by
+    # `load unavailable (backgrounded)`, so without this the suppression below could silence
+    # every row and this test would still pass.
+    load_ms = int(row["detail"].rsplit("load ", 1)[1].split("ms", 1)[0])
+    assert 0 <= load_ms < 120000, row
+
+
+def test_a_backgrounded_tab_reports_no_load_milestone_rather_than_an_hour(ui, ui_page):
+    """F863: a tab backgrounded while loading does not finish loading — the browser defers the
+    `load` event until it is looked at again, so `loadEventEnd` measures how long it sat in
+    another window. The first production reading of this instrument held a 4,271,306 ms
+    (71-minute) "page load" for exactly that reason, and nothing downstream can tell such a
+    number from a real one.
+
+    So the milestone is withheld, not faked. `response` and `dom` stay, because both are
+    normally past before a tab can be switched away from, and the reader parses `load <n>ms` —
+    which simply does not match.
+    """
+    # `document.visibilityState` is the property the instrument reads, so that is what is
+    # overridden — installed before any of the page's own script runs. The CDP route
+    # (`Emulation.setPageVisibilityOverride`) is NOT available in this Chromium build: it
+    # answers `wasn't found`, which is why this drives the property directly. What that means
+    # for what this test proves is stated plainly: it pins OUR branch (a hidden document yields
+    # no load number), not the browser's deferral of `load` itself, which is upstream behaviour
+    # this suite cannot and need not reproduce.
+    ui_page.add_init_script(
+        "Object.defineProperty(document, 'visibilityState', "
+        "{configurable: true, get: () => 'hidden'});")
+    ui_page.goto(ui.url)
+    ui_page.wait_for_selector(".topbar", state="attached")
+    until(lambda: _rows(ui, "load"), what="the page-load trace to be stored", page=ui_page,
+          timeout_s=30)
+
+    (row, *_) = _rows(ui, "load")
+    assert "load unavailable (backgrounded)" in row["detail"], row
+    assert "response " in row["detail"] and "dom " in row["detail"], row
+    # the shape the audit reader looks for must be ABSENT, so no median can absorb it
+    assert not re.search(r"load \d+ms", row["detail"]), row

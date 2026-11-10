@@ -133,16 +133,38 @@ function installRequestTiming() {
 // server had answered the document, `dom` when the console's modules had parsed and run, and
 // `load` when everything the page asked for was in. Which of the three is large says where the
 // cost is — the server, the JS, or the assets — and no guess can substitute for that split.
+// A tab that is BACKGROUNDED while loading does not finish loading: browsers defer timers,
+// images and the `load` event itself until it is looked at again, so `loadEventEnd` measures
+// how long the tab sat in another window. The first reading this instrument produced held a
+// 4,271,306 ms (71-minute) "page load" for that reason — a number nothing can distinguish from
+// a real one after the fact, and that moves any median it lands in. A hidden document is
+// therefore reported WITHOUT its load milestone (`load unavailable (backgrounded)`) rather than
+// with a false one: `response` and `dom` are still real, because both are typically past before
+// a tab can be switched away from, and a reader that parses `load <n>ms` simply finds nothing.
+function hiddenWhileLoading() {
+  return document.visibilityState === "hidden" || document.visibilityState === "prerender";
+}
+
 function installLoadTiming() {
+  // `visibilitychange` fires BEFORE `load` for a tab backgrounded mid-load, so the flag has to
+  // be latched as it happens: by the time `load` runs the tab may be visible again and the
+  // document would look like it had been in the foreground all along.
+  let wasHidden = hiddenWhileLoading();
+  const watch = () => { if (hiddenWhileLoading()) wasHidden = true; };
+  document.addEventListener("visibilitychange", watch);
   window.addEventListener("load", () => {
+    document.removeEventListener("visibilitychange", watch);
     // After `load` the entry is final; a timeout lets the last milestone be written first.
     setTimeout(() => {
       const nav = performance.getEntriesByType?.("navigation")?.[0];
       if (!nav) return;                       // unsupported browser → nothing to report
       const ms = (v) => Math.round(v || 0);
+      const load = wasHidden || hiddenWhileLoading()
+        ? "load unavailable (backgrounded)"
+        : `load ${ms(nav.loadEventEnd)}ms`;
       trace("load", location.pathname,
             `response ${ms(nav.responseEnd)}ms, dom ${ms(nav.domContentLoadedEventEnd)}ms, `
-            + `load ${ms(nav.loadEventEnd)}ms`);
+            + load);
       flush();                                // a load row is worth its own POST
     }, 0);
   });
