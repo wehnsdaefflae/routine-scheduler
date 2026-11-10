@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.6] — 2026-11-10
+
+### Fixed
+- **The suite's second most re-run browser node was racing the router, not the feature.**
+  `tests/ui/test_formpersist.py::test_credential_shaped_fields_are_never_kept_as_drafts`
+  injected its probe fields into `#view` — the element the hash router OWNS and whose children
+  it replaces on every render. A render landing between the injection and the first `fill()`
+  deleted the probes, so `[data-probe="0"]` never appeared and the node died on a 15-second
+  `Locator.fill` timeout. Measured across the recorded gate logs: **8 reruns in each of 5 gates
+  and an outright failure in 3 of them**, twice tonight — each time costing the release gate its
+  `flaky` verdict and a whole extra serial stage. The probes now mount on `document.body`, which
+  changes nothing about what the test proves: `formpersist` saves through document-level
+  `input`/`change` delegation and `fieldKey` disambiguates over `document.querySelectorAll`, so
+  a field in `body` is seen exactly as one inside a view. Proven both ways — five consecutive
+  clean runs after, and the mechanism reproduced on demand by injecting into `#view` and forcing
+  one render, which fails with the identical timeout.
+
 ## [0.525.5] — 2026-11-10
 
 ### Fixed
