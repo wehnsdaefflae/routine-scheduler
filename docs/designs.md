@@ -520,22 +520,6 @@ too, not only the transcript. **First increment:** the conversation artifact sna
 
 ---
 
-## Claude quota: a 429 from the quota read honours `Retry-After` (decided 2026-11-08, in conversation)
-
-The REMAINDER of "Claude quota: the scoped weekly limits in `limits[]`", whose first increment
-shipped in 0.526.0: `normalize` now reconciles both payload shapes into one representation keyed
-by scope (`endpoints/subscription_quota.py`), validates every `limits[]` entry on its own, and
-reports a limit it could not read as unknown rather than dropping it; `quota.js` renders scoped
-rows from their own display names and the header chip reads the tightest cap across every row.
-
-**Shape, still owed.** A 429 from the quota read honours `Retry-After` PER CREDENTIAL and the
-card says when it will read again, rather than retrying on the next poll. Today
-`cliproxy_quota.read_quota` turns any non-200 into one soft error string and the console simply
-re-asks — so a rate-limited account is hammered at the console's own cadence and the operator is
-told nothing about when a figure will exist again.
-
----
-
 ## A second opinion from another model family, as a library rule (decided 2026-11-08, in conversation)
 
 From a review of getpaseo/paseo, whose advisor/committee skills get an independent read from a
