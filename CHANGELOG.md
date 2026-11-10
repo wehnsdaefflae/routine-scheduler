@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.530.0] — 2026-11-10
+
+### Added
+- **⟲ rewind puts a conversation's FILES back, not only its transcript** — the first increment
+  of "Undo a run, and per-reply artifact snapshots". A routine's directory is the git repo
+  `autocommit` writes at every run end, so its deliverables have a history and a run can be
+  undone from it. A conversation is NOT versioned: `artifacts/` holds exactly what the newest
+  reply left there. So a rewind took the transcript back to the chosen turn and left the files as
+  the discarded replies had written them — the conversation saying one thing and its deliverables
+  another, which is the error nobody notices until they act on the wrong file. Each reply's
+  close-out now copies `artifacts/` to `.artifact-snapshots/<run-ts>-t<turn>/`
+  (`engine/artsnap.py`, called from `loopend.finish_run` for conversations only) and
+  `rewind.rewind_transcript` restores the newest snapshot at or before the turn it kept.
+  A COPY rather than a diff, because the moment a snapshot matters is the moment the automation
+  is wrong and a person can act on a copied file with no tool at all; what was live is copied
+  aside as `pre-restore-…` first, since a rewind is itself an act someone may regret; the store
+  is bounded per conversation (200 replies against a 40 MB artefact set would otherwise grow by
+  8 GB, silently) and never prunes a pre-restore copy; every entry point is best-effort, because
+  a lost undo point is a far smaller harm than a reply that fails to finish. The result's
+  `artifacts` key is ABSENT when no snapshot covered that turn — never false-y — so "nothing to
+  put back" cannot read as "the files were restored", which is exactly the case for a routine run
+  reaching the same code. A reply that wrote no files writes no snapshot at all.
+
 ## [0.529.0] — 2026-11-10
 
 ### Added
