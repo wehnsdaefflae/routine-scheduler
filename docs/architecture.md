@@ -429,6 +429,18 @@ the limits (single-writer status.json preserved).
   model otherwise could only be resumed onto that same model. Nothing new honours it — the
   signal is edge-triggered against `control-applied.json`, and the resumed leg's first turn
   boundary precedes its first completion (`tests/test_switch_after_death.py`).
+- **A leg that died MID-ACTION says so** (D278, `engine/unknownoutcome.py`). `assistant_action`
+  is recorded before dispatch and the `observation` after it, so a kill between the two leaves
+  an action with no result — and "continue from the last observation" invites the model to take
+  an outward action twice. `boot` therefore answers each unanswered trailing action with an
+  ordinary `observation` event (`unknownoutcome.record`, payload kind `outcome_unknown`): the
+  outcome is UNKNOWN, check its effect before repeating it. No new transcript event type; the
+  kind is in `donothing.NON_GROUNDING_KINDS`, so it can ground no `finish` and
+  `history.seen_paths` cannot read it as a file the run saw; exactly-once falls out of the
+  predicate, since after one resume the transcript no longer ends unanswered. A `finish` is
+  excluded EXPLICITLY — `chain.take_turn` never observes it, so every ordinary run ends in an
+  unanswered action by construction and a detection without that exclusion would fire on all of
+  them.
 - **"Once" survives a resume** (`engine/guardscope.py`). The once-only guards — the hold
   ledger, each rule assist's single fire and the one assist finish deferral, the repos found
   clean, the verifier's one challenge per line, a reminder hold's one label and a re-driven

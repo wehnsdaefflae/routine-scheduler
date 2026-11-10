@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 
 from ..endpoints.usage import fold_usage
+from ..paths import resolve_rel
 from . import enginenote, obstails
 from .compaction import turn_record
 from .observations import format_observation
@@ -173,6 +174,24 @@ def prior_usage(events: list[dict]) -> dict:
             continue
         fold_usage(total, u)
     return total
+
+
+def rehydrate_seen_paths(ctx, events: list[dict]) -> None:
+    """Rebuild `write_file`'s grounding set on RESUME — the paths earlier legs read stay
+    overwritable, and deletable, after an interruption.
+
+    Lives here rather than in `boot` because it is one more fact derived from the transcript,
+    like every other function in this module, and because `boot.py` sits at its size-ratchet
+    ceiling: the move is what paid for D278's call there. A root revoked between legs simply
+    drops out of the set (`resolve_rel` raises and the path is skipped), which is the intended
+    behaviour and not an error worth recording.
+    """
+    roots = [*ctx.routine.fs_read_roots, *ctx.routine.fs_write_roots]
+    for rel in seen_paths(events):
+        try:
+            ctx.seen_paths.add(str(resolve_rel(ctx.routine.dir, rel, roots)))
+        except (OSError, PermissionError):
+            continue
 
 
 def seen_paths(events: list[dict]) -> list[str]:

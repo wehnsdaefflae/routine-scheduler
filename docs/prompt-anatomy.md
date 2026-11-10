@@ -255,6 +255,30 @@ above is the run so far — continue from the last observation; do NOT restart f
 Re-orient briefly, then proceed.
 ```
 
+**…and when the leg died mid-action, the action itself is answered** (D278,
+`engine/unknownoutcome.py`). The engine records `assistant_action` before dispatch and the
+`observation` after it, so a process killed between the two leaves the transcript ending in an
+action with no result — and the framing above says only "continue from the last observation",
+which for an OUTWARD action (mail sent, a claim filed, a return submitted) invites the model to
+issue it a second time. So `boot` writes an ordinary `observation` event answering each
+unanswered trailing action, replayed like any other:
+
+```
+OBSERVATION (outcome UNKNOWN): the process ended while your `util` action was running, so its
+result was never recorded. It may or may not have taken effect — check its effect before
+repeating it. Anything it would have done outside this run (a message sent, a file written, a
+request filed) may already have happened.
+```
+
+A real transcript event rather than an engine note, so the prompt stays append-only and a second
+resume replays these words instead of re-authoring them — and exactly-once falls out of that:
+after the first resume the transcript no longer ends in an unanswered action. It carries no new
+transcript event type; its payload kind is in `donothing.NON_GROUNDING_KINDS`, because it records
+the ABSENCE of a result and a resumed leg may not pass the fabrication guard on an action nobody
+knows ran. A `finish` is excluded explicitly (`unknownoutcome.unanswered`): `chain.take_turn`
+returns the finish without observing it, so EVERY normally finished run — and every conversation
+follow-up leg — ends in an unanswered action by construction.
+
 …unless there is no conversation above it. `rewind_transcript`'s `before_reply` cut keeps
 everything BEFORE the message that opened a reply, and for a conversation's FIRST reply that is
 the header alone — which is exactly what the operator's ⚑ refusal flag does (discard the reply,

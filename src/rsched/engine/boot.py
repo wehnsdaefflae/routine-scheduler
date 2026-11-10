@@ -7,7 +7,7 @@ the system prompt itself is composed in composer.py.
 from __future__ import annotations
 
 from .. import reports, rules, sharedstores
-from ..paths import read_json, resolve_rel
+from ..paths import read_json
 from . import (
     askback,
     enginenote,
@@ -15,6 +15,7 @@ from . import (
     gate_digest,
     goals,
     guardscope,
+    history,
     inbox,
     jobops,
     mediaops,
@@ -26,10 +27,10 @@ from . import (
     rewind,
     runkind,
     subsalvage,
+    unknownoutcome,
 )
 from .composer import join_sections, kickoff_message, state_digest, system_sections
 from .control import inject_user_message, run_user_command
-from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
 from .transcript import read_events
 
 
@@ -67,12 +68,16 @@ def boot(loop) -> None:
         # (F131/F132), the way usage_base already keeps token spend cumulative.
         prior = read_json(ctx.run_dir / "status.json")
         if isinstance(prior, dict):
-            for attr, val in prior_counters(prior).items():
+            for attr, val in history.prior_counters(prior).items():
                 setattr(ctx, attr, val)
     ctx.write_status("starting")
     resuming = loop.resume and ctx.depth == 0
     # what this run has done so far — read before the digest, which names the goals it left
     events = (read_events(ctx.run_dir / "transcript.jsonl", 0)[0] if resuming else [])
+    # D278: a leg killed between an action and its observation leaves the model an action with
+    # no result — answered on the record HERE, before anything reads `events`, so the note
+    # rides this replay too (engine/unknownoutcome.py; a no-op on a fresh boot's empty list).
+    unknownoutcome.record(ctx, events)
     if ctx.depth == 0:
         # F359 (user order 2026-08-17): a RESUMED leg consumes only what is addressed to
         # IT — the user's conversation/run-page messages, a detached background task's
@@ -154,7 +159,7 @@ def boot(loop) -> None:
                                              promptsegments.of_sections(sections))
     system = join_sections(sections)
     if resuming:
-        replayed, last_turn, records = replay_messages(events)
+        replayed, last_turn, records = history.replay_messages(events)
         loop.messages = [{"role": "system", "content": system}, *replayed]
         loop.turn_records = records
         ctx.turn = last_turn
@@ -162,17 +167,12 @@ def boot(loop) -> None:
         # the run was in when it left off (the executor stamps stage-module reads)
         ctx.phase = next((str(e["phase"]) for e in reversed(events) if e.get("phase")), "")
         # rehydrate write_file's grounding set — a file an earlier leg read stays
-        # overwritable (a root revoked between legs simply drops out of the set)
-        roots = [*ctx.routine.fs_read_roots, *ctx.routine.fs_write_roots]
-        for rel in seen_paths(events):
-            try:
-                ctx.seen_paths.add(str(resolve_rel(ctx.routine.dir, rel, roots)))
-            except (OSError, PermissionError):
-                continue
+        # overwritable (history.py owns it: boot.py is at its ceiling)
+        history.rehydrate_seen_paths(ctx, events)
         ctx.budget_base_turn = last_turn        # a fresh budget window from the resume point
         # reporting stays cumulative even though the budget window is fresh — without
         # this base, status.json shows only the last leg of a resumed run
-        ctx.usage_base = prior_usage(events)
+        ctx.usage_base = history.prior_usage(events)
         # replayed observations ground the fabrication guard — a continued conversation
         # may legitimately answer and re-finish as its very first action
         # A HELD action executed nothing, and a `do_nothing` established nothing (D186), so
@@ -198,7 +198,7 @@ def boot(loop) -> None:
         # restart). Mark each aborted in the transcript (so the tree is honest and a re-resume
         # doesn't re-detect it) and tell the model below — otherwise it would `wait` forever
         # for a child that can never finish.
-        orphans = orphaned_children(events)
+        orphans = history.orphaned_children(events)
         _mark_orphans_dead(ctx, orphans)
         if orphans:
             # F778: the note used to say "results lost … Re-issue any you still need" while

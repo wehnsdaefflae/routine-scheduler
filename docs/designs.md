@@ -536,38 +536,6 @@ told nothing about when a figure will exist again.
 
 ---
 
-## A resumed leg is told when its last action's outcome is unknown (decided 2026-11-08, in conversation)
-
-From a review of getpaseo/paseo: its daemon journals every agent message as `pending` before
-sending and `completed` after, and a retry that finds `pending` after a restart reports
-`agent_request_outcome_unknown` instead of sending again, because the provider may already have
-acted.
-
-**Problem.** The engine records `assistant_action` BEFORE dispatch (`engine/loop.py:262`) and the
-`observation` after it (`:343`). A process killed between the two — a deploy, the D99 SIGKILL
-auto-resume, `daemon/reap_resume.py` after a restart — leaves the transcript ending in an action
-with no result. `history.replay_messages` replays that action as the last assistant message, and
-the only framing the resumed leg gets is `rewind._RESUMED`: "continue from the last observation".
-Nothing says the last action may or may not have happened. For an outward action that is the
-costly case: freelance-hunter sending mail, vodafone-outage-claims filing a claim, do-my-taxes
-submitting a return, predatory-publisher-tarpit replying — a model that sees no result is likely
-to issue the action again.
-
-**Shape.** At boot, when the replayed events end in an `assistant_action` with no answering
-`observation` (per element for a chained reply — `engine/replyactions.py` — so the note names
-which elements have results and which do not), the engine writes an `observation` for each
-unanswered element saying the outcome is UNKNOWN: the process ended while it ran, it may or may
-not have taken effect, check its effect before repeating it. Written as a real transcript event
-(not an engine note), so the prompt stays append-only and a later resume replays it verbatim.
-The guards the resume rebuilds (`grounding_from`, `seen_paths`) treat it as executing nothing.
-`docs/prompt-anatomy.md` gains the wording.
-
-**First increment.** The boot-time detection and the unknown-outcome observation, with a test
-that kills a scripted run between the two events and resumes it, and a replay test proving a
-second resume does not add a second observation.
-
----
-
 ## Catalog models carry a "when to use" note; a second opinion from another model family (decided 2026-11-08, in conversation)
 
 From a review of getpaseo/paseo: its agent profiles carry a "When to use" note that its

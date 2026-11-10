@@ -20,6 +20,7 @@ is already on disk, the `observation` never is — byte for byte the shape a SIG
 from __future__ import annotations
 
 import pytest
+
 from conftest import finish, util, write_file
 from helpers import server_for, transcript_events
 from rsched.engine.donothing import grounding_from
@@ -48,6 +49,15 @@ def _user_text(messages: list[dict]) -> str:
     return "\n".join(m["content"] for m in messages if m["role"] == "user")
 
 
+#: What a resumed leg must script to reach its own `finish`. The dead action got no
+#: observation and the unknown-outcome note deliberately grounds nothing, so the leg's
+#: `executed_actions` is 0 and `finishgate`'s fabrication guard defers an ok-finish as a
+#: hallucinated completion — correctly. One real action first is therefore not test
+#: scaffolding but the behaviour the note asks for: CHECK the effect, then conclude.
+def _checks_then_finishes() -> list[dict]:
+    return [write_file("state/checked-the-effect.txt"), finish()]
+
+
 def _interrupted(d, server, scripted, monkeypatch, action: dict):
     """Leg one: `action` lands, the process dies before its observation is written."""
     import rsched.engine.actionroute as actionroute_mod
@@ -72,7 +82,7 @@ def test_a_resumed_leg_is_told_its_last_action_may_already_have_happened(
     server = server_for(d)
     _interrupted(d, server, scripted, monkeypatch, util("web-request", ["--post"]))
 
-    ep = scripted([finish()])
+    ep = scripted(_checks_then_finishes())
     status, run_dir = run_routine(d, server, run_ts=TS, resume_from=TS)
     assert status == "ok"
     assert len(_unknowns(run_dir)) == 1, "exactly one observation answers the dangling action"
@@ -92,7 +102,7 @@ def test_the_observation_is_a_real_transcript_event_on_the_dead_action_s_turn(
     server = server_for(d)
     _interrupted(d, server, scripted, monkeypatch, write_file("state/x.txt"))
 
-    scripted([finish()])
+    scripted(_checks_then_finishes())
     _status, run_dir = run_routine(d, server, run_ts=TS, resume_from=TS)
     events = transcript_events(run_dir)
     action = next(e for e in events if e["type"] == "assistant_action")
@@ -112,9 +122,9 @@ def test_a_second_resume_does_not_add_a_second_observation(
     server = server_for(d)
     _interrupted(d, server, scripted, monkeypatch, write_file("state/x.txt"))
 
-    scripted([finish()])
+    scripted(_checks_then_finishes())
     run_routine(d, server, run_ts=TS, resume_from=TS)
-    scripted([finish()])
+    scripted(_checks_then_finishes())
     _status, run_dir = run_routine(d, server, run_ts=TS, resume_from=TS)
     assert len(_unknowns(run_dir)) == 1
 
@@ -146,7 +156,7 @@ def test_the_unknown_outcome_grounds_nothing_and_shows_no_path(
     server = server_for(d)
     _interrupted(d, server, scripted, monkeypatch, write_file("state/x.txt"))
 
-    scripted([finish()])
+    scripted(_checks_then_finishes())
     _status, run_dir = run_routine(d, server, run_ts=TS, resume_from=TS)
     upto = transcript_events(run_dir)
     upto = upto[:upto.index(_unknowns(run_dir)[0]) + 1]      # the first leg plus the note

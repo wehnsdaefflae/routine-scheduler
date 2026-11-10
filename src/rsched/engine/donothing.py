@@ -26,7 +26,11 @@ from __future__ import annotations
 #: Observation kinds that executed nothing a finish could rest on. A hold is the other
 #: family (`engine/hold.py` owns it, and a hold never reached the dispatcher at all); this
 #: one DID dispatch and still establishes nothing about the world.
-NON_GROUNDING_KINDS = frozenset({"do_nothing"})
+#:
+#: `outcome_unknown` (D278, `engine/unknownoutcome.py`) is the third family and the sharpest:
+#: it records that an action's result was NEVER KNOWN, so counting it would let a resumed leg
+#: pass the fabrication guard on an action nobody — not even the engine — can say ran.
+NON_GROUNDING_KINDS = frozenset({"do_nothing", "outcome_unknown"})
 
 
 def grounds_a_finish(obs: dict) -> bool:
