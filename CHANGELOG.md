@@ -15,6 +15,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.528.0] — 2026-11-10
+
+### Fixed
+- **The test session's memory guard waited for 2 GB while the fast stage holds 3.3** (goal b8).
+  The operator's ruling was to lower the gate's worker count rather than raise the 5 GiB
+  ceiling, and his follow-up named the figure to design against: `held_pct_of_limit` — anon +
+  swapped pages, what an OOM is actually decided on — never `peak_pct_of_limit`, which counts
+  page cache the kernel drops at the limit. Folding every stage the gate has sampled since that
+  field shipped: a `tests` stage (controller alone) holds 0.79-1.20 GB, a `fast` stage
+  (controller + 4 workers) **3.08-3.29 GB in 205-264 s**, a `ui` stage 0.80-1.03 GB. So a fast
+  worker holds **~600 MB, not the ~250 MB every comment claimed**, the whole stage holds at most
+  3,367 of 5,120 MB, `oom_kill` is **0 across the entire record**, and **duration does not track
+  held pressure** (the highest hold took 241 s; the highest peak took 205 s). The defect was
+  therefore not the worker count but `memgate.NEED_MB["fast"]`, which admitted a selection
+  needing 3.3 GB after waiting for 2 — a guard reporting safety it never checked. Now 3584 MB
+  (the worst measured hold, rounded up on the MB figure: 3.29 GB rounds to 3328, which is BELOW
+  the hold, and the new test below caught exactly that). The existing coupling test could not see
+  it, because its floor was `FAST_WORKERS * 250` = 1,000 MB against a 2,048 MB budget — the
+  relation held while both numbers were jointly too small; its floor is now the measured
+  600 MB/worker, and **two new tests** pin the budget against the measurement itself and against
+  the cgroup it waits for (a budget over the ceiling can never be satisfied and would exit 3 on
+  every gate forever). `FAST_WORKERS` stays **4**: on the figure the operator named, the stage
+  sits at 61.6-65.8 % with 1.7 GB spare, so cutting it would cost every release gate wall clock
+  for headroom the record does not show it needs — that call is his, with the table in front of
+  him. `CLAUDE.md` also still said the cap was 6 and the budget 2 GB, and never mentioned the
+  cgroup half of the guard.
+
+### Added
+- **An answer given on a run's finish banner is now REVISABLE** (D212, the last part). The
+  operator's brief asks for closing asks to be *"collected, presented, answered and revisable in
+  the run's final summary"*; answering on the banner locked the form and put nothing after it, so
+  the answer was final the moment it posted — while the same answer on the Decisions page has had
+  a revise path since F525, which exists because he answered one of four sub-questions and then
+  said *"i want to revise it to add the other answers"*. The banner now shows a receipt with his
+  own words and a *revise* button that opens an editor pre-filled with them, posting to the SAME
+  `POST /api/questions/{qid}/revise` route — no second route, no second answer shape. Two browser
+  tests drive the whole round trip; no new CSS class, since both stylesheets are at their ratchet
+  ceilings.
+- **The `second-opinion` library rule** (D279(b), the unbuilt half of that order). Before a
+  judgment that cannot be taken back — a release, a closing verdict, a message that cannot be
+  unsent — one independent read from a child run on a model of a DIFFERENT family: briefed
+  self-contained and WITHOUT the asking run's conclusion (a reviewer shown your answer finds
+  reasons for it), with no write rights, and the finish says where the two disagreed. It names
+  the capability, never a model or a util. Seeded in `library-seed/rules/` and authored to the
+  live library; it binds no routine — which routines hold it is the operator's call.
+  `docs/curated-rules.md` records its provenance and says plainly that it rests on an argument
+  (self-correction without external feedback measures net negative; two models of one lineage
+  share their characteristic errors) rather than on effectiveness data.
+
 ## [0.527.0] — 2026-11-10
 
 ### Added
