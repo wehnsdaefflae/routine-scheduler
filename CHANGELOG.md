@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.8] — 2026-11-10
+
+### Added
+- **A scope editor on every scoped provider in Settings → Connections.** Google's consent
+  scopes lived in a write-only Secrets entry, so changing one meant retyping ~48 URLs blind and
+  clicking reconnect on another card — llmsectest-weekday's Drive and Docs calls 403'd for two
+  scopes nobody could see were missing. The editor shows the list grouped by API, expands short
+  names, counts against Google's observed 50-scope consent ceiling, compares each connected
+  account's GRANTED scopes with the list as edited, and saves (*save*, *save & reconnect*)
+  through `PUT /api/settings/oauth/{provider}/scopes`, judged by `oauth/scopes.py`.
+- **Google Health as its own connection** (`google_health`). The Health API refuses a token
+  carrying any non-`googlehealth.*` scope, which is why deficit-coach's calls failed with the
+  Health scopes on the token. Same Google OAuth app, its own scopes
+  (`GOOGLE_HEALTH_OAUTH_SCOPES`, `googlehealth.*` only) and token
+  (`GOOGLE_HEALTH_ACCESS_TOKEN`); a routine binds it beside `google`.
+
+### Fixed
+- A failing util serving several connections is routed to request one only when none of them
+  is bound — a routine with Google bound is no longer told to ask for a Health connection
+  whenever a Google call fails.
+
 ## [0.525.7] — 2026-11-10
 
 ### Added

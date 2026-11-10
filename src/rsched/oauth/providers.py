@@ -31,6 +31,22 @@ class Provider:
     authorize_extra: tuple[tuple[str, str], ...] = ()  # extra authorize params (Notion: owner=user)
     exchange_auth: str = "body"      # "basic" = HTTP Basic (Notion); "body" = client creds in body
     exchange_encoding: str = "form"  # request body: "form" (standard) or "json" (Notion)
+    # Scope handling (`oauth/scopes.py`). `creds_from` reuses another provider's OAuth APP — the
+    # Google Health connection is the same Google client asked for a different set of scopes.
+    # `scope_base` expands a short name ("drive.readonly") to the provider's full scope URL;
+    # `scope_prefixes`, when set, are the ONLY scopes this provider may request; `max_scopes` is
+    # the most one consent may carry (0 = no known ceiling).
+    creds_from: str = ""
+    scope_base: str = ""
+    scope_prefixes: tuple[str, ...] = ()
+    max_scopes: int = 0
+
+
+#: Google's consent page hangs (spinner after "Weiter", an `RpcError` in the console, no error
+#: page) past 50 scopes on this instance's unverified app — measured 2026-11-08: 52 hung twice,
+#: 48 completed at once. Google documents no such limit, so it is an OBSERVED ceiling.
+GOOGLE_MAX_SCOPES = 50
+_GOOGLE_AUTH = "https://www.googleapis.com/auth/"
 
 
 # Notion is fully implemented and verified; google/slack are scaffolds that prove the registry
@@ -60,6 +76,27 @@ PROVIDERS: dict[str, Provider] = {
         expiring=True,              # scopes come from GOOGLE_OAUTH_SCOPES (scoped=True by default)
         # access_type=offline + prompt=consent make Google return a (stable) refresh_token.
         authorize_extra=(("access_type", "offline"), ("prompt", "consent")),
+        scope_base=_GOOGLE_AUTH,
+        max_scopes=GOOGLE_MAX_SCOPES,
+    ),
+    # The Google Health API refuses a token that carries ANY scope outside its own (403
+    # DISALLOWED_OAUTH_SCOPES naming every other scope on it — deficit-coach, 2026-11-08/09, with
+    # the googlehealth scopes present on the token). So Health is its own connection: the same
+    # Google OAuth app, consented for `googlehealth.*` alone, injected as
+    # GOOGLE_HEALTH_ACCESS_TOKEN beside a routine's ordinary Google token.
+    "google_health": Provider(
+        id="google_health",
+        name="Google Health",
+        authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
+        token_url="https://oauth2.googleapis.com/token",  # noqa: S106 — token ENDPOINT URL, not a secret
+        console_url="https://console.cloud.google.com/apis/library/health.googleapis.com",
+        uses_pkce=True,
+        expiring=True,
+        authorize_extra=(("access_type", "offline"), ("prompt", "consent")),
+        creds_from="google",
+        scope_base=_GOOGLE_AUTH,
+        scope_prefixes=(f"{_GOOGLE_AUTH}googlehealth.",),
+        max_scopes=GOOGLE_MAX_SCOPES,
     ),
     "slack": Provider(
         id="slack",
@@ -92,7 +129,7 @@ def client_creds(provider_id: str) -> ClientCreds | None:
     unset. Keys: `<PROVIDER>_OAUTH_CLIENT_ID` / `<PROVIDER>_OAUTH_CLIENT_SECRET`.
     """
     store = load_secrets()
-    prefix = provider_id.upper()
+    prefix = _creds_owner(provider_id).upper()
     client_id = store.get(f"{prefix}_OAUTH_CLIENT_ID", "").strip()
     if not client_id:
         return None
@@ -102,8 +139,14 @@ def client_creds(provider_id: str) -> ClientCreds | None:
 
 def creds_secret_keys(provider_id: str) -> tuple[str, str]:
     """The two Secrets-store key names a provider's OAuth app credentials use (for the UI)."""
-    prefix = provider_id.upper()
+    prefix = _creds_owner(provider_id).upper()
     return f"{prefix}_OAUTH_CLIENT_ID", f"{prefix}_OAUTH_CLIENT_SECRET"
+
+
+def _creds_owner(provider_id: str) -> str:
+    """Whose OAuth app credentials a provider uses — its own, or `creds_from`'s."""
+    prov = PROVIDERS.get(provider_id)
+    return prov.creds_from if prov is not None and prov.creds_from else provider_id
 
 
 def scopes_secret_key(provider_id: str) -> str:

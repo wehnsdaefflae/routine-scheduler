@@ -134,9 +134,12 @@ def _unbound_connection_request(ctx: RunContext, name: str) -> str:
     declared = utils_run.util_needs(ctx.server.libraries_home, name).secrets
     upper = {d.upper() for d in declared}
     bound = _bound_connections(ctx)
-    missing = [pid for pid in provider_ids()
-               if access_token_var(pid) in upper and not bound.get(pid)]
-    if not missing:
+    wanted = [pid for pid in provider_ids() if access_token_var(pid) in upper]
+    missing = [pid for pid in wanted if not bound.get(pid)]
+    # A util may serve several connections (google-api: Google and Google Health). When one of
+    # them IS bound, the call had a token and failed for another reason — routing it to request
+    # the other would send every Drive 403 to ask for a Health connection.
+    if not missing or len(missing) < len(wanted):
         return ""
     eid = f"connection:{missing[0]}"
     return (f'This util needs a bound {missing[0]} connection — it declares '

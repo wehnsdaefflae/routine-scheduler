@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from ...oauth import exchange, providers, redirecturi, store
 from ...oauth.store import Connection
+from . import oauth_scopes
 from .common import server_of, update_config
 
 log = logging.getLogger("rsched.oauth")
@@ -110,7 +111,8 @@ def oauth_status(request: Request) -> dict:
                       "console_url": prov.console_url,
                       "client_id_key": cid_key, "client_secret_key": secret_key,
                       "scoped": prov.scoped, "scopes_key": providers.scopes_secret_key(pid),
-                      "scopes_set": (not prov.scoped) or bool(providers.authorize_scopes(pid))})
+                      "scopes_set": (not prov.scoped) or bool(providers.authorize_scopes(pid)),
+                      **(oauth_scopes.status(pid) if prov.scoped else {})})
     return {"public_url": public_url, "public_url_set": bool(public_url),
             "providers": provs, "connections": store.list_connections()}
 

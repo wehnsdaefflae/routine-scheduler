@@ -31,13 +31,29 @@ OAuth has two halves that live in different places, because a routine run is hea
   (`authorize_scopes`, space/newline/comma-separated), and `authorize-start` **errors** if that
   secret is unset — there is no hardcoded fallback, so a connection can never silently consent to a
   narrower set than intended. `scoped=False` (Notion) sends no scope param and needs no secret, as
-  its scopes are fixed on the integration. Widen or narrow a Google connection by editing
-  `GOOGLE_OAUTH_SCOPES` and clicking *reconnect* on its row in Settings → Connections — never
+  its scopes are fixed on the integration. Widen or narrow a Google connection in the **scope
+  editor** under its provider in Settings → Connections (*scopes (n / 50)*): the list is shown
+  grouped by the API each scope's URL names, a short name (`drive.readonly`) expands to the full
+  URL, the count is held against the provider's consent ceiling (Google's consent page hangs past
+  50 scopes — observed 2026-11-08, undocumented), each connected account's GRANTED scopes are
+  compared with the list as edited, and *save* writes `<PROVIDER>_OAUTH_SCOPES`
+  (`PUT /api/settings/oauth/{provider}/scopes`, judged by `oauth/scopes.py`). Saving changes no
+  token — *save & reconnect <account>* (or the row's *reconnect*) is what does — never
   *disconnect* then *connect*: reconnect runs the same consent for the same `provider:account`
   and the callback overwrites that key only once the new consent has SUCCEEDED, so the working
   token stays bound to its routines until then (a disconnect first lost google:personal's token
   for nine routines on 2026-10-29, when the redirect was broken and the connect failed). The
   same secret is what any Google util reads.
+- **Google Health is its own connection** (`google_health`, 2026-11-09). The Google Health API
+  refuses a token carrying ANY scope outside `googlehealth.*` (403 `DISALLOWED_OAUTH_SCOPES`,
+  naming every other scope on it), so it can never share the general Google token. It is the
+  same Google OAuth app (`creds_from: google` — no second client to register), consented for
+  `googlehealth.*` alone (`GOOGLE_HEALTH_OAUTH_SCOPES`; the editor refuses anything else) and
+  injected as `GOOGLE_HEALTH_ACCESS_TOKEN`, so a routine binds both. The `google-api` util calls
+  `health.googleapis.com` with it and every other host with `GOOGLE_ACCESS_TOKEN`. A failing util
+  that serves several connections is routed to request one only when NONE of them is bound
+  (`exec_env._unbound_connection_request`): with Google bound, a Drive 403 is not a missing
+  Health connection.
 - **`oauth/store.py`** — the connection store: one `connections.json` next to `config.yaml`, keyed
   `"<provider>:<account>"`, written atomically at mode 0600 (modeled on the Secrets store). Values
   are write-only over the API (`list_connections` returns metadata only, never tokens). The

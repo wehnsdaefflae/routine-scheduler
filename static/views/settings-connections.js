@@ -6,6 +6,7 @@ import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { act, el, toast, toastError } from "/static/util.js";
 import { panelSection } from "/static/views/settings-common.js";
+import { scopeEditor } from "/static/components/scope-editor.js";
 
 export function renderConnections(view) {
   // -- OAuth connections (external accounts routines act on behalf of) --------------
@@ -118,6 +119,12 @@ export function renderConnections(view) {
         : el("span", { class: "small", style: "color:var(--warn)" }, `set ${p.client_id_key} + secret in Secrets`);
       connBox.append(el("div", { class: "row", style: "margin:4px 0", "data-provider": p.id },
         el("span", { style: "width:82px;font-weight:600" }, p.name), consoleLink, status, acct, connect));
+      // The consent scopes, edited where they are used (components/scope-editor.js).
+      if (p.scoped) connBox.append(el("details", { "data-scopes-of": p.id },
+        el("summary", { class: "small muted", style: "margin-left:82px;cursor:pointer" },
+          `scopes (${(p.requested || []).length}${p.max_scopes ? ` / ${p.max_scopes}` : ""})`),
+        scopeEditor(p, d.connections.filter((c) => c.provider === p.id),
+          { reload, reconnect: startConnect })));
     }
     if (!d.public_url_set)
       connBox.append(el("div", { class: "muted small mt" }, "set the redirect URL above to enable connecting"));

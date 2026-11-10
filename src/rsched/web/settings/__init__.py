@@ -15,6 +15,7 @@ from . import (
     github,
     machines,
     oauth,
+    oauth_scopes,
     pause,
     restart,
     secrets,
@@ -25,6 +26,7 @@ from . import (
 )
 
 router = APIRouter(tags=["settings"])
-for _mod in (endpoints, endpoint_probe, decisions, source, github, oauth, machines, secrets,
+for _mod in (endpoints, endpoint_probe, decisions, source, github, oauth, oauth_scopes,
+             machines, secrets,
              server, serverpatch, restart, pause, system_models):
     router.include_router(_mod.router)
