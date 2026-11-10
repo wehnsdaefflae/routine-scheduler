@@ -1165,7 +1165,13 @@ and the capabilities digest's catalog listing):
   answered, a pre-class record reading as `closing`) and the run page renders them on the finish
   banner with their options as buttons (`static/components/closing-asks.js`), posting through the
   ONE answer route. The surface follows the axis: a closing ask is read where the result is read,
-  while the Decisions page carries what is actually holding work up.
+  while the Decisions page carries what is actually holding work up. **An answer given there is
+  REVISABLE** — the receipt keeps what was said and offers a *revise* button posting to the same
+  `POST /api/questions/{qid}/revise` the Decisions page uses (`revise_question_answer`: a queued
+  answer is rewritten, one a run already read is re-queued so the next run reads the amendment).
+  Answering one of three closing asks and then wanting to extend it is the ordinary case, and
+  until then this surface had the answer box and nothing after it, so an answer typed on the
+  banner was final the moment it posted while the same answer on the Decisions page was not.
   An ask may carry
   `request: "<entity-id>"` — a typed ACCESS REQUEST (entities.py; docs/rules-permissions.md's
   grant model): the record then settles ONLY on one of the typed allow/deny × now/forever
