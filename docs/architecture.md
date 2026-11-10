@@ -1349,6 +1349,19 @@ meet. A conversation's spine is its own **working plan**
   ORDINARY continued conversation: the user's first message in it goes down `resume_terminal` and
   replays the inherited history, so the engine has no branch case at all. Because it is a copy, a
   branch **cannot mutate the original**.
+  **A branch of a branch records its WHOLE lineage** (E3.7(b)) — `lineage: [{slug, turn}, …]`,
+  oldest first, in both `routine.yaml` and the transcript header, beside the immediate
+  `branched_from`. The reason is `rewind._leg_start`, which bounds a reply at the LATEST
+  `finish` or fork cut before it: a turn-indexed fork can land MID-REPLY, so the inherited
+  reply it cut has no finish of its own, and with only the immediate fork recorded an
+  inherited reply lying before that cut found no bound at all — it read as the conversation's
+  FIRST, so flagging it (⚑) would have discarded the entire inherited history and re-sent
+  `instruction.md` in place of the message that really opened it. A conversation forked before
+  `lineage` existed keeps working on its single `branched_from` cut (`rewind._fork_turns` reads
+  both). The sibling worry about child NUMBERING needed no fix and is pinned instead: a branch
+  copies no `runs/` (`branches.COPIED_TREES` is `state` and `attachments`), and
+  `childrun.claim_child` numbers from the highest child directory ON DISK rather than from the
+  transcript, so an inherited `subrun_start` event can never collide with a real child.
   **Merging is deliberately a HAND-BACK, not a transcript merge** — two divergent histories cannot
   be interleaved into one coherent conversation. `hand_back` copies the branch's `artifacts/` into
   the parent's `artifacts/from-branch-<slug>/` and files ONE inbox message on the `branch` via —

@@ -60,17 +60,38 @@ def _reauthored_note(ev: dict) -> bool:
             and p.get("replay") is False)
 
 
+def _fork_turns(head: dict) -> list[int]:
+    """Every turn at which this conversation's history was FORKED, oldest first — E3.7(b).
+
+    A branch of a branch inherits two cuts, and before `lineage` the header recorded only the
+    immediate one (`branched_from`). That is enough to bound the branch's own latest reply,
+    because `_leg_start` takes the LATEST bound — but the refusal flag and ⟲ rewind address ANY
+    reply in the transcript, and an INHERITED one lying before the immediate fork found no
+    bound at all: the fork cut is after it, and the grandparent's fork had cut its predecessor
+    mid-reply, so no `finish` precedes it either. Such a reply read as the conversation's FIRST,
+    and flagging it would have discarded the entire inherited history and re-sent
+    `instruction.md` in place of the message that really opened it.
+
+    `branched_from` is still read, so every conversation forked before `lineage` existed keeps
+    working with its single cut.
+    """
+    turns = [int(row["turn"]) for row in (head.get("lineage") or [])
+             if isinstance(row, dict) and isinstance(row.get("turn"), int)]
+    fork = (head.get("branched_from") or {}).get("turn")
+    if isinstance(fork, int) and fork not in turns:
+        turns.append(fork)
+    return turns
+
+
 def _leg_start(events: list[dict], fin: int) -> tuple[int, bool]:
     """Where the leg that ended at `fin` began, and whether it is the conversation's FIRST:
-    just past the previous reply's finish, or past a branch's inherited history (its header's
-    `branched_from` turn, F325) — whichever is later — else just past the header.
+    just past the previous reply's finish, or past inherited history (every fork in the header's
+    `lineage`, F325/E3.7) — whichever is latest — else just past the header.
     """
     bounds = [i for i in range(fin) if events[i].get("type") == "finish"]
     head = events[0] if events and events[0].get("type") == "header" else {}
-    fork = (head.get("branched_from") or {}).get("turn")
-    if isinstance(fork, int) and (cut := cut_index_for_turn(events, fork)) is not None \
-            and cut < fin:
-        bounds.append(cut)
+    cuts = (cut_index_for_turn(events, fork) for fork in _fork_turns(head))
+    bounds.extend(cut for cut in cuts if cut is not None and cut < fin)
     return (max(bounds) + 1, False) if bounds else (1 if head else 0, True)
 
 
