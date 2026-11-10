@@ -16,9 +16,14 @@ a frozen guess. A scope is grouped by the API its own URL names.
 
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from . import providers
 
 DOCS_URL = "https://developers.google.com/identity/protocols/oauth2/scopes"
+CONSOLE = "https://console.cloud.google.com"
+#: Scope groups that belong to sign-in itself, not to an API a project enables.
+_NO_API = frozenset({"openid", "userinfo"})
 _BARE = frozenset({"openid", "email", "profile"})
 _HEALTH = "googlehealth."
 
@@ -73,3 +78,35 @@ def judge(provider_id: str, scopes: list[str]) -> tuple[list[str], list[str]]:
         warnings.append(f"{len(health)} googlehealth.* scope(s) here are refused by the Health "
                         "API on this token — they belong on the Google Health connection")
     return errors, warnings
+
+
+def google_project(provider_id: str) -> str:
+    """The Google Cloud project NUMBER a provider's OAuth client belongs to, read off the client
+    id itself (`746057774400-….apps.googleusercontent.com`) — or "" when it is not one.
+    """
+    creds = providers.client_creds(provider_id)
+    head = creds.client_id.split("-", 1)[0] if creds else ""
+    return head if head.isdigit() else ""
+
+
+def console_links(provider_id: str, groups: set[str]) -> dict:
+    """Where in the Cloud console this provider's project is managed (2026-11-10: a scope is
+    useless until its API is ENABLED in the project — Docs answered SERVICE_DISABLED with the
+    scope granted). Empty unless the provider is a Google one with a readable project.
+
+    An API row links to the project's API library SEARCHED for the group's name rather than to
+    one API's page: a scope's URL does not name the API's service (`documents` scopes belong to
+    docs.googleapis.com, `calendar` to calendar-json.googleapis.com), and a mapping kept here would
+    be a copy of Google's catalogue that goes stale.
+    """
+    prov = providers.get_provider(provider_id)
+    project = google_project(provider_id) if prov and "googleapis" in prov.scope_base else ""
+    if not project:
+        return {}
+    api = {g: f"{CONSOLE}/apis/library/browse?"
+              + urlencode({"project": project, "q": g.removeprefix("google") or g})
+           for g in sorted(groups - _NO_API)}
+    return {"project": project,
+            "enabled_apis": f"{CONSOLE}/apis/dashboard?project={project}",
+            "consent": f"{CONSOLE}/auth/overview?project={project}",
+            "api": api}

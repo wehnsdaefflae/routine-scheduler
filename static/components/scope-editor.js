@@ -39,13 +39,22 @@ export function scopeEditor(p, connections, { reload, reconnect }) {
         `${list.length}${p.max_scopes ? ` / ${p.max_scopes}` : ""} scopes`),
       p.scope_docs ? el("a", { href: p.scope_docs, target: "_blank", rel: "noopener" },
         "Google's scope list ↗") : null,
-      p.creds_from ? el("span", { class: "muted" }, `uses the ${p.creds_from} OAuth app`) : null);
+      p.creds_from ? el("span", { class: "muted" }, `uses the ${p.creds_from} OAuth app`) : null,
+      // The Cloud console, where a scope's API is ENABLED — a granted scope is useless until it is
+      // (Docs answered SERVICE_DISABLED with its scope on the token, 2026-11-10).
+      p.console?.enabled_apis ? el("a", { href: p.console.enabled_apis, target: "_blank",
+        rel: "noopener", "data-console": "apis" }, "enabled APIs ↗") : null,
+      p.console?.consent ? el("a", { href: p.console.consent, target: "_blank", rel: "noopener",
+        "data-console": "consent" }, "consent screen ↗") : null);
     const rule = p.scope_prefixes?.length
       ? el("div", { class: "muted small" }, `only ${p.scope_prefixes.map((x) => short(p, x)).join(", ")}…`
         + " — the API refuses a token carrying anything else") : null;
     const rows = Object.keys(groups).sort().map((api_) => el("div", { class: "row small",
       style: "flex-wrap:wrap;gap:4px;margin:3px 0", "data-scope-group": api_ },
       el("span", { style: "width:110px;font-weight:600" }, api_),
+      p.console?.api?.[api_] ? el("a", { href: p.console.api[api_], target: "_blank",
+        rel: "noopener", class: "small", "data-console-api": api_,
+        title: `find the ${api_} API in your Cloud project — enable it there` }, "console ↗") : null,
       ...groups[api_].map((s) => {
         const x = el("button", { class: "btn small ghost", title: `remove ${s}`,
           "data-scope-remove": s }, "×");

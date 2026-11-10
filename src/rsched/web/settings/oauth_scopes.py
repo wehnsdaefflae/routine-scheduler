@@ -24,8 +24,15 @@ def status(provider_id: str) -> dict:
     prov = providers.get_provider(provider_id)
     requested = scopes.current(provider_id)
     errors, warnings = scopes.judge(provider_id, requested) if requested else ([], [])
+    groups = {s: scopes.api_of(s) for s in requested}
+    console = scopes.console_links(provider_id, set(groups.values()))
+    project_console = ({"console_url": f"{prov.console_url}"
+                        f"{'&' if '?' in prov.console_url else '?'}project={console['project']}"}
+                       if console and prov and prov.console_url else {})
     return {"requested": requested,
-            "groups": {s: scopes.api_of(s) for s in requested},
+            "groups": groups,
+            "console": console,
+            **project_console,
             "max_scopes": prov.max_scopes if prov else 0,
             "scope_prefixes": list(prov.scope_prefixes) if prov else [],
             "scope_base": prov.scope_base if prov else "",

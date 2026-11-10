@@ -104,3 +104,26 @@ def test_a_util_with_one_of_its_connections_bound_is_not_sent_to_ask_for_the_oth
                                   connections={"google": "personal"}, machines=[])
     assert _unbound_connection_request(ctx, "gapi2") == ""
     assert "connection:google" in _unbound_connection_request(_ctx(tmp_path), "gapi2")
+
+
+def test_the_cloud_console_is_linked_for_the_project_the_client_belongs_to(client):
+    """The scope alone is not enough: Docs answered SERVICE_DISABLED with its scope granted. The
+    editor links the project's console, read off the client id."""
+    secrets.set_secret("GOOGLE_OAUTH_CLIENT_ID", "746057774400-abc.apps.googleusercontent.com")
+    client.put("/api/settings/oauth/google/scopes", json={"scopes": ["openid", "documents"]})
+    provs = {p["id"]: p for p in client.get("/api/settings/oauth").json()["providers"]}
+    console = provs["google"]["console"]
+    assert console["project"] == "746057774400"
+    assert console["enabled_apis"].endswith("/apis/dashboard?project=746057774400")
+    assert set(console["api"]) == {"documents"}          # sign-in scopes enable no API
+    assert "q=documents" in console["api"]["documents"]
+    assert provs["google"]["console_url"].endswith("?project=746057774400")
+    assert provs["google_health"]["console_url"].endswith("?project=746057774400")
+
+
+def test_no_project_means_no_console_links(client):
+    secrets.set_secret("GOOGLE_OAUTH_CLIENT_ID", "not-a-google-client")
+    client.put("/api/settings/oauth/google/scopes", json={"scopes": ["drive"]})
+    google = next(p for p in client.get("/api/settings/oauth").json()["providers"]
+                  if p["id"] == "google")
+    assert google["console"] == {}

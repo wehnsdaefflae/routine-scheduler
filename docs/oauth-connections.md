@@ -38,7 +38,12 @@ OAuth has two halves that live in different places, because a routine run is hea
   50 scopes — observed 2026-11-08, undocumented), each connected account's GRANTED scopes are
   compared with the list as edited, and *save* writes `<PROVIDER>_OAUTH_SCOPES`
   (`PUT /api/settings/oauth/{provider}/scopes`, judged by `oauth/scopes.py`). Saving changes no
-  token — *save & reconnect <account>* (or the row's *reconnect*) is what does — never
+  token — *save & reconnect <account>* (or the row's *reconnect*) is what does. A scope is also
+  useless until its API is ENABLED in the Google Cloud project (Docs answered `SERVICE_DISABLED`
+  with its scope granted, 2026-11-10), so the editor links the project's console — read off the
+  client id's numeric prefix, the project number: *enabled APIs*, *consent screen*, and per API
+  row a *console* link to the project's API library searched for that API (searched, because a
+  scope's URL does not name its service: `documents` is docs.googleapis.com) — never
   *disconnect* then *connect*: reconnect runs the same consent for the same `provider:account`
   and the callback overwrites that key only once the new consent has SUCCEEDED, so the working
   token stays bound to its routines until then (a disconnect first lost google:personal's token

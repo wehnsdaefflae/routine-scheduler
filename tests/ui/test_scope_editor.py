@@ -17,7 +17,7 @@ G = "https://www.googleapis.com/auth/"
 
 def _seed(ui, monkeypatch):
     monkeypatch.setattr(store, "connections_path", lambda: ui.tmp / "connections.json")
-    secrets.set_secret("GOOGLE_OAUTH_CLIENT_ID", "cid-ui")
+    secrets.set_secret("GOOGLE_OAUTH_CLIENT_ID", "746057774400-ui.apps.googleusercontent.com")
     secrets.set_secret("GOOGLE_OAUTH_SCOPES",
                        f"openid {G}gmail.modify {G}googlehealth.sleep.readonly")
     store.set_connection(Connection(provider="google", account="personal", access_token="t",
@@ -33,6 +33,10 @@ def test_the_editor_shows_edits_and_saves_the_consent_scopes(ui, ui_page, monkey
     expect(editor.locator("[data-scope-count]")).to_have_text("3 / 50 scopes")
     expect(editor).to_contain_text("refused by the Health API")
     expect(editor.locator('[data-scope-group="gmail"]')).to_contain_text("gmail.modify")
+    expect(editor.locator('[data-console="apis"]')).to_have_attribute(
+        "href", "https://console.cloud.google.com/apis/dashboard?project=746057774400")
+    expect(editor.locator('[data-console-api="gmail"]')).to_be_visible()
+    expect(editor.locator('[data-console-api="openid"]')).to_have_count(0)
     account = editor.locator('[data-scope-account="personal"]')
     expect(account).to_contain_text("1 not granted yet")
 

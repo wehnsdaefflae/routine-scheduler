@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.525.9] — 2026-11-10
+
+### Added
+- **The scope editor links the Google Cloud console where it is needed.** A granted scope is
+  useless until its API is enabled in the project — the Docs API answered `SERVICE_DISABLED` with
+  its scope on the token — and the console was reachable from nowhere in rsched. The editor now
+  links the project's *enabled APIs* and *consent screen*, and every API row a *console* link to
+  the project's API library searched for that API. The project number is read off the OAuth
+  client id itself; the providers' own console links carry it too.
+
 ## [0.525.8] — 2026-11-10
 
 ### Added
