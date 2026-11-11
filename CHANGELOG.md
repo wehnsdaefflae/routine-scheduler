@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.531.4] — 2026-11-11
+
+### Fixed
+- **`websockets` is declared.** `web/api_screen_view.py` imports it for the noVNC relay and it
+  was declared **nowhere** in `pyproject.toml` — arriving only through `uvicorn[standard]`'s
+  extra, which is exactly the silent-break case the deps list's own comment four lines above
+  declares `pydantic`, `markdown2`, `cryptography` and `py-vapid` against. A bump that repinned
+  or dropped that extra would have taken every screen in the console with it. The tree's ONLY
+  `except ImportError` guarded that import, and its own comment admitted the branch cannot be
+  taken (`# pragma: no cover - uvicorn[standard] ships it`) while the library was used
+  unguarded two lines later, so the guard was deleted and the import moved to the top, where
+  mypy and the import lint can see it. Found by the deep cruft sweep; `uv.lock` already pinned
+  it (17.2).
+- **A path a source docstring names must exist — and one did not.** `web/assetskew.py` told
+  every reader that the build-skew verdict is rendered by `static/components/notices.js`, a
+  file this repo has never had; the renderer is `skewbanner.js`. `test_doc_claims.py` has
+  proved this for `docs/` for weeks, and nothing proved it for the prose *inside the code* —
+  the new `tests/test_prose_paths.py` does, over source docstrings and console comments (385
+  citations across 556 files, now zero missing), with the detector itself pinned on the real
+  defect's own sentence so a dead pattern cannot pass as a clean tree.
+- **`hooks/store.py` stopped telling the reader that a defect in it is harmless.** Its
+  docstring still said *"Nothing reads this stream to make a decision yet"*, which was true
+  when the mirror landed and false since campaign step 7: `hooks/reportinv.open_threads_now`
+  answers the open-thread cap from this stream and files a `hook_stream_diverged` health event
+  when the two disagree, and `reports.py` says from the other side that the hook has been THE
+  SOURCE since step 4 — a hook that cannot be written now refuses the filing. A reader who
+  believed that paragraph would weigh a change here far too cheaply.
+
 ## [0.531.3] — 2026-11-11
 
 ### Fixed

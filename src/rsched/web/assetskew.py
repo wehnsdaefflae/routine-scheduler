@@ -19,7 +19,7 @@ running; and the process never restarted during the F696 window, so `/api/status
 changed either — a console comparing successive readings of it would have seen nothing all day.
 The server is the only party holding BOTH facts: the stamp it read at boot, and the stamp the
 checkout is at now. So it compares them and publishes the verdict, and the console renders it
-(`static/components/notices.js`).
+(`static/components/skewbanner.js`).
 
 Stamped asset URLs were the other candidate and were rejected for this tree: the console is
 plain ES modules importing each other by absolute path (`import { api } from "/static/api.js"`,

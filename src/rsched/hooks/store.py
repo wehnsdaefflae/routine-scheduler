@@ -3,9 +3,13 @@
 **One writer, and it is this module.** The three mechanisms that exist today (reports,
 consequence reminders, run injections) keep their own stores and their own readers at this
 step of the campaign and MIRROR into this one, through the three `record_*` functions below.
-Nothing reads this stream to make a decision yet — which is exactly why the mirror is safe to
-land first: a defect here cannot change what any routine sees, while the stream it builds is
-what the later steps need to exist before they can be built on it.
+**That "a defect here is harmless" window is CLOSED.** It was true while the mirror landed, and
+the sentence saying so outlived it by six campaign steps: step 7 moved the first real DECISION
+onto this stream — `hooks/reportinv.open_threads_now` answers the open-thread cap from it, and
+files a `hook_stream_diverged` health event when the two disagree (`reports.py` says the same
+from the other side: since step 4 the hook is the SOURCE and `reports.jsonl` its projection, and
+a hook that cannot be written REFUSES the filing). So a defect here can now refuse a report, and
+a reader who believes this paragraph will weigh a change to it far too cheaply.
 
 **Why mirror rather than cut over.** `reports.jsonl` and the reminders store both have readers
 OUTSIDE this engine — the console's Decisions page and self-audit's own scripts fold the report

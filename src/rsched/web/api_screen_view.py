@@ -31,6 +31,7 @@ import secrets
 import time
 
 import httpx
+import websockets
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 
@@ -197,13 +198,6 @@ async def _bridge(ws: WebSocket, upstream: str, screen: Screen) -> None:
     """Binary both ways, with each direction cancelled when the other ends — a half-closed
     relay would otherwise hold a worker and the upstream socket open until a timeout.
     """
-    try:
-        import websockets
-    except ImportError:  # pragma: no cover - uvicorn[standard] ships it
-        log.error("%s-view: the websockets package is unavailable", screen.key)
-        await ws.close(code=1011, reason="websocket relay unavailable")
-        return
-
     await ws.accept(subprotocol="binary")
     try:
         # `binary` is what noVNC negotiates; websockets types it as a NewType over str, so

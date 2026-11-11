@@ -22,6 +22,9 @@ dependencies = [
     "markdown2>=2.5",
     "cryptography>=43.0",
     "py-vapid>=1.9",
+    # `websockets` is the same case and was the ONE undeclared member of it: api_screen_view
+    # imports it for the noVNC relay and arrives at it via uvicorn[standard]'s extra.
+    "websockets>=13",
 ]
 
 [project.scripts]
