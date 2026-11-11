@@ -46,12 +46,13 @@ MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 REFUSAL_STOPS = frozenset({"refusal", "content_filter"})
 
 
-def diagnose(obj: dict) -> str:
+def diagnose(obj: dict, loop=None) -> str:
     """Everything we can say about an INVALID action beyond the schema's lines, in reading
     order: a renamed kind, a kind that is really a field or a util, then a field shift
-    (`shiftedfields.unkind_diagnosis` records why these three cannot overlap).
+    (`shiftedfields.unkind_diagnosis` records why these three cannot overlap, and what `loop`
+    buys the util branch: the live catalog instead of a heuristic).
     """
-    return "\n\n".join(part for part in (renamed_kind_hint(obj), unkind_diagnosis(obj),
+    return "\n\n".join(part for part in (renamed_kind_hint(obj), unkind_diagnosis(obj, loop),
                                          field_shift_diagnosis(obj)) if part)
 
 
@@ -272,7 +273,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
                 {"role": "user", "content": retry_message(
                     exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""),
                     repeated=repeated,
-                    diagnosis=diagnose(completion.parsed or {}),
+                    diagnosis=diagnose(completion.parsed or {}, loop),
                     help_text=schemamemo.field_help(exc.problems),
                     recalled=recalled)})
             if recalled:

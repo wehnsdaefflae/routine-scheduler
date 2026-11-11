@@ -17,8 +17,23 @@ engine would count a value it refuses to explain, or explain one it still counts
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
+from .. import utils_lib
 from .actionschema import ACTION_SCHEMA, KINDS, PSEUDO_UTILS
+
+
+def _catalog_home(loop) -> Path | None:
+    """The library home whose `utils/` is this instance's REAL util catalog, or None.
+
+    Best-effort by construction: this runs inside a schema REJECTION, the one path that must
+    never raise, and the loop is optional so every caller that has no live run (the tests, a
+    diagnosis composed off-engine) still gets the heuristic below it.
+    """
+    try:
+        return Path(loop.ctx.server.libraries_home)
+    except Exception:
+        return None
 
 #: How much of a field's own contract description the correction quotes. Same bound and same
 #: reason as `schemamemo.HELP_CHARS`: a correction that pastes a paragraph buries the one line
@@ -107,7 +122,7 @@ def field_shift_diagnosis(obj: dict) -> str:
             f"of seconds. Do not patch the one field you were told about.")
 
 
-def unkind_diagnosis(obj: dict) -> str:
+def unkind_diagnosis(obj: dict, loop=None) -> str:
     """What a `kind` that is NOT a kind really was — "" when nothing specific can be said.
 
     `kind` is the one field whose rejection the enum cannot answer: the validator lists all 34
@@ -122,8 +137,14 @@ def unkind_diagnosis(obj: dict) -> str:
     * a UTIL used as a kind — `deficit-coach:20261107-230003` turn 10 sent
       `kind: "code-search"`. The shape is `kind="util", name="<util>"`.
 
-    The util branch rests on a property of the vocabulary, asserted by its test: NO action kind
-    contains a hyphen. The field branch reads `ACTION_SCHEMA` at call time, so a field renamed
+    The util branch asks the INSTANCE'S OWN CATALOG first (`utils_lib.exists`, one stat call),
+    and only falls back to the vocabulary property its test still asserts — NO action kind
+    contains a hyphen — for a name no util carries. The hyphen alone was never enough: 34 of
+    this instance's 57 utils have no hyphen in their name, and `websearch` sent as a kind was
+    the single most frequent instance of this rejection (8 of 14 over 23 days, across 5
+    routines) while being the one shape the heuristic could not see. A live catalog read is
+    also the only branch that can say IS rather than LOOKS LIKE.
+    The field branch reads `ACTION_SCHEMA` at call time, so a field renamed
     in the contract cannot leave this pointing at one that is gone — and a word that is both a
     real kind and a field name (`delete`) is never diagnosed, because the first test here is
     that the kind is unknown. Returns "" for anything else: a diagnosis that fires on ordinary
@@ -147,9 +168,14 @@ def unkind_diagnosis(obj: dict) -> str:
         return (f"`{kind}` IS A FIELD, NOT A KIND. It is a property an action CARRIES, so it "
                 f"belongs beside `kind`, never in it.{said} Re-send the action whose kind is "
                 f"the thing you are actually doing, with `{kind}` as one of its fields.")
-    if could_be_util(kind) and "-" in kind:
-        return (f"`{kind}` LOOKS LIKE A UTIL, NOT A KIND — no action kind contains a hyphen. "
-                f'To run it: kind="util", name="{kind}", args=[…]. If no util of that name '
-                f'exists, `util name=list args=["{kind}"]` shows its usage, or '
-                f"`util name=search` finds one by need.")
+    if could_be_util(kind):
+        if (home := _catalog_home(loop)) is not None and utils_lib.exists(home, kind):
+            return (f"`{kind}` IS A UTIL, NOT A KIND — it is in this instance's catalog. "
+                    f'To run it: kind="util", name="{kind}", args=[…]. '
+                    f'`util name=list args=["{kind}"]` shows its exact usage first.')
+        if "-" in kind:
+            return (f"`{kind}` LOOKS LIKE A UTIL, NOT A KIND — no action kind contains a "
+                    f'hyphen. To run it: kind="util", name="{kind}", args=[…]. If no util of '
+                    f'that name exists, `util name=list args=["{kind}"]` shows its usage, or '
+                    f"`util name=search` finds one by need.")
     return ""

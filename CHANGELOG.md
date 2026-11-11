@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.530.1] — 2026-11-11
+
+### Fixed
+- **A util name sent as an action `kind` is now diagnosed from the instance's own catalog, not
+  from a guess about hyphens.** The correction for an unknown `kind` (`engine/shiftedfields.py`,
+  shipped 2026-11-08) rested on a property of the action vocabulary — no kind contains a hyphen —
+  and so could only recognise a HYPHENATED util name. 34 of this instance's 57 utils have no
+  hyphen, and the measurement says that is where the mistake actually lives: of 14
+  `wrong_turn_detected` invalid-kind rejections over 23 days across 9 routines, **8 were
+  `kind: "websearch"`** — the single most frequent shape, and the one the heuristic could not
+  see. It got the bare enum of 34 kinds and no hint, and the run lost a turn. The util branch
+  now asks `utils_lib.exists` first (one stat call) and says `IS A UTIL` for a name the catalog
+  carries, keeping the hyphen reading as a fallback for a name it does not — so a run that means
+  a util it has not installed still gets told the shape. The lookup is strictly best-effort: it
+  runs inside a schema rejection, the one path that must never raise, so a loop without a server
+  and a library home that does not exist both fall back silently (both are tested).
+
 ## [0.530.0] — 2026-11-10
 
 ### Added
