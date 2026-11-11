@@ -39,15 +39,23 @@ from pathlib import Path
 REPEAT_COOLDOWN_HOURS: dict[str, float] = {
     "cost_trend_degraded": 12,
     "cache_read_degraded": 12,
-    # A third standing condition, and the one with the highest rate by far: the report read
-    # falling back to `reports.jsonl` because the hook stream holds no report rows
-    # (`hooks/reportread`, D152 step 9). It is read on EVERY surface that lists a report — the
-    # Messages panel, the items index, the orphan sweep, every routine-page open — so an
-    # instance whose stream is lost would file a row per request instead of reporting a
-    # condition. 12 hours, the same window as the two above, for the same reason: the
-    # condition holds until someone restores the stream, and the second row of the day says
-    # nothing the first did not.
+    # The two REPORT-STORE conditions (D152 step 9), and they have the highest rate of anything
+    # here by far: the read that serves `reports.jsonl` because the hook stream holds no report
+    # rows, and the one that serves it because the stream is merely missing some
+    # (`hooks/reportread`). That read runs on EVERY surface listing a report — the Messages
+    # panel, the items index, the orphan sweep, every routine-page open — so an instance whose
+    # stream is behind would file a row per REQUEST instead of reporting a condition. 12 hours,
+    # the same window as the two above and for the same reason: the condition holds until
+    # someone repairs the stream, and the second row of the day says nothing the first did not.
+    #
+    # `hook_stream_diverged` is named here even though it is ALSO filed by the thread cap and
+    # the owed-reply hold (`hooks/reportinv`), which file it rarely — a suppression there costs
+    # one duplicate row of a condition the next read will report anyway, and the alternative is
+    # a second event name for one fact. Neither is in `readmodels/health_stream.BLOCKED_EVENTS`
+    # (nothing was DUE and nothing was missed), so no blocked-fleet count is suppressed — the
+    # one thing this table may never do.
     "hook_stream_unreadable": 12,
+    "hook_stream_diverged": 12,
 }
 
 

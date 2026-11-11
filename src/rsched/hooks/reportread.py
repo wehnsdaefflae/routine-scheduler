@@ -168,6 +168,8 @@ def _fell_short(routines_home: Path, missing: list[str], *, served: int,
             routines_home, "hook_stream_unreadable" if gone else "hook_stream_diverged",
             routine="", run_id="", detail=detail, rows=served, stream=from_stream,
             missing=len(missing))
-    except Exception:                        # noqa: BLE001 — a diagnostic may never raise here
+    except Exception:
+        # A diagnostic may never be the reason a page fails to render, so every failure here is
+        # swallowed down to a log line — the read has already decided what to serve.
         log.warning("report-hooks: the shortfall event could not be filed")
     log.warning("report-hooks: %s", detail)

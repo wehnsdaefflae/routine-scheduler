@@ -41,8 +41,7 @@ from pathlib import Path
 
 from ..health_events import log_health_event
 from ..report_threads import open_threads, still_owed
-from . import Hook, addressee
-from . import reportread
+from . import Hook, addressee, reportread
 from .reportproj import TERMINAL_EVENTS
 
 log = logging.getLogger("rsched.hooks")
