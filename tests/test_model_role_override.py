@@ -58,8 +58,10 @@ def _server(catalog=("glm-5", "opus-4")):
     # raises AttributeError there — the stand-in trap a grep for the function's callers
     # cannot see. Kept as a stand-in rather than a real ModelConfig because these tests are
     # about ROLE resolution and construct no catalog file.
+    # `endpoints` is read the same way since F868 (the teaching error names the configured
+    # endpoints, and list_models lists them) — the same stand-in trap, one field later.
     return SimpleNamespace(models={n: SimpleNamespace(fallbacks=[], note="") for n in catalog},
-                           decision_models={})
+                           decision_models={}, endpoints={})
 
 
 def _ctx(registry):

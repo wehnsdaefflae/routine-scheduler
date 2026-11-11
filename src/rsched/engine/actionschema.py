@@ -359,10 +359,11 @@ ACTION_SCHEMA: dict = {
                             "description": "llm: optional JSON schema constraining the reply"},
         "model": {"type": "string",
                   "description": "llm/spawn/subtask: OPTIONAL model override — a ROLE (main, "
-                                 "tool_call; uncensored targets the routine's uncensored model "
-                                 "for a step the default refuses, rejected if unconfigured) OR "
-                                 "a catalog model NAME from `list_models`. Defaults: children "
-                                 "(spawn/subtask) run the routine's MAIN model, llm runs "
+                                 "tool_call; uncensored for a step the default refuses, "
+                                 "rejected if unset), a catalog "
+                                 "model NAME from `list_models`, or (llm only) "
+                                 "`<endpoint>/<model id>` for an off-catalog model. Defaults: "
+                                 "children run the routine's MAIN model, llm runs "
                                  "tool_call · decide: OPTIONAL — a DECISION model's name "
                                  "(list_models shows them; default: the instance's decision "
                                  "model, its image default when the call carries images)"},

@@ -10,7 +10,8 @@ model is doing, so it is chosen per role (a routine's `efforts:`, a conversation
 server's `system_effort` — see *Effort* below), never on the catalog entry. You configure
 endpoints and models once (Settings → Endpoints, or
 `~/.config/routine-scheduler/config.yaml`), then every routine and the system model **picks a
-model by name**.
+model by name** — except one `llm` call, which may also name an endpoint plus a raw model id
+(see *Reaching a model the catalog does not carry*, below).
 
 This instance sends every call through a separate gateway (Otari, with CLIProxyAPI holding the
 subscription logins beside it) — see the [model gateway guide](model-gateway.md). **Decision
@@ -496,6 +497,51 @@ already use — its structured-output helpers duplicate an engine-side schema gu
 provider-agnostic, and its retry policy is the one `tenacity` already implements here with a
 Retry-After hint. Measured call durations (p99 45 s, max 414 s against a 600 s ceiling) show no
 need for its streaming helper either. Net: one more dependency stack, zero special cases removed.
+
+## Reaching a model the catalog does not carry (F868)
+
+An `llm` action's `model` field takes a role, a catalog name — or **`<endpoint>/<model id>`**:
+
+```json
+{"kind": "llm", "prompt": "transcribe this invoice", "model": "omen/qwen3-vl-8b-instruct"}
+```
+
+The **endpoint** half must be a name from `endpoints:` (`list_models` lists them with their
+base URLs); the **model id** half is sent verbatim and needs no catalog entry. Per-model
+attributes come from the endpoint's own defaults with the provider's published window and
+output cap in between — the same precedence a catalog model gets, minus its per-model tier —
+and the resolved ref carries **no catalog name**, so an unregistered model is never reported as
+a registered one.
+
+**Why not a URL.** The `llm` action runs in the engine, not in the util jail, so an endpoint
+named by a model would be a network destination nothing reviewed. The endpoint set stays the
+operator's; what opens is the model id, which is the half the catalog actually made impossible.
+A URL in the field fails as the unconfigured endpoint name it is, and the error names the
+configured ones.
+
+**`llm` only.** A child run (`spawn`/`subtask`) is configured with `models["main"] = <catalog
+name>` and resolves everything through the catalog, so an endpoint spec is refused there with a
+reason naming the action that does take one. A DECISION endpoint named here is refused too, and
+points at the `decide` action instead: it is a different wire (one typed answer, no free text).
+
+**What a util gets.** The same knowledge reaches a util as `RSCHED_LLM` (the configured
+endpoints plus which one each model role resolves to) and `RSCHED_LLM_KEYS` ({endpoint: api
+key}, for the ROLE endpoints only) — declared-only, like every injected name. That is what lets
+an LLM-calling util send work to the endpoint its own routine runs on instead of hardcoding a
+provider. See `endpoints/routine_env.py` and [sandboxing](sandboxing.md).
+
+**Local models are the case this exists for.** A routine whose files must not reach a cloud
+model (private scans, anything the operator has not cleared to leave the box) could not say so
+through the engine's own channel while the catalog was cloud-only. Adding a local box is an
+ordinary endpoint entry — no catalog model needed:
+
+```yaml
+endpoints:
+  omen:
+    kind: openai
+    base_url: http://192.168.0.201:8790/v1
+    # key_var: OMEN_AGENT_KEY   # only if the server wants one; local vLLM/Ollama need none
+```
 
 ## Provider recipes
 

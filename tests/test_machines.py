@@ -145,10 +145,14 @@ def test_machine_env_no_bindings():
 
 def test_extra_secrets_merges_connections_and_machines(monkeypatch):
     monkeypatch.setattr(secrets, "load_secrets", lambda: {"GPU_KEY": "PEM"})
-    ctx = SimpleNamespace(routine=SimpleNamespace(slug="mach", connections={}, machines=["gpu"]),
+    # `models:` / `endpoints:` ride the same extra_secrets channel since F868 (the routine's
+    # effective inference endpoints), so the stand-in carries what a real config always has
+    ctx = SimpleNamespace(routine=SimpleNamespace(slug="mach", connections={}, machines=["gpu"],
+                                                  models={}),
                           granted_now=set(), grant_args={},
                           server=SimpleNamespace(machines={"gpu": _mac("gpu", key_var="GPU_KEY")},
-                                                 routine_token=""))
+                                                 endpoints={}, models={}, routine_token="",
+                                                 system_model="", system_tool_call_model=""))
     env = _extra_secrets(ctx)
     assert machines.MACHINE_KEYS_VAR in env
 

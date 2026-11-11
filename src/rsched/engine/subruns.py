@@ -100,6 +100,15 @@ class SubrunManager:
                         "it needs a models.uncensored catalog entry (routine page → "
                         "Models). Drop the override, or ask the user to set one.")
             return None
+        if "/" in sel:
+            # F868: `<endpoint>/<model id>` reaches an off-catalog model on an `llm` call. A
+            # CHILD cannot take one: a child run is configured with `models["main"] = <catalog
+            # name>` (engine/childrun.py), so every resolution inside it goes through the
+            # catalog — an endpoint spec would be a name it cannot find, at its first turn.
+            return (f"model {sel!r} is an '<endpoint>/<model id>' spec, which only the `llm` "
+                    "action takes — a child run's model must be a catalog name (its whole "
+                    "config resolves through the catalog). Name a catalog model, or make the "
+                    "off-catalog call yourself with `llm`.")
         if sel not in ctx.server.models:
             avail = ", ".join(sorted(ctx.server.models)) or "none configured"
             return (f"model {sel!r} is neither a role (main/tool_call/uncensored) nor a "
