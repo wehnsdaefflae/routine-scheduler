@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.531.0] — 2026-11-11
+
+### Changed
+- **Ctrl+Enter sends, everywhere a message or an answer is composed** (operator, 2026-11-11:
+  *"we need to switch from shift-enter for send to ctrl-enter for send"*). Plain Enter still
+  inserts a newline — that is the half of the 2026-08-16 order (F353) he kept. **Cmd+Enter sends
+  too**, because the same console is read on a Mac and macOS reports that chord as `metaKey`;
+  a switch to `ctrlKey` alone would have left Mac users with no send chord at all.
+  Changed in one pass across every surface that composes, so the console cannot teach one chord
+  and obey another: `components/answerform.js` (the Decisions page, the run view, the finish
+  banner and the conversation answer form all share it), `views/conversations.js`,
+  `views/run.js`, and the two placeholder hints in `components/chat.js` and
+  `components/transcript.js`. **Shift+Enter now does nothing** — the browser test asserts that
+  as well as the new chord, because a superseded chord that silently keeps working is how a key
+  change half-lands and nobody notices for weeks.
+
 ## [0.530.1] — 2026-11-11
 
 ### Fixed

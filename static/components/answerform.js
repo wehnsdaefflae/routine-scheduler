@@ -14,8 +14,8 @@ import { md } from "/static/md.js";
 import { el, toast, toastError, when } from "/static/util.js";
 
 export function answerForm(q, {
-  control = "textarea",        // "textarea" (Shift+Enter sends) | "input" (Enter sends)
-  placeholder = "your answer… (Shift+Enter sends)",
+  control = "textarea",        // "textarea" (Ctrl+Enter sends) | "input" (Enter sends)
+  placeholder = "your answer… (Ctrl+Enter sends)",
   numbered = false,            // option buttons labeled "1 · a" + digit keys 1-9 prefill
   defaultLine = true,          // "↪ without an answer: …" under the options (if q.default)
   askBack = false,             // the intermediate-reply button (submit(true))
@@ -55,7 +55,7 @@ export function answerForm(q, {
     && (key !== "allow_once" || onceOk));
   // ALWAYS a textarea (user order 2026-08-15, F346): an answer is prose, and a one-line
   // slot punishes any thought longer than a word. `control` now ONLY sets the Enter
-  // behavior ("input": Enter always sends; "textarea": Shift+Enter sends, Enter breaks the line).
+  // behavior ("input": Enter always sends; "textarea": Ctrl/Cmd+Enter sends, Enter breaks line).
   // Flex lives on the .answer-input class, not inline — inline flex would beat the
   // mobile full-width stylesheet rule (F238).
   const input = el("textarea", { rows: "1", placeholder,
@@ -160,7 +160,7 @@ export function answerForm(q, {
   send.onclick = () => submit(false);
   if (discuss) discuss.onclick = () => submit(true);
   input.onkeydown = (e) => {
-    if (e.key === "Enter" && (control === "input" || e.shiftKey)) {
+    if (e.key === "Enter" && (control === "input" || e.ctrlKey || e.metaKey)) {
       e.preventDefault(); submit(false);
     } else if (onArrow && e.key === "ArrowDown") { e.preventDefault(); onArrow(1); }
     else if (onArrow && e.key === "ArrowUp") { e.preventDefault(); onArrow(-1); }

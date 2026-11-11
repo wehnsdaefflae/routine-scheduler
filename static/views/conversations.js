@@ -405,7 +405,7 @@ export async function render(view, slug, _query = {}) {
     }));
 
     function buildComposer() {
-      const input = el("textarea", { rows: 2, placeholder: "message…  (Shift+Enter sends · / for commands)" });
+      const input = el("textarea", { rows: 2, placeholder: "message…  (Ctrl+Enter sends · / for commands)" });
       const { picker, files, clearFiles, wirePaste } = filePicker();
       wirePaste(input);
       const send = el("button", { class: "btn primary" }, "send");
@@ -557,7 +557,7 @@ export async function render(view, slug, _query = {}) {
           if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); acceptSuggest(); return; }
           if (e.key === "Escape") { items = []; paintSuggest(); return; }
         }
-        if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); submit(); }
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
       };
       return { node, setRef,
                setLive: (live) => { stopBtn.hidden = !live; if (live) stopBtn.disabled = false; } };
