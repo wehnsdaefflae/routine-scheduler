@@ -45,6 +45,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cross-check.
 
 ### Added
+- **An `llm` call can name any endpoint you configured (F868, R3338, goal b7's engine half).**
+  `model: "<endpoint-name>/<model-id>"` — the endpoint half must be a name from your
+  `endpoints:` config, the model id is free and needs no catalog entry, which is exactly what
+  the cloud-only catalog made impossible. A bare URL is refused with an error naming the
+  configured endpoints: the `llm` action runs in the engine, not in the util jail, so a URL
+  there would make the network destination a model's own choice. `list_models` now lists the
+  configured endpoints; a spec on `spawn`/`subtask` is refused with a reason naming `llm`.
+  A util learns the same through new `RSCHED_LLM` (every endpoint, and which one each model role
+  resolves to) and `RSCHED_LLM_KEYS`, injected under the declared-only gate, keys scoped to the
+  routine's ROLE endpoints so every other key stays behind its own `secret:` grant row. It
+  exists because a privacy constraint — read these scans with a LOCAL model, never a cloud one —
+  could not be expressed through the engine's own model channel at all.
+- **A routine DRAFT that names a path the engine owns says so before the routine exists
+  (D281).** `create_routine`'s preview now carries `reserved_paths` + `reserved_warning`
+  (`engine/draftlint`), scanning the instruction, `done_when`, `never`, `setup` and
+  `finish_line` against the engine's own reserved list, read from `engine/storeseal`'s constants
+  rather than restated. It WARNS and never refuses — the paths have legitimate alternatives, and
+  a draft exists to be corrected. The failure it ends: a new routine put its obligations
+  register at `state/obligations.json` and met the refusal on its FIRST run while seeding state,
+  with its own Done when pointing at a file that cannot exist.
 - `hook_stream_unreadable` — the report read fell back to `reports.jsonl` because the hook
   stream holds no report rows (12 h cooldown: the read runs per request).
 

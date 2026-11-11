@@ -19,6 +19,7 @@ from rsched import pending, reports
 from rsched.daemon.owed_watch import OwedWatch
 from rsched.engine import obligations
 from rsched.engine.runtime import run_routine
+from rsched.hooks import store as hookstore
 from rsched.paths import atomic_write_json
 
 TS1, TS2 = "20261008-120000", "20261009-120000"
@@ -82,10 +83,18 @@ def test_owed_work_past_a_week_reaches_the_operator(tmp_path, make_routine):
     make_routine(slug="scheduler-builder")
     reports.file_report(home, routine="radar", run_id="radar:1",
                         title="Nobody owns deploying the kit")
+    # AGE IT IN BOTH STORES. Since D152 step 9 the report read comes from the hook stream
+    # (`hooks/reportread`) and `reports.jsonl` is its projection, so back-dating the ledger
+    # alone leaves the row today's age everywhere the watch looks. The ledger is back-dated too
+    # because this test's later assertions read that file directly.
     ledger = reports.reports_path(home)
+    stream = hookstore.hooks_path(home)
     rows = [json.loads(x) for x in ledger.read_text().splitlines()]
     rows[0]["ts"] = f"{old}T08:00:00+00:00"
     ledger.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    hooks = [json.loads(x) for x in stream.read_text().splitlines()]
+    hooks[0]["ts"] = f"{old}T08:00:00+00:00"
+    stream.write_text("".join(json.dumps(h) + "\n" for h in hooks))
 
     OwedWatch(server).check(datetime.now(UTC).date())
     events = [json.loads(x) for x in (home / ".control" / "health-events.jsonl").read_text()
