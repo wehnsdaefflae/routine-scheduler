@@ -85,10 +85,25 @@ def _llm_env(ctx: RunContext) -> dict[str, str]:
     as extra_secrets. Only a util that DECLARES them receives them — which is what makes
     shipping a key through this channel safe at all. See endpoints/routine_env.py for the whole
     design, including why keys cover the role endpoints and not every configured one.
+
+    Read with `getattr`, and that is not timidity. `_extra_secrets` runs before EVERY util
+    call, including `mediaops`' vision fallback and the engine's own reserved-token path, and
+    those callers hand in context stand-ins that carry what their own subject needs and nothing
+    more. A hard attribute read here does not surface a config fault — a real `RoutineConfig`
+    and `ServerConfig` always carry these keys — it turns an OPTIONAL env var into an
+    AttributeError that kills the util call that was going to work. Measured: the first version
+    read `ctx.routine.models` directly and redded 8 tests in 6 files on this exact path
+    (`test_api`, `test_utils` ×2, `test_view_image` ×2, `test_abort_ends_command`,
+    `test_cancel_b2_intent_channel`, `test_secret_decline_withholds`) — none of them about
+    endpoints. The same reasoning the boot migrations use for `server.conversations_home`: a
+    helper on a path this hot fails OPEN, by contributing nothing.
     """
     from ..endpoints.routine_env import llm_env_for_routine
 
-    return llm_env_for_routine(ctx.routine.slug, ctx.routine.models or {}, ctx.server)
+    models = getattr(ctx.routine, "models", None) or {}
+    if not hasattr(ctx.server, "endpoints"):
+        return {}
+    return llm_env_for_routine(ctx.routine.slug, models, ctx.server)
 
 def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     """Engine-resolved, per-run secrets a util may receive (still under the declared-only gate):
