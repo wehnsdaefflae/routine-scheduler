@@ -1235,12 +1235,19 @@ and the capabilities digest's catalog listing):
   (`next_prompt` · `turn_boundary` · `hold_before_action` · `decisions_page`) and disposition.
   Two rules fall out and bound what a hook can do: the run tree is the only addressing scheme,
   and `hold_before_action` is the only delivery moment that can change what runs. For a REPORT
-  this stream is now the SOURCE, not a copy: `reports.file_report` writes the hook first and
-  appends the `reports.jsonl` row as its PROJECTION (`rsched/hooks/reportproj`), lifecycle
-  events included, so the two cannot drift and the ledger is rebuildable from the stream
-  (`reportproj.rebuild`); a hook that cannot be written refuses the filing. `reports.jsonl`
-  stays because it has readers outside the engine (the operator's backlog counts,
-  self-audit's folds) and its bytes are unchanged. The reminder layer and the injection path
+  this stream is now the SOURCE on BOTH sides, which is what "replace last" meant:
+  `reports.file_report` writes the hook first and appends the `reports.jsonl` row as its
+  PROJECTION (`rsched/hooks/reportproj`), lifecycle events included, and a hook that cannot be
+  written refuses the filing — while `reports.read_reports`, the one seam ~20 modules read
+  through, folds the STREAM (`rsched/hooks/reportread`, step 9). No caller changed; what the
+  step cost was the HISTORY, which had to be complete first: the pre-stream backfill
+  (`migrate_report_hooks`), then a repair of 8 mirror-era rows whose hooks carried no disposal
+  at all (`migrate_mirror_hooks` — without it six settled exchanges would have read as open).
+  One rule governs the read, chosen so that no reading can LOSE a report: the stream decides,
+  and when the ledger names a report the stream's fold does not, the ledger is served and the
+  shortfall is filed (`hook_stream_diverged`, or `hook_stream_unreadable` when the stream holds
+  no report rows at all). `reports.jsonl` stays for that fall-back and for its readers outside
+  the engine (the operator's own eye, self-audit's folds); its bytes are unchanged. The reminder layer and the injection path
   still own their stores and MIRROR their writes here (`engine/remind_write`,
   `engine/control.inject_user_message` through `engine/hookmirror`), best-effort — including
   the target's disposition of a foreign hook, which is a later row about the same id.

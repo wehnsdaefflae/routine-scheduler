@@ -39,6 +39,15 @@ from pathlib import Path
 REPEAT_COOLDOWN_HOURS: dict[str, float] = {
     "cost_trend_degraded": 12,
     "cache_read_degraded": 12,
+    # A third standing condition, and the one with the highest rate by far: the report read
+    # falling back to `reports.jsonl` because the hook stream holds no report rows
+    # (`hooks/reportread`, D152 step 9). It is read on EVERY surface that lists a report — the
+    # Messages panel, the items index, the orphan sweep, every routine-page open — so an
+    # instance whose stream is lost would file a row per request instead of reporting a
+    # condition. 12 hours, the same window as the two above, for the same reason: the
+    # condition holds until someone restores the stream, and the second row of the day says
+    # nothing the first did not.
+    "hook_stream_unreadable": 12,
 }
 
 

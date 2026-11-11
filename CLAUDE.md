@@ -463,8 +463,10 @@ one you are about to touch, not all of them.
   fields — trigger, addressee, payload, delivery, disposition — of which a report, a
   consequence reminder and a mid-run injection are three settings, in the one store
   `.control/hooks.jsonl`. A REPORT is written there FIRST and its `reports.jsonl` row is the
-  projection (`rsched/hooks/reportproj`); the reminder and injection paths still mirror theirs
-  through `engine/hookmirror`. Two rules bound the mechanism: the run
+  projection (`rsched/hooks/reportproj`) — and since step 9 the stream is also what every report
+  surface READS (`rsched/hooks/reportread`, behind `reports.read_reports`; the ledger is served
+  only when it names a report the stream lacks, and the shortfall is filed). The reminder and
+  injection paths still mirror theirs through `engine/hookmirror`. Two rules bound the mechanism: the run
   tree is the only addressing scheme, and `hold_before_action` is the only delivery moment that
   can change what runs. `read_file` batches
   related reads via `paths` (one turn, one

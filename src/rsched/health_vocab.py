@@ -271,10 +271,17 @@ routine per day, `obligations` how many, detail naming each and what the last ru
 item_dropped_live: a finding/decision self-audit's report.json carried open or in_progress was
 rewritten out of it (`daemon/item_record_watch`); `items` names them. The index keeps it live.
 
-hook_stream_diverged: a decision from the hook stream disagreed with the report ledger it
-projects (`hooks/reportinv`, D152 steps 7-8 — the write path's thread cap, the pre-finish hold
-to answer a hand-off): `stream`/`ledger` are the counts, `detail` names the asker. The LEDGER's
-answer was used (the operator's counts rest on it); the event makes a disagreement findable.
+hook_stream_diverged: the hook stream and the `reports.jsonl` it projects disagreed about a
+report decision (`hooks/reportinv` — the write path's thread cap, the pre-finish hold to answer
+a hand-off): `stream`/`ledger` are the counts, `detail` names the asker. The STREAM's answer
+was used: since D152 step 9 it is what every report surface reads, and the ledger is the
+projection. The event makes a drift findable while both stores are still written.
+
+hook_stream_unreadable: the report read found NO report rows in the hook stream and fell back
+to `reports.jsonl` (`hooks/reportread`, D152 step 9), `rows` how many reports the projection
+holds. Either the stream was lost — restore it, or rebuild it from the ledger through
+`migrate_report_hooks` — or this is a fresh instance. A standing condition, so one row per
+cooldown window rather than one per page load.
 
 process_overhead_high: a routine's median `process_share` over its last runs reached the bar —
 its runs go mostly to its own process (`engine/overhead_alarm`, `median`/`threshold`/`runs`).
@@ -332,6 +339,7 @@ EVENTS: tuple[str, ...] = (
     "item_dropped_live",
     "oneshot_skipped",
     "hook_stream_diverged",
+    "hook_stream_unreadable",
     "process_overhead_high",
     "postdeploy_failed",
     "answer_undelivered",

@@ -135,20 +135,26 @@ def test_folding_the_stream_is_what_makes_the_two_agree(tmp_path, monkeypatch):
     assert seen == [], f"the fold was not applied to the stream: {seen}"
 
 
-def test_a_divergence_keeps_the_ledgers_answer_and_files_the_event(tmp_path,
-                                                                   monkeypatch):
-    """When the stream cannot account for a thread the ledger shows (an unmirrored write, or an
-    incomplete backfill), the LEDGER's answer is used and `hook_stream_diverged` is filed.
+def test_a_divergence_acts_on_the_stream_and_files_the_event(tmp_path, monkeypatch):
+    """When the two stores disagree about a thread, the STREAM's answer is acted on and
+    `hook_stream_diverged` is filed.
+
+    **The direction reversed at step 9 and this test is where that is visible.** Until the read
+    moved, the ledger was what every surface served, so a cap refusing a filing the ledger did
+    not justify would have been a defect reaching a run's work — hence the stream was consulted
+    and the ledger's answer returned. Now `rows` IS the stream's answer: returning the
+    projection's would mean refusing on a count no surface shows. What is unchanged is that the
+    disagreement is never swallowed.
     """
     home = tmp_path / "routines"
     seen: list[dict] = []
     monkeypatch.setattr("rsched.hooks.reportinv.log_health_event",
                         lambda *a, **k: seen.append(k))
-    monkeypatch.setattr("rsched.hooks.reportinv.stream_rows", lambda _h: [])
+    monkeypatch.setattr("rsched.hooks.reportread.projection", lambda _h: [])
     rows = [{"id": "R9", "ts": "t", "routine": "a", "run_id": "a:1", "title": "t",
              "detail": "d", "target": "b"}]
     assert open_threads_now(home, rows, routine="a", target="b") == ["R9"]
-    assert len(seen) == 1 and seen[0]["stream"] == 0 and seen[0]["ledger"] == 1
+    assert len(seen) == 1 and seen[0]["stream"] == 1 and seen[0]["ledger"] == 0
 
 
 def test_the_owed_reply_hold_agrees_with_the_ledger_over_the_stream(tmp_path, monkeypatch):
@@ -176,21 +182,26 @@ def test_the_owed_reply_hold_agrees_with_the_ledger_over_the_stream(tmp_path, mo
     assert still_owed_now(home, rows, [], routine="b") == []
 
 
-def test_an_owed_reply_divergence_keeps_the_ledgers_answer_and_files_the_event(tmp_path,
-                                                                              monkeypatch):
-    """A hold is placed on the LEDGER's answer, never on a stream-only reading: answering from
-    a stream missing history would ask a run again for a reply it already sent, which is the
-    exact failure R2086 fixed by re-reading the ledger at the moment of asking.
+def test_an_owed_reply_divergence_acts_on_the_stream_and_files_the_event(tmp_path,
+                                                                        monkeypatch):
+    """The hold is placed on the STREAM's answer since step 9 — it is the reading every report
+    surface shows, so holding a finish on the projection's would ask a run for a reply against
+    a count nobody can see.
+
+    R2086's lesson survives the reversal and is why the backfill and the mirror-era repair are
+    preconditions of this step, not optional extras: answering from a store MISSING history
+    asks a run again for a reply it already sent. The fix is that the store is complete, not
+    that the answer comes from the old file.
     """
     home = tmp_path / "routines"
     seen: list[dict] = []
     monkeypatch.setattr("rsched.hooks.reportinv.log_health_event",
                         lambda *a, **k: seen.append(k))
-    monkeypatch.setattr("rsched.hooks.reportinv.stream_rows", lambda _h: [])
+    monkeypatch.setattr("rsched.hooks.reportread.projection", lambda _h: [])
     rows = [{"id": "R9", "ts": "t", "routine": "a", "run_id": "a:1", "title": "t",
              "detail": "d", "target": "b"}]
     assert still_owed_now(home, rows, ["R9"], routine="b") == ["R9"]
-    assert len(seen) == 1 and seen[0]["stream"] == 0 and seen[0]["ledger"] == 1
+    assert len(seen) == 1 and seen[0]["stream"] == 1 and seen[0]["ledger"] == 0
     assert "still owes a reply" in seen[0]["detail"]
 
 
@@ -200,7 +211,9 @@ def test_the_finish_hold_predicate_reads_the_stream(tmp_path, monkeypatch):
     must consult the stream rather than the ledger alone.
 
     Its answer is deliberately unchanged, so the observable difference is the divergence event:
-    against code that only reads the projection, nothing is filed here and this fails.
+    against code that consults only ONE store, nothing is filed here and this fails. The seam
+    substituted is the PROJECTION — since step 9 the stream is the served reading and the old
+    file is the cross-check, so emptying the projection is what makes the two disagree.
     """
     from types import SimpleNamespace
 
@@ -212,23 +225,24 @@ def test_the_finish_hold_predicate_reads_the_stream(tmp_path, monkeypatch):
     seen: list[dict] = []
     monkeypatch.setattr("rsched.hooks.reportinv.log_health_event",
                         lambda *a, **k: seen.append(k))
-    monkeypatch.setattr("rsched.hooks.reportinv.stream_rows", lambda _h: [])
+    monkeypatch.setattr("rsched.hooks.reportread.projection", lambda _h: [])
     situation = SimpleNamespace(ctx=SimpleNamespace(
         reports_open=["R1"], routine=SimpleNamespace(slug="b"),
         server=SimpleNamespace(routines_home=home)), loop=SimpleNamespace())
 
     assert assist_predicates._unclosed_delivered_report(situation) is True
-    assert len(seen) == 1, "the finish-hold predicate did not consult the hook stream"
-    assert seen[0]["routine"] == "b" and seen[0]["ledger"] == 1
+    assert len(seen) == 1, "the finish-hold predicate did not compare the two stores"
+    assert seen[0]["routine"] == "b" and seen[0]["stream"] == 1 and seen[0]["ledger"] == 0
 
 
 def test_the_live_filing_path_reads_the_stream(tmp_path, monkeypatch):
     """THE pin on the decision actually moving: `file_report` — the engine's write path — must
     consult the stream, not just the ledger.
 
-    The cap's ANSWER is deliberately unchanged (the ledger's count is kept while both stores
-    are written), so the observable difference is the divergence event. With the decision still
-    read from the ledger alone, nothing is filed here; this test fails against that code.
+    The cap's ANSWER over agreeing stores is unchanged, so the observable difference is the
+    divergence event. With the decision read from one store alone, nothing is filed here and
+    this test fails against that code. The seam substituted is the PROJECTION, because since
+    step 9 that is the cross-check and the stream is what the cap acts on.
     """
     home = tmp_path / "routines"
     (home / ".control").mkdir(parents=True, exist_ok=True)
@@ -236,10 +250,10 @@ def test_the_live_filing_path_reads_the_stream(tmp_path, monkeypatch):
     seen: list[dict] = []
     monkeypatch.setattr("rsched.hooks.reportinv.log_health_event",
                         lambda *a, **k: seen.append(k))
-    monkeypatch.setattr("rsched.hooks.reportinv.stream_rows", lambda _h: [])
+    monkeypatch.setattr("rsched.hooks.reportread.projection", lambda _h: [])
     _file(home, "a", "b", 2)
-    assert len(seen) == 1, "the filing path did not consult the hook stream"
-    assert seen[0]["ledger"] == 1 and seen[0]["stream"] == 0
+    assert len(seen) == 1, "the filing path did not compare the two stores"
+    assert seen[0]["stream"] == 1 and seen[0]["ledger"] == 0
 
 
 def _run_backfill(home: Path) -> dict:
@@ -316,14 +330,19 @@ def test_the_backfill_skips_rows_already_in_the_stream(tmp_path):
         ("R2", ""), ("R2", "delivered")]
 
 
-def test_an_unreadable_stream_never_breaks_the_cap(tmp_path, monkeypatch):
-    """A decision moved onto the stream must not become a new way for a filing to fail."""
+def test_an_unreadable_store_never_breaks_the_cap(tmp_path, monkeypatch):
+    """A comparison between the two stores must not become a new way for a filing to fail.
+
+    The raising side is now the PROJECTION (the cross-check read, step 9): the cap acts on the
+    stream's answer, which the caller already holds, so an I/O failure on the old file costs
+    the comparison and nothing else.
+    """
     home = tmp_path / "routines"
 
     def boom(_home):
-        raise OSError("stream unreadable")
+        raise OSError("ledger unreadable")
 
-    monkeypatch.setattr("rsched.hooks.reportinv.stream_rows", boom)
+    monkeypatch.setattr("rsched.hooks.reportread.projection", boom)
     rows = [{"id": "R9", "ts": "t", "routine": "a", "run_id": "a:1", "title": "t",
              "detail": "d", "target": "b"}]
     assert open_threads_now(home, rows, routine="a", target="b") == ["R9"]

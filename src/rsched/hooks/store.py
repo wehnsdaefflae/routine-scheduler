@@ -1,22 +1,26 @@
 """The hook store — `<routines_home>/.control/hooks.jsonl`, one append-only stream.
 
-**One writer, and it is this module.** The three mechanisms that exist today (reports,
-consequence reminders, run injections) keep their own stores and their own readers at this
-step of the campaign and MIRROR into this one, through the three `record_*` functions below.
-**That "a defect here is harmless" window is CLOSED.** It was true while the mirror landed, and
-the sentence saying so outlived it by six campaign steps: step 7 moved the first real DECISION
-onto this stream — `hooks/reportinv.open_threads_now` answers the open-thread cap from it, and
-files a `hook_stream_diverged` health event when the two disagree (`reports.py` says the same
-from the other side: since step 4 the hook is the SOURCE and `reports.jsonl` its projection, and
-a hook that cannot be written REFUSES the filing). So a defect here can now refuse a report, and
-a reader who believes this paragraph will weigh a change to it far too cheaply.
+**One writer, and it is this module.** Two mechanisms still keep their own store beside this one
+and MIRROR into it (consequence reminders, run injections — the `record_*` functions below).
+**REPORTS NO LONGER DO, and that is the state of the campaign:** since step 4 the hook is the
+report's SOURCE (`hooks/reportproj` writes it first and derives the `reports.jsonl` row; a hook
+that cannot be written REFUSES the filing), and since **step 9** the hook is also what every
+report surface READS (`hooks/reportread`, behind `reports.read_reports` — the one seam about
+twenty modules go through). So a defect here now refuses a report AND empties a console page:
+the "a defect here is harmless" window closed long ago, and anyone weighing a change to this
+module from an older reading of it will weigh it far too cheaply.
 
-**Why mirror rather than cut over.** `reports.jsonl` and the reminders store both have readers
-OUTSIDE this engine — the console's Decisions page and self-audit's own scripts fold the report
-ledger; the reminders store carries per-routine fire tallies whose history is the evidence that
-tunes a pattern. A hard cutover would invalidate the operator's own backlog counts on the day
-it shipped. Two writers for one campaign is the cheaper mistake, and the campaign's last step
-is what removes the duplication (`state/hooks-design.md`, "Store: wrap first, replace last").
+**Why the two remaining stores are still mirrored, and what it costs to cut one over.** They
+have readers OUTSIDE this engine — self-audit's scripts fold the report ledger, and the reminders
+store carries the per-routine fire tallies that are the evidence tuning a pattern — so a hard
+cutover would invalidate the operator's own counts on the day it shipped. Reports show what the
+cutover actually takes, and it is less than the campaign's plan assumed: the read seam was
+already in one place, so NO caller changed. What took the work was the history — the pre-stream
+backfill (`migrate_report_hooks`) and then a repair, because 8 rows filed on 2026-10-19, in the
+window between the mirror and the source, had hooks carrying no disposal at all
+(`migrate_mirror_hooks`): six settled exchanges would have read as OPEN the day the read moved.
+**The lesson for the reminders cutover: the seam is cheap, the history is not.** Measure the two
+stores' folds against each other BEFORE repointing anything, and repair rather than work around.
 
 **Best-effort, always.** A mirror write that fails must never abort the run whose real work is
 elsewhere — the same discipline the health stream and an unaddressed report already use. Every

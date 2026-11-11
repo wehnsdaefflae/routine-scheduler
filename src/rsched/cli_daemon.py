@@ -109,6 +109,12 @@ def cmd_daemon(_args) -> int:
     # from the three weeks since step 4 — before the app starts, so nothing appends meanwhile
     from .migrate_report_hooks import run_migration as carry_report_hooks
     carry_report_hooks(server)
+    # MIGRATION(expires=2027-01-31): the 8 mirror-era report hooks (2026-10-19, between step 2
+    # and step 4) regain the disposal step 2's mirror dropped — AFTER the backfill above and
+    # BEFORE the app starts, because step 9 makes the stream what every report surface reads
+    # and without this six settled exchanges would read as open
+    from .migrate_mirror_hooks import run_migration as repair_mirror_hooks
+    repair_mirror_hooks(server)
     # MIGRATION(expires=2026-12-31): every routine's assist tally grows from an int per key to
     # the stat fields a reminder's keeps, so the four outcome labels D239 wired have somewhere
     # to go and the fires already counted stay the denominator they are read against

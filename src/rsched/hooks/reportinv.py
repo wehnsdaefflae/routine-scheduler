@@ -42,7 +42,8 @@ from pathlib import Path
 from ..health_events import log_health_event
 from ..report_threads import open_threads, still_owed
 from . import Hook, addressee
-from .reportproj import TERMINAL_EVENTS, stream_rows
+from . import reportread
+from .reportproj import TERMINAL_EVENTS
 
 log = logging.getLogger("rsched.hooks")
 
@@ -90,38 +91,35 @@ def open_threads_now(routines_home: Path, rows: list[dict], *, routine: str,
                      target: str) -> list[str]:
     """The open threads this sender holds to this owner, DECIDED FROM THE HOOK STREAM.
 
-    `rows` is the ledger the caller already read under its lock — passed in rather than read
-    again, so the comparison is against the same bytes the cap would otherwise have used and
-    cannot drift between two reads of a file another process appends to.
+    `rows` is what the caller already read under its lock — and since step 9 that read is the
+    STREAM's own answer (`hooks/reportread`), so this function no longer re-reads it. What is
+    read here is the other side: the ledger FILE, which outside readers still fold.
 
-    Returns the LEDGER's answer whenever the two disagree, and says so in the health stream.
-    That is deliberate conservatism, not a hedge: while both stores are written (the campaign
-    replaces the duplication last), the ledger is the record the operator's backlog counts and
-    `self-audit`'s folds are built on, so a cap that refused a filing the ledger does not
-    justify would be this module's defect reaching a run's work. The event is the thing that
-    makes the disagreement findable — the state the step set out to make impossible.
+    **The direction reversed at step 9 and the reason it was conservative is gone.** Until the
+    read moved, the ledger was what every surface served, so a cap refusing a filing the ledger
+    did not justify would have been this module's defect reaching a run's work — hence the
+    stream was consulted and the ledger's answer returned. Now the stream IS the served answer:
+    returning the ledger's would mean the cap refusing on a count no surface shows. So the
+    decided answer is `rows`, and the projection is the cross-check. Keeping the comparison at
+    all is what makes a drift between the two stores findable while both are still written (the
+    campaign's last step removes the duplication); the event is still the thing that says so.
     """
-    ledger = open_threads(rows, routine=routine, target=target)
+    decided = open_threads(rows, routine=routine, target=target)
     try:
-        # FOLDED by the ledger's OWN fold, exactly as `reportproj.rebuild` does it. `rows` is
-        # already folded (`read_reports`), and `stream_rows` is the raw projection — filings and
-        # lifecycle facts as separate rows. Comparing the two directly asked `_is_open` for
-        # `retracted`/`superseded` flags that only the fold writes onto a filing row, so every
-        # row disposed of by an EVENT read as still open on the stream side and the two could
-        # not agree. Measured 2026-11-06: five `hook_stream_diverged` events in one day across
-        # three sender/owner pairs, every one spurious — scheduler-builder -> self-audit read
-        # 19 open threads on the stream against the ledger's 3, and folding the same stream
-        # gave 3. Over the whole live stream, 5,102 rows fold to 2,753: the ledger's own count.
-        from ..reports import fold_rows
-
-        stream = open_threads(fold_rows(stream_rows(routines_home)),
-                              routine=routine, target=target)
+        # FOLDED by the ledger's OWN fold, never a second implementation of it — one stream
+        # read two ways is how two readings come to disagree. Measured 2026-11-06, before the
+        # fold was applied here: five `hook_stream_diverged` events in one day across three
+        # sender/owner pairs, every one spurious (scheduler-builder -> self-audit read 19 open
+        # threads against the ledger's 3) because `_is_open` reads `retracted`/`superseded`
+        # keys that only the fold writes onto a filing row.
+        old = open_threads(reportread.projection(routines_home),
+                           routine=routine, target=target)
     except OSError:
-        log.exception("report-hooks: reading the hook stream for the thread cap raised")
-        return ledger
-    _compare(routines_home, stream, ledger, routine=routine,
+        log.exception("report-hooks: reading the report ledger for the thread cap raised")
+        return decided
+    _compare(routines_home, decided, old, routine=routine,
              about=f"{routine}'s open threads to {target or 'triage'}")
-    return ledger
+    return decided
 
 
 def still_owed_now(routines_home: Path, rows: list[dict], owed: list[str], *,
@@ -140,43 +138,46 @@ def still_owed_now(routines_home: Path, rows: list[dict], owed: list[str], *,
     first place. Hence the same conservatism as step 7, for the same reason: the ledger's answer
     is returned whenever the two differ, and the disagreement is filed rather than acted on.
 
-    `rows` is the ledger the caller already read, passed in so both sides judge the same bytes.
+    `rows` is what the caller already read — the STREAM's answer since step 9 — and the ledger
+    FILE is read here as the cross-check, the same direction as the thread cap above.
     """
-    ledger = still_owed(rows, owed)
+    decided = still_owed(rows, owed)
     if not owed:
-        return ledger
+        return decided
     try:
-        # FOLDED, like step 7 and for the reason F847 found: `stream_rows` is the raw
-        # projection (a filing and each lifecycle fact as separate rows), while `_is_open`
-        # reads the `retracted`/`superseded` flags only the fold writes onto a filing row.
-        # Comparing unfolded rows made every event-disposed row read as still open.
-        from ..reports import fold_rows
-
-        stream = still_owed(fold_rows(stream_rows(routines_home)), owed)
+        # FOLDED, for the reason F847 found: the raw projection carries a filing and each
+        # lifecycle fact as separate rows, while `_is_open` reads the `retracted`/`superseded`
+        # flags only the fold writes onto a filing row. Comparing unfolded rows made every
+        # event-disposed row read as still open.
+        old = still_owed(reportread.projection(routines_home), owed)
     except OSError:
-        log.exception("report-hooks: reading the hook stream for the owed-reply hold raised")
-        return ledger
-    _compare(routines_home, stream, ledger, routine=routine,
+        log.exception("report-hooks: reading the report ledger for the owed-reply hold raised")
+        return decided
+    _compare(routines_home, decided, old, routine=routine,
              about=f"which of {sorted(owed)} {routine} still owes a reply to")
-    return ledger
+    return decided
 
 
-def _compare(routines_home: Path, stream: list[str], ledger: list[str], *, routine: str,
+def _compare(routines_home: Path, decided: list[str], projection: list[str], *, routine: str,
              about: str) -> None:
     """File `hook_stream_diverged` when the two stores disagree — the one place that says it.
 
-    Shared by every decision moved onto the stream (step 7's thread cap, step 8's owed-reply
-    hold), because the diagnosis is the same for all of them and a second copy of this sentence
-    would be a second thing to keep true. The event is what makes a disagreement findable; the
-    caller has already decided to keep the ledger's answer.
+    Shared by every decision taken from the stream (the thread cap, the owed-reply hold),
+    because the diagnosis is the same for all of them and a second copy of this sentence would
+    be a second thing to keep true. `decided` is the answer the caller is acting on — the
+    stream's, since step 9 — and `projection` is `reports.jsonl`'s. The event is what makes a
+    drift between the two stores findable for as long as both are written; the caller has
+    already acted on the stream.
     """
-    if sorted(stream) == sorted(ledger):
+    if sorted(decided) == sorted(projection):
         return
     detail = (f"the hook stream and the report ledger disagree about {about}: the stream says "
-              f"{sorted(stream) or 'none'}, the ledger says {sorted(ledger) or 'none'}. "
-              "The ledger's answer was used. Either a report was written without going "
-              "through the hook (hooks/reportproj is the one writer), or the backfill of "
-              "the pre-stream history is incomplete (migrate_report_hooks)")
+              f"{sorted(decided) or 'none'}, the ledger says {sorted(projection) or 'none'}. "
+              "The STREAM's answer was used — it is what every report surface reads since "
+              "D152 step 9. Either a row reached reports.jsonl without going through the hook "
+              "(hooks/reportproj is the one writer), or a mirror-era hook is missing its "
+              "disposal (migrate_mirror_hooks), or the pre-stream backfill is incomplete "
+              "(migrate_report_hooks)")
     log_health_event(routines_home, "hook_stream_diverged", routine=routine, run_id="",
-                     detail=detail, stream=len(stream), ledger=len(ledger))
+                     detail=detail, stream=len(decided), ledger=len(projection))
     log.warning("report-hooks: %s", detail)

@@ -39,7 +39,8 @@ the engine's own finish ever touches.
 | `<self-audit>/audit/report.json` | the self-audit routine | findings + decisions, and their CURRENT status |
 | `<self-audit>/audit/changelog.jsonl` | the self-audit routine | the archive: which commit addressed which item, when (`commit` empty for a builder completion without a release, whose items self-audit settles) |
 | `<self-audit>/audit/decisions-answered.json` | the web layer (`api_audit`) | durable "the user answered this decision" markers |
-| `<routines>/.control/reports.jsonl` | the engine (`rsched/reports.py`), as a PROJECTION of `.control/hooks.jsonl` (`rsched/hooks/reportproj`, D152) | every report a run filed, and how far an addressed one got |
+| `<routines>/.control/hooks.jsonl` | the engine (`rsched/hooks/reportproj`, D152) — the SOURCE, written first, and since step 9 also what every report surface READS (`rsched/hooks/reportread`) | every report a run filed, and how far an addressed one got |
+| `<routines>/.control/reports.jsonl` | the engine, as a PROJECTION of the stream above — kept for its readers OUTSIDE the engine (the operator reads it by eye, self-audit's scripts fold it) and as the read's fall-back | the same reports, in the same bytes it has always had |
 | `<routines>/.control/item-records.json` | the daemon (`daemon/item_record_watch` → `rsched/item_records.py`) | the LAST RECORDED row of every finding and decision `report.json` ever carried, and when it left |
 
 `report.json` carries only the CURRENT window (schema 1: `run_id`, `generated`,

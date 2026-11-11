@@ -72,6 +72,7 @@ from pathlib import Path
 from . import report_detail, report_disposal
 from .engine import inbox
 from .hooks import reportproj
+from .hooks import reportread as _reportread
 from .hooks.reportinv import open_threads_now
 from .ids import now_iso
 from .paths import append_jsonl, file_lock, read_jsonl
@@ -309,23 +310,13 @@ def discard_undelivered_report(routines_home: Path, report_id: str) -> dict:
     return row
 
 
-def read_reports(path: Path) -> list[dict]:
-    """The stream folded into one row per report, in filing order. A `delivered`, `retracted`
-    or `superseded` event row is merged into its report as a `delivered: {ts, run_id}` /
-    `retracted: {ts}` / `superseded: {ts, by, to}` key; an event with no matching report (a
-    truncated or hand-trimmed file) is dropped rather than becoming a phantom item.
-
-    Folded ONCE per append, behind the read-models' stat fingerprint: the ledger is
-    append-only and 2.9 MB / 2,199 rows on the live instance, and it was re-read and
-    re-parsed by every routine-page open (the Messages panel), every orphans read and every
-    outbox retraction — a per-request cost that grows with how much the fleet talks. The
-    returned rows are SHARED and must be treated as immutable; every caller here folds them
-    into new dicts.
-    """
-    from .readmodels import memo
-
-    return memo.memoized_shared(f"reports:{path}", [path],
-                                lambda: fold_rows(read_jsonl(path)))
+#: THE READ, which since D152 step 9 belongs to the module that owns the stream
+#: (`hooks/reportread.read_reports` — it states the whole rule, including when the projection
+#: is served instead and what is filed then). Re-exported because `reports.read_reports` is
+#: the name ~20 callers already hold, and moving the responsibility rather than the name is
+#: what let this file keep shrinking while gaining the cutover: the read's own prose lives
+#: where the read lives.
+read_reports = _reportread.read_reports
 
 
 def fold_rows(rows: list[dict]) -> list[dict]:
