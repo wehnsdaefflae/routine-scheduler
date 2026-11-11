@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.533.0] — 2026-11-11
+
+### Added
+- **Clicking a coloured prompt segment in the run rail opens its actual TEXT (R3341).** You
+  asked for it; the honest answer needed two halves. `history` and `observations` are the
+  message list, which IS on disk, so they are REPLAYED from the transcript through the engine's
+  own renderers and labelled *"what was sent"*. The always-on sections had no recorded text
+  anywhere — and re-composing one at read time is unsafe, not merely approximate: the path that
+  builds the digest drains a shared store, touches the job ledger and writes `answer` transcript
+  events, so a GET endpoint that re-composed would mutate state on every tap. So, on your
+  authorization, `engine/promptcapture.py` records the section texts ONCE per leg in the run dir
+  (~60-250 kB), and the view labels them *"what is being sent — this leg's composed section"*. A
+  run booted before the capture says *"text not recorded"* for those sections, which is the one
+  honest answer for it. Nothing changed about what is sent to a provider, and
+  `tests/test_prompt_segments.py`'s byte-identity hold is untouched.
+  Rows carry the turn the transcript stamped and token figures that SUM to the segment total the
+  bar draws, so the view is auditable against the bar; the body of one message is a second call,
+  because these segments run to hundreds of thousands of tokens and you read this on a phone.
+  New `GET /api/runs/{id}/prompt-segment` + `readmodels/promptsegtext.py`; the click is a `btn`
+  on the legend row (a 0.5%-wide rect is not a thumb target) reusing `panel`/`pre.doc`, so no new
+  CSS class. The panel closes itself when you leave the run — a browser test caught it staying
+  open on another page.
+
 ## [0.532.0] — 2026-11-11
 
 ### Changed
