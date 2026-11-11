@@ -45,8 +45,9 @@ answerable by a filter must not live in `detail`):
 
 BEST-EFFORT BY CONSTRUCTION. Both notifiers sit on paths that are already handling a failure, so
 every error here is swallowed and nothing is raised: a diagnostic that can turn a recovered
-failure into a dead run is worse than no diagnostic. This is `engine/promptfloor.py`'s contract,
-for the same reason.
+failure into a dead run is worse than no diagnostic. `engine/promptfloor.py` holds the same
+contract on its own failure paths, for the same reason — though what it does when it succeeds is
+no longer a diagnostic but a compaction (D223).
 """
 
 from __future__ import annotations

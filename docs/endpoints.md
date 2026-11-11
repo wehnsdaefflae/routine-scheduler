@@ -355,15 +355,25 @@ engine instead **fails over**:
   run that was unrunnable from turn 0 — a 32,768-token substitute under a 200k-class prompt —
   and `weightloss:20260923-220004` $1.01 over 193 turns diagnosing its own field-shifted
   output as "the model cannot reliably hold the action schema", two rungs down and never told.
-- **A floor already over the window is RECORDED at boot, and the run still starts** — a
-  `prompt_floor_over_window` health event carrying `floor_tokens`, `window_tokens` and the model
-  (`engine/promptfloor.py`, fired from `boot` once the prompt is composed). The first specimen
-  above could complete no turn from turn 0, and the floor was computable before the first model
-  call. It is a count and not a veto by the operator's decision (D223): the figure compared is
-  the CATALOG window, and an F278 run-local correction can already make the real clamp smaller
-  than it, so a refusal would rest on an approximation — while a run that previously produced
-  something would produce nothing. The stream is what makes refusing a later decision on
-  evidence instead of arithmetic.
+- **A floor already over the window is HARD-COMPACTED at boot, and the run starts** — the
+  engine's first act, before turn one, is to drop the middle to whatever fits
+  (`compaction.maybe_compact`, then `clamp_to_cap`) and to STATE the loss: an engine note in the
+  run's own prompt, rendered on the conversation and run pages, plus a `prompt_floor_over_window`
+  health event carrying `floor_tokens`, `window_tokens`, `after_tokens`, `elided_messages`,
+  `clamped_messages` and `fits` (`engine/promptfloor.py`, fired from `boot` once the prompt is
+  composed). The recording-only first version (D223, 2026-10-30) earned the evidence for this
+  one: it fired nine times for a single conversation, `c-20261014-134208`, every attempt bigger
+  than the last (1,063,175 → 1,138,237 estimated tokens against a 1,000,000-token window), after
+  a week of `prompt_oversize_shrunk` passes that had stopped being able to help. The operator
+  chose compaction over refusing the start (D223, 2026-11-10): *"start it, but have the engine's
+  FIRST act be a hard compaction that drops the middle to whatever fits, so the thread continues
+  with a stated loss"*. Compacting may act on the catalog figure where refusing could not — an
+  F278 run-local correction can make the real clamp smaller, and a veto resting on an
+  approximation would turn a degraded run into no run, while compacting early only costs context
+  the run can still read out of its transcript. No archival model call is made here: that is a
+  model call, and this is the engine's first act. A floor that still does not fit afterwards
+  (head, tail and system prompt are incompressible) is recorded with `fits: false` and said in
+  the note; the run starts regardless and its first completion fails for length as it would have.
 - **Every switch reaches the health stream** as a `model_failover` event carrying the chain
   head, both model names and a reason (`rate_limit` · `auth` · `server` · `refusal` ·
   `empty` · `other`) — a run that fails over finishes `ok`, so without it a fleet running
