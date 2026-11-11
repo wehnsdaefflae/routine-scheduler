@@ -1407,6 +1407,23 @@ meet. A conversation's spine is its own **working plan**
   as `pre-restore-…` first; the store keeps `artsnap.KEEP` snapshots per conversation and never
   prunes a pre-restore copy. The directory is dotted, so `api_conversations`' artifact listing
   never serves a snapshot as a deliverable.
+- **UNDO A RUN** (⤺ on the run page, `engine/rundo.py` behind `web/api_run_undo.py`) — the
+  VERSIONED half of the same order, for a routine rather than a conversation: a routine's dir IS
+  a git repo, so the material to undo is the run's own autocommit rather than a snapshot. Three
+  bounds, each load-bearing. It reverts the run's deliverables and recipe and **never `state/`**
+  — that is what the NEXT run reads, so reverting it would make the next run repeat the work or
+  act on a world that no longer exists (git reverts whole commits, so the protected paths are
+  restored from `HEAD` after the revert rather than excluded from it). It is **REFUSED when a
+  later commit touched the same paths**, naming them, because a revert that silently drops
+  someone else's later edit is worse than no undo — and a routine repo has several writers (its
+  runs, `routine-improver`, the operator by hand). And a **resumed** run is several commits, one
+  per leg (`<run id>: ok`, or `… recipe revision (ok)` — the only place a run's identity reaches
+  its repo), so all of them are reverted newest-first; undoing one leg would leave a state nobody
+  can reason about. It REVERTS rather than rewrites: the run's work stays in the history, the
+  undo is itself a commit and itself undoable, and nothing already pushed needs a force-update.
+  The GET half is what makes the control honest — the page asks what an undo WOULD do before
+  offering the button, so a refusal arrives as a sentence a person can act on rather than a grey
+  button.
 - **Refusal flag** (⚑, `web/api_refusal_flag.py`, operator decision 2026-10-01) — any reply of a
   settled conversation can be REDONE on its uncensored model, which then carries the conversation.
   One POST, validated whole before its first write: the reply and everything after it go through

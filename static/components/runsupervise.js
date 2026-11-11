@@ -23,7 +23,7 @@
 // could not hold.
 
 import { api } from "/static/api.js";
-import { promptDialog } from "/static/components/dialog.js";
+import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { act, el, toast } from "/static/util.js";
 
 /** createSuperviseButton(runId) → button
@@ -37,6 +37,37 @@ export function createSuperviseButton(runId) {
     // names WHICH boundary the rung was recorded for. A failure is already toasted by `act`.
     const r = await act(btn, () => api(`/api/runs/${runId}/supervise`, { method: "POST" }));
     if (r) toast(r.supervise || "a rung runs at the next turn boundary", 5000);
+  };
+  return btn;
+}
+
+/** createUndoButton(runId) → button
+ *  D269: UNDO this run — revert its own commits in the routine's repo, limited to its
+ *  deliverables and the recipe, with `state/` left exactly as it is.
+ *
+ *  It READS the plan before it asks (`GET …/undo`), so the confirmation names the actual files
+ *  and the actual commits rather than a generic warning — and a refusal (a later commit on the
+ *  same paths, nothing but `state/` touched, an unversioned routine) is shown as the server's
+ *  own sentence instead of a disabled button with no reason. That asymmetry is the point: the
+ *  operator can act on "a later commit has touched main.md"; he cannot act on a grey button. */
+export function createUndoButton(runId) {
+  const btn = el("button", { class: "btn small", hidden: true,
+    title: "revert what this run wrote (deliverables and recipe; never state/)" }, "⤺ undo");
+  btn.onclick = async () => {
+    const plan = await act(btn, () => api(`/api/runs/${runId}/undo`));
+    if (!plan) return;
+    if (!plan.ok) { toast(plan.why || "nothing to undo", 8000, { error: true }); return; }
+    const files = (plan.paths || []).join(", ");
+    const kept = (plan.protected || []).length;
+    const ok = await confirmDialog(
+      `Undo ${runId}? It reverts ${plan.paths.length} file(s) — ${files} — across `
+      + `${(plan.commits || []).length} commit(s)`
+      + (kept ? `, and leaves ${kept} state/ file(s) exactly as they are.` : ".")
+      + " The run's own commits stay in the history, so this undo is itself undoable.",
+      { confirmLabel: "undo the run" });
+    if (!ok) return;
+    const r = await act(btn, () => api(`/api/runs/${runId}/undo`, { method: "POST" }));
+    if (r) toast(r.why || "undone", 6000);
   };
   return btn;
 }

@@ -56,6 +56,7 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
         api_routine_secrets,
         api_routines,
         api_run_control,
+        api_run_undo,
         api_runs,
         api_schedule,
         api_search,
@@ -79,7 +80,8 @@ def include_api_routers(app: FastAPI, deps: list) -> None:
                    # the deny tombstones, the grants it holds, and (part a) the shared-store
                    # exposure dial; only the routine page had any of the three
                    api_background, api_branches, api_browser, api_desktops, api_runs,
-                   api_run_control,
+                   api_run_control, api_run_undo,   # D269's ⤺ lives apart: undoing a FINISHED
+                   # run's work is not steering a live one, and api_run_control is at its bar
                    api_refusal_flag,
                    api_schedule, api_stats, api_changes, api_health, api_finishline,
                    api_credential_names,

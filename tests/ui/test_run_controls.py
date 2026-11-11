@@ -106,3 +106,59 @@ def test_a_terminal_run_offers_rewind_and_not_supervise(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/run/uit:20260716-090000")
     expect(ui_page.get_by_role("button", name="⟲ rewind")).to_be_visible()
     expect(ui_page.get_by_role("button", name="👁 supervise")).to_be_hidden()
+
+
+def test_a_terminal_run_offers_undo_beside_rewind(ui, ui_page):
+    """D269's ⤺ shares rewind's visibility rule: a LIVE run has no autocommit of its own yet,
+    so there is nothing in the repo to revert (the endpoint refuses one too)."""
+    ui.seed_run("uiu", "20260716-093000", "finished", summary="wrote a report")
+
+    ui_page.goto(f"{ui.url}/#/run/uiu:20260716-093000")
+    expect(ui_page.get_by_role("button", name="⤺ undo")).to_be_visible()
+    expect(ui_page.get_by_role("button", name="⟲ rewind")).to_be_visible()
+
+
+def test_undo_shows_the_servers_own_refusal_instead_of_a_grey_button(ui, ui_page):
+    """The GET half is what makes the control honest. An operator can act on "a later commit has
+    touched main.md"; he cannot act on a disabled button. So a refused plan is TOASTED with the
+    server's own sentence and no confirmation is asked for.
+    """
+    ui.seed_run("uiu", "20260716-094000", "finished", summary="")
+    ui_page.route("**/api/runs/uiu:20260716-094000/undo",
+                  lambda route: route.fulfill(
+                      status=200, content_type="application/json",
+                      body='{"ok": false, "why": "a later commit has touched the same files: '
+                           'a1b2c3d (operator: fix the recipe by hand)", "paths": [], '
+                           '"commits": [], "protected": [], "blocked_by": []}'))
+
+    ui_page.goto(f"{ui.url}/#/run/uiu:20260716-094000")
+    undo = ui_page.get_by_role("button", name="⤺ undo")
+    expect(undo).to_be_visible()
+    undo.click()
+    expect(ui_page.locator(".toast")).to_contain_text("a later commit has touched the same files")
+    expect(ui_page.locator(".modal-overlay")).to_have_count(0)   # nothing was asked to confirm
+    expect(undo).to_be_enabled()
+
+
+def test_undo_names_the_files_and_the_kept_state_before_it_asks(ui, ui_page):
+    """A confirmation that does not say WHAT it reverts is not a confirmation. The dialog names
+    the files, the commit count, and that state/ is left alone — which is the bound a person
+    most needs to see before pressing it.
+    """
+    ui.seed_run("uiu", "20260716-095000", "finished", summary="")
+    ui_page.route("**/api/runs/uiu:20260716-095000/undo",
+                  lambda route: route.fulfill(
+                      status=200, content_type="application/json",
+                      body='{"ok": true, "why": "would revert 2 file(s)", '
+                           '"paths": ["artifacts/report.md", "main.md"], '
+                           '"commits": ["aaa", "bbb"], "protected": ["state/plan.md"], '
+                           '"blocked_by": []}'))
+
+    ui_page.goto(f"{ui.url}/#/run/uiu:20260716-095000")
+    ui_page.get_by_role("button", name="⤺ undo").click()
+    panel = ui_page.locator(".modal-overlay .panel")
+    expect(panel).to_have_count(1)
+    expect(panel).to_contain_text("artifacts/report.md, main.md")
+    expect(panel).to_contain_text("2 commit(s)")
+    expect(panel).to_contain_text("leaves 1 state/ file(s) exactly as they are")
+    expect(panel).to_contain_text("itself undoable")

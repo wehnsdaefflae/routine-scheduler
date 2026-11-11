@@ -495,21 +495,6 @@ first routine on predator's GPU for the GPT-2 demo track (its 6 GB only fits tha
 
 ---
 
-## Undo a run, and per-reply artifact snapshots (decided 2026-10-08, in conversation)
-
-Carries item 4 of "adopt the list".
-
-**THE FIRST INCREMENT IS BUILT** (0.530.0): a conversation is unversioned, so each reply's
-close-out snapshots `artifacts/` and ⟲ rewind restores the newest snapshot at or before the turn
-it keeps (`engine/artsnap.py`) — the files go back with the transcript instead of staying as the
-discarded replies wrote them.
-
-**Shape, still owed.** "Undo this run" on the RUN PAGE, for a versioned routine: revert that
-run's autocommit limited to its deliverables and the recipe (never `state/`), refused when a
-later commit touched the same paths.
-
----
-
 ## A second opinion from another model family, as a library rule (decided 2026-11-08, in conversation)
 
 From a review of getpaseo/paseo, whose advisor/committee skills get an independent read from a

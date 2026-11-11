@@ -18,7 +18,7 @@ import { createPhaseGraph } from "/static/components/phasegraph.js";
 import { createRunAccounting } from "/static/components/run-accounting.js";
 import { mountRunJob } from "/static/components/runjob.js";
 import { createModelSwitch } from "/static/components/runswitch.js";
-import { createRewindButton, createSuperviseButton } from "/static/components/runsupervise.js";
+import * as runsup from "/static/components/runsupervise.js";
 import { renderLadder } from "/static/components/ladderstrip.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtAbs, fmtDur, fmtTokens, skeleton, streamStatus,
@@ -201,12 +201,12 @@ export async function render(view, runId, query = {}) {
       remountSoon();
     } catch (err) { toastError(err); resumeBtn.disabled = false; }
   };
-  // Both in runsupervise.js: ⟲ rewind a terminal run (D69), and 👁 supervise a LIVE one — ask
-  // for a rung at its next turn boundary (F750), which is how a person supervises a run in
-  // flight now that the daemon's one-run-per-routine rule rightly refuses a second run.
-  const rewindBtn = createRewindButton(runId, remountSoon);
-  const superviseBtn = createSuperviseButton(runId);
-  controls.append(pauseBtn, abortBtn, resumeBtn, rewindBtn, superviseBtn);
+  // All three in runsupervise.js, which says why each exists: ⟲ rewind a terminal run (D69),
+  // ⤺ undo what one wrote (D269), 👁 supervise a live one at its next boundary (F750).
+  const rewindBtn = runsup.createRewindButton(runId, remountSoon);
+  const [undoBtn, superviseBtn] = [runsup.createUndoButton, runsup.createSuperviseButton]
+    .map((make) => make(runId));
+  controls.append(pauseBtn, abortBtn, resumeBtn, rewindBtn, undoBtn, superviseBtn);
 
   // Live model + effort mid-run switch (applies at the next turn; the engine re-resolves both).
   const { node: switchBox, setModel } = createModelSwitch(runId, modelSpan);
@@ -324,8 +324,8 @@ export async function render(view, runId, query = {}) {
     pauseBtn.hidden = abortBtn.hidden = terminal;   // controls for a live run
     superviseBtn.hidden = terminal;   // a rung needs a turn boundary still to come (F750)
     resumeBtn.hidden = !terminal;                   // resume only a terminal run
-    rewindBtn.hidden = !terminal;                   // D69: rewind only a terminal run
-    if (terminal) rewindBtn.disabled = false;
+    rewindBtn.hidden = undoBtn.hidden = !terminal;  // D69/D269: a terminal run only
+    if (terminal) rewindBtn.disabled = undoBtn.disabled = false;
     switchBox.hidden = false;        // F837: a dead run's switch arms its resume
     delibBox.hidden = terminal;                     // deliberation re-level is mid-run only
     setModes(terminal);
