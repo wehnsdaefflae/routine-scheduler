@@ -36,7 +36,7 @@ from pathlib import Path
 
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
-from . import candidate, outcome_words, reviseroutine
+from . import candidate, draftlint, outcome_words, reviseroutine
 from .run_context import RunContext
 from .runkind import is_root_conversation
 
@@ -205,7 +205,7 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
            # F383: the pattern catalog rides the observation so the relay compares against
            # what the library actually holds — the choice stops being an unexamined default.
            "workflow_catalog": catalog,
-           "settings_patterns": patterns,
+           "settings_patterns": patterns, **draftlint.preview_keys(draft),
            "design_checks": list(_DESIGN_CHECKS),
            "next": ("Nothing is created yet. Put this draft to the user as DECISIONS, not as "
                     "prose: every point still open goes out as its own `ask_user` carrying "
