@@ -121,11 +121,35 @@ const SLOW_REQUEST_MS = 1000;
 // this module records no free-text input — while which endpoint is slow is the whole question.
 function endpointOf(path) { return String(path).split("?")[0]; }
 
+// A request measured across a BACKGROUNDED tab is the same artefact `installLoadTiming` below
+// guards against, and it reached the store: 24 rows of 106,205-183,081 ms were all REPORTED
+// inside one 3-second window (2026-11-10 12:35:58-12:36:01 UTC, every one status 200) — a tab
+// flushing its queue on wake, its wall clock having counted the time the laptop was asleep. No
+// SERVER row in the same store exceeds 16,790 ms, which is how the artefact was identified; an
+// optimization reading the unfiltered client maximum is measuring sleep.
+//
+// `performance.now()` keeps running while a tab is hidden (that is the spec — it is a monotonic
+// clock, not a work meter), so the duration cannot be corrected here, only DISCLOSED. The row
+// is therefore kept and MARKED rather than dropped: a slow request that happened while nobody
+// was looking is still evidence about the server, and silently discarding it would bias the
+// store toward whatever the operator happens to be watching. A reader filters on the marker.
+//
+// Latched, for the same reason the load guard latches: the tab may be visible again by the time
+// the response lands, and the document would then look as if it had never been away.
 function installRequestTiming() {
+  let hiddenSince = null;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") hiddenSince = hiddenSince ?? performance.now();
+    else hiddenSince = null;
+  });
   onRequestTiming((path, ms, status) => {
     if (ms < SLOW_REQUEST_MS) return;
+    // Hidden NOW, or hidden at any point this request could have spanned.
+    const slept = document.visibilityState === "hidden"
+      || (hiddenSince !== null && hiddenSince <= performance.now());
     trace("slow", endpointOf(path),
-          `${ms}ms, status ${status}, ${openStreamCount()} streams open`);
+          `${ms}ms, status ${status}, ${openStreamCount()} streams open`
+          + (slept ? ", backgrounded (wall clock, not server time)" : ""));
   });
 }
 

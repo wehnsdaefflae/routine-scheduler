@@ -53,6 +53,50 @@ def test_a_slow_request_becomes_a_row_naming_the_endpoint_and_the_wait(ui, ui_pa
     assert held >= HELD_MS * 0.6, row                  # the wait itself, not a token round-trip
     assert "status 200" in row["detail"], row
     assert "streams open" in row["detail"], row
+    # A VISIBLE tab must NOT be marked. Without this, a guard that marked every row would pass
+    # both this test and the hidden-tab one below, and every real measurement in the store
+    # would read as unusable wall clock.
+    assert "backgrounded" not in row["detail"], row
+
+
+def test_a_slow_request_measured_in_a_hidden_tab_says_so(ui, ui_page):
+    """The `slow` kind's half of F863, which the load kind got in 0.525.5 and this one did not.
+
+    MEASURED in production: 24 client rows claiming 106,205-183,081 ms were all REPORTED inside
+    one 3-second window (2026-11-10 12:35:58-12:36:01 UTC, every one status 200) — a tab
+    flushing its queue on wake, `performance.now()` having counted the laptop's sleep. No SERVER
+    row in that store exceeds 16,790 ms.
+
+    `performance.now()` keeps running while a tab is hidden (it is a monotonic clock, not a work
+    meter), so the duration cannot be corrected — only DISCLOSED. The row is kept and marked:
+    a slow request nobody was watching is still evidence about the server, and dropping it would
+    bias the store toward whatever the operator happens to be looking at.
+
+    Same technique and same limit as the load case below: this pins OUR branch, not the
+    browser's own clock behaviour.
+    """
+    ui_page.add_init_script(
+        "Object.defineProperty(document, 'visibilityState', "
+        "{configurable: true, get: () => 'hidden'});")
+    ui_page.goto(ui.url)
+    ui_page.wait_for_selector(".topbar", state="attached")
+
+    def hold(route):
+        ui_page.wait_for_timeout(HELD_MS)
+        route.continue_()
+
+    ui_page.route("**/api/stats**", hold)
+    ui_page.evaluate("""() => { import('/static/api.js').then(
+        (m) => m.api('/api/stats?window=7d').catch(() => {})); }""")
+
+    until(lambda: _rows(ui, "slow"), what="the slow-request trace to be stored", page=ui_page,
+          timeout_s=30)
+    (row, *_) = _rows(ui, "slow")
+    assert "backgrounded (wall clock, not server time)" in row["detail"], row
+    # the row still carries everything it carried before — the marker ADDS, it does not replace
+    assert row["target"] == "/api/stats", row
+    assert "status 200" in row["detail"] and "streams open" in row["detail"], row
+    assert re.match(r"\d+ms", row["detail"]), row
 
 
 def test_a_navigation_becomes_a_render_row_naming_the_view(ui, ui_page):

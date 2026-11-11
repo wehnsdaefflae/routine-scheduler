@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.531.2] — 2026-11-11
+
+### Fixed
+- **A slow request measured across a SUSPENDED tab now says so, instead of entering the store as
+  a three-minute server wait.** The `load` kind got this guard in 0.525.5 (F863); the `slow`
+  kind did not, and the first two days of production rows show why it needed one: **24 client
+  rows claiming 106,205-183,081 ms were all REPORTED inside one 3-second window** (2026-11-10
+  12:35:58-12:36:01 UTC, every one status 200) — a backgrounded browser flushing its queue on
+  wake, with `performance.now()` having counted the time the laptop was asleep. **No SERVER row
+  anywhere in the same store exceeds 16,790 ms**, which is how the artefact was identified. An
+  optimization reading the unfiltered client maximum would have been measuring sleep.
+  `performance.now()` keeps running while a tab is hidden — it is a monotonic clock, not a work
+  meter — so the duration cannot be corrected, only DISCLOSED: the row is kept and **marked**
+  (`, backgrounded (wall clock, not server time)`) rather than dropped, because a slow request
+  nobody was watching is still evidence about the server, and discarding it would bias the store
+  toward whatever the operator happens to be looking at. The visibility flag is latched, as the
+  load guard's is, since the tab is usually visible again by the time the response lands.
+  Two browser tests: a hidden tab's row carries the marker (proved red-first — the unguarded
+  build wrote `1814ms, status 200, 1 streams open`), and **a visible tab's row does NOT**, which
+  is the half that would otherwise let a guard marking everything pass both tests.
+
 ## [0.531.1] — 2026-11-11
 
 ### Fixed
