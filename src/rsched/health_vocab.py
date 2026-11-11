@@ -103,7 +103,11 @@ the run's local view to fit (engine/window.py). The turn survives — what it ma
 context is silently truncated: a routine that has outgrown its model or its state files.
 
 prompt_floor_over_window: the same condition at BOOT, before any provider rejection — the floor
-already exceeds the window; the run starts anyway (D223, engine/promptfloor.py).
+already exceeds the window, so the engine's FIRST act is a hard compaction that drops the middle
+to whatever fits and states the loss in the run's own prompt and transcript. The run starts with
+less context rather than not at all (D223, engine/promptfloor.py). `elided_messages` and
+`after_tokens` say how much it cost; `fits: false` marks a floor no compaction could rescue,
+whose first completion will still be refused for length.
 
 scheduler_tick_error: a scheduling pass raised, so whatever it owed is late. routine = `(daemon)`
 when a whole pass or the boot rescan raised (daemon/scheduler.py); otherwise the ITEM one

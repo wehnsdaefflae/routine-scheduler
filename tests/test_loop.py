@@ -2899,15 +2899,15 @@ def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monk
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "ok"
 
-    # TWO events now: the instant digest that let the run carry on, then the archive landing.
-    # The archival call is 180-600s of a run's time and nothing about it needs the run to
-    # wait, so the prompt gets the digest immediately and the navigable history when it is
-    # ready — losslessly, from the real middle. (Here the run finishes first, so the archive
-    # is settled at finish rather than announced at a boundary.)
+    # TWO events: the instant digest the run carried on with, then the archive landing (that
+    # call is 180-600s and nothing waits for it; here the run finishes first, so it settles at
+    # finish). NINE elided, not eight: `main-model`'s 2,000-token window is under the composed
+    # system prompt, so the D223 boot pass fires, finds nothing shrinkable on a fresh boot, and
+    # states the loss anyway — one ENGINE NOTE, which the archival then elides with the rest.
     comps = [e["payload"] for e in events if e["type"] == "compaction"]
     if archival_model is None:
         assert len(comps) == 1
-        assert comps[0]["elided_messages"] == 8 and comps[0]["archival"] == "skipped"
+        assert comps[0]["elided_messages"] == 9 and comps[0]["archival"] == "skipped"
         assert "no available model can archive it" in comps[0]["archival_skipped"]
         assert not (run_dir / "history").exists()
         assert not [c for c in ep.calls if "You are archiving" in c["messages"][0]["content"]]
@@ -2918,11 +2918,11 @@ def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monk
         return
     assert len(comps) == 2
     digest, landed = comps
-    assert digest["elided_messages"] == 8 and digest["archival"] == "background"
+    assert digest["elided_messages"] == 9 and digest["archival"] == "background"
     assert "digest_chars" in digest          # the instant tier is what the prompt got
     assert landed["mode"] == "llm-history" and landed["background"] is True
     assert landed["model"] == f"scripted/{archival_model}"
-    assert landed["history_files"] == 1 and landed["elided_messages"] == 8
+    assert landed["history_files"] == 1 and landed["elided_messages"] == 9
 
     hist = run_dir / "history"
     assert "notes-archive" in (hist / "INDEX.md").read_text()
