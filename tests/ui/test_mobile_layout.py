@@ -47,6 +47,45 @@ def _start_conversation(ui, ui_page) -> str:
     return start_conversation(ui, ui_page, "Look at the console on a phone.")[0]
 
 
+def test_the_answer_placeholder_is_not_clipped_on_a_phone(ui, ui_page):
+    """R3334 (`scheduler-builder`, found by RENDERING at 390px — no attribute test can see it):
+    `answerform.js` builds its field with `rows="1"`, and at this width the placeholder
+    "your answer… (Ctrl+Enter sends)" wraps to two lines. A one-row box clipped the second, so
+    the reader saw "your answer… (Ctrl+Enter" and the word "sends)" was unreadable.
+
+    MEASURED before the fix, which is the only reason this is a defect rather than an opinion:
+    the field rendered **39px tall while its placeholder needed 64px**.
+
+    Not cosmetic in the way a cut label usually is: the placeholder exists to teach the send
+    chord AT THE MOMENT OF USE, and it was teaching half of it. The operator changed that chord
+    on 2026-11-11, which is exactly when a half-legible hint costs the most.
+
+    The box is measured against the text it must hold (`scrollHeight`), not against a pixel
+    count: a fixed expectation would pass on a font change that re-broke the clip.
+    """
+    # The RUN view's live-question card (`run.js:345` → `answerform.questionPanel`), which takes
+    # the DEFAULT placeholder. The Decisions page passes its own short one and `control:
+    # "input"` (Enter sends there), so it is not the clipping surface — a detail worth naming,
+    # because the first version of this test aimed at it and proved nothing.
+    ui.seed_run("uir", "20260715-090000", "waiting_user",
+                question={"qid": "q-ph", "question": "Which way?", "options": [],
+                          "default": "", "asked": "20260715-090000"})
+    ui_page.set_viewport_size(PHONE)
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-090000")
+    box = ui_page.locator("textarea.answer-input").first
+    expect(box).to_be_visible()
+    # The placeholder must FIT: a textarea whose content (here, its placeholder) is taller than
+    # its box is clipping, and that is true whatever the font or the wrap point turns out to be.
+    clipped = ui_page.evaluate(
+        """() => { const t = document.querySelector("textarea.answer-input");
+                   return {box: t.clientHeight, text: t.scrollHeight}; }""")
+    assert clipped["text"] <= clipped["box"] + 1, (
+        f"the answer placeholder is clipped at {PHONE['width']}px: the field is "
+        f"{clipped['box']}px tall and its text needs {clipped['text']}px")
+    # and the hint it exists to carry is the CURRENT chord, on the surface he reads
+    assert "Ctrl+Enter" in (box.get_attribute("placeholder") or "")
+
+
 def test_a_dropdown_cannot_widen_a_conversation_on_a_phone(ui, ui_page):
     """A `<select>` is as wide as its widest OPTION, and inside a shrink-to-fit row (the
     conversation head's model pair was `display: inline-flex`) `max-width: 100%` has nothing

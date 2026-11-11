@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.531.3] — 2026-11-11
+
+### Fixed
+- **The answer field's placeholder is no longer clipped on a phone** (R3334, found by
+  `scheduler-builder` by RENDERING at 390px — no attribute test can see it). `answerform.js`
+  builds its field with `rows="1"`, and at that width the hint wraps to two lines: **measured,
+  the field rendered 39px tall while its placeholder needed 64px**, so the reader saw
+  *"your answer… (Ctrl+Enter"* and the word *"sends)"* was cut off. The field is now two lines
+  tall inside the existing ≤860px block (`.row > .answer-input { min-height: 4.2em }`) — CSS
+  rather than JS, so the shared control is untouched and F238's full-width mobile rule stays
+  intact. Two rows rather than auto-grow: a height that changes as you type moves the buttons
+  under your thumb.
+  Not cosmetic in the way a cut label usually is — the placeholder exists to teach the send
+  chord at the moment of use, and the chord changed today. The browser test measures the
+  rendered box against its own `scrollHeight` (proved red-first at 39 vs 64px), so a font
+  change that re-breaks the clip cannot pass it; a fixed pixel expectation could.
+  **The surface is the RUN view's live-question card**, which takes the default placeholder —
+  the Decisions page passes its own short hint with `control: "input"` and does not clip, which
+  the test now says out loud so nobody re-aims it there.
+
 ## [0.531.2] — 2026-11-11
 
 ### Fixed

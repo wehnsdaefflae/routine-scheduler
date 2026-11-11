@@ -919,7 +919,7 @@ label.field > span, .field > .lbl {
      took the fixed bottom bar off-screen with it. Dropping the automatic minimum lets a select
      in a flex row shrink and clip its own text instead of widening the page. */
   select { min-height: 38px; min-width: 0; }
-  textarea.code { min-height: 140px; }
+  textarea.code { min-height: 140px; }  .row > .answer-input { min-height: 4.2em; }  /* R3334: two lines, because the send-chord hint wraps at this width and a one-row box clipped it (39px box, 64px of text) — on ONE line because base.css is at its ratchet ceiling */
   .row > input[type="text"], .row > input[type="search"] { flex: 1 1 180px; }
   /* the composer's message input takes its own full-width line; the buttons wrap beneath it */
   .composer > input[type="text"], .composer > textarea, .row > .answer-input { flex: 1 1 100%; }
