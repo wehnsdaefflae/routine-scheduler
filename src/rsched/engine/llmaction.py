@@ -25,9 +25,19 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
     schema = action.get("response_schema")
     purpose = ("llm · " + str(action.get("say") or "sub-call"))[:80]
     # The optional `model` field: a ROLE (main/tool_call; uncensored → the routine's
-    # uncensored model) or a CATALOG model NAME (`list_models` shows them) — default
-    # tool_call. An unknown value is a teaching error naming the catalog (D81 extended,
-    # 2026-08-22).
+    # uncensored model), a CATALOG model NAME (`list_models` shows them), or
+    # `<endpoint>/<model id>` for a model the catalog does not carry on an endpoint the
+    # operator configured — default tool_call. An unknown value is a teaching error naming
+    # the catalog (D81 extended, 2026-08-22).
+    #
+    # F868: the slash is the whole syntax, because no role and no catalog name contains one
+    # and the run's own prompt already names its model that way ("Model: otari/claude-opus-5",
+    # engine/capabilities.py). The ENDPOINT stays the operator's — a bare URL would make the
+    # destination a model's choice, and this action runs in the engine, not in the util jail —
+    # while the MODEL ID becomes free, which is the half the catalog made impossible. That is
+    # what lets a run send private work to a local model (`folder-reorg` b10/b14: image-only
+    # scans that must never reach a cloud model) through the engine's own channel instead of
+    # through a util hardcoding a provider.
     role = str(action.get("model") or "tool_call")
     try:
         if role == "uncensored":
@@ -42,12 +52,16 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
             endpoint, ref = ctx.registry.for_model(role, ctx.routine.models, ctx.routine.efforts)
         elif role in ctx.server.models:
             endpoint, ref = ctx.registry.for_name(role)
+        elif "/" in role:
+            endpoint, ref = ctx.registry.for_endpoint(role)
         else:
             avail = ", ".join(sorted(ctx.server.models)) or "none configured"
+            eps = ", ".join(sorted(ctx.server.endpoints)) or "none configured"
             return {"kind": "llm",
-                    "error": f"model {role!r} is neither a role (main/tool_call/uncensored) "
-                             f"nor a catalog model name. Catalog models: {avail}. The "
-                             "list_models action shows each one's endpoint and attributes."}
+                    "error": f"model {role!r} is neither a role (main/tool_call/uncensored), "
+                             f"a catalog model name, nor '<endpoint>/<model id>'. Catalog "
+                             f"models: {avail}. Configured endpoints: {eps}. The list_models "
+                             "action shows each model's endpoint and attributes."}
         completion = endpoint.complete(messages, model=ref.model, schema=schema,
                                        effort=ref.effort, temperature=ref.temperature,
                                        max_tokens=ref.max_tokens, purpose=purpose,
@@ -158,10 +172,21 @@ def do_list_models(ctx: RunContext) -> dict:
             models.append(row)
         except EndpointError as exc:
             models.append({"name": name, "error": str(exc)})
+    # F868: the configured ENDPOINTS, because `llm`'s `<endpoint>/<model id>` route is
+    # unusable without knowing their names — and the catalog alone does not reveal them (an
+    # endpoint serving no catalog model is invisible in `models` above, which on this
+    # instance is exactly the local-inference case the route exists for). Non-secret:
+    # base_url and whether a key resolved, never the key.
+    endpoints = [{"name": name, "kind": cfg.kind, "base_url": cfg.base_url}
+                 for name, cfg in sorted((ctx.server.endpoints or {}).items())]
     out: dict = {"kind": "list_models", "roles": roles, "models": models,
+                 "endpoints": endpoints,
                  "note": ("a spawn/subtask/llm action's `model` field takes one of these "
                           "catalog names, or a role (main/tool_call/uncensored/supervisor); "
-                          "children default to main, llm to tool_call")}
+                          "children default to main, llm to tool_call. An `llm` call may also "
+                          "name '<endpoint>/<model id>' from `endpoints` to reach a model the "
+                          "catalog does not carry (llm only — a child run's model must be a "
+                          "catalog name)")}
     if ctx.server.decision_models:
         # The DECISION catalog is a different contract (endpoints/decisions.py) — listed apart
         # so a name from it is never passed to llm/spawn, nor a chat model's to decide.

@@ -127,29 +127,29 @@ def test_ssh_agent_vars_always_stripped(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------- executor injection ----
+def _ctx(bound: list[str], catalog: dict) -> SimpleNamespace:
+    """ONE stand-in for all three injection reads, carrying what a real config always has — F868
+    put `models:`/`endpoints:` here, and a `getattr` guard would mask a config-shape fault."""
+    return SimpleNamespace(
+        routine=SimpleNamespace(slug="mach", machines=bound, connections={}, models={}),
+        granted_now=set(), grant_args={},
+        server=SimpleNamespace(machines=catalog, endpoints={}, models={}, routine_token="",
+                               system_model="", system_tool_call_model=""))
+
+
 def test_machine_env_resolves_bindings(monkeypatch):
     monkeypatch.setattr(secrets, "load_secrets", lambda: {"GPU_KEY": "PEM"})
-    ctx = SimpleNamespace(routine=SimpleNamespace(slug="mach", machines=["gpu"]),
-                          granted_now=set(), grant_args={},
-                          server=SimpleNamespace(machines={"gpu": _mac("gpu", key_var="GPU_KEY")}))
-    env = _machine_env(ctx)
+    env = _machine_env(_ctx(["gpu"], {"gpu": _mac("gpu", key_var="GPU_KEY")}))
     assert json.loads(env[machines.MACHINE_KEYS_VAR]) == {"gpu": "PEM"}
 
 
 def test_machine_env_no_bindings():
-    ctx = SimpleNamespace(routine=SimpleNamespace(slug="mach", machines=[]),
-                          granted_now=set(), grant_args={},
-                          server=SimpleNamespace(machines={}))
-    assert _machine_env(ctx) == {}
+    assert _machine_env(_ctx([], {})) == {}
 
 
 def test_extra_secrets_merges_connections_and_machines(monkeypatch):
     monkeypatch.setattr(secrets, "load_secrets", lambda: {"GPU_KEY": "PEM"})
-    ctx = SimpleNamespace(routine=SimpleNamespace(slug="mach", connections={}, machines=["gpu"]),
-                          granted_now=set(), grant_args={},
-                          server=SimpleNamespace(machines={"gpu": _mac("gpu", key_var="GPU_KEY")},
-                                                 routine_token=""))
-    env = _extra_secrets(ctx)
+    env = _extra_secrets(_ctx(["gpu"], {"gpu": _mac("gpu", key_var="GPU_KEY")}))
     assert machines.MACHINE_KEYS_VAR in env
 
 

@@ -376,9 +376,16 @@ resolved over the whole call tree against the ROOT call's verb. `STRIP_VARS` (th
 SSH-agent vars `SSH_AUTH_SOCK` / `SSH_AGENT_PID` — so a forwarded agent can't route around
 the per-routine machine binding) never pass, declared or not. The engine also injects a few
 per-run secrets through this SAME gate — the routine's OWN scoped secrets (D103), its OAuth
-connection tokens (`<PROVIDER>_ACCESS_TOKEN`) and its bound remote machines
-(`RSCHED_MACHINES` / `RSCHED_MACHINE_KEYS`) — each reaching a util only if the util declares
-the var. This layer needs no kernel support and applies even with `sandbox: off`. WHICH
+connection tokens (`<PROVIDER>_ACCESS_TOKEN`), its bound remote machines
+(`RSCHED_MACHINES` / `RSCHED_MACHINE_KEYS`) and its inference endpoints (`RSCHED_LLM` /
+`RSCHED_LLM_KEYS`, F868 — endpoint metadata plus the role map, and the api keys for the
+endpoints this routine's own roles resolve to) — each reaching a util only if the util declares
+the var. The endpoint vars are not the thing `STRIP_VARS` forbids, and the difference is
+INHERITANCE: a stripped name is a provider's well-known one (`ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`) carrying whatever account the daemon happened to hold, invisible in the
+util's header; these are named for this engine, must be declared to arrive, and carry the
+endpoint the routine is configured to run on — so a util billing through them bills its own
+routine's account, which is what the strip list protects and could not express. This layer needs no kernel support and applies even with `sandbox: off`. WHICH
 CENTRAL store secrets a routine's calls may receive at all is the user's per-routine decision
 (the four-state grant rows `secret:<NAME>` in routine.yaml `grants:` — an undecided REQUIRED
 name files a blocking access request on first use; docs/rules-permissions.md). A request for a

@@ -109,6 +109,52 @@ class EndpointRegistry:
                        name=name)
         return self.get(mc.endpoint), ref
 
+    def for_endpoint(self, spec: str,
+                     effort: str | None = None) -> tuple[InstrumentedEndpoint, ModelRef]:
+        """`<endpoint name>/<provider model id>` → that endpoint's adapter + a ModelRef for an
+        id the CATALOG does not carry. The arbitrary-endpoint path (F868).
+
+        Why the endpoint is still named from config and never as a URL: the destination set is
+        the operator's, and the `llm` action runs in the engine rather than in the util jail, so
+        a bare URL would be a network destination chosen by a model with nothing to review it.
+        What the catalog made impossible was the other half — naming a model id the operator has
+        not pre-registered — and that is what opens here. The spec reads exactly as the run's own
+        prompt already names its model (`Model: otari/claude-opus-5`, engine/capabilities.py),
+        so there is one vocabulary and nothing new to teach.
+
+        The per-model attributes a catalog entry would carry come from the endpoint's own
+        defaults, with the provider's published window/output cap in between (`limits`), which is
+        the same precedence `resolve` applies minus the per-model tier. `name` stays EMPTY: there
+        is no catalog entry, and inventing one would make an unregistered id indistinguishable
+        from a registered one everywhere a ref is reported.
+        """
+        ep_name, _, model_id = spec.partition("/")
+        ep_cfg = self.server.endpoints.get(ep_name)
+        if ep_cfg is None:
+            # A decision endpoint is a DIFFERENT wire (one typed answer, no free text), so
+            # naming one here is a wrong-action mistake and is answered as one rather than as
+            # a missing endpoint.
+            if ep_name in (self.server.decision_endpoints or {}):
+                raise EndpointError(
+                    f"{ep_name!r} is a DECISION endpoint, which answers typed questions "
+                    "rather than completions — put the question to it with the `decide` "
+                    "action instead.")
+            avail = ", ".join(sorted(self.server.endpoints)) or "none configured"
+            raise EndpointError(f"endpoint {ep_name!r} is not configured. Configured "
+                                f"endpoints: {avail}.")
+        if not model_id:
+            raise EndpointError(
+                f"{spec!r} names endpoint {ep_name!r} with no model id — write it as "
+                f"'{ep_name}/<model id the endpoint serves>'.")
+        found = limits.lookup(self.server.routines_home, ep_name, model_id) or {}
+        ref = ModelRef(endpoint=ep_name, model=model_id, effort=effort or None,
+                       multimodal=ep_cfg.kind in NATIVE_MM_KINDS,
+                       context_tokens=(limits.window_tokens(found) or ep_cfg.context_tokens),
+                       temperature=ep_cfg.temperature,
+                       max_tokens=(found.get("max_output_tokens") or ep_cfg.max_tokens
+                                   or DEFAULT_MODEL_MAX_TOKENS))
+        return self.get(ep_name), ref
+
     def resolve_chain(self, name: str,
                       effort: str | None = None) -> list[tuple[InstrumentedEndpoint, ModelRef]]:
         """The model plus its fallbacks TRANSITIVELY — breadth-first, in declaration order.

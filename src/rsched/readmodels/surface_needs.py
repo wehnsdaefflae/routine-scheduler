@@ -49,12 +49,16 @@ def _secret_nodes(cfg: RoutineConfig, needed: dict[str, list[str]],
     vars the engine injects from a binding, plus a connection's `<PROVIDER>_ACCESS_TOKEN`. Their
     real dependency is the binding, which the expects: join already covers.
     """
+    from ..endpoints.routine_env import llm_env_vars
     from ..machines import machine_env_vars
 
     out = []
     # Names the ENGINE supplies per run, not the store: reporting them as missing would send
-    # the operator looking for a secret to add that nothing can add.
-    engine_injected = machine_env_vars() | {"RSCHED_ROUTINE", "RSCHED_API_TOKEN"}
+    # the operator looking for a secret to add that nothing can add. The endpoint vars (F868)
+    # are assembled from `endpoints:` and each endpoint's own key ladder, so they are the same
+    # kind of name as the machine vars — never a row the operator can satisfy.
+    engine_injected = (machine_env_vars() | llm_env_vars()
+                       | {"RSCHED_ROUTINE", "RSCHED_API_TOKEN"})
     grants = cfg.grants or {}
     for name in sorted(needed):
         if name in engine_injected or name.endswith("_ACCESS_TOKEN"):

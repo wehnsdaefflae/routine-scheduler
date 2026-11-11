@@ -2298,7 +2298,13 @@ every copy it left (`migrate_converse_goals` carries this release's `converse` r
   caller: a routine cannot forge its environment, so a util handed it can scope itself to the
   caller rather than to an argument (the `ftp` util resolves `{routine}` in a source's base
   directory with it, which is how one shared credential serves many routines with nothing
-  configured per routine)
+  configured per routine). F868 adds the other axis: `RSCHED_LLM` (the configured endpoints
+  plus which one each model ROLE resolves to) and `RSCHED_LLM_KEYS` ({endpoint: api key} for
+  the role endpoints only) are WHERE this routine's inference goes — `endpoints/routine_env.py`
+  assembles both from `endpoints:` and each endpoint's own key ladder, `llm_env_vars()` keeps
+  them out of the Settings "needed secrets" list, and a key for any OTHER endpoint stays behind
+  its own `secret:<NAME>` grant row. Before it, every LLM-calling util hardcoded a provider,
+  so a routine configured for a local model still sent its prompt to a cloud one
   (`engine/exec_env._extra_secrets`, overriding any secrets-store value for that reserved
   name — UNCONDITIONALLY, because a guard written `if routine_token:` fails OPEN on a blank
   value and then hands the util whatever the central store holds under that name, which on this

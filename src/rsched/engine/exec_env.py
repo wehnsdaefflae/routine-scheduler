@@ -79,10 +79,22 @@ def _routine_secrets(ctx: RunContext) -> dict[str, str]:
     except ValueError:
         return {}     # a dir-path routine whose name is not a slug has no scoped store
 
+def _llm_env(ctx: RunContext) -> dict[str, str]:
+    """The routine's EFFECTIVE inference endpoints resolved to RSCHED_LLM (endpoint metadata +
+    the role map) + RSCHED_LLM_KEYS (api keys for the role endpoints only), passed to run_util
+    as extra_secrets. Only a util that DECLARES them receives them — which is what makes
+    shipping a key through this channel safe at all. See endpoints/routine_env.py for the whole
+    design, including why keys cover the role endpoints and not every configured one.
+    """
+    from ..endpoints.routine_env import llm_env_for_routine
+
+    return llm_env_for_routine(ctx.routine.slug, ctx.routine.models or {}, ctx.server)
+
 def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     """Engine-resolved, per-run secrets a util may receive (still under the declared-only gate):
-    the routine's OWN scoped secrets, OAuth connection access tokens, and bound remote-machine
-    details/keys. The var names are disjoint, so a plain merge is safe.
+    the routine's OWN scoped secrets, OAuth connection access tokens, bound remote-machine
+    details/keys, and the routine's own inference endpoints. The var names are disjoint, so a
+    plain merge is safe.
 
     ROUTINE-SCOPED SECRETS (D103): `secrets.d/<slug>.env` rides this channel because
     extra_secrets WIN the _child_env merge — so a routine's own `SFTP_USER` shadows a central
@@ -95,6 +107,18 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     base directory with it, which is what lets one shared credential serve many routines with
     nothing configured per routine. Injected for every run and, like every other name here,
     delivered only to a util that DECLARES it.
+
+    RSCHED_LLM / RSCHED_LLM_KEYS (F868): WHERE this routine's inference goes, which is the
+    other thing a util cannot be told by its own caller. Every LLM-calling util hardcoded a
+    provider, because nothing carried the routine's effective endpoint — so a routine
+    configured for a LOCAL model still sent its prompt to a cloud one, and for a run reading
+    private files that is a privacy breach rather than a cost. Exactly the RSCHED_ROUTINE
+    argument, about the destination instead of the caller: engine knowledge, unforgeable by
+    the caller, useless to a util that does not ask for it. The keys ride the same channel
+    because the declared-only gate is what makes that safe, and they cover the routine's ROLE
+    endpoints only — a key for any other endpoint stays behind its own `secret:<NAME>` grant
+    row, which is the operator's decision and not a run's. endpoints/routine_env.py holds the
+    whole design.
 
     RSCHED_API_TOKEN (R94, operator decision 2026-08-05: ENFORCE): the reserved name a
     util declares to talk to the daemon API resolves to the server's ROUTINE token — the
@@ -110,7 +134,8 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     engine reads `routine_token` here, it never writes it (bootstrap.ensure_config
     generates it).
     """
-    out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx)}
+    out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx),
+           **_llm_env(ctx)}
     out["RSCHED_API_TOKEN"] = str(ctx.server.routine_token or "")
     out["RSCHED_ROUTINE"] = ctx.routine.slug
     return out

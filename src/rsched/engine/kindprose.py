@@ -120,9 +120,9 @@ say what evidence made the current wording wrong. A rule states a principle and 
 no routine and no file — mechanism belongs in a recipe or a conduct doc. The library linter \
 gates the write and your approval level decides whether the user confirms it. There is no \
 delete: a rule that should go is a report or a deferred ask_user naming it."""),
-    (("llm",), """- llm: one scoped, stateless LLM subcall (default: this routine's tool-call \
-model; `model` overrides per call — a role or a catalog model name, `list_models` shows them). \
-It sees ONLY \
+    (("llm",), """- llm: one scoped, stateless subcall (default: this routine's tool-call \
+model; `model` takes a role, a catalog name, or `<endpoint>/<model id>` \
+for an off-catalog model). It sees ONLY \
 your prompt/system — include everything it needs; set response_schema for structured replies."""),
     (("decide",), """- decide: put a typed question to a DECISION model and get probabilities \
 back, never prose — `question` + `options` for a choice (each "value: what it means"; the \
