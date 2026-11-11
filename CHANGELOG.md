@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.532.0] — 2026-11-11
+
+### Changed
+- **A conversation over its prompt floor now STARTS, and the engine's first act is a hard
+  compaction that states what it dropped (D223/F539).** The operator's answer reverses D223's
+  own first one (a health event only, 0.479.0): `prompt_floor_over_window` had fired nine times
+  for a single conversation, climbing 1,063,175 → 1,138,237 tokens against a 1,000,000-token
+  window, with 1,333 turns on disk and no way to add to the thread. `engine/promptfloor.check`
+  — same call site in `boot`, before turn one — now elides the MIDDLE via
+  `compaction.maybe_compact` and trims oversized bodies via `clamp_to_cap`, then states the
+  loss through `enginenote.append`: the next turn's model reads it in the prompt, and the
+  conversation page and run transcript render it as an engine note. It compacts against the
+  catalog window minus output+schema and reserves 400 tokens for the statement, because
+  compacting to the exact ceiling and then appending the note put the prompt back over. A floor
+  no compaction can rescue records `fits: false`, says so once, and still starts the run — no
+  boot may fail here, and no refusal was reintroduced.
+- **Every report surface now READS the hook stream; `reports.jsonl` is its projection (D152
+  step 9, the campaign's "replace last" half).** `reports.read_reports` — the one seam ~20
+  modules read through — folds `.control/hooks.jsonl` (`hooks/reportread`); no caller changed.
+  What the step cost was the history: 8 rows filed on 2026-10-19, between the mirror and the
+  source, had hooks carrying no disposal, so six settled exchanges would have read as OPEN and
+  two folds would have been lost. `migrate_mirror_hooks` recomputes exactly those records
+  through the declared inverse, refusing to guess where an `(id, event)` key names two rows.
+  One read rule, so no reading can lose a report: the stream decides, and when the ledger names
+  a report the stream's fold does not, the ledger is served and the shortfall is filed — a
+  hand-written `reports.jsonl` keeps working. The two decisions moved onto the stream in steps
+  7-8 reverse direction with the read: the stream's answer is acted on, the projection is the
+  cross-check.
+
+### Added
+- `hook_stream_unreadable` — the report read fell back to `reports.jsonl` because the hook
+  stream holds no report rows (12 h cooldown: the read runs per request).
+
 ## [0.531.4] — 2026-11-11
 
 ### Fixed
