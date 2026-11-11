@@ -153,10 +153,10 @@ def boot(loop) -> None:
                                [m["text"] for m in prose if not m.get("report")],
                                allowed_kinds=loop.allowed_tools,
                                report_msgs=[m["text"] for m in prose if m.get("report")])
-    # what each section of the always-on prompt weighs — in chars for the run record
-    # (runrecord.quality), and in the WINDOW's own unit for the per-turn breakdown (D270)
-    ctx.prompt_chars, ctx.prompt_segments = ({n: len(t) for n, t in sections},
-                                             promptsegments.of_sections(sections))
+    # what each section of the always-on prompt weighs — chars for the run record
+    # (runrecord.quality), the WINDOW's own unit for the per-turn breakdown (D270) — and, since
+    # R3341, its TEXT once per leg beside the transcript so the bar is readable
+    ctx.prompt_chars, ctx.prompt_segments = promptsegments.note_sections(ctx, sections)
     system = join_sections(sections)
     if resuming:
         replayed, last_turn, records = history.replay_messages(events)

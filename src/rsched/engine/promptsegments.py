@@ -27,12 +27,19 @@ from __future__ import annotations
 
 import json
 
+from . import promptcapture
 from .compaction import estimate_input_tokens
 
 #: The message roles the prompt GROWS by, named as the breakdown reports them: what the model
 #: said, and what it was handed back. The system message is measured section by section
 #: instead (`of_sections`), so it is never counted here a second time.
-_GROWN = {"assistant": "history", "user": "observations"}
+#:
+#: PUBLIC because a second reader needs the same mapping and a second copy of it would be a
+#: second thing to keep true: `readmodels/promptsegtext.py` serves the TEXT of exactly these two
+#: segments (they are the message list, which is on disk) and refuses it for every always-on
+#: section (whose text is never stored). If this mapping and that reader disagreed, the view
+#: would offer a click the server answers with a refusal, or hide one it could honour.
+GROWN_SEGMENTS = {"assistant": "history", "user": "observations"}
 
 
 def of_sections(sections: list[tuple[str, str]]) -> dict[str, int]:
@@ -43,6 +50,25 @@ def of_sections(sections: list[tuple[str, str]]) -> dict[str, int]:
     second, hand-written segmentation of the same prompt could, and would be believed.
     """
     return {name: estimate_input_tokens([{"content": text}]) for name, text in sections}
+
+
+def note_sections(ctx, sections: list[tuple[str, str]]) -> tuple[dict[str, int], dict[str, int]]:
+    """Boot's one call over the composed sections: MEASURE them twice, and record their TEXT.
+
+    Returns `(chars, tokens)` — the run record's unit and the window's — and writes the section
+    texts once for this leg (`engine/promptcapture`, R3341, on the operator's authorization:
+    *"store the always-on section texts ONCE at boot in the run dir"*). All three readings come
+    from the SAME tuple list, so the text a reader opens and the token count the bar draws can
+    never describe different prompts.
+
+    It lives here rather than in `boot` because this module already owns "what the always-on
+    prompt is made of" — and because `boot.py` sits exactly at its size-ratchet ceiling, so one
+    call there is the whole budget. Nothing in the return value or the file reaches the prompt
+    path: `of_sections` reads, `promptcapture` writes a diagnostic, and the caller joins the
+    tuples it already had.
+    """
+    promptcapture.write(ctx.run_dir, sections)
+    return {name: len(text) for name, text in sections}, of_sections(sections)
 
 
 def schema_tokens(loop) -> int:
@@ -63,9 +89,9 @@ def measure(loop, sections: dict[str, int] | None = None) -> dict[str, int]:
     `loop.messages` as the completion just sent it. Returns a fresh dict; the caller decides
     where it is recorded, and nothing here touches the prompt.
     """
-    grown: dict[str, list[dict]] = {name: [] for name in _GROWN.values()}
+    grown: dict[str, list[dict]] = {name: [] for name in GROWN_SEGMENTS.values()}
     for msg in loop.messages:
-        segment = _GROWN.get(msg.get("role", ""))
+        segment = GROWN_SEGMENTS.get(msg.get("role", ""))
         if segment is not None:
             grown[segment].append(msg)
     sizes = dict(sections or {})
@@ -86,4 +112,4 @@ def note(loop) -> None:
         return
     sections = getattr(ctx, "prompt_segments", None) or {}
     ctx.prompt_segments = measure(loop, {k: v for k, v in sections.items()
-                                         if k not in _GROWN.values()})
+                                         if k not in GROWN_SEGMENTS.values()})

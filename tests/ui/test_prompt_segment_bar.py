@@ -117,3 +117,101 @@ def test_leaving_the_run_stops_the_bars_own_poll(ui, ui_page):
     ui_page.wait_for_timeout(4500)
     leaked = [u for u in after if ts in u]
     assert not leaked, f"the prompt-segment bar polled a run nobody is looking at: {leaked}"
+
+
+def _seed_transcript(run, events: list[dict]) -> None:
+    """A transcript the replay can rebuild — what the `history`/`observations` click serves."""
+    import json
+
+    (run / "transcript.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+
+def test_clicking_a_grown_segment_shows_what_was_sent(ui, ui_page):
+    """R3341, the operator's own words: "can we click on it to see the actual prompt?"
+
+    `history` is the message list, which IS on disk, so the click opens the real text — replayed
+    through the engine's own renderers — and the panel says it is a recording rather than
+    implying it. Asserts the opener is PRESENT before asserting what it opens.
+    """
+    ts = "20260907-140000"
+    run = _seed_with_segments(ui, ts, state="finished")
+    _seed_transcript(run, [
+        {"type": "assistant_action", "turn": 1,
+         "payload": {"say": "reading the plan", "kind": "read_file", "path": "state/plan.md"}},
+        {"type": "observation", "turn": 1,
+         "payload": {"kind": "read_file", "path": "state/plan.md", "content": "PLAN BODY HERE",
+                     "start_line": 1, "end_line": 1, "total_lines": 1}},
+    ])
+
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
+    opener = ui_page.locator('[data-prompt-segments] button[data-segment="history"]')
+    expect(opener).to_have_count(1)
+    opener.click()
+
+    panel = ui_page.locator(".modal-overlay .panel")
+    expect(panel).to_have_count(1)
+    expect(panel).to_contain_text("what was sent")
+    expect(panel).to_contain_text("replayed from this run's transcript")
+    row = panel.locator("button", has_text="turn 1")
+    expect(row).to_have_count(1)
+    row.click()
+    expect(panel.locator("pre.doc")).to_contain_text("reading the plan")
+
+
+def test_clicking_an_always_on_section_shows_the_text_captured_at_boot(ui, ui_page):
+    """His option B: the always-on half of the bar is readable too, because the section texts
+    are recorded once at boot. The panel says WHICH prompt it is holding.
+    """
+    from rsched.engine import promptcapture
+
+    ts = "20260907-150000"
+    run = _seed_with_segments(ui, ts, state="finished")
+    promptcapture.write(run, [("harness", "THE HARNESS CONTRACT, VERBATIM"),
+                              ("capabilities", "what this run can use")])
+
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
+    opener = ui_page.locator('[data-prompt-segments] button[data-segment="harness"]')
+    expect(opener).to_have_count(1)
+    opener.click()
+
+    panel = ui_page.locator(".modal-overlay .panel")
+    expect(panel).to_have_count(1)
+    expect(panel).to_contain_text("this leg's composed section")
+    panel.locator("button", has_text="turn 0").click()
+    expect(panel.locator("pre.doc")).to_contain_text("THE HARNESS CONTRACT, VERBATIM")
+
+
+def test_a_section_with_no_capture_says_the_text_was_never_stored(ui, ui_page):
+    """Every run recorded before the capture shipped. The refusal is the feature here: a text
+    presented as the prompt that is not the prompt is worse than no text.
+    """
+    ts = "20260907-160000"
+    _seed_with_segments(ui, ts, state="finished")
+
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
+    ui_page.locator('[data-prompt-segments] button[data-segment="digest"]').click()
+    panel = ui_page.locator(".modal-overlay .panel")
+    expect(panel).to_have_count(1)
+    expect(panel).to_contain_text("never stored")
+    expect(panel.locator("pre.doc")).to_have_count(0)
+
+
+def test_leaving_the_run_closes_an_open_segment_panel(ui, ui_page):
+    """The panel lives on document.body, so the rail leaving the document does not remove it:
+    the bar's own stop() has to, or a reader who navigates away keeps a dialog about a run they
+    have left (tests/ui/test_view_teardown.py's rule, for a node outside the rail).
+    """
+    ts = "20260907-170000"
+    _seed_with_segments(ui, ts, state="finished")
+
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
+    ui_page.locator('[data-prompt-segments] button[data-segment="harness"]').click()
+    expect(ui_page.locator(".modal-overlay")).to_have_count(1)
+    ui_page.evaluate("location.hash = '#/help'")
+    ui_page.wait_for_selector("#view h1")
+    expect(ui_page.locator(".modal-overlay")).to_have_count(0)

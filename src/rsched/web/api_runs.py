@@ -182,6 +182,30 @@ def run_phases(request: Request, run_id: str) -> dict:
     return {"phases": phase_stats(run_dir)}
 
 
+@router.get("/runs/{run_id}/prompt-segment")
+def run_prompt_segment(request: Request, run_id: str, name: str, offset: Offset = 0,
+                       i: int = -1) -> dict:
+    """The TEXT behind one segment of the prompt-distribution bar — what a click on it opens.
+
+    Two segments have recorded text and the rest do not, which the payload says rather than
+    implies (`readmodels/promptsegtext`): `history` and `observations` ARE the message list and
+    are replayed from the transcript through the engine's own renderers, while every always-on
+    section answers "text not recorded — the prompt is measured, never stored". Re-composing one
+    here is not an option at any fidelity: the composing path drains a shared store and writes
+    transcript events, so a GET would mutate state on every tap.
+
+    `i` names ONE row and returns its whole text; without it the segment's rows come back
+    newest-first and paged, each with the turn the transcript stamped and a token figure that
+    sums to the total the bar draws.
+    """
+    from ..readmodels import promptsegtext
+
+    _, run_dir = _run_dir(request, run_id)
+    if i >= 0:
+        return promptsegtext.body(run_dir, name, i)
+    return promptsegtext.page(run_dir, name, offset=offset)
+
+
 @router.get("/runs/{run_id}/files")
 def run_files(request: Request, run_id: str) -> dict:
     """Which files the run read and wrote — per-path counts derived from the transcript

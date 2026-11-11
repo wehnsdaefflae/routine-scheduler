@@ -26,6 +26,7 @@
 // never the datum. The datum is the legend's token count and share.
 
 import { api } from "/static/api.js";
+import { openModal } from "/static/components/dialog.js";
 import { el, fmtNum, svgEl } from "/static/util.js";
 
 const COLORS = ["var(--series-1)", "var(--series-2)", "var(--series-3)",
@@ -40,10 +41,78 @@ const POLL_MS = 3000;
 //: named apart in the legend because they are the ones a run can do something about.
 const GROWN = { history: "what this run said", observations: "what it was handed back" };
 
+/** Open ONE segment's text — what a click on a rect or a legend row does (R3341).
+ *
+ * Two segments have recorded text and the rest do not, and the modal says which it is holding
+ * rather than implying it: `history` and `observations` ARE the message list and are replayed
+ * from the transcript through the engine's own renderers, while every always-on section answers
+ * "text not recorded — the prompt is measured, never stored". The server decides that, not this
+ * module (readmodels/promptsegtext), so the view cannot offer a click it would refuse.
+ *
+ * Rows first, bodies on demand: `history` and `observations` run to hundreds of thousands of
+ * tokens on a long run, and this console is read on a phone. Each row carries the turn the
+ * transcript stamped and a token figure that SUMS to the segment total the bar draws, so the
+ * view is auditable against the bar rather than merely adjacent to it.
+ *
+ * Returns the modal's close(), which the caller keeps so a rail teardown ends it too.
+ */
+async function openSegment(runId, name, anchorNode) {
+  const head = el("div", {}, el("b", {}, name));
+  const body = el("div", { class: "faint small" }, "loading\u2026");
+  const close = el("button", { class: "btn" }, "close");
+  const panel = el("div", { class: "panel", style: "max-width:46rem" }, head, body,
+    el("div", { class: "row mt", style: "justify-content:flex-end" }, close));
+  // `openModal` puts the overlay on document.body, so the rail leaving the document does NOT
+  // remove it — and this module's stop() is not a reliable hook either: views/run.js is at its
+  // size-ratchet ceiling and has no room to call it (this file's own header says so). So the
+  // panel watches the SAME liveness signal every poller here uses, its anchor's connectivity,
+  // and dismisses itself when the bar it belongs to is gone. Measured: without this, a reader
+  // who navigated to another page kept a dialog about a run they had left — the browser test
+  // caught it, and the view's DOM showed the panel still open on #/help.
+  const WATCH_MS = 400;
+  const watch = setInterval(() => {
+    if (!anchorNode || !anchorNode.isConnected) dismiss();
+  }, WATCH_MS);
+  const closeModal = openModal(panel, { label: head, focus: close,
+                                        onCancel: () => dismiss() });
+  function dismiss() { clearInterval(watch); closeModal(); }
+  close.onclick = () => dismiss();
+  let page;
+  try { page = await api(`/api/runs/${runId}/prompt-segment?name=${encodeURIComponent(name)}`); }
+  catch { body.replaceChildren(el("div", { class: "faint small" }, "could not be read")); return dismiss; }
+  const note = el("div", { class: "faint small" }, page.note || "");
+  if (!page.recorded) { body.replaceChildren(note); return dismiss; }
+  const rows = el("div", {});
+  (page.rows || []).forEach((r) => {
+    const open = el("button", { class: "btn" },
+      `turn ${r.turn} · ${fmtNum(r.tokens)} tokens`);
+    const text = el("pre", { class: "doc", hidden: true });
+    open.onclick = async () => {
+      if (!text.hidden) { text.hidden = true; return; }
+      if (!text.textContent) {
+        try {
+          const one = await api(`/api/runs/${runId}/prompt-segment`
+                                + `?name=${encodeURIComponent(name)}&i=${r.i}`);
+          text.textContent = one.text || "";
+        } catch { text.textContent = "could not be read"; }
+      }
+      text.hidden = false;
+    };
+    rows.append(el("div", { class: "mt" }, open, el("div", { class: "faint small" }, r.preview),
+                   text));
+  });
+  body.replaceChildren(note,
+    el("div", { class: "faint small mt" },
+      `${page.total} messages · ${fmtNum(page.tokens)} estimated tokens, newest first`),
+    rows);
+  return dismiss;
+}
+
+
 /** The bar plus its legend, or null when there is nothing measured to show. Not exported: it
  * is this module's own drawing, and an export no other module imports is a symbol the codemap
  * reports as rot. The browser test reads the rendered DOM, which is the claim that matters. */
-function segmentBar(segments) {
+function segmentBar(segments, onPick) {
   const rows = Object.entries(segments || {})
     .map(([name, tokens]) => [name, Number(tokens) || 0])
     .filter(([, tokens]) => tokens > 0);
@@ -69,9 +138,16 @@ function segmentBar(segments) {
                                  height: String(BAR_H), fill: color },
                        `${name}${what}: ${fmtNum(tokens)} tokens · ${pct}%`));
     x += share;
+    // THE CLICK the operator asked for lives on the legend row, not on the rect: a sliver under
+    // half a percent has no rect at all (above), and a 0.5%-wide rect is not a target a thumb
+    // can hit. A `btn` carries it, so there is no new class to style and the row is focusable
+    // and keyboard-operable for free.
     legend.append(el("div", {},
       el("span", { style: `color:${color}`, "aria-hidden": "true" }, "\u25a0 "),
-      `${name} · ${fmtNum(tokens)} · ${pct}%`));
+      onPick
+        ? el("button", { class: "btn", "data-segment": name, onclick: () => onPick(name) },
+             `${name} · ${fmtNum(tokens)} · ${pct}%`)
+        : `${name} · ${fmtNum(tokens)} · ${pct}%`));
   });
   return el("div", { "data-prompt-segments": String(rows.length) },
     svg,
@@ -103,6 +179,11 @@ export function mountPromptSegments(rail, { runId, isLive, host }) {
   let stopped = false;
   let timer = null;
   let added = false;
+  // The open segment modal's dismiss, if one is open. It lives on document.body (openModal's
+  // overlay does), so it is NOT torn down by the rail leaving the document — `stop()` has to
+  // dismiss it, or a reader who navigates away keeps a dialog about a run they have left
+  // (tests/ui/test_view_teardown.py's rule, applied to a node outside the rail).
+  let closeOpen = () => {};
 
   async function refresh() {
     let detail;
@@ -114,7 +195,10 @@ export function mountPromptSegments(rail, { runId, isLive, host }) {
     try { detail = await api(`/api/runs/${runId}`); }
     catch { return; }                  // transient: keep the last bar rather than blanking it
     if (stopped || !body.isConnected) return;
-    const bar = segmentBar(detail.prompt_segments);
+    const bar = segmentBar(detail.prompt_segments, async (name) => {
+      closeOpen();                     // one segment at a time; a second click replaces the first
+      closeOpen = await openSegment(runId, name, body) || closeOpen;
+    });
     if (!bar) return;                  // nothing measured yet — and so still no caption
     body.replaceChildren(bar);
     if (!added) { rail.add("prompt", body); added = true; }
@@ -132,5 +216,10 @@ export function mountPromptSegments(rail, { runId, isLive, host }) {
   }
 
   refresh().then(poll);
-  return { stop() { stopped = true; if (timer) clearTimeout(timer); timer = null; } };
+  return { stop() {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    timer = null;
+    closeOpen();
+  } };
 }

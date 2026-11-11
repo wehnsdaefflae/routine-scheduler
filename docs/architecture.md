@@ -235,7 +235,14 @@ the limits (single-writer status.json preserved).
   cannot disagree with what `join_sections` actually sends. Written to status.json as
   `prompt_segments`, served by `GET /api/runs/<id>` and drawn as the run rail's stacked `prompt`
   bar (`static/components/promptsegbar.js`, lazily added so a run measured before D270 gains no
-  caption); the Stats half of the order is not built. **Diagnostic only — it never enters the
+  caption); the Stats half of the order is not built. **A click on a segment opens its TEXT**
+  (R3341, `readmodels/promptsegtext.py` behind `GET /api/runs/<id>/prompt-segment`), and the
+  answer says which of three things it is holding: the two GROWN segments are REPLAYED from the
+  transcript through the engine's own renderers, an always-on section is the leg's COMPOSED text
+  captured once at boot (`engine/promptcapture.py`, on the operator's authorization — the prompt
+  text is persisted nowhere else, and re-composing a section at read time would drain a shared
+  store and write transcript events on every tap), and a run booted before that capture existed
+  says its text was never stored. **Still diagnostic only — none of it enters the
   prompt**,
   because the composed prompt is a caching contract and a mutated byte invalidates the
   provider's cache for the rest of the run (`tests/test_prompt_segments.py` holds the
