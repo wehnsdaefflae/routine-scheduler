@@ -49,10 +49,20 @@ PROTECTED = "state/"
 
 @dataclass
 class Plan:
-    """What an undo of one run would do. `ok` is False when it cannot or need not run."""
+    """What an undo of one run would do. `ok` is False when it cannot or need not run.
+
+    `commits` has NO DEFAULT on purpose, and the reason is a repo policy rather than a design
+    preference: `tests/test_double_conformance.py` refuses a `SimpleNamespace` stand-in for a
+    dataclass whose required fields the namespace already supplies (F766 — a hand-built surface
+    silently lacks the field production adds tomorrow). With `run_id` as the ONLY required
+    field, this class made every pre-existing `SimpleNamespace(run_id=…)` in the suite read as a
+    stand-in FOR IT — five of them, in test files with nothing to do with undoing a run. A
+    second required field removes the collision, and asking every caller to say which commits it
+    is talking about is no loss: a plan with no commit list is not a plan.
+    """
 
     run_id: str
-    commits: list[str] = field(default_factory=list)      # newest first, the run's own
+    commits: list[str]                                    # newest first, the run's own
     paths: list[str] = field(default_factory=list)        # what would be reverted
     protected: list[str] = field(default_factory=list)    # touched but NOT reverted (state/)
     blocked_by: list[dict] = field(default_factory=list)  # later commits on the same paths
@@ -112,7 +122,7 @@ def plan(routine_dir: Path, run_id: str) -> Plan:
     The run page reads this to decide whether to offer the control, so every "no" carries a
     sentence a person can act on rather than a disabled button with no reason.
     """
-    out = Plan(run_id=run_id)
+    out = Plan(run_id=run_id, commits=[])
     if not (Path(routine_dir) / ".git").is_dir():
         out.why = ("this routine's directory is not a git repo, so its runs are not versioned "
                    "— there is no commit to revert")
