@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.531.1] — 2026-11-11
+
+### Fixed
+- **An escalation dispatch no longer tells the supervisor the worker answered three questions
+  nobody asked it** (R3320/R3325, filed twice by `fau`). The rung's brief said the dispatch
+  carried "its own answers to 3 questions", and `worker_says` was `turn_records[-3:]`'s `say`
+  lines — a SUBSET of `build_dispatch`'s `says`, which already carries every line of the
+  interval. So the supervisor was shown one witness quoted twice and told it was two.
+  That matters because the ladder's whole value is the gap between the worker's account and
+  the engine's counts (`engine/oversight.py`: *"the party under suspicion must not be the only
+  witness"*), and this collapsed that cross-check **invisibly** — a rung comparing one source
+  against itself reports that it compared two. The dispatch still carries `worker_says`, now
+  described as what it is (the newest three lines again, for recency: the interval can be
+  dozens of lines and the newest intent is the one a verdict turns on), and
+  `worker_questions` is named as the RUNG's checklist to answer FROM the evidence. Two tests
+  pin it: that the prompt makes no answered-questions claim, and that every `worker_says` line
+  is also a `says` line — so the two-source story cannot be re-invented.
+
 ## [0.531.0] — 2026-11-11
 
 ### Changed

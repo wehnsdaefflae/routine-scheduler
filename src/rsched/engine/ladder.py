@@ -182,9 +182,11 @@ def _supervisor_prompt(dispatch: dict, *, rung: int) -> str:
         f"follows. You did not do this work and the run below cannot see you.\n\n"
         f"Judge the work on the DISPATCH alone: the run's goal, the `say` line of every action "
         f"it took in the interval, the action-kind histogram, the repetition signals, its "
-        f"Done-when lines and finish line, its budget meter, and its own answers to "
-        f"{len(oversight.WORKER_QUESTIONS)} questions. The worker's account and the engine's "
-        f"counts are both in there; where they disagree, the counts are the evidence.\n\n"
+        f"Done-when lines and finish line, its budget meter, and its newest lines again under "
+        f"`worker_says`. The {len(oversight.WORKER_QUESTIONS)} `worker_questions` are YOURS to "
+        f"answer FROM that evidence — the worker was never asked them and answered nothing. "
+        f"Its account and the engine's counts are both there; where they disagree, the counts "
+        f"are the evidence.\n\n"
         f"DISPATCH:\n```json\n{json.dumps(dispatch, ensure_ascii=False, indent=2)}\n```\n\n"
         f"Answer with ONE directive and nothing else — your finish summary IS the directive, as "
         f"a JSON object:\n"
@@ -204,13 +206,13 @@ def _supervisor_prompt(dispatch: dict, *, rung: int) -> str:
 
 
 def _worker_answers(loop) -> list[str]:
-    """The worker's half of the dispatch — the three questions only it can answer.
+    """The worker's THREE MOST RECENT `say` lines — its newest account, nothing more.
 
-    Read from what the run has already SAID rather than bought with a turn: the recent `say`
-    lines are the run's own account of what it is doing and why. A dedicated question turn
-    would be the fuller way to ask, and it is also a turn the ladder spends on every rung of
-    every run; the questions are named in the dispatch so a supervisor always knows which half
-    is the worker SPEAKING and which half is the engine COUNTING.
+    These are not answers: nobody asked the worker anything (R3320/R3325, `fau` — the dispatch
+    once presented this tail as its replies to `WORKER_QUESTIONS`, which made one witness
+    quoted twice look like two, `build_dispatch`'s `says` already carrying the whole interval).
+    What it is for is RECENCY: the newest intent is the one a verdict turns on, and
+    `WORKER_QUESTIONS` is the RUNG's checklist, answered from the evidence.
     """
     says = [str(r.get("say") or "") for r in getattr(loop, "turn_records", [])[-3:]]
     return [s for s in says if s]
@@ -260,9 +262,7 @@ def escalate(loop, reason: str, settings: dict) -> None:
     dispatch = oversight.build_dispatch(
         _transcript_path(ctx), goal=laddergoal.goal(loop), since_turn=since, turn=ctx.turn,
         stopping=laddergoal.stopping(loop), budget=_meter(ctx))
-    # The worker's own half, beside the engine's counts and never merged into them: the
-    # supervisor must always be able to tell which lines the run SAID from what the engine
-    # COUNTED, because the discrepancy between the two is the finding.
+    # The newest three say lines, beside the counts and never merged into them.
     dispatch["worker_says"] = _worker_answers(loop)
     # The interval is closed before the rung runs, so a rung that fails cannot make the next
     # one re-judge the same turns — two rungs judging one interval is how a ladder becomes m
