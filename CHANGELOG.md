@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.534.0] — 2026-11-11
+
+### Added
+- **"Undo this run" on the run page (⤺) — D269's second increment.** The first covered the
+  unversioned case in 0.530.0 (a conversation's per-reply artifact snapshots); this is the
+  versioned half, and a different mechanism for a reason: a routine's directory IS a git repo
+  autocommitted at every run end, so the material to undo is the run's own commit.
+  Three bounds, each load-bearing. It reverts the run's **deliverables and recipe and never
+  `state/`** — that is what the NEXT run reads, so reverting it would make the next run repeat
+  the work or act on a world that no longer exists. It is **REFUSED when a later commit touched
+  the same paths**, naming them, because a revert that silently drops someone else's later edit
+  is worse than no undo (these repos have several writers: the routine's runs,
+  `routine-improver`, you by hand) — and the check is per PATH, so an unrelated later commit is
+  not in the way. A **resumed run is several commits**, one per leg, and all of them go
+  newest-first; undoing one leg leaves a state nobody can reason about.
+  It REVERTS rather than rewrites: the run's work stays in the history, the undo is itself a
+  commit and itself undoable, and nothing already pushed needs a force-update. The control reads
+  its plan BEFORE offering itself, so a refusal arrives as the server's own sentence and the
+  confirmation names the actual files, the commit count and the `state/` files it leaves alone.
+  New `engine/rundo.py` + `web/api_run_undo.py`; 11 unit tests over a real git repo.
+
 ## [0.533.0] — 2026-11-11
 
 ### Added

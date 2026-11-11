@@ -135,7 +135,8 @@ def test_undo_shows_the_servers_own_refusal_instead_of_a_grey_button(ui, ui_page
     undo = ui_page.get_by_role("button", name="⤺ undo")
     expect(undo).to_be_visible()
     undo.click()
-    expect(ui_page.locator(".toast")).to_contain_text("a later commit has touched the same files")
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text(
+        "a later commit has touched the same files")
     expect(ui_page.locator(".modal-overlay")).to_have_count(0)   # nothing was asked to confirm
     expect(undo).to_be_enabled()
 
