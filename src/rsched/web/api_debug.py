@@ -15,10 +15,17 @@ stack is the daemon's own business, and a run has no use for it):
   workers are borrowed), and the requests in flight. Taken while it is slow, this names the
   thread that holds the GIL and the handler that is waiting.
 - `GET /api/debug/slow` — the last `SLOW_KEEP` requests that exceeded `SLOW_REQUEST_S`,
-  recorded by the timing middleware in `app.py` (method, path, seconds, in-flight count at
-  the time). Survives nobody watching: the evidence is there the morning after.
+  recorded by the timing middleware in `slowsample.py` (method, path, seconds, in-flight count
+  at the time, and the `sample` file taken while it was still running). Survives nobody
+  watching: the evidence is there the morning after.
 
 Nothing here writes, spawns, or mutates state; the only cost is the frame walk itself.
+
+The threads view's reader is `thread_report`, a function rather than only a route, because the
+moment it answers "who held the pool" is while a request is STILL stalled — and at 18:07 on a
+Tuesday no operator is holding a browser open inside the stall. `web/slowsample.py` takes the
+same reading from its own off-loop thread when a request crosses the slow threshold (F871) and
+leaves it under `.control/slow-samples/`; one reader, so the two can never disagree.
 """
 
 from __future__ import annotations
@@ -66,23 +73,33 @@ def _limiter() -> dict:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
-@router.get("/debug/threads")
-async def debug_threads(request: Request) -> dict:
+def thread_report(state) -> dict:
     """Thread stacks plus the three numbers that tell "slow" from "QUEUED": the anyio limiter,
     the named I/O pool every `asyncio.to_thread` runs on (`workers` / `threads` / `queued`),
     and the live-stream gate (`live` / `ceiling` / `refused`) whose ceiling is derived from the
     pool size in `web/ioload.py`. A non-zero `io_pool.queued` while `streams.live` sits at its
     ceiling is this pool's contention, named.
+
+    Separated from the route because it has a SECOND caller that is not an operator with a
+    browser: `web/slowsample.py` takes this same reading from its own thread while a request is
+    still stalled (F871), which is the only moment it answers "who held the pool". One reader,
+    so the self-sample can never report a different set of numbers than the endpoint does —
+    and `getattr` throughout, because that caller reaches it from the request path, where
+    every piece of app state is handed stand-ins by design in tests.
     """
     from .ioload import pool_stats
 
-    state = request.app.state
     gate = getattr(state, "stream_gate", None)
     return {"in_flight": int(getattr(state, "in_flight", 0)),
             "threadpool": _limiter(),
             "io_pool": pool_stats(getattr(state, "io_pool", None)),
             "streams": gate.stats() if gate is not None else None,
             "threads": thread_stacks()}
+
+
+@router.get("/debug/threads")
+async def debug_threads(request: Request) -> dict:
+    return thread_report(request.app.state)
 
 
 @router.get("/debug/slow")

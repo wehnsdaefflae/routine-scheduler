@@ -2615,9 +2615,9 @@ lock that a kill from elsewhere leaves is found by whoever next writes there, as
 
 ## Observing the daemon
 
-The web process records its own slowness (0.332.0): a timing middleware in `web/app.py` counts
-requests in flight and keeps the last 50 that exceeded `SLOW_REQUEST_S` (2 s), each logged as a
-`slow request` WARNING, and `web/api_debug.py` serves `GET /api/debug/slow` (that ring) and
+The web process records its own slowness (0.332.0): a timing middleware in `web/slowsample.py`
+counts requests in flight and keeps the last 50 that exceeded `SLOW_REQUEST_S` (2 s), each logged
+as a `slow request` WARNING, and `web/api_debug.py` serves `GET /api/debug/slow` (that ring) and
 `GET /api/debug/threads` (every Python thread's stack, the in-flight count, and the two
 thread pools) to the operator's primary token only. The two pools are reported together
 because confusing them costs a diagnosis: anyio's limiter (40 tokens, its own default) runs
@@ -2627,7 +2627,24 @@ the run tails' polls, the machines' SSH, the endpoint probes, the `rmtree`s and 
 exactly `POOL_WORKERS` (32) threads (asyncio's own `min(32, cpu_count + 4)` would make the
 live-stream ceiling derived from it depend on the host). `io_pool.queued` is the number of
 those jobs waiting for a thread: non-zero means QUEUED, not slow. The live streams never reach the timing:
-they are WebSockets, which an http middleware does not see. The container also carries `SYS_PTRACE` so `py-spy dump` works inside it
+they are WebSockets, which an http middleware does not see.
+
+Since F871 the daemon does not wait to be asked. When a request crosses the threshold and is
+STILL in flight, `web/slowsample.py` takes that same reading — `api_debug.thread_report`, both
+pools and every stack — from its own OS thread and writes it under
+`<routines_home>/.control/slow-samples/`, with the existing durable `slow` row naming the file
+(`sample <name>` at the end of its `detail`, after the `in_flight` count both of its regex
+readers parse). A thread, not a loop callback: a blocked loop runs no callbacks, so anything
+scheduled on it would sample a pool that had already drained — the 2026-09-12 misreading with a
+timer attached. It is bounded because it fires on a process already in trouble: ONE snapshot per
+stall (`SAMPLE_COOLDOWN_S`, 30 s — the measured failure is shared, three pairs of unrelated
+endpoints finishing within 20 ms of each other, and every request waiting at that instant points
+at the one snapshot), a ring of `SAMPLE_KEEP` (20) files, `FRAMES_PER_THREAD` frames per thread,
+and one watcher thread for the app that retires after `IDLE_TICKS` quiet ticks. What it exists
+for is the case contention cannot explain: 33 of 79 server-side slow rows had `in_flight = 0`
+and still took a median 2,700 ms (R3363), and that count can go no further by construction —
+an http middleware never sees a websocket scope, so a 0 refutes HTTP queueing and says nothing
+about open streams, engine work or pytest workers. The container also carries `SYS_PTRACE` so `py-spy dump` works inside it
 (deploy/DOCKER.md). All of it exists because on 2026-09-12 every sync handler took 20-50 s for
 an hour with one worker thread at 70% CPU, and the daemon could name neither the thread nor the
 requests it had starved. It named them the same afternoon (0.334.0): the dashboard reloading five
