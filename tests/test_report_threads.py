@@ -345,6 +345,6 @@ def test_each_unusable_id_says_why_and_a_folded_one_names_the_live_row(home):
         "R4": "was retracted",
         "R404": "is unknown to the ledger"}
     rendered = format_observation({"kind": "report", "unusable": bad})
-    assert "R1 is already folded into R3" in rendered, "the live row, not the intermediate R2"
+    assert "R1 is folded into R3" in rendered, "the live row, not the intermediate R2"
     assert "R4 was retracted" in rendered and "R404 is unknown" in rendered
     assert "R2" not in rendered, "an intermediate nobody is working is never offered"

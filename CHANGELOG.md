@@ -15,6 +15,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.535.0] — 2026-11-12
+
+### The action contract stops being sent twice (goal b5, step 1 of the prompt cut)
+
+- **The ACTION SCHEMA section is now a compact FIELD INDEX wherever the wire enforces the
+  schema** — `engine/schemaindex.py`. `completion.next_action` already hands
+  `loop.action_schema` to `endpoint.complete(schema=…)`, and every transport enforces it with
+  its descriptions in front of the model (the anthropic adapter as a tool's `input_schema`,
+  `openai_compat` as a strict `response_format: json_schema`, Ollama as `format` — real
+  constrained decoding), so the contract was travelling twice in one request. Measured over 21
+  live run captures (`runs/<ts>/prompt-sections.json`, R3341's boot capture): the composed
+  prompt averages **108,666 chars (~31k tokens)** and the dumped schema section **28,189** of
+  them, 26,143 being description prose against ~7,800 of structure. What the prompt still owes
+  is the one thing the FLAT schema cannot encode — `ACTION_SCHEMA`'s only `required` entries are
+  `say` and `kind`, so nothing in it says which fields belong to which kind — and that index,
+  read off `actions.KIND_FIELDS` (the map `validate_action` itself uses), is **1,442 chars for
+  all 34 kinds**. End to end the section goes **35,246 → 1,855 chars**, on every turn of every
+  run. No description was reworded: description wording swings tool selection by more than 10×,
+  so a bulk rewrite is the one edit this change does not make.
+- **The full dump returns whenever nothing else states the contract.** `schemaindex` asks it of
+  the `main` chain's every member transitively, because `degrade` advances down a chain mid-turn
+  and the composed prompt can never be rewritten afterwards (it is a caching contract, and a
+  cold window of this size has cost over $100 on this instance). An endpoint at `schema_mode:
+  none` or `json_object` requests no grammar, so there the prompt stays the whole contract;
+  anything unreadable — no registry, an unresolvable role — falls back the same way. The answer
+  is cached on the run context, so the chain is resolved once per leg.
+- **…and when a turn is served with neither, the engine appends it.** `turntakeover` asks
+  `schemaindex.turn_needs_the_contract` at both of its branches and posts the full projection
+  ONCE as an ENGINE NOTE — for the uncensored takeover, for an unenforced endpoint, and for the
+  repeat-streak grammar shed (`loop._schema_off` / `_shed_schema_turns`). That matters here
+  rather than in theory: on this instance `uncensored` is served by `otari-openai-plain`, whose
+  `schema_mode` is `none` precisely because its model refuses `response_format` — so weighing
+  that chain at composition time would have answered "unenforced" for every routine and saved
+  nothing. Sent once per run, because an action definition must never be unloaded after a run
+  has used it.
+- A field the model still gets wrong is taught at the moment it is wrong — `schema_guard
+  .retry_message` with `schemamemo.field_help` already quotes the schema's own words for the
+  named field, inside the retry cycle that existed before this. The adherence baseline it is
+  measured against: 242 `wrong_turn_detected` rows over 2026-10-19..11-12, 219 schema-rejected,
+  **median turn 66** with only 13 at turn ≤ 1 — a long-context failure — and the top causes are
+  missing `say` (20) and invalid `kind` (18), the universal fields the index states explicitly.
+
+### A refused `supersedes` now says which row IS live (R3364, from `rules-review`)
+
+- `report_threads.supersedable` returns a clause per id instead of one shared reason — `is
+  unknown to the ledger` / `was retracted` / `is folded into R<n> — the live row; name that
+  instead` — and the folded clause follows the fold chain to its END, so a caller is never sent
+  to an intermediate nobody is working. `owner_of` was rebuilt on the same walk, so a row's
+  owner and the live row offered to a caller cannot disagree. The reporter named this the better
+  of its two options because a caller learns the precondition only at the moment of refusal.
+
 ## [0.534.5] — 2026-11-12
 
 ### Removed

@@ -31,7 +31,17 @@ def test_a_switch_armed_on_a_dead_run_serves_the_resumed_legs_first_turn(make_ro
                                                                          monkeypatch):
     # every catalog name resolves to the one scripted endpoint, so the model each COMPLETION
     # asked for is read where a turn resolves its chain (`turntakeover`), not from boot-time
-    # resolutions (CAPABILITIES, the prompt floor) that run before any turn boundary
+    # resolutions (CAPABILITIES, the prompt floor) that run before any turn boundary.
+    #
+    # One of those boot-time readers now resolves the MAIN CHAIN too (0.535.0,
+    # `engine/schemaindex.wire_enforces`: whether every chain member enforces the action schema
+    # on the wire decides whether the prompt carries the field index or the whole dump, and it
+    # must be known before the prompt is composed — the prompt is a caching contract and cannot
+    # be rewritten at the first turn). It is cached on the run context, so it is ONE extra
+    # resolution per leg and it happens before the switch is applied, which is why the leg's
+    # record opens with the pre-switch value. The assertion below therefore reads the
+    # COMPLETIONS — the tail — rather than every resolution, which is what this test's subject
+    # has always been.
     asked: list[str | None] = []
     chain = ScriptedRegistry.for_model_chain
     monkeypatch.setattr(ScriptedRegistry, "for_model_chain", lambda self, kind, models, efforts: (
@@ -51,7 +61,10 @@ def test_a_switch_armed_on_a_dead_run_serves_the_resumed_legs_first_turn(make_ro
     scripted([write_file("state/b.txt"), finish("ok", "resumed on the new model")])
     status, _ = run_routine(d, server, run_ts=TS, resume_from=TS)
     assert status == "ok"
-    assert asked == ["big", "big"], asked   # from the leg's FIRST completion on
+    # from the leg's FIRST completion on — the boot-time schema-surface resolution (see above)
+    # precedes the switch, so the completions are the tail and every one of them is the new model
+    assert asked[-2:] == ["big", "big"], asked
+    assert "big" not in asked[:-2], asked    # nothing after the switch still asks for the old
     assert any("model switched mid-run: main → big" in t for t in _injections(run_dir))
     applied = json.loads((run_dir / "control-applied.json").read_text())
     assert applied["switch_model"] == "2026-11-05T01:05:00"

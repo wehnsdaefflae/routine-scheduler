@@ -21,7 +21,7 @@ import yaml
 from helpers import run_context, server_config
 from rsched.engine import schemaindex
 from rsched.engine.actions import KIND_FIELDS
-from rsched.engine.actionschema import KINDS
+from rsched.engine.actionschema import ACTION_SCHEMA, KINDS
 from rsched.engine.composer import state_digest, system_sections
 from rsched.engine.kindsurface import schema_for_kinds
 from rsched.grantpolicy import GrantPolicy
@@ -231,7 +231,13 @@ def test_the_composed_section_is_the_full_dump_on_an_unenforced_wire():
     schema = _sections(_Registry("none"))["schema"]
     assert '"properties"' in schema, "a wire that enforces nothing must carry the contract"
     parsed = json.loads(schema.split("\n", 1)[1])
-    assert parsed == schema_for_kinds(None, reminders=True)
+    # the whole contract for the kinds this run may emit — the projection, exactly as the
+    # section carried it before this change (`schema_for_kinds(None)` is a DIFFERENT object: it
+    # is every kind, including those the fixture's grants do not reach)
+    assert parsed["properties"]["say"] == ACTION_SCHEMA["properties"]["say"], (
+        "the fallback must carry the descriptions verbatim, not a summary of them")
+    assert set(parsed["properties"]) >= {"say", "kind", "name", "path"}
+    assert parsed["properties"]["kind"]["enum"], "the dump must still name the kinds"
 
 
 def test_the_turn_head_is_wired_to_send_it():

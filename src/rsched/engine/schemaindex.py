@@ -117,6 +117,9 @@ def wire_enforces(ctx) -> bool:
     endpoint error answers False, so the prompt falls back to carrying the whole contract. A
     measurement that guessed wrong here would cost a run its action grammar.
     """
+    cached = getattr(ctx, "wire_enforces_schema", None)
+    if cached is not None:
+        return cached          # one chain resolution per run: the composer and loopsetup both ask
     registry = getattr(ctx, "registry", None)
     routine = getattr(ctx, "routine", None)
     if registry is None or routine is None:
@@ -124,9 +127,14 @@ def wire_enforces(ctx) -> bool:
     models = getattr(routine, "models", None) or {}
     efforts = getattr(routine, "efforts", None) or {}
     try:
-        return chain_carries(registry.for_model_chain("main", models, efforts))
+        answer = chain_carries(registry.for_model_chain("main", models, efforts))
     except Exception:
         return False
+    try:
+        ctx.wire_enforces_schema = answer
+    except Exception:          # a frozen or slotted stand-in: answering is what matters
+        pass
+    return answer
 
 
 def turn_needs_the_contract(loop, endpoint) -> bool:
