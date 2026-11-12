@@ -15,6 +15,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.534.4] — 2026-11-12
+
+### Added
+- **The post-boot checklist now asks whether the fleet's model roles can fail over at all** —
+  a fifth check, `model-chain-depth`, reusing `conformance.chain_problems` unchanged.
+  That answer has been computable offline and free since R2196, and its only caller was
+  `rsched validate` — a command somebody has to type. `daemon/postdeploy_watch`'s own docstring
+  says what that is worth: *a check that runs only when a human types a command is a check whose
+  silence means nothing.*
+  What the silence cost, measured today: `deficit-coach:20261111-230002` died with "the model
+  chain was exhausted after 0 rungs" on a provider connection refusal, and the previous
+  `self-audit` run died the same way hours earlier. `engine/failover.next_after` searches
+  strictly AFTER the failed member, so a chain of ONE dies at its first failure — and 12 of the
+  13 catalog models declare `fallbacks: []`. The retry budget is real but short (3 attempts,
+  exponential), so a provider 503 lasting seconds is enough to end a run.
+  **A NOTE, never a FAIL, and deliberately so:** `cli_validate` already reports these lines
+  without counting them, because whether a single-member or single-domain chain is acceptable is
+  a judgement about THIS instance's providers — a one-provider instance has no other domain to
+  reach — and a boot check that went red over it would be switched off inside a week. Making it
+  fatal stays the operator's call. What changes is that the verdict reaches
+  `.control/postdeploy.jsonl` at every boot, with the offending roles named per routine, where
+  it is read without anyone asking. Disabled routines are walked too: one enabled tomorrow runs
+  on the chain it has today.
+  An unreadable catalog reports itself as unread rather than as a pass — `chain_problems` skips
+  any role whose model is not in the catalog, so an instance whose catalog failed to load would
+  otherwise report zero problems, indistinguishable from a healthy fleet. (That is not
+  hypothetical: a sandboxed reader got "0 chain problems" out of a config it could not read
+  while building this.) `record_row` already stored verdicts by name, so the row shape is
+  unchanged; one test that hardcoded four verdicts now derives the count from `CHECK_NAMES`.
+  **Not verified live, and worth knowing:** a routine's sandbox cannot read `config.yaml`, so
+  the real catalog could not be walked from the run that built this — the check returned its own
+  "catalog could not be read" NOTE, which is the behaviour above working, not a reading. The
+  daemon process can read it; the first real verdict lands in the record at the next boot.
+
 ## [0.534.3] — 2026-11-12
 
 ### Fixed

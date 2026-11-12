@@ -43,6 +43,7 @@ from .postdeploy import (
     backup_freshness,
     build_skew,
     exit_code,
+    model_chain_depth,
     record_row,
     served_identity,
     state_path_ownership,
@@ -177,6 +178,38 @@ def _reference_uid(server) -> int:
         return -1
 
 
+def _chain_problems(server) -> tuple[list[str], int, bool]:
+    """Every model role on this box that cannot fail over — the lines, the routines read, and
+    whether the CATALOG was readable at all.
+
+    That third value is the whole reason this is not a one-liner. `chain_problems` skips any role
+    whose name is not in `server.models`, so an instance whose catalog failed to load reports
+    ZERO problems — indistinguishable from a healthy fleet unless the emptiness is carried out
+    separately. (Measured on 2026-11-12: a sandboxed reader got "0 chain problems" from a config
+    it could not read, and nearly filed it as a clean bill.)
+
+    Disabled routines are included deliberately: one enabled tomorrow runs on the chain it has
+    today, and a check that only looks at what is running misses exactly that.
+    """
+    from .config import load_routine
+    from .conformance import chain_problems, system_model_problems
+
+    if not getattr(server, "models", None):
+        return ([], 0, False)
+    out = list(system_model_problems(server))
+    seen = 0
+    home = getattr(server, "routines_home", None)
+    if home and Path(home).is_dir():
+        for d in sorted(p for p in Path(home).iterdir()
+                        if p.is_dir() and not p.name.startswith(".")):
+            cfg, _problems = load_routine(d)
+            if cfg is None:
+                continue                      # an unparseable config is `rsched validate`'s line
+            seen += 1
+            out.extend(f"{d.name}: {line}" for line in chain_problems(server, cfg.models))
+    return (out, seen, True)
+
+
 def run_checks(server, url: str, source: str) -> tuple[list[Check], dict | None]:
     """The whole checklist against a live instance, in `CHECK_NAMES` order — and the status it read.
 
@@ -193,11 +226,13 @@ def run_checks(server, url: str, source: str) -> tuple[list[Check], dict | None]
         state, detail = staleness()
     except OSError as exc:              # a share that vanished mid-read is a finding, not a crash
         state, detail = "unknown", f"reading the backup record raised {exc!r}"
+    chains, routines, catalog_read = _chain_problems(server)
     return ([served_identity(url, status, source),
              build_skew(status, checkout_version(server.source_repo),
                         str(server.source_repo or "")),
              backup_freshness(state, detail),
-             state_path_ownership(stats, reference, truncated)], status)
+             state_path_ownership(stats, reference, truncated),
+             model_chain_depth(chains, routines, catalog_read)], status)
 
 
 def cmd_postdeploy(args) -> int:

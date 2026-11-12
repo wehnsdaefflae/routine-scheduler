@@ -72,7 +72,8 @@ PASS, NOTE, FAIL = "PASS", "NOTE", "FAIL"
 #: to answer is that the highest-yield inspection in the project had no checklist at all. A check
 #: added here is added to `cli_postdeploy.run_checks` and to `deploy/DOCKER.md`'s list in the same
 #: change, or the session and the command disagree about what was looked at.
-CHECK_NAMES = ("served-identity", "build-skew", "backup-freshness", "state-path-ownership")
+CHECK_NAMES = ("served-identity", "build-skew", "backup-freshness", "state-path-ownership",
+               "model-chain-depth")
 
 
 @dataclass(frozen=True)
@@ -246,6 +247,46 @@ def state_path_ownership(stats: list[PathStat], daemon_uid: int,
     return Check(CHECK_NAMES[3], PASS,
                  f"all {len(stats)} state path(s) are owned by uid {daemon_uid}, the uid the "
                  "daemon writes as")
+
+
+def model_chain_depth(problems: list[str], routines: int, read: bool) -> Check:
+    """Can the fleet's model roles actually FAIL OVER, or does one provider blip end a run?
+
+    `conformance.chain_problems` has been able to answer this since R2196 — offline, free, from
+    resolved config — and its only caller was `rsched validate`, a command somebody has to type.
+    So the answer existed and nobody read it, which is the exact shape this watcher's own
+    docstring names: a check that runs only when a human types a command is a check whose
+    SILENCE MEANS NOTHING.
+
+    What it cost, measured 2026-11-12: `deficit-coach:20261111-230002` died with "the model chain
+    was exhausted after 0 rungs" on a provider connection refusal, and the previous `self-audit`
+    run died the same way hours earlier. `engine/failover.next_after` searches strictly AFTER the
+    failed member, so a chain of one dies at its FIRST failure — and 12 of the 13 catalog models
+    declare `fallbacks: []`. The retry budget is real but short (3 attempts, exponential), so a
+    provider 503 lasting seconds is enough.
+
+    A NOTE, never a FAIL, and that is deliberate rather than timid: `cli_validate` reports these
+    lines without counting them because whether a single-domain or single-member chain is
+    acceptable is a judgement about THIS instance's providers — a one-provider instance has no
+    other domain to reach — and a boot check that went red over it would be switched off inside
+    a week. Making it fatal is the operator's call. What this adds is that the answer lands in
+    the record at every boot, where it is read without anyone asking.
+    """
+    if not read:
+        return Check(CHECK_NAMES[4], NOTE,
+                     "the model catalog could not be read, so no chain was checked — and a "
+                     "chain check that reports zero problems because it saw zero models reads "
+                     "exactly like a healthy fleet")
+    if not problems:
+        return Check(CHECK_NAMES[4], PASS,
+                     f"every model role across {routines} routine(s) has a fallback outside its "
+                     "own failure domain")
+    shown = "; ".join(problems[:3])
+    more = f" (+{len(problems) - 3} more)" if len(problems) > 3 else ""
+    return Check(CHECK_NAMES[4], NOTE,
+                 f"{len(problems)} role(s) across {routines} routine(s) cannot fail over: "
+                 f"{shown}{more} — a provider failure of a few seconds ends such a run at its "
+                 "first attempt, which is what killed two runs on 2026-11-11")
 
 
 def exit_code(checks: list[Check]) -> int:

@@ -105,7 +105,10 @@ def test_it_waits_for_its_own_port_instead_of_recording_its_own_boot(tmp_path, m
     checks = postdeploy_watch.run_now(server)
 
     assert len(calls) == 3, "it retried until the port answered"
-    assert [c.verdict for c in checks] == [PASS] * 4
+    # length from CHECK_NAMES, like the `_checks` stub above it: the checklist grows (a fifth
+    # check, model-chain-depth, landed 2026-11-12) and a hardcoded count makes every addition
+    # red a test about retrying
+    assert [c.verdict for c in checks] == [PASS] * len(postdeploy.CHECK_NAMES)
     assert len(_record(server)) == 1, "one row per boot, not one per attempt"
 
 
