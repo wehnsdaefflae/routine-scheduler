@@ -227,9 +227,9 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                     f"`supersedes` naming the ones it takes over (start with "
                     f"{obs.get('oldest')!r}), or with `answers` if it replies to one. Nothing "
                     "was filed.)")
-        if obs.get("unusable"):
-            return (f"OBSERVATION (report REFUSED — `supersedes` names rows that cannot be "
-                    f"taken over: {', '.join(obs['unusable'])}. Each is {obs.get('reason')}. "
+        if obs.get("unusable"):   # R3364: a clause PER ID, worded by `supersedable`
+            return ("OBSERVATION (report REFUSED — `supersedes` names rows that cannot be "
+                    f"taken over: {'; '.join(f'{r} {c}' for r, c in obs['unusable'])}. "
                     "Nothing was filed; re-emit without them.)")
         if obs.get("undeliverable_disposal"):
             # D182: the two refusals need different moves, so they are never merged into one

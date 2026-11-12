@@ -556,7 +556,8 @@ one you are about to touch, not all of them.
   A report may also TAKE ROWS OVER (`supersedes`, beside `target`): each named row gets a
   `superseded` event, leaves triage at once and reads the CARRIER's status from then on,
   through a chain if the carrier is itself folded later (first fold wins — a row is in exactly
-  one thread). A reply may also SETTLE rows it is not
+  one thread; naming an already-folded row is refused PER ID, and that clause carries the LIVE
+  row at the end of the chain to name instead, R3364). A reply may also SETTLE rows it is not
   answering (`settles`, up to `actionschema.SETTLES_MAX`): folding moves rows into this thread,
   settling declares them finished, and with `settles` a reply needs no `answers` to carry
   `closes` — the shape that ends a drained queue in one reply instead of leaving rows
