@@ -22,7 +22,8 @@ the fleet over a stretch of releases. A release that lands inside a routine chan
 named beside it (`engines`) — the confounder a reader must see.
 
 The history reaches back past the record: runs from before fingerprints existed were REBUILT
-from git (migrate_runrecords.py). What could not be recovered is UNKNOWN, and an unknown
+from git (the one-shot run-record backfill, honoured 2026-11-12). What could not be recovered
+is UNKNOWN, and an unknown
 component is a wildcard — it never makes a change, and a change's `what` names only components
 known on both sides; a verdict drawn on rebuilt runs carries `reconstructed`. A slug that was
 archived and created again names two routines, so runs are grouped by INCARNATION

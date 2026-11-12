@@ -12,7 +12,7 @@ and as cheap from one run to the next. So every run records two things beside it
   rule's text, and a trial id when the run was fired as a model trial. (The recipe and library
   commits ride the record already.) A CHANGE is a boundary between consecutive runs whose
   fingerprints differ; nothing has to declare it. Runs from before this record existed are
-  REBUILT from the instance's own history (`migrate_runrecords.py`): they carry
+  REBUILT from the instance's own history (a one-shot backfill, honoured 2026-11-12): they carry
   `source: "reconstructed"` and name what could not be recovered in `unknown`.
 - **`quality`** — the run's own counts, read as rates against its peers:
   CORRECTNESS — claims the verifier challenged and the ones that stood disputed, actions a
@@ -113,7 +113,7 @@ def fingerprint(ctx, orch_ref) -> dict:
 
 def accounting_counts(entries: object) -> dict[str, int]:
     """A finish accounting's Done-when lines and goals (`d<n>`, `b<n>`) by verdict — one
-    reading for a live run and a run rebuilt from its status.json (migrate_runrecords.py).
+    reading for a live run and a run rebuilt from its status.json (the one-shot backfill).
     """
     verdicts = accounting.parse(entries)
     lines = [v for i, (v, _note) in verdicts.items() if i[0] in "db"]

@@ -247,9 +247,10 @@ def test_a_placeholder_entry_is_still_counted_by_its_verdict():
     """DELIBERATE: `accounting_counts` is a RULER, not a gate.
 
     It feeds the `met_rate` completeness signal (readmodels/change_signals.py), which compares
-    runs of the same routine across releases, and `runevidence.quality_of` re-derives it from
-    an old run's `status.json` — so discounting placeholders here would silently re-score every
-    historical run, which is exactly what `COUNTED_SINCE` exists to prevent. The finish guard
+    runs of the same routine across releases, and the one-shot run-record backfill (honoured
+    2026-11-12) re-derived it from an old run's `status.json` — so discounting placeholders here
+    would have silently re-scored every historical run, and the records it wrote still stand,
+    which is exactly what `COUNTED_SINCE` exists to prevent. The finish guard
     is where a placeholder is stopped; no new run can land one. The runs that already did stay
     counted the way they were counted then.
     """

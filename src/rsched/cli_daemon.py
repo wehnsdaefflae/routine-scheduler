@@ -67,10 +67,10 @@ def cmd_daemon(_args) -> int:
     from .migrate_dispatcher_seed import run_migration as carry_tracked_dispatcher
     carry_tracked_dispatcher(server)
     sync_seed_library_docs(server.libraries_home, routines_home=server.routines_home)
-    # MIGRATION(expires=2026-11-30): the converse pattern's goals revision (version 5) — the
-    # sync above only adds missing patterns
-    from .migrate_converse_goals import run_migration as carry_converse_goals
-    carry_converse_goals(server)
+    # (The `converse` pattern's goals revision was carried by a one-shot here until its
+    # MIGRATION(expires=2026-11-30) was honoured: it ran on 2026-10-08 and the record in
+    # `.control/migrations/converse-goals.json` names the copy it replaced. A fresh install
+    # gets the revision from the seed sync above, so nothing replaced it.)
     # The seed rules' `assists:` DECLARATIONS, per entry: the add-only file sync above cannot
     # carry a block into a rule the live library already has, so every hook point the campaign
     # wired was firing against no candidates at all. Recurring and add-only per declaration id
@@ -86,12 +86,11 @@ def cmd_daemon(_args) -> int:
     from .migrate_permission_requires import run_migration as carry_permission_requires
     carry_permission_requires(server)
     adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
-    # MIGRATION(expires=2026-11-30): every past run's record gains the fingerprint and quality
-    # the change measurement reads, rebuilt from git and the runs' own files — after the library
-    # exists (its rule history is read) and before the app starts, so nothing appends to the
-    # usage stream while it is rewritten
-    from .migrate_runrecords import run_migration as rebuild_run_records
-    rebuild_run_records(server)
+    # (Every past run's record was rebuilt from git and the runs' own files by a one-shot here
+    # until its MIGRATION(expires=2026-11-30) was honoured: it ran on 2026-10-08 over 1,331 runs,
+    # 967 of them with quality recovered, and `.control/migrations/run-records.json` holds what
+    # it could not recover. The records it wrote stand; nothing re-derives them, which is why the
+    # three modules that read the instance's own history went with it.)
     # MIGRATION(expires=2026-12-15): every past usage record gains its leg's cache traffic and
     # context volume, which every cost ranking now reads — after the rebuild above, same window
     from .migrate_usage_volume import run_migration as backfill_usage_volume

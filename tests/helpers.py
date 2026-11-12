@@ -227,7 +227,8 @@ def measured_run(i: int, *, slug: str = "digest", recipe: str = "c1",
     """One depth-0 usage record carrying the `fingerprint` and `quality` the change read models
     measure (engine/runrecord.py), run `i` on 2026-10-<i> (its run id stamped in UTC, as
     `ids.run_ts` stamps one). `rebuilt` makes it a run the history backfill rebuilt
-    (migrate_runrecords.py): its effort unknown, as every rebuilt run's is. `frictions` gives it
+    (the one-shot run-record backfill): its effort unknown, as every rebuilt run's is.
+    `frictions` gives it
     the signatures the moment test reads (engine/frictions.py); without it they are unknown.
     The fast suite's change tests and the browser suite's Changes pages read the same shape."""
     return {"ts": f"2026-10-{i:02d}T07:00:00+02:00", "routine": slug,

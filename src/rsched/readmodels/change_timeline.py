@@ -14,7 +14,8 @@ one ISO week at a time, on the same per-run signals (readmodels/change_signals.p
   routines' — they are comparable across routines already.
 
 Each week also names the releases first run in it, the main models its runs ran on (`model_id`),
-and how many of its runs were REBUILT from history (migrate_runrecords.py) or carry no quality at
+and how many of its runs were REBUILT from history (a one-shot backfill, honoured 2026-11-12;
+the record is `.control/migrations/run-records.json`) or carry no quality at
 all, so a reader can tell a reading from a gap. Weeks without a run are kept, empty, so the
 sequence has no holes.
 """

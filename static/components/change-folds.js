@@ -1,7 +1,8 @@
 // The two pieces both DEVELOPMENT views (views/changes.js, views/changes-routine.js) need to
 // show months of rebuilt history without spending the page on it:
 //
-//   rebuiltMark — "≈": a reading drawn on runs REBUILT from history (migrate_runrecords.py), what
+//   rebuiltMark — "≈": a reading drawn on runs REBUILT from history (a one-shot backfill run on
+//   2026-10-08, honoured and deleted 2026-11-12; the records it wrote stand), what
 //                 could not be recovered left out. A faint glyph beside the verdict, the words in
 //                 its tooltip; with a count, how many of a group's runs were rebuilt.
 //   foldEntries — the first `keep` entries of a table and ONE row that reveals the rest. An entry

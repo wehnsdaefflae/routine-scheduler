@@ -1574,7 +1574,9 @@ permissions, settings PATTERNS and the reminder store's README — plus whole pl
 files are user-editable, so overwriting one would discard an operator's edit silently. A seed doc
 or util whose TEXT must change on a live instance is carried by a one-shot migration instead,
 which replaces the live copy only while it is byte-identical to the seed it supersedes and names
-every copy it left (`migrate_converse_goals` carries this release's `converse` revision).
+every copy it left. (The worked example, the `converse` pattern's goals revision, was carried
+that way on 2026-10-08 and its one-shot deleted on 2026-11-12 when its marker came due; a fresh
+install gets the revision from the seed sync itself.)
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
   (`slug / name / description / when_to_use / version / tags / includes`, optional `tools:`

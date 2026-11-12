@@ -432,9 +432,13 @@ Flag-first: nothing reverts or proposes on its own.
 
 The record began with 0.398.0 (2026-10-08); the measurement reaches back to the usage stream's
 first run (2026-07-12), because a one-shot boot migration REBUILT every earlier run's fingerprint
-and quality from what the instance still holds (`migrate_runrecords.py`, with
-`runhistory.py` and `runevidence.py`; all three go with the migration). As of the instant each run
-STARTED:
+and quality from what the instance still holds. That migration and the two readers it needed
+(the instance's own git history, and what a past run's files say about it) were **honoured and
+deleted on 2026-11-12**, as their own markers said they would be: it ran on 2026-10-08 over
+1,331 runs, recovering quality for 967 of them, and
+`.control/migrations/run-records.json` holds both what it wrote and what it could not recover.
+The records stand; nothing re-derives them, so the table below describes how they were BUILT
+rather than a path any boot still walks. As of the instant each run STARTED:
 
 | component | rebuilt from | unknown when |
 |---|---|---|
@@ -448,7 +452,8 @@ STARTED:
 
 `quality` comes from the run's `status.json` and transcript where retention kept them (two runs
 in three): a key a file lacks, or a count its release did not RECORD yet
-(`runevidence.RECORDED_SINCE`), stays absent — unknown, never zero. The person's interventions
+(the backfill carried its own floor per count, below which a release could not have recorded it),
+stays absent — unknown, never zero. The person's interventions
 are counted as a live run counts them: mid-run messages that are not an answer the run asked for,
 nothing the engine wrote (it stamps a `source` on every note, assist and warning), no report and
 no machine channel.

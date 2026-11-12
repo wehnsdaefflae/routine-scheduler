@@ -9,7 +9,8 @@ across the fleet instead (readmodels/change_fleet.py).
 
 A component's value is a string (`""` is a real value — no trial, no effort set) or None, which is
 UNKNOWN. A run rebuilt from history (`fingerprint.source == "reconstructed"`,
-migrate_runrecords.py) names what it could not recover in `fingerprint.unknown`; an unknown
+the one-shot run-record backfill, honoured 2026-11-12) names what it could not recover in
+`fingerprint.unknown`; an unknown
 component matches any value and is never a change, because a gap in the evidence is not a change
 in the routine.
 """

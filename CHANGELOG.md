@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.534.5] — 2026-11-12
+
+### Removed
+- **Two converged one-shot migrations and the two readers they needed, eighteen days before
+  their markers would have redded every gate on this host.** `tests/test_policy.py` turns an
+  expired `MIGRATION(expires=…)` marker into a FAST-stage failure, so the date is not advisory:
+  on 2026-11-30 every release gate here — mine and the builder's — would have failed on files
+  the candidate never touched. The daemon's own `migration_due_soon` event had fired five times
+  naming the same six markers.
+  Both migrations have converged, and their records say so: `.control/migrations/converse-goals.json`
+  (2026-10-08, the `converse` pattern's goals revision, which the add-only seed sync could not
+  carry) and `.control/migrations/run-records.json` (2026-10-08, 1,331 runs rebuilt, quality
+  recovered for 967, with everything unrecoverable named per field). The records stand; nothing
+  re-derives them. So `migrate_converse_goals.py`, `migrate_runrecords.py` and the two readers
+  written only for it — the instance's own git history and what a past run's files say about it —
+  are deleted, with their three test modules and both `cli_daemon` call sites, exactly as their
+  own docstrings said they would be ("all three go with the migration").
+  Seven files removed, ~700 lines. Every piece of prose that cited them is rewritten to say what
+  the backfill DID rather than to point at code: four source docstrings, `tests/helpers.py`,
+  `tests/test_accounting_floor.py` (where the citation carries the reason the accounting ruler
+  must not be changed — that reason is kept), one console comment, and the two guides. One of
+  those rewrites still backticked `RECORDED_SINCE`, an identifier that went with the module, and
+  `test_doc_claims.py::test_every_backticked_identifier_still_exists_in_the_source` caught it —
+  which is the second time this week a guide-claim test has caught a stale citation in prose a
+  human had just written.
+
 ## [0.534.4] — 2026-11-12
 
 ### Added
