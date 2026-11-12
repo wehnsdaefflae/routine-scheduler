@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .. import answerlines, patchreceipt
 from ..runledger import digest_tail
-from . import notemeta, notes, outputs
+from . import notemeta, notes, outputs, schemaindex
 from .actionschema import example_action
 from .capabilities import capabilities_digest
 from .harness import harness_contract
@@ -239,11 +239,16 @@ def system_sections(ctx: RunContext, workflow_body: str, instruction: str,
     # The schema is PROJECTED onto the kinds this run may actually emit (kindsurface): a
     # restricted workflow never reads the fields and prose of channels it cannot use.
     kinds = effective_kinds(allowed_kinds, ctx.grants)
+    projection = schema_for_kinds(kinds, reminders=bool(ctx.grants and ctx.grants.reminders_on))
     sections = [
         ("harness", harness_contract(ctx, kinds)),
-        ("schema", "# ACTION SCHEMA (your every reply matches this)\n"
-         + json.dumps(schema_for_kinds(
-             kinds, reminders=bool(ctx.grants and ctx.grants.reminders_on)), indent=1)),
+        # …and it is sent ONCE, not twice: `completion.next_action` hands this same projection
+        # to `endpoint.complete(schema=…)`, where the wire enforces it (a tool's input_schema,
+        # a strict response_format, Ollama's format) with its descriptions in front of the
+        # model. So where every chain member carries it, this section is the compact FIELD
+        # INDEX — which fields each kind takes, the one thing the flat schema does not encode
+        # — and `engine/schemaindex.py` holds why and when the full dump comes back.
+        ("schema", schemaindex.section(projection, kinds, ctx)),
         ("example", "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1)),
         ("workflow", "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip()),
     ]

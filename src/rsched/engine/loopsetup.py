@@ -247,6 +247,13 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     from .kindsurface import effective_kinds, schema_for_kinds
     loop.action_schema = schema_for_kinds(effective_kinds(loop.allowed_tools, ctx.grants),
                                           reminders=bool(ctx.grants and ctx.grants.reminders_on))
+    # Whether the PROMPT carries only the field index for it (engine/schemaindex.py decided
+    # that at composition, from this same chain). When it does, a turn served with no grammar
+    # — an unenforced wire, the uncensored takeover, the repeat-streak shed — is handed the
+    # full contract as an ENGINE NOTE instead, once (`turntakeover._contract_if_unenforced`).
+    from . import schemaindex
+    loop._schema_is_index = schemaindex.wire_enforces(ctx)
+    loop._schema_contract_sent = False
     # The relevance-trigger layer: one hold seam (engine/hold.py), two trigger sources —
     # the reminders this routine learned and the assists its rules declare — and the run's
     # own archived history as a third store to surface from. Each initialises its OWN run

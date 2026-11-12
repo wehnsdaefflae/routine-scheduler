@@ -29,6 +29,10 @@ def serve_turn_head(loop):
     if takeover is not None:
         chain = [takeover]
         endpoint, ref = _adopt_model(loop, takeover)
+        # the branch this matters most on: the uncensored model is the one an operator binds
+        # to an endpoint that refuses `response_format` (here `otari-openai-plain`), so a
+        # takeover turn is the likeliest to arrive with no grammar at all
+        _contract_if_unenforced(loop, endpoint)
         return chain, endpoint, ref, True
     chain = ctx.registry.for_model_chain("main", ctx.routine.models, ctx.routine.efforts)
     # The chain HEAD is what the routine was configured with, whatever is serving now.
@@ -42,7 +46,22 @@ def serve_turn_head(loop):
     ref = _override_window(loop, ref)    # re-apply run-local window correction (F278)
     ctx.main_model = f"{ref.endpoint}/{ref.model}"  # in status.json; updates on a switch
     compact_if_needed(loop, endpoint, ref)
+    _contract_if_unenforced(loop, endpoint)
     return chain, endpoint, ref, False
+
+
+def _contract_if_unenforced(loop, endpoint) -> None:
+    """A run whose prompt carries only the FIELD INDEX gets the full action contract as an
+    ENGINE NOTE the first turn nothing else states it — an unenforced wire serving the turn
+    (the uncensored takeover among them) or the grammar shed by the repeat-streak escape.
+
+    Here rather than in `completion.next_action` because this is the one function that knows
+    which endpoint is about to serve, and because that file sits at its size-ratchet ceiling.
+    The decision and the note are `engine/schemaindex.py`'s; this is the call site.
+    """
+    from . import schemaindex
+    if schemaindex.turn_needs_the_contract(loop, endpoint):
+        schemaindex.send_the_contract(loop, loop.action_schema)
 
 
 def note_takeover(refstate: dict, on_takeover: bool, served: bool) -> bool:
