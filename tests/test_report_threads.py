@@ -118,7 +118,8 @@ def test_the_first_fold_wins(home):
     second = handle_report(_loop(home, "self-audit"),
                            {"target": "global-utils-review", "title": "second",
                             "supersedes": ["R1"], "answers": "R2"})
-    assert second.get("unusable") == ["R1"], "already folded — refused rather than stolen"
+    assert second.get("unusable") == [
+        ("R1", "is folded into R2 — the live row; name that instead")], "refused, not stolen"
     row = {r["id"]: r for r in read_reports(reports_path(home))}["R1"]
     assert row["superseded"]["by"] == "R2"
 
@@ -159,11 +160,11 @@ def test_unusable_ids_refuse_the_whole_report(home):
     out = handle_report(_loop(home, "self-audit"),
                         {"target": "global-utils-review", "title": "x",
                          "supersedes": ["R1", "R99"]})
-    assert out["unusable"] == ["R99"]
+    assert out["unusable"] == [("R99", "is unknown to the ledger")]
     assert "filed" not in out
     assert len(read_reports(reports_path(home))) == 1, "nothing was written"
     rendered = format_observation(out)
-    assert "REFUSED" in rendered and "R99" in rendered
+    assert "REFUSED" in rendered and "R99 is unknown to the ledger" in rendered
 
 
 def test_a_retracted_row_cannot_be_folded(home):
@@ -172,7 +173,7 @@ def test_a_retracted_row_cannot_be_folded(home):
     retract_report(home, "R1")
     out = handle_report(audit, {"target": "global-utils-review", "title": "x",
                                 "supersedes": ["R1"]})
-    assert out["unusable"] == ["R1"]
+    assert out["unusable"] == [("R1", "was retracted")]
 
 
 def test_supersedes_needs_a_target(home):
@@ -313,12 +314,37 @@ def test_supersedable_splits_and_keeps_the_callers_order(home):
             {"id": "R3", "superseded": {"by": "R9"}}]
     ok, bad = supersedable(rows, ["r3", "R1", "R404", "R2"])
     assert ok == ["R1"]
-    assert bad == ["R3", "R404", "R2"]
+    assert [rid for rid, _why in bad] == ["R3", "R404", "R2"]
 
 
 def test_supersedable_names_each_row_once(home):
     """A repeated id is one row: listed twice it minted two `superseded` events and a
     carrier whose `supersedes` named the same row twice on its card."""
     rows = [{"id": "R1"}, {"id": "R2"}]
-    assert supersedable(rows, ["R1", "r1", " R1", "R2", "R404", "r404"]) == (["R1", "R2"],
-                                                                             ["R404"])
+    assert supersedable(rows, ["R1", "r1", " R1", "R2", "R404", "r404"]) == (
+        ["R1", "R2"], [("R404", "is unknown to the ledger")])
+
+
+def test_each_unusable_id_says_why_and_a_folded_one_names_the_live_row(home):
+    """R3364: one refusal, three causes, three different moves — and the FOLDED cause carries
+    the live row of that thread, to the END of the chain.
+
+    The specimen is `routine-improver:20261111-020001` turn 128: a hand-off naming a row
+    another report had already folded was refused, and nothing in the refusal said which row
+    was live. The caller learns this precondition only at the moment it is refused, so the
+    refusal is the only place the answer costs it no extra turn.
+    """
+    rows = [{"id": "R1", "superseded": {"by": "R2"}},     # folded, and its carrier folded again
+            {"id": "R2", "superseded": {"by": "R3"}},
+            {"id": "R3"},
+            {"id": "R4", "retracted": {"ts": "x"}}]
+    ok, bad = supersedable(rows, ["R1", "R4", "R404", "R3"])
+    assert ok == ["R3"]
+    assert dict(bad) == {
+        "R1": "is folded into R3 — the live row; name that instead",
+        "R4": "was retracted",
+        "R404": "is unknown to the ledger"}
+    rendered = format_observation({"kind": "report", "unusable": bad})
+    assert "R1 is already folded into R3" in rendered, "the live row, not the intermediate R2"
+    assert "R4 was retracted" in rendered and "R404 is unknown" in rendered
+    assert "R2" not in rendered, "an intermediate nobody is working is never offered"

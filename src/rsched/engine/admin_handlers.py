@@ -194,10 +194,13 @@ def handle_report(loop, action: dict) -> dict:
         if unusable:
             # Naming them beats folding what it can: a run told "3 of 5 taken over" has to
             # work out which two it still owns, and that is the bookkeeping this field exists
-            # to remove.
+            # to remove. PER ID (R3364), because the three causes need three different moves
+            # and one shared reason named none of them: a FOLDED row's clause carries the live
+            # row of its thread, which is the only thing the caller could not have known before
+            # it filed — the precondition is invisible until the refusal. `supersedable` words
+            # them, where the verdict is reached, so the wording cannot drift from the test.
             return {"kind": "report", "target": target, "supersedes": wanted,
-                    "unusable": unusable, "reason": "unknown to the ledger, retracted, or "
-                    "already folded into another thread — a row belongs to exactly one"}
+                    "unusable": unusable}
     # D182: `answers` and `settles` dispose of a row FOR THE ROUTINE IT WAS DELIVERED TO. The
     # grammar was validated thoroughly and the relationship not at all, so any report naming a
     # row retired it — its own sender's included: 492 rows left this ledger that way, 317 of

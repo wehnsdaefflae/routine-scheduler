@@ -162,31 +162,50 @@ def open_threads(rows: list[dict], *, routine: str, target: str) -> list[str]:
             and _is_open(r, disposed)]
 
 
+def _by_id(rows: list[dict]) -> dict[str, dict]:
+    """The rows by id, upper-cased and stripped — how every question here looks one up."""
+    return {str(r.get("id") or "").strip().upper(): r for r in rows}
+
+
+def _chain(by_id: dict[str, dict], rid: str) -> list[str]:
+    """`rid`, then every carrier it was folded into, to the END of the chain — LIVE row last.
+
+    One hop is not the answer: a carrier can itself be taken over later, and an intermediate is
+    a thread nobody is working (`readmodels/item_reports.resolved_carriers` reads it the same
+    way). The last id may be one the ledger does not have; the stamp names it, a cycle ends it.
+    """
+    walked: list[str] = []
+    at = str(rid).strip().upper()
+    while at and at not in walked:
+        walked.append(at)
+        fold = by_id.get(at, {}).get("superseded")
+        at = str((fold if isinstance(fold, dict) else {}).get("by") or "").strip().upper()
+    return walked
+
+
 def owner_of(rows: list[dict], rid: str) -> str | None:
     """Whose row is this — the routine it was DELIVERED to — or `""` when nobody owns it yet.
     `None` means the ledger does not have the id at all.
 
-    A FOLDED row's owner is its carrier's target, following the chain to its end: `supersedes`
-    makes the carrier the row's thread, so the thread's owner is who holds it (the same reading
-    `readmodels/item_reports.report_row_item` renders as "folded into R<n> → <owner>"). Without
-    that, handing rows to their owner and then answering as that owner — the ordinary
-    consolidate-then-reply pass — would refuse itself.
+    A FOLDED row's owner is its carrier's target, following the chain to its end (`_chain`, the
+    one walk `supersedable`'s refusal reads too, so an owner and a live thread can never
+    disagree) — the reading `item_reports.report_row_item` renders as "folded into R<n> →
+    <owner>". Without it the ordinary consolidate-then-reply pass, handing rows to their owner
+    and then answering as that owner, would refuse itself.
     """
-    by_id = {str(r.get("id") or "").strip().upper(): r for r in rows}
-    seen: set[str] = set()
-    at = str(rid).strip().upper()
-    while at and at in by_id and at not in seen:
-        seen.add(at)
-        row = by_id[at]
-        if target := str(row.get("target") or "").strip():
+    by_id = _by_id(rows)
+    chain = _chain(by_id, rid)
+    if not chain or chain[0] not in by_id:
+        return None
+    for at in chain:
+        if target := str(by_id.get(at, {}).get("target") or "").strip():
             return target
-        fold = row.get("superseded")
-        fold = fold if isinstance(fold, dict) else {}
-        nxt = str(fold.get("by") or "").strip().upper()
-        if not nxt:
-            return str(fold.get("to") or "").strip()
-        at = nxt
-    return None if not seen else ""
+    # The chain ran out: the last stamp's own `to` is the owner that hop handed it to — and `""`
+    # where no owner can be read off at all (a carrier the ledger lacks, or a cycle, which ends
+    # nowhere: ids mint upward, so only a corrupt stamp makes one).
+    fold = by_id.get(chain[-1], {}).get("superseded")
+    fold = fold if isinstance(fold, dict) else {}
+    return "" if str(fold.get("by") or "").strip() else str(fold.get("to") or "").strip()
 
 
 def disposable(rows: list[dict], ids: list[str], *,
@@ -287,22 +306,33 @@ def disposed_by_non_owner(rows: list[dict]) -> list[dict]:
             if (rid := str(row.get("id") or "").strip().upper()) in wrong]
 
 
-def supersedable(rows: list[dict], ids: list[str]) -> tuple[list[str], list[str]]:
-    """Split `ids` into those a new report may take over and those it may not, preserving the
-    caller's order and naming each id once. Unusable means unknown to the ledger, already
-    retracted, or already folded into some other thread — a row cannot be in two threads at
-    once.
+def supersedable(rows: list[dict], ids: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
+    """Split `ids` into those a new report may take over and those it may not — the caller's
+    order, each id once, every refused one carrying WHY in the words its refusal prints.
+
+    Three causes needing three different moves, so a refusal never collapses them into one
+    shared reason (R3364): unknown to the ledger, already RETRACTED, already FOLDED into
+    another thread. The third is the one no caller can see coming — the precondition is
+    invisible until the refusal — so its clause carries the LIVE row of that thread to name
+    instead (`_chain`, the walk `owner_of` reads), costing the caller no second turn.
     """
-    by_id = {str(r.get("id") or "").upper(): r for r in rows}
+    by_id = _by_id(rows)
     ok: list[str] = []
-    bad: list[str] = []
+    bad: dict[str, str] = {}
     for raw in ids:
         rid = str(raw).strip().upper()
         if rid in ok or rid in bad:
             continue
         row = by_id.get(rid)
-        (bad if row is None or row.get("retracted") or row.get("superseded") else ok).append(rid)
-    return ok, bad
+        if row is None:
+            bad[rid] = "is unknown to the ledger"
+        elif row.get("retracted"):
+            bad[rid] = "was retracted"
+        elif row.get("superseded"):
+            bad[rid] = f"is folded into {_chain(by_id, rid)[-1]} — the live row; name that instead"
+        else:
+            ok.append(rid)
+    return ok, list(bad.items())
 
 
 def still_owed(rows: list[dict], ids: list[str]) -> list[str]:

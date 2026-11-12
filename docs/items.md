@@ -320,7 +320,12 @@ line. The fold is a CHAIN — a carrier can
 itself be taken over later — and `readmodels/item_reports.resolved_carriers` follows it to the
 live thread, so a row never reads the status of an intermediate nobody is working. First fold
 wins: a row belongs to exactly one thread, and a second carrier cannot steal one another is
-already answering for.
+already answering for. A `supersedes` naming such a row is REFUSED, and the refusal answers per
+id (R3364): unknown to the ledger, retracted, or `is folded into R<n> — the live row; name that
+instead`, the carrier at the END of the chain. One shared reason named none of the three, and
+this is the one precondition a caller cannot see coming — a row anyone has already folded is no
+longer takeable, and nothing says so until it files — so the refusal naming the live row is what
+makes the retry cost no second turn (`routine-improver:20261111-020001` turn 128 spent one).
 
 It exists because two documented operations had no mechanism (F492/D110, 0.345.0):
 
