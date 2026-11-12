@@ -45,11 +45,25 @@ def field_problems(obj: dict) -> list[str]:
     # closes is a contradiction, not a no-op. Before D134 only `answers` counted, which is why
     # a report that asked nothing back could not be born settled at all: it answers no single
     # row, so `closes` was refused and the carrier stayed open forever (F497).
+    # MEASURED 2026-11-12: 22 of these rejections, 11 routines, 18 runs since 2026-10-19 — and
+    # three runs earned it twice or three times in one run, so it was not teaching the second
+    # time either. Of the 13 whose transcripts survive, only 3 carried `supersedes`; TEN carried
+    # `target` + `closes` alone — a run ORIGINATING a notice it wants nobody to reply to. The
+    # old sentence stated the rule correctly and left that run with nowhere to go, so it says
+    # what to DO with an originating notice: drop `closes`. That is not the loss it looks like
+    # for the sender's intent — a closure is excluded from the report trigger's inbox predicate
+    # (`daemon/triggers`, include_closures=False) precisely because it asks nothing, so marking
+    # one would hide the notice rather than deliver it quietly.
     if (obj.get("closes")
             and not str(obj.get("answers") or "").strip()
             and not obj.get("settles")):
-        problems.append("kind=report: 'closes' is valid only together with 'answers' or "
-                        "'settles' — it marks the disposal as completing those exchanges")
+        problems.append(
+            "kind=report: 'closes' is valid only together with 'answers' (the ONE exchange "
+            "this reply belongs to) or 'settles' (every row it finishes) — it marks a disposal "
+            "as complete, and a report that originates something completes none. Filing a "
+            "notice that asks nothing back: leave 'closes' out. The row is then the recipient's "
+            "to dispose of, which is what puts it in front of them — a closure is kept out of "
+            "the report trigger on purpose, so it is not the quiet way to be heard.")
     # `answers` is ONE report id, held to the grammar `settles` and `supersedes` are. The ledger
     # matches it against ids, so free text there disposed of nothing — while the run, and its
     # observation, believed the exchange answered (the settled-in-prose, open-in-the-ledger

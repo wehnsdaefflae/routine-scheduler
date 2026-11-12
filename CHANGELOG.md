@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.534.2] — 2026-11-12
+
+### Fixed
+- **The `closes` refusal cost 11 routines 22 turns by naming only the moves a REPLY can make.**
+  Measured over `.control/health-events.jsonl`: 22 `wrong_turn_detected` rows on this one
+  sentence across 11 routines and 18 runs since 2026-10-19 — and three runs earned it twice or
+  three times *within a single run*, so it was not teaching on the second reading either. Of the
+  13 whose transcripts survive, only 3 carried `supersedes`: **ten carried `target` + `closes`
+  alone**, a run ORIGINATING a notice it wanted nobody to reply to. The old wording stated the
+  rule (which is the operator's, D196, and is unchanged) and left that run with nowhere to go,
+  because every face it named — `answers`, `settles` — belongs to a reply.
+  Both entrances now name the move for an originating notice: **leave `closes` out.** The
+  action layer adds why that is not the loss it looks like — the row is then the recipient's to
+  dispose of, which is what puts it in front of them, whereas a closure is deliberately kept out
+  of the report trigger's inbox predicate (`daemon/triggers`, `include_closures=False`), so
+  marking one would hide the notice rather than deliver it quietly. The grammar, the phrase
+  `engine/schemamemo` parses out of the message, and every existing refusal all stand.
+  `tests/test_report_closes_refusal.py` pins the measured shape at both entrances; proved red
+  against the old messages before shipping.
+
 ## [0.534.1] — 2026-11-12
 
 ### Fixed

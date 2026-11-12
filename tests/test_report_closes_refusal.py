@@ -57,6 +57,33 @@ def test_a_routine_target_still_gets_the_original_sentence():
         {"say": "s", "kind": "report", "title": "t", "closes": True}))
 
 
+def test_the_refusal_tells_an_originating_notice_what_to_do():
+    """The shape 10 of 13 measured rejections actually sent: `target` + `closes`, no
+    `supersedes` — a run FILING a notice it wants nobody to reply to.
+
+    Measured 2026-11-12 over `.control/health-events.jsonl`: 22 rejections of this one sentence
+    across 11 routines and 18 runs since 2026-10-19, and three runs earned it two or three times
+    WITHIN one run — so the sentence was not teaching on the second reading either. It stated
+    the rule correctly (and the rule is the operator's, D196) while leaving that run with
+    nowhere to go: every face it named belongs to a REPLY, and the run was not replying.
+
+    So the refusal must name the move for an originating notice — leave `closes` out — and both
+    entrances must do it, because the out-of-band caller builds its own `Disposal`.
+    """
+    for problems in (
+        validate_action({"say": "s", "kind": "report", "title": "fixed, no reply needed",
+                         "target": "scheduler-builder", "closes": True}),
+        validate_action({"say": "s", "kind": "report", "title": "fyi", "closes": True}),
+    ):
+        assert problems, "the grammar is unchanged — a bare closure is still refused"
+        said = " ".join(problems)
+        assert "leave 'closes' out" in said, said
+
+    with pytest.raises(ValueError, match="closes needs a disposal to complete") as caught:
+        Disposal(closes=True)
+    assert "leave `closes` out" in str(caught.value)
+
+
 def test_a_bare_closure_is_refused_with_what_closes_needs():
     with pytest.raises(ValueError, match="closes needs a disposal to complete") as caught:
         Disposal(closes=True)

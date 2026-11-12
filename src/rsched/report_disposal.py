@@ -54,4 +54,7 @@ class Disposal:
                 "closes needs a disposal to complete: pass `answers` (the ONE exchange this "
                 "reply belongs to) or `settles` (every row it terminally disposes of). "
                 "`supersedes` is not one of them — folding rows makes this report their "
-                "thread, which is the opposite of ending it.")
+                "thread, which is the opposite of ending it. Filing a notice that asks "
+                "nothing back, rather than replying to one: leave `closes` out — an "
+                "originating report completes no exchange, and the row is then its "
+                "recipient's to dispose of.")
