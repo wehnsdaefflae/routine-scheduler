@@ -46,3 +46,54 @@
 /* The rule's slug and the declaration that fired read as one token, so a wrap does not split
    `<rule>/<id>` across two lines in a narrow turn box. */
 .rule-fire-one { white-space: nowrap; }
+
+/* ---------- a transcript ROW's own controls (F217) ----------
+   ⧉ copy and 🐞 report-as-bug, the affordances a conversation's bubbles have carried since
+   2026-08-22 and a RUN's rows never had. Same corner language as `.refer-btn` (views.css:351,
+   which owns `.turn { position: relative }` and the ↩ at `right: 4px`): quiet, revealed on
+   hover, `user-select: none` so a glyph never rides a dragged selection (R3085). They queue
+   left of the ↩ in the order a reader reaches for them.
+
+   Here rather than in views.css for this file's own reason, stated at the top: views.css is
+   over the house bar and held at its ratchet ceiling, so an addition belongs in a new
+   stylesheet exactly as it belongs in a new module. */
+.turn > :is(.row-copy, .row-bug) {
+  position: absolute; top: 3px; background: none; border: none; cursor: pointer;
+  color: var(--ink-3); font-size: var(--t-s); line-height: 1; padding: 3px 5px;
+  opacity: 0; transition: opacity 0.12s; user-select: none;
+}
+.turn > .row-copy { right: 28px; }
+.turn > .row-bug { right: 52px; }
+.turn:hover > :is(.row-copy, .row-bug) { opacity: .45; }
+.turn > :is(.row-copy, .row-bug):is(:hover, :focus-visible) { opacity: .9; color: var(--ink); }
+/* A touch pointer cannot hover, so a hover-revealed control can never be revealed on a phone —
+   F433's lesson, and an opacity-0 control still takes a tap. Shown at rest at the half strength
+   a hover gives, exactly as views.css:667 does for the chat bubble's controls. */
+@media (hover: none) {
+  .turn > :is(.row-copy, .row-bug) { opacity: .45; }
+}
+/* The bug report's pre-filled message: a plain editable box, sized like the composer's. */
+.bug-box {
+  width: 100%; min-height: 9em; margin-top: 10px; resize: vertical;
+  font: inherit; font-size: var(--t-s);
+}
+
+/* ---------- what a view_image row shows (R3357) ----------
+   The FILE rides the action element now, so the paths and the thumbnails sit in `.act`'s flex
+   row (views.css:208) — a column, because a 260px thumbnail beside its own path reads as two
+   unrelated things, and `.att-row`'s own top margin would push it off the baseline. */
+.img-links { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.img-links .att-row { margin-top: 4px; }
+/* The RESULT row's labelled pointer to the turn where the model says what it read off the image
+   (components/obs-image.js: the direct multimodal path records no answer of its own). Quiet and
+   inline — it is a sentence about where the answer is, not a button competing with the fold's
+   summary — and it keeps the signal colour every turn-addressing control in the console wears. */
+.obs-answer-link {
+  display: block; margin: 6px 0 0; padding: 4px 8px; text-align: left;
+  background: none; border: none; border-left: 3px solid var(--signal); cursor: pointer;
+  color: var(--signal); font: inherit; font-size: var(--t-s);
+}
+.obs-answer-link:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--signal-dim) 40%, var(--deck));
+  color: var(--ink);
+}

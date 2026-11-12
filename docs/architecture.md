@@ -1476,6 +1476,29 @@ meet. A conversation's spine is its own **working plan**
   to the message TEXT, so the model reads it as plain markdown — no new event field, and
   renderers show it as a quote chip. Slash commands never take a reference (the `/<kind>`
   head must lead).
+  **Row controls** (F217, run view + chat): beside that ↩, every transcript ROW carries ⧉ copy
+  and 🐞 report-as-bug (`components/row-tools.js`, which owns the one clipboard call site —
+  `copyBtn` moved there out of `chat.js`, since a transcript row cannot import from a module
+  that imports it). ⧉ copies what the row SAYS — its address (run, sub-run, turn, kind), the
+  narration, the brief and the result, read off the row at click time because the observation
+  lands an event later than the action. 🐞 opens a pre-filled, editable message and queues it to
+  the routine that owns the run through `POST /api/routines/{slug}/messages` — the operator's own
+  inbox channel (`api_messages.create_message`), read at that routine's next run. There is NO
+  report-filing route and this did not add one: a `report` is a RUN's utterance and a person's is
+  a message (docs/messages.md), so the control files the message a person would have written. No
+  routine on the mount (a conversation's work fold) means no inbox to reach, so the 🐞 is absent
+  rather than broken.
+  **A `view_image` row** (R3357) shows the FILE under the action and the ANSWER in the result
+  (`components/obs-image.js`): the path and its thumbnail ride the `.act` element, because which
+  file was opened is part of what was DONE — visible without expanding the fold, where F559's
+  thumbnails used to sit, and reading `paths` as well as `path`, which rendered an empty brief
+  for a batch. The result cell is bounded by what the engine records, and says WHICH path
+  produced what it shows: the `vision` util's returned description IS the answer where that
+  fallback ran (`via: "vision-util"` + `text`), while an image shown DIRECTLY to a multimodal
+  model has its reading in the model's NEXT turn and nowhere in the observation — so the row
+  says so and points at that turn (`data-turn-link`, landed by `components/turnlink.js`) instead
+  of inventing prose nobody read off the image. Showing the reading IN the row would need the
+  engine to record it against the `view_image` observation; that is not built.
 - **Playbooks** (see Libraries & seeds → Playbooks): the new-conversation form has a playbook
   picker (`GET /api/playbooks`); the composer carries **Save as playbook** (`POST …/playbook` →
   distil a new one) and, when the conversation was seeded from a playbook, **Update playbook**

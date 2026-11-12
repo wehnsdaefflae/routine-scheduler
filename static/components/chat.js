@@ -20,7 +20,12 @@
 //   onRefer({label, snippet}) — "refer to" on any message primes the composer (also passed
 //                       into the work-fold transcripts, so a single step is referable)
 
-import { attachmentRow, createTranscript, operatorFlagText, referButton, revokeBlobs, splitRef } from "/static/components/transcript.js";
+import { createTranscript, operatorFlagText, referButton, splitRef } from "/static/components/transcript.js";
+import { attachmentRow, revokeBlobs } from "/static/components/obs-attachments.js";
+// ⧉ moved to components/row-tools.js (F217), which a transcript ROW imports too — chat.js
+// cannot be imported from there (it imports transcript.js) and one clipboard call site is
+// enough. The three uses below are unchanged: whole message, per-fence, summary.
+import { copyBtn } from "/static/components/row-tools.js";
 import { answerForm } from "/static/components/answerform.js";
 import { isDeliverable } from "/static/components/artifacts.js";
 import { md, mdInline } from "/static/md.js";
@@ -36,21 +41,6 @@ const ATTACH_BLOCK = /\n?\n?\[attached files[^\]]*\]\n((?:- .*\n?)+)/;
 // the "✓ sent" bubble stayed beside the real attachment card forever).
 export function typedBody(text) {
   return splitRef(text || "").body.replace(ATTACH_BLOCK, "").trim();
-}
-
-// Copy-to-clipboard on every chat bubble (operator order 2026-08-22): a quiet corner
-// button, visible on hover, that copies the message's SOURCE text (the markdown the
-// author wrote, not the rendered HTML) — feedback ✓ on success, ✕ when the browser
-// denies clipboard access (select-and-copy still works there).
-function copyBtn(getText, cls = "copy-msg", title = "copy message text") {
-  const btn = el("button", { class: cls, title,
-    onclick: async () => {
-      let mark = "✓";
-      try { await navigator.clipboard.writeText(getText()); } catch { mark = "✕"; }
-      btn.textContent = mark;
-      setTimeout(() => { btn.textContent = "⧉"; }, 1200);
-    } }, "⧉");
-  return btn;
 }
 
 // F385 (operator order 2026-08-23): every fenced code block in a bubble gets its OWN quiet
