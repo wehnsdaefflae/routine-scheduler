@@ -64,6 +64,19 @@ def test_vulture_clean():
     _gate("vulture", "src", "tests", "--min-confidence", "60")
 
 
+def test_uv_lock_matches_pyproject():
+    """A dependency added to `pyproject.toml` and never re-locked installs NOTHING on the next
+    container rebuild, because the rebuild syncs from `uv.lock`. 0.531.4 shipped
+    `websockets>=13` as a real dependency — `src/rsched/web/api_screen_view.py` imports it at
+    module level — with the lock left at its previous resolution, so the committed tree declared
+    a package no rebuilt environment would install; the live venv had it only from a hand
+    install. Nothing in the suite compared the two, and neither gate stage reads the lock.
+    `--offline` keeps this network-free: the check compares the lock's recorded requirements
+    against the manifest's and never resolves anything new.
+    """
+    _gate("uv", "lock", "--check", "--offline")
+
+
 def test_the_gate_runs_when_its_tool_is_only_beside_the_interpreter(monkeypatch):
     """Measured in the running container: PATH is `/usr/local/bin:…:/bin` and carries none of
     the three tools, because the image sets no PATH and `/opt/rsched-venv/bin` is not on it. Only

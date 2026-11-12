@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.534.1] — 2026-11-12
+
+### Fixed
+- **`uv.lock` was four commits behind `pyproject.toml`, and nothing in the suite could tell.**
+  0.531.4 added `websockets>=13` as a real dependency — `web/api_screen_view.py` imports it at
+  module level, behind no try/except — but the lock was left at its previous resolution. A
+  container rebuild syncs the environment from the LOCK, so the committed tree declared a
+  package no rebuilt environment would install: the daemon kept working only because the live
+  venv had `websockets` from an earlier hand install. `uv lock --check` was red on the committed
+  tree and green on the re-locked one, which is the whole proof.
+  The lock is re-locked (two lines: the `websockets` requirement recorded against `rsched`), and
+  `tests/test_quality.py` gains `test_uv_lock_matches_pyproject`, which runs
+  `uv lock --check --offline` through the same `_gate` helper as ruff/mypy/vulture — so the
+  manifest and the lock can never disagree silently again. `--offline` keeps it network-free:
+  it compares recorded requirements and resolves nothing new. The node was proved in both
+  directions (green on the re-locked tree, red on the committed one) before shipping.
+
 ## [0.534.0] — 2026-11-11
 
 ### Added
