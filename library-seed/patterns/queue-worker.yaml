@@ -41,6 +41,7 @@ settings:
   - evidence-discipline
   - fix-the-cause
   - make-failure-visible
+  - outcome-first
   - problem-routing
   - verify-independently
   - web-research

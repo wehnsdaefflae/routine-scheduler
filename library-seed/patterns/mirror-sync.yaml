@@ -40,6 +40,7 @@ settings:
   - fix-the-cause
   - git-checkpoint
   - make-failure-visible
+  - outcome-first
   - problem-routing
   - verify-independently
   - web-research

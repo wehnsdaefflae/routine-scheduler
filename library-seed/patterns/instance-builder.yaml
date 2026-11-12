@@ -48,6 +48,7 @@ settings:
   - git-checkpoint
   - interface-craft
   - make-failure-visible
+  - outcome-first
   - problem-routing
   - verify-independently
   - web-research

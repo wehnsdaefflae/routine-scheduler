@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.534.3] — 2026-11-12
+
+### Fixed
+- **All fourteen shipped settings patterns dropped `outcome-first` from every routine they
+  created.** A pattern's `rules` list REPLACES the computed defaults rather than adding to them:
+  `workflows/scaffold` builds `rules: active_rules` (DEFAULT_RULES ∩ library + the workflow's
+  includes) and then spreads `patterns/apply.routine_yaml(settings)` over that config, where
+  `rules` is one of the copied keys. Every one of the fourteen omitted `outcome-first` — **and
+  only `outcome-first`**, the other six defaults being present in all fourteen — because the
+  patterns were written in `307e127b` before that rule existed and nothing ever compared the two
+  lists. `git log -G` on the installed `project-steward.yaml` shows exactly one commit touching
+  those lines, so nobody had narrowed it by hand either.
+  The consequence was live and measurable: of 26 routines on this instance 25 hold the rule, and
+  the one that does not — `drawerrr-irreversible-actions` — is the newest and the only one born
+  from a pattern since the rule was added. The rule it lost is the one that makes a run answer
+  for what it PRODUCES.
+  All fourteen seed patterns now carry it, and `tests/test_pattern_default_rules.py` pins every
+  shipped pattern's rules against `DEFAULT_RULES` (plus the other half of the same guard: a
+  default rule the seed library ships no document for would be filtered out by `scaffold` and
+  reach no routine anyway). Its sibling `test_patterns.py` has pinned exactly this shape for
+  budgets since it was written; rules never had the equivalent. A new module because that file
+  is at its size ratchet ceiling.
+  **This reaches patterns installed from now on, NOT the fourteen already in a live library:**
+  `bootstrap.sync_seed_library_docs` is add-only by design and never syncs content drift, so on
+  an existing instance the stale lists stand until a one-shot migration converts them — which is
+  the operator's call, because the library is his to edit and its repo pushes on commit. Filed
+  as an audit decision rather than done silently here.
+
 ## [0.534.2] — 2026-11-12
 
 ### Fixed

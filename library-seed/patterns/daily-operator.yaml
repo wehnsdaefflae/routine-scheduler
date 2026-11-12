@@ -37,6 +37,7 @@ settings:
   - feedback-loop
   - fix-the-cause
   - make-failure-visible
+  - outcome-first
   - problem-routing
   - verify-independently
   - web-research
