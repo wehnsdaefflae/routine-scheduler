@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.537.0] — 2026-11-13
+
+### A one-shot migration converts all fourteen installed patterns (D283)
+
+- The operator's answer to D283. `src/rsched/migrate_pattern_drift.py` (new), called from
+  `cli_daemon`: `max_total_turns` −1 → 0, the three ladder keys, and `outcome-first` added —
+  while any list a pattern deliberately NARROWED is left alone, which is the half that makes a
+  blanket rewrite unsafe and is pinned by its own tests.
+- The drift was re-measured rather than inherited: 14/14 on all three counts, and each live file
+  is **exactly 116 bytes** from its seed twin — which the three changes sum to exactly.
+- `getattr` throughout, pinned by the four-attribute boot stand-in test, because anything
+  `cli_daemon` calls at startup meets that stand-in. `MIGRATION(expires=2026-12-31)` declared, so
+  `tests/test_policy.py` holds it to an expiry.
+
+### A created routine measures something from its first run (D286)
+
+- The operator's answer to D286. The outcome contract is already DEMANDED before anything is
+  created, so the measuring script is now scaffolded with it: `workflows/outcome_stub.py` (new)
+  derives a runnable `scripts/outcome.py` from the `produces` lines.
+- What it prevents: a routine born with an `outcome:` and no `scripts/outcome.py` records an
+  outcome error at every run and its own settings page calls it broken on the day it was made
+  (`readmodels/surface_outcome.py`).
+- The stub REPORTS 0 for each measure rather than leaving the measure out, with a per-measure
+  marker naming what a real count would read — omitting a measure makes the engine drop the whole
+  reading as an error, which is the state D286 exists to end. Checked against the engine's own
+  `outcome.parse` over the scaffolded script's real output, and against `surface_outcome` no
+  longer emitting `unmeasured`.
+- The person's own `produces` prose is compiled into the generated file, so a label holding a
+  backslash or a triple quote is defused before it can make the scaffolded script raise at
+  import.
+
 ## [0.536.0] — 2026-11-13
 
 ### The action kinds' prose carries conduct, not a third copy of the field contract (goal b5, step 2)
