@@ -54,6 +54,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by the schema's `summary` description. Three needles in `tests/test_prompt_anatomy.py` moved
   from cut bullet prose to the field descriptions the engine really emits.
 
+### A run transcript's rows carry ⧉ copy and 🐞 report-as-bug, and a `view_image` row says where the reading is (F217, R3357)
+
+- **Copy shipped for conversations only.** A run transcript's messages carried no copy button, and
+  nothing anywhere carried report-as-bug. New `static/components/row-tools.js` holds `copyBtn`
+  (moved out of `chat.js` with its clipboard-rejection handling verbatim) plus the 🐞 dialog, which
+  queues a **message** through the existing `POST /api/routines/{slug}/messages` — the same endpoint
+  the routine page's inbox composer uses, pre-filled and editable, and absent entirely where no
+  routine owns the mount. No report-filing route was invented; `src/rsched/web/` has none.
+- **Two real defects were found by RENDERING the page, which nobody had done:**
+  - `static/views/run.js` mounted the transcript without `runId`/`sub`, so every copy and every
+    🐞 from a run row named only "routine uir, turn 1" instead of the run — the feature's whole
+    purpose defeated silently.
+  - R3357's "↳ shown directly to the model" pointer sat inside the **collapsed** result fold:
+    invisible until expanded. That is the F559 defect R3357 exists to fix, reintroduced one element
+    over, and missed by a test asserting `to_have_count(1)` on an element nobody could see.
+- **R3357's half:** new `static/components/obs-image.js`. A `view_image` row's paths and thumbnails
+  now ride the action element instead of the collapsed fold, and reading `paths` (not just `path`)
+  fixes a batched `view_image` rendering an empty brief. The vision-util path renders the util's
+  returned description; the DIRECT multimodal path renders a labelled pointer with a
+  `data-turn-link` to the turn where the model's reading is — landed by the listener `turnlink.js`
+  already installs over the run view, so frozen `views/run.js` needed no new wiring. No answer is
+  invented into that cell; the engine half (recording the reading against the row) is deliberately
+  not built.
+- Five new classes in `static/obs.css` (48 → 99 lines, against the 350 bar); `views.css` and
+  `base.css`, both at ceiling, are untouched. F433's `@media (hover: none)` rule carried across.
+  Both files the fixes touched sit AT their ratchet ceilings, so both fixes are line-neutral.
+- 15 browser tests (`tests/ui/test_transcript_row_tools.py`), including the 🐞 end-to-end
+  assertion that `msg-*.json` really lands in the inbox, a both-widths test at 1280 and 390 that
+  verifies button labels by COMPUTED TEXT (the blank-pill artefact of an unweighted face), and the
+  new address test. Looked at, desktop and phone.
+
 ### The daemon samples ITSELF while a request is still slow (F871)
 
 - **The console's 10-30 second waits are a blocked process, not slow handlers.** `/api/llm-tasks`
