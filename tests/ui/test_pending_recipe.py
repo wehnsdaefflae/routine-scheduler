@@ -144,6 +144,61 @@ def test_discard_can_tell_the_routine_the_change_was_already_made_by_hand(ui, ui
     assert "was not wanted" not in text
 
 
+def test_a_live_proposing_run_is_not_offered_the_click_the_server_refuses(ui, ui_page):
+    """F885. `apply it` was an enabled button the route answers 409 to while the proposing run
+    is live: the operator clicked it at 09:22:33, read "…is running again — recipe editing
+    unlocks on a FINISHED run", waited 93 s, clicked again and read the identical refusal. Those
+    two toasts were the ONLY two error events in 2 998 trace rows across two days, on a control
+    he had clicked 13 times in the window. The row now carries the refusal the POST would raise,
+    so the card says when it unlocks instead of spending a click to find out.
+    """
+    _queue(ui)
+    ui.seed_run("uir", "20261025-140000", "running")
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator("[data-recipe]")
+    expect(card).to_have_count(1)
+    note = card.locator("[data-recipe-blocked]")
+    expect(note).to_have_count(1)
+    expect(note).to_contain_text("unlocks when the run finishes")
+    expect(note).to_contain_text("recipe editing unlocks on a FINISHED run")
+    # both controls end in POST …/revise, so both are withheld; discarding is still his
+    expect(card.get_by_role("button", name="apply it")).to_be_disabled()
+    expect(card.get_by_role("button", name="edit", exact=True)).to_be_disabled()
+    expect(card.get_by_role("button", name="discard")).to_be_enabled()
+
+
+def test_a_pruned_run_says_it_cannot_be_applied_here_rather_than_to_wait(ui, ui_page):
+    """The route's OTHER 409: retention pruned the proposing run, so there is no leg to resume.
+    "unlocks when the run finishes" would be a lie about that card — nothing is coming — so the
+    line says it cannot be applied from here and carries the route's own sentence, which names
+    the routine's recipe editor as the way to make the change.
+    """
+    _queue(ui)                                   # …and no run dir for it on disk
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator("[data-recipe]")
+    expect(card).to_have_count(1)
+    note = card.locator("[data-recipe-blocked]")
+    expect(note).to_have_count(1)
+    expect(note).to_contain_text("cannot be applied from here")
+    expect(note).to_contain_text("no longer on disk")
+    expect(note).not_to_contain_text("unlocks when the run finishes")
+    expect(card.get_by_role("button", name="apply it")).to_be_disabled()
+
+
+def test_a_finished_proposing_run_is_still_offered_the_click(ui, ui_page):
+    """The other half of the same rule: disabled exactly when the server would refuse, so a
+    finished run's card is unchanged and carries no blocked line at all.
+    """
+    _queue(ui)
+    ui.seed_run("uir", "20261025-140000", "finished")
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator("[data-recipe]")
+    expect(card).to_have_count(1)
+    expect(card.get_by_role("button", name="apply it")).to_be_enabled()
+    expect(card.get_by_role("button", name="edit", exact=True)).to_be_enabled()
+    expect(card.locator("[data-recipe-blocked]")).to_have_count(0)
+
+
 def test_several_revisions_are_all_listed(ui, ui_page):
     _queue(ui, lines=(LINE, "main.md — drop the duplicate recheck step"))
     ui.seed_run("uir", "20261025-140000", "finished")

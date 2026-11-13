@@ -11,6 +11,12 @@
 // The LINES are the card, not a fold-away detail: they are what the operator is approving, in
 // the run's own words, and there are at most engine/recipeproposal.MAX_LINES of them.
 //
+// F885 — and the apply is WITHHELD where the route would refuse it, because the unlock needs a
+// FINISHED run and the card used to have no way to know: the operator clicked `apply it` on a
+// live run, read the 409, waited 93 s, clicked again and read it verbatim again. The row carries
+// the route's own refusal (web/api_pending.list_pending → api_recipe_revision.revise_refusal),
+// so the reason is on the card and the terminal-state list stays in the one place that decides.
+//
 // F790 — and they are EDITABLE here, because the proposal is PROSE rather than a diff: there is
 // no patch to adjust, so rewording the lines is the whole of editing them, and the reworded
 // lines are what the resumed leg is told to implement. The control is chat.js's revise control
@@ -39,8 +45,26 @@ const WHY = {
 export function recipeRow(rec, { reload, onChanged } = {}) {
   const f = rec.fields || {};
   const lines = f.lines || [];
-  const apply = el("button", { class: "btn small primary" }, "apply it");
-  const edit = el("button", { class: "btn small" }, "edit");
+  // F885 — what the route would REFUSE this click with, carried on the row by
+  // web/api_pending.list_pending from the route's own predicate
+  // (api_recipe_revision.revise_refusal). Empty exactly when the POST would be accepted, so
+  // the card is disabled exactly where the server raises 409 and never keeps a terminal-state
+  // list of its own. The operator clicked `apply it` on a live run, read "…is running again",
+  // waited 93 s, clicked again and read the identical refusal: the only two error toasts in
+  // 2 998 trace rows over two days, on a control he had clicked 13 times in the window.
+  const blocked = rec.revise_blocked || "";
+  // `run_state` tells the two refusals apart, and they are not the same promise: a LIVE run
+  // unlocks by ending, a run retention has PRUNED never unlocks at all — "wait for it" would
+  // be a card that lies. Its own sentence names what to do instead.
+  const blockedLine = blocked
+    ? el("div", { class: "faint small mt", "data-recipe-blocked": "" },
+        rec.run_state ? "unlocks when the run finishes" : "cannot be applied from here",
+        " — ", blocked)
+    : null;
+  const apply = el("button", { class: "btn small primary", disabled: Boolean(blocked) },
+    "apply it");
+  // `edit` too: `apply edited` posts the same route, so editing could only end in that refusal
+  const edit = el("button", { class: "btn small", disabled: Boolean(blocked) }, "edit");
   const drop = el("button", { class: "btn small danger" }, "discard");
   const btns = [apply, edit, drop];
   const lineRows = () => lines.map((line) => el("div", { class: "small",
@@ -54,8 +78,12 @@ export function recipeRow(rec, { reload, onChanged } = {}) {
       toastError(err, 5000);
       // the editor stays open holding what he typed, so the two controls it suppresses stay
       // suppressed: `edit` would rebuild the box from the run's lines and lose his wording, and
-      // `apply it` would send those lines instead of his
-      btns.forEach((b) => { b.disabled = editing && (b === edit || b === apply); });
+      // `apply it` would send those lines instead of his. A card the ROUTE would refuse keeps
+      // both suppressed for its own reason — a failed discard must not hand back a click the
+      // server answers 409 to (F885).
+      btns.forEach((b) => {
+        b.disabled = (editing || Boolean(blocked)) && (b === edit || b === apply);
+      });
     }
   };
   const revise = (body, said) => act(async () => {
@@ -118,6 +146,7 @@ export function recipeRow(rec, { reload, onChanged } = {}) {
       el("a", { class: "btn small", href: `#/routine/${rec.routine}` }, "open"),
       apply, edit, drop),
     shown,
+    blockedLine,
     el("div", { class: "faint small" },
       rec.run_id
         ? el("span", {}, "proposed in ", el("a", { href: `#/run/${rec.run_id}` }, rec.run_id))

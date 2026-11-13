@@ -25,7 +25,13 @@ Every finishing run is asked whether its own recipe should change, and what it a
 You have three dispositions there, and the proposing routine is told which one you picked, because
 its next run reasons from that:
 
-- **apply it** — resume that run with its recipe writable, to make the edit it proposed.
+- **apply it** — resume that run with its recipe writable, to make the edit it proposed. It is
+  **withheld while that run is live** — recipe editing unlocks on a *finished* run, so the card
+  says "unlocks when the run finishes" instead of offering a click the server refuses. The state
+  is read fresh every time the band loads, so the button is back the next time you open the
+  Decisions page after that run has ended. If retention has already **pruned** the run there is no leg
+  to resume at all, and the card says so: make the change from the routine's own recipe editor
+  and discard the proposal.
 - **edit** — reword the lines first. The proposal is prose, not a patch, so editing it *is*
   rewording what the resumed run is told to do: the box is prefilled with the run's own lines (one
   per line), and `apply edited` sends yours instead. The run is told plainly that the wording is
