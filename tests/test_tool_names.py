@@ -33,9 +33,9 @@ from rsched.workflows import lint, recipelint
 RULE = """---
 tags: [a, b, c]
 effect:
-  with: it happens
-  without: it does not
-  when: always
+  with: the run states the principle before it acts on the subject
+  without: the run acts on the subject without stating the principle
+  when: the routine reaches the subject this rule governs
 ---
 
 # rule: a-rule — one line
@@ -82,7 +82,7 @@ def test_asking_the_catalog_what_exists_is_not_naming_a_tool(tmp_path: Path) -> 
     tool. self-audit's evidence stage was the hit on 2026-11-13.
     """
     (tmp_path / "main.md").write_text(
-        '# r\n\nRun `util name=list` for the catalog, or `util name=search` to find one '
+        "# r\n\nRun `util name=list` for the catalog, or `util name=search` to find one "
         "by need.\n")
     assert not [n for n in recipelint.recipe_notes(tmp_path) if "names the tool" in n]
 

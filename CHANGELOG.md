@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.540.0] — 2026-11-13
+
+### Prose names the CAPABILITY, never a tool — the standing order, enforced (goal b7)
+
+- The operator, 2026-11-13, reading a report of mine that priced a contract change at *"31
+  routines and 14 patterns to migrate"*: *"I'm **flabbergasted** that you say "every recipe,
+  pattern and instruction naming them must be migrated in the same release" because we should
+  have a standing order **FOR MONTHS** saying that recipes don't mention utils by name"*.
+- **The order was already written and bought nothing.** `engine/kindprose.py` states it for
+  library rules; `scheduler-builder`'s own `recipe-authoring` permission states it for recipes.
+  Neither is a check, so nothing failed when prose broke it — and the migration estimate that
+  provoked him exists only because of that. What was owed is ENFORCEMENT, not the sentence
+  again.
+- `recipelint.tool_names()` is the one predicate: it matches the CALL FORM — `gu <name>`,
+  `util name=<name>` — not a catalog of names, because `recipelint` may not read the library
+  (its charter: `rsched validate` walks every routine and must not need the library or the
+  network), and the call form is what a machine can be sure of from the document alone. A
+  tool's word in ordinary prose ("the mail account", "a git history") is English and is NOT a
+  finding; the catalog's own meta-verbs `util name=list` / `util name=search` are excluded,
+  because telling a run to ask what exists is the OPPOSITE of naming a tool.
+- **The two halves carry different severity, and the asymmetry is measured, not chosen.**
+  Nothing the library holds names a tool today — every pattern, workflow, rule, playbook and
+  permission, checked — so a breach there is NEW and **fails** `lint_rule_text`,
+  `lint_permission_text` and `lint_playbook_text`, which is what stops the order being broken
+  by whatever the library hands a routine at creation. **13 of 31 live recipes already name
+  one (28 findings)**, so there it is a `recipelint` note: failing `rsched validate` for
+  thirteen routines nobody asked to break is how a check gets switched off in a week.
+- `tests/test_tool_names.py` holds both halves, the prose false positive, the meta-verb false
+  positive the live fleet produced, and the library's cleanliness itself — so the day the
+  library acquires a tool name, that test says so.
+
 ## [0.539.0] — 2026-11-13
 
 ### A reference says WHAT the thing is, not only its id (R3386, first cut)
