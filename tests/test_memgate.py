@@ -93,6 +93,59 @@ def test_the_switch_turns_it_off(monkeypatch):
                             sleep=lambda _s: None, clock=lambda: 0)
 
 
+#: What a SERIAL selection was measured to HOLD, in MB — `held_peak_bytes` at its worst across
+#: every `-n 0` stage the gate has sampled whose log is still on disk to prove it was serial
+#: (21 rows, 876-2700 MB, median 1965; plus 5 `fast-serial` re-runs at 851-1317). The two 4 GB
+#: rows in the same `tests` label are 2-worker whole-suite runs (6,927 items) and are NOT
+#: serial, which is why the worker count is read from the log rather than assumed.
+MEASURED_SERIAL_HOLD_MB = 2700
+
+
+def test_a_serial_selection_is_not_charged_the_four_worker_price():
+    """R3376: every non-ui selection was charged `fast`, so a two-file `-n 0` call was gated on
+    3,584 MB — about four times its own measured hold — and on 2026-11-12 that refused ~12 gate
+    calls, including a release gate's whole FAST stage and three child runs that handed back
+    built items with no test evidence at all.
+
+    `-n 0` leaves `dist == "no"` and `numprocesses == 0`; the default selection resolves to
+    `worksteal` with 4 (measured on this box, pytest 9.1.1 / xdist 3.8.0). The browser suite is
+    priced by its markers instead, because its cost is the Chromiums rather than the workers.
+    """
+    serial = types.SimpleNamespace(option=types.SimpleNamespace(dist="no", numprocesses=0))
+    fast = types.SimpleNamespace(option=types.SimpleNamespace(dist="worksteal", numprocesses=4))
+    assert memgate.selection_for(serial, "not ui") == "serial"
+    assert memgate.selection_for(fast, "not ui") == "fast"
+    assert memgate.selection_for(serial, "") == "browser", "markers decide the browser price"
+    assert memgate.selection_for(fast, "ui") == "browser"
+    assert memgate.NEED_MB["serial"] < memgate.NEED_MB["fast"], (
+        "a selection that starts no xdist worker must not be charged for four of them")
+
+
+def test_the_serial_budget_covers_what_a_serial_selection_was_measured_to_hold():
+    """The same floor the fast budget has, for the same reason: a budget below the measured hold
+    is a guard that reports safety it never checked. R3376 proposed 1280 MB from this module's
+    older n=27 table (0.79-1.20 GB); with 119 rows the serial worst case is 2,700 MB, so the
+    cheaper figure would have admitted a selection more than twice what it waited for.
+    """
+    assert memgate.NEED_MB["serial"] >= MEASURED_SERIAL_HOLD_MB, (
+        f"memgate's serial budget is {memgate.NEED_MB['serial']} MB but a serial selection was "
+        f"measured holding {MEASURED_SERIAL_HOLD_MB} MB (held_peak_bytes) — raise it")
+
+
+def test_the_refusal_says_which_selection_it_priced(monkeypatch):
+    """R3376's second ask: "the fast suite needs 3584 MB" printed on a two-file `-n 0` call read
+    as a memory leak in the candidate and sent its author looking for one."""
+    monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
+    monkeypatch.setenv("RSCHED_TEST_MEM_WAIT_S", "0")
+    with pytest.raises(pytest.exit.Exception) as exc:
+        memgate.wait_for_memory("serial", read=lambda: 9000, read_cgroup=lambda: 500,
+                                sleep=lambda _s: None, clock=lambda: 1)
+    assert "no xdist workers" in str(exc.value), str(exc.value)
+    assert "2816 MB" in str(exc.value)
+    assert set(memgate.SELECTION_PROSE) == set(memgate.NEED_MB), (
+        "every priced selection needs prose for its refusal")
+
+
 def test_the_fast_budget_still_covers_the_worker_count_it_claims_to():
     """The two halves must move together — nothing has ever checked that they do.
 

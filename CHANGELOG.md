@@ -15,6 +15,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.535.1] — 2026-11-13
+
+### The memory gate stops charging a serial test run for four workers it never starts
+
+- **`tests/memgate.py` has a third price, `serial`, and `tests/conftest.py` charges by what the
+  session will really start.** Until now every non-ui selection was charged `NEED_MB["fast"]` —
+  3,584 MB, the four-worker fast stage's measured hold — whatever it selected. The 2.25 GB that
+  figure covers above a bare controller *is* the four xdist workers, and a `-n 0` selection
+  starts none of them. `scheduler-builder` measured the cost on 2026-11-12 (R3376): his release
+  gate's FAST stage exited 3 after 1,201 s with `real_failures: []`, two more targeted calls of
+  his went the same way, and **three of his child runs handed back three built items with no
+  pytest evidence at all** across ~9 gate attempts — nothing wrong with any candidate.
+- **The new figure is measured, and it is not the one the report proposed.** `memgate`'s table
+  rested on 27 `tests` rows (0.79-1.20 GB), which suggested 1,280 MB. The gate's evidence now
+  carries 119 rows with `held_peak_bytes`, and the 23 whose stage log is still on disk can be
+  split by the worker count pytest printed into its header: **21 serial rows hold 876-2,700 MB
+  (median 1,965)**, the gate's own 5 `fast-serial` re-runs 851-1,317 MB, and the two 4 GB rows
+  in the same label are **2-worker whole-suite runs (6,927 items), not serial at all**. So
+  `serial` is **2,816 MB** — the worst measured serial hold rounded up to the next 256 MB — and
+  1,280 would have admitted a selection holding more than twice what it waited for, which is
+  the same class of defect as the 2,048 MB budget this module corrected on 2026-11-10.
+- **The discriminator is what xdist does, not what was typed:** `-n 0` leaves `dist == "no"`
+  and `numprocesses == 0`, while the default `addopts` selection resolves to `worksteal` with 4
+  (measured on this box, pytest 9.1.1 / xdist 3.8.0). The browser suite is still priced by its
+  marker expression, because its cost is the Chromiums it drives rather than the workers.
+- **A refusal now names the selection it priced** (the report's second ask): "the fast suite
+  needs 3584 MB" printed on a two-file `-n 0` call read as a memory leak in the candidate and
+  sent its author looking for one. `SELECTION_PROSE` gives each priced label its phrase, and a
+  test asserts the two mappings cover the same keys so a future price cannot ship without it.
+- Three new tests in `tests/test_memgate.py` pin the discriminator over all three selection
+  shapes, the serial budget against `MEASURED_SERIAL_HOLD_MB`, and the refusal's wording.
+  `tests/conftest.py` was at its 679-line ceiling, so its change is exactly line-neutral.
+- **Not fixed here, and it is an operator question:** even priced correctly, the fast stage's
+  3,584 MB and a live routine run cannot both be guaranteed inside this 5,120 MB cgroup — the
+  report measured a run holding 1,717 MB (3,271 MB left), while with a run live during this fix
+  the cgroup held 1,086 MB and left 4,033 MB. So the collision is real but intermittent, and
+  the choice between a larger cgroup and fewer `FAST_WORKERS` is his.
+
 ## [0.535.0] — 2026-11-12
 
 ### The action contract stops being sent twice (goal b5, step 1 of the prompt cut)

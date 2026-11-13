@@ -68,7 +68,58 @@ import pytest
 #: peak (100.0 %) took 205 s, while the one 1,710 s stage was the `should_wait` hang below, not
 #: memory pressure. Lowering `FAST_WORKERS` would have cost every release gate wall clock
 #: against a ceiling the stage was never near on the deciding figure.
-NEED_MB = {"fast": 3584, "browser": 3584}
+#: `serial` is the THIRD entry, added 2026-11-13 (R3376 from `scheduler-builder`). Until then
+#: every non-ui selection was charged the four-worker `fast` figure, whatever it selected: a
+#: two-file `-n 0` call was gated on 3,584 MB, and on 2026-11-12 that refused ~12 gate calls —
+#: his own release gate's FAST stage (exit 3 at 1,201 s with `real_failures: []`) and three of
+#: his child runs, which handed back three built items with ZERO test evidence between them.
+#: The 2.25 GB the fast figure covers above a bare controller is the four xdist WORKERS, and a
+#: serial selection starts none of them, so it was being charged for processes it never spawns.
+#:
+#: MEASURED the same way as the others, off `held_peak_bytes` in the gate's own
+#: `.gate-evidence/memory-peaks.jsonl` — 119 `tests` rows carry the field, and the 23 whose
+#: stage log is still on disk can be split by the worker count pytest printed:
+#:
+#:     selection                       n    held of the 5 GiB cgroup      seconds
+#:     -n 0, under 1000 items         21    876-2700 MB (median 1965)     1-442
+#:     fast-serial (the gate's own)    5    851-1317 MB (median  934)
+#:     2 workers, 6927 items           2    3979-4393 MB                  441-442
+#:
+#: So `serial` is 2816 MB: the worst measured serial hold (2,700) rounded up to the next 256 MB.
+#: It is NOT the 1280 MB R3376 proposed from this module's older n=27 table — that table read
+#: 0.79-1.20 GB, and with four times the rows the serial worst case is more than twice it, so
+#: the cheaper figure would have admitted a selection it had not checked for. The two-worker
+#: rows are the reason the whole-suite `-n 2` workaround is not priced here: it is not serial.
+#:
+#: Like every figure here this is the whole CGROUP's hold while the selection ran, a live
+#: routine run included — deliberately conservative, since what must fit is everything at once.
+NEED_MB = {"fast": 3584, "browser": 3584, "serial": 2816}
+
+#: What each label is called in the message a refusal prints. "the fast suite" was the only
+#: phrase before, and it was printed for a two-file `-n 0` call too — which read as a memory
+#: leak in the candidate and sent R3376's author looking for one (his point 2).
+SELECTION_PROSE = {
+    "fast": "the fast suite at 4 xdist workers",
+    "browser": "the browser suite",
+    "serial": "this serial selection (no xdist workers)",
+}
+
+
+def selection_for(config, markexpr: str) -> str:
+    """Which NEED_MB entry this session should be charged — by what it will really start.
+
+    The browser suite is priced by its marker expression, because its cost is the Chromiums it
+    drives rather than the workers pytest starts. Everything else is priced by whether xdist
+    workers will exist: `-n 0` leaves `dist == "no"` and `numprocesses == 0` (measured on this
+    box with pytest 9.1.1 / xdist 3.8.0), while the default `addopts` selection resolves to
+    `worksteal` with 4. A worker process never reaches here at all — `should_wait` sends it
+    straight through, since the controller already waited for the whole selection.
+    """
+    if "not ui" not in markexpr:
+        return "browser"
+    serial = (getattr(config.option, "dist", "no") == "no"
+              or getattr(config.option, "numprocesses", None) in (0, None))
+    return "serial" if serial else "fast"
 
 MEMINFO = Path("/proc/meminfo")
 CGROUP = Path("/sys/fs/cgroup")
@@ -149,11 +200,13 @@ def wait_for_memory(selection: str, *, read=available_mb, read_cgroup=cgroup_hea
             return
         name, have = min(short, key=lambda s: s[1])
         if clock() >= deadline:
-            pytest.exit(f"{name}: {have} MB available, the {selection} suite needs {need} MB "
+            what = SELECTION_PROSE.get(selection, f"the {selection} suite")
+            pytest.exit(f"{name}: {have} MB available, {what} needs {need} MB "
                         "— not started, so it cannot push it into an OOM that kills a live "
                         "run (tests/memgate.py). Retry when it is quieter.", returncode=3)
         if not told:
-            sys.stderr.write(f"memgate: {name} has {have} MB, {selection} suite needs {need} "
+            what = SELECTION_PROSE.get(selection, f"the {selection} suite")
+            sys.stderr.write(f"memgate: {name} has {have} MB, {what} needs {need} "
                              "MB — waiting for it to free memory\n")
             told = True
         sleep(15)
