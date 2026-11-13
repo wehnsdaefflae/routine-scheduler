@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.535.5] — 2026-11-13
+
+### The sub-run card stops refetching once per replayed subrun event
+
+- **The same replay storm as 0.535.4, second panel** (F892). `views/conversations.js:392` called
+  `subRunTree.refresh()` for every `subrun_start` / `subrun_end` the tail delivered — and the
+  tail replays the whole transcript from offset 0, so each HISTORIC subrun event fired an
+  immediate `/api/runs/<run>/tree`. `views/run.js:533-534` had the same shape.
+- **Measured in the same two trace days:** 827 client-stamped `/tree` slow rows at a 3,358 ms
+  median, **676 of them (82%) under a second after the previous one**, and 695 falling inside
+  the artifact bursts — the two storms are one view open, amplifying each other.
+- `components/subruntree.js` gains a 1,500 ms coalescing `poke()` beside its `refresh()`,
+  guarded on `box.isConnected` and the existing final `stopped` flag (and cleared by `stop()`,
+  so a torn-down view leaves no timer). The per-event hooks poke; the TERMINAL-state refresh
+  stays a refresh, because a finished run deserves one authoritative read.
+- **Both pins discriminate, proven by removing the fix:** with the two call sites reverted, 12
+  replayed writes cost **13** `/artifacts` fetches and 8 replayed subruns cost **17** `/tree`
+  fetches; with the coalescing, 3 and 4. The liveness pin passes either way, which is what makes
+  the other two meaningful.
+
 ## [0.535.4] — 2026-11-13
 
 ### Opening a long conversation no longer fires one artifact fetch per historic write

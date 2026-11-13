@@ -389,7 +389,7 @@ export async function render(view, slug, _query = {}) {
                            pendingEcho.node?.remove(); pendingEcho = null;   // the real bubble takes over (F295)
                          }
                          chat.add(ev); scrollDown();
-                         if (ev.type === "subrun_start" || ev.type === "subrun_end") subRunTree?.refresh();
+                         if (ev.type === "subrun_start" || ev.type === "subrun_end") subRunTree?.poke();
                          if (ev.type === "observation" && ["read_file", "view_image", "write_file",
                              "edit_file"].includes(ev.payload?.kind)) fileActivity?.poke(); },
       onState: (s) => { setState(s.state);   // setState re-lights the state diagram

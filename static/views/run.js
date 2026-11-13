@@ -530,8 +530,8 @@ export async function render(view, runId, query = {}) {
       } else if (ev.type === "observation" || ev.type === "finish") {
         pendingAction = null; setWaiting(WORKING.has(curState));
       }
-      if (ev.type === "subrun_start") { addSubTab(ev.payload.n, ev.payload.label); subRunTree.refresh(); }
-      if (ev.type === "subrun_end") subRunTree.refresh();
+      if (ev.type === "subrun_start") { addSubTab(ev.payload.n, ev.payload.label); subRunTree.poke(); }
+      if (ev.type === "subrun_end") subRunTree.poke();
       // a deliverable landed — the rail refreshes without waiting for run end
       if (ev.type === "observation" && !ev.payload?.error
           && (ev.payload?.kind === "write_file" || ev.payload?.kind === "edit_file")

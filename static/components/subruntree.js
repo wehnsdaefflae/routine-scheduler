@@ -105,8 +105,22 @@ export function createSubRunTree(container, { treeUrl, isLive, turnHref }) {
   }
 
   refresh().then(poll);
+  let pokeTimer = null;
   return {
     refresh() { if (!stopped) { refresh(); poll(); } },
-    stop() { stopped = true; if (timer) clearTimeout(timer); timer = null; },
+    // F892: the live tail replays the WHOLE transcript on a view open (liveTail offset 0), so
+    // calling refresh() per subrun event meant one immediate /tree fetch per HISTORIC subrun
+    // too — 676 of 827 client-stamped /tree rows in the 2026-11-12/13 traces arrived under a
+    // second apart, 695 of them inside the artifact storm F891 fixed. One refetch per lull,
+    // and none once the card is gone or the tree is stopped.
+    poke() {
+      if (pokeTimer || stopped) return;
+      pokeTimer = setTimeout(() => {
+        pokeTimer = null;
+        if (!stopped && box.isConnected) { refresh(); poll(); }
+      }, 1500);
+    },
+    stop() { stopped = true; if (timer) clearTimeout(timer); timer = null;
+             if (pokeTimer) clearTimeout(pokeTimer); pokeTimer = null; },
   };
 }
