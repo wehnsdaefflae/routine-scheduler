@@ -10,7 +10,7 @@
 
 import { md, mdInline } from "/static/md.js";
 import { chip, el, when } from "/static/util.js";
-import { refHref } from "/static/components/reflinks.js";
+import { refLink } from "/static/components/reflinks.js";
 import { itemAge } from "/static/components/item-age.js";
 
 const STATUS_TONE = {
@@ -138,7 +138,9 @@ function refsLine(item) {
   if (!(item.refs || []).length) return null;
   return el("div", { class: "row mt", style: "gap:6px" },
     el("span", { class: "faint small" }, "refers to"),
-    ...item.refs.map((r) => el("a", { class: "ref-link", href: refHref(r) }, r)));
+    // the SAME builder the prose links use, so a reference says the same thing wherever the
+    // console renders one (the operator's requirement: never an identifier on its own)
+    ...item.refs.map((r) => refLink(r)));
 }
 
 // `queued` is this finding's not-yet-consumed comment (if any): it persists in the box across
