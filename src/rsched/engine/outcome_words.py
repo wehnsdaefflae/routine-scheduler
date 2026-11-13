@@ -13,8 +13,10 @@ run's queued proposal and the Decisions page that materializes one — because a
 without it is one `rsched validate` fails at once, and the freelance-radar lesson is that a
 routine nobody asked "what is this for, counted how" runs for months on its own account of
 itself. The person's confirmation of the draft IS the accept: scaffold writes the contract into
-the new routine.yaml, and the routine's first run writes `scripts/outcome.py` from the records
-its stages keep (the recipe's Done-when line names the measures; workflows/pipeline.py).
+the new routine.yaml AND, from these same lines, a `scripts/outcome.py` stub, so the first run
+records a reading rather than an outcome error (D286, `workflows/outcome_stub.py`); a later run
+replaces the stub's placeholder with real counting from the records its stages keep (the
+recipe's Done-when line names the measures; workflows/pipeline.py).
 """
 
 from __future__ import annotations

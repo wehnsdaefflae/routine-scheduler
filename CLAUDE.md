@@ -892,7 +892,10 @@ by a test, by the engine, or by a past incident.
 - **What a routine is FOR is its OUTCOME contract, and no run judges it.** `outcome:` in
   routine.yaml (config/outcome.py: a `principal` and up to six `measures`, each a `count` or a
   `level` with a `better` direction) is the operator's declaration; the routine's own
-  `scripts/outcome.py` prints `{<measure id>: <number>}` from its state, and the engine runs it
+  `scripts/outcome.py` prints `{<measure id>: <number>}` from its state — SCAFFOLDED as a stub
+  derived from the `produces` lines at creation (D286, `workflows/outcome_stub.py`: a routine
+  whose contract was demanded and whose script was not written recorded an error at every run
+  and its own page called it broken on day one), then made real by a later run — and the engine runs it
   after every run's last turn (engine/outcome.py — shape-checked only; a failure records
   `error`, never a zero) and records `outcome_measures` in status.json and the usage row, so
   outcome and cost form ONE series (readmodels/outcome_series.py, `GET

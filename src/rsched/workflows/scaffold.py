@@ -54,8 +54,10 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     `## Done when`; `never` — what they said a run must never do — its `## Never` (and
     context for the settings recommended to stop it before the action). `outcome` — the
     contract the person settled (engine/outcome_words.py) — is written into routine.yaml as
-    declared, not proposed: their confirmation of the draft was the accept, and the recipe's
-    Done-when names its measures so the first run writes `scripts/outcome.py`. A one-line
+    declared, not proposed: their confirmation of the draft was the accept, the recipe's
+    Done-when names its measures, and a `scripts/outcome.py` STUB derived from the same lines
+    is written beside it (`outcome_stub.py`, D286) so the first run records a reading instead
+    of an outcome error. A one-line
     `description` (for the UI) is always written, falling back to the name. `tz` is the zone
     the schedule is in — empty means the server's (`config.default_tz`), the zone the console
     shows and saves schedules in.
@@ -159,6 +161,15 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
                          routine=slug, run_id="", detail=why)
     (routine_dir / "LEDGER.md").write_text(ledger, encoding="utf-8")
     (routine_dir / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
+    # The contract was DEMANDED before anything was created, so the measuring script is
+    # scaffolded with it (D286): a routine born with an `outcome:` and no `scripts/outcome.py`
+    # records an outcome error at every run and its own settings page calls it broken on the
+    # day it was made (`readmodels/surface_outcome.py`). Derived from the same lines, stub and
+    # TODO — `workflows/outcome_stub.py` says why it reports 0 rather than leaving a measure out.
+    if outcome:
+        from .outcome_stub import write as write_outcome_stub
+
+        write_outcome_stub(routine_dir, OutcomeConfig.model_validate(outcome))
 
     cfg = {
         "name": name,

@@ -88,10 +88,14 @@ def test_the_created_routine_declares_it_and_its_recipe_names_it(tmp_path):
     raw = yaml.safe_load((made / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["outcome"] == outcome_words.contract(PRODUCES).model_dump()
     assert any(names_a_measure(line["text"], ["replies"]) for line in donewhen.read(made))
-    # born declared and named; what it still owes is the script its first run writes
+    # Born declared, NAMED and MEASURING: the contract was demanded, so the measuring script is
+    # scaffolded from the same lines (D286) and the routine owes its own page nothing. Until
+    # 0.535.x this row read `unmeasured` at birth — "it declares an outcome but has no
+    # scripts/outcome.py to measure it" — and every run recorded an outcome error instead of a
+    # reading (`drawerrr-irreversible-actions`, created 2026-11-10, flagged itself at once).
     cfg, _ = load_routine(made)
-    rows = _outcome_nodes(server, cfg)
-    assert [r.get("state") for r in rows] == ["unmeasured"]
+    assert (made / "scripts" / "outcome.py").is_file()
+    assert [r.get("state") for r in _outcome_nodes(server, cfg)] == []
 
 
 def test_the_generator_is_told_the_measures_and_the_line_to_write():

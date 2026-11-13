@@ -71,6 +71,14 @@ def cmd_daemon(_args) -> int:
     # MIGRATION(expires=2026-11-30) was honoured: it ran on 2026-10-08 and the record in
     # `.control/migrations/converse-goals.json` names the copy it replaced. A fresh install
     # gets the revision from the seed sync above, so nothing replaced it.)
+    # MIGRATION(expires=2026-12-31): the fourteen INSTALLED patterns gain what F883 fixed in the
+    # seed — `max_total_turns: 0` (every one still read the inert `-1` the other migration above
+    # exists to remove, so each new routine re-introduced it), the three ladder keys and
+    # `outcome-first`. Here because the sync above is ADD-ONLY and cannot touch a doc the live
+    # library already has, and BEFORE anything loads a pattern; a list the operator narrowed is
+    # left alone (D283).
+    from .migrate_pattern_drift import run_migration as converge_patterns
+    converge_patterns(server)
     # The seed rules' `assists:` DECLARATIONS, per entry: the add-only file sync above cannot
     # carry a block into a rule the live library already has, so every hook point the campaign
     # wired was firing against no candidates at all. Recurring and add-only per declaration id

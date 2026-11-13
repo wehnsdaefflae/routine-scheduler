@@ -618,9 +618,16 @@ A NEW routine is born with it. `create_routine` refuses to create or queue anyth
 line per measure, in the person's words (`engine/outcome_words.py`) — because "what is this for,
 counted how" is the question freelance-radar was never asked. Scaffold writes it into
 routine.yaml as declared (the person's confirmation of the draft is the accept), the recipe
-generator must give `## Done when` a line naming the measures, and the routine's first run writes
-`scripts/outcome.py` from the records its stages keep — until it does, the outcome row reads
-`unmeasured` and the engine records `{"error": …}`, never a zero.
+generator must give `## Done when` a line naming the measures, and scaffold also writes a
+`scripts/outcome.py` STUB derived from those same lines (D283/D286,
+`rsched/workflows/outcome_stub.py`), so the FIRST run records a reading rather than an error: a
+routine whose contract was demanded and whose script was never written reported
+`{"error": "the routine declares an outcome but has no scripts/outcome.py"}` at every run and
+its own settings page called it `unmeasured` on the day it was created. The stub counts every
+measure out of `state/outcome.json` and carries a TODO per measure; a later run replaces that
+placeholder with real counting from the records its stages keep. Once it counts for real, a
+measure the records cannot support is left out — and the engine records `{"error": …}` for the
+whole reading, never a zero.
 
 ## Process overhead: does a run go to its task?
 

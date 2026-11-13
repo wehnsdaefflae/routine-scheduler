@@ -94,10 +94,13 @@ def _outcome_prompt(outcome) -> str:
             "counted after every run by its own `scripts/outcome.py`:\n" + rows + "\nAdd this "
             f"line to `## Done when`, with its d-number: `- dN — {done_when_line(outcome)}`. "
             "Make the stages keep, in `state/`, the dated records each measure is counted "
-            "from, and say in main that a run which finds no `scripts/outcome.py` writes it: "
-            "standard library only, reading only this routine's own records, printing ONE "
-            "JSON object of those ids and their numbers on its last line, with a "
-            "`--selftest`. A measure the records cannot support is left out, never estimated.")
+            "from. The routine is CREATED with a `scripts/outcome.py` STUB derived from these "
+            "lines (D286), which counts every measure out of `state/outcome.json` and carries "
+            "a TODO per measure: say in main that a run replaces that placeholder reading with "
+            "real counting from those dated records — standard library only, reading only this "
+            "routine's own records, printing ONE JSON object of those ids and their numbers on "
+            "its last line, with a `--selftest`. Once it counts for real, a measure the records "
+            "cannot support is left out, never estimated.")
 
 
 def _budget(ref, want: int) -> int:
