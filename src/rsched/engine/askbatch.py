@@ -59,6 +59,21 @@ def handle(loop, action: dict, poll_s: float) -> dict:
                       "question": one["question"],
                       "class": askclass.of(request=obs.get("request"),
                                            blocks_work=one.get("blocks_work"))})
+    # F893: `count` is what REACHED his page. A question REFUSED before it filed anything (an
+    # invalid `config_patch` key, say) is on no surface of his and nobody was asked — counting
+    # it here told a run "2 questions filed" when one was never asked, and the run carried on
+    # believing the operator could see it (self-audit:20261112-233155, turn 298: the refused
+    # one went unnoticed for 70 turns). The refusals are named apart so the observation cannot
+    # be read as success, and `blocking` likewise counts only records that exist.
+    refused = [{"question": f["question"], "error": f["error"]} for f in filed if f.get("error")]
+    # The note travels WITH the observation rather than being assembled by the renderer: the
+    # renderer sits exactly on the house size bar, and what a refusal means — nothing was
+    # asked, so it is this turn's to re-file — is this module's own fact.
+    note = "".join(f" {len(refused)} REFUSED, so {'it is' if len(refused) == 1 else 'they are'} "
+                   "on NO surface of his and nobody was asked — re-file this turn: "
+                   + "; ".join(r["error"] for r in refused) if refused else "")
     return {"kind": "ask_user", "batch": bid, "mode": "deferred",
-            "count": len(filed), "filed": filed,
-            "blocking": sum(1 for f in filed if f["class"] == askclass.BLOCKING)}
+            "count": sum(1 for f in filed if not f.get("error")), "filed": filed,
+            **({"refused": refused, "refused_note": note} if refused else {}),
+            "blocking": sum(1 for f in filed
+                            if f["class"] == askclass.BLOCKING and not f.get("error"))}

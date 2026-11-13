@@ -308,9 +308,9 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             # D212: ONE action, N decision records. Say how many and how many of them you
             # marked as stopping your work — the class is a recorded fact, not a wait.
             return (f"OBSERVATION (ask_user): {obs['count']} questions filed as one batch "
-                    f"({obs['batch']}), {obs.get('blocking') or 0} marked blocking. "
-                    "They are on the user's "
-                    "Decisions page together; answers reach a future run. Continue.")
+                    f"({obs['batch']}), {obs.get('blocking') or 0} marked blocking. They are "
+                    "on the user's Decisions page together; answers reach a future run. "
+                    f"Continue.{obs.get('refused_note') or ''}")
         if obs.get("decision"):
             # an access request settled by one of the typed decisions — the result
             # line already teaches scope (this run vs forever) and the way forward
