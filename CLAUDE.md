@@ -1207,7 +1207,9 @@ by a test, by the engine, or by a past incident.
   20-50 s. The watch ribbon splits its two halves for exactly this reason: run
   events repaint its rectangles from `/api/runs`, while `/api/schedule/week` rides its own 120 s
   timer and is repainted from cache in between. When the console is slow, `/api/debug/slow` and
-  `docker logs rsched | grep "slow request"` say which path, before anyone guesses. The
+  `docker logs rsched | grep "slow request"` say which path, before anyone guesses — and each of
+  those rows names the self-sample taken WHILE it was still waiting
+  (`.control/slow-samples/`, `web/slowsample.py`), which says who held the pool. The
   server-side half of the rule: a read model on a bus-event path is MEMOIZED on a stat
   fingerprint of its sources with SINGLE-FLIGHT misses (`readmodels/memo`) — `/api/items`
   (0.312.1) and `/api/questions` (0.340.0, three catalog walks per call at 10-20 in flight)

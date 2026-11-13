@@ -197,12 +197,26 @@ def record_slow_request(state, entry: dict) -> None:
     keeps the leading `<n>ms` shape those readers parse. `in_flight` is carried because a slow
     request with nothing else in flight is a slow HANDLER, while one of thirty is CONTENTION —
     the distinction that took a stack sample to make on 2026-09-12.
+
+    And `in_flight 0` turned out to be the case neither half explains: 33 of 79 such rows
+    (2026-11-12, R3363) were recorded with no other HTTP request being served and still took a
+    median 2,700 ms, 24 of them on `/api/health/blocked`, whose handler measures 1.4 ms warm.
+    The count can go no further by construction — an http middleware never sees a websocket
+    scope, so a 0 refutes HTTP queueing and says nothing about streams, engine work or pytest
+    workers. So the row now also names the SELF-SAMPLE taken while that request was still in
+    flight (`sample`, a file under `.control/slow-samples/` — `web/slowsample.py`), which
+    carries both thread pools and every stack. It is a NAME, not the dump: `detail` is clipped
+    to `MAX_FIELD` and parsed by regex downstream (`_ms`, `_in_flight` in self-audit's
+    `ui_trace_audit.py`), and it goes LAST so both of those keep matching. A row without one is
+    written exactly as before, which is every row the cooldown deduplicated.
     """
     state.slow_requests.appendleft(entry)
     ms = round(float(entry.get("seconds") or 0) * 1000)
+    sample = str(entry.get("sample") or "")
     record_server_trace(state.server, kind="slow", target=str(entry.get("path") or ""),
                         detail=f"{ms}ms, {entry.get('method') or '?'}, "
-                               f"in_flight {entry.get('in_flight')}")
+                               f"in_flight {entry.get('in_flight')}"
+                               + (f", sample {sample}" if sample else ""))
 
 
 def record_server_trace(server, *, kind: str, target: str = "", detail: str = "",

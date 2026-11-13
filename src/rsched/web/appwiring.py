@@ -204,15 +204,16 @@ def _add_middlewares(app: FastAPI) -> None:
 
     * There is no SSE anywhere in this app — `grep` for `StreamingResponse` /
       `text/event-stream` finds nothing; the live streams are WebSockets, and a websocket
-      scope never reaches an http middleware (the same reason `app.py`'s timing middleware
-      cannot count one). Starlette 1.8's GZip also excludes `text/event-stream` and the
+      scope never reaches an http middleware (the same reason `slowsample.py`'s timing
+      middleware cannot count one). Starlette 1.8's GZip also excludes `text/event-stream` and the
       binary types (images, fonts, video, zip) by default, so artifact and screenshot
       responses pass through untouched.
     * `minimum_size=1024` keeps small bodies byte-identical — including the 9-byte body
       `tests/test_served_file_containment.py` pins by `content-length`.
 
     WHERE THIS IS CALLED IS LOAD-BEARING, and it was measured the hard way. `app.py` calls it
-    BEFORE its two `@app.middleware("http")` layers (`fresh_ui`, `slow_requests`), which makes
+    BEFORE its two `@app.middleware("http")` layers — `fresh_ui`, then `slow_requests`, which
+    `slowsample.install` adds — which makes
     gzip the INNERMOST of the four. Those two are `BaseHTTPMiddleware`, which re-emits every
     response as a STREAM, and starlette's gzip skips a small body only when it arrives in one
     chunk with `more_body=False` (`starlette/middleware/gzip.py`). Wired outside them, every

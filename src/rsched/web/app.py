@@ -4,7 +4,6 @@ scheduler running as a startup task — one process serves everything.
 
 from __future__ import annotations
 
-import collections
 import logging
 import secrets
 import time
@@ -19,20 +18,13 @@ from ..config import ServerConfig, load_server_config
 from ..daemon.events import EventBus
 from ..daemon.runner import Runner
 from ..daemon.scheduler import Scheduler
-from ..ids import now_iso
 from ..llm_tasks import TaskCenter
-from . import actionlimits, api_traces, assetskew, routers
+from . import actionlimits, assetskew, routers, slowsample
 from .appwiring import _add_middlewares, _make_lifespan
 from .ioload import attach_state
 from .screen_proxy import screen_for_path
 
 log = logging.getLogger("rsched.web")
-
-#: A request slower than this is recorded (`app.state.slow_requests`, `/api/debug/slow`) and
-#: logged. Two seconds: every console read model measures under 0.3 s on this instance, so a
-#: request over two is queueing or contention — the thing worth a stack sample.
-SLOW_REQUEST_S = 2.0
-SLOW_KEEP = 50
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
 
@@ -314,30 +306,12 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         return response
 
     # Slow-request evidence (2026-09-12): every sync handler took 20-50 s for an hour while five
-    # runs were active, and nothing recorded it — no access log, no stack. The ring and the
-    # in-flight count are what /api/debug reads; the DURABLE row is api_traces' (see
-    # record_slow_request — the deque dies with the process). Live streams cannot be counted
-    # here: they are WebSockets, and an http middleware never sees a websocket scope.
-    app.state.in_flight = 0
-    app.state.slow_request_s = SLOW_REQUEST_S
-    app.state.slow_requests = collections.deque(maxlen=SLOW_KEEP)
-
-    @app.middleware("http")
-    async def slow_requests(request, call_next):
-        app.state.in_flight += 1
-        started = time.monotonic()
-        try:
-            return await call_next(request)
-        finally:
-            app.state.in_flight -= 1
-            took = time.monotonic() - started
-            if took >= app.state.slow_request_s:
-                entry = {"method": request.method, "path": str(request.url.path),
-                         "ts": now_iso(), "seconds": round(took, 2),
-                         "in_flight": app.state.in_flight}
-                api_traces.record_slow_request(app.state, entry)
-                log.warning("slow request: %s %s took %.1fs (in_flight=%d)",
-                            request.method, request.url.path, took, app.state.in_flight)
+    # runs were active, and nothing recorded it — no access log, no stack. The timing middleware,
+    # the in-flight register and the SELF-SAMPLE taken while a request is still stalled (F871)
+    # live in `slowsample.py`, whose docstring holds the measurements; the durable row is
+    # api_traces'. Live streams reach none of it: they are WebSockets, and an http middleware
+    # never sees a websocket scope.
+    slowsample.install(app)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     # Generated Help content (see docs_build.py) — static like /static and served with the
