@@ -141,3 +141,24 @@ def test_the_live_library_is_clean_so_the_check_can_be_fatal() -> None:
     offenders = {name: [p for p in problems if "names the tool" in p]
                  for name, problems in lint.lint_all(home).items()}
     assert not {k: v for k, v in offenders.items() if v}
+
+
+def test_a_workflow_pattern_is_held_to_it_because_it_becomes_a_recipe() -> None:
+    """The half 0.540.0 missed: a WORKFLOW's prose is what create_routine materializes.
+
+    `create_routine` builds a new routine's recipe from the library workflow it names, so a
+    tool named in a workflow is inherited by every routine ever built from it — the one place
+    where one breach becomes many. Proven against the library's own `general-task.py`, which
+    lints clean today: appending a single call form must make it fail.
+    """
+    home = Path("/home/mark/.local/share/routine-scheduler-libraries")
+    src_path = home / "workflows" / "general-task.py"
+    if not src_path.is_file():  # the library is not part of the repo's own test fixtures
+        return
+    rules = [p.stem for p in (home / "rules").glob("*.md")]
+    clean = src_path.read_text()
+    assert lint.lint_workflow_py(clean, filename="general-task.py",
+                                 rule_slugs=rules) == []
+    breached = clean + "\n# Fetch the listing with `gu web-request` first.\n"
+    found = lint.lint_workflow_py(breached, filename="general-task.py", rule_slugs=rules)
+    assert [p for p in found if "names the tool `web-request`" in p], found

@@ -60,6 +60,9 @@ def lint_workflow_py(source: str, *, filename: str, rule_slugs: list[str]) -> li
         problems.append(f"{filename}: missing PHASES (the cross-run progression)")
     problems += pattern_problems(source, meta, filename)
     problems += _tools_problems(meta, filename)
+    # A workflow's PROSE is what create_routine materializes into a new routine's recipe, so
+    # the standing order has to hold here or every routine built from it inherits the breach.
+    problems += recipelint.tool_names(source, filename=filename, subject="library prose")
     return problems
 
 
