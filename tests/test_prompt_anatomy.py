@@ -107,18 +107,23 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "sets `closes: true` so the thread ends settled",
         "it settles its target(s) AND is itself born settled",
         # the FOLD (F492) + the open-thread cap (D110): routing that leaves the original
-        # behind is a copy, and a cap is only fair beside an operation that can consolidate
-        "leaving triage at once and settling when it settles",
-        "a new report is REFUSED and the open ids are named",
+        # behind is a copy, and a cap is only fair beside an operation that can consolidate.
+        # The needle moved to ACTION_SCHEMA's `supersedes` description in 0.536.0: the kind
+        # bullet said the same thing in prose nothing enforced, so the recital was cut and the
+        # field's own words are now the engine's only statement of it.
         "it leaves triage now and settles when this one settles",
+        "a new report is REFUSED and the open ids are named",
         # the say contract (composer harness line + ACTION_SCHEMA description)
         "lead with what the last observation taught you",
         # the note channel (ACTION_SCHEMA description + composer contract sentence)
         "worth keeping beyond this context window",
-        # the finish summary's two labelled parts (kindprose finish bullet + ACTION_SCHEMA
-        # summary description) — static/md.js `outcomeLine` reads the Work label back
-        "`**Process:**` how the run went",
-        "`**Work:**` the task",
+        # the finish summary's two labelled parts — static/md.js `outcomeLine` reads the Work
+        # label back. ACTION_SCHEMA's `summary` description is the engine's only statement of
+        # the shape since 0.536.0: the `finish` bullet recited the same two parts, and that
+        # recital was cut with every other field recital the enforced wire already carries.
+        "a SHORT summary in TWO labelled parts",
+        "1-2 lines on HOW the run went",
+        "2-5 lines on the task",
         # the util-output spill pointer (outputs.pointer_line) + its digest section
         # (outputs.digest) — the only route to output the observation could not carry
         "instead of re-running the util",

@@ -1,4 +1,6 @@
-"""The harness contract's per-kind PROSE — one bullet per action kind a run may use.
+"""The harness contract's per-kind PROSE — what each action kind is FOR, and the conduct it
+carries. NOT what its fields mean: that is the schema's, and the schema travels with every
+request.
 
 Split from `engine/kindsurface.py`, which decides WHICH kinds a run sees and projects the JSON
 schema onto them; this file is WHAT the run is told about each. The same kind set filters both,
@@ -6,6 +8,33 @@ and they change for different reasons: a bullet's wording is prompt surface, pin
 byte-for-byte by docs/prompt-anatomy.md §5.1 (tests/test_prompt_anatomy_example.py), while the
 projection is a derivation from `actions.KIND_FIELDS`. Split when `do_nothing` (D186) needed
 room in a file already at its size-ratchet ceiling.
+
+## Why these bullets carry no field mechanics (the operator's decision, 2026-11-13)
+
+Until 0.536.0 each bullet recited its kind's fields — their defaults, their caps, their
+refusals. That was the THIRD copy of one contract in a single request:
+
+* `endpoint.complete(schema=…)` puts `ACTION_SCHEMA`'s own `description` prose in front of the
+  model structurally (a tool's `input_schema`, a strict `response_format`, Ollama's `format`),
+  and where an endpoint enforces nothing `schemaindex.full` dumps the whole projection into the
+  prompt instead — so the field descriptions are present on EVERY turn, by one route or the
+  other, and `schemaindex.send_the_contract` appends them when a mid-run shed removes both;
+* `schemaindex.index` states which fields each kind takes, from `actions.KIND_FIELDS` — the map
+  `validate_action` builds its allowed-field set from;
+* and then these bullets said it a third time, in prose nothing enforced.
+
+Measured over 21 live run captures on 2026-11-12 (`runs/<ts>/prompt-sections.json`, R3341's
+boot capture) the block averaged **21,421 characters on every turn of every run**. The
+operator's ruling: *"Cut the bullets to conduct only — drop every field recital the enforced
+wire already carries."* With one bound, which is why the cut is deletion only and no sentence
+was rephrased: description wording swings tool selection by more than 10×, so the words the
+model reads about a FIELD stay exactly the words the schema says.
+
+What a bullet owes, then: the kind's IDENTITY — `ACTION_SCHEMA["kind"]` is a bare enum, so
+nothing on the wire says what `report` or `do_nothing` IS — and CONDUCT, which no schema can
+hold: when to reach for the kind, when not to, what it costs, what the engine does around it.
+A field a run gets wrong is taught at the moment it is wrong, by `schema_guard.retry_message`
+with `schemamemo.field_help`, which quotes the schema's own words for that field.
 """
 
 from __future__ import annotations
@@ -23,24 +52,19 @@ from .actions import ASK_OPTIONS_MAX
 # Three placeholders are substituted (not f-string interpolated — the prose contains braces
 # in code fragments): {util_confirm}, {ask_timeout_min} and {ask_options_max}.
 KIND_PROSE: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("util",), """- util: run a global util — name + optional args (append "--json" for \
-structured output).
+    (("util",), """- util: run a global util.
 Utils are your primary tools — the CAPABILITIES section below lists what exists (name + \
 summary); for ONE util's exact usage run `util name=list args=["<util-name>"]` before relying \
 on it (bare name=list re-dumps the whole catalog you already have). Observation = exit code + \
 captured output."""),
-    (("shell",), """- shell: run ONE ad-hoc command on the host — `command` (a single \
-string, handed to \
-`bash -c`, so pipes and `&&` work), optional `timeout_s` (default 120) and `path` (a working \
-directory; default yours). It runs NON-INTERACTIVELY inside your sandbox — the same filesystem \
-jail your utils get, and no secret from the store reaches it — so anything that waits for a \
-keystroke never returns, and a credential-needing command belongs in a util instead. \
-Observation = exit code + captured output (capped; the overflow is saved to a file the \
-observation names). This is the ESCAPE HATCH, not a tool: use it for the one-off look no util \
-covers, and the moment you run something a SECOND time, write the util (or a scripts/ helper) \
-that does it properly."""),
-    (("write_util",), """- write_util: create or revise a global util — name (kebab-case) \
-+ content (a complete
+    (("shell",), """- shell: run ONE ad-hoc command on the host. It runs NON-INTERACTIVELY \
+inside your sandbox — the same filesystem jail your utils get, and no secret from the store \
+reaches it — so anything that waits for a keystroke never returns, and a credential-needing \
+command belongs in a util instead. Observation = exit code + captured output (capped; the \
+overflow is saved to a file the observation names). This is the ESCAPE HATCH, not a tool: use \
+it for the one-off look no util covers, and the moment you run something a SECOND time, write \
+the util (or a scripts/ helper) that does it properly."""),
+    (("write_util",), """- write_util: create or revise a global util — a complete
 PEP 723 script: `# /// script` deps block, a module docstring whose first line is
 `<name> — <one-line summary>` then a `usage:` BLOCK — the call form, and for a
 verb-dispatched util one line per verb directly under it (every non-blank line up to the
@@ -48,50 +72,42 @@ next header key is part of it, and that whole block is what a caller is shown be
 calls you) — a `--json` flag, a `--selftest` that runs
 built-in checks, data on stdout / diagnostics on stderr / exit 0 on success; on invalid or
 missing arguments it MUST print its own usage line to stderr and exit 2 — an error that
-doesn't teach the correct call wastes every future caller's turn). The engine runs
-`--selftest` and only commits if it passes. To REVISE an existing util surgically, pass
-`anchor`/`replacement` INSTEAD of content — a verbatim in-place patch like edit_file, so a small \
-fix never re-emits the whole script (read the current source first: `util name=show \
-args=["<name>", "--full"]`). A util may call sibling utils via `gu <name>` — declare those on a \
-`calls: <name>, …` header line. If it needs a secret (token, password, API key), read it \
-env-first — `os.environ["NAME"]` — never hardcode or prompt for it, AND declare the names in a \
-header `secrets: NAME1, NAME2` line so the UI tells the user what to set (they set it once in the \
-Secrets store; the engine injects it — ONLY declared secrets reach the util). A credential ONE \
-VERB needs binds to it — `secrets: DEEPL_API@credentials`, a verb your `usage:` block lists — and \
-reaches that verb's calls alone. Declare network use with a `net: outbound` (or `net: none`) \
-header line: utils run in a filesystem/network sandbox and an undeclared network need fails. \
-Declare filesystem use the same way, on an `fs:` header line — `fs: roots` when the util opens \
-paths its CALLER passes it (the common case), `fs: none` when it touches no file outside its own \
-temp space, or `fs: rw <path>` / `fs: ro <path>` for a private store the util reaches on its own \
-(a session directory, a state file). A declared path is mounted only when the routine was already \
-granted it, so declaring one asks for nothing — it narrows what this util sees, and keeps a store \
-like that out of every OTHER util's jail.{util_confirm}"""),
-    (("remove_util",), """- remove_util: delete a global util the library no longer needs — \
-name (kebab-case). The \
+doesn't teach the correct call wastes every future caller's turn. The engine runs
+`--selftest` and only commits if it passes. A util may call sibling utils via `gu <name>` — \
+declare those on a `calls: <name>, …` header line. If it needs a secret (token, password, API \
+key), read it env-first — `os.environ["NAME"]` — never hardcode or prompt for it, AND declare \
+the names in a header `secrets: NAME1, NAME2` line so the UI tells the user what to set (they \
+set it once in the Secrets store; the engine injects it — ONLY declared secrets reach the \
+util). A credential ONE VERB needs binds to it — `secrets: DEEPL_API@credentials`, a verb your \
+`usage:` block lists — and reaches that verb's calls alone. Declare network use with a `net: \
+outbound` (or `net: none`) header line: utils run in a filesystem/network sandbox and an \
+undeclared network need fails. Declare filesystem use the same way, on an `fs:` header line — \
+`fs: roots` when the util opens paths its CALLER passes it (the common case), `fs: none` when \
+it touches no file outside its own temp space, or `fs: rw <path>` / `fs: ro <path>` for a \
+private store the util reaches on its own (a session directory, a state file). A declared path \
+is mounted only when the routine was already granted it, so declaring one asks for nothing — \
+it narrows what this util sees, and keeps a store like that out of every OTHER util's \
+jail.{util_confirm}"""),
+    (("remove_util",), """- remove_util: delete a global util the library no longer needs. The \
 curation counterpart to write_util, gated by the util-removal permission (and, unless \
 util approval is set to never, the same approval step). The engine REFUSES if any other \
 util still declares it on a `calls:` line — remove or update those callers first; the deletion \
 is committed to the library and stays recoverable from git history. Check the catalog before \
 removing something another routine relies on."""),
     (("read_file", "write_file", "delete", "move", "mkdir", "edit_file"), """- read_file / \
-write_file / delete / move / mkdir / edit_file: read or write a file (within the working dir or an \
-allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
-reads instead of spending a turn per file); a directory path returns its listing (one entry \
-per line, paged like a file); a PDF or an Office document (docx/pptx/xlsx) returns its text \
+write_file / delete / move / mkdir / edit_file: read or write a file (within the working dir or \
+an allowed root). Several files in ONE action — batch related reads instead of spending a turn \
+per file; a directory path returns its listing (one entry per line, paged like a file); a PDF \
+or an Office document (docx/pptx/xlsx) returns its text \
 CONVERTED to Markdown, paged like a file — the observation names the pages and any page with \
 no text layer (a scan, not transcribed); any other binary or oversized file only its size — \
-page those with shell or a util. edit_file replaces an exact `anchor` string with \
-`replacement` IN PLACE — for touching a few lines of a large file, use it instead of \
-re-emitting the whole document through write_file. write_file REPLACES wholesale: overwriting \
-an existing file outside your working dir is rejected until this run has read it. delete \
-removes a file, or a whole directory with recursive: true — deleting a path outside your \
-working dir that this run has not read is rejected, like write_file's overwrite gate (a \
-listing or a size read counts). move \
-relocates src to dst (both inside the same write-root jail): it refuses to overwrite an \
-existing dst. mkdir creates a directory — parents: true makes intermediates and treats an \
-existing path as success."""),
-    (("view_image",), """- view_image: SEE an image, PDF, audio or video file at `path` (or \
-`paths`) — for attachments and files a util produced. When this run's model carries that \
+page those with shell or a util. For touching a few lines of a large file, use edit_file \
+instead of re-emitting the whole \
+document through write_file. write_file REPLACES wholesale: overwriting an existing file \
+outside your working dir is rejected until this run has read it, and deleting a path outside it \
+that this run has not read is rejected the same way (a listing or a size read counts)."""),
+    (("view_image",), """- view_image: SEE an image, PDF, audio or video file — for attachments \
+and files a util produced. When this run's model carries that \
 modality the file is shown to you DIRECTLY on the next turn; an image otherwise goes to the \
 `vision` util, which describes it (set `prompt` so that fallback is useful) — audio/video have \
 no fallback and are refused, naming the 7 MiB raw cap (base64 inflates ~33%)."""),
@@ -99,38 +115,26 @@ no fallback and are refused, naming the 7 MiB raw cap (base64 inflates ~33%)."""
 notes under .memory/ — for what was \
 EXPENSIVE to find out (environment quirks, working solutions, constraints nobody wrote \
 down), not what the instruction or a plain look at the data would tell anyone. \
-memory_write(name, content, about) writes ONE kebab-named note (~100 lines advised) and \
-the engine maintains .memory/INDEX.md from `about`; delete: true removes a note. \
-To REVISE an existing note, pass `anchor` + `replacement` INSTEAD of content — a verbatim \
-in-place patch like edit_file, so adding two facts to a 95-line note never re-emits the other \
-93. memory_read(name) returns one, and is where you copy an anchor from. The state digest \
+The state digest \
 shows the INDEX at run start — consult it before re-discovering anything; revise notes that \
 turned out wrong instead of appending contradictions. read_file / write_file are rejected on \
 .memory/ paths."""),
-    (("read_rule",), """- read_rule: read a GENERAL RULE from the shared library — \
-`name: "list"` for the catalog, `name: "<slug>"` for one rule's prose. The rules that bind you are \
+    (("read_rule",), """- read_rule: read a GENERAL RULE from the shared library. \
+The rules that bind you are \
 named in your digest beside when each applies; read one when its moment comes and apply it to \
 the case in front of you. Reading one you do NOT hold applies it for the rest of this run \
 only; which rules bind you is the user's call, so if one keeps proving necessary, name it in \
 your finish summary."""),
     (("write_rule",), """- write_rule: author a NEW general rule, or revise an existing one, in \
-the shared library — `content` (the complete rule markdown) to create, `anchor` + `replacement` \
-to revise in place. What you write binds EVERY routine holding that rule from its next run, so \
+the shared library. What you write binds EVERY routine holding that rule from its next run, so \
 say what evidence made the current wording wrong. A rule states a principle and names no tool, \
 no routine and no file — mechanism belongs in a recipe or a conduct doc. The library linter \
 gates the write and your approval level decides whether the user confirms it. There is no \
 delete: a rule that should go is a report or a deferred ask_user naming it."""),
-    (("llm",), """- llm: one scoped, stateless subcall (default: this routine's tool-call \
-model; `model` takes a role, a catalog name, or `<endpoint>/<model id>` \
-for an off-catalog model). It sees ONLY \
-your prompt/system — include everything it needs; set response_schema for structured replies."""),
+    (("llm",), """- llm: one scoped, stateless subcall. It sees ONLY \
+your prompt/system — include everything it needs."""),
     (("decide",), """- decide: put a typed question to a DECISION model and get probabilities \
-back, never prose — `question` + `options` for a choice (each "value: what it means"; the \
-answer names the value), no options for a yes/no (the answer is P(yes)), `answer_type` "score" \
-to read the options as ordered levels, LOWEST first. `evidence` is what the answer depends on \
-(text or JSON, self-contained — the model sees nothing else) and `files` adds images, judged \
-together, or text files read in whole. Several independent questions about the SAME evidence \
-go in ONE call as `questions`: one reading of the evidence answers all of them. Use it where a \
+back, never prose. Use it where a \
 step is a classification — route, gate, screen, rate — and act on the probability with a \
 threshold you can name; it gives no reasons, so ask `llm` when you need one."""),
     (("spawn",), """- spawn: start a CHILD RUN scheduled in PARALLEL with you. Every child \
@@ -142,47 +146,30 @@ THERE: name absolute paths (within the allowed roots) for anything it must read.
 its finish summary always, and hands back FILES by writing them into its own artifacts/ — the \
 engine copies those into YOUR artifacts/from-sub-<n>/ when it exits and names the landed paths, \
 so you never go looking in its dir. Parallel is the mode where you KEEP WORKING while it runs \
-and are notified when it exits. Pick its "workflow" for the child's PURPOSE from the patterns \
-listed under CAPABILITIES (default general-task) and give it a fully self-contained "prompt". A \
-child runs on your MAIN model unless `model` picks a role or a catalog model for it."""),
+and are notified when it exits."""),
     (("subtask",), """- subtask: start a CHILD RUN scheduled SEQUENTIALLY — the same child run \
-`spawn` starts \
-(own directory, own budget, own fresh context and pattern, hands files back through its own \
-artifacts/ into your artifacts/from-sub-<n>/), differing ONLY in how you schedule it. Use it to \
+`spawn` starts, differing ONLY in how you schedule it. Use it to \
 decompose a large task into ordered steps. It does NOT block you: to keep the order, `wait` for \
-it (n=N) before starting the next one and fold its result into that brief — the wait YIELDS if \
+it before starting the next one and fold its result into that brief — the wait YIELDS if \
 the user writes (so the conversation stays live) and you are notified when it finishes; or do \
-other work meanwhile. Pick its "workflow" for that step's purpose from the catalog (or omit \
-for the default); give a \
-self-contained "prompt"; "turns" bounds it (default: half your remaining). It runs on the \
-routine's MAIN model unless `model` picks a role or a catalog model for it."""),
+other work meanwhile."""),
     (("detach",), """- detach: start a LONG background task that OUTLIVES this reply — for a \
 big, self-contained job (a \
 large scrape, a bulk conversion, a slow build) you want to kick off and keep chatting around. \
 Unlike spawn/subtask (children that die when this reply's process ends), a detached task runs as \
 its OWN process; when it finishes the engine delivers its result back into this conversation and \
-you relay it to the user. Give a complete self-contained "prompt" (it CANNOT ask you blocking \
-questions) and pick its "workflow"; then `finish` the reply ("started it — I'll report back") and \
+you relay it to the user. It CANNOT ask you blocking questions; \
+then `finish` the reply ("started it — I'll report back") and \
 do NOT wait. Its status is in state/background.json. Only from a conversation, only for jobs too \
 long to finish in this reply — otherwise do the work directly or use subtask."""),
-    (("schedule_run",), """- schedule_run: arm a ONE-SHOT future run of a routine — `target` \
-(the routine slug — this routine or another), `fire_at` (an absolute ISO-8601 UTC instant or a \
-relative offset like "+3d" / "+2h" / "+30m"), `reason` (a provenance line injected into the \
-target's inbox just before it fires). The daemon fires the one-shot ONCE at fire_at, then \
+    (("schedule_run",), """- schedule_run: arm a ONE-SHOT future run of a routine. \
+The daemon fires the one-shot ONCE at fire_at, then \
 CONSUMES it (it never \
-repeats — no cron to clean up). Cancel with `cancel: true` (+ `id` for one, or without to clear \
-all armed on the target). For a run to schedule its own follow-up ("re-check in 3 days") or arm \
-a milestone run on a sibling routine — gated by the scheduling permission."""),
+repeats — no cron to clean up). For a run to schedule its own follow-up ("re-check in 3 days") \
+or arm a milestone run on a sibling routine — gated by the scheduling permission."""),
     (("create_routine",), """- create_routine: turn what you and the user have worked out in \
-THIS conversation into a real scheduled routine — `target` (its new kebab-case slug), `name` \
-(its display name), `prompt` (the clarified task, decomposed into the routine's stages — say \
-WHAT it does, not when), and optional `workflow` (the library pattern to build from, default \
-general-task), `pattern` (the settings pattern it follows), `setup` (the user's answers to that \
-pattern's questions), `done_when` (what one finished run leaves behind, in their words), \
-`finish_line` (when the routine is done for good, each outcome led by its judge) and `never` \
-(what a run must never do, in their words), and — required before anything is created or queued \
-— `produces`, its OUTCOME CONTRACT: who the results are for and the numbers they would count, in \
-the form the schema gives. PRECONDITION — settle the clarification WITH the user BEFORE the \
+THIS conversation into a real scheduled routine. PRECONDITION — settle the clarification WITH \
+the user BEFORE the \
 first call: what the routine PRODUCES each run (the artefact by name and where it lands), what \
 one finished run leaves behind, whether it ever finishes for good, anything a run must never do, \
 which workflow it is built on, and every question its settings pattern asks that the task does \
@@ -206,13 +193,9 @@ approved it. With `replaces: <slug>` (the routine-rebuild permission) it creates
 CANDIDATE at once instead, and files the one swap decision: then write the candidate's recipe \
 and prove it beside the old routine."""),
     (("manage_lane",), """- manage_lane: manage routine LANES (ordered sets that fire \
-back-to-back on one clock) from THIS conversation via a `verb`: list (the whole store), create \
-(`name` + optional `members` + `on_failure` + `cron`), update (`target` = the lane id, plus any \
-of name/members/on_failure/cron/paused), delete (`target`), set-default (`on_failure` = \
-stop|continue, the instance-wide mid-chain-failure default), run (`target` — arm a sequential \
-fire the daemon runs on its next tick). `members` is the ORDERED routine slugs and each must \
-name a real routine; the chain fires ONCE, every member in order; a routine belongs to at most \
-one lane. A flow with an inbound and an outbound end BRACKETS the lane: a dedicated \
+back-to-back on one clock) from THIS conversation. The chain fires ONCE, every member in \
+order; a routine belongs to at most one lane. A flow with an inbound and an outbound end \
+BRACKETS the lane: a dedicated \
 inbound-router member placed first and a dedicated outbound-sender member placed last — two \
 single-purpose members, never one member run twice. A lane decides only WHEN routines run: what \
 a routine may reach (its settings, its roots, the stores it shares) is its own config — propose \
@@ -223,26 +206,19 @@ queues a proposal on the Decisions page instead of applying — one call, then c
 work that does not depend on it; your next run learns from your inbox whether the user \
 approved it."""),
     (("job",), """- job: this routine keeps JOBS — standing units of its work, each with its \
-own workspace and, often, its own recipe — and this kind is how you manage them, via `verb`: \
-list · \
-create (id, title, brief; optional path = its workspace, wake, quiet_days) · update (id + what \
-changes, state active/paused/done included) · open (id, or none for the next due job) · \
-checkpoint (id, outcome, summary, accounting) · delete (id; its workspace stays on disk). \
+own workspace and, often, its own recipe — and this kind is how you manage them. \
 GATED PROCESSING: every job your digest lists as DUE this run must be opened and checkpointed \
 before the engine lets you finish — one at a time: opening a job while another is open is \
 refused, so checkpoint first (outcome `deferred`, saying why, when you set one aside). While a \
 job is OPEN your working directory IS its workspace: relative paths, scripts, shell and util \
 calls and memory_read / memory_write resolve there, and its recipe (main.md + stages/ in the \
-workspace) is authoritative for its work. A checkpoint accounts for that recipe's `## Done when` \
-lines and opens the next due job. Create a job when standing work comes up that is not one yet; \
+workspace) is authoritative for its work. \
+Create a job when standing work comes up that is not one yet; \
 never let one job's work hide inside another's checkpoint. (These were `task` before 0.416.0.)"""),
     (("goal",), """- goal: the GOALS of this run — what a PERSON asked of it, each ONE checkable \
-end state (b1, b2, …). You are their scribe, never their author: every goal carries `quote`, \
-their own words verbatim, and the engine refuses words it cannot find in what they wrote. Via \
-`verb`: set (goals: [{text, quote}, …] — the opening list, while none is open) · add (goals: \
-new ones, when they ask for more) · change (id + goals: [the new wording], quoting words they \
-wrote AFTER the goal was set) · drop (id + quote: their later words that withdraw it — never \
-because it got hard) · check (id + evidence: met, checked against your transcript once) · list. \
+end state (b1, b2, …). You are their scribe, never their author: the engine refuses words it \
+cannot find in what they wrote, and a goal is dropped on their later words that withdraw it — \
+never because it got hard. \
 A goal is an outcome, not a step: the steps toward it belong in your plan. An APPROVAL is a \
 goal — "yes, do it", "you fix all of that" answering work you proposed: set it quoting that \
 answer. Every open goal is answered at your finish; one a routine run leaves open is CARRIED to \
@@ -252,8 +228,8 @@ bindings (main / tool_call / uncensored / supervisor), read-only — consult it 
 override on llm/spawn/subtask so the name you pass is one the catalog actually carries."""),
     (("subruns",), """- subruns: a status table of your child runs, whatever mode each was \
 started in (state, turns, elapsed)."""),
-    (("kill", "wait"), """- kill: terminate child run "n". wait: block until child run \
-"n" / "all": true / the next child exit or background-call landing (timeout_s, default 600) — \
+    (("kill", "wait"), """- kill: terminate child run "n". wait: block until a child exits or a \
+backgrounded call lands — \
 AT ONCE when one is unreported, or nothing is running. Children never outlive you — your \
 finish kills them."""),
     (("ask_user",), """- ask_user: mode "deferred" (default) files the question and CONTINUES \
@@ -261,32 +237,25 @@ finish kills them."""),
 answer. Mode "blocking" pauses the run until answered; after {ask_timeout_min} minutes without \
 an answer the run CONTINUES on your stated `default` (set it on every blocking ask) and the \
 question stays open for a future run. Ask sparingly; batch what can wait until run end — and \
-batch it IN ONE ACTION: `questions` takes several, each with its own question/options/default/\
-request/config_patch, filing one record each under one batch id (five asks as five actions cost \
+batch it IN ONE ACTION (five asks as five actions cost \
 you five turns and him five cards). Mark one `blocks_work: true` when you cannot do the work \
 you were fired to do without its answer; that records its class and suspends nothing."""),
     (("report",), """- report: raise something that needs doing and is NOT your task — a \
 defect, friction, a
-missing or broken tool, a recipe or config that is wrong. `title` (one line) + `detail` (the \
-artefact, what is wrong, the evidence — a run id, a `path:line`, an error — and what "done" \
-looks like; whoever picks it up has none of your context). Available to EVERY routine, always.
-Set `target` to the routine that OWNS the problem and the report is delivered into its inbox, \
-which it reads on its NEXT SCHEDULED RUN — nothing is started and nobody is interrupted. Leave \
-`target` out when you cannot name the owner: the report goes to triage and is routed for you. \
-Omitting it is always allowed; guessing wrong sends the work to someone who will bounce it.
+missing or broken tool, a recipe or config that is wrong. Available to EVERY routine, always.
+A report with an owner is delivered into that routine's inbox, \
+which it reads on its NEXT SCHEDULED RUN — nothing is started and nobody is interrupted. \
+Naming no owner is always allowed; guessing wrong sends the work to someone who will bounce it.
 A report addressed to YOU arrives in its own prompt section — act on it, or close it by \
-reporting back to the sender with `answers` set to its id, IN THIS RUN: once you finish, \
+reporting back to the sender, IN THIS RUN: once you finish, \
 nothing is left that can close it but a person reading the ledger. A reply that completes the \
 exchange sets `closes: true` so the thread ends settled — without it your answer is itself a \
 new open report waiting for one more reply; a message marked "no reply needed" gets none.
-`supersedes` takes rows OVER: list the report ids this one now carries and they fold into it, \
-leaving triage at once and settling when it settles. That is how you hand someone else's row \
-to its owner (naming it without folding it leaves it exactly where it was, to be routed again \
-next pass) and how you add to a thread you already have open instead of opening a second one. \
-`options` (at most {ask_options_max}) make the report a DECISION FOR THE USER as well as work \
-for its target: the same call puts it on his Decisions page as an open question from you, \
-counts it on your routine card, and brings his answer into YOUR inbox for your next run — \
-while the target is told what he decided. Use it the moment you are blocked on a call only he \
+FOLD a row rather than merely naming it: naming leaves it exactly where it was, to be routed \
+again next pass, and a fold is also how you add to a thread you already have open instead of \
+opening a second one. \
+Make a report a DECISION FOR THE USER (at most {ask_options_max} choices) \
+the moment you are blocked on a call only he \
 can make: a question parked in a plain report reaches no surface of his, so a run that writes \
 "waiting on the operator" without options is waiting on nobody. Do not also file an ask_user \
 about it.
@@ -299,19 +268,10 @@ checked, and what it showed. Use it when a scheduled fire finds its sources unch
 want that finding on the record as a turn, rather than inventing an action to have done \
 something. It establishes nothing, so it does NOT let a finish(ok) stand on its own — the \
 honest ending for an idle run is still `finish`, with the same reasoning in the summary."""),
-    (("finish",), """- finish: end the run with status ok (the ordinary ending, including a \
-run with a shortfall of its own — a step you skipped, a check you could not get green, work you \
-left: do what you can, then name what remains in the summary), partial (ONLY when something you \
-cannot unblock yourself stopped work you could otherwise have done — a missing grant or \
-credential, a service that is down, a budget you cannot raise; name it. A decision waiting on \
-the user, or work handed to the routine that owns it, is not a blocker unless the rest cannot \
-go on without the answer) or failed (the job could not be done), plus a \
-SHORT summary told the way you would TELL someone what happened, in the two labelled parts the \
-schema gives: `**Process:**` how the run went, then `**Work:**` the task — its outcome, \
-conditions and consequences. It is the only part of this conversation that survives, so the \
-facts have to be in it; no preamble, and a long artefact is a file it names. Decisions are asks, \
+    (("finish",), """- finish: end the run — the only part of this conversation that survives, \
+so the facts have to be in it; a long artefact is a file it names. Decisions are asks, \
 never summary prose: one you cannot work without when you meet it (`blocks_work`), the rest in \
-one batch before the finish. A conversation's summary IS its reply: no parts."""),
+one batch before the finish."""),
 )
 
 
