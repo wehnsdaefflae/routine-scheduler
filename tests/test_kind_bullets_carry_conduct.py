@@ -38,6 +38,21 @@ GRAM = 4
 #: the conduct is about that field — and refuses one that restates the description.
 RECITAL = 0.25
 
+#: The ONE place where saying the same thing twice is the point. D204 (the operator,
+#: 2026-10-23) requires `partial`'s restriction to be stated identically on three surfaces at
+#: once — this bullet, `ACTION_SCHEMA`'s `status` description and the harness honesty
+#: paragraph — because a run that reads two different definitions of its own status picks the
+#: wrong one, which is what the fleet did (232 `ok` and 4 `partial` in the 14 days to
+#: 2026-10-23, every `partial` self-chosen and none of them blocked).
+#: `tests/test_partial_means_blocked.py` pins all three copies and is the authority; this
+#: carve-out exists so the two pins cannot demand opposite things. It is deliberately ONE
+#: literal prefix, not a pattern: a second deliberate agreement has to be argued here in the
+#: same way, where the next reader meets the reason.
+#: The 2026-11-13 cut DID remove this bullet's elaborations around the trichotomy (what counts
+#: as a shortfall, that a waiting decision is not a blocker); those really are on the wire
+#: verbatim and are not restored by the carve-out.
+AGREED_WITH_THE_WIRE = ("- finish: end the run with status ok",)
+
 
 def _words(text: str) -> list[str]:
     return re.findall(r"[a-z]+", text.lower())
@@ -77,6 +92,8 @@ def test_no_bullet_sentence_restates_a_field_description():
     offenders = []
     for covers, prose in KIND_PROSE:
         for sentence in _sentences(prose):
+            if sentence.startswith(AGREED_WITH_THE_WIRE):
+                continue
             words = _words(sentence)
             if len(words) < 8:
                 continue
@@ -90,6 +107,20 @@ def test_no_bullet_sentence_restates_a_field_description():
         "than rewording it (the operator's bound: no field description is reworded):\n"
         + "\n".join(f"  [{lead}] {share:.0%} on the wire: {text}"
                     for lead, share, text in offenders))
+
+
+def test_every_agreed_duplication_is_still_a_real_sentence():
+    """A carve-out that matches nothing is not protection — it is a hole left open.
+
+    If the finish bullet is reworded, this entry stops matching and the duplication check
+    silently stops covering whatever replaced it. Fail here instead, where the reason is.
+    """
+    sentences = [s for _, prose in KIND_PROSE for s in _sentences(prose)]
+    for prefix in AGREED_WITH_THE_WIRE:
+        assert any(s.startswith(prefix) for s in sentences), (
+            f"AGREED_WITH_THE_WIRE still excuses {prefix!r}, which no bullet sentence starts "
+            "with any more — either restore the wording D204 requires on all three surfaces "
+            "(tests/test_partial_means_blocked.py is the authority) or drop this entry")
 
 
 def test_every_bullet_opens_with_what_its_kind_is():
