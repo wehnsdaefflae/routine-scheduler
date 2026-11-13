@@ -32,6 +32,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 
+from . import digesttail
 from .finishline import today
 
 #: The two optional fields this module owns, in the order they render on the INDEX line.
@@ -202,9 +203,15 @@ def digest_blocks(index_text: str) -> list[str]:
     if fresh:
         more = (f"\n[... read .memory/INDEX.md for the full {len(fresh)} lines]"
                 if len(fresh) > INDEX_SHOWN_MAX else "")
+        # Bounded in CHARACTERS as well as in lines: an index line is a note's whole `about`
+        # sentence, so a routine with a mature store reached 23,069 chars here — the single
+        # largest block measured in any live digest (engine/digesttail.py). Line order is
+        # kept (the index is a catalogue, not a history), so the clip takes the tail.
+        shown = digesttail.clip("\n".join(fresh[:INDEX_SHOWN_MAX]),
+                                read_with=".memory/INDEX.md")
         blocks.append(".memory/ index (notes from earlier work — memory_read the relevant "
                       "topic before re-discovering anything):\n"
-                      + "\n".join(fresh[:INDEX_SHOWN_MAX]) + more)
+                      + shown + ("" if shown.endswith("]") else more))
     if stale:
         blocks.append(stale_digest(stale))
     return blocks

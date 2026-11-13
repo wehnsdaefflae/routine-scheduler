@@ -68,6 +68,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .engine import digesttail
 from .paths import atomic_write
 
 FILE = "LEDGER.md"
@@ -187,4 +188,20 @@ def digest_tail(routine_dir: Path, *, skip_run: str = "", max_lines: int = 30) -
     n = f"{len(entries)} entr{'y' if len(entries) == 1 else 'ies'}"
     head = (f"LEDGER — the engine's record of earlier runs, newest last ({n}"
             f"{', its tail' if cut else ''}; read_file {FILE}, older months in {ARCHIVE_DIR}/):")
-    return head + "\n" + "\n".join(lines[-max_lines:])
+    body = "\n".join(lines[-max_lines:])
+    # Then bounded in CHARACTERS: an entry is a whole run summary, so 30 lines measured a
+    # median 7,209 chars over 37 live digests — the largest single block of the largest
+    # section of the composed prompt (engine/digesttail.py). The NEWEST entries are kept.
+    if len(body) > digesttail.TAIL_BUDGET:
+        tail: list[str] = []
+        size = 0
+        for line in reversed(lines[-max_lines:]):
+            if tail and size + len(line) + 1 > digesttail.TAIL_BUDGET:
+                break
+            tail.append(line)
+            size += len(line) + 1
+        dropped = len(body) - size
+        body = ("\n".join(reversed(tail))
+                + f"\n[... {dropped:,} more characters of older entries clipped — "
+                  f"read_file {FILE} for them]")
+    return head + "\n" + body

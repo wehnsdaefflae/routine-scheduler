@@ -25,6 +25,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from . import digesttail
+
 if TYPE_CHECKING:
     from .run_context import RunContext
 
@@ -98,4 +100,21 @@ def tail(routine_dir, lines: int = 10) -> str:
     except OSError:
         return ""
     noted = [ln for ln in text.splitlines() if ln.startswith("- ")]
-    return "\n".join(noted[-lines:])
+    # Newest last, then bounded in CHARACTERS: a note line is a paragraph, so ten of them
+    # measured 5,508 chars at the median over 37 live digests (engine/digesttail.py). The
+    # OLDEST of the kept lines go first when the budget bites — the newest note is the one a
+    # run is most likely to need, and the whole file is one read away.
+    newest_last = "\n".join(noted[-lines:])
+    if len(newest_last) <= digesttail.TAIL_BUDGET:
+        return newest_last
+    kept: list[str] = []
+    size = 0
+    for line in reversed(noted[-lines:]):
+        if kept and size + len(line) + 1 > digesttail.TAIL_BUDGET:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    dropped = len(newest_last) - size
+    return ("\n".join(reversed(kept))
+            + f"\n[... {dropped:,} more characters of older notes clipped — "
+              f"state/{NOTES_FILE} holds them whole]")

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .. import answerlines, patchreceipt
 from ..runledger import digest_tail
-from . import notemeta, notes, outputs, schemaindex
+from . import digesttail, notemeta, notes, outputs, schemaindex
 from .actionschema import example_action
 from .capabilities import capabilities_digest
 from .harness import harness_contract
@@ -156,8 +156,13 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     runs = sorted(runs_dir.glob("*/result.md")) if runs_dir.is_dir() else []
     if runs:
         last = runs[-1]
+        # Bounded in characters (engine/digesttail.py): a finish summary is the one history
+        # block whose length the WRITER chooses, and it rode every turn whole — 9,317 chars
+        # at the worst of 37 live digests. The head is kept, which is where a summary states
+        # what happened; the whole file is one read away and the marker names it.
         parts.append(f"Last run result ({last.parent.name}):\n"
-                     f"{last.read_text(encoding='utf-8').strip()}")
+                     + digesttail.clip(last.read_text(encoding="utf-8").strip(),
+                                       read_with=f"runs/{last.parent.name}/result.md"))
     else:
         parts.append("Last run result: (no previous runs)")
     # the engine's process record (rsched/runledger.py) — less the last run's own entry, whose
