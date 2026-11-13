@@ -192,6 +192,15 @@ message belongs to the transcript record.
   console's one rule for that (a blob URL carries this origin, so a type that can hold script
   opens inside a sandboxed frame). The panel owns those object URLs and revokes them on every
   re-render and in its `destroy()` — a thumbnail holds its decoded image until then.
+- **Run page → a transcript row's 🐞** (F217, `components/row-tools.js`): the second way a
+  message reaches an inbox. Every transcript row carries ⧉ copy and 🐞 report-as-bug; the 🐞
+  opens a PRE-FILLED, editable message — the row's address (run, sub-run, turn, kind), the
+  narration, the brief and the result — and queues it to the routine that owns the run through
+  the same generic `POST /api/routines/{slug}/messages` as the composer above, so it lands in
+  that routine's inbox, editable and withdrawable until a run drains it. It files a MESSAGE and
+  not a report, deliberately: a report is a RUN's utterance (above), and there is no
+  report-filing route in `web/` — this added none. A transcript mounted without a routine (a
+  conversation's work fold) shows no 🐞, there being no inbox to address.
 - **Messages page** (`static/views/messages.js`, docs/items.md): the maintenance index,
   plus self-audit's whole inbox queue ("waiting for the next run" — every queued message,
   editable and withdrawable until a run consumes it) and the note composer. The note is a

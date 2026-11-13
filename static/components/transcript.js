@@ -32,12 +32,9 @@ import { ruleFireStrip, sideFieldRows } from "/static/components/concept-rows.js
 import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
 import { accountingLine } from "/static/components/obs-accounting.js";
 import { attachmentRow, revokeBlobs } from "/static/components/obs-attachments.js";
-// …and re-exported, because this file is still their public entry: components/chat.js imports
-// both from here, and that file is AT its own ratchet ceiling with zero slack, so it cannot
-// afford the second import line a direct dependency would cost it. A re-export is also the
-// honest shape — nothing about an attachment row is the transcript's, and a later change may
-// repoint chat.js at the module itself without touching this one.
-export { attachmentRow, revokeBlobs };
+// F217: the re-export this file carried for chat.js is gone — chat.js imports the module itself.
+import { imageAnswer, imageLinks } from "/static/components/obs-image.js";
+import { rowTools } from "/static/components/row-tools.js";
 import { killBrief } from "/static/components/obs-background.js";
 import { OVERSIGHT_TEXT, actionCancelledText, compactionText, headerText, stagesSkippedText }
   from "/static/components/obs-records.js";
@@ -247,7 +244,11 @@ export function createTranscript(container, opts = {}) {
         // 2026-09-30). Only the name is linked, never the args beside it, and only from the
         // structured `a.name` field — a util called `job` or `git` would match ordinary
         // English everywhere if this were done by scanning prose (see conceptlinks.js).
-        a.kind === "util" && a.name
+        // R3357 (1): the FILE a view_image opened is part of what was DONE, so it rides the
+        // action element — visible without expanding anything (it used to sit inside the
+        // collapsed result fold) and reading `paths` too, which rendered an EMPTY brief.
+        a.kind === "view_image" ? imageLinks(a, opts.fileUrl, blobs, brief)
+          : a.kind === "util" && a.name
           ? el("span", { class: "muted" }, utilLink(a.name),
               Array.isArray(a.args) && a.args.length
                 ? " " + a.args.join(" ").slice(0, 200) : "  (no args)")
@@ -270,7 +271,9 @@ export function createTranscript(container, opts = {}) {
     // POST (opts.cancelAction); actionTime decides when the control may show itself, because it
     // is what knows the row is still running and the view is live.
     const clock = actionTime(ev, opts.isLive, opts.cancelAction);
-    turn.append(clock.node);
+    // F217: ⧉ copy and 🐞 report-as-bug (components/row-tools.js), handed the box itself —
+    // the copy reads the result off it at click time, an event later than this one.
+    turn.append(...rowTools(ev, a, turn, opts, brief), clock.node);
     root.append(turn);
     openClock = clock;
     openTurn = a.kind === "finish" ? null : turn;
@@ -292,25 +295,22 @@ export function createTranscript(container, opts = {}) {
   function addObservation(ev) {
     const o = ev.payload;
     // The WORDS and the row's state word come from components/obs-text.js, which owns the
-    // per-kind vocabulary; what is left here is the page — the collapsing fold, the clocks,
-    // and a `view_image`'s real thumbnails, which need the authenticated blob route an
-    // <img src> cannot carry an Authorization header for (F559).
+    // per-kind vocabulary; what is left here is the page — the collapsing fold and the clocks.
+    // A `view_image`'s files ride the ACTION element now (R3357, components/obs-image.js).
     const text = observationText(o);
-    const thumbs = o.kind === "view_image"
-      ? attachmentRow((o.files || []).filter((f) => !f.error).map((f) => f.path),
-                      opts.fileUrl, blobs)
-      : null;
     const obs = obsBody(text, (o.kind === "llm" && !o.error)
       || (o.kind === "memory_read" && !o.missing), obsState(o));
-    if (thumbs) obs.append(thumbs);
+    // R3357 (2): shown DIRECTLY to a multimodal model, the reading is the NEXT turn, so the row
+    // says so and points there — on the TURN like `fire`: inside `obs` the fold hid it (F559).
+    const answer = o.kind === "view_image" ? imageAnswer(o, ev) : null;
     // A rule FIRE is not an ordinary result: its strip rides the turn OUTSIDE the collapsed
     // fold, so a reader sees that a rule governed this moment without expanding anything
     // (F591; components/concept-rows.js words it and links the rule from `o.assists`).
     const fire = ruleFireStrip(o);
     openClock?.stop(ev.ts);
     openClock = null;
-    if (openTurn) { openTurn.append(...[fire, obs].filter(Boolean)); openTurn = null; }
-    else root.append(el("div", { class: "turn" }, fire, obs));
+    if (openTurn) { openTurn.append(...[fire, obs, answer].filter(Boolean)); openTurn = null; }
+    else root.append(el("div", { class: "turn" }, fire, obs, answer));
   }
 
   // Human-authored message bodies (injections, answers) are prose exactly like the model's
