@@ -116,7 +116,8 @@ notes under .memory/ — for what was \
 EXPENSIVE to find out (environment quirks, working solutions, constraints nobody wrote \
 down), not what the instruction or a plain look at the data would tell anyone. \
 The state digest \
-shows the INDEX at run start — consult it before re-discovering anything; revise notes that \
+shows .memory/INDEX.md at run start — consult it before re-discovering anything; revise notes \
+that \
 turned out wrong instead of appending contradictions. read_file / write_file are rejected on \
 .memory/ paths."""),
     (("read_rule",), """- read_rule: read a GENERAL RULE from the shared library. \
@@ -268,7 +269,11 @@ checked, and what it showed. Use it when a scheduled fire finds its sources unch
 want that finding on the record as a turn, rather than inventing an action to have done \
 something. It establishes nothing, so it does NOT let a finish(ok) stand on its own — the \
 honest ending for an idle run is still `finish`, with the same reasoning in the summary."""),
-    (("finish",), """- finish: end the run — the only part of this conversation that survives, \
+    (("finish",), """- finish: end the run with status ok (the ordinary ending, including a \
+run with a shortfall of its own: do what you can, then name what remains), partial (ONLY \
+when something you cannot unblock yourself stopped work you could otherwise have done) or \
+failed (the job could not be done) — the only part of this \
+conversation that survives, \
 so the facts have to be in it; a long artefact is a file it names. Decisions are asks, \
 never summary prose: one you cannot work without when you meet it (`blocks_work`), the rest in \
 one batch before the finish."""),
