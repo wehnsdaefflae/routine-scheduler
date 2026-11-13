@@ -203,6 +203,50 @@ def test_a_batch_has_a_brief_and_an_observation_that_say_it_is_several():
     assert "filed as deferred" not in line, "a batch is N records, not one"
 
 
+def test_the_count_is_what_reached_his_page(make_routine):
+    """F893, the computation half: one question refused at filing time must leave `count` at
+    the number of records that EXIST. The shape is the one that cost a real run a decision:
+    a `config_patch` whose keys are not routine config.
+    """
+    d = make_routine(slug="batchcount")
+    ctx = _ctx(d)
+    ctx.turn = 9
+
+    obs = askbatch.handle(_loop(ctx), {
+        "kind": "ask_user",
+        "questions": [
+            {"question": "Which folder do the invoices live in?"},
+            {"question": "Add the rule?", "config_patch": {"settings": {"rules": ["a"]}}},
+        ]}, poll_s=0.01)
+
+    assert len(_records(d)) == 1, "the refused question filed no record"
+    assert obs["count"] == 1, f"count must be what reached his page, got {obs['count']}"
+    assert len(obs["filed"]) == 2, "the run still sees what happened to each question"
+    assert len(obs["refused"]) == 1
+    assert "settings" in obs["refused"][0]["error"]
+    assert "REFUSED" in obs["refused_note"]
+
+
+def test_a_refused_question_is_not_counted_as_filed():
+    """F893: a question the engine REFUSES (an invalid `config_patch` key, say) files no
+    record and reaches no surface of his — but `count` counted it, so the observation read
+    "2 questions filed as one batch" when one was never asked. self-audit:20261112-233155
+    lost an operator decision for 70 turns to exactly that reading.
+    """
+    from rsched.engine.obs_admin import format_admin
+
+    obs = {"kind": "ask_user", "batch": "qb-20260708-070000-3", "mode": "deferred",
+           "count": 1, "blocking": 0, "filed": [],
+           "refused": [{"question": "Which rules?", "error": "config_patch key(s) 'settings'"}],
+           "refused_note": " 1 REFUSED, so it is on NO surface of his and nobody was asked — "
+                           "re-file this turn: config_patch key(s) 'settings'"}
+    line = format_admin(obs, "ask_user")
+    assert "1 questions filed as one batch" in line
+    assert "REFUSED" in line, "a refusal the run cannot see is a question nobody answers"
+    assert "nobody was asked" in line
+    assert "config_patch key(s) 'settings'" in line, "the reason must be actionable in place"
+
+
 @pytest.mark.parametrize(("action", "needle"), [
     ({"say": "s", "kind": "ask_user"}, "question"),
     ({"say": "s", "kind": "ask_user", "question": "a?",
