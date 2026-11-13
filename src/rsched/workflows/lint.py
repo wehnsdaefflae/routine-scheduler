@@ -22,6 +22,7 @@ import frontmatter
 import yaml
 
 from ..ids import is_slug
+from . import recipelint
 from .library import permissions_dir, rules_dir, workflows_dir
 from .taskcontract import pattern_problems
 
@@ -126,6 +127,7 @@ def lint_rule_text(raw: str, *, filename: str) -> list[str]:
         problems.append(f"{filename}: suspiciously short for a general rule")
     problems += [f"{filename}: {p}" for p in normalize_assists(meta.get("assists"))[1]]
     problems += _effect_problems(meta, filename, "the run reads it and applies it")
+    problems += recipelint.tool_names(body, filename=filename, subject="library prose")
     return problems
 
 
@@ -204,6 +206,7 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
         problems += [f"{filename}: {p}" for p in req_problems]
     problems += [f"{filename}: {p}" for p in normalize_expects(meta.get("expects"))[1]]
     problems += _effect_problems(meta, filename, "the routine can do the thing")
+    problems += recipelint.tool_names(body, filename=filename, subject="library prose")
     return problems
 
 
@@ -229,6 +232,7 @@ def lint_playbook_text(raw: str, *, filename: str = "MAIN.md") -> list[str]:
         problems.append(f"{filename}: needs at least one tag")
     if "## Instructions" not in body:
         problems.append(f"{filename}: body must have an '## Instructions' section")
+    problems += recipelint.tool_names(body, filename=filename, subject="library prose")
     return problems
 
 

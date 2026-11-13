@@ -63,6 +63,17 @@ _SCRIPT_REF = re.compile(r"(?<![\w*./~-])scripts/([A-Za-z0-9_-]+)\.py")
 #: target's own", "check that filename is free before you write it") and config-optimizer's
 #: surface lens both discuss it, and neither owns a file by that name.
 _DAEMON_OWNED_SCRIPTS = frozenset({gate_prepare.ADMIT})
+#: A TOOL CALL a recipe spells out: `gu <name>` (a util from a script or a shell line) or
+#: `util name=<name>` (the action's own call form). Both NAME the tool, which is what the
+#: operator's standing order forbids — see `_named_tools`. The form is deliberately narrow:
+#: a util's name in prose ("the mail account", "a git history") is ordinary English, and a
+#: linter that matched it would be switched off in a week.
+_TOOL_CALL = re.compile(r"(?:\bgu\s+|\butil\s+name=\[?\"?)([a-z][a-z0-9-]{2,})\b")
+#: The catalog's own meta-verbs, which are NOT tools: `util name=list` asks what exists and
+#: `util name=search` finds one by need. Prose telling a run to look the catalog up is the
+#: opposite of the breach — it is how a run names a capability and lets the catalog answer
+#: with the tool. Measured on the live fleet: self-audit's evidence stage was the one hit.
+_CATALOG_VERBS = frozenset({"list", "search"})
 #: An action kind a recipe names the way recipes name kinds — in backticks. Bare words are
 #: prose ("the filter script", "a shell-driven agent") and matching them is pure noise.
 _KIND_REF = re.compile(r"`([a-z_]+)`")
@@ -110,6 +121,7 @@ def recipe_notes(routine_dir: Path, capabilities: dict | None = None) -> list[st
             *_mixed_records(files),
             *_missing_scripts(routine_dir, files),
             *_ungranted_kinds(files, capabilities),
+            *_named_tools(files),
             *_restated_blocks(files)]
 
 
@@ -209,6 +221,43 @@ def _ungranted_kinds(files: dict[str, str], capabilities: dict | None) -> list[s
                      for kind in sorted({k for k in _KIND_REF.findall(body)
                                          if k in GATED_KINDS and k not in held}))
     return notes
+
+
+def tool_names(text: str, *, filename: str, subject: str) -> list[str]:
+    """Every TOOL this prose names, one finding per tool — the shared half of the order.
+
+    `subject` says whose prose it is ("library prose", "a recipe"), because the two halves
+    carry different weight: nothing the LIBRARY holds names a tool today (measured over every
+    pattern, workflow, rule, playbook and permission), so a breach there is new and FAILS the
+    lint, stopping the order being broken by what the library hands a routine at creation.
+    13 of 31 live recipes already name one, so there it is a note — failing `rsched validate`
+    for thirteen routines nobody asked to break would get the check switched off in a week.
+    """
+    return [f"{filename}: names the tool `{tool}` — {subject} names the CAPABILITY it needs, "
+            f"never a tool or its flags (the operator's standing order, 2026-11-13): tools "
+            f"change under the document that names them"
+            for tool in sorted({m.group(1) for m in _TOOL_CALL.finditer(text)}
+                               - _CATALOG_VERBS)]
+
+
+def _named_tools(files: dict[str, str]) -> list[str]:
+    """A step naming a TOOL — `gu <name>`, `util name=<name>` — instead of the capability.
+
+    The operator's standing order (2026-11-13): *"we should have a standing order FOR MONTHS
+    saying that recipes don't mention utils by name"*. The reason is lifetime: a tool is an
+    implementation detail that changes under the recipe that names it, so a recipe naming one
+    carries a maintenance debt nothing surfaces — a renamed flag, a folded verb or a removed
+    util leaves the step standing and the run follows an instruction that no longer works.
+    The cost is measurable: a contract change was priced at "31 routines and 14 patterns to
+    migrate", a figure that exists only because nothing had ever enforced the order.
+
+    This matches the CALL FORM, not a catalog of names: `recipelint` may not read the library
+    (its charter — `rsched validate` walks every routine and must not need the library or the
+    network), and the call form is what a machine can be sure of from the routine dir alone.
+    So `gu mail` and `util name=["mail"]` are findings; the word "mail" in prose is not.
+    """
+    return [note for rel, body in files.items()
+            for note in tool_names(body, filename=rel, subject="a recipe")]
 
 
 def _blocks(body: str) -> list[tuple[int, str]]:
