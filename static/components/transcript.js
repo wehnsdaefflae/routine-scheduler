@@ -300,17 +300,17 @@ export function createTranscript(container, opts = {}) {
     const text = observationText(o);
     const obs = obsBody(text, (o.kind === "llm" && !o.error)
       || (o.kind === "memory_read" && !o.missing), obsState(o));
-    // R3357 (2): shown DIRECTLY to a multimodal model, the reading is the NEXT turn and this
-    // observation does not hold it — so the row says so and points there (obs-image.js).
-    if (o.kind === "view_image") obs.append(...[imageAnswer(o, ev)].filter(Boolean));
+    // R3357 (2): shown DIRECTLY to a multimodal model, the reading is the NEXT turn, so the row
+    // says so and points there — on the TURN like `fire`: inside `obs` the fold hid it (F559).
+    const answer = o.kind === "view_image" ? imageAnswer(o, ev) : null;
     // A rule FIRE is not an ordinary result: its strip rides the turn OUTSIDE the collapsed
     // fold, so a reader sees that a rule governed this moment without expanding anything
     // (F591; components/concept-rows.js words it and links the rule from `o.assists`).
     const fire = ruleFireStrip(o);
     openClock?.stop(ev.ts);
     openClock = null;
-    if (openTurn) { openTurn.append(...[fire, obs].filter(Boolean)); openTurn = null; }
-    else root.append(el("div", { class: "turn" }, fire, obs));
+    if (openTurn) { openTurn.append(...[fire, obs, answer].filter(Boolean)); openTurn = null; }
+    else root.append(el("div", { class: "turn" }, fire, obs, answer));
   }
 
   // Human-authored message bodies (injections, answers) are prose exactly like the model's

@@ -1479,7 +1479,10 @@ meet. A conversation's spine is its own **working plan**
   **Row controls** (F217, run view + chat): beside that ↩, every transcript ROW carries ⧉ copy
   and 🐞 report-as-bug (`components/row-tools.js`, which owns the one clipboard call site —
   `copyBtn` moved there out of `chat.js`, since a transcript row cannot import from a module
-  that imports it). ⧉ copies what the row SAYS — its address (run, sub-run, turn, kind), the
+  that imports it). The ADDRESS comes from the mount: `views/run.js` passes `runId` (and `sub`
+  for a sub-run's own transcript), without which a row names only its routine and a turn number
+  — ambiguous across runs, and a sub's turns read as the parent's. ⧉ copies what the row SAYS —
+  its address (run, sub-run, turn, kind), the
   narration, the brief and the result, read off the row at click time because the observation
   lands an event later than the action. 🐞 opens a pre-filled, editable message and queues it to
   the routine that owns the run through `POST /api/routines/{slug}/messages` — the operator's own
@@ -1497,7 +1500,11 @@ meet. A conversation's spine is its own **working plan**
   fallback ran (`via: "vision-util"` + `text`), while an image shown DIRECTLY to a multimodal
   model has its reading in the model's NEXT turn and nowhere in the observation — so the row
   says so and points at that turn (`data-turn-link`, landed by `components/turnlink.js`) instead
-  of inventing prose nobody read off the image. Showing the reading IN the row would need the
+  of inventing prose nobody read off the image. That pointer rides the TURN, beside the rule-fire
+  strip and NOT inside the result's `<details>`: a fold starts collapsed, so a line appended
+  there is invisible until the reader expands it — the very defect F559 moved the thumbnails out
+  of, and `to_have_count(1)` passes on an element nobody can see
+  (`test_the_answer_pointer_is_visible_without_expanding_anything`). Showing the reading IN the row would need the
   engine to record it against the `view_image` observation; that is not built.
 - **Playbooks** (see Libraries & seeds → Playbooks): the new-conversation form has a playbook
   picker (`GET /api/playbooks`); the composer carries **Save as playbook** (`POST …/playbook` →

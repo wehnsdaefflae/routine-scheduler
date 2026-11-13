@@ -159,6 +159,35 @@ def test_a_row_can_be_reported_as_a_bug_into_the_owning_routine(ui, ui_page):
     assert RUN in record["text"] and "turn 1" in record["text"]
 
 
+def test_a_rows_address_names_the_run_the_mount_gave_it(ui, ui_page):
+    """The address is only as good as what the MOUNT passes, and nothing else tests that.
+
+    `rowAddress` prefers `opts.runId`, falls back to `opts.slug` and names `opts.sub` when it
+    has one — so a view that mounts the transcript without them yields "routine uir, turn 1",
+    which cannot say WHICH run or whose turn 1 (a sub-run's turns are its own). That is what
+    `views/run.js` passed until F217 was verified. Read straight off the helper, because the
+    defect is in the arguments a caller supplies, not in the rendering.
+    """
+    _seed(ui, ui_page)
+    got = ui_page.evaluate("""async () => {
+      const {rowAddress} = await import('/static/components/row-tools.js');
+      const ev = {turn: 7}, a = {kind: 'util', name: 'fs-ops'};
+      return {full: rowAddress(ev, a, {runId: 'uir:20261112-090000', slug: 'uir', sub: 2}),
+              bare: rowAddress(ev, a, {slug: 'uir'})};
+    }""")
+    assert got["full"] == "run uir:20261112-090000, sub-run 2, turn 7 (util fs-ops)", got
+    assert got["bare"] == "routine uir, turn 7 (util fs-ops)", got
+    # and the run view really hands those over — the mount, not just the helper
+    mounted = ui_page.evaluate("""() => {
+      const row = document.querySelector('.turn[data-turn="1"]');
+      row.querySelector('.row-bug').click();
+      const text = document.querySelector('.bug-box').value;
+      document.querySelector('.modal-overlay button')?.click();
+      return text;
+    }""")
+    assert "run uir:20261112-090000" in mounted, mounted
+
+
 def test_the_bug_control_is_absent_where_no_routine_owns_the_rows(ui, ui_page):
     """A transcript mounted without a routine (a conversation's work fold mounts the same
     renderer) has no inbox to reach, so the control is ABSENT rather than present and broken —
@@ -241,6 +270,25 @@ def test_the_direct_path_does_not_invent_an_answer(ui, ui_page):
     assert link.get_attribute("data-turn-link") == "3"
     # and the engine's placeholder sentence is not left standing as the answer
     expect(_turn(ui_page, 2).locator(".obs-collapse")).not_to_contain_text("look at it now")
+
+
+def test_the_answer_pointer_is_visible_without_expanding_anything(ui, ui_page):
+    """The defect R3357 was RAISED about, reintroduced one element over — and the reason this
+    test exists at all: `to_have_count(1)` passes on an element nobody can see.
+
+    The pointer was appended to the observation's own `<details class="obs-collapse">`, which
+    starts COLLAPSED (`obsBody`), so the one line saying where the image's reading is was
+    invisible until the reader expanded the fold — exactly what the thumbnail did before F559
+    moved it out. It rides the TURN instead, beside the rule-fire strip, which is this
+    renderer's own place for something a reader must see without expanding anything.
+    """
+    _seed(ui, ui_page)
+    row = _turn(ui_page, 2)
+    assert row.locator(".obs-collapse").first.evaluate(
+        "el => !el.open"), "the result fold no longer starts collapsed — rewrite this test"
+    link = row.locator(".obs-answer-link")
+    expect(link).to_be_visible()
+    assert link.evaluate("el => !el.closest('details')"), "the pointer is back inside a fold"
 
 
 def test_the_vision_utils_description_is_the_answer_where_it_ran(ui, ui_page):
