@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.538.0] — 2026-11-13
+
+### The state digest's history tails are bounded in CHARACTERS, not in lines (goal b5, step 3)
+
+- **The digest is the largest section of the composed prompt** — 29,122 chars measured over 37
+  live captures (`runs/<ts>/prompt-sections.json`, the boot capture R3341 shipped) — and four
+  HISTORY tails carry 69% of it: the ledger (median 7,209, max 13,326), the `.memory/` index
+  (median 2,666, max **23,069**), the notes tail (median 5,508) and the previous run's
+  `result.md` (median 3,861, max 9,317).
+- **Every one of them was already capped — in LINES** (`notes.tail` 10, `runledger.digest_tail`
+  30, `notemeta.INDEX_SHOWN_MAX` 60). A note line is a paragraph and a ledger entry is a whole
+  run summary, so a line cap bounds the COUNT and not the size: that is how a "10-line" notes
+  tail reaches 6,352 characters.
+- New `engine/digesttail.py` owns ONE number (`TAIL_BUDGET` = 2,500) with the measurement behind
+  it, and the clip: a line-boundary cut carrying a marker that names how much was dropped and
+  which file holds it whole. Wired into all four producers. `notes.tail` and
+  `runledger.digest_tail` keep the **newest** history (a digest exists to carry what just
+  happened); `notemeta.digest_blocks` and the composer's last-run-result keep the head, which is
+  where an index and a summary state what they are.
+- **Why a character bound is honest here, where it would not be for a contract:** all four are
+  readable on demand and the digest says where. The clip moves a cost from every turn of every
+  run to the one turn of the one run that needs the older half — and a marked block can always be
+  read back in one action, which a silently truncated one cannot.
+- **Not clipped, deliberately:** the working plan (a run that cannot read its plan re-derives it,
+  which costs more than the bytes), the goals and accounting contract, the finish-line block —
+  anything stating what the run must DO. This bound only ever shortens what the run can read back
+  in full.
+- **Measured on the live fleet, all 31 routines:** the four tails together go from a mean 19,053
+  chars to 9,796 — **9,257 chars saved per digest, on every turn of every run**. The figure is
+  conservative: the comparison read `result.md` raw on both sides, so the last-run-result clip is
+  not counted in it.
+- 9 tests; 3 verified RED against the unbounded code before the fix.
+
 ## [0.537.0] — 2026-11-13
 
 ### A one-shot migration converts all fourteen installed patterns (D283)
