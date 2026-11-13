@@ -535,7 +535,7 @@ export async function render(view, runId, query = {}) {
       // a deliverable landed — the rail refreshes without waiting for run end
       if (ev.type === "observation" && !ev.payload?.error
           && (ev.payload?.kind === "write_file" || ev.payload?.kind === "edit_file")
-          && String(ev.payload?.path || "").includes("artifacts/")) artifacts?.refresh();
+          && String(ev.payload?.path || "").includes("artifacts/")) artifacts?.poke();
       if (ev.type === "observation" && ["read_file", "view_image", "write_file", "edit_file"]
           .includes(ev.payload?.kind)) fileActivity.poke();
       transcript.add(ev);

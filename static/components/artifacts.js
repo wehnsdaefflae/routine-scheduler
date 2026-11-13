@@ -216,8 +216,24 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
   }
 
   refresh();
+  let pokeTimer = null;
   return {
     refresh,
+    // F891: the chat fires one onArtifact per deliverable write observation, and opening a
+    // view REPLAYS the whole transcript — so a conversation with ~70 artifact writes in its
+    // history sent 70 identical list fetches in 9.6 s, each ~4 s, climbing to 13 s as they
+    // queued against each other. Measured 2026-11-13 in .ui-traces: 25 such bursts carrying
+    // 1,566 of 1,581 /artifacts rows, and inside their 305 s of windows every OTHER
+    // endpoint's slow rows ran 39% slower (3,786 ms vs 2,721 ms median). Coalesce the burst
+    // into one refetch per lull, exactly as fileactivity.js's poke() already does — and none
+    // once the card is gone, so a torn-down view never refetches for nobody.
+    poke() {
+      if (pokeTimer) return;
+      pokeTimer = setTimeout(() => {
+        pokeTimer = null;
+        if (listBox.isConnected) refresh();
+      }, 1500);
+    },
     count: () => items.length,
     /** The view's teardown: free the viewer's URLs, and those of an open still in flight. */
     destroy() { opening += 1; release(); },

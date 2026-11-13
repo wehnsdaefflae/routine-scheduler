@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.535.4] — 2026-11-13
+
+### Opening a long conversation no longer fires one artifact fetch per historic write
+
+- **The console's biggest measured self-inflicted load, and it is a replay artefact** (F891).
+  `components/chat.js` fires `onArtifact` for every `write_file`/`edit_file` observation landing
+  in a deliverable dir, and opening a view replays the WHOLE transcript — so
+  `views/conversations.js` called an unthrottled `artifacts.refresh()` once per historic write.
+- **Measured in `.ui-traces` (2026-11-12/13, 6,983 events):** 25 bursts, the largest **70
+  identical `/artifacts` fetches in 9.6 s**; latency inside a burst climbs from 3,894 ms to
+  13,377 ms as the requests queue against each other, and **1,566 of 1,581** client-stamped
+  `/artifacts` rows arrive inside one. Those bursts occupy **305 s of a two-day trace (0.18%)**
+  yet carry **17.1% of every other endpoint's slow rows**, which run **39% slower inside them**
+  (3,786 ms vs 2,721 ms median against 2,721 ms outside). `/api/runs/…/tree` contributes 695 of
+  those rows.
+- **The fix is the pattern the sibling card already had.** `components/fileactivity.js` has
+  carried a 1,500 ms coalescing `poke()` since it was written — "many file observations arrive
+  in bursts: one refetch per lull". `components/artifacts.js` now has the same, guarded on
+  `listBox.isConnected` so a torn-down view never refetches, and both call sites
+  (`views/conversations.js`, `views/run.js`) poke instead of refreshing. Each call site is
+  line-neutral: both files are at their size ceiling.
+- **Not a handler fix, deliberately:** `readmodels/fileactivity.file_activity` measures **66 ms
+  cold / 1 ms memoized** on a 3.6 MB transcript, so the wait was never in the handler. This is
+  the request-volume half of the UI's slowness, next to the server-side half F871 addresses.
+- `tests/ui/test_artifact_poll_storm.py` pins both directions: twelve replayed writes cost at
+  most three list fetches, and a live write still reaches the panel.
+
 ## [0.535.3] — 2026-11-13
 
 ### An engine note no longer contradicts the grant answer printed beside it
