@@ -216,3 +216,74 @@ def test_an_empty_edit_is_refused_instead_of_applying_the_runs_words(web):
     r = c.post(f"/api/pending-creations/{rec['id']}/revise", json={"lines": ["  ", ""]})
     assert r.status_code == 400 and "empty" in r.json()["detail"]
     assert len(pending.load_all(tmp / "routines")) == 1       # still the operator's to decide
+
+
+# ---- F885: the card is told what the route would refuse -------------------------------------
+# The operator clicked `apply it` on a live run at 09:22:33, read "…is running again — recipe
+# editing unlocks on a FINISHED run", waited 93 s, clicked again and got the identical refusal.
+# Those two toasts were the ONLY two error events in 2 998 trace rows over two days, on a
+# control he had clicked 13 times in the window. The row the card renders from carries the
+# proposing run's state and the refusal itself, so the click is never offered.
+
+
+def test_a_live_proposing_runs_row_carries_the_refusal_the_route_would_raise(web):
+    c, tmp = web
+    mk_run(tmp / "routines" / "rev", "20260709-180000", "running")
+    rec = _queued(c.app.state.server, "rev", "20260709-180000", ["main.md — x"])
+    [row] = c.get("/api/pending-creations").json()
+    assert row["run_state"] == "running"
+    # the SAME sentence the route answers — one predicate, so the card cannot drift from the
+    # server's own terminal-state list (`registry.TERMINAL_STATES`)
+    r = c.post(f"/api/pending-creations/{rec['id']}/revise")
+    assert r.status_code == 409
+    assert row["revise_blocked"] == r.json()["detail"]
+    assert "FINISHED run" in row["revise_blocked"]
+
+
+def test_a_finished_proposing_runs_row_carries_no_refusal(web):
+    c, tmp = web
+    mk_run(tmp / "routines" / "rev", "20260709-181000", "finished")
+    _queued(c.app.state.server, "rev", "20260709-181000", ["main.md — x"])
+    [row] = c.get("/api/pending-creations").json()
+    assert row["run_state"] == "finished"
+    assert row["revise_blocked"] == ""
+
+
+def test_a_pruned_run_dir_is_a_refusal_the_card_can_read_too(web):
+    """Retention prunes runs and a proposal outlives the run that made it — the other 409 the
+    route raises, and the operator has no more use for an `apply it` button for it than for a
+    live run's."""
+    c, _tmp = web
+    rec = _queued(c.app.state.server, "rev", "20200101-000000", ["main.md — x"])
+    [row] = c.get("/api/pending-creations").json()
+    assert row["run_state"] == ""
+    r = c.post(f"/api/pending-creations/{rec['id']}/revise")
+    assert r.status_code == 409
+    assert row["revise_blocked"] == r.json()["detail"]
+    assert "no longer on disk" in row["revise_blocked"]
+
+
+def test_the_refusal_is_re_read_per_request_not_served_from_the_proposal_memo(web):
+    """`decisions_read.open_proposals` is memoized on the QUEUE directory, and that directory
+    does not move when a RUN finishes. Attaching the state inside that read model would pin
+    "running" for as long as nothing wrote to the queue — the card would then refuse to offer
+    the apply the server had already started accepting, which is the same defect pointing the
+    other way.
+    """
+    c, tmp = web
+    mk_run(tmp / "routines" / "rev", "20260709-182000", "running")
+    _queued(c.app.state.server, "rev", "20260709-182000", ["main.md — x"])
+    assert "FINISHED run" in c.get("/api/pending-creations").json()[0]["revise_blocked"]
+    mk_run(tmp / "routines" / "rev", "20260709-182000", "finished")   # the run ends; queue same
+    [row] = c.get("/api/pending-creations").json()
+    assert row["run_state"] == "finished" and row["revise_blocked"] == ""
+
+
+def test_other_kinds_are_served_unchanged(web):
+    """Only the recipe-revision card asks this question — a goal-reached or creation row must
+    not grow fields its own card would have to ignore."""
+    c, _tmp = web
+    pending.queue(c.app.state.server, kind="goal-reached", routine="rev", run_id="rev:1",
+                  fields={"outcomes": []}, summary="finish line reached")
+    [row] = c.get("/api/pending-creations").json()
+    assert "revise_blocked" not in row and "run_state" not in row

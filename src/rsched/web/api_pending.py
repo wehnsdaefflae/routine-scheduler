@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from .. import lanes, library_drift, pending, schedule
 from ..engine import finishline, reviseroutine
 from ..paths import read_yaml
-from .api_recipe_revision import materialize_revise
+from .api_recipe_revision import materialize_revise, with_revise_state
 
 router = APIRouter(tags=["pending"])
 
@@ -85,10 +85,17 @@ def _decide_unowned(server, rec: dict, body: Choice | None) -> dict:
 
 @router.get("/pending-creations")
 def list_pending(request: Request) -> list[dict]:
-    """Everything a run has proposed and nobody has decided yet, oldest first."""
+    """Everything a run has proposed and nobody has decided yet, oldest first.
+
+    A `recipe-revision` row also carries what the approve route would refuse
+    (`api_recipe_revision.with_revise_state`, F885) — its one predicate, so the card disables
+    the click exactly where the server raises 409 rather than keeping a terminal-state list of
+    its own.
+    """
     from .decisions_read import open_proposals
 
-    return open_proposals(request.app.state.server)
+    server = request.app.state.server
+    return [with_revise_state(server, rec) for rec in open_proposals(server)]
 
 
 def _materialize_routine(server, fields: dict) -> dict:

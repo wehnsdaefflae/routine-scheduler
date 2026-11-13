@@ -25,6 +25,13 @@ The run dir is the limit, and it is named rather than hidden: retention prunes r
 (`keep_runs`), and a proposal outlives the run that made it. Once the dir is gone there is no
 transcript to resume, so this answers 409 and says to apply the revision from the routine page
 instead — better than silently resuming a run whose reasoning no longer exists.
+
+Both refusals — the pruned run, and a run that is LIVE again (the unlock needs a finished run) —
+are ONE predicate, `revise_refusal`, and the CARD is given it (`with_revise_state`, read by
+`api_pending.list_pending`). The card used to have no way to know, so it served an enabled
+button this route answers 409 to, and finding out cost a click (F885). The view is told rather
+than deriving it: a second copy of `registry.TERMINAL_STATES` out there would drift from the one
+here, which is what actually decides.
 """
 
 from __future__ import annotations
@@ -77,6 +84,52 @@ def materialize_revise(server, rec: dict) -> dict:
         raise ValueError(f"{target} already has {reciperevise.MAX_PENDING} revisions waiting "
                          "for its next run — approve this once it has run")
     return {"revises": target, "lines": lines, "armed": True}
+
+
+def revise_refusal(server, rec: dict) -> tuple[str, str]:
+    """The proposing run's state, and the 409 detail `apply it` would be refused with — the
+    refusal is "" exactly when the route below would accept the click.
+
+    ONE predicate, read by that route AND by the CARD (`api_pending.list_pending` carries both
+    onto a `recipe-revision` row, `static/components/recipe-card.js` renders them). What decides
+    is `registry.TERMINAL_STATES`; a second copy of that list in the view would drift from this
+    one, so the view is TOLD rather than deriving it.
+
+    F885: the card could not know, so it served an enabled button the server refuses. The
+    operator clicked `apply it` on a live run at 09:22:33, read "…is running again — recipe
+    editing unlocks on a FINISHED run", waited 93 seconds, clicked again and read the identical
+    refusal — the only two UI error events in 2 998 trace rows across two days, on a control he
+    had clicked 13 times in that window.
+    """
+    fields = rec.get("fields") or {}
+    slug = str(rec.get("routine") or "")
+    run_id = str(fields.get("run_id") or rec.get("run_id") or "")
+    ts = run_id.split(":", 1)[1] if ":" in run_id else ""
+    run_dir = server.routines_home / slug / "runs" / ts
+    if not ts or not run_dir.is_dir():
+        return "", (f"the run that proposed this ({run_id or 'unknown'}) is no "
+                    "longer on disk, so there is no leg to resume — apply the "
+                    f"revision from {slug}'s own recipe editor and discard this "
+                    "proposal")
+    state = run_state(run_dir) or ""
+    if state not in TERMINAL_STATES:
+        return state, (f"{run_id} is running again — recipe editing unlocks on a "
+                       "FINISHED run; approve this once it ends")
+    return state, ""
+
+
+def with_revise_state(server, rec: dict) -> dict:
+    """A `recipe-revision` row plus `run_state` and `revise_blocked`, for the card to read.
+
+    Attached per REQUEST rather than inside `decisions_read.open_proposals`, which is memoized
+    on the queue directory: that directory does not move when a RUN finishes, so a state folded
+    into the memo would pin "running" until something wrote to the queue — the same defect
+    pointing the other way. Other kinds are returned untouched; only this card asks.
+    """
+    if rec.get("kind") != recipeproposal.KIND:
+        return rec
+    state, refusal = revise_refusal(server, rec)
+    return {**rec, "run_state": state, "revise_blocked": refusal}
 
 
 def _instruction(lines: list[str], *, edited: bool = False) -> str:
@@ -144,14 +197,11 @@ async def apply_recipe_revision(request: Request, pid: str, body: Edited | None 
     ts = run_id.split(":", 1)[1] if ":" in run_id else ""
     routine_dir = server.routines_home / slug
     run_dir = routine_dir / "runs" / ts
-    if not ts or not run_dir.is_dir():
-        raise HTTPException(409, f"the run that proposed this ({run_id or 'unknown'}) is no "
-                                 "longer on disk, so there is no leg to resume — apply the "
-                                 f"revision from {slug}'s own recipe editor and discard this "
-                                 "proposal")
-    if run_state(run_dir) not in TERMINAL_STATES:
-        raise HTTPException(409, f"{run_id} is running again — recipe editing unlocks on a "
-                                 "FINISHED run; approve this once it ends")
+    # The predicate the CARD is given too (`revise_refusal` → `with_revise_state`), so the
+    # button is disabled exactly where this 409 is raised, and the operator reads the reason
+    # on the card instead of spending a click to discover it (F885).
+    if refusal := revise_refusal(server, rec)[1]:
+        raise HTTPException(409, refusal)
     from ..config import load_routine
 
     cfg, _problems = load_routine(routine_dir)
