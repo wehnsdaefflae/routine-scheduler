@@ -269,8 +269,16 @@ def model_chain_depth(problems: list[str], routines: int, read: bool) -> Check:
     lines without counting them because whether a single-domain or single-member chain is
     acceptable is a judgement about THIS instance's providers — a one-provider instance has no
     other domain to reach — and a boot check that went red over it would be switched off inside
-    a week. Making it fatal is the operator's call. What this adds is that the answer lands in
-    the record at every boot, where it is read without anyone asking.
+    a week. What this adds is that the answer lands in the record at every boot, where it is
+    read without anyone asking.
+
+    **The operator ANSWERED that judgement on 2026-11-12: "No fallbacks" (decision D285).** All
+    four configured endpoints sit on one host (`172.17.0.1`), so a fallback declared inside this
+    catalog would share one failure domain and read as a failover it is not. So this check must
+    not keep prompting for an action he has declined — a NOTE that asks for the same unwanted
+    change at every boot is noise that trains its reader to skip the checklist. It reports the
+    COUNT, and the count moving is the news; the wording says so, because a reader who does not
+    know the decision would otherwise read the line as an open defect.
     """
     if not read:
         return Check(CHECK_NAMES[4], NOTE,
@@ -285,8 +293,10 @@ def model_chain_depth(problems: list[str], routines: int, read: bool) -> Check:
     more = f" (+{len(problems) - 3} more)" if len(problems) > 3 else ""
     return Check(CHECK_NAMES[4], NOTE,
                  f"{len(problems)} role(s) across {routines} routine(s) cannot fail over: "
-                 f"{shown}{more} — a provider failure of a few seconds ends such a run at its "
-                 "first attempt, which is what killed two runs on 2026-11-11")
+                 f'{shown}{more} — the operator chose this on 2026-11-12 ("No fallbacks", '
+                 "decision D285), so the number is here to be WATCHED, not acted on: a provider "
+                 "failure of a few seconds ends such a run at its first attempt, as it did twice "
+                 "on 2026-11-11, and the count moving is what would be news")
 
 
 def exit_code(checks: list[Check]) -> int:

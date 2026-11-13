@@ -15,6 +15,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.535.3] — 2026-11-13
+
+### An engine note no longer contradicts the grant answer printed beside it
+
+- **Three engine messages told one run three incompatible things within two turns** (R3380, from
+  conversation `c-20261025-100140`, turns 812-814): the capability refusal said the refusal was
+  *"permanent for this run"*; the grant answer said *"allowed permanently — recorded in the
+  routine's config (and usable now)"*; and the config-patch ENGINE NOTE, **in the same
+  observation**, said it *"takes effect at your NEXT RUN — you are still running under what you
+  booted with … a live run's schema is already fixed"*. The send then worked immediately: `gu
+  whatsapp send` exit 0 on the next turn.
+- **Only one of the three was wrong for that case, and it was the note's reason.** A grant IS
+  live — `engine/requests._seed` folds the decided entity into `ctx.granted_now` and
+  `rebuild_policy` re-projects the action schema, so the next turn can use it, `allow_forever`
+  included (the web layer additionally writes it to the config). The note is about a config
+  EDIT, which really does wait, and `configflow.CLASSIFICATION` carried that carve-out for
+  `machines`, `fs_read_roots` and `fs_write_roots` — *"an access-REQUEST decided mid-run DOES
+  reach this one … while a config edit does not"* — but **not** for `permissions` and
+  `capabilities`, which is the pair this run hit.
+- Both reasons now carry it, naming `allow_forever` explicitly. The half stays `NEXT_RUN`,
+  because a config edit does wait; what changed is the sentence a run reads.
+- `tests/test_configflow.py` pins the class over all five authority fields: each must tell the
+  run that a mid-run request reaches it AND name the config edit as the thing that waits. The
+  refusal's own *"permanent for this run"* is untouched — it is true of the refusal, and
+  `engine/denialmemo.py` already teaches the request route in the same breath.
+
+### The post-boot chain check stops asking for a change the operator has declined
+
+- `model-chain-depth` (0.534.4) reported *"61 role(s) across 31 routine(s) cannot fail over … a
+  provider failure of a few seconds ends such a run at its first attempt"* at every boot. The
+  operator **answered that question on 2026-11-12: "No fallbacks"** (decision D285, filed with
+  four options and the measurement that all four configured endpoints share one host, so a
+  fallback declared in this catalog would read as a failover it is not).
+- A NOTE that keeps prompting for a declined change trains its reader to skip the checklist, so
+  the check now reports the **count** and says the count moving is the news, naming the decision
+  and its date. It stays a NOTE and still never moves the exit code. The docstring's old line
+  that making it fatal is the operator's open call is replaced by what he decided.
+
 ## [0.535.2] — 2026-11-13
 
 ### Structured evidence reaches the default decision model at all (`decide`'s headline capability)

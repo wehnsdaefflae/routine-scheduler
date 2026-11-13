@@ -57,10 +57,16 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
                             "not")),
     "permissions": (NEXT_RUN, ("the held conduct docs are read at boot: their prose is composed "
                                "into the prompt and their capabilities projected into the action "
-                               "schema, so widening or narrowing authority reaches the NEXT run")),
+                               "schema, so widening or narrowing authority reaches the NEXT run; "
+                               "an access-REQUEST decided mid-run DOES reach this one — the "
+                               "engine folds that one entity into the run's grant overlay and "
+                               "re-projects the schema — while this config edit does not")),
     "capabilities": (NEXT_RUN, ("the policy and the action schema are projected from this mapping "
                                 "at boot; a live run's schema is already fixed, and its permission "
-                                "prose would no longer match what it may do")),
+                                "prose would no longer match what it may do; an access-REQUEST "
+                                "decided mid-run DOES reach this one, including `allow_forever` "
+                                "— it is recorded in the config AND folded into this run's "
+                                "overlay — while this config edit does not")),
     "rules": (NEXT_RUN, ("prose already in the context cannot be unsaid; the /rules picker "
                          "pushes an ADDED rule to a live run, a config patch does not")),
     "fs_read_roots": (NEXT_RUN, ("the sandbox roots are computed at boot and passed to every "

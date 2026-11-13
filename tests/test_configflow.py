@@ -30,6 +30,35 @@ def test_every_patch_field_declares_its_half():
             "NEXT_RUN, with the reason the run is shown")
 
 
+#: The authority fields a mid-run ACCESS REQUEST reaches even though a config EDIT does not:
+#: `requests._seed` folds the decided entity into `ctx.granted_now` and `rebuild_policy`
+#: re-projects the action schema, so the grant is usable on the next turn — including
+#: `allow_forever`, which the web layer additionally writes to the config.
+GRANTABLE_MID_RUN = ("permissions", "capabilities", "machines", "fs_read_roots",
+                     "fs_write_roots")
+
+
+@pytest.mark.parametrize("field", GRANTABLE_MID_RUN)
+def test_an_authority_fields_reason_says_a_mid_run_request_still_reaches_the_run(field):
+    """R3380: a run was told three contradictory things in two turns — the refusal said the
+    refusal was "permanent for this run", the grant answer said "allowed permanently … usable
+    now", and the config-patch ENGINE NOTE in the SAME observation said it "takes effect at your
+    NEXT RUN". The send then worked immediately, so the note was what misled: it is right about a
+    config EDIT and was read as a statement about the GRANT. Three of these five fields already
+    carved the request out in their reason; `permissions` and `capabilities` did not, which is
+    the pair the reporter hit. The half stays NEXT_RUN — a config edit really does wait — so what
+    a test can hold is that the reason a run READS names the live route."""
+    half, why = configflow.CLASSIFICATION[field]
+    assert half == configflow.NEXT_RUN, f"{field} is no longer next-run; revisit this pin"
+    low = why.lower()
+    assert "request" in low, (
+        f"{field}'s reason must tell the run that an access REQUEST decided mid-run reaches it, "
+        f"so the note cannot be read as contradicting a grant answer — got: {why}")
+    assert "config edit" in low or "config patch" in low, (
+        f"{field}'s reason must name what actually waits (the config edit), not just what "
+        f"arrives — got: {why}")
+
+
 def test_each_surface_vocabulary_is_exactly_its_patch_model():
     """`engine/interact.py` judges a filed `config_patch` in the vocabulary of the surface its
     apply will PATCH. The engine may not import the web layer, so `configflow` spells the two
