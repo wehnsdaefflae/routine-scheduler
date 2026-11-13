@@ -137,6 +137,13 @@ class SlowWatch:
             self._live[token] = {"method": method, "path": path, "started": time.monotonic()}
             alive = self._thread is not None and self._thread.is_alive()
             if not alive:
+                # HERE, on the event loop: anyio resolves its thread limiter from the running
+                # async context, so the watcher's own thread cannot read it — it would record
+                # `threadpool: {"error": …}` and lose half of what the snapshot exists to show
+                # (caught by this feature's own test). `arm` is the middleware's entry, so it
+                # is the last point on the loop before the thread needs it.
+                with contextlib.suppress(Exception):   # hot path: fail open, never raise here
+                    api_debug.capture_limiter()
                 self._thread = threading.Thread(target=self._watch, name="rsched-slow-watch",
                                                 daemon=True)
                 self._thread.start()

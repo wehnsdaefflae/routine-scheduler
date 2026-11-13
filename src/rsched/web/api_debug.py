@@ -66,11 +66,29 @@ def _limiter() -> dict:
     because an operator cannot tell which one is saturated without seeing both.
     """
     try:
-        import anyio
-        lim = anyio.to_thread.current_default_thread_limiter()
+        lim = _LIMITER[0] or capture_limiter()
         return {"total_tokens": lim.total_tokens, "borrowed_tokens": lim.borrowed_tokens}
     except Exception as exc:   # a diagnostic never fails the diagnostic
         return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+#: The limiter OBJECT, captured once from the event loop. `current_default_thread_limiter()`
+#: resolves it from the running async context, so it raises off the loop — and F871's whole
+#: point is that the useful reading is taken from an ORDINARY THREAD while the loop is blocked
+#: (`web/slowsample.py`; a loop callback would be served only after the stall released, against
+#: an already-drained pool). The object itself is the live counter: `borrowed_tokens` is current
+#: whenever it is read, from any thread. So the loop captures it and the sampler reads it.
+_LIMITER: list = [None]
+
+
+def capture_limiter():
+    """Resolve the limiter in the RUNNING LOOP and remember it — `slowsample.SlowWatch.arm`
+    calls this before starting its sampling thread, and `_limiter()` falls back to it for the
+    route, which is itself on the loop.
+    """
+    import anyio
+    _LIMITER[0] = anyio.to_thread.current_default_thread_limiter()
+    return _LIMITER[0]
 
 
 def thread_report(state) -> dict:

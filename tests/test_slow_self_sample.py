@@ -91,7 +91,7 @@ def test_the_snapshot_names_the_trigger_both_pools_and_the_stacks(watched):
         assert body["trigger"]["method"] == "GET"
         assert body["trigger"]["elapsed_s"] >= 0.05          # it had crossed the floor
         assert body["slow_request_s"] == 0.05
-        assert "still in flight" in body["why"]
+        assert "STILL in flight" in body["why"]   # the sentence slowsample actually writes
 
         # BOTH pools, by the names `/api/debug/threads` reports them under
         report = body["report"]
