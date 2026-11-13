@@ -54,6 +54,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by the schema's `summary` description. Three needles in `tests/test_prompt_anatomy.py` moved
   from cut bullet prose to the field descriptions the engine really emits.
 
+### The daemon samples ITSELF while a request is still slow (F871)
+
+- **The console's 10-30 second waits are a blocked process, not slow handlers.** `/api/llm-tasks`
+  — an `async def` returning an in-memory snapshot and doing no I/O — recorded a worst of
+  34,396 ms, and unrelated endpoints finished within 20 ms of each other. The case no existing
+  evidence explains is the QUIET one: **33 of 79 server-side slow rows had `in_flight = 0`** and
+  still took a median 2,700 ms, 24 of them on `/api/health/blocked`, whose handler measures
+  1.4 ms warm. `in_flight` cannot narrow that by construction (an http middleware never sees a
+  websocket scope), and `/api/debug/threads` can — but only while somebody holds a browser open
+  inside the stall, which at 18:07 nobody is.
+- New `src/rsched/web/slowsample.py` owns the timing middleware (moved out of `app.py`, which was
+  at its size ceiling, so the host SHRANK 350 → 324 while gaining the feature) plus `SlowWatch`:
+  an in-flight register and ONE OS thread that wakes every 0.25 s and, when a request has been in
+  flight past `app.state.slow_request_s`, writes `api_debug.thread_report(...)` — both pools and
+  every stack — to `<routines_home>/.control/slow-samples/<ts>-<nnn>.json`.
+- **Why a thread and not a callback, which is the whole design:** a blocked event loop runs no
+  callbacks, so a sample taken in the middleware's `finally`, in a `call_later` or in any
+  coroutine would be served only AFTER the stall released, against an already-drained pool —
+  exactly the misreading `api_debug.py` records from 2026-09-12. The watcher holds no anyio token
+  and no `io_pool` thread, so it cannot deepen the shortage it measures.
+- **The one thing the thread cannot do is resolve anyio's limiter**, which comes from the running
+  async context. So `api_debug.capture_limiter()` is called from `SlowWatch.arm` — on the loop,
+  since `arm` is the middleware's own entry — and the sampler reads the captured object, whose
+  `borrowed_tokens` is live from any thread. Without that the snapshot recorded
+  `threadpool: {"error": NoEventLoopError}` and lost half of what it exists to show; the feature's
+  own test caught it.
+- Bounds: ONE sample per stall (`SAMPLE_COOLDOWN_S = 30`, because the measured failure is SHARED —
+  every request waiting at that instant is pointed at the one snapshot), a 20-file ring pruned on
+  write, 12 frames per thread, the `waiting` list clipped to 50, and a watcher that retires after
+  8 quiet ticks. Every context read on the request path uses `getattr` and fails open.
+- **The four sync handlers are untouched, for a measured reason, not caution:**
+  `starlette/concurrency.py` shows `run_in_threadpool` IS `anyio.to_thread.run_sync`, the same
+  40-token limiter — so rewriting a `def` handler as `async def` + `to_thread.run_sync` holds the
+  same token for the same duration. The real alternative is moving them onto `ioload`'s `io_pool`,
+  which re-derives that pool's live-stream ceiling; this self-sample is the instrument that says
+  whether it is even the right move.
+
 ### An `ask_user` batch no longer counts a REFUSED question as filed (F893)
 
 - `askbatch.handle` counted every entry of `filed`, refusals included, so a batch of two where
