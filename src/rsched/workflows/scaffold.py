@@ -164,8 +164,9 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # The contract was DEMANDED before anything was created, so the measuring script is
     # scaffolded with it (D286): a routine born with an `outcome:` and no `scripts/outcome.py`
     # records an outcome error at every run and its own settings page calls it broken on the
-    # day it was made (`readmodels/surface_outcome.py`). Derived from the same lines, stub and
-    # TODO — `workflows/outcome_stub.py` says why it reports 0 rather than leaving a measure out.
+    # day it was made (`readmodels/surface_outcome.py`). Stub and per-measure marker are derived
+    # from the same lines — `workflows/outcome_stub.py` says why it reports 0 rather than
+    # leaving a measure out.
     if outcome:
         from .outcome_stub import write as write_outcome_stub
 

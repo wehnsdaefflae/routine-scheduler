@@ -143,7 +143,7 @@ def _oneline(text: str) -> str:
 
 
 def _prose(text: str) -> str:
-    """One line of the person's words, safe inside the GENERATED file's docstring.
+    r"""One line of the person's words, safe inside the GENERATED file's docstring.
 
     A backslash is escaped and a triple quote defused because this text is compiled as Python
     source: `produces` is the person's prose, and a label holding `\\d` would make the
