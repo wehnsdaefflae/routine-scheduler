@@ -15,6 +15,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.536.0] — 2026-11-13
+
+### The action kinds' prose carries conduct, not a third copy of the field contract (goal b5, step 2)
+
+- **The operator's decision of 2026-11-13**, answering the choice this routine put to him in
+  R3379: *"Cut the bullets to conduct only — drop every field recital the enforced wire already
+  carries."* With one bound, which is part of the decision and not a caveat: **no field
+  description is reworded.**
+- **Why there was anything to cut.** The `Action kinds:` block glossed every kind's FIELDS — their
+  defaults, caps and refusals. That was the THIRD statement of one contract in a single request:
+  `completion.next_action` hands the projection to `endpoint.complete(schema=…)` where every
+  transport enforces it with its own `description` prose in front of the model (a tool's
+  `input_schema`, a strict `response_format`, Ollama's `format`); 0.535.0's `schemaindex.index`
+  states which fields each kind takes; and then the bullets said it again in prose nothing
+  enforced. Measured over 21 live run captures on 2026-11-12 (`runs/<ts>/prompt-sections.json`)
+  the block averaged **21,421 chars on every turn of every run and conversation.**
+- **What stayed, and why those two things.** Each kind's IDENTITY — `ACTION_SCHEMA["kind"]` is a
+  bare enum, so the wire says a kind EXISTS and never what it is for — and its CONDUCT, which no
+  schema can hold: *"ask sparingly"*, *"the moment you run something a SECOND time, write the
+  util"*, *"it gives no reasons, so ask `llm` when you need one"*. Conduct is why the operator
+  chose this over moving it into library rules: a routine holding no corresponding rule would
+  silently lose the instruction.
+- **Measured, and smaller than the estimate this routine gave him.** Bullet prose
+  **23,853 → 16,841 chars (−7,012, 29.4%)**; through the real composer the harness section drops
+  **6,631 chars on every turn** (`tests/prompt_budget.json` re-locked 65,220 → **58,589**, the
+  reason in its `note`). R3379 estimated ~19k by counting the whole block as recital — it is not:
+  by 4-gram overlap against the schema's own 85 field descriptions, only **2,416 chars** of the
+  old block was ≥20% verbatim-on-the-wire. With step 1 the always-on contract a real run receives
+  is **~25.2k chars, against ~31.8k before this release and ~65.2k before step 1.**
+- `tests/test_kind_bullets_carry_conduct.py` pins the ARCHITECTURE rather than a char count: no
+  bullet sentence is ≥25% the schema's own words (4-gram windows, so a paraphrase is caught as
+  well as a quote), every bullet opens with its kind's identity, and nine conduct sentences that
+  live nowhere else survive. It earned itself at once — it caught the `job` bullet's checkpoint
+  sentence at 31% on the wire, which review by eye had passed.
+- `docs/prompt-anatomy.md`: §5.1's bullet fence re-rendered from the composer, and the section
+  table now says what a bullet owes and that the finish summary's two labelled parts are stated
+  by the schema's `summary` description. Three needles in `tests/test_prompt_anatomy.py` moved
+  from cut bullet prose to the field descriptions the engine really emits.
+
+### An `ask_user` batch no longer counts a REFUSED question as filed (F893)
+
+- `askbatch.handle` counted every entry of `filed`, refusals included, so a batch of two where
+  one question was rejected *before it filed anything* still reported `"count": 2` — and the
+  observation read "2 questions filed as one batch … They are on the user's Decisions page
+  together". Nothing of the refused one was on his page. The run read the count, believed the
+  operator could see both, and carried on.
+- Measured where it happened: `self-audit:20261112-233155` turn 298 filed a two-question batch
+  whose first carried a `config_patch` nesting its keys under `settings`. The engine refused that
+  one correctly — and the observation still said `count: 2`, with the error buried inside
+  `filed[0]`. The question (that run's whole fleet-wide decision-model nudge) was found missing
+  70 turns later by reading `/api/questions`, not the observation.
+- `count` and `blocking` now count records that EXIST; the refusals are listed apart under
+  `refused`; and the observation carries a `refused_note` saying plainly that nobody was asked
+  and the question is the run's to re-file THIS turn. Two pins in `tests/test_ask_batch.py`: the
+  computation and the rendered prose. Built and serially gated by `self-audit`, which handed the
+  candidate over in R3395 when its own release gate's browser stage stalled.
+
+### The Decisions page stops offering a click the server refuses (F885)
+
+- The operator clicked `apply it` on a `fau` recipe revision at 2026-11-10T09:22:33, was refused
+  (*"fau:20261110-083642 is running again — recipe editing unlocks on a FINISHED run"*), waited
+  93 seconds, clicked again and got the identical refusal; it succeeded at 09:31. Those two
+  toasts are the **only two `error` events in 2,998 trace rows** across 2026-11-10 and 11-11,
+  while `apply it` was clicked 13 times in the window.
+- `api_recipe_revision.revise_refusal(server, rec)` is now the one source of truth: it returns
+  the proposing run's state and the exact 409 detail `POST …/revise` would raise, and the route
+  raises *from it*, so the terminal-state list exists once and the card's promise cannot drift
+  from the server's answer. `with_revise_state` adds `run_state` + `revise_blocked` to a
+  `recipe-revision` row, applied **per request** in `api_pending.list_pending` and deliberately
+  not inside `decisions_read.open_proposals` — that read model memoizes on the queue directory,
+  which does not move when a *run* finishes, so a state folded into the memo would pin `running`
+  (there is a test for exactly that trap).
+- `recipe-card.js` disables `apply it` **and** `edit` (same route) while blocked and renders the
+  reason, worded by case: a live run *"unlocks when the run finishes"*, a pruned run dir
+  *"cannot be applied from here"* — two different promises, so two different sentences.
+- Known residue, named rather than hidden: a card rendered while the run was finished and clicked
+  after it is resumed can still spend one click, because the Decisions band loads once at mount
+  and its refresh is wired to no bus event. That is a page-refresh change beyond this item.
+
 ## [0.535.5] — 2026-11-13
 
 ### The sub-run card stops refetching once per replayed subrun event
