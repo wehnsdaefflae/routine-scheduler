@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.539.0] — 2026-11-13
+
+### A reference says WHAT the thing is, not only its id (R3386, first cut)
+
+- The operator, 2026-11-12, on every surface that needs his attention: *"they must be
+  self-contained. they cannot have me hunting for content in other documents. i want all info i
+  need in the text i have in front of me along with hyperlinks to the files / documents where
+  the info is from. **worst case scenario is content i need to know about being referenced only
+  by an identifier.**"* His own first cut: wherever the UI renders an id, it renders a link
+  whose text is the thing's one-line subject.
+- `reflinks.js` already turned every `F63`/`D14`/`R7` in rendered prose into a link — but the
+  link's text was the id and its tooltip said *"jump to R3361 on the Messages page"*, which
+  tells him where it is and never what it is.
+- New `static/ref-titles.js` — ONE reader of item subjects for the whole console. **No new route
+  and no new store:** `/api/items` already returns every row with its `title`. One read, cached
+  for the session, `folded=1` so a row another report has taken over still resolves — its id
+  goes on being NAMED in prose long after it leaves the open lists, and an unresolvable id is
+  precisely the failure this ends.
+- `refLink(id)` is now the ONE place that decides what a reference SAYS:
+  `R4242 — the Decisions page is an inbox sorted by urgency`, clipped at 72 characters with the
+  whole subject in the tooltip. **The id stays in the text** — he names items by id when he
+  answers, and a link whose id he cannot read cannot be quoted back.
+- Resolution is **synchronous by design** (prose renders before any fetch lands), so an
+  unresolved id is exactly what it has always been — still a link, never a dead end — and fills
+  itself in when the one read returns. That read is kicked off by the FIRST reference the
+  console renders, so a page showing none pays nothing.
+- `itemcard.js`'s "refers to" line uses the same builder, so the two places that render a
+  reference cannot disagree. No new CSS class.
+
 ## [0.538.0] — 2026-11-13
 
 ### The state digest's history tails are bounded in CHARACTERS, not in lines (goal b5, step 3)
