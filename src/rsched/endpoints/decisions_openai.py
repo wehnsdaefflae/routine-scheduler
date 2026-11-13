@@ -48,10 +48,45 @@ from .usage import reported_cost
 _WIRE_TYPE = {"yes_no": "predicate", "choice": "choice", "score": "score"}
 
 
+#: What a JSON evidence body is announced as, so the `input` string cannot be read as the
+#: message list that field also accepts. Any prefix does; this one tells the model what follows.
+EVIDENCE_HEADER = "EVIDENCE (JSON):\n"
+
+
+def _is_bare_json_document(text: str) -> bool:
+    """Whether this text IS a JSON object/array and nothing else — the ambiguous case.
+
+    `input` takes a string OR a message list (see this module's docstring), so a string whose
+    whole content parses as a JSON object or array is ambiguous on the wire. A number, a quoted
+    string or ordinary prose is not: only a dict or a list collides with the list form.
+    """
+    head = text.lstrip()[:1]
+    if head not in ("{", "["):
+        return False
+    try:
+        return isinstance(json.loads(text), (dict, list))
+    except ValueError:
+        return False
+
+
 def evidence_text(evidence: str | dict | list) -> str:
-    """Structured evidence as the text this protocol's `input` takes (its string form)."""
-    return evidence if isinstance(evidence, str) else json.dumps(evidence, ensure_ascii=False,
+    """Structured evidence as the text this protocol's `input` takes (its string form).
+
+    A bare JSON document is announced rather than sent naked. Measured against
+    `otari-decisions` on 2026-11-13: a 62-character dict was refused with `HTTP 400
+    {"detail":"The provider rejected the request as invalid"}` while a 2,600-character string
+    was answered, and the identical content prefixed with `EVIDENCE (JSON):` was answered too —
+    the gateway reads an `input` that parses as JSON as a malformed message list rather than as
+    text. It cost every structured-evidence call on this instance's DEFAULT decision model,
+    including every call carrying text `files` (`decideaction._gather` folds those into a dict),
+    and `jev` was unaffected because the systemone protocol sends the object raw as `state`.
+
+    A caller's own string gets the same treatment when it is itself a bare JSON document — a run
+    that passes the text of a JSON file it read meets the identical refusal.
+    """
+    text = evidence if isinstance(evidence, str) else json.dumps(evidence, ensure_ascii=False,
                                                                  indent=1)
+    return EVIDENCE_HEADER + text if _is_bare_json_document(text) else text
 
 
 def wire_question(q: DecisionQuestion) -> dict:

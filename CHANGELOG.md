@@ -15,6 +15,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.535.2] — 2026-11-13
+
+### Structured evidence reaches the default decision model at all (`decide`'s headline capability)
+
+- **Every `decide` call carrying a dict or a list as `evidence` failed on this instance's
+  DEFAULT decision model**, with `HTTP 400 {"detail":"The provider rejected the request as
+  invalid"}` and nothing else. Measured against `otari-decisions` on 2026-11-13: a
+  **62-character** dict was refused while a **2,600-character prose string** on the same
+  subject was answered; a multi-line string was answered; a string merely *beginning* with `{`
+  and continuing in prose was answered; and the identical dict content prefixed with
+  `EVIDENCE (JSON):` was answered (P(yes)=0.96). `jev` answered the dict throughout.
+- **The cause is the `input` field's own ambiguity.** `decisions_openai.evidence_text` dumped
+  structured evidence into `body["input"]`, and that field takes *either* a string *or* a
+  message list (this module's docstring records the published shape), so a string whose whole
+  content parses as a JSON object or array is ambiguous and the gateway rejects the request.
+  The systemone protocol was never affected: it sends the object raw as `body["state"]`.
+- **The blast radius was larger than the obvious case:** `decideaction._gather` folds text
+  `files` into a dict together with the evidence, so **every `decide` call that read a text
+  file** met the same refusal — the two documented ways to pass non-prose evidence, both dead
+  on the default model, which is one plausible reason the whole fleet made **1** `decide` call
+  in 16,721 actions over 30 days.
+- **The fix announces rather than rewrites:** a bare JSON document is prefixed with
+  `EVIDENCE (JSON):`, which both removes the ambiguity and tells the model what follows.
+  Ordinary text reaches the wire byte for byte — a prefix on every payload would silently
+  change the evidence every current caller's model reads — and a caller's own string gets the
+  same treatment when it is itself a bare JSON document, because a run that passes the text of
+  a JSON file it read meets the identical refusal.
+- `tests/test_decision_evidence_wire.py` pins all of it: eight shapes that must pass through
+  untouched, four structured shapes announced with the evidence intact, the caller's-own-JSON
+  case, idempotence, and the request body. The existing wire pin in
+  `tests/test_decision_endpoints.py` asserted the old string and now asserts the new one with
+  the reason beside it.
+- **Live proof is owed and is named here rather than claimed:** the engine's Python is frozen
+  at boot, so the running daemon still refuses these calls until it restarts on this commit.
+  What is proven is the provider's acceptance of the announced form (measured by hand) and that
+  the engine now produces exactly that form (tested).
+
 ## [0.535.1] — 2026-11-13
 
 ### The memory gate stops charging a serial test run for four workers it never starts

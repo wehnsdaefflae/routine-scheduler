@@ -146,8 +146,12 @@ def test_openai_sends_the_published_shape(monkeypatch, tmp_path):
                      {"value": "frontend"}]},
         {"type": "score", "name": "urgency", "instructions": "How urgent?",
          "levels": [{"label": "low", "description": "can wait"}, {"label": "high"}]}]
+    # Structured evidence is ANNOUNCED rather than sent as a bare JSON document: `input` takes
+    # a string or a message list, so a string that parses as JSON is ambiguous and the gateway
+    # serving this instance's default decision model refuses the request outright (measured
+    # 2026-11-13; tests/test_decision_evidence_wire.py carries the reading and every shape).
     text_only = endpoint.body({"ticket": "x"}, [], QS[:1], "m")
-    assert text_only["input"] == '{\n "ticket": "x"\n}'
+    assert text_only["input"] == 'EVIDENCE (JSON):\n{\n "ticket": "x"\n}'
 
 
 def test_openai_answers_are_normalised(monkeypatch):
