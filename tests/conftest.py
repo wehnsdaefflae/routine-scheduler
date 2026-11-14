@@ -95,20 +95,10 @@ def pytest_terminal_summary(terminalreporter) -> None:
 
 
 def pytest_xdist_auto_num_workers(config) -> int:
-    """What `-n auto` means for THIS suite: one worker fewer than the machine has cores.
-
-    xdist's own `auto` is `os.cpu_count()`, which assumes one busy process per worker. A worker
-    here serves a uvicorn in-process on top of the test itself, so `-n 4` on a 4-core box runs
-    more runnable processes than the box has and it thrashes instead of working. Measured on
-    the 4-core deployment (2026-08-30, whole suite):
-
-        -n 4 (auto)   574 s   149 % cpu     ← 4 cores available, under 1.5 used
-        -n 3          445 s   179 % cpu     ← 22 % faster AND better utilised
-
-    Fewer workers is faster: the loss is contention, not idleness. Capped at FAST_WORKERS for
-    MEMORY, and the browser selection gets fewer still (`browsersource` says why for both)."""
-    reserved = max(2, min(browsersource.FAST_WORKERS, (os.cpu_count() or 4) - 1))
-    return browsersource.worker_cap(getattr(config.option, "markexpr", ""), reserved)
+    """What `-n auto` means for THIS suite — `browsersource.auto_workers` decides it, since the
+    cores/memory/browser reasoning and both ceilings live there."""
+    return browsersource.auto_workers(os.cpu_count() or 4,
+                                      getattr(config.option, "markexpr", ""))
 
 
 #: The interpreter the engine image runs (`FROM python:3.12-…` in the Dockerfile), pinned for
@@ -153,7 +143,7 @@ def pytest_configure(config) -> None:
     _refuse_a_foreign_interpreter()
     markexpr = (getattr(config.option, "markexpr", "") or "").replace("  ", " ")
     if memgate.should_wait(config):          # the controller waits; workers and stubs do not
-        memgate.wait_for_memory(memgate.selection_for(config, markexpr))   # by what it starts
+        memgate.wait_for_config(config, markexpr)   # by what it starts, worker COUNT included
     if "not ui" in markexpr:
         return
     if hasattr(config, "workerinput"):
