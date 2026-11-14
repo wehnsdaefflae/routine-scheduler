@@ -20,12 +20,17 @@ from rsched.readmodels.usage_stream import stream_path
 
 
 def _row(i: int, share: float | None, *, slug: str = "r", depth: int = 0,
-         recipe: str | None = None) -> dict:
+         recipe: str | None = None, landed: int = 20) -> dict:
+    """A measured row whose counts sum to `landed` — a real run's scale, not two actions. The
+    reading reads the RECORDED `process_share` and never recomputes it, so `share` is verbatim;
+    the counts carry the total `overhead.MIN_ACTIONS` is read against. `landed` under the floor
+    makes a run too short to be evidence."""
     rec = measured_run(i, slug=slug)
     rec["depth"], rec["recipe_commit"] = depth, recipe     # a dir with no git: recipe None
     if share is not None:
-        rec["quality"]["overhead"] = {"task": 1, "process": 1, "friction": 0,
-                                      "process_share": share}
+        process = round(share * landed)
+        rec["quality"]["overhead"] = {"task": landed - process, "process": process,
+                                      "friction": 0, "process_share": share}
     return rec
 
 
@@ -176,3 +181,37 @@ def test_a_recipe_change_resets_the_window_and_silences_alarm_and_digest(tmp_pat
         assert (r["judged"], r["over"]) == (judged, judged)
         assert ("PROCESS OVERHEAD" in finish_digest.digest_section(d)) is judged
     assert overhead_alarm.file_if_high(home, "r", "r:y", d) is True
+
+
+def test_a_run_too_short_to_be_evidence_is_set_aside_not_judged(tmp_path):
+    """`library-sync`'s measured shape (R3390 via R3404): FOUR landed actions — two task utils,
+    the outcome script and the finish — reading 0.5 for doing everything right. Two actions of a
+    correct run are process by rule, so its bar is unreachable; such a run is not evidence."""
+    home = tmp_path / "routines"
+    write_usage_stream(home, [_row(i + 1, 0.5, landed=4) for i in range(5)])
+    assert overhead_reading.reading(home, "r") is None
+    assert overhead_alarm.file_if_high(home, "r", "r:1") is False
+    assert health_events(home, event="process_overhead_high") == []
+    server = SimpleNamespace(routines_home=home)
+    assert _overhead_nodes(server, _cfg(tmp_path)) == []
+
+
+def test_short_runs_leave_the_window_and_the_long_ones_still_judge(tmp_path):
+    home = tmp_path / "routines"
+    rows = [_row(1, 0.5, landed=4), _row(2, 0.5, landed=4)]                 # set aside
+    rows += [_row(i + 3, s, landed=20) for i, s in enumerate([0.1, 0.2, 0.15])]
+    write_usage_stream(home, rows)
+    r = overhead_reading.reading(home, "r")
+    assert [x["process_share"] for x in r["runs"]] == [0.1, 0.2, 0.15]
+    assert (r["too_short"], r["min_actions"]) == (2, overhead.MIN_ACTIONS)
+    assert (r["judged"], r["over"]) == (True, False)
+
+
+def test_the_floor_is_derived_from_the_bar_and_the_two_unavoidable_actions():
+    """Not a chosen number: the outcome script and the finish are process in every routine, so
+    the floor under any correct run's share is 2/total. MIN_ACTIONS is the smallest total at
+    which that floor alone cannot clear the bar — one lower would flag a run that did everything
+    right, one higher would stop judging real runs."""
+    unavoidable = 2
+    assert unavoidable / overhead.MIN_ACTIONS < overhead.THRESHOLD
+    assert unavoidable / (overhead.MIN_ACTIONS - 1) >= overhead.THRESHOLD

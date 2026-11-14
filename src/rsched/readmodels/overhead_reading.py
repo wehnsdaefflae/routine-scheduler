@@ -46,6 +46,24 @@ def _share(rec: dict) -> float | None:
         else None
 
 
+def _landed(rec: dict) -> int | None:
+    """The run's landed-action total — its three counts summed — or None when it carries none.
+
+    None is UNKNOWN, never zero: a row written before the counts existed must not read as a run
+    that landed nothing (all 797 measured rows on this instance carry them, so this is the
+    guard, not the case). A total is the denominator `process_share` was taken over, so summing
+    the counts cannot disagree with the share the way a recomputation from a transcript could.
+    """
+    q = rec.get("quality")
+    o = q.get("overhead") if isinstance(q, dict) else None
+    if not isinstance(o, dict):
+        return None
+    counts = [o.get(k) for k in (overhead.TASK, overhead.PROCESS, overhead.FRICTION)]
+    if not any(isinstance(c, int) and not isinstance(c, bool) for c in counts):
+        return None
+    return sum(c for c in counts if isinstance(c, int) and not isinstance(c, bool))
+
+
 def _measured(routines_home: Path) -> dict[str, list[dict]]:
     """`{routine: [run, …]}` — every measured depth-0 run, oldest first, with its recipe."""
     out: dict[str, list[dict]] = {}
@@ -54,7 +72,8 @@ def _measured(routines_home: Path) -> dict[str, list[dict]]:
             continue
         out.setdefault(str(rec.get("routine") or ""), []).append(
             {"run_id": str(rec.get("run_id") or ""), "process_share": share,
-             "recipe_commit": rec.get("recipe_commit") or None})
+             "recipe_commit": rec.get("recipe_commit") or None,
+             "landed": _landed(rec)})
     return out
 
 
@@ -80,14 +99,24 @@ def current_recipe(routine_dir: Path) -> str | None:
 def reading(routines_home: Path, slug: str, routine_dir: Path | None = None) -> dict | None:
     """One routine's reading over its runs of the CURRENT recipe — `median`, the `runs` it was
     taken over (oldest first), `recipe_commit`, `threshold`, `judged` (enough runs under this
-    recipe to say anything) and `over` (judged and at or above the bar) — or None when no run
-    of this recipe was measured. `routine_dir` defaults to `<routines_home>/<slug>`.
+    recipe to say anything), `min_actions` and `too_short` (runs of this recipe set aside as too
+    short to be evidence) and `over` (judged and at or above the bar) — or None when no run of
+    this recipe was measured, or every one of them was too short to judge. `routine_dir`
+    defaults to `<routines_home>/<slug>`.
     """
     home = Path(routines_home)
     path = stream_path(home)
     measured = memo.memoized(f"overhead-measured:{path}", [path], lambda: _measured(home))
     commit = current_recipe(routine_dir or home / slug)
-    runs = [r for r in measured.get(slug, []) if r["recipe_commit"] == commit][-overhead.WINDOW:]
+    of_recipe = [r for r in measured.get(slug, []) if r["recipe_commit"] == commit]
+    # A run too SHORT to be evidence is set aside, not counted as healthy and not recomputed:
+    # two of its actions are process by rule, so the bar is unreachable from below (see
+    # `overhead.MIN_ACTIONS`). An unknown total predates the counts and stays in the window.
+    def short(r: dict) -> bool:
+        return r.get("landed") is not None and int(r["landed"]) < overhead.MIN_ACTIONS
+
+    too_short = sum(1 for r in of_recipe if short(r))
+    runs = [r for r in of_recipe if not short(r)][-overhead.WINDOW:]
     if not runs:
         return None
     median = round(statistics.median(r["process_share"] for r in runs), 3)
@@ -95,6 +124,7 @@ def reading(routines_home: Path, slug: str, routine_dir: Path | None = None) -> 
     return {"routine": slug, "median": median, "recipe_commit": commit,
             "runs": [{"run_id": r["run_id"], "process_share": r["process_share"]} for r in runs],
             "threshold": overhead.THRESHOLD, "judged": judged,
+            "min_actions": overhead.MIN_ACTIONS, "too_short": too_short,
             "over": judged and median >= overhead.THRESHOLD}
 
 

@@ -46,6 +46,13 @@ runs since 2026-10-23 of each routine; median of the per-run shares, as the inva
     tv-show-tracker-seedbox-manager (39)          0.277   |  doppelcheck 0.267, freelance 0.263,
     self-audit (45)                               0.206   |  grant-hunter 0.247, website 0.223
 
+The `library-sync (25) 0.583` row of that table measured a DEFECT THAT NO LONGER EXISTS: an
+unsatisfiable Done-when line made every clean run finish twice, and `routine-improver` fixed it
+at source (commit 0cd3baa). Its runs now land FOUR actions — two task utils, the outcome script
+and the finish — and read 0.5 for doing everything right, which is what `MIN_ACTIONS` is for.
+Read that row as the calibration of a routine that has since been repaired, not as a standing
+verdict on it.
+
 `THRESHOLD` = 0.27, the midpoint of the gap between the highest healthy median (0.263) and the
 lowest flagged one (0.277): 11 of 12 flagged, 0 of 8 healthy. The miss is self-audit, whose
 bookkeeping is its item ledger (`audit/report.json`, named as nothing) maintained through its
@@ -86,6 +93,19 @@ THRESHOLD = 0.27
 #: needs before it judges at all — one long orientation run is not a routine's habit.
 WINDOW = 5
 MIN_RUNS = 3
+#: How many LANDED ACTIONS a run needs before its share is evidence of anything. Two actions of
+#: a correct run are process BY RULE in every routine — the outcome script and the finish — so
+#: the floor under `process_share` is 2/total, and the bar is unreachable from below only once
+#: total ≥ 8 (2/8 = 0.25 < 0.27 ≤ 2/7). Derived, not chosen: a smaller floor still flags a run
+#: that did everything right, a larger one stops judging real runs.
+#: MEASURED 2026-11-14 over all 797 measured depth-0 runs (`library-sync`'s R3390, via
+#: scheduler-builder's R3404): 756 land 16+ actions, 35 land 8-15, SIX land fewer. The two
+#: routines over the bar were `freelance-hunter` (41-55 actions, median 0.356 — a true reading)
+#: and `library-sync` (4-5 actions, median 0.500), the cheapest routine on the instance, whose
+#: four landed actions are two task utils, the outcome script and the finish. The alarm fired
+#: for it on 2026-11-13 while `syncs_pushed` went 58 → 83: the denominator shrank when
+#: `routine-improver` removed its real waste (commit 0cd3baa), so the metric penalised the fix.
+MIN_ACTIONS = 8
 
 #: Kinds that ARE the run working on its own process, whatever they name: its notebook, the
 #: general rules that bind it, the goals it keeps, the jobs it opens and checkpoints.

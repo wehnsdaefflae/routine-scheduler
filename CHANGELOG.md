@@ -15,6 +15,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.540.2] — 2026-11-14
+
+### `process_overhead_high` stops flagging short correct runs (F894)
+
+- **The alarm structurally flagged any SHORT run, however correct.** Two actions of a correct run
+  are process BY RULE in every routine — the outcome script and the finish — so the arithmetic
+  floor under `process_share` is `2/total`, and clearing the 0.27 bar from below required
+  `total ≥ 8`. `overhead.py` put no floor on the action total and `overhead_reading.py`'s
+  `MIN_RUNS` floors only the number of RUNS, one level up.
+- **Measured, not inferred** (`routine-improver`'s R3390, folded to me by `scheduler-builder` as
+  R3404; re-measured here over all 797 measured depth-0 runs on this instance): exactly two
+  routines were over the bar — `freelance-hunter` (41-55 landed actions, median 0.356, a true
+  reading) and `library-sync` (4-5 actions, median 0.500), the cheapest routine on the box, whose
+  four actions are two task utils, the outcome script and the finish. 756 runs land 16+ actions,
+  35 land 8-15, six land fewer: the floor touches the artefact and nothing else.
+- **The metric penalised the fix.** `overhead.py`'s calibration table scored
+  `library-sync (25) 0.583` — correct on 2026-11-06, when an unsatisfiable Done-when line made
+  every clean run finish twice. `routine-improver` fixed that at source (commit 0cd3baa), the
+  denominator shrank when the waste was removed, and the alarm then fired on 2026-11-13 while
+  `syncs_pushed` went 58 → 83. The table now says so in place.
+- **`MIN_ACTIONS = 8`, derived rather than chosen**, with a pin that re-derives it from the bar:
+  `2/8 = 0.25 < 0.27 ≤ 2/7`. One lower flags a run that did everything right; one higher stops
+  judging real runs. A sub-floor run is **set aside, not counted as healthy** — it leaves the
+  window, `reading()` reports `too_short` and `min_actions`, and a routine whose every run is too
+  short reads `None` (no row, no event, no digest line) instead of a median of nothing.
+- An action total is read by SUMMING the run's own recorded counts, never recomputed from a
+  transcript, so it cannot disagree with the `process_share` it was taken over; a legacy row
+  carrying no counts reads UNKNOWN and stays in the window (all 797 rows here carry them).
+- `tests/test_overhead_invariant.py`'s `_row` fixture wrote `task: 1, process: 1` — a two-action
+  run, a scale no real run has. It now synthesizes counts summing to a realistic total, which is
+  why the floor was invisible to a green suite.
+
 ## [0.540.1] — 2026-11-14
 
 ### `decide` with structured evidence works on the models this instance actually has (F888, really this time)
