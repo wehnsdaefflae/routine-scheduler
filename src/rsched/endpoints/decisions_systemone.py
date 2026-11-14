@@ -44,6 +44,7 @@ from .decisions import (
     DecisionAnswer,
     DecisionImage,
     DecisionQuestion,
+    evidence_text,
 )
 from .media_types import read_media_b64
 from .usage import reported_cost
@@ -103,8 +104,14 @@ class SystemOneDecisions:
              questions: list[DecisionQuestion], model: str) -> dict:
         """The request body — public so a test can pin the wire shape without a server. A
         text-only call carries no `images` key at all, so Jev never sees an empty one.
+
+        `state` carries structured evidence ANNOUNCED AS TEXT (`decisions.evidence_text`), not
+        as a raw object: the Otari gateway serving this instance's three decision models refuses
+        a request whose `state` is a JSON object with `HTTP 400 {"detail":"The provider rejected
+        the request as invalid"}` — measured five times on 2026-11-13/14 — while the announced
+        form is answered by all three. Jev answers either, so one form serves every model.
         """
-        out: dict = {"model": model, "state": evidence,
+        out: dict = {"model": model, "state": evidence_text(evidence),
                      "questions": {q.name: wire_question(q) for q in questions}}
         if images:
             out["images"] = [f"data:{img.media_type};base64,{read_media_b64(img.path)}"

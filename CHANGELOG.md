@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.540.1] — 2026-11-14
+
+### `decide` with structured evidence works on the models this instance actually has (F888, really this time)
+
+- **0.535.2 announced the evidence in the wrong adapter and the defect stayed live.** That fix
+  put `EVIDENCE_HEADER`/`evidence_text` in `endpoints/decisions_openai.py`, reasoning from the
+  `input` field's string-or-message-list ambiguity. But `list_models` reports all three of this
+  instance's decision models — `gemini-decision` (the default), `jev`, `local-qwen-vl8b` — on
+  endpoint `otari-decisions` with protocol **`systemone`**, so the `openai` adapter is never
+  executed here. `decisions_systemone.body()` put the object raw into `state`, and the gateway
+  went on refusing it.
+- **Measured again on 2026-11-14 against the live daemon (0.540.0, no build skew):** a dict
+  `evidence` → `HTTP 400 {"detail":"The provider rejected the request as invalid"}`, five times,
+  under two question wordings. The byte-exact announced string built from that same dict was
+  answered by all three models (`gemini-decision` P=0.068, `jev` 0.050, `local-qwen-vl8b` 0.000);
+  prose was answered throughout (P=0.155). `jev` answers either form, so one form serves every
+  model.
+- **The fix:** `evidence_text` moves to `endpoints/decisions.py`, where both adapters import it,
+  and `systemone`'s `state` now carries the announced text. The refusal is the gateway's, not
+  one wire shape's — keeping the helper in one adapter is what allowed a green pin to coexist
+  with a broken live path.
+- **New pins:** `test_systemone_announces_its_state_rather_than_sending_a_raw_object`, and
+  `test_every_protocol_announces_structured_evidence`, which drives off `DEFAULT_BASE_URLS` so a
+  protocol added later must name its evidence field and announce. `test_decision_endpoints`'s
+  jev wire assertion moves with the shape it pins.
+
 ## [0.540.0] — 2026-11-13
 
 ### Prose names the CAPABILITY, never a tool — the standing order, enforced (goal b7)

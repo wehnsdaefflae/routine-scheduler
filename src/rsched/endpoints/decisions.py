@@ -19,6 +19,7 @@ completion passes (so it shows in the LLM activity dock while it runs).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -34,6 +35,43 @@ ANSWER_TYPES = ("yes_no", "choice", "score")
 #: Where a protocol is served when `base_url` is blank — each vendor's own API root.
 DEFAULT_BASE_URLS = {"openai": "https://api.openai.com/v1",
                      "systemone": "https://api.typesafe.ai/v1"}
+#: Prefix announcing structured evidence as text, so no protocol's evidence field can read as a
+#: message list or be refused as a raw JSON document. BOTH protocols send it (see
+#: `evidence_text`): the refusal it works around is the gateway's, not one wire shape's.
+EVIDENCE_HEADER = "EVIDENCE (JSON):\n"
+
+
+def _is_bare_json_document(text: str) -> bool:
+    """Whether this text IS a JSON object/array and nothing else — the ambiguous case.
+
+    A number, a quoted string or ordinary prose is not: only a dict or a list collides.
+    """
+    if text.lstrip()[:1] not in ("{", "["):
+        return False
+    try:
+        return isinstance(json.loads(text), (dict, list))
+    except ValueError:
+        return False
+
+
+def evidence_text(evidence: str | dict | list) -> str:
+    """Structured evidence as announced text — what every decision protocol sends.
+
+    Measured against `otari-decisions`, which serves ALL THREE of this instance's decision
+    models over the `systemone` protocol: a dict was refused with `HTTP 400 {"detail":"The
+    provider rejected the request as invalid"}` five times, while the byte-exact string this
+    function builds from that same dict was answered by all three (`gemini-decision` 0.068,
+    `jev` 0.050, `local-qwen-vl8b` 0.000). So the refusal is not about `input`'s string-or-list
+    ambiguity, which is why announcing only in the `openai` adapter (0.535.2) fixed nothing on
+    this instance — `systemone` put the object raw into `state` and every structured-evidence
+    call went on failing on the default model.
+
+    A caller's own string gets the same treatment when it is itself a bare JSON document — a run
+    that passes the text of a JSON file it read meets the identical refusal.
+    """
+    text = evidence if isinstance(evidence, str) else json.dumps(evidence, ensure_ascii=False,
+                                                                 indent=1)
+    return EVIDENCE_HEADER + text if _is_bare_json_document(text) else text
 
 
 @dataclass

@@ -1,18 +1,20 @@
-"""What the `openai` decision protocol puts in `input`, for every shape of evidence.
+"""What a decision protocol puts in its evidence field, for every shape of evidence — BOTH of
+them, because the refusal these tests pin is the gateway's and not one wire shape's.
 
-The field takes a string OR a message list (`endpoints/decisions_openai` docstring), so a
-string whose whole content parses as a JSON object or array is ambiguous on the wire. The
-gateway serving this instance's DEFAULT decision model refuses such a request outright:
-measured 2026-11-13 against `otari-decisions`, a 62-character dict came back `HTTP 400
-{"detail":"The provider rejected the request as invalid"}` while a 2,600-character prose
-string of the same subject was answered, and the identical dict content prefixed with
-`EVIDENCE (JSON):` was answered as well.
+Measured against `otari-decisions`, which serves all three of this instance's decision models
+over the `systemone` protocol: evidence given as a dict came back `HTTP 400 {"detail":"The
+provider rejected the request as invalid"}` five times across 2026-11-13/14, while the
+byte-exact announced string built from that same dict was answered by all three
+(`gemini-decision` 0.068, `jev` 0.050, `local-qwen-vl8b` 0.000) and prose was answered
+throughout. So every structured-evidence `decide` call failed on the default model — including
+every call carrying text `files`, because `decideaction._gather` folds those into a dict.
 
-That made every structured-evidence `decide` call fail on the default model — including every
-call carrying text `files`, because `decideaction._gather` folds those into a dict — while
-`jev` worked throughout, the systemone protocol sending the object raw as `state`. These tests
-pin the announcement and, just as importantly, pin that ordinary text is still sent untouched:
-a prefix on every payload would change what every existing caller's model reads.
+The first fix (0.535.2) announced the evidence in the `openai` adapter only, reasoning from
+`input`'s string-or-message-list ambiguity. **It changed nothing live**: no model on this
+instance speaks `openai`, and `systemone` put the object raw into `state`. Hence
+`test_both_protocols_announce_structured_evidence` — a pin on one adapter cannot speak for the
+other. These tests also pin that ordinary text is still sent untouched: a prefix on every
+payload would change what every existing caller's model reads.
 """
 
 from __future__ import annotations
@@ -22,12 +24,16 @@ import json
 import pytest
 
 from rsched.config.decisionconf import DecisionEndpointConfig
-from rsched.endpoints.decisions import DecisionOption, DecisionQuestion
-from rsched.endpoints.decisions_openai import (
+from rsched.endpoints.decisions import (
+    DEFAULT_BASE_URLS,
     EVIDENCE_HEADER,
-    OpenAIDecisions,
+    DecisionOption,
+    DecisionQuestion,
     evidence_text,
+    make_decision_endpoint,
 )
+from rsched.endpoints.decisions_openai import OpenAIDecisions
+from rsched.endpoints.decisions_systemone import SystemOneDecisions
 
 PLAIN = [
     "cannot log in",
@@ -100,3 +106,30 @@ def test_a_text_only_body_sends_the_string_form_and_no_image_parts() -> None:
     for images, and sending it without any would change the request for every text caller."""
     body = _adapter().body({"id": "R3368"}, [], _questions(), "gpt-6-luna")
     assert isinstance(body["input"], str), "a text-only call stays in the string form"
+
+
+def _systemone() -> SystemOneDecisions:
+    return SystemOneDecisions(DecisionEndpointConfig(name="probe", protocol="systemone",
+                                                     base_url="http://example.invalid"))
+
+
+def test_systemone_announces_its_state_rather_than_sending_a_raw_object() -> None:
+    """The live path on this instance: every configured decision model speaks `systemone`, and
+    the gateway refuses a `state` that is a JSON object (HTTP 400, measured five times)."""
+    body = _systemone().body({"id": "R3368"}, [], _questions(), "gemini:gemini-decision-1")
+    assert isinstance(body["state"], str), "a raw object here is the refusal this test pins"
+    assert body["state"].startswith(EVIDENCE_HEADER)
+    assert json.loads(body["state"][len(EVIDENCE_HEADER):]) == {"id": "R3368"}
+
+
+def test_every_protocol_announces_structured_evidence() -> None:
+    """A pin on ONE adapter cannot speak for the other: 0.535.2 announced in `openai` alone and
+    fixed nothing live, because no model on this instance speaks it. Driven off the adapter
+    table, so a protocol added later is held to the same rule."""
+    fields = {"openai": "input", "systemone": "state"}
+    assert set(fields) == set(DEFAULT_BASE_URLS), "a new protocol needs its field named here"
+    for protocol, field in fields.items():
+        cfg = DecisionEndpointConfig(name="probe", protocol=protocol,
+                                     base_url="http://example.invalid")
+        body = make_decision_endpoint(cfg).body({"id": "R3368"}, [], _questions(), "m")
+        assert body[field].startswith(EVIDENCE_HEADER), f"{protocol} sends evidence unannounced"

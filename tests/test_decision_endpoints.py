@@ -198,7 +198,8 @@ def test_systemone_sends_and_reads_jevs_shape(monkeypatch):
     call = seen[0]
     assert call["url"] == "https://openrouter.ai/api/v1/systemone"
     assert call["headers"] == {"Authorization": "Bearer or-key"}
-    assert call["body"] == {"model": "typesafe/jev-1.13", "state": {"ticket": "blank page"},
+    assert call["body"] == {"model": "typesafe/jev-1.13",
+                            "state": 'EVIDENCE (JSON):\n{\n "ticket": "blank page"\n}',
                             "questions": {
         "is_bug": {"type": "noul", "instructions": "Is it a defect?"},
         "team": {"type": "choice", "instructions": "Which team?",
