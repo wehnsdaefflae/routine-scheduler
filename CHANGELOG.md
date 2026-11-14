@@ -15,6 +15,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.546.0] — 2026-11-14
+
+### A decision model answers the same question beside the chat model, and both are recorded — D287 step 1
+
+- **The operator, 2026-11-14:** *"Reroute the refusal classifier AND cascade the finish verifier:
+  a typed screen over each claim, with the prose judge called only on the claims it flags (184
+  calls, 24.5 s average, $11.15/month, all at the moment every run is trying to end)"*.
+- **This increment reroutes nothing, deliberately.** Every option he was offered carried the
+  clause *"measured in parallel before it replaces anything"*, because of what D287 measured on
+  this instance's own models: permuting the options moved `jev`'s probability mass by ~10 points
+  while the argmax never moved. A system reading only the verdict sees perfect consistency and
+  learns nothing about the instability underneath — so the swap is not step 1; the evidence that
+  the swap is safe is step 1.
+- **And his 2026-08-22 constraint governs this path**, quoted in `engine/refusal.py`: *"only an
+  LLM classification subcall (tool_call model, schema'd verdict) may decide the non-obvious cases
+  either way"*. The chat model keeps deciding; `engine/decision_shadow.compare` returns its
+  verdict **unchanged** and records what a decision model would have said.
+- **Both sites his answer names are wired**: `refusal.is_refusal` (34 calls/month) and
+  `verifier.refuted` (184 calls, the expensive one). The finish site screens **every claim in ONE
+  decision call** — one evidence, many questions — because that is both what these models are
+  fastest at and the shape the cascade will ship in, so the measurement is taken in the form it
+  will be used.
+- **The stream is `.control/decision-shadow.jsonl`**, durable and instance-wide like
+  `workflow-usage.jsonl`: the question is whether two models agree over hundreds of calls, and
+  run dirs fall to retention. Each row carries both verdicts, **the probability** (the argmax is
+  what hid the instability) and **the threshold** it was scored against, so a later reader can
+  rescore the whole stream.
+- **A measurement may never fail a run.** No decision model configured, a provider error, a
+  malformed answer, an unwritable stream: every path returns the chat verdict untouched. An
+  unanswered comparison records `decision_verdict: null` and `agree: null`, never `false` — an
+  absent verdict and a negative verdict are different facts, and conflating them would make the
+  stream lie in the direction that looks safe. An instance with no decision model records
+  nothing at all rather than one identical row per classification.
+- Structured evidence goes through `decisions.evidence_text`, pinned here: 0.535.2 announced it
+  in the `openai` adapter — dead code on this instance — and the live path stayed broken for nine
+  days under a green pin.
+- **Known limit: no reroute and no cascade yet, and the stream holds no rows until runs with a
+  decision model configured exercise these two paths.** Still open: D287.
+
 ## [0.545.0] — 2026-11-14
 
 ### `websearch` and `code_search` are action kinds — D290, and they are SPELLINGS, not ports

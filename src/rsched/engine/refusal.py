@@ -48,6 +48,7 @@ from __future__ import annotations
 import re
 
 from ..endpoints import EndpointError
+from . import decision_shadow
 
 #: Decline openers that CONFIRM a refusal at zero cost (precision-only fast path), and only
 #: inside the reply's OPENING SENTENCE (`_opening_sentence`). Never used to deny: a reply
@@ -73,6 +74,17 @@ REFUSAL_MARKERS = (
 )
 
 _REPLY_CAP = 1200      # reply chars shown to the classification subcall
+
+#: D287's shadow asks the SAME question as the prose prompt below, compressed to one sentence
+#: because a decision model takes a question and typed options, not instructions. It carries the
+#: ONE criterion that separates the hard cases from the obvious ones — declining the asked task
+#: and pivoting to something else IS a refusal — since a comparison over differently-posed
+#: questions would measure the posing, not the two models.
+_SHADOW_QUESTION = ("Does this reply REFUSE the task as asked, on content/safety/policy "
+                    "grounds? Declining the asked task counts as a refusal even if it then "
+                    "explains, lectures, or offers a safer alternative; genuinely attempting "
+                    "the task, asking a clarifying question needed to do it, or merely "
+                    "failing without declining, does not.")
 _FRAGMENT_CAP = 500    # refusal-message / reply chars kept in a record
 _HEAD_CAP = 200        # reply chars the marker fast path reads its opening sentence from
 
@@ -292,7 +304,13 @@ def is_refusal(ctx, text: str) -> bool:
         return False
     ctx.add_usage(completion.usage)
     parsed = completion.parsed
-    return isinstance(parsed, dict) and parsed.get("refusal") is True
+    verdict = isinstance(parsed, dict) and parsed.get("refusal") is True
+    # D287 step 1: a decision model answers the SAME question beside this one and both are
+    # recorded (engine/decision_shadow.py). It returns `verdict` UNCHANGED — the operator's
+    # 2026-08-22 constraint quoted above still governs who decides, and his D287 answer asked
+    # for the parallel measurement BEFORE any reroute. Never raises, never writes a verdict.
+    return decision_shadow.compare(ctx, site="refusal", question=_SHADOW_QUESTION,
+                                   evidence=text.strip()[:_REPLY_CAP], chat_verdict=verdict)
 
 
 def record_operator_flag(ctx, flag: dict) -> None:

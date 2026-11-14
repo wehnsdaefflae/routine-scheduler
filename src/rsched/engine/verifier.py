@@ -258,7 +258,36 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
             out.append({"id": claim["id"], "text": claim["text"],
                         "evidence": str(v.get("evidence") or "").strip()
                         or "the transcript does not show this being done"})
+    # D287 step 1: the same claims screened by a DECISION model, one question each in one call,
+    # recorded beside the prose judge's verdicts and changing none of them
+    # (engine/decision_shadow.py). This is the site his answer prices — 184 calls a month at
+    # 24.5 s and $11.15, every one of them while a run is trying to end — so it is the one whose
+    # agreement has to be known before a cascade screens anything for real.
+    _shadow_claims(ctx, claims, summary, _tail(loop), {str(c["id"]) for c in out})
     return out
+
+
+def _shadow_claims(ctx, claims: list[dict], summary: str, tail: str,
+                   refuted_ids: set[str]) -> None:
+    """Hand the comparison to the shadow, and never let it reach the run.
+
+    `refuted` is fail-open by charter ("a verifier that can break a run is worse than no
+    verifier") and a MEASUREMENT inside it must hold the same line — one level stricter, in
+    fact, since it buys the run nothing at all.
+    """
+    try:
+        from . import decision_shadow
+
+        decision_shadow.compare_claims(
+            ctx,
+            question=("Does the run's own record below SUPPORT this claim? Answer yes only if "
+                      "the summary and the transcript tail show the thing being done."),
+            evidence={"summary": summary, "transcript_tail": tail},
+            claims=claims,
+            chat_supported={str(c["id"]): str(c["id"]) not in refuted_ids for c in claims},
+        )
+    except Exception as exc:                      # a measurement never raises
+        log.info("finish: the claim shadow could not run (%s)", exc)
 
 
 def challenge_message(items: list[dict]) -> str:
