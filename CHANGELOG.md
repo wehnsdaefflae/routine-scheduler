@@ -15,6 +15,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.545.0] — 2026-11-14
+
+### `websearch` and `code_search` are action kinds — D290, and they are SPELLINGS, not ports
+
+- **The operator, 2026-11-14:** *"Make `websearch` and `code-search` action kinds, matching what
+  callers already attempt — two more kind bullets in every routine's prompt, and the util catalog
+  loses its two most-used entries to a second front door"*, chosen over three options that left
+  the action schema alone.
+- **The premise, measured before building:** `kind: websearch` / `kind: code-search` are 23
+  rejected turns in 30 days across 12 routines and 3 conversations — the third-largest
+  action-schema rejection class, written by `claude-sonnet-5` and `claude-opus-5` alike. Every
+  one recovered inside its own turn (`global-utils-review:20261113-031130` turns 77/89/90:
+  *"Correcting the call shape — websearch is a util, not a kind"*, then `kind="util",
+  name="websearch", args=[query]`). So the intent behind the rejected shape was known exactly,
+  and is what the rewrite implements rather than guesses.
+- **`engine/kindaliases.py` rewrites an alias into the util action it spells**, inside
+  `actions.normalize_action` — ahead of the schema validator, the capability layer, the secret
+  gate and the telemetry seam. One implementation, one permission, one Stats row: a kind with its
+  own executor entry would have been a second code path to the same util, which is how
+  `background` once relocated a security decision (F633).
+- **It runs before the FIELD STRIPPING, deliberately.** `ACTION_SCHEMA` is
+  `additionalProperties: false`, so a payload in an undeclared field (`query`, `pattern`) is
+  deleted during normalisation — a rewrite any later would run the util with an empty query.
+- **`code_search` is the kind and `code-search` is accepted anyway.** No action kind may contain
+  a hyphen: `tests/test_wrong_kind_diagnosis.py` pins that property because it is the
+  discriminator that diagnoses every OTHER util-name-as-kind mistake. Since the rewrite precedes
+  the enum, the hyphenated spelling 11 of the 23 rejections used never has to BE a kind to work.
+- **An alias with no derivable payload is left alone**, so the validator names the missing field
+  inside the schema-retry cycle (no turn) instead of running `gu websearch` empty (one turn).
+  That decline is what makes the payload tolerance safe.
+- **Availability follows `util`, not a new allowlist entry** (`kindsurface._permitted`): a
+  workflow that may call utils may spell it either way, and one that may not cannot reach the
+  util under another name. Making each alias its own `tools:` entry would have meant editing 31
+  routines to keep exactly the capability they already have.
+- **Two existing invariants were taught the new category rather than weakened**: every
+  backgroundable kind must be runnable (`executor.DISPATCH`) — for an alias what must be there is
+  the kind it BECOMES, because no path delivers an alias to a runner (`completion.judge`
+  normalises the first action AND every chained element); and `unkind_diagnosis` no longer fires
+  for `websearch`, which is now a real kind, so its specimen moved to `immich` — one word, no
+  hyphen, not a kind, the same hole the hyphen heuristic cannot see.
+- `engine/kindexamples.py` holds `KIND_EXAMPLES` (moved out of `actions.py`, at its ceiling, and
+  re-exported); `transcript.js`'s `BRIEF_FIELD` copy is regenerated from the Python map.
+- **Known limit: the two utils keep their catalog entries and nothing migrated to the new
+  spelling** — the aliases are additive, so every existing call keeps working unchanged. Nothing
+  further is owed: D290 ships complete.
+
 ## [0.544.0] — 2026-11-14
 
 ### A util can learn which DECISION models its routine reaches — D288 increment 1 (goal b6)

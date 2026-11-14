@@ -57,6 +57,12 @@ Utils are your primary tools — the CAPABILITIES section below lists what exist
 summary); for ONE util's exact usage run `util name=list args=["<util-name>"]` before relying \
 on it (bare name=list re-dumps the whole catalog you already have). Observation = exit code + \
 captured output."""),
+    (("websearch", "code_search"), """- websearch: search the web — your 3 most \
+distinctive terms in `args`, ranked results out. code_search: read-only regex search across a \
+directory tree — the pattern first, then the paths. Both are SPELLINGS of the util that does \
+the work, so the observation, the flags and the usage are that util's: ask it for its usage \
+when a call of yours is refused, and reach for `util` directly for anything these two bare \
+forms cannot say."""),
     (("shell",), """- shell: run ONE ad-hoc command on the host. It runs NON-INTERACTIVELY \
 inside your sandbox — the same filesystem jail your utils get, and no secret from the store \
 reaches it — so anything that waits for a keystroke never returns, and a credential-needing \

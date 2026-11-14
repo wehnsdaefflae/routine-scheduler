@@ -276,9 +276,9 @@ def test_the_background_runner_matches_the_foreground_routing_table():
         if kind == "script":
             continue
         assert background._runner(kind) is executor.dispatch, kind
-        assert kind in executor.DISPATCH, (
-            f"{kind} is backgroundable, is not in DISPATCH, and has no runner of its own — "
-            "it would raise KeyError the moment a run backgrounds it")
+        # D290: an alias RUNS AS the util call it spells, so DISPATCH must hold what it BECOMES
+        runs_as = normalize_action({"say": "x", "kind": kind, "args": ["q"]})["kind"]
+        assert runs_as in executor.DISPATCH, f"{kind} is backgroundable and runs as {runs_as!r} — not in DISPATCH and no runner of its own: it would raise KeyError the moment a run backgrounds it"
 
 
 # ---- NO concurrency cap (D118 phase 4; D166 answered (c) unbounded) ---------------------------

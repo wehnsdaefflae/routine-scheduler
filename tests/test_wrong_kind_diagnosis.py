@@ -86,26 +86,38 @@ def _catalog(tmp_path, *names):
 
 
 def test_a_one_word_util_name_is_diagnosed_from_the_catalog(tmp_path):
-    """The measured hole: `websearch` has no hyphen, so the vocabulary heuristic saw nothing.
+    """The measured hole: a one-word util name has no hyphen, so the vocabulary heuristic saw
+    nothing. `wrong_turn_detected` on this instance, all time to 2026-11-10: 14 invalid-kind
+    rejections across 9 routines and 23 days, of which `websearch` was 8 — the most frequent
+    single shape, and the one the hyphen rule could not catch. 34 of 57 utils have no hyphen.
 
-    `wrong_turn_detected` on this instance, all time to 2026-11-10: 14 invalid-kind rejections
-    across 9 routines and 23 days, of which `websearch` is 8 — the most frequent single shape,
-    and the one the hyphen rule could not catch. 34 of the 57 installed utils have no hyphen.
+    The SPECIMEN moved in 0.545.0 and the hole did not: `websearch` is an action KIND now
+    (D290), so the first test in `unkind_diagnosis` — is this kind unknown? — is false for it
+    and no diagnosis is owed. `immich` stands in: one word, no hyphen, not a kind, and still
+    exactly the shape the heuristic alone cannot see.
     """
-    loop = _catalog(tmp_path, "websearch", "code-search")
-    text = unkind_diagnosis({"kind": "websearch", "args": ["grant deadlines"]}, loop)
+    loop = _catalog(tmp_path, "immich", "code-search")
+    text = unkind_diagnosis({"kind": "immich", "args": ["album list"]}, loop)
     assert text, "a util in the catalog used as a kind must be diagnosed"
-    assert "websearch" in text
+    assert "immich" in text
     assert "util" in text.lower()
     assert "name" in text                     # the correction carries the SHAPE
     assert "LOOKS LIKE" not in text           # the catalog knows; it does not guess
 
 
+def test_a_util_that_became_a_kind_is_no_longer_diagnosed_as_a_wrong_kind(tmp_path):
+    """The other side of D290, asserted so the two cannot disagree: `websearch` is in the
+    catalog AND in the enum, and a diagnosis telling a run to re-send a correct action as
+    something else is the misdiagnosis this module's own docstring forbids."""
+    loop = _catalog(tmp_path, "websearch")
+    assert unkind_diagnosis({"kind": "websearch", "args": ["q"]}, loop) == ""
+
+
 def test_the_catalog_branch_asserts_and_the_heuristic_only_suggests(tmp_path):
     """Two different claims, and the difference is the evidence behind them: a name the
     catalog confirms is a util; a hyphenated name it does not carry only looks like one."""
-    loop = _catalog(tmp_path, "websearch")
-    assert "IS A UTIL" in unkind_diagnosis({"kind": "websearch"}, loop)
+    loop = _catalog(tmp_path, "immich")
+    assert "IS A UTIL" in unkind_diagnosis({"kind": "immich"}, loop)
     assert "LOOKS LIKE A UTIL" in unkind_diagnosis({"kind": "no-such-util"}, loop)
 
 
@@ -113,7 +125,7 @@ def test_without_a_loop_the_heuristic_still_answers():
     """Every off-engine caller (these tests, a diagnosis composed outside a run) keeps the
     behaviour it had — the catalog read is an addition, never a precondition."""
     assert "code-search" in unkind_diagnosis({"kind": "code-search"})
-    assert unkind_diagnosis({"kind": "websearch"}) == ""
+    assert unkind_diagnosis({"kind": "immich"}) == ""
 
 
 def test_a_broken_library_home_cannot_turn_a_rejection_into_a_crash(tmp_path):
@@ -126,7 +138,7 @@ def test_a_broken_library_home_cannot_turn_a_rejection_into_a_crash(tmp_path):
     assert "code-search" in unkind_diagnosis({"kind": "code-search"}, _Headless())
     gone = _FakeLoop(tmp_path / "nope")
     assert "code-search" in unkind_diagnosis({"kind": "code-search"}, gone)
-    assert unkind_diagnosis({"kind": "websearch"}, gone) == ""
+    assert unkind_diagnosis({"kind": "immich"}, gone) == ""
 
 
 def test_a_real_kind_is_never_looked_up_even_if_a_util_shares_its_name(tmp_path):
@@ -140,9 +152,9 @@ def test_a_real_kind_is_never_looked_up_even_if_a_util_shares_its_name(tmp_path)
 def test_the_seam_carries_the_loop_so_the_live_catalog_reaches_the_retry(tmp_path):
     """`completion.diagnose` is the single composer every schema rejection reads. If it did
     not forward the loop, the catalog branch would be dead code in production."""
-    loop = _catalog(tmp_path, "websearch")
-    assert "websearch" in diagnose({"kind": "websearch"}, loop)
-    assert diagnose({"kind": "websearch"}) == ""       # no loop, no catalog, no invention
+    loop = _catalog(tmp_path, "immich")
+    assert "immich" in diagnose({"kind": "immich"}, loop)
+    assert diagnose({"kind": "immich"}) == ""          # no loop, no catalog, no invention
 
 
 @pytest.mark.parametrize("kind", ["", "Something Entirely Made Up", "x", "do_the_thing"])

@@ -3,8 +3,8 @@ projection of ACTION_SCHEMA onto them.
 
 `actions.py` stays the single source of truth for what a turn may do — this module only
 NARROWS what the model is shown to what the engine would accept anyway. A run whose
-workflow `tools:` allowlist and capabilities permit 8 of the 34 kinds was previously sent
-all 34 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
+workflow `tools:` allowlist and capabilities permit 8 of the 36 kinds was previously sent
+all 36 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
 model read, every turn, the full description of channels the validator would reject. The
 projection is derived from `actions.KIND_FIELDS` — the same map `validate_action` builds
 its allowed-field set from — so the shown schema and the enforced contract cannot drift.
@@ -27,6 +27,7 @@ import copy
 from . import thenscript
 from .actions import ALWAYS_KINDS, KIND_FIELDS
 from .actionschema import ACTION_SCHEMA, KINDS
+from .kindaliases import ALIAS_KINDS
 
 # Fields every kind carries (actions.validate_action allows `note` on any kind, like `say`).
 _UNIVERSAL_FIELDS = ("say", "note", "kind", "role_swap")
@@ -47,8 +48,20 @@ def effective_kinds(allowed_kinds: set[str] | None = None, grants=None) -> list[
     a kind the schema omits (or vice versa).
     """
     return [k for k in KINDS
-            if (allowed_kinds is None or k in allowed_kinds or k in ALWAYS_KINDS)
+            if (allowed_kinds is None or _permitted(k) & (allowed_kinds | set(ALWAYS_KINDS)))
             and (grants is None or grants.allows_kind(k))]
+
+
+def _permitted(kind: str) -> set[str]:
+    """The allowlist entries that make `kind` available — itself, or what it is a SPELLING of.
+
+    D290's alias kinds (`websearch`, `code_search`) are rewritten into a util call before any
+    gate, so what a workflow must permit is `util`: a separate entry per alias would mean
+    editing 31 routines' `tools:` to keep exactly the capability they already have. The reverse
+    direction is the one that must not fail open, and it does not — a run that may not call a
+    util cannot reach one under another spelling either, because the set below is {"util"}.
+    """
+    return {kind, "util"} if kind in ALIAS_KINDS else {kind}
 
 
 def _clause_kinds(clause: str) -> set[str]:

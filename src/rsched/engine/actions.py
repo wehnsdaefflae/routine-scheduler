@@ -19,6 +19,8 @@ from .askfields import field_problems as ask_field_problems
 from .decideaction import field_problems as decide_field_problems
 from .goalops import field_problems as goal_field_problems
 from .jobfields import field_problems as job_field_problems
+from .kindaliases import rewrite as alias_rewrite
+from .kindexamples import KIND_EXAMPLES  # noqa: F401 — re-exported: importers read it here
 from .reportfields import field_problems as report_field_problems
 from .sidefields import problems as side_field_problems
 
@@ -36,95 +38,6 @@ SIDE_FIELDS = ("note", "remind", "remind_feedback", "role_swap")
 ALWAYS_KINDS = ("finish", "report", "list_models")
 
 
-# kind → a minimal VALID action, shown to the model when a reply fails validation. Weak
-# models merge payload keys into the action object (file bodies, finish fields at top
-# level); an abstract error alone often doesn't correct them — a concrete shape does.
-KIND_EXAMPLES: dict[str, dict] = {
-    "util": {"say": "<why this util now>", "kind": "util", "name": "list"},
-    "list_models": {"say": "<why model discovery now>", "kind": "list_models"},
-    "script": {"say": "<why this deterministic step now>", "kind": "script",
-               "name": "poll-inbox", "args": ["--json"]},
-    "shell": {"say": "<why an ad-hoc command instead of a util>", "kind": "shell",
-              "command": "<the ONE command line, as a single string>"},
-    "write_util": {"say": "<why a new util>", "kind": "write_util", "name": "my-util",
-                   "content": "<the complete PEP 723 script as ONE string>"},
-    "remove_util": {"say": "<why remove this util>", "kind": "remove_util",
-                    "name": "obsolete-util"},
-    "schedule_run": {"say": "<why arm a one-shot>", "kind": "schedule_run",
-                     "target": "some-routine", "fire_at": "+3d",
-                     "reason": "<what the fired run should pick up>"},
-    "create_routine": {"say": "<why create this routine now>", "kind": "create_routine",
-                       "target": "arxiv-reading-list", "name": "Arxiv reading list",
-                       "prompt": "<the clarified task, decomposed into the routine's stages>",
-                       "workflow": "general-task", "pattern": "watcher",
-                       "setup": ["<the user's answer to one of the pattern's questions>"],
-                       "done_when": ["<what one finished run leaves behind, in their words>"],
-                       "never": ["<what a run must never do, in the user's words>"],
-                       "produces": ["principal: <who>", "<id> · count · higher — <what>"]},
-    "manage_lane": {"say": "<why this lane change now>", "kind": "manage_lane",
-                     "verb": "create", "name": "Morning jobs",
-                     "members": ["weight-coach", "news-digest"]},
-    "job": {"say": "<what this run did for the open job>", "kind": "job",
-             "verb": "checkpoint", "id": "client-onboarding", "outcome": "advanced",
-             "summary": "<what landed, what the next run picks up>",
-             "accounting": ["d1 met: <evidence>"]},
-    "goal": {"say": "<what the person asked for>", "kind": "goal", "verb": "add",
-             "goals": [{"text": "<one checkable end state>",
-                        "quote": "<their own words it came from, verbatim>"}]},
-
-    "read_file": {"say": "<why this file>", "kind": "read_file", "path": "state/notes.md"},
-    "view_image": {"say": "<why look at it>", "kind": "view_image",
-                   "path": "attachments/shot.png",
-                   "prompt": "<what to look for, if it falls back to the vision util>"},
-    "write_file": {"say": "<why this write>", "kind": "write_file", "path": "artifacts/table.json",
-                   "content": {"<item>": "<structured data may be a plain JSON object — "
-                                         "text files take one string instead>"}},
-    "edit_file": {"say": "<why this edit>", "kind": "edit_file", "path": "state/notes.md",
-                  "anchor": "<exact text to find (verbatim)>",
-                  "replacement": "<what replaces it>"},
-    "delete": {"say": "<why delete this>", "kind": "delete", "path": "state/stale-cache/",
-                "recursive": True},
-    "move": {"say": "<why move it>", "kind": "move", "src": "artifacts/draft.md",
-              "dst": "state/final/draft.md"},
-    "mkdir": {"say": "<why this dir>", "kind": "mkdir", "path": "state/weekly-digests",
-               "parents": True},
-    "memory_read": {"say": "<why this note now>", "kind": "memory_read", "name": "topic-slug"},
-    "memory_write": {"say": "<what surprised you>", "kind": "memory_write", "name": "topic-slug",
-                     "content": "<the note's full markdown, ~100 lines or fewer>",
-                     "about": "<one line: what this note holds + when to consult it>"},
-    "read_rule": {"say": "<why this rule now>", "kind": "read_rule",
-                  "name": "test-design"},
-    "write_rule": {"say": "<the evidence that this wording is the cause>", "kind": "write_rule",
-                   "name": "test-design",
-                   "anchor": "<the exact sentence(s) to replace, copied verbatim>",
-                   "replacement": "<the new wording, in the rule's own voice>"},
-    "llm": {"say": "<why delegate>", "kind": "llm", "prompt": "<the subtask prompt>"},
-    "decide": {"say": "<why this decision now>", "kind": "decide",
-               "question": "<what to decide>",
-               "options": ["<value>: <what it means>", "<other value>: <what it means>"],
-               "evidence": "<the text or facts the answer depends on>"},
-    "spawn": {"say": "<why a child>", "kind": "spawn",
-              "prompt": "<self-contained instruction>", "label": "child-1"},
-    "subtask": {"say": "<why this sequential step>", "kind": "subtask",
-                "prompt": "<self-contained brief; fold in the previous subtask's result>",
-                "label": "step-1"},
-    "detach": {"say": "<why detach this long job>", "kind": "detach",
-               "prompt": "<self-contained brief for the background task>", "label": "scrape"},
-    "subruns": {"say": "<why check children>", "kind": "subruns"},
-    "kill": {"say": "<why stop it>", "kind": "kill", "n": 1},
-    "wait": {"say": "<why block>", "kind": "wait"},
-    "ask_user": {"say": "<why ask>", "kind": "ask_user",
-                 "question": "<one self-contained question>", "mode": "deferred"},
-    "report": {"say": "<the problem you are raising>", "kind": "report",
-               "title": "<one-line summary>",
-               "detail": "<the artefact, what is wrong, the evidence, what done looks like>",
-               "target": "<the routine that owns it, or omit for triage>"},
-    "do_nothing": {"say": "<what you checked, and why nothing is due>",
-                   "kind": "do_nothing"},
-    "finish": {"say": "<what was achieved>", "kind": "finish", "status": "ok",
-               "summary": "<**Process:** … **Work:** …>"},
-}
-
 # The kinds a run may mark `background: true` (D118 phases 1 and 3). The reads and fetches defer
 # because their only effect IS the observation. The three MUTATIONS defer because each declares
 # the one target it writes (`path`, or `name` in the memory namespace) and
@@ -140,13 +53,20 @@ KIND_EXAMPLES: dict[str, dict] = {
 #     create_routine, manage_lane, schedule_run — which either steer the run (so they must be
 #     synchronous) or are already asynchronous in their own right (the children).
 # `shell` declares no target, so a WRITING shell command stays the caller's own ordering hazard.
-BACKGROUNDABLE_KINDS = ("util", "script", "shell", "llm", "decide",
+BACKGROUNDABLE_KINDS = ("util", "websearch", "code_search", "script", "shell", "llm", "decide",
                         "read_file", "view_image", "memory_read", "read_rule",
                         "write_file", "edit_file", "memory_write")
 
 # kind → (required fields, allowed extra fields beyond say/kind)
 KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s", "background")),
+    # D290: a SPELLING of the util call above, rewritten into it by `normalize_action` before
+    # any gate (engine/kindaliases.py) — so these two take the util kind's own fields and
+    # nothing of their own. `args` is REQUIRED here where `name` is required there: an alias
+    # that names no query is refused in the schema-retry cycle (no turn) rather than run empty
+    # (one turn), which is the whole reason the rewrite may be generous about where it reads it.
+    "websearch": (("args",), ("timeout_s", "background")),
+    "code_search": (("args",), ("timeout_s", "background")),
     "script": (("name",), ("args", "timeout_s", "background")),
     "shell": (("command",), ("timeout_s", "path", "background")),
     "write_util": (("name",), ("content", "path", "anchor", "replacement", "all")),
@@ -208,7 +128,16 @@ def normalize_action(obj: dict) -> dict:
     tend to emit OTHER kinds' fields as empty strings/false/null. Empty-valued fields that
     are not required for this kind carry no information — drop them so the semantic
     validator sees the model's intent, not the grammar's debris.
+
+    An ALIAS KIND is rewritten FIRST, into the util action it spells (D290,
+    engine/kindaliases.py). First because the payload a caller puts it in is often a field
+    ACTION_SCHEMA does not declare (`query`, `pattern`), and the stripping below would delete
+    it — a rewrite any later would run the util with an empty query. Before every gate too:
+    the rewritten action meets the capability layer, the secret gate and the telemetry seam as
+    the ordinary util call it is, so an alias cannot become a second front door.
     """
+    if (aliased := alias_rewrite(obj)) is not None:
+        obj = aliased
     # weak models sometimes wrap the action in a generic tool-call envelope — unwrap it
     if "kind" not in obj and isinstance(obj.get("action"), dict):   # {"action": {...}}
         obj = obj["action"]

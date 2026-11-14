@@ -729,7 +729,7 @@ runs, LEDGER, `.memory/`, one open + one answered question, one waiting inbox me
 NOT here: the general rules' prose is never inlined — the state digest names each held rule
 with the moment it applies; the run reads one with `read_rule` when that moment comes. The working-directory path is shortened.
 The ACTION SCHEMA block below is the **projection** for that routine's kinds, not the full
-34-kind schema (see *The projection* above) — the kinds it cannot emit contribute neither
+36-kind schema (see *The projection* above) — the kinds it cannot emit contribute neither
 fields nor prose, and a field a surviving kind SHARES with an absent one carries only the
 clauses that still apply. So a property missing here, or a description shorter than
 `actionschema.ACTION_SCHEMA`'s, is the projection at work rather than drift; a property here
@@ -882,17 +882,17 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
    "items": {
     "type": "string"
    },
-   "description": "util/script: command-line arguments passed to the script (append '--json' for structured output)"
+   "description": "util/websearch/code_search/script: command-line arguments passed to the script (append '--json' for structured output)"
   },
   "timeout_s": {
    "type": "integer",
    "minimum": 1,
    "maximum": 1800,
-   "description": "util/script: seconds before the script is killed (default 300; raise it \u2014 up to 1800 \u2014 for a genuinely long job the 300s default would kill, e.g. running a full test suite) \u00b7 wait: max seconds to block (default 600)"
+   "description": "util/websearch/code_search/script: seconds before the script is killed (default 300; raise it \u2014 up to 1800 \u2014 for a long job the 300s default would kill, e.g. running a full test suite) \u00b7 wait: max seconds to block (default 600)"
   },
   "background": {
    "type": "boolean",
-   "description": "run THIS ONE call in the BACKGROUND and get the turn back at once. The observation you receive names a handle and says the call is running; the REAL observation is appended at a later turn boundary, tagged with that handle. Use it for a call that would make a waiting human sit \u2014 a heavy fetch, a long `llm`, a slow test run, a big write \u2014 and keep working or keep talking meanwhile. Do not background a call whose result your VERY NEXT action needs \u2014 you would only have to wait for it anyway. There is no cap on how many may be in flight at once; your own turn budget is the limit, since every result still has to be read. A kind that STEERS the run (finish, ask_user, report, spawn, subtask, wait, kill) may not defer, nor may delete, move, mkdir, write_util or write_rule \u2014 each refusal says why \u00b7 util/script/shell/llm/decide/read_file/view_image/memory_read/read_rule: a READ or a FETCH, whose only effect is the observation it brings back. A backgrounded `shell` or `util` CAN write, and declares no target, so ordering what it writes stays yours \u00b7 write_file/edit_file/memory_write: a WRITE defers too, and is ORDERED rather than trusted \u2014 any later action touching the target you declare (`path`, or `name` for a memory note) is HELD until the write lands, so it can never be read stale even if you never `wait`. A second deferred write to one target is refused (no defined order), as is a `then_script` riding a deferred change: defer the change alone, then run the script"
+   "description": "run THIS ONE call in the BACKGROUND and get the turn back at once. The observation you receive names a handle and says the call is running; the REAL observation is appended at a later turn boundary, tagged with that handle. Use it for a call that would make a waiting human sit \u2014 a heavy fetch, a long `llm`, a slow test run, a big write \u2014 and keep working or keep talking meanwhile. Do not background a call whose result your VERY NEXT action needs \u2014 you would only have to wait for it anyway. There is no cap on how many may be in flight at once; your own turn budget is the limit, since every result still has to be read. A kind that STEERS the run (finish, ask_user, report, spawn, subtask, wait, kill) may not defer, nor may delete, move, mkdir, write_util or write_rule \u2014 each refusal says why \u00b7 util/websearch/code_search/script/shell/llm/decide/read_file/view_image/memory_read/read_rule: a READ or a FETCH, whose only effect is the observation it brings back. A backgrounded `shell` or `util` CAN write, and declares no target, so ordering what it writes stays yours \u00b7 write_file/edit_file/memory_write: a WRITE defers too, and is ORDERED rather than trusted \u2014 any later action touching the target you declare (`path`, or `name` for a memory note) is HELD until the write lands, so it can never be read stale even if you never `wait`. A second deferred write to one target is refused (no defined order), as is a `then_script` riding a deferred change: defer the change alone, then run the script"
   },
   "path": {
    "type": "string",

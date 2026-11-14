@@ -34,8 +34,8 @@ SETTLES_MAX = 20
 #: these names, because the action would never reach it.
 PSEUDO_UTILS = ("list", "show", "search")
 
-KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
-         "delete", "move", "mkdir", "edit_file",
+KINDS = ("util", "websearch", "code_search", "write_util", "remove_util",
+         "read_file", "view_image", "write_file", "delete", "move", "mkdir", "edit_file",
          "memory_read", "memory_write", "read_rule", "write_rule",
          "script", "shell",
          "llm", "decide", "spawn", "subtask", "detach",
@@ -89,13 +89,13 @@ ACTION_SCHEMA: dict = {
         },
         "args": {
             "type": "array", "items": {"type": "string"},
-            "description": "util/script: command-line arguments passed to the script "
-                           "(append '--json' for structured output)",
+            "description": "util/websearch/code_search/script: command-line arguments passed "
+                           "to the script (append '--json' for structured output)",
         },
         "timeout_s": {
             "type": "integer", "minimum": 1, "maximum": 1800,
-            "description": "util/script: seconds before the script is killed "
-                           "(default 300; raise it — up to 1800 — for a genuinely long job "
+            "description": "util/websearch/code_search/script: seconds before the script is "
+                           "killed (default 300; raise it — up to 1800 — for a long job "
                            "the 300s default would kill, e.g. running a full test suite) · "
                            "shell: seconds before the command is killed (default 120) · "
                            "wait: max seconds to block (default 600)",
@@ -538,15 +538,15 @@ ACTION_SCHEMA: dict = {
 
 # The one field that best identifies a turn of each kind — the one-line "briefs" used by
 # turn records, compaction digests, and transcript replay.
-BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "read_file": "path",
+BRIEF_FIELD = {"util": "name", "websearch": "args", "code_search": "args",
+               "write_util": "name", "remove_util": "name", "read_file": "path",
                "view_image": "path", "script": "name", "shell": "command",
                "write_file": "path", "delete": "path", "move": "src",
                "mkdir": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "decide": "question", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
-               "manage_lane": "verb", "job": "id", "goal": "id",
-               "kill": "n", "wait": "n",
+               "manage_lane": "verb", "job": "id", "goal": "id", "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
 #: The kinds that may name several files at once (`paths`) where BRIEF_FIELD names one — what
 #: `canon` renders, and the reminder gate accepts, as `<kind> paths=<a,b>`.

@@ -62,16 +62,13 @@ import { el, fmtTime, fmtTokens } from "/static/util.js";
 // cannot import it) — a kind missing here renders its turn line with an EMPTY brief, which is
 // how this map drifted 10 kinds behind before the 2026-08-21 sweep caught it.
 // tests/test_actions.py now holds the two in lockstep.
-const BRIEF_FIELD = { util: "name", write_util: "name", remove_util: "name",
-                      read_file: "path", view_image: "path", write_file: "path",
-                      edit_file: "path", delete: "path", move: "src", mkdir: "path",
-                      memory_read: "name", memory_write: "name",
-                      read_rule: "name", write_rule: "name", script: "name",
-                      shell: "command", llm: "prompt", decide: "question",
-                      spawn: "label", subtask: "label", detach: "label",
-                      schedule_run: "target", create_routine: "target",
-                      manage_lane: "verb", job: "id", goal: "id", kill: "n", wait: "n",
-                      ask_user: "question", report: "title", finish: "status" };
+const BRIEF_FIELD = { util: "name", websearch: "args", code_search: "args", write_util: "name",
+  remove_util: "name", read_file: "path", view_image: "path", script: "name", shell: "command",
+  write_file: "path", delete: "path", move: "src", mkdir: "path", edit_file: "path",
+  memory_read: "name", memory_write: "name", read_rule: "name", write_rule: "name", llm: "prompt",
+  decide: "question", spawn: "label", subtask: "label", detach: "label", schedule_run: "target",
+  create_routine: "target", manage_lane: "verb", job: "id", goal: "id", kill: "n", wait: "n",
+  ask_user: "question", report: "title", finish: "status" };
 
 // "Refer to" rides the message TEXT as one leading quoted line — `> re <label>: <snippet>`,
 // then a blank line, then the message. Plain markdown the model reads naturally, no new
