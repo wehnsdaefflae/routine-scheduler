@@ -28,6 +28,8 @@ them would teach a run that the library is smaller than it is. These tests pin b
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rsched.engine.utilcatalog import util_catalog_block
 
 #: A util as `utils_lib.list_utils` yields it, with the fields the catalog block reads.
@@ -74,13 +76,13 @@ def test_a_reserved_util_keeps_its_annotation() -> None:
     even possible, and a run that cannot see it spends a turn discovering a refusal.
     """
     class _Grants:
-        utils: frozenset[str] = frozenset()
-        gated_verbs = {"mail": {"send"}}
-        gated_utils: frozenset[str] = frozenset({"darknet"})
-        denied: frozenset[str] = frozenset()
+        utils: ClassVar[frozenset[str]] = frozenset()
+        gated_verbs: ClassVar[dict[str, set[str]]] = {"mail": {"send"}}
+        gated_utils: ClassVar[frozenset[str]] = frozenset({"darknet"})
+        denied: ClassVar[frozenset[str]] = frozenset()
 
     text = util_catalog_block(
-        _UTILS + [{"name": "darknet", "summary": "darknet — fetch .onion pages.",
+        [*_UTILS, {"name": "darknet", "summary": "darknet — fetch .onion pages.",
                    "tags": ["tor"]}], ["util"], _Grants())
     assert "send reserved — not granted to this routine" in text, text
     assert "reserved — not granted to this routine" in text, text

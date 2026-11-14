@@ -291,15 +291,10 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     ctx.grants = GrantPolicy(active=("run-history",),
                              gated_utils={"discord": ("messaging-discord",)})
     text = capabilities_digest(ctx)
-    # NAMES ONLY since goal b5 step 4 (the operator, 2026-11-14): a util's one-line summary is
-    # reached with `util name=search` / `name=list` instead of riding every prompt, which the
-    # header says. What stays is every NAME, the grouping, and a reservation — the last is not a
-    # description but the fact that decides whether a call is possible at all.
-    assert "- frob" in text and "flips widgets" not in text
+    assert "- frob" in text and "flips widgets" not in text and "name=search" in text
     assert "- discord  [reserved — not granted to this routine]" in text
     # D52 Phase 1: the catalog is grouped by a controlled category vocabulary, not a flat list.
     assert "grouped by category" in text
-    assert "name=search" in text, "nothing tells the run where a util's summary is"
     assert "### Code & development (1)" in text          # frob (tags: code, dev)
     assert "### Email & messaging (1)" in text            # discord (tags: communication, chat)
     from rsched.engine.utilcatalog import util_category

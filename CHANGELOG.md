@@ -15,6 +15,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.542.0] — 2026-11-14
+
+### Both catalogs in the CAPABILITIES section become an index — goal b5 step 4, as a three-day trial
+
+- **The operator's decision**, answering the measurement with option 3: *"Let's try 3 for three
+  days and see how it goes"*. A **reversible trial** over two compositions, whose review is a
+  dated obligation rather than a note.
+- **The util catalog carries NAMES only** (`engine/utilcatalog`, split out of
+  `engine/capabilities`) and **the sub-workflow patterns SLUGS only**. Measured through the real
+  composer against the live library: the util catalog **6,058 → 1,276 chars (−4,782)** and the
+  pattern block **4,230 → 484 (−3,746)** — **−8,528 chars on every turn** of every run and
+  conversation holding `spawn`, taking goal b5 from 47% to ~55% of the 108,666-char baseline.
+- **Why this needed his decision when steps 1-3 did not.** Those removed prose the engine already
+  enforces or already stores, each justified by a 4-gram overlap measurement. Over **52 live
+  `prompt-sections.json` captures**, every part of this section overlaps harness+schema by
+  **0.0-5.4%** (util catalog 0.4%, patterns 0.1%): nothing here is a duplicate. What is left is a
+  CATALOG, so cutting it moves a description one call away (`util name=search`, `util name=list`,
+  the library's `workflows/<slug>`) and makes it cost a turn — the trade he ruled on in step 2.
+- **What keeps it honest:** every NAME stays, the category grouping stays, a reserved util keeps
+  its `[reserved — …]` annotation (not a description — the fact that decides whether a call is
+  possible), and both headers say where the descriptions are. `vision`'s text-only note becomes
+  MORE load-bearing, not less, and is pinned as such.
+- `engine/capabilities.py` went **412 → 301 lines** by moving the catalog to the module whose
+  subject it is, so it came back under the 350-line bar and **dropped its ratchet entry**.
+- **Stated with the number rather than left implicit: b5's 90% is not reachable by removal
+  alone.** The remaining always-on inventory is digest 26,547 · harness 21,487 · capabilities
+  ~7,100 after this · workflow 12,164 (each routine's own recipe) · reports 11,837 where present.
+  The rest is contracts enforced by the wire instead of recited, not more trimming.
+
+### A reminder deletion reaches the hook stream, and the pre-mirror ids are backfilled (goal b4, D152 step 3)
+
+- **The write-path defect, live rather than historical.** Measured over all 31 routines with
+  `hooks/reminderproj.drift`: **122 drifting ids in 21 of 31 routines**. Of those, **23 exist as
+  a hook and in NO store** — five from November, one deleted by the very run that measured it —
+  because a routine deleting its OWN reminder wrote the store and no row, while every other act
+  (the write, a target's say over a foreign hook, a curator's disposal) reached the stream.
+  `remind_write.remove` now owns the act so the store write and the hook row are one, and
+  `hookmirror.reminder_removed` records it as a later row about the same id. **`remind.py`
+  SHRANK 605 → 599 lines** by delegating, which it had to: it sits at its size ceiling.
+- **Why it mattered more than drift:** the campaign ends with the store SERVED from the stream,
+  and a fold that cannot see a deletion re-raises patterns their routines removed. A reminder
+  decides whether an action is HELD, so that changes what binds a run, silently.
+- **The 95-id backfill.** Every store-only id predates the mirror (newest `rem-20261018-…`, the
+  mirror landed 2026-10-19; 41 September, 54 October, none November), so the class is closed and
+  `migrate_premirror_reminders` empties it at boot — a pure read-only core (`missing_hooks`) so
+  the live-store property is testable with no write, the shape the report half proved.
+- **What it deliberately leaves:** the 23 stream-only ids (deletions must stay deleted) and the
+  4 `differs` ids — three missing `created_run` from the mirror era, and one `owner`
+  disagreement (`rem-20261026-233255-1`), and `owner` decides who may remove a hook.
+
+### The blocked-work fold reports two units: incidents counted, standing conditions measured (R3418)
+
+- `readmodels/blocked_kinds` holds the judgement alone, with each writer's own latch quoted.
+  **Six** of `BLOCKED_EVENTS`' fourteen are STANDING — `backup_stale`, `migration_due_soon`,
+  `migration_expired`, `obligation_overdue`, `answer_undelivered`, `process_overhead_high` — and
+  three that look standing are not: `trigger_capped` (one event per day AT THE TRANSITION, F276),
+  `scheduler_tick_error` (once per failure episode), `postdeploy_failed` (once per process).
+- A standing row now carries `standing_hours` and **no count**, because its writer files one row
+  a day while one fact holds: counting those rows measured how long the daemon was up, so a
+  nineteen-night backup gap read `19` — the same magnitude as nineteen distinct refused fires —
+  and an instance that restarts often reported a *smaller* problem.
+- The payload carries `incident_total` and `standing_rows` and **the `total` key is removed**
+  rather than kept beside them, so no consumer can add two units by accident. `operator_total`
+  is untouched, which is what the rail's blocked badge reads. The console branches on the row's
+  `kind` rather than being compiled with event names.
+
+### The fast suite's worker count follows the cgroup headroom there IS (D291)
+
+- **The operator's decision**, asked which side gives when a release gate's FAST stage (3,584 MB
+  of this container's 5,120 MB cgroup) and a live routine run (1,086-1,717 MB) cannot both fit:
+  *"Reduce FAST_WORKERS while a routine run is active, trading gate wall-clock for coexistence"*
+  — explicitly **not** the cgroup raise.
+- Both halves were constants, so a live run holding the difference **refused** the gate (exit 3
+  after up to `RSCHED_TEST_MEM_WAIT_S`) instead of running it smaller — and because the two fit
+  SOMETIMES, that refusal read as a flaky failure rather than as a rule.
+- The charge is now **derived** from the table `memgate`'s own docstring records: 930 MB
+  controller + 610 MB per worker, rounded up to 256 MB, and never below the `serial` charge it
+  contains. A pin **re-derives the old 3,584 MB at four workers**, so the new arithmetic cannot
+  silently disagree with the measurement the constant stood on. `browsersource.fast_workers`
+  then picks the largest count (floor 2, ceiling `FAST_WORKERS`) whose charge fits the headroom
+  `memgate` already reads — `memory.max` minus what the cgroup HOLDS, never `memory.current`.
+- **An idle box is untouched by construction** (4 workers, 3,584 MB) and a box without a cgroup
+  ceiling is unchanged. The refusal message now names the count it settled on: "the fast suite at
+  4 xdist workers" became a lie once the count is conditional, and an unreadable refusal is what
+  sent R3376's author hunting a memory leak that did not exist.
+- `tests/conftest.py` is over the size bar and may only shrink, so the whole `-n auto` decision
+  moved to `browsersource.auto_workers`, the module that already owned both worker counts:
+  **679 → 669 lines**, ceiling tightened. The host shrank while gaining the feature.
+
+### Every run names its slowest tests, and the expectation is finally checked (R3419)
+
+- `addopts` gains `--durations 25 --durations-min 1.0`. `pyproject.toml`'s own comment beside
+  `timeout = 300` says the slowest legitimate test takes "well under a minute" — a **299-second
+  blind spot** the deadline cannot see, and F739 lived in it: a test polling to its routine's
+  inherited one-minute ask timeout cost **~120 s of every release gate the fleet runs** until
+  someone noticed by hand, with no production code at fault. The per-stage aggregate cannot
+  localise that: 179 s is the same number whether it is 2,150 tests at 80 ms or 2,148 at 25 ms
+  plus two at 60 s. Measured before editing: `durations` appeared nowhere in the repo.
+- No test is given a deadline and none is excused — a flat per-test cap can never go green (the
+  30 s SIGTERM-grace test is legitimate) and a gate red on arrival is a gate someone deletes.
+  It earned itself inside this release: the first scanner run named mypy at 19.12 s and vulture
+  at 13.28 s, numbers the project had never recorded.
+
 ## [0.541.0] — 2026-11-14
 
 ### A workflow pattern's prose is held to the standing order too — the half 0.540.0 missed (goal b7)

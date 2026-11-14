@@ -10,6 +10,7 @@ import json
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
+
 from helpers import tmp_server
 from rsched.health_events import log_health_event
 from rsched.readmodels import memo

@@ -13,8 +13,7 @@ import json
 from rsched import reminders as store
 from rsched.hooks import reminderproj
 from rsched.hooks import store as hookstore
-from rsched.migrate_premirror_reminders import (RECORD, missing_hooks, routine_dirs,
-                                                run_migration)
+from rsched.migrate_premirror_reminders import RECORD, missing_hooks, routine_dirs, run_migration
 
 
 def _rem(rid, *, regex="^util:danger", desc="it deletes the target", owner=""):

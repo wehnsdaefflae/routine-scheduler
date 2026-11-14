@@ -15,7 +15,7 @@
     "src/rsched/engine/fileops.py": 586,
     "src/rsched/engine/ladder.py": 353,
     "src/rsched/engine/loop.py": 435,
-    "src/rsched/engine/remind.py": 605,
+    "src/rsched/engine/remind.py": 599,
     "src/rsched/engine/run_context.py": 587,
     "src/rsched/engine/window.py": 395,
     "src/rsched/grantpolicy.py": 385,
