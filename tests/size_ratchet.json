@@ -9,7 +9,6 @@
     "src/rsched/engine/actions.py": 488,
     "src/rsched/engine/actionschema.py": 628,
     "src/rsched/engine/background.py": 474,
-    "src/rsched/engine/capabilities.py": 394,
     "src/rsched/engine/compaction.py": 393,
     "src/rsched/engine/create_routine.py": 410,
     "src/rsched/engine/executor.py": 454,

@@ -297,13 +297,13 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "grouped by category" in text
     assert "### Code & development (1)" in text          # frob (tags: code, dev)
     assert "### Email & messaging (1)" in text            # discord (tags: communication, chat)
-    from rsched.engine.capabilities import _util_category
-    assert _util_category(["code", "dev"]) == "Code & development"
-    assert _util_category(["communication"]) == "Email & messaging"  # a util TAG, not the permission
-    assert _util_category([]) == "Other"                  # no tags → Other, still listed
+    from rsched.engine.utilcatalog import util_category
+    assert util_category(["code", "dev"]) == "Code & development"
+    assert util_category(["communication"]) == "Email & messaging"  # a util TAG, not the permission
+    assert util_category([]) == "Other"                  # no tags → Other, still listed
     # order-based collision resolution: a util tagged both health AND logs files under the
     # meta/logs group (listed first), NOT under Health & fitness.
-    assert _util_category(["health", "logs"]) == "Scheduler, runs, logs & audit"
+    assert util_category(["health", "logs"]) == "Scheduler, runs, logs & audit"
     kinds_line = next(line for line in text.splitlines() if line.startswith("Action kinds"))
     assert "util" in kinds_line and "write_util" not in kinds_line   # authoring not granted
     assert "Capabilities enabled (user-set, engine-enforced):" in text
