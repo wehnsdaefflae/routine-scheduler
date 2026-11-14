@@ -15,7 +15,7 @@ from conftest import make_test_server, mk_run
 from rsched.paths import atomic_write_json
 from rsched.priorities import SELF_AUDIT_SLUG
 from rsched.readmodels import memo
-from rsched.web import decisions_read
+from rsched.web import decisions_ledger, decisions_read
 
 RUN = "20260708-110000"
 
@@ -33,7 +33,10 @@ class _Walks:
     def __init__(self, monkeypatch):
         self.homes: list[str] = []
         self.audit = 0
-        fresh, audit_fresh = decisions_read._all_questions_fresh, decisions_read._audit_decisions_fresh
+        # `_audit_decisions_fresh` moved to `web/decisions_ledger` when decisions_read
+        # crossed the house size bar (R3417); it is still the function the memo wraps.
+        fresh = decisions_read._all_questions_fresh
+        audit_fresh = decisions_ledger._audit_decisions_fresh
 
         def counted(server, home_kind, home):
             self.homes.append(home_kind)
@@ -44,7 +47,7 @@ class _Walks:
             return audit_fresh(rdir)
 
         monkeypatch.setattr(decisions_read, "_all_questions_fresh", counted)
-        monkeypatch.setattr(decisions_read, "_audit_decisions_fresh", counted_audit)
+        monkeypatch.setattr(decisions_ledger, "_audit_decisions_fresh", counted_audit)
         self._seen = 0
 
     def routine_walks(self) -> int:

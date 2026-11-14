@@ -15,6 +15,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.543.0] — 2026-11-14
+
+### A ledger decision's per-option proof reaches the Decisions page (R3417, D220's last step)
+
+- `self-audit`'s ledger writer refuses to file a decision without a proof per option — one entry
+  carrying `predicate`, `reads` and `category`, with the five states derived exactly as
+  `proofs.answered` derives them, **mirroring this engine's own module deliberately so the two
+  cannot disagree**. Nothing read it: `decisions_read` built its question items from id, options,
+  status and detail alone, so a proof reached **no surface at all** and the Unproven band (F795,
+  0.520.0) covered engine-filed asks but not the ledger decisions — the ones that sit
+  answered-and-unbuilt for weeks.
+- `_ledger_proof` lifts the map onto the item, **validated through `proofs.problems` rather than
+  trusted**: the ledger is another routine's file, and a proof the engine cannot read is worse
+  than none, because it would park a row in a band no predicate could ever clear.
+- **`in_progress` stops hiding a row that carries a valid proof.** D220's closure named this
+  sequencing and stopped one step short: dropping `in_progress` from `_DECIDED_STATUSES` outright
+  would un-hide **156 proofless decided rows** nothing can ever clear — the F659 regression, where
+  six already-addressed decisions came back as answerable cards and one was answered the OPPOSITE
+  way. A row WITH a proof is the one case where "already building it" is checkable.
+- Its answered state and answer TEXT come from the ledger's own `resolution`: an answer recorded
+  IN a report is older than the report recording it, so the marker gate reads False and the row
+  would render as an UNANSWERED card — and `proofs.unproven` needs `answered` to put it in the
+  band at all. Without this the reader bought nothing.
+- **Measured on the live ledger, before and after:** 5 rows carry a proof (D287, D288, D289,
+  D290, D291 — four `in_progress`, every one answered by the operator and none built). Before:
+  1 card, 0 in the Unproven band. After: 5 cards, all 5 unproven, each carrying his own words —
+  and **0 of the 156 proofless decided rows leaked**.
+- `web/decisions_read.py` crossed the 350-line bar, so the self-audit LEDGER half (its own status
+  vocabulary, its answered-marker records, now its proof validation) moved to
+  `web/decisions_ledger.py` along a boundary that was already there: **383 → 250 + 186**, with
+  `_audit_decisions` re-exported so no caller changed.
+
+### A release's declared remainder must be ADDRESSED to someone — `docs/limits.md` and its gate (R3421)
+
+- Of nine remainders declared between 0.444.0 and 0.445.2, the ONE given a report id (R2844) was
+  fixed **the next day**; two named a route; six had none, and two of those went wrong *silently*
+  — a credential watch covering one provider of three looks like a credential watch, and a
+  command "never run against a live instance" is the one artefact whose purpose is to be run
+  against one. The mechanism that turns a known limit into a fix is being ADDRESSED TO SOMEONE,
+  and the CHANGELOG addresses nobody: it is a record, not an inbox.
+- **`docs/limits.md`** is the store for the one class that had none — known, UNDECIDED, unbuilt —
+  stating its own contract: what belongs, what goes to `docs/designs.md` (decided) or to a report
+  (a defect) instead, the six required fields, and how an entry LEAVES (graduates when decided,
+  deleted when it stops being true). Registered in `docs_build.GUIDE_ORDER` beside `designs`, its
+  deliberate opposite.
+- **The twelve unrouted clauses were actually dispositioned**, written from the CHANGELOG's own
+  words plus the line each needed and did not have: what would make it matter. One answered
+  itself — 0.535.1's "the fast stage's 3,584 MB and a live routine run cannot both be guaranteed"
+  is D291, which 0.542.0 shipped.
+- **The gate** (`tests/test_limits_md.py`) reads the CHANGELOG for the declaration vocabulary and
+  requires each clause to carry a report id, a decision/question id, a `designs.md` entry, an
+  `Accepted permanently: <reason>`, or an entry in the store joined on a ≥25-char verbatim
+  fragment AND the release. Both directions are pinned, and an entry whose fragment no longer
+  matches is reported rather than left to rot.
+- **Two defects in that scanner were found by running its TESTS rather than its functions**, and
+  both would have shipped a check that lies in the direction that matters: the clause splitter
+  truncated at the next marker, so "Known limit: … Not fixed, reported as R9001" read as
+  addressed to nobody (the disposition vocabulary overlaps the declaration vocabulary, so that is
+  the common case); and the vacuity test keyed dispositions by RELEASE, so 0.445.1's three clauses
+  overwrote each other and its assertion passed on dict ordering.
+- **Known limit: this release's own browser stage was not completed** — the gate's ui stage hung
+  in finalisation twice on 0.542.0 without writing a result, and 0.543.0's candidate touches no
+  `static/`, `.js`, `.css` or `tests/ui/` file. Not fixed, reported as R3428.
+
 ## [0.542.0] — 2026-11-14
 
 ### Both catalogs in the CAPABILITIES section become an index — goal b5 step 4, as a three-day trial
