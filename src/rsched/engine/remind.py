@@ -588,18 +588,12 @@ def _replace(loop, target: Reminder, **changes) -> None:
     loop.reminders = [updated if r.id == target.id else r for r in loop.reminders]
 
 
-def _remove(loop, target: Reminder) -> None:
-    loop.reminders = [r for r in loop.reminders if r.id != target.id]
-    if target.scope == "global":
-        store.delete_global(loop.ctx.server.reminders_home, target.id)
-    else:
-        _save_local(loop)
-
-
 #: The write path lives in `remind_write` — `persist` (which store a definition goes to, plus
-#: the hook mirror), `save_local` (the definitions-from-memory / tallies-from-disk rewrite) and
-#: `commit` (the library write). Aliased under the names this module's ops already call, so the
-#: extraction moved code and nothing else.
+#: the hook mirror), `remove` (the same act in reverse: the live set, the store, and the hook row
+#: recording the deletion), `save_local` (the definitions-from-memory / tallies-from-disk
+#: rewrite) and `commit` (the library write). Aliased under the names this module's ops already
+#: call, so the extraction moved code and nothing else.
 _persist = remind_write.persist
+_remove = remind_write.remove
 _save_local = remind_write.save_local
 _commit = remind_write.commit
