@@ -84,7 +84,20 @@ asyncio_mode = "auto"
 #   uv run pytest -q -m ui      the browser suite (serialize it: flock /tmp/rsched-gates.lock)
 #   uv run pytest -q -m ""      everything — what ships a release
 # A CLI `-m` wins over this one, because addopts are prepended and pytest keeps the last.
-addopts = ["-n", "auto", "--dist", "worksteal", "-rR", "-m", "not ui"]  # -rR: name any flaky rerun in the summary (RERUN <nodeid>) so an intermittent UI flake is diagnosable, not just counted
+addopts = ["-n", "auto", "--dist", "worksteal", "-rR", "-m", "not ui", "--durations", "25", "--durations-min", "1.0"]  # -rR: name any flaky rerun in the summary (RERUN <nodeid>) so an intermittent UI flake is diagnosable, not just counted
+# --durations: EVERY run names its slowest items, because the expectation stated at `timeout`
+# below was never checked. F739 is the whole argument: `test_remind_global_resolution.py` filed a
+# blocking approval nobody answered, `interact.handle_ask` polled to the test routine's inherited
+# `ask_timeout_min: 1`, and the file went from ~130 s to 0.38 s — ~120 s off EVERY release gate
+# the fleet runs, with no production code changed. The deadline was never the defect; the test's
+# own budget was, and nothing recorded how long it had been that way. The per-stage aggregate the
+# gate captures (`quality 0.4 s / fast 179.1 s / ui 959.7 s`) cannot localise it: 179 s is the
+# same number whether it is 2,150 tests at 80 ms or 2,148 at 25 ms plus two at 60 s.
+# 25 items covers one slow FILE's parametrized cases (F739's was two of them); the 1.0 s floor
+# replaces pytest's 0.005 s default, which would list hundreds of ordinary unit tests and bury
+# the two that matter — a measurement nobody reads is the failure mode here. Pinned by
+# tests/test_suite_durations.py, which also keeps the `timeout` prose below from drifting away
+# from the thing these numbers measure against.
 # THE WHOLE SUITE'S rerun shield — the operator's belt-and-braces net (2026-11-02), asked for
 # alongside the fix for the WebSocket teardown race (`tests/helpers.idle_socket`): where a
 # harness race is fixed at its cause, a bounded net still covers the NEXT one, undiagnosed.

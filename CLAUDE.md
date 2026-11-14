@@ -166,6 +166,13 @@ one you are about to touch, not all of them.
   LOGIC runs, the 1s/2s backoff clock doesn't); test_docs_build / test_with_retries_backoff
   clear them to pin the real paths. Single test: `uv run pytest tests/test_loop.py -q`
   or `-k <name>`. Live endpoint smoke tests run only with `RSCHED_LIVE_TESTS=1`.
+  **Every run NAMES ITS SLOWEST ITEMS** — addopts carry `--durations 25 --durations-min 1.0`,
+  so the tail is in every gate log and the only per-test cost the project used to record was a
+  per-stage aggregate. The expectation they measure against is `pyproject.toml`'s own, beside
+  `timeout = 300`: the slowest legitimate test takes "well under a minute", which leaves a
+  299-second blind spot the deadline cannot see. F739 lived in it — a test polling to a
+  one-minute ask timeout cost ~120 s of EVERY release gate until someone noticed by hand.
+  Pinned by `tests/test_suite_durations.py`.
 - **The BROWSER suite is opt-in.** `tests/ui/` drives the REAL console with Playwright over a
   stub runner (no scheduler, no engine, no LLM; see `tests/ui/conftest.py`). Its conftest marks
   the whole directory `ui` AND puts it in one `xdist_group`, and addopts carry `-m "not ui"`,
