@@ -122,6 +122,13 @@ def cmd_daemon(_args) -> int:
     # and without this six settled exchanges would read as open
     from .migrate_mirror_hooks import run_migration as repair_mirror_hooks
     repair_mirror_hooks(server)
+    # MIGRATION(expires=2027-02-28): the REMINDER half of the same step. 95 definitions across
+    # 21 of 31 routines exist in a store with no hook at all, every one written before the
+    # mirror landed (newest `rem-20261018-…`, mirror 2026-10-19) — so the class is closed and a
+    # backfill empties it. The 23 stream-only ids are deletions, not gaps, and are deliberately
+    # left: resurrecting a reminder its routine removed would change what HOLDS a run.
+    from .migrate_premirror_reminders import run_migration as backfill_premirror_reminders
+    backfill_premirror_reminders(server)
     # MIGRATION(expires=2026-12-31): every routine's assist tally grows from an int per key to
     # the stat fields a reminder's keeps, so the four outcome labels D239 wired have somewhere
     # to go and the fires already counted stay the denominator they are read against

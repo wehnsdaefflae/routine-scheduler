@@ -45,6 +45,32 @@ def persist(loop, reminder: Reminder, message: str) -> None:
     hookmirror.reminder_written(loop, reminder)
 
 
+def remove(loop, target: Reminder) -> None:
+    """DELETE one reminder of this routine's own — the live set, the store its scope names, and
+    the hook row that records the deletion.
+
+    Here beside `persist` because it is the same act in reverse, and because that is what was
+    wrong: `persist` mirrored every write while the removal wrote only the store, so the stream
+    kept definitions their routines had deleted. Measured over all 31 live routines on
+    2026-11-14 (`hooks/reminderproj.drift`): **23 ids on the stream and in no store**, five of
+    them from November. The campaign's end state is the store SERVED from the stream, and a fold
+    that cannot see a deletion re-raises a pattern its routine removed — which, since a reminder
+    decides whether an action is HELD, changes what binds a run rather than merely looking stale.
+
+    The mirror covers the LOCAL scope, which is what a routine's own store holds and what the
+    comparator (`reminderproj.drift`) compares. A global reminder lives in the library and its
+    deletion is already recorded where that store's history is — the library git commit the
+    caller makes — so a `self`-addressed row for it would claim one routine's view of a store
+    every routine reads.
+    """
+    loop.reminders = [r for r in loop.reminders if r.id != target.id]
+    if target.scope == "global":
+        store.delete_global(loop.ctx.server.reminders_home, target.id)
+        return
+    save_local(loop)
+    hookmirror.reminder_removed(loop, target)
+
+
 def dispose(loop, target: Reminder, disposition: str) -> str:
     """Write the TARGET's disposition of a foreign hook — `keep`, `mute` or `remove` — and
     record it on the hook stream. Returns what was actually applied, or "" when the record is

@@ -37,6 +37,37 @@ def reminder_written(loop, reminder, target: str = "") -> None:
         return
 
 
+def reminder_removed(loop, reminder) -> None:
+    """Record a routine DELETING ITS OWN reminder as a later row about that id
+    (`disposition: remove`) — the half of the write path that was missing.
+
+    MEASURED on the live instance 2026-11-14, over all 31 routines with
+    `hooks/reminderproj.drift`: **23 ids exist as a hook and in no store**, five of them from
+    November, and one of those was deleted by the run that measured it. Every other act on a
+    reminder reached the stream — the write (`persist`), the target's say over a foreign hook
+    (`reminder_disposed`), the curator's disposal of a row in another store
+    (`reminder_curated`, D231) — and a routine deleting its own was the one that did not. So
+    the stream kept a definition the store had dropped, which is not a cosmetic drift: the
+    reminder half of this campaign ends with the store SERVED from the stream, and a fold that
+    cannot see a deletion would re-raise patterns their own routines removed. A reminder decides
+    whether an action is HELD, so that is a change to what binds a run, not a stale row.
+
+    Addressed `self`, like the write it undoes: these are the routine's own future runs, and
+    spelling it as the slug would make a self-hook indistinguishable from one a sibling set.
+    The projection subtracts on `remove` (`reminderproj.REMOVING`), so one row is the whole fix.
+
+    Best-effort and after the real removal, like every function here: a mirror that could fail
+    the deletion would be bookkeeping dressed as a feature.
+    """
+    ctx = loop.ctx
+    try:
+        hookstore.record_reminder(
+            ctx.server.routines_home, record=reminder.as_record(),
+            routine=ctx.routine.slug, run_id=ctx.run_id, disposition="remove")
+    except (AttributeError, OSError, TypeError, ValueError):
+        return
+
+
 def reminder_disposed(loop, reminder, disposition: str) -> None:
     """Record the TARGET's say over a foreign hook as a later row about the same id (D152 step
     4): `keep`, `mute` or `remove`.
