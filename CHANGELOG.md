@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.541.0] — 2026-11-14
+
+### A workflow pattern's prose is held to the standing order too — the half 0.540.0 missed (goal b7)
+
+- **The order** (the operator's, 2026-11-13): a recipe, pattern or instruction never names a util
+  or its flags — it names the capability. 0.540.0 made that a CHECK rather than a sentence, fatal
+  for library rules, permissions and playbooks and a note for live recipes. It did **not** cover
+  **workflow patterns**, and a workflow's prose is what `create_routine` materializes into a new
+  routine's recipe: one breach there is inherited by every routine ever built from that pattern.
+- **One line** in `lint_workflow_py`, on the same shared `recipelint.tool_names()` predicate the
+  other three surfaces already use, so the four cannot drift apart.
+- **A hardening, not a repair**: the library's 16 workflows and 14 patterns are measured clean
+  today with the shipped predicate, so nothing is breaching. **Red-first**: the new test takes the
+  library's own `general-task.py` — which it first asserts lints CLEAN — appends one util call
+  form, and requires the failure; without the `lint.py` line that assertion does not fire.
+
 ## [0.540.3] — 2026-11-14
 
 ### A revise leg no longer destroys the task leg's turn record (F895)
