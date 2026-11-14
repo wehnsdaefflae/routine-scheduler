@@ -86,6 +86,69 @@ FAST_WORKERS = 4
 BROWSER_WORKERS = 2
 
 
+#: The fewest workers a fast selection ever runs with. `-n auto` has always guaranteed two
+#: (`max(2, …)` in conftest), a one-worker xdist run is a serial run paying xdist's overhead,
+#: and a box with no room for even two is what the memory WAIT is for — it waits, which is the
+#: behaviour a refusal was only pretending to have.
+MIN_FAST_WORKERS = 2
+
+
+def fast_workers(cores: int, *, headroom=None) -> int:
+    """How many fast workers fit the cgroup headroom there IS right now — D291.
+
+    The operator, asked which side gives when a release gate's FAST stage (3,584 MB of this
+    container's 5,120 MB cgroup) and a live routine run (1,086-1,717 MB) cannot both fit:
+    *"Reduce FAST_WORKERS while a routine run is active, trading gate wall-clock for
+    coexistence"*. He did NOT choose raising the cgroup, so the conditional count is the work.
+
+    Before this, both the count and the charge were constants, so a live run holding the
+    difference meant the gate was REFUSED rather than run smaller — and since the two fit
+    SOMETIMES, the refusal read as a flaky failure instead of as a rule.
+
+    Bounded by cores as it always was, by `FAST_WORKERS` above, and by `MIN_FAST_WORKERS` below.
+    An IDLE box is untouched by construction: its headroom exceeds the four-worker charge, so
+    no release gate pays wall clock for a coexistence nobody needs. Where there is no cgroup
+    ceiling to read (not Linux, cgroup v1, `memory.max` reading `max`) the headroom is None and
+    the ceiling applies, exactly as this module behaved before.
+
+    The headroom reader is `memgate.cgroup_headroom_mb` — `memory.max` minus what the cgroup
+    HOLDS (anon + swapped pages), never `memory.current`, which counts page cache the kernel
+    drops at the limit and read 96-100 % on gates that killed nothing. Injected rather than
+    imported at module scope because `memgate` imports this module.
+    """
+    import memgate
+
+    ceiling = max(MIN_FAST_WORKERS, min(FAST_WORKERS, max(1, cores)))
+    have = (headroom or memgate.cgroup_headroom_mb)()
+    if have is None:
+        return ceiling
+    for count in range(ceiling, MIN_FAST_WORKERS, -1):
+        if memgate.fast_need_mb(count) <= have:
+            return count
+    return min(ceiling, MIN_FAST_WORKERS)
+
+
+def auto_workers(cores: int, markexpr: str) -> int:
+    """What `-n auto` means for THIS suite: one worker fewer than the machine has cores, capped
+    for memory by the headroom there IS, and fewer still for the browser selection.
+
+    Moved here from `tests/conftest.py` (D291): that file is over the house size bar and may
+    only shrink, and this is the module that owns both worker counts — so the whole decision
+    lives in one place instead of half a decision in a hook.
+
+    xdist's own `auto` is `os.cpu_count()`, which assumes one busy process per worker. A worker
+    here serves a uvicorn in-process on top of the test itself, so `-n 4` on a 4-core box runs
+    more runnable processes than the box has and it thrashes instead of working. Measured on the
+    4-core deployment (2026-08-30, whole suite):
+
+        -n 4 (auto)   574 s   149 % cpu     ← 4 cores available, under 1.5 used
+        -n 3          445 s   179 % cpu     ← 22 % faster AND better utilised
+
+    Fewer workers is faster: the loss is contention, not idleness.
+    """
+    return worker_cap(markexpr, fast_workers(cores - 1))
+
+
 def cdp_endpoint() -> str:
     """The browser to ATTACH to, or "" meaning "launch your own"."""
     return os.environ.get("RSCHED_TEST_CDP", "").strip()

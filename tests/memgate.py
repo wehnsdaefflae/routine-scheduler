@@ -95,6 +95,45 @@ import pytest
 #: routine run included — deliberately conservative, since what must fit is everything at once.
 NEED_MB = {"fast": 3584, "browser": 3584, "serial": 2816}
 
+#: The fast charge DERIVED rather than fixed, because the worker count is now conditional
+#: (D291, the operator 2026-11-14: *"Reduce FAST_WORKERS while a routine run is active, trading
+#: gate wall-clock for coexistence"* — explicitly not the cgroup raise). A constant charge meant
+#: a live run holding the difference REFUSED the gate (exit 3 after up to
+#: `RSCHED_TEST_MEM_WAIT_S`) instead of running it smaller; and because the two fit SOMETIMES,
+#: that refusal read as a flaky failure rather than as a rule.
+#:
+#: Both terms come off the measured table above, not from a new measurement. The seven `fast`
+#: rows hold 3.08-3.29 GB with four workers and the median increment over a bare controller is
+#: 2.25 GB (2.38 GB at its worst), which is the WORKERS: 2.38 GB / 4 = 610 MB each, the ~600 MB
+#: per worker this module already states. The controller term is then what the worst four-worker
+#: hold leaves: 3,370 = 930 + 4×610 reproduces that hold's rounding exactly (3,367 → 3,584 at
+#: 256 MB), which is what `test_four_workers_still_cost_the_3584_mb_the_constant_held` pins.
+#: A fast selection is never charged less than the `serial` entry it contains: the 21 serial
+#: rows were measured holding up to 2,700 MB, more than this arithmetic's controller term, and a
+#: budget below a measured hold is a guard reporting safety it never checked.
+CONTROLLER_HOLD_MB = 930
+PER_WORKER_HOLD_MB = 610
+
+
+def fast_need_mb(workers: int) -> int:
+    """What a fast selection at `workers` xdist workers must be charged, rounded UP to 256 MB.
+
+    Rounded on the MB figure and never on the GB one — 3.29 GB rounds to 3,328 MB, which is
+    BELOW the hold it has to cover, the trap this module's own comment records.
+    """
+    raw = CONTROLLER_HOLD_MB + max(0, int(workers)) * PER_WORKER_HOLD_MB
+    rounded = -(-raw // 256) * 256
+    return max(rounded, NEED_MB["serial"])
+
+
+def need_mb(selection: str, workers: int = 0) -> int:
+    """The charge for one selection — the fast one derived from its worker count, the others
+    their measured constants. One reading, so the wait and the refusal message cannot disagree.
+    """
+    if selection == "fast" and workers:
+        return fast_need_mb(workers)
+    return NEED_MB[selection]
+
 #: What each label is called in the message a refusal prints. "the fast suite" was the only
 #: phrase before, and it was printed for a two-file `-n 0` call too — which read as a memory
 #: leak in the candidate and sent R3376's author looking for one (his point 2).
@@ -103,6 +142,20 @@ SELECTION_PROSE = {
     "browser": "the browser suite",
     "serial": "this serial selection (no xdist workers)",
 }
+
+
+def prose_for(selection: str, workers: int = 0) -> str:
+    """How a refusal or a wait NAMES what it is waiting for — with the worker count it actually
+    settled on (D291).
+
+    "the fast suite at 4 xdist workers" became a lie the moment the count was conditional, and
+    a refusal nobody can read is what sent R3376's author hunting a memory leak in a candidate
+    that had none. So the fast selection's phrase is built from the count, and the others keep
+    their constant prose.
+    """
+    if selection == "fast" and workers:
+        return f"the fast suite at {workers} xdist workers"
+    return SELECTION_PROSE.get(selection, f"the {selection} suite")
 
 
 def selection_for(config, markexpr: str) -> str:
@@ -184,12 +237,35 @@ def should_wait(config) -> bool:
     return not hasattr(config, "workerinput") and hasattr(config, "pluginmanager")
 
 
-def wait_for_memory(selection: str, *, read=available_mb, read_cgroup=cgroup_headroom_mb,
-                    sleep=time.sleep, clock=time.monotonic) -> None:
-    """Block until the host can take `selection` ("fast" | "browser"), or exit the session."""
+def wait_for_config(config, markexpr: str) -> None:
+    """Wait for what THIS session will really start — the selection and its worker COUNT (D291).
+
+    Here rather than in `conftest.py` because the charge is this module's subject and that file
+    is over the house size bar, so it may only shrink: one call there, the reasoning here.
+
+    By the time `pytest_configure` runs, `-n auto` is already the resolved integer (measured on
+    this box, pytest 9.1.1 / xdist 3.8.0 — the same reading `selection_for` prices by), so the
+    count the auto hook settled on against the cgroup headroom is what the wait is charged for.
+    Charging the CEILING instead is what refused a gate that would have run perfectly well
+    beside a live routine run, and refused it in a way that read as a flaky failure.
+    """
+    wait_for_memory(selection_for(config, markexpr),
+                    getattr(config.option, "numprocesses", 0) or 0)
+
+
+def wait_for_memory(selection: str, workers: int = 0, *, read=available_mb,
+                    read_cgroup=cgroup_headroom_mb, sleep=time.sleep,
+                    clock=time.monotonic) -> None:
+    """Block until the host can take `selection` ("fast" | "browser" | "serial"), or exit.
+
+    `workers` is the count xdist ACTUALLY resolved, so the charge follows the selection that
+    will run rather than the ceiling it might have run at (D291). Zero means "price it by the
+    constant", which is what every non-fast selection does.
+    """
     if os.environ.get("RSCHED_TEST_MEM_WAIT", "") == "0":
         return
-    need = NEED_MB[selection]
+    need = need_mb(selection, workers)
+    what = prose_for(selection, workers)
     deadline = clock() + float(os.environ.get("RSCHED_TEST_MEM_WAIT_S") or 1200)
     told = False
     while True:
@@ -200,12 +276,10 @@ def wait_for_memory(selection: str, *, read=available_mb, read_cgroup=cgroup_hea
             return
         name, have = min(short, key=lambda s: s[1])
         if clock() >= deadline:
-            what = SELECTION_PROSE.get(selection, f"the {selection} suite")
             pytest.exit(f"{name}: {have} MB available, {what} needs {need} MB "
                         "— not started, so it cannot push it into an OOM that kills a live "
                         "run (tests/memgate.py). Retry when it is quieter.", returncode=3)
         if not told:
-            what = SELECTION_PROSE.get(selection, f"the {selection} suite")
             sys.stderr.write(f"memgate: {name} has {have} MB, {what} needs {need} "
                              "MB — waiting for it to free memory\n")
             told = True

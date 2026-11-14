@@ -154,10 +154,16 @@ one you are about to touch, not all of them.
   the suite refuses to start on another minor version — a host run on 3.14 once tested an
   interpreter production does not use
 - `uv run pytest -q` — full suite (fast, no network; PARALLEL by default via pytest-xdist
-  `-n auto --dist worksteal` in addopts, `auto` capped at `browsersource.FAST_WORKERS` (4) for
-  memory — pass `-n0` for a serial run / debugging with `-s`). Every session first WAITS until
+  `-n auto --dist worksteal` in addopts, `auto` decided by `browsersource.auto_workers`: cores
+  minus one, capped at `FAST_WORKERS` (4), and capped again by **the cgroup headroom there IS**
+  (D291 — beside a live routine run the stage runs with FEWER workers instead of being refused,
+  which is the trade the operator chose; an idle box still resolves to 4 and still costs 3,584 MB,
+  so no gate pays wall clock for a coexistence nobody needs) — pass `-n0` for a serial run /
+  debugging with `-s`. Every session first WAITS until
   BOTH the HOST's `MemAvailable` and THIS CONTAINER's own cgroup headroom cover its selection
-  (`tests/memgate.py`: 3.25 GB fast, 3.5 GB browser, up to `RSCHED_TEST_MEM_WAIT_S`, then exit 3
+  (`tests/memgate.py`: the fast charge is DERIVED from the worker count — 930 MB controller +
+  610 MB per worker, rounded up to 256 MB, which re-derives the old 3,584 MB at four workers —
+  3.5 GB browser, 2,816 MB serial, up to `RSCHED_TEST_MEM_WAIT_S`, then exit 3
   without starting; `RSCHED_TEST_MEM_WAIT=0` skips it): on 2026-11-05 a gate started on a host
   with ~2 GB free and the global OOM killed a live run. Both budgets are the stages' MEASURED
   hold — `held_peak_bytes`, anon + swap — not an estimate; `NEED_MB`'s comment holds the table. Two conftest
