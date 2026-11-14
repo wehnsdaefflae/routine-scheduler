@@ -28,9 +28,17 @@ def blocked(request: Request,
             days: Annotated[int, Query(ge=1, le=MAX_WINDOW_DAYS)] = DEFAULT_WINDOW_DAYS,
             ) -> dict:
     """Work the fleet owed and did not do in the last `days`: `rows` is one entry per
-    (event, subject) with a count, first/last stamps and the newest detail, newest first;
+    (event, subject) with first/last stamps, the newest detail and its magnitude, newest first;
     `vocabulary` is what each event name means, so the console renders a label it was not
-    compiled with. `total` is 0 on a healthy instance — an empty list is the good reading.
+    compiled with.
+
+    A row's magnitude is in the unit its `kind` names (`readmodels/blocked_kinds`, R3418): an
+    INCIDENT carries `count` (how many times it happened — that many facts), a STANDING
+    condition carries `standing_hours` and NO count, because its writer files one row a day
+    while one fact holds and counting those rows would measure daemon uptime. So the payload
+    carries `incident_total` and `standing_rows` and no single `total`: one number over two
+    units made a nineteen-night backup gap read as nineteen refused fires. Both are 0 on a
+    healthy instance — an empty list is the good reading.
 
     Each row also says WHO can clear it (F796, `readmodels/operator_blocks`): `operator` is
     true for a block nothing inside the system will clear — a stale backup, dropped fires
@@ -38,7 +46,7 @@ def blocked(request: Request,
     — and those rows carry `waiting_on_you`, the sentence naming what only he can do.
     `operator_total` counts them as DISTINCT ROWS, which is the number the header badge
     carries: a pause that ate eight fires of one routine is one thing to go and fix, while
-    `total` keeps counting occurrences for the panel. The judgement is SERVED for the same
+    `incident_total` keeps counting occurrences for the panel. The judgement is SERVED for the same
     reason `vocabulary` is — one place decides it, and the console renders what it was not
     compiled with. A row counts only while its condition still HOLDS (`operator_conditions`):
     one known to be over is `resolved`, keeps its place on the panel and leaves the badge.

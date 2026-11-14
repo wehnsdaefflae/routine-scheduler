@@ -58,7 +58,7 @@ def test_an_exhausted_chain_reaches_the_blocked_fold(tmp_path):
     server = tmp_server(tmp_path, create=False)
     _write(server, [_exhausted("scheduler-builder", "scheduler-builder:20261019-030000", 2)])
     out = blocked_fleet(server)
-    assert out["total"] == 1
+    assert out["incident_total"] == 1
     row = out["rows"][0]
     assert row["event"] == "model_chain_exhausted"
     assert row["subject"] == "scheduler-builder"
@@ -83,7 +83,7 @@ def test_the_2026_10_19_outage_folds_to_one_row_per_routine(tmp_path):
     assert {r["subject"] for r in rows} == {"scheduler-builder", "bahnbonus-seat-position",
                                             "self-audit"}
     assert sum(r["count"] for r in rows) == 5
-    assert out["total"] == 5
+    assert out["incident_total"] == 5
 
 
 def test_a_resumed_run_does_not_erase_a_chain_outage(tmp_path):

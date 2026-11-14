@@ -29,9 +29,14 @@ delete rather than that something is wrong.
 Both are also standing conditions, so the cadence is ONE row a day while the condition holds —
 a deadline a month out would otherwise write a row every 5 s tick. It is latched HERE, on this
 object, and deliberately not in `health_cooldown.REPEAT_COOLDOWN_HOURS`: nothing in
-`BLOCKED_EVENTS` may be named in that table (a test pins it), because the console's blocked-fleet
-fold COUNTS those rows and a suppressed one would make the fleet look less stuck than it is. The
-day latch is `daemon/backup_watch`'s, for a condition of exactly the same shape.
+`BLOCKED_EVENTS` may be named in that table (a test pins it), because the blocked-fleet fold
+reads its magnitude off those rows and a suppressed one would make the fleet look less stuck
+than it is. The day latch is `daemon/backup_watch`'s, for a condition of exactly the same shape.
+
+That latch is also why the fold does not COUNT these rows: both events are classified STANDING
+(`readmodels/blocked_kinds`, R3418), so the console reports how long the deadline has stood
+rather than how many days this daemon happened to be up to say so. A `migration_due_soon` row
+means there is still room to act, which is precisely not something to tally.
 
 That latch also decides the read cadence: the declarations are files in the installed tree, which
 cannot change under a running daemon without a restart, and the window is measured in days — so

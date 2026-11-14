@@ -79,7 +79,9 @@ and two per-run counters, so the FLEET rate was readable nowhere. ONE row per (r
 turn rejected three times is one wrong turn. The EVENT still changes no effort, model or attempt
 budget; the rows are the `(turn, effort-that-sufficed)` corpus the effort ladder rests on.
 Deliberately NOT in `health_cooldown.REPEAT_COOLDOWN_HOURS`: a rate suppressed by the hour is
-not a rate, and nothing the blocked-fleet fold COUNTS may be cooled down.
+not a rate, and nothing the blocked-fleet fold reads a magnitude off may be cooled down. This
+one is an INCIDENT there (`readmodels/blocked_kinds`), so that magnitude is its count: every
+row is a turn that was paid for and produced nothing.
 
 git_lock_cleared: a provably stale `index.lock` was removed before a write (`gitlock`: the commit
 lock was held, no git process worked there, it was empty and older than `gitlock.STALE_AFTER_S`).

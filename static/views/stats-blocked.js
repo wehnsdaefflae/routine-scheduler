@@ -22,6 +22,12 @@
 // Three shapes of `subject`, and the fold's contract on them: a routine slug, a LANE ID (opaque
 // by contract — never parsed, never prefix-read), or empty for an instance-wide event like a
 // scheduler tick or a stale backup. Each gets the link it can have and no link it cannot.
+//
+// TWO UNITS of magnitude, which the server decides per row (`kind`) and this renders without
+// being compiled with any event name, exactly as `means` and `waiting_on_you` already are
+// (R3418 · `readmodels/blocked_kinds.py`): incidents are counted, standing conditions are
+// measured by how long they have stood. The panel's own summary therefore carries two figures
+// and never adds them.
 
 import { api } from "/static/api.js";
 import { el, emptyState, fmtInt } from "/static/util.js";
@@ -31,6 +37,23 @@ const WINDOW_DAYS = 7;          // the fold's own default: a week covers every r
 
 // A stamp as a reader wants it in a table cell: the day and the minute, nothing else.
 const when = (ts) => (ts || "").replace("T", " ").slice(0, 16) || "—";
+
+// TWO UNITS, and the server says which per row (`kind`, R3418 · `readmodels/blocked_kinds`).
+// An INCIDENT happened a number of times — a fire refused twice is two refusals. A STANDING
+// CONDITION is one fact that stayed true, filed by its watcher once a day while it held, so a
+// row count there measures how long the daemon was up: a nineteen-night backup gap rendered as
+// `19` beside `fire_refused: 19` and read as the same magnitude. So this cell renders the unit
+// the row is in and never a bare number, and the two are never added.
+function magnitudeCell(r) {
+  if (r.kind !== "standing") {
+    return el("td", { class: "num", title: "times it happened" }, fmtInt(r.count));
+  }
+  const h = Number(r.standing_hours) || 0;
+  const span = h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} d`;
+  return el("td", { class: "num faint", title: "how long this one condition has stood — its "
+    + "watcher files a row a day while it holds, so there is nothing here to count" },
+  `${span} standing`);
+}
 
 // A routine slug links to its page. A lane id is opaque, so it links to the Routines page where
 // the lanes live rather than to a route built out of its characters. Empty means the instance
@@ -71,7 +94,7 @@ export async function blockedSection() {
 
   const head = el("tr", {},
     el("th", {}, "what did not happen"), el("th", {}, "whose"),
-    el("th", { class: "num" }, "times"), el("th", {}, "first"), el("th", {}, "newest"),
+    el("th", { class: "num" }, "how much"), el("th", {}, "first"), el("th", {}, "newest"),
     el("th", {}, "newest detail"));
   const body = rows.map((r) => el("tr", {},
     // the label is the SERVER's (`means`), which is what the vocabulary payload is for.
@@ -89,12 +112,20 @@ export async function blockedSection() {
       r.resolved ? el("div", { class: "faint small" }, `resolved — ${r.resolved_note}`) : null,
       el("div", { class: "faint small" }, r.means || "")),
     subjectCell(r.subject),
-    el("td", { class: "num" }, fmtInt(r.count)),
+    magnitudeCell(r),
     el("td", { class: "faint small" }, when(r.first_ts)),
     el("td", { class: "faint small" }, when(r.last_ts)),
     el("td", { class: "small" }, r.detail || "")));
 
+  // Two figures, never one: occurrences of things that happened, and conditions standing. One
+  // number over both units is the defect R3418 removed — see `magnitudeCell`.
+  const counted = `${fmtInt(d.incident_total)} ${d.incident_total === 1 ? "time" : "times"} `
+    + "something due did not happen";
+  const standing = d.standing_rows
+    ? ` · ${fmtInt(d.standing_rows)} ${d.standing_rows === 1 ? "condition" : "conditions"} `
+      + "standing"
+    : "";
   return statSection("Blocked work",
-    [...sub, el("div", {}, `${fmtInt(d.total)} in window · zero is the good reading`)],
+    [...sub, el("div", {}, `${counted}${standing} · zero is the good reading`)],
     head, foldRows(body, 8, "rows"));
 }
