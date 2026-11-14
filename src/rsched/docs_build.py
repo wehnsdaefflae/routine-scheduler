@@ -126,7 +126,11 @@ GUIDE_ORDER = ["getting-started", "examples", "authoring", "conversations", "pla
                "oauth-connections", "remote-machines", "browser-sessions", "desktop-sessions",
                "darknet", "usenet",
                "output-compression", "revise-recipe",
-               "prompt-anatomy", "architecture", "designs"]
+               # `limits` sits beside `designs` because they are deliberate opposites:
+               # designs.md holds what is DECIDED and unbuilt (an order, deleted when it ships),
+               # limits.md what is KNOWN, UNDECIDED and unbuilt (R3421). A reader who finds one
+               # should find the other.
+               "prompt-anatomy", "architecture", "designs", "limits"]
 
 
 def docs_out_dir() -> Path:
