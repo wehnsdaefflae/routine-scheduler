@@ -24,6 +24,13 @@ that nothing on the instance would ever bring back:
 Daily, like the other standing-condition watches (daemon/marker_watch.py): the conditions are
 measured in days, and the reads — every routine's obligations, the report index — would be waste
 on a 5 s tick. Never raises into the tick.
+
+So BOTH blocked-work events here are STANDING CONDITIONS, and the fold is told so rather than
+inferring it (`readmodels/blocked_kinds`, R3418): one row a day while one item stays unmet means
+the row count measures how many days the daemon was up, not how much is owed — an obligation open
+eleven weeks on an instance that restarts often would read SMALLER than one open a fortnight on
+one that does not. The fold reports these rows' SPAN and no count. The cadence here is unchanged;
+what is new is that the unit is declared where the latch that creates it lives.
 """
 
 from __future__ import annotations
