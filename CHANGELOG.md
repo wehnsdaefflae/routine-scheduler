@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.548.0] — 2026-11-14
+
+### The pre-mirror reminder DELETIONS reach the stream — D152 step 4, goal b4
+
+- **Where the campaign stands**, measured over all 31 live routines with
+  `hooks/reminderproj.drift`: **122 drifting ids in 21 routines before 0.542.0 → 27 in 9 after**
+  (95 store-only → **0**, 23 stream-only, 4 differs). The dangerous class is empty: a
+  stream-served read would have LOST 95 live patterns, and 0.542.0's backfill closed that on the
+  real instance.
+- **This release takes the 23 `stream-only` ids**, and corrects what 0.542.0's own module said
+  about them. They are reminders a routine DELETED before `remind_write.remove` learned to mirror
+  the deletion — so the stream still implies a definition the store has dropped. "Correct
+  history" was right about the history and wrong about the consequence: the campaign ends with
+  the store SERVED from the stream, and a fold that cannot see those deletions would **re-raise
+  23 patterns their own routines removed**. A reminder decides whether an action is HELD.
+- **Not a deletion from an append-only stream.** `migrate_premirror_deletions` appends the row
+  the write path never wrote — one `disposition: remove` per id, which
+  `reminderproj.REMOVING` already subtracts. The definition stays; the removal is a later fact
+  about the same id, and both are history in the order they happened.
+- **Proven against the live stores through the PURE finder, with no write and no daemon boot**:
+  it records exactly 23 deletions across 8 routines (`scheduler-builder` 7, `llmsectest-weekday`
+  4, `self-audit` 4, …) and leaves exactly 4 ids drifting. A test asserts the RELATION — what is
+  left is only the `differs` class — so a new drift of a different class fails it while a
+  reminder legitimately deleted tomorrow does not.
+- **The 4 `differs` are deliberately left and NAMED in the record**: three lack `created_run`
+  (the mirror era dropped it) and `rem-20261026-233255-1` disagrees on `owner` —
+  `vodafone-outage-claims` on the stream against `self-audit` in the store. `owner` decides who
+  may REMOVE a hook, so a migration may not settle it by guessing.
+- A foreign hook is recorded origin=owner, addressee=holder, the same correction the backfill
+  needed: passing the holder as both would turn a drift into a different drift while appearing
+  to fix it.
+- **Known limit: 4 ids still drift, and one of them is a question for the operator (which side
+  is authoritative for `owner`), so the comparator does not read EMPTY yet.** Still open: D152
+  step 4 / goal b4.
+
 ## [0.547.0] — 2026-11-14
 
 ### The seven attention classes are a FOLD, and who decides a row's class is answered — D289

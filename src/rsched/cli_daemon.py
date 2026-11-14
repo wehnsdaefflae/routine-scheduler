@@ -126,9 +126,15 @@ def cmd_daemon(_args) -> int:
     # 21 of 31 routines exist in a store with no hook at all, every one written before the
     # mirror landed (newest `rem-20261018-…`, mirror 2026-10-19) — so the class is closed and a
     # backfill empties it. The 23 stream-only ids are deletions, not gaps, and are deliberately
-    # left: resurrecting a reminder its routine removed would change what HOLDS a run.
+    # left HERE: resurrecting a reminder its routine removed would change what HOLDS a run.
     from .migrate_premirror_reminders import run_migration as backfill_premirror_reminders
     backfill_premirror_reminders(server)
+    # MIGRATION(expires=2027-02-28): …and the 23 stream-only ids get the row the write path
+    # never wrote — `disposition: remove`, which the projection subtracts. NOT a deletion from
+    # an append-only stream: the definition stays and the removal is a later fact about the
+    # same id. Measured after 0.542.0: 27 drifting ids in 9 routines, 23 of them this class.
+    from .migrate_premirror_deletions import run_migration as record_premirror_deletions
+    record_premirror_deletions(server)
     # MIGRATION(expires=2026-12-31): every routine's assist tally grows from an int per key to
     # the stat fields a reminder's keeps, so the four outcome labels D239 wired have somewhere
     # to go and the fires already counted stay the denominator they are read against
