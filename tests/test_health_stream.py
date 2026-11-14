@@ -54,7 +54,7 @@ def test_a_finish_gate_that_did_not_run_reaches_the_blocked_fold(tmp_path):
                      "run_id": "uir:20261016-120000", "ts": _ago(1),
                      "detail": "AttributeError in a guard"}])
     out = blocked_fleet(server)
-    assert out["total"] == 1
+    assert out["incident_total"] == 1
     assert out["rows"][0]["event"] == "finish_gate_failed"
     assert out["rows"][0]["subject"] == "uir"
     assert "unchecked" in out["rows"][0]["means"]
@@ -64,7 +64,7 @@ def test_missing_stream_is_empty_not_an_error(tmp_path):
     server = tmp_server(tmp_path, create=False)
     assert health_records(server.routines_home) == []
     out = blocked_fleet(server)
-    assert out["total"] == 0 and out["rows"] == []
+    assert out["incident_total"] == 0 and out["rows"] == []
     assert set(out["vocabulary"]) == set(BLOCKED_EVENTS)
 
 
@@ -92,7 +92,7 @@ def test_rows_group_by_event_and_subject_newest_first(tmp_path):
         {"event": "run_failed", "routine": "alpha", "run_id": "x", "ts": _ago(1)},
     ])
     out = blocked_fleet(server)
-    assert out["total"] == 3
+    assert out["incident_total"] == 3
     assert [(r["event"], r["subject"], r["count"]) for r in out["rows"]] == [
         ("trigger_capped", "beta", 1), ("fire_refused", "alpha", 2)]
     alpha = out["rows"][1]
@@ -108,8 +108,8 @@ def test_window_excludes_older_events(tmp_path):
          "ts": _ago(24 * 30), "detail": "old"},
         {"event": "lane_fire_refused", "routine": "grp-1", "run_id": "", "ts": _ago(5)},
     ])
-    assert blocked_fleet(server, days=7)["total"] == 1
-    assert blocked_fleet(server, days=MAX_WINDOW_DAYS)["total"] == 2
+    assert blocked_fleet(server, days=7)["incident_total"] == 1
+    assert blocked_fleet(server, days=MAX_WINDOW_DAYS)["incident_total"] == 2
 
 
 def _at(delta, offset_hours):
@@ -165,7 +165,7 @@ def test_the_window_moves_with_the_clock_while_the_file_stands_still(tmp_path, m
                      "ts": _at(-timedelta(days=6), 2)},
                     {"event": "budget_exhausted", "routine": "beta", "run_id": "b1",
                      "ts": _at(-timedelta(days=6), 2)}])
-    assert blocked_fleet(server)["total"] == 1
+    assert blocked_fleet(server)["incident_total"] == 1
     assert budget_endings(server, "beta")["budget_exhausted"] == 1
 
     class TwoDaysLater(datetime):
@@ -174,7 +174,7 @@ def test_the_window_moves_with_the_clock_while_the_file_stands_still(tmp_path, m
             return datetime.now(tz) + timedelta(days=2)
 
     monkeypatch.setattr(health_stream, "datetime", TwoDaysLater)
-    assert blocked_fleet(server)["total"] == 0
+    assert blocked_fleet(server)["incident_total"] == 0
     assert budget_endings(server, "beta")["budget_exhausted"] == 0
 
 
@@ -201,11 +201,11 @@ def test_fold_reflects_a_new_append(tmp_path):
     a process restart — this rides a bus-event refresh path."""
     server = tmp_server(tmp_path, create=False)
     _write(server, [])
-    assert blocked_fleet(server)["total"] == 0
+    assert blocked_fleet(server)["incident_total"] == 0
     log_health_event(server.routines_home, "scheduler_tick_error", routine="", run_id="",
                      detail="boom")
     out = blocked_fleet(server)
-    assert out["total"] == 1 and out["rows"][0]["subject"] == ""
+    assert out["incident_total"] == 1 and out["rows"][0]["subject"] == ""
 
 
 def test_route_serves_the_blocked_fold(api_client):
@@ -221,7 +221,7 @@ def test_route_serves_the_blocked_fold(api_client):
     r = c.get("/api/health/blocked")
     assert r.status_code == 200
     body = r.json()
-    assert body["window_days"] == 7 and body["total"] == 1
+    assert body["window_days"] == 7 and body["incident_total"] == 1
     row = body["rows"][0]
     assert row["event"] == "lane_chain_member_skipped" and row["subject"] == "ghost"
     assert row["detail"] == "lane grp-1 continued"
