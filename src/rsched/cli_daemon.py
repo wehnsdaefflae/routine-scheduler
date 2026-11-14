@@ -135,6 +135,13 @@ def cmd_daemon(_args) -> int:
     # same id. Measured after 0.542.0: 27 drifting ids in 9 routines, 23 of them this class.
     from .migrate_premirror_deletions import run_migration as record_premirror_deletions
     record_premirror_deletions(server)
+    # MIGRATION(expires=2027-02-28): …and the LAST class, the 4 ids where the two definitions
+    # disagree, is settled by the STORE — the operator's ruling of 2026-11-14, "the holder's own
+    # record wins". Three lack `created_run` (the mirror era dropped it) and one disagrees on
+    # `owner`, which decides who may remove a hook. After this the comparator reads EMPTY, which
+    # is D152 step 4's precondition for serving the store from the stream.
+    from .migrate_store_wins import run_migration as settle_store_wins
+    settle_store_wins(server)
     # MIGRATION(expires=2026-12-31): every routine's assist tally grows from an int per key to
     # the stat fields a reminder's keeps, so the four outcome labels D239 wired have somewhere
     # to go and the fires already counted stay the denominator they are read against

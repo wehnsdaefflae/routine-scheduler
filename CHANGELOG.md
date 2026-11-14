@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.549.0] — 2026-11-14
+
+### A reminder definition disagreement is settled by the STORE — his ruling, and the comparator reaches EMPTY (goal b9, D152 step 4)
+
+- **The operator, 2026-11-14**, answering this run's question: *"The STORE is authoritative
+  (self-audit owns it) — the holder's own record wins"*, over "the stream wins", "delete the
+  reminder" and "leave it drifting as a permanent exception".
+- **What he settled.** `rem-20261026-233255-1` read `owner: vodafone-outage-claims` on the hook
+  stream and `owner: self-audit` in the store, and `owner` decides who may REMOVE a hook — so a
+  migration guessing it would hand one routine power over another routine's reminder. The other
+  three `differs` ids lack `created_run`, which the mirror era dropped.
+- **Why his ruling is also the right general rule**, which is what makes it safe for all four:
+  the store is where the HOLDING routine writes, through `remind_write.persist` — the one path a
+  routine's own act takes — and the stream's row is a mirror of that act. Every disagreement
+  measured was the mirror being poorer, never the store. Measured across all 195 live reminders,
+  194 store `owner: ""` (self-held) and exactly one names another routine: the id he ruled on.
+- **`migrate_store_wins` appends the store's own record**; the poorer row stays as history and
+  the fold (last row wins, by id) reads the agreement. That is the opposite of
+  `migrate_mirror_hooks`, which rewrote `reports.jsonl` in place — because reports fold
+  FIRST-wins and reminders fold LAST-wins, so here an append is both sufficient and honest.
+- **THE CAMPAIGN'S PRECONDITION IS NOW REACHABLE, proven on the live stores through the pure
+  finders with no write:** of 27 drifting ids, 23 are accounted for as deletions (0.548.0) and 4
+  as disagreements (this release) — **0 unaccounted**. A test asserts that relation against the
+  live stores, so a class nobody accounts for fails rather than hides.
+- A foreign hook keeps its HOLDER as addressee and takes the store's OWNER as origin: recording
+  it as a self-hook would hide it from its holder and give the wrong routine the power to remove
+  it.
+- **Known limit: the two migrations run at daemon BOOT, so the comparator reads EMPTY only after
+  the next restart — and nothing yet SERVES the reminder store from the stream.** Still open:
+  D152 step 4 / goal b4.
+
 ## [0.548.0] — 2026-11-14
 
 ### The pre-mirror reminder DELETIONS reach the stream — D152 step 4, goal b4
