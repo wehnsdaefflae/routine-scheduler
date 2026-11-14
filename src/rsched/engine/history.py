@@ -259,4 +259,43 @@ def prior_counters(status: dict) -> dict:
         val = status.get(fld)
         if isinstance(val, int) and not isinstance(val, bool):
             out[fld] = val
+    if legs := prior_legs(status):
+        out["prior_legs"] = legs
     return out
+
+
+#: How many prior legs' windows status.json keeps. A resume chain is bounded at three windows
+#: (`turnwindow.TOTAL_TURN_MULTIPLE`), so four is the whole chain plus the one that re-armed it;
+#: a record that grew without bound would be the next thing to go wrong in this file.
+MAX_PRIOR_LEGS = 4
+
+
+def prior_legs(status: dict) -> list[dict]:
+    """The windows of every leg BEFORE the one about to boot, oldest first.
+
+    A leg's own `write_status` replaces the whole `budgets` block, so the leg that follows a
+    finish erases the ceiling and the remainder the previous leg ran under. The narrow revise
+    leg (`engine/reviseleg.py`) makes that routine: it resumes with `max_turns = 12`, and the
+    task leg's `max_turns`, `window_turns` and `turns_left` are then gone from the only file
+    that held them — leaving `base_turn`, which happens to carry the task leg's final
+    cumulative turn, as the sole trace. Measured on 2026-11-13 (`config-optimizer`'s R3393, via
+    `scheduler-builder`'s R3404): 20 leg-overwritten run dirs across 8 routines, with
+    `drawerrr-irreversible-actions` 6 of 6 — a consumer that filters legs out samples nothing,
+    and one that does not read a 12-turn leg as a ceiling hit (that routine's
+    `20261110-140149` was reported as "154/150", a ceiling hit that never happened).
+
+    So the window is CARRIED instead of recomputed: each leg's block is appended as it is
+    displaced, the way `prior_counters` keeps the util histogram. A status file written before
+    this existed carries no legs and gets none — the loss is not reconstructable from the
+    file, only from `base_turn`, which is why it is recorded going forward rather than
+    back-filled.
+    """
+    block = status.get("budgets")
+    if not isinstance(block, dict):
+        return []
+    kept = [leg for leg in block.get("legs", []) if isinstance(leg, dict)]
+    window = {k: block.get(k) for k in ("base_turn", "window_turns", "max_turns",
+                                        "max_total_turns", "total_turns", "turns_left")}
+    if all(v is None for v in window.values()):
+        return kept[-MAX_PRIOR_LEGS:]
+    return [*kept, window][-MAX_PRIOR_LEGS:]

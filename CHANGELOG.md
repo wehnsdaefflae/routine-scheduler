@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.540.3] — 2026-11-14
+
+### A revise leg no longer destroys the task leg's turn record (F895)
+
+- **A narrow revise leg resumes with `max_turns = 12` and `write_status` replaces the whole
+  `budgets` block**, so the task leg's `max_turns`, `window_turns` and `turns_left` were gone
+  from the only file that held them. The sole trace was `base_turn`, which happens to carry the
+  task leg's final cumulative turn — a number that looks like an answer and is not one.
+- **Measured** (`config-optimizer`'s R3393, folded in by `scheduler-builder`'s R3404): **20
+  leg-overwritten run dirs across 8 routines**. `drawerrr-irreversible-actions` has 6 of 6, so a
+  consumer that filters legs out samples nothing and the routine is invisible; recovered from
+  `base_turn`, its task legs ran 142/19/137/19/145/149 against a 150 ceiling.
+  `moltbook-heartbeat` lost its 136/140 run while 127/133/132 survived — hiding exactly the
+  window a ceiling question turns on. The opposite error was equally available and happened:
+  `drawerrr-irreversible-actions:20261110-140149` was reported as a "GENUINE single-window
+  ceiling hit, 154/150" when it was a 12-turn leg.
+- **The window is CARRIED, not recomputed.** `history.prior_legs` reads the displaced block and
+  `prior_counters` reseeds it as `prior_legs` — the mechanism that already keeps the util
+  histogram and the integer counters cumulative across legs (F131/F132/F140) — and
+  `turnwindow.status_budgets` emits it as `budgets.legs`, oldest first. A reader asking what
+  ceiling the WORK ran under reads `legs[0]`; `max_turns` keeps meaning this leg's window, so
+  every existing consumer reads exactly what it did before.
+- A run that never resumed carries **no** `legs` key, so an ordinary run's status.json is
+  byte-identical to before. The record is capped at `history.MAX_PRIOR_LEGS = 4` — the derived
+  resume chain is three windows (`TOTAL_TURN_MULTIPLE`) plus the leg that re-armed it.
+- **Not back-filled, and deliberately so:** the overwritten dirs no longer hold the figures, and
+  reconstructing them from `base_turn` would invent a `turns_left` nobody measured. The 20 known
+  dirs stay unreadable; everything from here is recorded.
+- Nothing was added to `engine/run_context.py`: it sits at its 587-line size pin, so
+  `budget_block` reads the carried legs off the ctx with `getattr`, as `reviseleg.active` does.
+
 ## [0.540.2] — 2026-11-14
 
 ### `process_overhead_high` stops flagging short correct runs (F894)

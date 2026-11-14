@@ -84,15 +84,22 @@ def left(amount: float, limit: float, window_limit: float) -> str:
 
 def status_budgets(*, turn: int, base_turn: int, max_turns: int, max_total_turns: int,
                    turns_left: float | None, wall_left_min: float | None,
-                   spent: dict | None) -> dict:
+                   spent: dict | None, legs: list[dict] | None = None) -> dict:
     """status.json's `budgets` block — the window stated explicitly beside what is left.
 
     `turns_left` stays exactly what it was (this WINDOW's remainder, the ledger's own
     reading). What is new is everything needed to read it: the `base_turn` a resume re-based
     at, this window's own count, and both ceilings — so no reader has to find the routine's
     config to make 348 and 179 agree.
+
+    `legs` carries the windows of the legs BEFORE this one (`history.prior_legs`), because this
+    block REPLACES the file's previous one: without it, a 12-turn revise leg erases the ceiling
+    and remainder its task leg ran under, and `base_turn` is the only trace left (F895).
     """
     return {
+        # the prior legs' windows, oldest first — [] for a run that never resumed. A reader
+        # asking "what ceiling did the work run under?" reads legs[0], never this block.
+        **({"legs": [dict(leg) for leg in legs]} if legs else {}),
         "turns_left": None if turns_left is None else int(turns_left),
         # the cumulative count status.json's own `turn` carries, named here as what it is
         "total_turns": int(turn),
@@ -122,7 +129,11 @@ def budget_block(ctx) -> dict:
         turn=ctx.turn, base_turn=ctx.budget_base_turn, max_turns=ctx.budgets.max_turns,
         max_total_turns=ctx.budgets.max_total_turns,
         turns_left=ledger.remaining("turns", meter),
-        wall_left_min=ledger.remaining("wall_clock", meter), spent=ledger.spent(meter))
+        wall_left_min=ledger.remaining("wall_clock", meter), spent=ledger.spent(meter),
+        # the prior legs' windows, reseeded onto the ctx at boot (history.prior_legs). getattr:
+        # a loop double and a fresh run never set it, and the attribute lives nowhere else —
+        # run_context.py is AT its size pin, and one more field there would breach it.
+        legs=getattr(ctx, "prior_legs", None))
 
 
 def budget_left(block: dict, *, wall_ceiling_min: int, token_ceiling: int,

@@ -194,3 +194,30 @@ def test_the_fold_reads_a_revise_row_as_spend_only():
     assert run["status"] == "partial" and run["quality"] == {"q": 1}
     assert run["outcome_measures"] == {"values": {"m": 3}}
     assert run["turns"] == 12 and run["volume"] == 105 and run["tokens"] == 11
+
+
+def test_the_leg_keeps_the_task_legs_turn_window_in_status_json(make_routine, scripted):
+    """F895 (`config-optimizer`'s R3393, folded in by `scheduler-builder`'s R3404): the leg's
+    own `write_status` REPLACES the budget block, so the task leg's ceiling and remainder were
+    gone from the only file that held them and `base_turn` — its final cumulative turn — was the
+    sole trace. Measured 2026-11-13: 20 leg-overwritten run dirs across 8 routines,
+    `drawerrr-irreversible-actions` 6 of 6, and a 12-turn leg once read as a 154/150 ceiling hit
+    that never happened. The window is now CARRIED, not recomputed.
+    """
+    d = make_routine(slug="legwin", budgets={"max_turns": 150})
+    server = server_for(d)
+    scripted([_probe(), finish()])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+    task = read_json(run_dir / "status.json")["budgets"]
+    assert (task["max_turns"], task["base_turn"]) == (150, 0)
+    assert "legs" not in task                       # a run that never resumed carries none
+
+    _arm(d, run_dir)
+    scripted([_read("main.md"), finish()])
+    assert run_routine(d, server, run_ts=TS, resume_from=TS)[0] == "ok"
+
+    leg = read_json(run_dir / "status.json")["budgets"]
+    assert leg["max_turns"] == reviseleg.LEG_TURNS          # the leg's own window, as before
+    assert [(x["max_turns"], x["window_turns"], x["turns_left"]) for x in leg["legs"]] == [
+        (150, task["window_turns"], task["turns_left"])]    # the task leg's, not recomputed
