@@ -15,6 +15,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.547.0] — 2026-11-14
+
+### The seven attention classes are a FOLD, and who decides a row's class is answered — D289
+
+- **The operator, 2026-11-12** (R3365, quoted whole): operator-facing text *"must focus on things
+  that might require my intervention. this includes (a) context for things i might need to decide
+  (b) unexpected events … (c) any form of outgoing or incoming communication, especially personal
+  (d) reached goals (e) blocks that the system cannot resolve itself (f) methodological or
+  strategic pivots (g) confirmed dead-ends"*. **His answer, 2026-11-14:** *"Lead with the seven
+  classes as a labelled block at the top, narrative below it"*.
+- **The open sub-question he handed over is answered, and MEASURED rather than chosen.** Does the
+  engine ask a run to MARK its finding's class, or does the renderer classify prose? Measured on
+  this instance: (a) 529 of 623 question records carry explicit `options`; (b) 2,618 health rows
+  across 36 event types; (d) 146 `status.json` files carry goals with `met` and evidence; (e)
+  `BLOCKED_EVENTS` plus a `partial` finish, which by its own contract IS a blocker the run could
+  not clear; (c) partial — a reserved outward util is gated but no stream records that a message
+  went out; (f) and (g) recorded nowhere at all.
+- **So it is NEITHER option as posed:** `readmodels/attention.py` DERIVES the four classes the
+  engine already records and accepts a run's MARK only for the three it cannot. Classifying a
+  derived class from prose would replace a fact with a guess that could disagree with
+  `operator_blocks` invisibly; letting a run mark one would make the label a run's opinion of its
+  own work, on the very surfaces that exist because its prose does not say what needs a person. A
+  mark in a derived class is **dropped**, with the specimen pinned (a run marking its own goal as
+  reached).
+- **Every row is self-contained**, which is his requirement 1 (*"worst case scenario is content i
+  need to know about being referenced only by an identifier"*): an ask carries its options, a met
+  goal its evidence, a partial finish its own summary — never just an id.
+- **A repeated event is ONE row with a count**, found by running the fold over all 715 live runs:
+  266 of 846 class-(b) rows were the same event filed again inside one run and one run produced
+  30 rows. Collapsed, the fleet reads 747 rows over 379 runs, **median 1 per run, max 10** — a
+  block that can lead a surface instead of burying it.
+- **A blocking ask is both (a) and (e)**: he must decide AND the run cannot proceed. His list is
+  not a partition, and forcing a row into one class would lose half its meaning.
+- Order is his order, (a) through (g). The fold never raises: a missing, unreadable or
+  half-written status reads as nothing to report.
+- **Known limit: nothing renders the labelled block yet, and class (c) has no derived source —
+  an outward act is gated but never recorded, so communication relies on a run marking it.**
+  Still open: D289.
+
 ## [0.546.0] — 2026-11-14
 
 ### A decision model answers the same question beside the chat model, and both are recorded — D287 step 1
