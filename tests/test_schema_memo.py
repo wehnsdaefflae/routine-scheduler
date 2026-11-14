@@ -45,7 +45,11 @@ READ = {"say": "Reading the recipe.", "kind": "read_file", "path": "main.md"}
 NO_SAY = {"kind": "read_file", "path": "main.md"}
 
 #: A DIFFERENT rejection — an unknown kind, the `bahnbonus-seat-position` specimen's shape.
-BAD_KIND = {"say": "Searching the web.", "kind": "websearch"}
+# `immich` since 0.545.0: `websearch` was this specimen until D290 made it a real kind, and the
+# premise needs a kind the enum does NOT carry — the rejection then names `kind`, which is a bare
+# enum with no description, so `field_help` has nothing to quote. A one-word util name is the
+# measured shape (12 of 23 such rejections in 30 days) and `immich` is one that stayed a util.
+BAD_KIND = {"say": "Reading the photo library.", "kind": "immich"}
 
 
 def _run_home(make_routine, scripted, replies, *, slug="memor", ts=TS):

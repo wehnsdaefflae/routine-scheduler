@@ -58,8 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `engine/kindexamples.py` holds `KIND_EXAMPLES` (moved out of `actions.py`, at its ceiling, and
   re-exported); `transcript.js`'s `BRIEF_FIELD` copy is regenerated from the Python map.
 - **Known limit: the two utils keep their catalog entries and nothing migrated to the new
-  spelling** — the aliases are additive, so every existing call keeps working unchanged. Nothing
-  further is owed: D290 ships complete.
+  spelling.** Accepted permanently: the aliases are ADDITIVE by design — the kind rewrites into
+  the util call, so both spellings are the same call and every existing one keeps working. A
+  migration would change prose that is already correct, and removing the catalog entries would
+  hide the usage a bare alias cannot express (the flags, the verbs).
 
 ## [0.544.0] — 2026-11-14
 
