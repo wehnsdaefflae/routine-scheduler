@@ -15,6 +15,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.544.0] — 2026-11-14
+
+### A util can learn which DECISION models its routine reaches — D288 increment 1 (goal b6)
+
+- **The operator, 2026-11-14: "Convert fully"** — `llm` and `decide` stop being action kinds and
+  become ONE util with both capabilities (goal b13's constraint: two capabilities or none).
+- **The asymmetry this closes is why `decide` could only ever be an ACTION.**
+  `endpoints/routine_env` has injected a routine's INFERENCE endpoints into a declaring util's
+  environment since it shipped (`RSCHED_LLM` / `RSCHED_LLM_KEYS`); the DECISION catalog had **no
+  such injection at all**. The engine knew which decision model a routine reaches and a util did
+  not, so a util could only hardcode one — which for a routine configured to a LOCAL model is not
+  a cost problem but a privacy breach, the argument the inference half already makes.
+- **`RSCHED_DECISIONS`** carries every configured decision endpoint and model, the role map, and
+  **each endpoint's PROTOCOL**; **`RSCHED_DECISIONS_KEYS`** carries keys for the ROLE endpoints
+  only — a blob of every endpoint key would route around the operator's own `secret:<NAME>`
+  decision. Both live beside the inference pair in one module, deliberately: they are one design,
+  and a reader who has understood one has understood the other.
+- **The role map resolves as the engine does** — the routine's own binding first, then the
+  instance default (`decision_model` / `decision_media_model`), which is
+  `pick_decision_model`'s order. A util told only about the routine's bindings would reach a
+  *different* model than the engine does for the same routine: a second implementation rather
+  than a second front door. A role naming a model the catalog lost reads as absent, never
+  substituted.
+- **The protocol rides the metadata, and that is F888's lesson rather than decoration:** that
+  defect cost nine days because both documented ways of passing structured evidence were dead on
+  the default decision model and the 0.535.2 fix landed in the `openai` adapter, while all three
+  of this instance's models speak `systemone`. A util that cannot see its protocol can only
+  rediscover it by failing.
+- `engine/exec_env._decision_env` folds it into `_extra_secrets`, reading with
+  `getattr`/`hasattr` and failing open for the reason that module documents: it runs before EVERY
+  util call, including the vision fallback, whose callers pass context stand-ins.
+- **Behaviour is unchanged for everything that exists today**: only a util that DECLARES the vars
+  receives them, and none does yet.
+- **Known limit: the `model` util itself and the removal of the two action kinds are NOT built**
+  — this increment is the injection they both need. Still open: D288.
+
 ## [0.543.0] — 2026-11-14
 
 ### A ledger decision's per-option proof reaches the Decisions page (R3417, D220's last step)
