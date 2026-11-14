@@ -310,8 +310,14 @@ def test_the_keys_var_is_credential_shaped_so_the_authoring_gate_forces_its_decl
 
 
 # --------------------------------------------------------------------------- the surface -----
-def test_llm_env_vars_are_the_two_names():
-    assert routine_env.llm_env_vars() == {"RSCHED_LLM", "RSCHED_LLM_KEYS"}
+def test_llm_env_vars_are_the_engine_injected_endpoint_names():
+    """The INFERENCE pair plus the DECISION pair (D288): one set, because they are one fact —
+    env vars assembled from the instance's `endpoints:` / `decision_endpoints:` config rather
+    than set by the operator, so the Settings "needed secrets" list must not prompt for any of
+    them. `tests/test_decision_env.py` pins what the decision half carries.
+    """
+    assert routine_env.llm_env_vars() == {"RSCHED_LLM", "RSCHED_LLM_KEYS",
+                                          "RSCHED_DECISIONS", "RSCHED_DECISIONS_KEYS"}
 
 
 @pytest.mark.usefixtures("empty_store")

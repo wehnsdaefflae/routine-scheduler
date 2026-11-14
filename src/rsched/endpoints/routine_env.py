@@ -61,12 +61,22 @@ LLM_KEYS_VAR = "RSCHED_LLM_KEYS"  # env var NAME (carries the per-endpoint api k
 ROLES = ("main", "tool_call", "uncensored")
 
 
+#: The same two vars for the DECISION catalog (D288, goal b6). A util reaching a decision
+#: endpoint had no way to learn which one its routine runs on — the inference half has had that
+#: since this module shipped, and the asymmetry is why `decide` could only ever be an ACTION:
+#: the engine knew the catalog and a util did not. One `model` util with both capabilities needs
+#: both injections, so they live here, beside each other, deliberately: a reader who has
+#: understood one has understood the other, and they cannot drift into two designs.
+DECISIONS_VAR = "RSCHED_DECISIONS"            # non-secret catalog metadata
+DECISIONS_KEYS_VAR = "RSCHED_DECISIONS_KEYS"  # the per-endpoint api keys
+
+
 def llm_env_vars() -> set[str]:
-    """The engine-injected endpoint env vars — these come from the instance's `endpoints:`
-    config, not from the user's secret store, so the Settings 'needed secrets' list must not
-    prompt for them as store secrets.
+    """The engine-injected endpoint env vars — these come from the instance's `endpoints:` and
+    `decision_endpoints:` config, not from the user's secret store, so the Settings 'needed
+    secrets' list must not prompt for them as store secrets.
     """
-    return {LLM_VAR, LLM_KEYS_VAR}
+    return {LLM_VAR, LLM_KEYS_VAR, DECISIONS_VAR, DECISIONS_KEYS_VAR}
 
 
 def endpoint_key(cfg: EndpointConfig) -> str:
@@ -142,3 +152,92 @@ def llm_env_for_routine(slug: str, models: dict[str, str],
     meta = {"routine": slug, "default": "tool_call", "roles": roles, "endpoints": endpoints}
     return {LLM_VAR: json.dumps(meta, separators=(",", ":")),
             LLM_KEYS_VAR: json.dumps(keys, separators=(",", ":"))}
+
+
+def decision_roles(models: dict[str, str], server: ServerConfig) -> dict[str, dict | None]:
+    """Each DECISION role (`config.base.DECISION_ROLES`) → the catalog entry it resolves to, or
+    None — the decision-catalog twin of `role_endpoints`.
+
+    An unset role falls back to the INSTANCE default (`decision_model` /
+    `decision_media_model`), which is what `endpoints/decisions.pick_decision_model` does when a
+    call names no model: a util told only about the routine's own bindings would reach a
+    different model than the engine does for the same routine, which is the kind of divergence
+    that makes a util a second implementation rather than a second front door.
+
+    A role naming a model the catalog no longer carries is a warning and reads as None — never
+    substituted, for the reason `role_endpoints` gives: a default going missing must be visible.
+    """
+    from ..config.base import DECISION_ROLES
+
+    out: dict[str, dict | None] = {}
+    defaults = {"decision": server.decision_model,
+                "decision_media": server.decision_media_model}
+    for role in DECISION_ROLES:
+        name = (models or {}).get(role) or defaults.get(role) or ""
+        if not name:
+            out[role] = None
+            continue
+        mc = (server.decision_models or {}).get(name)
+        if mc is None or mc.endpoint not in (server.decision_endpoints or {}):
+            log.warning("decision role %r names model %r, which resolves to no configured "
+                        "decision endpoint", role, name)
+            out[role] = None
+            continue
+        out[role] = {"catalog": name, "endpoint": mc.endpoint, "model": mc.model,
+                     "protocol": server.decision_endpoints[mc.endpoint].protocol}
+    return out
+
+
+def decision_env_for_routine(slug: str, models: dict[str, str],
+                             server: ServerConfig) -> dict[str, str]:
+    """This routine's effective DECISION catalog → the env vars its utils receive (D288).
+
+    `RSCHED_DECISIONS` carries every configured decision endpoint and model plus the role map,
+    so a util can tell "this instance has no media-capable decision model" from "I was told
+    nothing". `RSCHED_DECISIONS_KEYS` carries keys for the ROLE endpoints only, exactly as the
+    inference half does: a blob of every endpoint key would route around the operator's own
+    `secret:<NAME>` decision, which is not a widening a run gets to make for him.
+
+    **The PROTOCOL rides the metadata, and that is not decoration.** F888 cost nine days because
+    the two documented ways of passing structured evidence were both dead on the default decision
+    model, and the 0.535.2 fix landed in the `openai` adapter while all three of this instance's
+    models speak `systemone`. A util that cannot see which protocol it is talking to can only
+    rediscover that by failing; told it, it can send the right wire body or refuse clearly.
+    """
+    roles = decision_roles(models or {}, server)
+    keyed = {r["endpoint"] for r in roles.values() if r}
+    keys: dict[str, str] = {}
+    endpoints: dict[str, dict] = {}
+    for name, cfg in sorted((server.decision_endpoints or {}).items()):
+        key = decision_endpoint_key(cfg)
+        endpoints[name] = {"name": name, "protocol": cfg.protocol,
+                           "base_url": cfg.base_url, "key_var": cfg.key_var,
+                           "has_key": bool(key), "timeout_s": cfg.timeout_s}
+        if key and name in keyed:
+            keys[name] = key
+    catalog = {name: {"endpoint": mc.endpoint, "model": mc.model}
+               for name, mc in sorted((server.decision_models or {}).items())}
+    meta = {"routine": slug, "default": "decision", "roles": roles,
+            "endpoints": endpoints, "models": catalog}
+    return {DECISIONS_VAR: json.dumps(meta, separators=(",", ":")),
+            DECISIONS_KEYS_VAR: json.dumps(keys, separators=(",", ":"))}
+
+
+def decision_endpoint_key(cfg) -> str:
+    """One DECISION endpoint's api key through its own ladder, or "".
+
+    Separate from `endpoint_key` because the fallback var differs: a decision endpoint whose
+    `key_var` is unset falls back to `DECISION_KEY_VAR_DEFAULTS[protocol]`, which the inference
+    config has no equivalent of. Never raises, for the same reason: a missing key is a warning
+    for the operator, not a failed util call.
+    """
+    from ..config.decisionconf import DECISION_KEY_VAR_DEFAULTS
+
+    key_var = cfg.key_var or DECISION_KEY_VAR_DEFAULTS.get(cfg.protocol, "")
+    try:
+        key = resolve_api_key(name=cfg.name, api_key=cfg.api_key, key_var=key_var,
+                              key_env_file=cfg.key_env_file, required=False)
+    except EndpointError as exc:
+        log.warning("decision endpoint key: %s", exc)
+        return ""
+    return "" if key == "none" else key

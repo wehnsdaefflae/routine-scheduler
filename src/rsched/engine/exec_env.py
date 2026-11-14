@@ -105,11 +105,36 @@ def _llm_env(ctx: RunContext) -> dict[str, str]:
         return {}
     return llm_env_for_routine(ctx.routine.slug, models, ctx.server)
 
+def _decision_env(ctx: RunContext) -> dict[str, str]:
+    """The routine's effective DECISION catalog resolved to RSCHED_DECISIONS (catalog metadata +
+    the role map + each endpoint's PROTOCOL) and RSCHED_DECISIONS_KEYS (keys for the role
+    endpoints only), passed to run_util as extra_secrets. Only a util that DECLARES them
+    receives them, which is what makes shipping a key through this channel safe at all.
+
+    D288, goal b6: the inference half of this has existed since `_llm_env` shipped, and the
+    decision half did not — so a util could not learn which decision model its own routine
+    reaches, and `decide` could only be an ACTION. One util with both capabilities needs both
+    injections.
+
+    Read with `getattr`/`hasattr` for exactly the reason `_llm_env` documents: `_extra_secrets`
+    runs before EVERY util call, including `mediaops`' vision fallback and the engine's own
+    reserved-token path, and those callers hand in context stand-ins carrying only what their own
+    subject needs. A hard read here would turn an OPTIONAL env var into an AttributeError that
+    kills a util call that was going to work — the first version of `_llm_env` redded 8 tests in
+    6 files on this exact path, none of them about endpoints.
+    """
+    from ..endpoints.routine_env import decision_env_for_routine
+
+    models = getattr(ctx.routine, "models", None) or {}
+    if not hasattr(ctx.server, "decision_endpoints"):
+        return {}
+    return decision_env_for_routine(ctx.routine.slug, models, ctx.server)
+
 def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     """Engine-resolved, per-run secrets a util may receive (still under the declared-only gate):
     the routine's OWN scoped secrets, OAuth connection access tokens, bound remote-machine
-    details/keys, and the routine's own inference endpoints. The var names are disjoint, so a
-    plain merge is safe.
+    details/keys, the routine's own inference endpoints, and (D288) its DECISION catalog. The
+    var names are disjoint, so a plain merge is safe.
 
     ROUTINE-SCOPED SECRETS (D103): `secrets.d/<slug>.env` rides this channel because
     extra_secrets WIN the _child_env merge — so a routine's own `SFTP_USER` shadows a central
@@ -150,7 +175,7 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     generates it).
     """
     out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx),
-           **_llm_env(ctx)}
+           **_llm_env(ctx), **_decision_env(ctx)}
     out["RSCHED_API_TOKEN"] = str(ctx.server.routine_token or "")
     out["RSCHED_ROUTINE"] = ctx.routine.slug
     return out
