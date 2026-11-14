@@ -45,6 +45,13 @@ The event is filed AT MOST ONCE A DAY while the condition holds (`_last_filed`):
 every 5 s, and a row per tick would bury the stream it is meant to make legible — the same rule
 `tickguard` applies to a failing item. A stamp that becomes fresh again clears the memory, so the
 next staleness is reported rather than swallowed.
+
+THAT LATCH MAKES THIS A STANDING CONDITION, and the blocked-work fold is told so rather than
+inferring it (`readmodels/blocked_kinds`, R3418): its rows are one fact that stayed true, so
+their COUNT would measure how long the daemon happened to be up — a nineteen-night gap read as
+`19`, the same magnitude as nineteen distinct refused fires, and an instance that restarts often
+would report a smaller problem. The fold therefore reports this row's SPAN and no count. Nothing
+about the cadence here changed; what changed is that the unit is now declared where it is known.
 """
 
 from __future__ import annotations

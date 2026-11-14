@@ -20,8 +20,17 @@ proxy the failure is never one routine's, and a per-routine run page is exactly 
 cannot say "the fleet has no model". Eight such events in one day (2026-10-19, all claude-proxy
 503 `auth_unavailable`) reached no surface a person clicks.
 
-`blocked_fleet` is that fold: one row per (event, subject) with a count and the newest
-detail, so "what is the fleet not doing" is answered by a fetch instead of by ssh.
+`blocked_fleet` is that fold: one row per (event, subject) with the newest detail and its
+magnitude, so "what is the fleet not doing" is answered by a fetch instead of by ssh.
+
+The magnitude is in TWO UNITS, which is why `readmodels/blocked_kinds` exists (R3418). Most of
+these events are INCIDENTS and a row's count is how many facts it is. Six are STANDING
+CONDITIONS whose writers latch privately to one row a day while one fact holds, so counting
+those rows measures how long the daemon was up rather than how bad the condition is: a
+nineteen-night backup gap read as `count: 19` beside `fire_refused: 19`, nineteen distinct
+refusals, and one `total` added them. A standing row carries `standing_hours` and no count,
+and the payload reports `incident_total` and `standing_rows` separately — never one number
+over both.
 `budget_endings` is the per-routine one — which of a routine's partial finishes a BUDGET
 forced, the distinction the usage stream cannot carry because both land there as `partial`.
 
@@ -49,7 +58,7 @@ from .. import runcorrection
 from ..config import ServerConfig
 from ..health_events import HEALTH_EVENTS_FILE
 from ..paths import read_jsonl
-from . import memo
+from . import blocked_kinds, memo
 from .stamps import instant
 
 #: The correction event both folds resolve against (`rsched/runcorrection.py`, F637/F703). It
@@ -249,7 +258,20 @@ def _window(routines_home: Path, events, since: datetime) -> list[tuple[datetime
 
 def blocked_fleet(server: ServerConfig, *, days: int = DEFAULT_WINDOW_DAYS) -> dict:
     """What the fleet did not do in the last `days`: one row per (event, subject), newest
-    first, each carrying its count, its first and last stamp and the newest `detail`.
+    first, each carrying its first and last stamp, the newest `detail`, and its MAGNITUDE in
+    the unit its `kind` names (`readmodels/blocked_kinds`, R3418).
+
+    An INCIDENT row carries `count` — how many times it happened, which is how many facts it
+    is. A STANDING row carries `standing_hours` instead and NO count: its writer files one row
+    a day while one fact holds, so counting those rows measures how long the daemon was up, not
+    how bad the condition is. The span is what the stream PROVES (a condition filed once reads
+    0.0 hours — one sighting, no span yet); whether it still holds is `web/operator_conditions`'
+    question, answered on the row as `resolved`.
+
+    The payload therefore reports the two units separately — `incident_total` (occurrences
+    across incident rows) and `standing_rows` (conditions standing) — and carries no single
+    `total`: one number over two units is what made a nineteen-night backup gap read as the
+    same magnitude as nineteen distinct refused fires. Both are 0 on a healthy instance.
 
     `subject` is the event's `routine` field as written — a routine slug for a refused fire
     or a capped trigger, a LANE ID for the three lane events (opaque by contract: resolve it
@@ -259,6 +281,7 @@ def blocked_fleet(server: ServerConfig, *, days: int = DEFAULT_WINDOW_DAYS) -> d
     since = _since(days)
     rows: dict[tuple[str, str], dict] = {}
     span: dict[tuple[str, str], tuple[datetime, datetime]] = {}   # (first, last) instants
+    seen: dict[tuple[str, str], int] = {}       # filings, which only an INCIDENT row reports
     corrections = _corrections(server.routines_home)
     for when, raw in _window(server.routines_home, BLOCKED_EVENTS, since):
         resolved = _resolve(raw, when, corrections)
@@ -270,19 +293,30 @@ def blocked_fleet(server: ServerConfig, *, days: int = DEFAULT_WINDOW_DAYS) -> d
         row = rows.get(key)
         if row is None:
             rows[key] = {"event": key[0], "means": BLOCKED_EVENTS[key[0]], "subject": key[1],
-                         "count": 1, "first_ts": ts, "last_ts": ts, "detail": detail,
+                         "kind": blocked_kinds.kind(key[0]),
+                         "first_ts": ts, "last_ts": ts, "detail": detail,
                          "corrected": bool(rec.get("corrected"))}
             span[key] = (when, when)
+            seen[key] = 1
             continue
         row["corrected"] = row["corrected"] or bool(rec.get("corrected"))
-        row["count"] += 1
+        seen[key] += 1
         first, last = span[key]
         if when < first:
             first, row["first_ts"] = when, ts
         if when >= last:
             last, row["last_ts"], row["detail"] = when, ts, detail
         span[key] = (first, last)
+    for key, row in rows.items():
+        if row["kind"] == blocked_kinds.STANDING:
+            first, last = span[key]
+            row["standing_hours"] = round((last - first).total_seconds() / 3600, 1)
+        else:
+            row["count"] = seen[key]
     ordered = [rows[k] for k in sorted(rows, key=lambda k: (span[k][1], k[0]), reverse=True)]
     return {"window_days": days, "since": since.isoformat(),
-            "total": sum(r["count"] for r in ordered), "rows": ordered,
-            "vocabulary": dict(BLOCKED_EVENTS)}
+            "incident_total": sum(r["count"] for r in ordered
+                                  if r["kind"] == blocked_kinds.INCIDENT),
+            "standing_rows": sum(1 for r in ordered
+                                 if r["kind"] == blocked_kinds.STANDING),
+            "rows": ordered, "vocabulary": dict(BLOCKED_EVENTS)}

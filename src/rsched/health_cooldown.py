@@ -24,8 +24,13 @@ first row of only 2 of 80 flagged runs. A day is too coarse here: at 24 h, 19 of
 their first row, and a routine that fires twice a day would never report its second reading.
 
 Nothing in `readmodels.health_stream.BLOCKED_EVENTS` may ever be named here (a test pins it):
-the console's blocked-fleet fold COUNTS those rows, so suppressing one would make the fleet
-look less stuck than it is. An incident that happened twice is two facts.
+the blocked-fleet fold reads every row's MAGNITUDE off these rows, so suppressing one would
+make the fleet look less stuck than it is. That holds for both kinds the fold distinguishes
+(`readmodels/blocked_kinds`, R3418), by two different mechanisms — an INCIDENT's magnitude is
+its count, and an incident that happened twice is two facts; a STANDING condition's is the SPAN
+between its first and last filing, so a swallowed first row makes something that has stood for
+weeks read as if it had just begun. A standing event's own writer already latches it to one row
+a day, privately, which is why this table is not where that cadence belongs.
 """
 
 from __future__ import annotations

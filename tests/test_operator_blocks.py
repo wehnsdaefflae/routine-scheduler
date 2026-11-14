@@ -70,7 +70,9 @@ def test_a_stale_backup_is_a_block_only_he_can_clear():
 def test_the_count_is_distinct_rows_not_occurrences(tmp_path):
     """A pause that ate eight of ONE routine's fires is one thing to go and fix. The badge
     carries rows, so eight occurrences of one (event, subject) count once and two subjects
-    count twice — while `total` keeps counting occurrences for the panel.
+    count twice — while `incident_total` keeps counting occurrences for the panel. Both
+    subjects here are `fire_paused`, an INCIDENT: each dropped fire is a fire that did not
+    happen, so counting them is counting facts (R3418 · `readmodels/blocked_kinds`).
     """
     server = tmp_server(tmp_path, create=False)
     rows = [{"event": "fire_paused", "routine": "scheduler-builder", "run_id": "",
@@ -82,7 +84,7 @@ def test_the_count_is_distinct_rows_not_occurrences(tmp_path):
 
     payload = annotate(blocked_fleet(server))
 
-    assert payload["total"] == 9, "the panel still counts occurrences"
+    assert payload["incident_total"] == 9, "the panel still counts incident occurrences"
     assert payload["operator_total"] == 2, "the badge counts rows — one per thing to fix"
 
 

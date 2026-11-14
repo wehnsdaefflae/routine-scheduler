@@ -130,7 +130,7 @@ def test_the_blocked_surface_reads_the_correction(tmp_path):
     assert ("wrong_turn_detected", "beta") in subjects
     assert ("wrong_turn_detected", "alpha") not in subjects, \
         "a corrected run still reads as blocked work"
-    assert out["total"] == 1
+    assert out["incident_total"] == 1
 
 
 def test_a_turn_that_was_merely_rejected_is_not_folded_away(tmp_path):
@@ -146,7 +146,7 @@ def test_a_turn_that_was_merely_rejected_is_not_folded_away(tmp_path):
          "superseded": ["run_failed"], "detail": "resumed to ok"},
     ])
     out = blocked_fleet(server)
-    assert out["total"] == 1 and out["rows"][0]["event"] == "wrong_turn_detected"
+    assert out["incident_total"] == 1 and out["rows"][0]["event"] == "wrong_turn_detected"
 
 
 def test_an_unchecked_finish_is_not_corrected_by_a_later_one(tmp_path):
@@ -161,7 +161,7 @@ def test_an_unchecked_finish_is_not_corrected_by_a_later_one(tmp_path):
          "superseded": ["run_failed"], "detail": "resumed to ok"},
     ])
     out = blocked_fleet(server)
-    assert out["total"] == 1 and out["rows"][0]["event"] == "finish_gate_failed"
+    assert out["incident_total"] == 1 and out["rows"][0]["event"] == "finish_gate_failed"
     assert out["rows"][0].get("corrected") is not True
 
 
@@ -199,7 +199,7 @@ def test_a_run_that_fails_again_after_a_correction_is_blocked_again(tmp_path):
          "ts": _ago(1), "reason": "attempts_exhausted", "turn": 9, "detail": "and again"},
     ])
     out = blocked_fleet(server)
-    assert out["total"] == 1, "a later failure was excused by an earlier correction"
+    assert out["incident_total"] == 1, "a later failure was excused by an earlier correction"
     assert out["rows"][0]["detail"] == "and again"
 
 
@@ -231,7 +231,7 @@ def test_the_lane_chain_close_reads_the_correction(tmp_path):
          "superseded": ["run_failed"], "detail": "resumed to ok"},
     ])
     out = blocked_fleet(server)
-    assert out["total"] == 1                      # the members still did not run
+    assert out["incident_total"] == 1                      # the members still did not run
     row = out["rows"][0]
     assert row["event"] == "lane_chain_stopped"
     assert row["corrected"] is True

@@ -9,6 +9,7 @@ the route, plus the per-routine budget/partial split the usage stream cannot mak
 import json
 from datetime import UTC, datetime, timedelta, timezone
 
+import pytest
 from helpers import tmp_server
 from rsched.health_events import log_health_event
 from rsched.readmodels import memo
@@ -53,7 +54,7 @@ def test_a_finish_gate_that_did_not_run_reaches_the_blocked_fold(tmp_path):
                      "run_id": "uir:20261016-120000", "ts": _ago(1),
                      "detail": "AttributeError in a guard"}])
     out = blocked_fleet(server)
-    assert out["total"] == 1
+    assert out["incident_total"] == 1
     assert out["rows"][0]["event"] == "finish_gate_failed"
     assert out["rows"][0]["subject"] == "uir"
     assert "unchecked" in out["rows"][0]["means"]
@@ -63,7 +64,7 @@ def test_missing_stream_is_empty_not_an_error(tmp_path):
     server = tmp_server(tmp_path, create=False)
     assert health_records(server.routines_home) == []
     out = blocked_fleet(server)
-    assert out["total"] == 0 and out["rows"] == []
+    assert out["incident_total"] == 0 and out["rows"] == []
     assert set(out["vocabulary"]) == set(BLOCKED_EVENTS)
 
 
@@ -91,7 +92,7 @@ def test_rows_group_by_event_and_subject_newest_first(tmp_path):
         {"event": "run_failed", "routine": "alpha", "run_id": "x", "ts": _ago(1)},
     ])
     out = blocked_fleet(server)
-    assert out["total"] == 3
+    assert out["incident_total"] == 3
     assert [(r["event"], r["subject"], r["count"]) for r in out["rows"]] == [
         ("trigger_capped", "beta", 1), ("fire_refused", "alpha", 2)]
     alpha = out["rows"][1]
@@ -107,8 +108,8 @@ def test_window_excludes_older_events(tmp_path):
          "ts": _ago(24 * 30), "detail": "old"},
         {"event": "lane_fire_refused", "routine": "grp-1", "run_id": "", "ts": _ago(5)},
     ])
-    assert blocked_fleet(server, days=7)["total"] == 1
-    assert blocked_fleet(server, days=MAX_WINDOW_DAYS)["total"] == 2
+    assert blocked_fleet(server, days=7)["incident_total"] == 1
+    assert blocked_fleet(server, days=MAX_WINDOW_DAYS)["incident_total"] == 2
 
 
 def _at(delta, offset_hours):
@@ -164,7 +165,7 @@ def test_the_window_moves_with_the_clock_while_the_file_stands_still(tmp_path, m
                      "ts": _at(-timedelta(days=6), 2)},
                     {"event": "budget_exhausted", "routine": "beta", "run_id": "b1",
                      "ts": _at(-timedelta(days=6), 2)}])
-    assert blocked_fleet(server)["total"] == 1
+    assert blocked_fleet(server)["incident_total"] == 1
     assert budget_endings(server, "beta")["budget_exhausted"] == 1
 
     class TwoDaysLater(datetime):
@@ -173,7 +174,7 @@ def test_the_window_moves_with_the_clock_while_the_file_stands_still(tmp_path, m
             return datetime.now(tz) + timedelta(days=2)
 
     monkeypatch.setattr(health_stream, "datetime", TwoDaysLater)
-    assert blocked_fleet(server)["total"] == 0
+    assert blocked_fleet(server)["incident_total"] == 0
     assert budget_endings(server, "beta")["budget_exhausted"] == 0
 
 
@@ -200,11 +201,11 @@ def test_fold_reflects_a_new_append(tmp_path):
     a process restart — this rides a bus-event refresh path."""
     server = tmp_server(tmp_path, create=False)
     _write(server, [])
-    assert blocked_fleet(server)["total"] == 0
+    assert blocked_fleet(server)["incident_total"] == 0
     log_health_event(server.routines_home, "scheduler_tick_error", routine="", run_id="",
                      detail="boom")
     out = blocked_fleet(server)
-    assert out["total"] == 1 and out["rows"][0]["subject"] == ""
+    assert out["incident_total"] == 1 and out["rows"][0]["subject"] == ""
 
 
 def test_route_serves_the_blocked_fold(api_client):
@@ -220,7 +221,7 @@ def test_route_serves_the_blocked_fold(api_client):
     r = c.get("/api/health/blocked")
     assert r.status_code == 200
     body = r.json()
-    assert body["window_days"] == 7 and body["total"] == 1
+    assert body["window_days"] == 7 and body["incident_total"] == 1
     row = body["rows"][0]
     assert row["event"] == "lane_chain_member_skipped" and row["subject"] == "ghost"
     assert row["detail"] == "lane grp-1 continued"
@@ -228,3 +229,92 @@ def test_route_serves_the_blocked_fold(api_client):
 
     assert c.get("/api/health/blocked?days=0").status_code == 422
     assert c.get(f"/api/health/blocked?days={MAX_WINDOW_DAYS + 1}").status_code == 422
+
+
+# --- R3418: a standing condition's magnitude is its SPAN, never a row count ----------------
+
+
+def test_a_standing_condition_reports_its_span_not_a_row_count(tmp_path):
+    """`backup_stale` is filed at most once a day while the gap holds (`daemon/backup_watch`'s
+    own latch), so its row count measured how many days the DAEMON happened to be up, not how
+    bad the gap was — an instance that restarts often reported a smaller backup gap. The row
+    now says how long the condition has stood, and carries no count to be read as facts.
+    """
+    server = tmp_server(tmp_path, create=False)
+    _write(server, [{"event": "backup_stale", "routine": "", "run_id": "", "ts": _ago(24 * 5),
+                     "detail": "no completed snapshot since 2026-11-04"},
+                    {"event": "backup_stale", "routine": "", "run_id": "", "ts": _ago(24 * 4),
+                     "detail": "no completed snapshot since 2026-11-04"},
+                    {"event": "backup_stale", "routine": "", "run_id": "", "ts": _ago(1),
+                     "detail": "no completed snapshot since 2026-11-04"}])
+    [row] = blocked_fleet(server)["rows"]
+    assert row["kind"] == "standing"
+    assert "count" not in row, "three filings of ONE gap are not three facts"
+    assert 118 <= row["standing_hours"] <= 120      # first seen 5 days ago, last an hour ago
+    assert row["first_ts"] < row["last_ts"]
+
+
+def test_an_incident_keeps_its_count_and_gains_no_span(tmp_path):
+    """Doctrine 2's case is untouched: an incident that happened twice is two facts, and its
+    magnitude stays the count — nothing about the twelve incident events changes here.
+    """
+    server = tmp_server(tmp_path, create=False)
+    _write(server, [{"event": "fire_refused", "routine": "alpha", "run_id": "", "ts": _ago(30),
+                     "detail": "overrun"},
+                    {"event": "fire_refused", "routine": "alpha", "run_id": "", "ts": _ago(2),
+                     "detail": "draining"}])
+    [row] = blocked_fleet(server)["rows"]
+    assert row["kind"] == "incident" and row["count"] == 2
+    assert "standing_hours" not in row, "an incident has no span to read"
+
+
+def test_the_payload_cannot_be_summed_across_the_two_units(tmp_path):
+    """The defect was ONE `total` that added occurrences to days-the-daemon-was-up: a 19-night
+    backup gap read as 19 beside `fire_refused: 19` — nineteen distinct refusals. The key is
+    GONE rather than redefined, because a redefined key is read wrongly in silence, and the two
+    figures that replace it name their own units. `sum(r["count"] …)` over a mixed payload now
+    raises instead of inventing a number.
+    """
+    server = tmp_server(tmp_path, create=False)
+    _write(server, [{"event": "fire_refused", "routine": "alpha", "run_id": "", "ts": _ago(5),
+                     "detail": "draining"},
+                    {"event": "fire_refused", "routine": "alpha", "run_id": "", "ts": _ago(4),
+                     "detail": "draining"},
+                    {"event": "backup_stale", "routine": "", "run_id": "", "ts": _ago(72),
+                     "detail": "no completed snapshot for 4 days"},
+                    {"event": "backup_stale", "routine": "", "run_id": "", "ts": _ago(2),
+                     "detail": "no completed snapshot for 4 days"},
+                    {"event": "migration_due_soon", "routine": "", "run_id": "", "ts": _ago(3),
+                     "detail": "1 MIGRATION marker expires 2026-11-20"}])
+    out = blocked_fleet(server)
+    assert "total" not in out, "one number over two units is the defect R3418 removes"
+    assert out["incident_total"] == 2, "occurrences, over incident rows only"
+    assert out["standing_rows"] == 2, "conditions standing — backup_stale and the marker"
+    with pytest.raises(KeyError):
+        sum(r["count"] for r in out["rows"])
+
+
+def test_a_healthy_fleet_reads_zero_on_both_figures(tmp_path):
+    """Zero is the good reading, and it has to be readable on both units."""
+    server = tmp_server(tmp_path, create=False)
+    _write(server, [])
+    out = blocked_fleet(server)
+    assert out["incident_total"] == 0 and out["standing_rows"] == 0 and out["rows"] == []
+
+
+def test_each_row_says_which_unit_its_magnitude_is_in(tmp_path):
+    """A mixed window: the console branches on `kind` to pick a unit, so every row carries it.
+    `obligation_overdue` is latched one row per routine per day (`daemon/owed_watch`), while a
+    capped trigger is re-earned by real traffic each day.
+    """
+    server = tmp_server(tmp_path, create=False)
+    _write(server, [{"event": "trigger_capped", "routine": "beta", "run_id": "", "ts": _ago(2),
+                     "detail": "daily cap of 5 reached"},
+                    {"event": "obligation_overdue", "routine": "beta", "run_id": "",
+                     "ts": _ago(48), "detail": "2 obligations open since 2026-11-01"},
+                    {"event": "obligation_overdue", "routine": "beta", "run_id": "",
+                     "ts": _ago(2), "detail": "2 obligations open since 2026-11-01"}])
+    out = blocked_fleet(server)
+    kinds = {row["event"]: row["kind"] for row in out["rows"]}
+    assert kinds == {"trigger_capped": "incident", "obligation_overdue": "standing"}
+    assert out["incident_total"] == 1 and out["standing_rows"] == 1
