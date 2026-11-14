@@ -38,6 +38,12 @@ def _model(multimodal):
 
 
 def test_a_multimodal_run_sees_vision_flagged_as_for_text_only_runs(make_routine, tmp_path):
+    """Goal b5 step 4 made the catalog NAMES ONLY, which makes this note MORE load-bearing, not
+    less: the qualifier inside `vision`'s summary — "for a text-only model" — was already not
+    enough (a multimodal run called it on a PDF, opening a credential question for a call that
+    needed none), and now that summary is not in the prompt at all. So the annotation is what
+    carries the fact, and it is not a description: it decides whether the call is right.
+    """
     ctx = _with_vision(_ctx(make_routine, tmp_path, slug="capsvision"))
     ctx.registry = _model(True)
     text = capabilities_digest(ctx)
@@ -45,16 +51,18 @@ def test_a_multimodal_run_sees_vision_flagged_as_for_text_only_runs(make_routine
     assert "view_image path=" in text
     # the util is still LISTED and still callable — the note is guidance, not a removal:
     # an oversized file or an endpoint without document support still needs it
-    assert "vision — see images/PDFs" in text
+    assert "- vision" in text
 
 
-def test_a_text_only_run_sees_the_bare_summary(make_routine, tmp_path):
+def test_a_text_only_run_sees_the_name_without_the_note(make_routine, tmp_path):
     """The note must not appear where `vision` IS the right call, or it becomes noise that
     teaches a run to distrust the annotation."""
     ctx = _with_vision(_ctx(make_routine, tmp_path, slug="capsvisiontext"))
     ctx.registry = _model(False)
     text = capabilities_digest(ctx)
-    assert "vision — see images/PDFs" in text
+    assert "- vision" in text
+    assert "see images/PDFs" not in text, (
+        "a util's summary is back in the always-on prompt (goal b5 step 4)")
     assert "[for a text-only run" not in text
 
 
