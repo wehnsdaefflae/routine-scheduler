@@ -81,19 +81,37 @@ def test_the_deletion_is_a_later_row_and_does_not_erase_the_write(make_routine, 
         "the write's own row no longer carries the pattern it defined")
 
 
-def test_a_global_reminders_deletion_is_not_claimed_as_a_local_fact(make_routine, scripted):
-    """A curated reminder lives in the library, which every routine reads, and its deletion is
-    recorded where that store's history is — the library git commit. A `self`-addressed row for
-    it would make one routine's view of a shared store look like its own local fact, and
-    `drift` (local scope only) must stay empty either way.
-    """
-    d = make_routine(slug="curator")
-    set_capabilities(d, reminders="global")
-    scripted([{**write_file("state/c.txt", content="c"),
-               "remind": {"op": "add", "scope": "global", "regex": "^shell: curl",
-                          "description": "it reaches the network from inside a jail"}},
-              finish()])
-    run_routine(d, server_for(d), run_ts=TS)
+def test_only_a_local_deletion_is_mirrored_as_this_routines_own(make_routine):
+    """A curated reminder lives in the library, which every routine reads, so its deletion is
+    recorded where that store's history is — the library git commit `remind_write.commit`
+    makes. A `self`-addressed hook row for it would make one routine's view of a SHARED store
+    read as its own local fact.
 
-    assert reminderproj.drift(d.parent, d) == {}, (
-        "a global reminder leaked into the LOCAL comparison")
+    Driven at the write function rather than through a scripted run: a global op goes through
+    the approval ladder, and scripting that dialogue would test the ladder, not this.
+    """
+    from types import SimpleNamespace
+
+    from rsched.engine import remind_write
+
+    d = make_routine(slug="curator")
+    glob = store.Reminder(id="rem-20260101-010101-9", regex="^shell: curl",
+                          description="it reaches the network from inside a jail",
+                          scope="global", kind="action", owner="", created_run="c:1",
+                          stats=store.blank_stats())
+    reminders_home = d.parent / "_library" / "reminders"
+    reminders_home.mkdir(parents=True, exist_ok=True)
+    store.write_global(reminders_home, glob)
+    loop = SimpleNamespace(
+        reminders=[glob],
+        ctx=SimpleNamespace(routine=SimpleNamespace(slug="curator", dir=d),
+                            server=SimpleNamespace(routines_home=d.parent,
+                                                   reminders_home=reminders_home),
+                            run_id="curator:20260905-090000"))
+
+    remind_write.remove(loop, glob)
+
+    assert loop.reminders == []
+    assert [h for h in hookstore.read_hooks(d.parent) if h.source == "reminder"] == [], (
+        "a GLOBAL reminder's deletion was recorded as this routine's own local hook")
+    assert reminderproj.drift(d.parent, d) == {}
