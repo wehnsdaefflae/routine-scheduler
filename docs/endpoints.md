@@ -580,7 +580,8 @@ base URL of the server, whatever key you configured it with. This is the guarant
 for a model no provider lists.
 
 **Anthropic API** — `kind: anthropic`, no base_url needed, `sk-ant-…` key. Metered: know
-your budget caps. The action rides one tool offered on `auto`, held to one call — because a
+your budget caps. The action rides one tool offered on plain `auto` (`_AUTO`), which lets a
+reply chain several CALLS — because a
 FORCED tool choice makes the configured effort meaningless: the Messages API allows thinking
 only on `auto`, the newest Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5)
 refuse forcing with a 400, and the [subscription proxy](model-gateway.md) strips thinking
@@ -594,7 +595,7 @@ since; it can no longer cost a run, because an `auto` reply no action can be rea
 re-asked ONCE with the tool forced inside the same call (`stop_details["forced_reask"]` marks
 that answer, which ran at the proxy's default effort, and the warning log names what the unread
 reply carried). An endpoint set `tool_choice: forced` sends the forced choice, and on a model
-that refuses it gets `auto` held to one call. A model that answers in text instead has its action
+that refuses it gets plain `auto`. A model that answers in text instead has its action
 read from the text — and a THINKING model often does both in one reply: its first action as JSON
 text, the next as the call, narrating the first as done. The engine runs the reply's actions in that
 order (`engine/replyactions.py` for the order, `engine/chain.py` for the run), stopping at the
@@ -604,7 +605,12 @@ the adapter's call was all it read, so the first action vanished and the call th
 every past action is SENT as a call of the action tool and its observation as that call's result
 (`anthropic_messages.native_turns`), so the model reads its history as calls rather than JSON text
 and a reply ends at its one call — in live replays of the same turn, two actions in 5 of 5 replies
-before, one call in 5 of 5 after, on Opus 5 and Sonnet 5. The rendering is positional and
+before, one call in 5 of 5 after, on Opus 5 and Sonnet 5. **That measurement is also why the
+one-call rendering teaches by example**: until 0.550.0 the body additionally asked the provider
+for at most one `tool_use` block, so a model forming a chaining intent could express it only as
+JSON text — the channel this rendering teaches it not to use. The ask is gone; the history
+rendering is unchanged, and whether a chained reply should be rendered BACK as its several calls
+is a separate question (the engine's list keeps one action per assistant message). The rendering is positional and
 deterministic, so the cached prefix holds; no thinking block is stored or passed back (the API
 accepts a continuation without one, measured 2026-10-10); a forced route keeps the text history
 it was validated on. A model that refuses several

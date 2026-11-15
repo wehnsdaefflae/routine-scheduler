@@ -503,7 +503,7 @@ _ANTH_OK = {"content": [{"type": "tool_use", "name": "action", "input": {"say": 
 # The forced tool_choice (an endpoint configured `forced`, and the re-ask of an unreadable
 # reply) and the one every schema'd call sends by default — pinned as the literal wire shapes.
 _FORCED = {"type": "tool", "name": "action"}
-_ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
+_ONE_CALL_AT_MOST = {"type": "auto"}   # production `_AUTO`: a reply may chain calls
 
 
 @pytest.mark.parametrize(("status", "attr", "attempts"), [

@@ -1,7 +1,7 @@
 """Anthropic Messages API adapter.
 
 Schema enforcement via tool use: one tool named "action" whose input_schema is the requested
-schema, offered on `auto` held to ONE call (`_ONE_CALL_AT_MOST`). Without a schema it is a plain
+schema, offered on plain `auto` (`_AUTO`), so a reply may chain CALLS. Without one it is a plain
 messages call.
 
 **Why not forced.** A forced `tool_choice` makes a configured EFFORT meaningless: the Messages
@@ -29,10 +29,10 @@ Every optional field a model may refuse — the forced `tool_choice`, `output_co
 it for a retry (`_degrade`). This adapter's KIND is a WIRE, not a provider: a subscription
 proxy speaks it while serving `gpt-*` ids, Haiku 4.5 still honours temperature, and the newest
 Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse forced tool use — on
-those the tool is still offered, on `auto` with at most one call (`_ONE_CALL_AT_MOST`: a reply's
-actions may chain, but they are READ in reply order — text blocks then the calls — so one call
-keeps that order unambiguous; a wire ignoring the ask sends several and `_parse` keeps them ALL,
-in wire order, as `parsed` + `parsed_rest` — F754), and the engine reads a text reply too. So no
+those the tool is still offered, on plain `auto` (`_AUTO`), which lets a reply carry SEVERAL
+calls: they are READ in reply order — text blocks then the calls, `parsed` + `parsed_rest`
+(F754) — and `engine/chain.py` runs them in that order, stopping at the first failure, which is
+the chaining the operator ordered; and the engine reads a text reply too. So no
 field is sent blindly or dropped blindly: the model that rejects one says so, and pays a round
 trip per refused field.
 
@@ -128,9 +128,11 @@ _DROPPABLE = (
 _FORCED = {"type": "tool", "name": "action"}
 
 #: The tool_choice every schema'd call sends by default (the module docstring says why): the API
-#: default, held to ONE call — `auto` alone would let a reply carry several. `_parse` reads the
-#: first call; a reply's text can still carry actions of its own (engine/replyactions.py).
-_ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
+#: default, which lets a reply carry SEVERAL calls. Until 0.550.0 it also sent
+#: `disable_parallel_tool_use: True`, written 2026-10-01 "so a reply cannot carry two actions" —
+#: three weeks before the operator ordered chaining (0.446.0) and F754 made a multi-call reply
+#: reach the engine whole, after which it only forbade at the wire what the engine runs.
+_AUTO = {"type": "auto"}
 
 
 def _usage(raw: dict) -> dict:
@@ -168,7 +170,7 @@ def _describe(blocks: list[dict]) -> str:
 def _degrade(body: dict, error: str) -> dict | None:
     """`body` with every optional field this 400 names degraded, or None when it names none
     that is still being sent — then the 400 stands. A forced tool_choice is first unforced
-    (`_ONE_CALL_AT_MOST`) and dropped only if that is refused too; every other field is
+    (`_AUTO`) and dropped only if that is refused too; every other field is
     dropped. Each call changes at least one field and none comes back, so a caller looping on
     it ends after at most five degraded requests.
     """
@@ -177,10 +179,10 @@ def _degrade(body: dict, error: str) -> dict | None:
            if not any(key == field and any(h in low for h in hints)
                       for field, hints in _DROPPABLE)}
     if "tool_choice" in low and "tool_choice" in out:
-        if out["tool_choice"] == _ONE_CALL_AT_MOST:   # a gateway that does not know the field
+        if out["tool_choice"] == _AUTO:   # a gateway that does not know the field
             del out["tool_choice"]
         else:
-            out["tool_choice"] = _ONE_CALL_AT_MOST
+            out["tool_choice"] = _AUTO
     if "cache_control" in low:   # a proxy/old gateway that rejects caching
         out = strip_cache_control(out)
     return out if out != body else None
@@ -258,7 +260,7 @@ class AnthropicEndpoint:
                 tool["cache_control"] = {"type": "ephemeral"}   # static per run → a breakpoint
             body["tools"] = [tool]
             body["tool_choice"] = dict(_FORCED if self.tool_choice == "forced"
-                                       else _ONE_CALL_AT_MOST)
+                                       else _AUTO)
         if not cacheable:
             body = claim_placement(body)
         headers = {"x-api-key": self._api_key(), "anthropic-version": API_VERSION}
@@ -318,7 +320,7 @@ class AnthropicEndpoint:
         calls = [b.get("input") for b in blocks
                  if b.get("type") == "tool_use" and b.get("name") == "action"]
         texts = [b.get("text", "") for b in blocks if b.get("type") == "text"]
-        # `_ONE_CALL_AT_MOST` is a REQUEST, so a wire that drops the field sends several calls.
+        # Plain `auto` lets a reply carry several calls — the chaining the engine runs.
         # Every readable one is kept — `parsed` the first, `parsed_rest` the rest, folded by
         # `replyactions.reply_actions` after the text actions. Dropping the tail here (with a
         # server-log warning no run reads) left the false-claim guard blind on this channel: F754.

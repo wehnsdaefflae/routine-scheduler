@@ -208,6 +208,27 @@ def cgroup_headroom_mb(cgroup: Path = CGROUP) -> int | None:
     return (int(limit) - anon - swap) // (1024 * 1024)
 
 
+def headroom_mb(*, read=None, read_cgroup=None) -> int | None:
+    """The MB a selection may actually use: the SMALLER of the host's MemAvailable and this
+    cgroup's own headroom — exactly the pair `wait_for_memory` below enforces.
+
+    D291 reduced the WORKER COUNT against the cgroup alone while the wait kept guarding both,
+    so on a box whose HOST is the short side the count stayed at its ceiling and the session
+    waited out `RSCHED_TEST_MEM_WAIT_S` and exited 3 — the refusal that decision replaced,
+    surviving wherever the host binds first. Measured 2026-11-15 on this box: cgroup headroom
+    3,845 MB, host MemAvailable 2,797 MB, four workers kept, `fast` refused after 20 minutes
+    while a three-worker selection (2,816 MB) was within reach. One reading for the count and
+    the wait, for the reason `need_mb` gives: the two must not be able to disagree.
+
+    None only when NEITHER reader answers, which is what "no ceiling to read" has always meant.
+    Both readers are resolved at CALL time off this module, never bound as defaults, so a test
+    that monkeypatches either one reaches the code it is pinning (D291's own wiring pin does).
+    """
+    readers = (read or available_mb, read_cgroup or globals()["cgroup_headroom_mb"])
+    have = [mb for mb in (reader() for reader in readers) if mb is not None]
+    return min(have) if have else None
+
+
 def should_wait(config) -> bool:
     """Is this the CONTROLLER of a real gate session — the one process that may block?
 

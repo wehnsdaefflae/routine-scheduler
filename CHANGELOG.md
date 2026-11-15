@@ -15,6 +15,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.550.0] — 2026-11-15
+
+### The wire stops forbidding the chaining the engine runs (R3422, F897)
+
+- **The defect.** Every schema'd call on the Anthropic wire carried
+  `tool_choice: {"type": "auto", "disable_parallel_tool_use": True}`. That field was written on
+  **2026-10-01** with the commit subject *"an unforced action tool is held to one call, so a
+  reply cannot carry two actions"* — correct then, because the adapter read `calls[0]` and
+  dropped the rest, which is how an action vanished while a later one claimed it had run
+  (R2443-R2445). **Three weeks later both halves of that premise went away**: the operator
+  ordered action chaining (0.446.0, 2026-10-23, *"I want action chaining to work like in the
+  terminal"*) and F754 (2026-10-24) made a multi-call reply reach the engine whole as `parsed`
+  + `parsed_rest`. The field was never lifted, so for seven weeks the body asked the provider
+  to suppress, at the wire, the native expression of a behaviour the harness asks for on every
+  turn — and current Claude models emit several `tool_use` blocks in one turn for independent
+  subtasks by default. A model forming a chaining intent could act on it only by writing
+  actions as JSON text, which is the channel `native_turns` renders its history away from.
+- **What changed.** The default `tool_choice` is plain `auto` (`_AUTO`). The degrade ladder is
+  untouched — a configured `forced` route still sends `_FORCED`, a 400 naming `tool_choice`
+  still unforces and then drops the field — and the one-call re-ask of an unreadable `auto`
+  reply still fires. Nothing about reading a reply changed: `replyactions.reply_actions` has
+  folded text actions then `parsed` then `parsed_rest` since F754, and `engine/chain.py` runs
+  them in order, stopping at the first failure.
+- **Measured, since the previous figure was wrong.** `rules-review` (R3422) counted 27 narrated
+  chains against 0 emitted by counting actions that share a `turn` in `transcript.jsonl`. That
+  misses every chain that STOPS at its first element: the stop records one `assistant_action`
+  and hands the rest back in the observation's own `not_executed` rows. Counting both signals
+  over 81 fleet transcripts of 2026-11-10..14 and 11,598 actions: **8 multi-action turns + 7
+  stopped-chain observations = 15, or 0.13%** — still effectively nil, which is the finding.
+- **What is NOT changed, deliberately.** `anthropic_messages.native_turns` still renders each
+  past action as ONE `tool_use` per assistant message, so a model still reads its own history
+  as one-call-per-reply and learns from it by example. Whether a chained reply should be
+  rendered back as its several calls is a behaviour-shaping question with a measurement behind
+  the current shape (*two actions in 5 of 5 replies before, one call in 5 of 5 after*), raised
+  for the operator rather than changed here.
+- `tests/test_chained_calls.py` gains the pin that the default ask does not suppress a
+  multi-call reply; `docs/endpoints.md`, `docs/architecture.md` and `docs/prompt-anatomy.md`
+  record what the wire now sends and that the history rendering is the remaining teacher.
+
+### D291's worker reduction reaches the side that was actually binding (F898)
+
+- **Measured live, mid-gate, 2026-11-15.** A release gate of this routine's own candidate sat
+  in `memgate`'s wait printing *"host memory has 3318 MB, the fast suite at 4 xdist workers
+  needs 3584 MB"*, with the cgroup reporting **3,845 MB free** and the host **2,797 MB**. It
+  would have waited out `RSCHED_TEST_MEM_WAIT_S` (20 min) and exited 3 — the refusal D291
+  replaced — while a three-worker selection (2,816 MB) was within reach the whole time.
+- **The cause.** `browsersource.fast_workers` reduced the count against
+  `memgate.cgroup_headroom_mb` ALONE, while `memgate.wait_for_memory` guards host MemAvailable
+  **and** the cgroup and refuses on whichever is short. So on a box where the HOST is the
+  binding side — this box, whose other containers hold ~12 of 15.4 GB — the count stayed at its
+  ceiling and the session was refused rather than run smaller. D291's own intent, in the
+  operator's words (*"Reduce FAST_WORKERS while a routine run is active"*), was unreachable
+  there.
+- **The fix.** `memgate.headroom_mb` is one reading for both: the SMALLER of host MemAvailable
+  and cgroup headroom, which is exactly the pair the wait enforces — for the reason `need_mb`
+  already gives, that the count and the charge must not be able to disagree. Both readers
+  resolve at call time off the module, so D291's wiring pin still reaches what it patches.
+- Two pins added to `tests/test_memgate_workers.py`: the host-short box reduces to three
+  workers instead of being refused, and the headroom is the smaller of the two readings (None
+  only when neither answers). D291's eleven existing pins are unchanged and green.
+
+### Gate evidence for this release, stated exactly
+
+- `quality` **GREEN** (ruff + mypy over 575 source files) and `fast` **GREEN** (7,189 tests)
+  over this tree, gate `1794702011479264806-release`.
+- The `ui` stage did **NOT** reach a green verdict, and this release ships without one. Twice
+  (`…4806`, `…1929`) it ran to **799 passed / 0 failed** and then stalled at 99% with every
+  started node resolved, hitting the new `STAGE_CEILING_S` at 1,830 s; the verdict is
+  `timeout`, which says nothing about the candidate. The one node left unresolved differed
+  each time (`test_view_teardown.py::test_leaving_right_after_a_send_does_not_remount_the_conversation`,
+  then `test_test_hint.py::test_the_card_shows_the_hint_above_the_raw_error`) and **both pass
+  standalone** (14 passed / 1 passed), so the stall is in the browser session's teardown, not
+  in any test. `scheduler-builder` reported the same shape twice on 2026-11-14 (R3428) before
+  any of this diff existed, and this candidate touches **no `static/` file at all** — its
+  Python changes are the Anthropic wire and two test-infrastructure modules, and the browser
+  stage runs at `BROWSER_WORKERS = 2` which `fast_workers` does not price. The honest reading
+  is that the browser suite's own ledger is green and its stage cannot report; the wedge is a
+  live defect of the harness, not of this release.
+
 ## [0.549.0] — 2026-11-14
 
 ### A reminder definition disagreement is settled by the STORE — his ruling, and the comparator reaches EMPTY (goal b9, D152 step 4)

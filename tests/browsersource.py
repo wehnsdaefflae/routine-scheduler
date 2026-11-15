@@ -94,7 +94,7 @@ MIN_FAST_WORKERS = 2
 
 
 def fast_workers(cores: int, *, headroom=None) -> int:
-    """How many fast workers fit the cgroup headroom there IS right now — D291.
+    """How many fast workers fit the headroom there IS right now — D291.
 
     The operator, asked which side gives when a release gate's FAST stage (3,584 MB of this
     container's 5,120 MB cgroup) and a live routine run (1,086-1,717 MB) cannot both fit:
@@ -111,15 +111,18 @@ def fast_workers(cores: int, *, headroom=None) -> int:
     ceiling to read (not Linux, cgroup v1, `memory.max` reading `max`) the headroom is None and
     the ceiling applies, exactly as this module behaved before.
 
-    The headroom reader is `memgate.cgroup_headroom_mb` — `memory.max` minus what the cgroup
-    HOLDS (anon + swapped pages), never `memory.current`, which counts page cache the kernel
-    drops at the limit and read 96-100 % on gates that killed nothing. Injected rather than
-    imported at module scope because `memgate` imports this module.
+    The headroom reader is `memgate.headroom_mb` — the SMALLER of the host's MemAvailable and
+    the cgroup's own headroom (`memory.max` minus what it HOLDS: anon + swapped pages, never
+    `memory.current`, which counts page cache the kernel drops at the limit and read 96-100 %
+    on gates that killed nothing). Both sides, because both are what the memory wait enforces:
+    reducing against the cgroup alone left the count at its ceiling on a HOST-short box, so the
+    session waited twenty minutes and exited 3 — the very refusal this function replaces.
+    Injected rather than imported at module scope because `memgate` imports this module.
     """
     import memgate
 
     ceiling = max(MIN_FAST_WORKERS, min(FAST_WORKERS, max(1, cores)))
-    have = (headroom or memgate.cgroup_headroom_mb)()
+    have = (headroom or memgate.headroom_mb)()
     if have is None:
         return ceiling
     for count in range(ceiling, MIN_FAST_WORKERS, -1):

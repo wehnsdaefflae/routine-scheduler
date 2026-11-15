@@ -486,15 +486,15 @@ Two kinds:
   is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
 - **anthropic** — Messages API, direct or through a gateway (Otari, with CLIProxyAPI behind it for subscription
   authentication — docs/model-gateway.md). Schema via a single tool
-  on `auto` held to one call — a FORCED `tool_choice` makes the configured effort meaningless
+  on plain `auto`, so a reply may chain CALLS — a FORCED `tool_choice` makes the configured effort meaningless
   (thinking is allowed only on `auto`, and the proxy strips thinking and effort from a forced
   call; measured 2026-10-08), so forcing is an endpoint's `tool_choice: forced` only, for a route
   validated that way (the Codex models). An `auto` reply no action can be read from is re-asked
   once forced in the same call (`stop_details["forced_reask"]`), so the shape 0.372.0 met cannot
   cost a run. Past actions are SENT as calls of the action tool and their observations as the calls'
-  results (`anthropic_messages.native_turns`, on `auto` only), so a reply ends at its one call;
-  should a reply still carry actions as text beside its call — or several CALLS, which the
-  one-call ask cannot prevent (F754: `parsed` the first, `parsed_rest` the others in wire order)
+  results (`anthropic_messages.native_turns`, on `auto` only), so the model reads its history as
+  calls; should a reply carry actions as text beside its call — or several CALLS, which plain
+  `auto` permits (F754: `parsed` the first, `parsed_rest` the others in wire order)
   — every one of them reaches the engine, which runs them in reply order
   (`engine/replyactions.py` for the order, `engine/chain.py` for the run). Message rendering — merging, media,
   calls, cache markers — is `anthropic_messages.py`; `anthropic_api.py` is the transport. Effort via `output_config`. Every

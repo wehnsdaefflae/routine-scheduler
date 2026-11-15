@@ -146,6 +146,9 @@ def test_the_xdist_auto_hook_hands_the_headroom_aware_count_to_pytest(monkeypatc
     monkeypatch.setattr("os.cpu_count", lambda: 12)
     monkeypatch.setattr(memgate, "cgroup_headroom_mb",
                         lambda *_a, **_k: CGROUP_MB - IDLE_HOLD_MB - LIVE_RUN_MB)
+    # The host side is pinned too: the count follows the SMALLER of the two readings, so a live
+    # box's own MemAvailable would otherwise decide this assertion (F898).
+    monkeypatch.setattr(memgate, "available_mb", lambda *_a, **_k: 10 ** 6)
     config = types.SimpleNamespace(option=types.SimpleNamespace(markexpr="not ui"))
     # The hook delegates to `browsersource.auto_workers`, which owns the cores/memory/browser
     # reasoning: conftest.py is over the house size bar and may only shrink, so the decision
@@ -195,3 +198,30 @@ def test_the_refusal_says_which_count_it_settled_on(monkeypatch):
     assert "this container's cgroup: 500 MB available" in message, message
     assert "needs 2816 MB" in message, message
     assert memgate.prose_for("fast", 4) == "the fast suite at 4 xdist workers"
+
+
+# ---- the host side binds too (F898, 2026-11-15) ------------------------------------------
+
+def test_the_count_reduces_against_the_host_when_the_host_is_the_short_side():
+    """D291 reduced against the cgroup alone while the wait guarded host memory as well.
+
+    Measured on this box 2026-11-15, mid-gate: cgroup headroom 3,845 MB but host MemAvailable
+    2,797 MB. `fast_workers` saw only the cgroup, kept FOUR workers at 3,584 MB, and the
+    session waited out `RSCHED_TEST_MEM_WAIT_S` and exited 3 — the refusal D291 replaced,
+    alive wherever the host is the binding side. The count must follow whichever limit binds.
+    """
+    short = {"read": lambda: 2900, "read_cgroup": lambda: CGROUP_MB - IDLE_HOLD_MB}
+    assert memgate.headroom_mb(**short) == 2900
+    workers = browsersource.fast_workers(11, headroom=lambda: memgate.headroom_mb(**short))
+    assert workers == 3, "three workers cost 2,816 MB and fit 2,900"
+    assert memgate.fast_need_mb(workers) <= 2900
+
+
+def test_the_headroom_is_the_smaller_of_the_two_readings_and_none_only_without_both():
+    """One reading for the count and for the wait, so the two cannot disagree — the reason
+    `need_mb` gives for deriving both charges in one place."""
+    assert memgate.headroom_mb(read=lambda: 4000, read_cgroup=lambda: 1500) == 1500
+    assert memgate.headroom_mb(read=lambda: 1200, read_cgroup=lambda: 4000) == 1200
+    assert memgate.headroom_mb(read=lambda: None, read_cgroup=lambda: 2000) == 2000
+    assert memgate.headroom_mb(read=lambda: 2000, read_cgroup=lambda: None) == 2000
+    assert memgate.headroom_mb(read=lambda: None, read_cgroup=lambda: None) is None

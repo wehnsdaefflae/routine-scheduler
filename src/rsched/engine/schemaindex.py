@@ -5,7 +5,7 @@ already carries.
 
 `completion.next_action` hands `loop.action_schema` to `endpoint.complete(..., schema=…)`, and
 every transport this instance speaks enforces it STRUCTURALLY: the Anthropic adapter offers it
-as a tool (`{"name": "action", "input_schema": schema}`) held to one call, the OpenAI-compatible
+as a tool (`{"name": "action", "input_schema": schema}`) on plain `auto`, the OpenAI-compatible
 one as `response_format: {"type": "json_schema", "strict": True}`, Ollama as `format` — real
 constrained decoding. The descriptions inside that object are what the model reads there.
 
