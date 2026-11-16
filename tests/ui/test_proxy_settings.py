@@ -262,3 +262,48 @@ def test_a_rate_limit_without_a_figure_still_says_rate_limited(ui, ui_page, monk
     expect(card).to_contain_text("rate limited")
     expect(card).to_contain_text("read again later")
     expect(card).not_to_contain_text("subscription quota unavailable")
+
+
+def test_a_stale_login_is_told_apart_and_removed_from_the_card(ui, ui_page, monkeypatch):
+    """2026-11-16: a lapsed subscription's free-plan login and the new Plus login sat on the
+    card as two identical `Codex me+openai@…` rows, and the stale one could be dropped only in
+    the proxy's own panel. Two rows with one address now say which auth file each is, and each
+    row removes its own account after a confirm that names the file."""
+    from rsched.config import ModelConfig
+    from rsched.endpoints import cliproxy_login
+
+    ui.server_cfg.endpoints["codex-proxy"] = EndpointConfig(
+        kind="anthropic", base_url="http://127.0.0.1:1", quota_source="cliproxy")
+    ui.server_cfg.models["Sol"] = ModelConfig(name="Sol", endpoint="codex-proxy",
+                                               model="gpt-6.1-sol")
+    row = {"provider": "codex", "label": "me+openai@example.org", "status": "active",
+           "status_message": "", "unavailable": False, "next_retry_after": ""}
+    accounts = [dict(row, name="codex-me-prolite.json", disabled=True),
+                dict(row, name="codex-me-plus.json", disabled=False)]
+    monkeypatch.setattr(cliproxy_login, "accounts", lambda cfg, providers: {
+        "supported": True, "ok": True, "accounts": list(accounts),
+        "providers": [{"id": "codex", "label": "Codex"}]})
+    removed: list = []
+
+    def remove(cfg, account, providers):
+        removed.append((account, sorted(providers)))
+        accounts[:] = [a for a in accounts if a["name"] != account]
+        return {"ok": True, "name": account}
+    monkeypatch.setattr(cliproxy_login, "remove", remove)
+
+    ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
+    card = ui_page.locator(".panel", has=ui_page.get_by_text("codex-proxy", exact=True)).first
+    expect(card).to_contain_text("✗ Codex me+openai@example.org (codex-me-prolite.json): disabled")
+    expect(card).to_contain_text("✓ Codex me+openai@example.org (codex-me-plus.json): active")
+    stale = card.get_by_role("button", name="remove Codex me+openai@example.org "
+                                            "(codex-me-prolite.json)", exact=True)
+    stale.click()                                  # cancelled: nothing is sent
+    expect(ui_page.get_by_text("codex-me-prolite.json) from the proxy?")).to_be_visible()
+    ui_page.get_by_role("button", name="cancel", exact=True).click()
+    assert removed == []
+    stale.click()
+    ui_page.get_by_role("button", name="remove", exact=True).click()
+    expect(card).not_to_contain_text("prolite")
+    # one row left: no twin, so the file name is no longer needed to tell it apart
+    expect(card).to_contain_text("✓ Codex me+openai@example.org: active")
+    assert removed == [("codex-me-prolite.json", ["codex"])]

@@ -141,9 +141,9 @@ system_tool_call_model: ""        # fleet default for the tool_call role; blank 
   works on everything else the wire serves, Haiku and a proxy's `gpt-*` ids included.
 - `quota_source` — `cliproxy` binds the PROXY to its management API (the edit form calls
   the field *Proxy management (CLIProxyAPI)*): the signed-in account rows on the card, the
-  card's *re-authenticate* control that signs a dead session back in without a terminal, and
-  the Claude subscription quota read (`docs/model-gateway.md`, "Signing in, and signing back
-  in"). Here that binding is `cliproxy-mgmt`, an endpoint with no models on the standalone
+  card's *re-authenticate* control that signs a dead session back in without a terminal, each
+  row's *remove* that deletes a lapsed or replaced login, and the Claude subscription quota read
+  (`docs/model-gateway.md`, "Signing in, signing back in, and removing a login"). Here that binding is `cliproxy-mgmt`, an endpoint with no models on the standalone
   proxy's own origin. One binding per proxy is enough — an endpoint without its own resolves a
   sibling's on the same origin — and each card shows the accounts for ITS models, by model
   family (`claude-*` → Claude, `gemini-*` and `gpt-oss*` → Antigravity — matched before the

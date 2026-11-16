@@ -148,3 +148,28 @@ def test_mutating_routes_need_a_binding_and_the_operator_token(api_client, monke
     r = c.post("/api/settings/endpoints/claude-proxy/proxy-login/complete",
                json={"provider": "anthropic", "state": "s", "response": "x"}, headers=headers)
     assert r.status_code == 403
+
+
+def test_remove_route_passes_the_cards_providers_and_refuses_the_routine_token(api_client,
+                                                                                monkeypatch):
+    """The remove route is bound like the sign-in: the sibling's binding serves the Codex
+    card, which can remove only what it lists (its providers go along), and the read-only
+    routine token is refused."""
+    c, _tmp = api_client
+    _add_proxy_pair(c)
+    calls: list = []
+    monkeypatch.setattr(endpoint_probe.cliproxy_login, "remove",
+                        lambda bound, account, providers:
+                        calls.append((bound.quota_source, account, sorted(providers)))
+                        or {"ok": True, "name": account})
+    r = c.post("/api/settings/endpoints/codex-proxy/proxy-accounts/remove",
+               json={"account": "codex-me-prolite.json"})
+    assert r.status_code == 200 and r.json() == {"ok": True, "name": "codex-me-prolite.json"}
+    assert calls == [("cliproxy", "codex-me-prolite.json", ["codex"])]
+    r = c.post("/api/settings/endpoints/dummy/proxy-accounts/remove", json={"account": "x"})
+    assert r.status_code == 400 and "Proxy management" in r.json()["detail"]
+    c.app.state.server.routine_token = "routine-only"
+    r = c.post("/api/settings/endpoints/codex-proxy/proxy-accounts/remove",
+               json={"account": "x"}, headers={"Authorization": "Bearer routine-only"})
+    assert r.status_code == 403
+    assert len(calls) == 1

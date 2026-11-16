@@ -265,3 +265,58 @@ def test_mocking_the_proxy_twice_re_aims_it_instead_of_wrapping_it(proxy, monkey
     second = cliproxy_login.accounts(proxy)
     assert second["ok"], second.get("error")      # red before the fix: TypeError -> not ok
     assert [a["label"] for a in second["accounts"]] == ["second@example.org"]
+
+
+# ---- removing an account ------------------------------------------------------------------
+
+
+def _two_codex_logins(seen):
+    """The 2026-11-16 layout: one address signed in twice — the lapsed free plan's login and
+    the new Plus one — plus a Claude account another card owns."""
+    def handler(request):
+        seen.append((request.method, request.url.path, dict(request.url.params)))
+        if request.method == "GET":
+            return httpx.Response(200, json={"files": [
+                {"name": "codex-me-prolite.json", "type": "codex", "email": "me+openai@x.org"},
+                {"name": "codex-me-plus.json", "type": "codex", "email": "me+openai@x.org"},
+                {"name": "claude-me.json", "provider": "claude", "email": "me@x.org"}]})
+        return httpx.Response(200, json={"status": "ok"})
+    return handler
+
+
+def test_remove_deletes_exactly_the_named_listed_account(proxy, monkeypatch):
+    seen: list = []
+    mock_proxy(monkeypatch, _two_codex_logins(seen))
+    out = cliproxy_login.remove(proxy, "codex-me-prolite.json", {"codex"})
+    assert out == {"ok": True, "name": "codex-me-prolite.json"}
+    assert seen == [("GET", "/v0/management/auth-files", {}),
+                    ("DELETE", "/v0/management/auth-files", {"name": "codex-me-prolite.json"})]
+
+
+@pytest.mark.parametrize(("name", "providers"), [
+    ("claude-me.json", {"codex"}),         # another card's account: this card cannot see it
+    ("codex-me-gone.json", {"codex"}),     # not (or no longer) signed in
+    ("", set())])                          # no name: the proxy's delete-everything is never sent
+def test_remove_refuses_what_the_card_does_not_list_before_any_delete(proxy, monkeypatch,
+                                                                      name, providers):
+    seen: list = []
+    mock_proxy(monkeypatch, _two_codex_logins(seen))
+    out = cliproxy_login.remove(proxy, name, providers)
+    assert not out["ok"] and "reload the account list" in out["error"]
+    assert [m for m, _p, _q in seen] == ["GET"]
+
+
+def test_remove_reports_the_proxys_refusal_and_never_echoes_a_body(proxy, monkeypatch):
+    def refuse(status, body):
+        def handler(request):
+            if request.method == "GET":
+                return httpx.Response(200, json={"files": [
+                    {"name": "codex-me.json", "type": "codex"}]})
+            return httpx.Response(status, **body)
+        return handler
+    mock_proxy(monkeypatch, refuse(404, {"json": {"error": "auth file not found"}}))
+    assert cliproxy_login.remove(proxy, "codex-me.json") == {
+        "ok": False, "error": "The proxy did not remove it: auth file not found"}
+    mock_proxy(monkeypatch, refuse(500, {"text": "management-secret"}))
+    out = cliproxy_login.remove(proxy, "codex-me.json")
+    assert not out["ok"] and "HTTP 500" in out["error"] and "secret" not in out["error"]

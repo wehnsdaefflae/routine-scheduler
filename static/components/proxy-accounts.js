@@ -7,7 +7,8 @@
 // nothing outside that file imported it.
 
 import { api } from "/static/api.js";
-import { act, el, toast } from "/static/util.js";
+import { act, el, toast, toastError } from "/static/util.js";
+import { confirmDialog } from "/static/components/dialog.js";
 
 //: Who the proxy is signed in as FOR THIS ENDPOINT'S MODELS, and the way back in when a session
 //: dies. The proxy owns the OAuth flow; the console only ferries the consent link out and the
@@ -18,6 +19,8 @@ import { act, el, toast } from "/static/util.js";
 //: endpoint: the Claude card shows the Claude account, the Codex card the Codex one, a card serving
 //: Gemini ids the Antigravity (Google) one. The sign-in is the same three steps for all of them;
 //: only the callback port and path differ, and the server names both in its reply.
+//: Each row can be REMOVED — a lapsed subscription's old login sitting beside the new one —
+//: and two rows with the same address are told apart by their auth-file name.
 const PROVIDER_LABEL = { claude: "Claude", anthropic: "Claude", codex: "Codex",
   antigravity: "Antigravity" };
 
@@ -27,16 +30,33 @@ export function proxyAccounts(ep, onSignedIn) {
   const loginBox = el("div", {});
   const box = el("div", { class: "small", style: "margin-top:4px" });
 
-  function accountLine(acc) {
+  function accountLine(acc, twin) {
     const bad = acc.disabled || acc.unavailable || !["", "ok", "active"].includes(acc.status);
     const word = acc.disabled ? "disabled"
       : acc.unavailable ? (acc.status_message || acc.status || "unavailable")
       : (acc.status || "ok");
     const retry = bad && acc.next_retry_after
       ? ` (retry after ${acc.next_retry_after.slice(0, 16).replace("T", " ")})` : "";
+    const who = `${PROVIDER_LABEL[acc.provider] || acc.provider} ${acc.label || acc.name}`;
+    const remove = el("button", { class: "btn small", style: "margin-left:8px",
+      "aria-label": `remove ${who} (${acc.name})` }, "remove");
+    remove.onclick = () => act(remove, () => removeAccount(acc, who));
     return el("div", {},
       el("span", { style: `color:var(--${bad ? "err" : "ok"})` }, bad ? "✗ " : "✓ "),
-      `${PROVIDER_LABEL[acc.provider] || acc.provider} ${acc.label || acc.name}: ${word}${retry}`);
+      who, twin ? el("span", { class: "muted" }, ` (${acc.name})`) : null,
+      `: ${word}${retry}`, remove);
+  }
+
+  // Deleting the auth file is the proxy's, and it cannot be undone from here: the confirm names
+  // the file, and the only way back is a fresh sign-in. A thrown error is act()'s to show.
+  async function removeAccount(acc, who) {
+    const ok = await confirmDialog(`Remove ${who} (${acc.name}) from the proxy? Its sign-in is `
+      + "deleted; any model it served stops until you sign in again.", { confirmLabel: "remove" });
+    if (!ok) return;
+    const r = await api(`${base}/proxy-accounts/remove`, { method: "POST", body: { account: acc.name } });
+    if (!r.ok) { toastError(r.error); return; }
+    toast(`${who}: removed from the proxy`);
+    await load();
   }
 
   async function load() {
@@ -48,7 +68,11 @@ export function proxyAccounts(ep, onSignedIn) {
       list.replaceChildren(el("span", { class: "warn-line" }, `proxy accounts unavailable — ${a.error}`));
       return;
     }
-    list.replaceChildren(...a.accounts.map(accountLine));
+    // the same address signed in twice (an old plan's login beside the new one) reads as two
+    // identical rows unless each says which auth file it is
+    const seen = a.accounts.map((acc) => `${acc.provider} ${acc.label}`);
+    list.replaceChildren(...a.accounts.map((acc, i) =>
+      accountLine(acc, seen.indexOf(seen[i]) !== seen.lastIndexOf(seen[i]))));
     if (!a.accounts.length) list.append(el("span", { class: "muted" }, "no proxy account signed in yet"));
     // act() holds the button while the proxy mints the link: a double press started two
     // sign-ins, and the card showed whichever link answered last while the other state waited.

@@ -1,4 +1,4 @@
-"""Sign a subscription account back in through CLIProxyAPI, from the console.
+"""Sign a subscription account back in through CLIProxyAPI, from the console — or remove one.
 
 The proxy owns the OAuth flow (docs/model-gateway.md): it mints the consent URL,
 receives the authorization code and writes the auth file. What the console adds is the
@@ -15,6 +15,11 @@ account messages — never a token, a key or an upstream body. Every public func
 a soft `{"ok": False, "error": …}` instead of raising, so the card can show the reason.
 Which endpoint a call is made for is `cliproxy_mgmt`'s business: it resolves the binding
 (one key per proxy) and names the providers that endpoint's models belong to.
+
+Removing (`remove`) deletes ONE auth file by its name: a lapsed subscription's old login beside
+the new one (2026-11-16: two Codex rows for the same address, the free one and the Plus one, and
+no way to tell them apart or drop the stale one but the proxy's own panel). Only an account the
+asking card lists can be removed, and the proxy's delete-everything form is never sent.
 """
 
 from __future__ import annotations
@@ -188,6 +193,35 @@ def complete(cfg: EndpointConfig, provider: str, state: str, pasted: str, *,
                                         "the account list in a moment; if it still reads "
                                         "unavailable, start the sign-in again.")
                 sleep(1)
+    except EndpointError as exc:
+        return {"ok": False, "error": str(exc)}
+    except (httpx.HTTPError, ValueError, TypeError):
+        return {"ok": False, "error": UNREACHABLE}
+
+
+def remove(cfg: EndpointConfig, name: str, providers=frozenset(), *, timeout: int = 15) -> dict:
+    """Delete one signed-in account — the auth file `name` — from the proxy. It must be one
+    of the accounts `accounts(cfg, providers)` lists for the asking card, so a card can only
+    remove what it shows; a name that is not there is refused before the delete is sent. The
+    proxy's delete takes `?name=`, and without one it answers 400 — this never sends `all`.
+    Irreversible on the proxy's side: signing in again is the only way back.
+    """
+    wanted = {p for p in providers if p in LOGIN_PROVIDER}
+    try:
+        client, url = _client(cfg, timeout)
+        with client:
+            listed = [f for f in auth_files(client, url)
+                      if not wanted or file_provider(f) in wanted]
+            if not name or name not in {str(f.get("name") or "") for f in listed}:
+                raise EndpointError(f"No account {name!r} on this card — reload the account "
+                                    "list and try again.")
+            response = client.delete(f"{url}/auth-files", params={"name": name})
+            if response.status_code != 200:
+                reply = response.json() if response.status_code in (400, 404) else {}
+                why = _one_line(reply.get("error")) if isinstance(reply, dict) else ""
+                raise (EndpointError(f"The proxy did not remove it: {why}") if why
+                       else management_error(response.status_code))
+        return {"ok": True, "name": name}
     except EndpointError as exc:
         return {"ok": False, "error": str(exc)}
     except (httpx.HTTPError, ValueError, TypeError):

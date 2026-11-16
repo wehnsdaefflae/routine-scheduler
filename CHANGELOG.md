@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.551.0] — 2026-11-16
+
+### A subscription login can be removed from its card, and two logins for one address are told apart
+
+- **The defect.** A new ChatGPT Plus subscription was signed in from the `cliproxy-mgmt` card
+  (2026-11-16) for an address the proxy already held, a free-plan Codex login whose subscription
+  ran out on 2026-10-10. The proxy kept both, and the card showed two identical rows,
+  `Codex me+openai@…: active` twice. Nothing on the card said which one was the stale login, and
+  dropping it was possible only in the proxy's own panel.
+- **What changed.** Each account row has a *remove* button. After a confirm that names the auth
+  file, `POST /api/settings/endpoints/{name}/proxy-accounts/remove` (`{account}`) deletes that one
+  login through the proxy's management API (`cliproxy_login.remove`, `DELETE
+  /v0/management/auth-files?name=…`). A card can remove only an account it lists, so the server
+  re-reads the listing filtered to that card's providers before it sends the delete. The proxy's
+  delete-everything form is never sent, the routine token is refused like on every
+  config-mutating route, and nothing the management key sees reaches the console. Two rows with
+  the same provider and address now each name their file (`codex-…-plus.json`).
+- `tests/test_cliproxy_login.py`, `tests/test_proxy_login_api.py` and
+  `tests/ui/test_proxy_settings.py` pin the delete, the refusals that send no delete, the route's
+  binding and token, and the card's confirm, cancel and twin labels. `docs/model-gateway.md`
+  (the section is now "Signing in, signing back in, and removing a login") and
+  `docs/endpoints.md` describe the control, and the gateway doc also covers an `error` status that
+  is one refused request rather than a dead login.
+
 ## [0.550.0] — 2026-11-15
 
 ### The wire stops forbidding the chaining the engine runs (R3422, F897)

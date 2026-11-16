@@ -142,13 +142,14 @@ async def endpoint_quota(request: Request, name: str) -> dict:
     return await asyncio.to_thread(cliproxy_quota.read_quota, bound)
 
 
-# ---- signing the proxy's accounts back in, from the card -----------------------------------
+# ---- signing the proxy's accounts back in (or removing one), from the card -----------------
 # The management binding is the proxy's (`quota_source: cliproxy` + the management key in
 # `quota_key_var` on ANY endpoint of that proxy — cliproxy_mgmt.binding resolves a sibling's),
 # and which accounts a card shows follows the provider of the models bound to that endpoint.
-# The proxy owns the OAuth flow; these three routes ferry the consent URL out to the
+# The proxy owns the OAuth flow; the two login routes ferry the consent URL out to the
 # operator's browser and the code back (endpoints/cliproxy_login.py explains why the code
-# comes back by hand: the consent page redirects to localhost on the OPERATOR'S device).
+# comes back by hand: the consent page redirects to localhost on the OPERATOR'S device), and
+# the remove route deletes one account the card lists.
 # Mutating routes, so the read-only routine token is refused like every other POST.
 
 def _proxy_binding(request: Request, name: str):
@@ -201,6 +202,20 @@ async def proxy_login_complete(request: Request, name: str,
     bound = _proxy_binding(request, name)
     return await asyncio.to_thread(cliproxy_login.complete, bound, body.provider, body.state,
                                    body.response)
+
+
+class ProxyAccountRemove(BaseModel):
+    account: str    # the auth file's name, as the account list carries it
+
+
+@router.post("/settings/endpoints/{name}/proxy-accounts/remove")
+async def proxy_account_remove(request: Request, name: str, body: ProxyAccountRemove) -> dict:
+    """Delete one of the accounts THIS card lists from the proxy (a lapsed subscription's old
+    login, say). Only a listed account can go; signing in again is the only way back.
+    """
+    bound = _proxy_binding(request, name)
+    providers = cliproxy_mgmt.endpoint_providers(server_of(request), name)
+    return await asyncio.to_thread(cliproxy_login.remove, bound, body.account, providers)
 
 
 @router.get("/settings/endpoints/{name}/model-ids")

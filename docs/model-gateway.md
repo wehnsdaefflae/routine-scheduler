@@ -94,7 +94,7 @@ up `<name>`'s list price and context window in the reference catalog — the fal
 whose bill was not reported, and the window the run is sized by. Only the suffix counts: an id
 with `metered` elsewhere in it is its own name.
 
-## Signing in, and signing back in
+## Signing in, signing back in, and removing a login
 
 The subscription logins belong to the standalone proxy, and the console still manages them —
 through `cliproxy-mgmt`, the one endpoint bound to the proxy's management API. Its card lists the
@@ -112,10 +112,22 @@ open the link it shows. The consent page then sends the browser to the PROXY'S c
 device the page fails to load while its address bar still carries the code. Copy the whole
 address, paste it into the card's box and press *finish sign-in*; if the consent page shows a
 code instead of redirecting, paste that. The console hands the code to the proxy's management
-callback and polls until the token exchange settles. It never sees a token: its three routes
-(`GET …/proxy-accounts`, `POST …/proxy-login`, `POST …/proxy-login/complete`) carry the consent
-link, the state and the proxy's status words, and both POSTs are refused for the routine token
-like every config-mutating route.
+callback and polls until the token exchange settles. It never sees a token: its four routes
+(`GET …/proxy-accounts`, `POST …/proxy-login`, `POST …/proxy-login/complete`,
+`POST …/proxy-accounts/remove`) carry the consent link, the state, an account's file name and the
+proxy's status words, and every POST is refused for the routine token like every
+config-mutating route.
+
+Each account row has a *remove* button: it deletes that login from the proxy (its auth file,
+after a confirm that names the file), for a subscription that lapsed or was replaced. A new
+sign-in for an address the proxy already holds does not replace the old login, it adds one
+beside it (2026-11-16: the lapsed free-plan Codex login and the new Plus login for the same
+address), so two rows with the same address also name their file (`codex-…-plus.json`). A
+card can remove only an account it lists, the proxy's delete-everything form is never sent,
+and there is no undo: only a fresh sign-in brings a login back. Switching a login off without
+deleting it is still the proxy's own panel (`/management.html`, Auth Files). An `error` status
+without a usage limit can be one refused request (a model the plan does not include), which the
+proxy keeps as the account's last word even while later requests succeed.
 
 The terminal fallback — the proxy's own `--claude-login` with its callback port tunnelled over
 SSH — belongs to the gateway repo now, since the container it runs in is that stack's.
