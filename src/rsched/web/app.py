@@ -6,11 +6,8 @@ from __future__ import annotations
 
 import logging
 import secrets
-import time
-from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from starlette._utils import get_route_path
 
@@ -19,14 +16,13 @@ from ..daemon.events import EventBus
 from ..daemon.runner import Runner
 from ..daemon.scheduler import Scheduler
 from ..llm_tasks import TaskCenter
-from . import actionlimits, assetskew, routers, slowsample
+from . import api_core, assetskew, routers, slowsample
+from .api_core import STATIC_DIR
 from .appwiring import _add_middlewares, _make_lifespan
 from .ioload import attach_state
 from .screen_proxy import screen_for_path
 
 log = logging.getLogger("rsched.web")
-
-STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
 
 
 # R94 (operator decision 2026-08-05: ENFORCE — this supersedes decision D68's 2026-08-03
@@ -194,105 +190,14 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     deps = [Depends(require_auth)]
     routers.include_api_routers(app, deps)
 
-    def _setup_marker():
-        return (server.source.parent / ".setup-complete") if server.source else None
-
     # The build this PROCESS is, read once at boot. /static is served live from the checkout,
     # which can move under us — `assetskew` compares the two and /api/status carries the verdict
     # so the console can say so (F696).
-    build = assetskew.read_stamp(server.source_repo)
-
-    @app.get("/api/status", dependencies=deps)
-    def status() -> dict:
-        from .. import __version__, registry
-        from ..schedule import server_tz
-
-        marker = _setup_marker()
-        needs_setup = not (marker and marker.exists())
-        # llm_ready: the system_model (used by clarify + workflow generation) names a
-        # catalog model whose endpoint is configured. Until then nothing that needs an LLM to
-        # CREATE a routine works — the UI disables those. (Routines pick their own models to run.)
-        mc = server.models.get(server.system_model) if server.system_model else None
-        llm_ready = bool(mc and mc.endpoint in server.endpoints)
-        # the seeded meta routines install disabled and carry the "meta" tag — the UI uses this
-        # to notice that self-improvement is off on a fresh instance
-        meta_routines = [{"slug": info.slug, "enabled": info.cfg.enabled}
-                         for info in registry.scan(server).values()
-                         if "meta" in info.cfg.tags]
-        return {"version": __version__, "build": build, "server_tz": server_tz(),
-                # F696: `build` is the process; `disk_build` is the checkout /static is served
-                # from NOW, and `build_skew` says they disagree — the console then tells the
-                # operator to reload instead of posting new fields at an old process.
-                **assetskew.status_fields(server.source_repo, build),
-                "needs_setup": needs_setup, "llm_ready": llm_ready,
-                # Where the shared browser can be WATCHED (empty = this deployment never
-                # published a screen). The console shows the Browser section only when it
-                # is set, because a dead link to a port nobody opened is worse than no link.
-                "browser_view_url": server.browser_view_url,
-                # The agent desktops' two addresses, and whether BOTH are set — the Desktops
-                # page, its nav link and its dock show only then, on the same reasoning.
-                "desktop_broker_url": server.desktop_broker_url,
-                "desktop_view_url": server.desktop_view_url,
-                "desktops": server.desktops_configured,
-                "action_limits": actionlimits.LIMITS,   # web/actionlimits.py — D252
-                "meta_routines": meta_routines, **scheduler.snapshot()}
-
-    @app.post("/api/setup/complete", dependencies=deps)
-    def setup_complete() -> dict:
-        """The first-run setup flow calls this once the user has configured (or chosen to skip)
-        providers + repos — it stops the first-launch redirect to Settings.
-        """
-        marker = _setup_marker()
-        if marker:
-            marker.write_text("done\n", encoding="utf-8")
-        return {"ok": True}
-
-    @app.post("/api/stream-ticket", dependencies=deps)
-    def stream_ticket() -> dict:
-        """A short-lived, unguessable query-string credential for ONE live-stream socket (the
-        WebSocket API cannot send an Authorization header). `streams.admits` spends it on the
-        handshake, so every connection and every reconnect mints its own; expired, unspent
-        tickets are purged here.
-        """
-        from .streams import STREAM_TICKET_TTL_S
-
-        now = time.monotonic()
-        tickets = app.state.stream_tickets
-        # A sync route runs on a worker thread, so two mints can purge at once — every
-        # browser tab reconnecting after a restart asks together. Both see the same expired
-        # ticket, and a bare `del` made the slower one a 500; the snapshot keeps the
-        # iteration off a dict another thread is growing.
-        for stale, exp in list(tickets.items()):
-            if exp < now:
-                tickets.pop(stale, None)
-        ticket = secrets.token_urlsafe(24)
-        tickets[ticket] = now + STREAM_TICKET_TTL_S
-        return {"ticket": ticket, "ttl": STREAM_TICKET_TTL_S}
-
-    # A WebSocket route takes no `deps`: an HTTP dependency fails on a websocket scope (it
-    # has no Request), so the socket is admitted by its stream ticket inside `serve`.
-    @app.websocket("/api/events")
-    async def global_events(ws: WebSocket) -> None:
-        from .streams import bus_stream, serve
-
-        await serve(ws, lambda: bus_stream(bus))
-
-    @app.get("/", include_in_schema=False)
-    def index():
-        return FileResponse(STATIC_DIR / "index.html")
-
-    @app.get("/sw.js", include_in_schema=False)
-    def service_worker():
-        # served from the root (not /static/) so the worker's scope covers the whole console
-        return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript")
-
-    @app.get("/manifest.webmanifest", include_in_schema=False)
-    def web_manifest():
-        # served from the root so an installed PWA's scope covers the whole console — the
-        # manifest (display:standalone) is what lets the console be added to a phone's home
-        # screen, which iOS Safari requires before it will deliver Web Push notifications.
-        return FileResponse(STATIC_DIR / "manifest.webmanifest",
-                            media_type="application/manifest+json")
+    app.state.build = assetskew.read_stamp(server.source_repo)
+    # The app's own routes are MODULE-LEVEL and read this app from `request.app.state`: as
+    # closures here, FastAPI's process-wide callable cache kept every app ever built (api_core).
+    app.include_router(api_core.authed, dependencies=deps)
+    app.include_router(api_core.public)
 
     _add_middlewares(app)   # CSP + compression, INSIDE the two layers below (see appwiring)
 

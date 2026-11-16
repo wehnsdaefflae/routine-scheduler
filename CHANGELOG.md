@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.551.1] — 2026-11-16
+
+### The browser suite no longer runs out of memory: an app is freed once its test ends
+
+- **The defect.** Every full browser-suite run ended with an xdist worker OOM-killed inside the
+  `uitest` container's 4 GiB cgroup (`node down: Not properly terminated`) at ~90%, after which
+  the run hung. The kernel log has twelve such kills of a `uitest` python since 2026-11-13, each
+  at ~1.9 GB anon. Measured per test (a throwaway probe reading `RssAnon` after each one): every
+  worker grew 3-7 MB per test in every file alike, so no test was at fault. After `gc.collect()`,
+  **40 FastAPI apps were alive after 40 tests**, one per test.
+- **The cause.** FastAPI classifies endpoint and dependency callables through process-lifetime
+  `lru_cache`s keyed on the callable (`fastapi.dependencies.models`, 4096 entries). Seven routes
+  (`/api/status`, `/api/setup/complete`, `/api/stream-ticket`, `/api/events`, `/`, `/sw.js`,
+  `/manifest.webmanifest`) were closures inside `create_app`, so each app added new cache keys
+  whose cells held that app and its ~560 routes' pydantic models. The daemon builds one app,
+  so it never showed there.
+- **What changed.** Those routes are module-level in the new `web/api_core.py` (two routers:
+  the token-gated three, included with the same bearer dependency, and the public four) and read
+  their app from `request.app.state` / `ws.app.state`. `create_app` now stores the boot `build`
+  stamp on `app.state.build`. Served behaviour is unchanged. Measured after: 1-2 apps alive at
+  any point (the current one, and one whose slow-request watcher has not retired yet), and the
+  three files of the probe ran in 53 s instead of 75 s.
+- `tests/test_app_release.py` pins that a dropped app is freed, both bare and after serving
+  requests. It fails on the old `app.py`. CLAUDE.md gains the gotcha.
+
 ## [0.551.0] — 2026-11-16
 
 ### A subscription login can be removed from its card, and two logins for one address are told apart

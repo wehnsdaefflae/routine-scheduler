@@ -1405,6 +1405,15 @@ by a test, by the engine, or by a past incident.
   deliberately NOT `engine/requests.DECISIONS`: those values decide an ENTITY and seed a run's
   grant overlay, so an access request's "no" stays `deny_now`/`deny_forever` and the decline
   route refuses that record with a 400 naming them.
+- **A route handler or dependency never closes over an app.** FastAPI classifies every
+  endpoint and dependency callable through process-lifetime `lru_cache`s keyed on the callable
+  (`fastapi.dependencies.models`, 4096 entries), so a handler defined inside `create_app` is a
+  new key per app and pins that whole app (~5 MB, every route's pydantic models) for the life of
+  the process. The daemon builds one app and never shows it; the suites build one per test, and
+  the browser suite's workers grew to ~1.9 GB and were OOM-killed in `uitest`'s 4 GiB cgroup near
+  the end of every full run (12 kills 2026-11-13..16, found by counting live apps). The
+  app's own routes are module-level in `web/api_core.py` and read their app from
+  `request.app.state`; `tests/test_app_release.py` fails when a dropped app stays alive.
 
 ## Standards
 
