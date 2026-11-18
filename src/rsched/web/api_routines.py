@@ -28,7 +28,6 @@ from .routines_common import (
     _catalog,
     _info,
     _state,
-    guard_not_active,
     permission_layers_detail,
     queue_or_apply,
 )

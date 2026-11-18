@@ -81,6 +81,51 @@ def test_the_deletion_is_a_later_row_and_does_not_erase_the_write(make_routine, 
         "the write's own row no longer carries the pattern it defined")
 
 
+def test_the_consoles_delete_reaches_the_stream_too(api_client, make_routine):
+    """The CONSOLE's delete — the user's own lever — must reach the stream as well.
+
+    The run's `remind op=delete` was the half D152 step 3 fixed; `DELETE
+    /api/routines/{slug}/reminders/{rid}` wrote the raw store and nothing else. Now that the
+    reminder half SERVES definitions from the stream, that is not cosmetic drift: the next read
+    folds a definition the user deleted and the pattern keeps holding actions, under a
+    `{"ok": true}` the user already saw. A reminder decides whether an action is HELD, so a
+    deletion missing from the stream changes what binds a run.
+
+    The endpoint has no run `loop`, so it appends through `hooks.store.record_reminder`
+    directly, with the routine as origin and no run id — the honest record of "the console did
+    this". What this pins is the PROPERTY, not the mechanism: the comparator reads empty.
+    """
+    c, _tmp = api_client
+    d = make_routine(slug="consoledel")
+    (d / "state").mkdir(exist_ok=True)
+    kept = store.Reminder(id="rem-20260101-010101-2", regex="^util:b", description="stays",
+                          scope="local", created_run="r:1", stats=store.blank_stats())
+    doomed = store.Reminder(id="rem-20260101-010101-1", regex="^shell: rm -rf",
+                            description="it removes a tree nothing restores", scope="local",
+                            created_run="r:1", stats=store.blank_stats())
+    store.save_local(d, [doomed, kept], {})
+    # the write's own row, as the run that set it would have left on the stream
+    hookstore.record_reminder(d.parent, record=doomed.as_record(), routine="consoledel",
+                              run_id="consoledel:20260101-010101")
+    hookstore.record_reminder(d.parent, record=kept.as_record(), routine="consoledel",
+                              run_id="consoledel:20260101-010101")
+
+    assert c.delete(f"/api/routines/consoledel/reminders/{doomed.id}").json() == {
+        "ok": True, "remaining": 1}
+
+    assert [r.id for r in store.load_local(d)[0]] == [kept.id]
+    assert reminderproj.drift(d.parent, d) == {}, (
+        "the console's delete did not reach the hook stream — a stream-served read would "
+        "re-raise a reminder the user deleted")
+    rows = [h for h in hookstore.read_hooks(d.parent)
+            if h.source == "reminder" and h.id == doomed.id]
+    assert rows[-1].disposition == "remove", [(h.id, h.disposition) for h in rows]
+    assert rows[0].disposition != "remove", "the write's own row was rewritten, not added to"
+    # the reminder that stayed is untouched on both sides
+    assert [h.disposition for h in hookstore.read_hooks(d.parent)
+            if h.source == "reminder" and h.id == kept.id] == ["keep"]
+
+
 def test_only_a_local_deletion_is_mirrored_as_this_routines_own(make_routine):
     """A curated reminder lives in the library, which every routine reads, so its deletion is
     recorded where that store's history is — the library git commit `remind_write.commit`
