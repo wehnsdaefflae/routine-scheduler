@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.551.2] — 2026-11-18
+
+### The declared Pydantic floor matches the API the config actually uses
+
+- **The defect** (`config-optimizer`'s F42, decided by the operator as R3534). `pyproject.toml`
+  declared `pydantic>=2.9`, while `src/rsched/config/base.py` builds its models with
+  `ConfigDict(validate_by_name=True)` — a setting Pydantic added in **2.11**. An install
+  resolving the declared minimum would accept by-name construction silently and drop the
+  values, so the declaration promised support for versions the code cannot run on.
+- **Measured, not assumed.** The real `RoutineConfig` was round-tripped (alias in, by-name in,
+  dump out) against an isolated **2.11.0** target: it passes. The same probe against the
+  formerly allowed **2.9.0** loses the by-name values, which is the mismatch itself reproduced
+  rather than inferred. Evidence: `scheduler-builder/artifacts/pydantic-floor-check.json`.
+- **Deliberately narrow.** Only the floor moves — `pydantic>=2.9` → `pydantic>=2.11` in
+  `pyproject.toml`, and the matching `requires-dist` specifier in `uv.lock`. No locked package
+  version, artifact, hash or unrelated metadata changed (the lock stays pinned at the 2.14.1 it
+  already resolved), and the live environment was not refreshed: there is no outage to fix, only
+  a declaration to correct. Verified with an offline lock-consistency check
+  (`artifacts/pydantic-floor-lock-check.json`).
+
 ## [0.551.1] — 2026-11-16
 
 ### The browser suite no longer runs out of memory: an app is freed once its test ends
