@@ -126,6 +126,44 @@ def test_the_consoles_delete_reaches_the_stream_too(api_client, make_routine):
             if h.source == "reminder" and h.id == kept.id] == ["keep"]
 
 
+def test_a_holders_disposition_does_not_take_over_a_foreign_hooks_ownership(make_routine):
+    """D152/b4 cutover hazard 2: the HOLDER's say over a foreign hook must not make it the
+    OWNER of that hook.
+
+    `hookmirror.reminder_disposed` records the target's keep/mute/remove with `routine` AND
+    `target` both the holder — correctly, because the holder is who acted — while
+    `reminderproj.definitions` derives `owner` from the row's ORIGIN. So the later row read as
+    "the holder owns this", overwriting the sibling that set it. `owner` is what decides who
+    may REMOVE a hook, and the store still records the real setter, so the projection both
+    transferred ownership and made `drift` report a disagreement that was not one.
+
+    Driven at the stream writer rather than through a scripted cross-routine run: the holder's
+    feedback path is covered by `test_reminder_crossroutine*`, and what is pinned here is the
+    DERIVATION, which is the thing that was wrong.
+    """
+    d = make_routine(slug="holder")
+    foreign = store.Reminder(id="rem-20260101-010101-7", regex="^util:send",
+                             description="it speaks as him to a real person", scope="global",
+                             owner="sibling", kind="action", created_run="sibling:1",
+                             stats=store.blank_stats())
+    # the sibling SETS the hook on `holder` — addressed to the holder, origin the sibling
+    hookstore.record_reminder(d.parent, record=foreign.as_record(), routine="sibling",
+                              run_id="sibling:20260101-010101", target="holder")
+    first = reminderproj.definitions(d.parent, routine="holder")[foreign.id]
+    assert first["owner"] == "sibling", first
+
+    # the HOLDER then mutes it for the rest of its run — its own say, not a transfer of title
+    hookstore.record_reminder(d.parent, record=foreign.as_record(), routine="holder",
+                              run_id="holder:20260101-020202", target="holder",
+                              disposition="mute")
+
+    after = reminderproj.definitions(d.parent, routine="holder")[foreign.id]
+    assert after["disposition"] == "mute", after
+    assert after["owner"] == "sibling", (
+        "the holder's disposition took over the hook's ownership — `owner` decides who may "
+        "remove it, and the sibling that set it is still its owner")
+
+
 def test_only_a_local_deletion_is_mirrored_as_this_routines_own(make_routine):
     """A curated reminder lives in the library, which every routine reads, so its deletion is
     recorded where that store's history is — the library git commit `remind_write.commit`

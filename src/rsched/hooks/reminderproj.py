@@ -61,6 +61,17 @@ def definitions(routines_home: Path, *, routine: str = "") -> dict[str, dict]:
         kind, name = split_addressee(hook.addressee)
         holder = origin if kind == "self" else name
         owner = "" if kind == "self" else origin
+        if owner and owner == holder:
+            # THE HOLDER ACTING ON A ROW IN ITS OWN STORE — `hookmirror.reminder_disposed`
+            # records the target's say over a foreign hook with `routine` AND `target` both the
+            # holder, so this row's origin names who DISPOSED of the hook, never who set it.
+            # Deriving `owner` from it would project the holder as the owner of a hook a
+            # sibling set, and `owner` is what decides who may remove one — so a `keep` or a
+            # `mute` would silently transfer ownership, and `drift` would then name a
+            # disagreement with a store that still records the real setter. The definition's
+            # ownership is established by the row that WROTE it; a later disposition inherits
+            # it (and an unknown owner stays unknown rather than becoming the holder).
+            owner = str((out.get(hook.id) or {}).get("owner") or "")
         if routine and holder != routine:
             continue
         if hook.disposition in REMOVING:
