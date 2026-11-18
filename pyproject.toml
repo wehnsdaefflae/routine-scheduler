@@ -18,7 +18,7 @@ dependencies = [
     # Imported DIRECTLY across config/ and web/, so they are declared directly. They arrive
     # transitively today (pydantic via fastapi, markdown2 via pdoc, cryptography + py_vapid via
     # pywebpush) — a bump that repins or drops one would otherwise break us silently.
-    "pydantic>=2.9",
+    "pydantic>=2.11",
     "markdown2>=2.5",
     "cryptography>=43.0",
     "py-vapid>=1.9",
