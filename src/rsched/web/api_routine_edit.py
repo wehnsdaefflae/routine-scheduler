@@ -1,4 +1,5 @@
-"""Routine config editing: general rules, the two permission layers, run-now and archive —
+"""Routine config editing: general rules, the two permission layers, run-now, archive and
+the deletion of a routine's own local reminder —
 the write half of the old api_routines, which keeps the read surfaces (cards, detail,
 health, the phase graph). The generic validated `PATCH /routines/{slug}` lives in
 api_routine_patch.py and routes its two authority keys back through
@@ -281,3 +282,55 @@ def archive_routine(request: Request, slug: str) -> dict:
     return {"ok": True, "archived_to": str(target), "ts": now_iso(),
             "secrets_dropped": dropped, "lanes_left": lanes_left,
             "external_residue": residue}
+@router.delete("/routines/{slug}/reminders/{rid}")
+def delete_local_reminder(request: Request, slug: str, rid: str) -> dict:
+    """Drop one of this routine's OWN reminders, tally and all — in BOTH stores.
+
+    A local reminder is written by the run with no approval — that is the whole point of the
+    local rung — so the user's only lever over one is here. Without it a run that left itself
+    a bad pattern would keep paying a turn for it every time the pattern matched, and the only
+    remedy would be hand-editing `state/reminders.json` on the server.
+
+    Local only: a curated reminder is the library's copy, removed on the Library tab, and its
+    tally here is this routine's evidence about it rather than the reminder itself. Deleting a
+    local one takes its tally with it, because the tally is about a definition that is going.
+
+    Refused (409) while a run is active. A live run holds its reminders in memory and keeps
+    holding actions on them, and its next `remind` rewrites the file with the definitions it
+    holds (`engine/remind._save_local`) — so a delete landing mid-run reached nothing and was
+    then silently undone, under a 200.
+
+    IT ALSO APPENDS THE REMOVAL TO THE HOOK STREAM (D152). Every other act on a reminder
+    reaches that stream — the run's own write and delete (`hookmirror.reminder_written`,
+    `reminder_removed`), the target's say over a foreign hook (`reminder_disposed`), the
+    curator's disposal of a row in another store (`reminder_curated`) — and the console's
+    delete was the one that wrote the raw row and nothing else. Now that the reminder half of
+    the campaign SERVES definitions from the stream, a deletion missing there would be served
+    back on the next read: the user's delete would report `{"ok": true}` and the pattern would
+    keep holding actions. A reminder decides whether an action is HELD, so that is a change to
+    what binds a run, not a stale row.
+
+    `hooks.store.record_reminder` is used DIRECTLY rather than through `engine/hookmirror`,
+    whose writers all take a run `loop` for its routine/run id — the web layer has no loop.
+    The origin is therefore the routine whose store it is, with no run id: the honest record of
+    "the console deleted this", and `reminderproj` subtracts on `remove` whatever the origin.
+    Best-effort (`append` swallows `OSError`) and AFTER the real write, like every mirror call:
+    the deletion the user asked for must not fail because its bookkeeping did. A write that
+    does fail leaves exactly the drift `reminderproj.drift` exists to report.
+    """
+    from .. import reminders
+    from ..hooks import store as hookstore
+
+    info = _info(request, slug)
+    if not reminders.is_reminder_id(rid):
+        raise HTTPException(400, f"not a reminder id: {rid!r}")
+    guard_not_active(request, info)
+    local, gstats = reminders.load_local(info.cfg.dir)
+    kept = [r for r in local if r.id != rid]
+    if len(kept) == len(local):
+        raise HTTPException(404, f"{slug} has no local reminder {rid!r}")
+    gone = next(r for r in local if r.id == rid)
+    reminders.save_local(info.cfg.dir, kept, gstats)
+    hookstore.record_reminder(_state(request).server.routines_home, record=gone.as_record(),
+                              routine=slug, run_id="", disposition="remove")
+    return {"ok": True, "remaining": len(kept)}
