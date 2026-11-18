@@ -52,6 +52,27 @@ BLOCKER_HARNESS = "`partial` is for a blocker you cannot remove"
 BLOCKER_BULLET = "ONLY when something you cannot unblock yourself stopped work"
 BLOCKER_SCHEMA = "only when something you cannot unblock yourself stopped work"
 
+#: The operator, 2026-11-17, verbatim: *"sufficient conditions for a full finish in contrast to
+#: a partial finish include ONLY conditions that are within your abilities inside of a run (also
+#: covering asking for permissions and grants you might need)"* — raised to the engine as R3565,
+#: taken over by R3566 (`global-utils-review`) and R3567 (`scheduler-builder`).
+#:
+#: D204 said what `partial` is FOR; it did not say what an `ok` finish may be made to WAIT for,
+#: and three routines read the gap the same way: `global-utils-review:20261117` finished
+#: `partial` with external decisions pending and nothing blocking its own work, and
+#: `scheduler-builder` twice withheld an `ok` for an unapplied host change and an unanswered
+#: question — each of them an outside act the run had already asked for. The clause closes that
+#: reading in both directions, which is why each surface is checked for BOTH halves: the
+#: reachability half (an outside act or a filed request is not a partial) and the honesty half
+#: (a request never makes skipped work, a failed verification or an unapplied change done).
+#:
+#: ALL THREE surfaces carry the reachability half, because all three are read before a run
+#: writes its own status. The honesty half is pinned on the two PROSE surfaces only:
+#: `actionschema.py` sits ON its ratchet ceiling and is shrink-only, so its description states
+#: the rule while the prose a run reads beside it carries the warning.
+REACH_HALF = ("actions reach", "does not make a finish partial")
+HONESTY_HALF = ("never excuses reachable work left undone",)
+
 
 def _finish_bullet() -> str:
     return next(prose for covers, prose in KIND_PROSE if "finish" in covers)
@@ -124,6 +145,37 @@ def test_the_schema_status_description_says_partial_means_blocked():
         "run cannot unblock itself"
     )
     assert "failed = the job could not be done" in desc
+
+
+def test_every_status_surface_says_an_ok_finish_waits_on_nothing_outside_the_run(make_routine):
+    """R3566 — the three surfaces agree that an `ok` finish's conditions are the run's OWN.
+
+    D204 restricted `partial` to a blocker; it left open what an `ok` may be made to wait for,
+    and runs filled the gap with outside acts they had already asked for. Each surface is
+    checked for the same two halves, so the clause cannot survive in a form that only forgives
+    (reachability without honesty) or only warns (honesty without reachability).
+    """
+    bullet, desc = _finish_bullet(), _status_description()
+    contract = harness_contract(run_context(make_routine(slug="r3566"), "20261118-140002"),
+                                kinds=["read_file", "finish"])
+    for needle in REACH_HALF:
+        for surface, text in (("the finish bullet", bullet), ("the schema description", desc),
+                              ("the harness contract", contract)):
+            assert needle in text, (
+                f"{surface} does not say that an `ok` finish's conditions are ones the run's "
+                f"own actions reach ({needle!r} missing) — a run with a request pending reads "
+                "itself as partial (R3566)"
+            )
+    for needle in HONESTY_HALF:
+        for surface, text in (("the finish bullet", bullet),
+                              ("the harness contract", contract)):
+            assert needle in text, (
+                f"{surface} lost the honesty half ({needle!r}): without it the same clause "
+                "reads as permission to file a request instead of doing reachable work"
+            )
+    # the bullet is projected per run, so a finish-only routine must read the clause too
+    assert REACH_HALF[0] in harness_contract(
+        run_context(make_routine(slug="r3566b"), "20261118-140002"), kinds=["finish"])
 
 
 def test_no_engine_prose_defines_the_status_by_the_run_s_reach():
