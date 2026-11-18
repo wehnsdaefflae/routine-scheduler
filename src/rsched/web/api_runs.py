@@ -217,14 +217,12 @@ def run_files(request: Request, run_id: str) -> dict:
     fs root answered 400, a chip the console could never honour.
     """
     from ..readmodels.fileactivity import file_activity
-    from .servable import roots_for_run, servable_rel
+    from .servable import roots_for_run
 
     _, run_dir = _run_dir(request, run_id)
     routine_dir = run_dir.parent.parent
     roots = roots_for_run(request.app.state.server, run_dir, routine_dir)
-    rows = [{**row, "servable": servable_rel(str(row.get("path") or ""), run_dir, roots,
-                                             row.get("bases") or [])}
-            for row in file_activity(run_dir)]
+    rows = request.app.state.file_checks.rows(file_activity(run_dir), run_dir, roots)
     hist = run_dir / "history"
     history = (sorted(p.name for p in hist.iterdir() if p.is_file())
                if hist.is_dir() else [])
