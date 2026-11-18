@@ -163,13 +163,65 @@ def _normalize(data: dict) -> dict:
 
 
 def _infer(server, prompt: str, *, purpose: str, kind: str) -> dict:
-    from .endpoints import EndpointRegistry
+    """One schema'd system-model call, advancing the CONFIGURED chain when a rung fails hard.
 
-    endpoint, ref = EndpointRegistry(server).for_system()
-    comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
-                             schema=PLAYBOOK_SCHEMA, effort=ref.effort,
-                             temperature=ref.temperature, max_tokens=ref.max_tokens,
-                             timeout=180, purpose=purpose, kind=kind)
+    F907: the operator's save-as-playbook on `c-20261014-134208` died on an upstream
+    credential-pool HTTP 429. `for_system()` resolves the whole chain and `failover.pick` hands
+    back the member SERVING it — resolve-time avoidance — but a failure that happens during the
+    CALL had nowhere to go here: the exhausted `EndpointError` escaped to the route's 502 while
+    the `fallbacks:` the catalog already declares went untried. The engine's turn loop has had
+    call-time failover since `engine/degrade.py`; this button never ran through it.
+
+    So the same primitive is used, not a new policy: `failover.next_after` returns the next
+    usable member strictly after the one that just failed (which `InstrumentedEndpoint` has
+    already marked cooling), skipping members already cooling, and marks it as serving so the
+    rest of the process starts there. Deliberately narrow:
+
+    - only a RETRYABLE error fails over — a 429, a 5xx, a timeout, after the adapter's own
+      retries are spent. An auth failure or a bad request is the same on every rung, so walking
+      the chain would multiply one real error into several;
+    - every rung keeps ITS OWN parameters (`effort`, `temperature`, `max_tokens`), as
+      `resolve_chain` resolved them, and the schema and the 180 s timeout are unchanged. Nothing
+      is truncated to fit a smaller rung: a member that cannot hold the prompt is a failure to
+      report, not a digest to silently cut;
+    - a MALFORMED or EMPTY reply is NOT a transport failure and stays outside this loop — it
+      raises from `_normalize` exactly as before, so a model that answered badly is not retried
+      as though it had not answered;
+    - the chain is resolved LAZILY, on the first retryable failure only. The happy path keeps
+      the single resolution it always had, and a registry that cannot produce a chain (a test
+      double, a server with no catalog) propagates the original error rather than raising a
+      second one on top of it.
+    """
+    from .endpoints import EndpointRegistry, failover
+    from .endpoints.base import EndpointError
+
+    registry = EndpointRegistry(server)
+    endpoint, ref = registry.for_system()
+    chain: list | None = None
+    attempted: list[str] = []
+    while True:
+        attempted.append(ref.name or ref.model)
+        try:
+            comp = endpoint.complete([{"role": "user", "content": prompt}], model=ref.model,
+                                     schema=PLAYBOOK_SCHEMA, effort=ref.effort,
+                                     temperature=ref.temperature, max_tokens=ref.max_tokens,
+                                     timeout=180, purpose=purpose, kind=kind)
+            break
+        except EndpointError as exc:
+            if not exc.retryable:
+                raise
+            if chain is None:
+                try:
+                    chain = registry.resolve_chain(server.system_model, server.system_effort)
+                except Exception:
+                    raise exc from None
+            nxt = failover.next_after(chain, ref, has_media=False, prompt_tokens=0)
+            if nxt is None:
+                raise EndpointError(
+                    f"{exc} — the system-model chain is exhausted "
+                    f"(tried {', '.join(attempted)})",
+                    retryable=exc.retryable, auth=exc.auth) from exc
+            endpoint, ref = nxt
     data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
     return _normalize(data)
 
