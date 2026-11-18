@@ -23,6 +23,7 @@ from ..schema_guard import SchemaViolation, extract_json, retry_message, validat
 from . import denialmemo, overflow, paramsalvage, schemamemo, turndebris, turntakeover, wrongturn
 from .actions import KIND_EXAMPLES, normalize_action, validate_action
 from .actionschema import ACTION_SCHEMA
+from .completionrequest import complete_attempt
 from .degrade import (
     _handle_empty,
     _handle_refusal,
@@ -166,17 +167,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
     while attempt < MAX_SCHEMA_ATTEMPTS:
         attempt += 1
         try:
-            completion = endpoint.complete(loop.messages, model=ref.model,
-                                           schema=schema, effort=ref.effort,
-                                           temperature=ref.temperature,
-                                           max_tokens=ref.max_tokens,
-                                           # bookkeeping only — the wrapper consumes
-                                           # these; they never reach the transport, so
-                                           # the prompt is untouched
-                                           purpose=f"turn {ctx.turn + 1}"
-                                                   + ("" if attempt == 1
-                                                      else f" · retry {attempt}"),
-                                           kind="turn")
+            completion = complete_attempt(loop, endpoint, ref, schema, attempt=attempt)
         except EndpointError as exc:
             # media repair / transport failover — neither consumes a schema attempt;
             # a chain-exhausted failure re-raises out of _recover_transport.

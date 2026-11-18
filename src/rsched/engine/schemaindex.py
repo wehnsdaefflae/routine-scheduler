@@ -173,6 +173,19 @@ def send_the_contract(loop, projection: dict) -> None:
         + json.dumps(projection, indent=1)))
 
 
+def request_contract(loop, endpoint, schema: dict | None) -> None:
+    """Keep the contract available before EVERY actual completion request.
+
+    The turn-head check cannot see a schema shed inside the retry loop or a mid-turn
+    endpoint switch. Consult the schema this attempt will send, retaining the existing
+    once-per-run note and the cached prompt prefix.
+    """
+    if (getattr(loop, "_schema_is_index", False)
+            and not getattr(loop, "_schema_contract_sent", False)
+            and (schema is None or not carried_on_the_wire(endpoint))):
+        send_the_contract(loop, loop.action_schema)
+
+
 def section(schema: dict, kinds: list[str], ctx) -> str:
     """The prompt's ACTION SCHEMA section: the compact index where the wire carries the
     prose, the full dump where it does not. One decision, one place.
