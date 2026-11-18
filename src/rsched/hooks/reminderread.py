@@ -42,7 +42,7 @@ from .reminderproj import definitions as _definitions
 
 log = logging.getLogger(__name__)
 
-__all__ = ["read_local", "stream_definitions"]
+__all__ = ["materialize_stream_only", "read_local", "stream_definitions"]
 
 
 def stream_definitions(routines_home: Path, routine: str) -> dict[str, dict]:
@@ -53,6 +53,66 @@ def stream_definitions(routines_home: Path, routine: str) -> dict[str, dict]:
     below are exactly the states a fixture cannot easily produce.
     """
     return _definitions(routines_home, routine=routine)
+
+
+def materialize_stream_only(routines_home: Path, routine_dir: Path) -> list[str]:
+    """Give every STREAM-ONLY local definition a real row in the routine's own store, and
+    return the ids that gained one. The cutover's third hazard, closed at the read seam.
+
+    WHY THIS IS NEEDED. Once definitions are served from the stream, a reminder can be live
+    for a run while having NO row in `state/reminders.json` — a recovery state the merge
+    deliberately allows. But the three raw mutation paths work off that file and silently do
+    nothing for an id that is not in it:
+
+    - `reminders.record` (the ONLY writer of a tally) returns the caller's stats unchanged when
+      the id is gone from disk, so every fire of such a reminder goes uncounted — and the tally
+      is exactly what tunes a pattern, and what `remind_feedback` exists to write;
+    - `reminders.dispose` returns "" because `find` sees nothing, so the target's keep / mute /
+      remove over a hook it HOLDS cannot be applied — a run could not silence a bad pattern;
+    - `reminders.set_for`'s cap and duplicate checks count only stored rows, so a stream-only
+      definition is invisible to both and the cap can be exceeded.
+
+    WHY HERE AND NOT IN THOSE PATHS. Repointing a mutator at the merged read would make it
+    read its own projection — `record` would rewrite definitions from a served fold, `dispose`
+    would materialize wholesale as a side effect of feedback, and `reminderproj.drift` would
+    compare the stream to itself and read empty however far apart the stores were. So the
+    stores' writers stay RAW and the gap is closed before they run: the row is created once,
+    from the stream's own definition, with a BLANK tally because no fire has been counted for
+    it (inventing one would be the two-writers defect this campaign removes).
+
+    Local scope only — a global definition lives in the library store and is merged separately;
+    copying one into a routine's private file would put it where no curation reaches it.
+    Best-effort: a store that cannot be written leaves the ids unmaterialized and the run still
+    starts, exactly as the merge's own OSError fallback does.
+    """
+    from ..reminders import blank_stats, save_local
+
+    try:
+        stored, gstats = load_local(routine_dir)
+        derived = stream_definitions(routines_home, routine_dir.name)
+    except OSError:
+        log.exception("reminder-hooks: materializing stream-only definitions raised")
+        return []
+    have = {r.id for r in stored}
+    fresh = [(rid, d) for rid, d in derived.items()
+             if rid not in have and str(d.get("scope") or "local") == "local"]
+    if not fresh:
+        return []
+    rows = [*stored]
+    for rid, d in fresh:
+        rows.append(Reminder(
+            id=rid, regex=str(d.get("regex") or ""),
+            description=str(d.get("description") or ""),
+            scope="local", kind=str(d.get("kind") or ""),
+            reach=str(d.get("reach") or ""), owner=str(d.get("owner") or ""),
+            created_run=str(d.get("created_run") or ""),
+            disposition=str(d.get("disposition") or "keep"), stats=blank_stats()))
+    try:
+        save_local(routine_dir, rows, gstats)
+    except OSError:
+        log.exception("reminder-hooks: writing materialized stream-only definitions raised")
+        return []
+    return [rid for rid, _ in fresh]
 
 
 def read_local(routines_home: Path, routine_dir: Path) -> tuple[list[Reminder], dict[str, dict]]:

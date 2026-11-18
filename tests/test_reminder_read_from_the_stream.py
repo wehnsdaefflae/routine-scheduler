@@ -46,6 +46,63 @@ def _rec(rid, regex="^util:", desc="careful", **kw):
     return base
 
 
+def test_materializing_lets_the_raw_mutation_paths_reach_a_stream_only_reminder(
+        tmp_path, monkeypatch):
+    """D152/b4 cutover hazard 3: a stream-only definition must gain a real row, because the
+    three RAW mutation paths work off the store and silently no-op without one.
+
+    What each of them does to an id that is not on disk, before materialization:
+    `reminders.record` returns the caller's stats unchanged, so every fire goes UNCOUNTED —
+    and the tally is what tunes a pattern; `reminders.dispose` returns "" because `find` sees
+    nothing, so a run cannot even mute a bad pattern it holds. Both are checked here against
+    the real functions, not a stand-in: the point is that the store's own writers now find
+    something to write.
+    """
+    rd = tmp_path / "r"
+    _store(rd, [])
+    stream = {"rem-only-1": _rec("rem-only-1", regex="^shell: rm -rf", desc="it removes a tree",
+                                 scope="local")}
+    monkeypatch.setattr(reminderread, "stream_definitions", lambda home, routine: stream)
+
+    live, _gstats = reminderread.read_local(tmp_path, rd)
+    served = next(r for r in live if r.id == "rem-only-1")
+    assert reminders.load_local(rd)[0] == [], "the store already held it; nothing was proven"
+    # the gap itself: the raw writers cannot reach it
+    assert reminders.record(rd, served, "fires")["fires"] == 0
+    assert reminders.dispose(rd, "rem-only-1", "mute", "r:2") == ""
+
+    assert reminderread.materialize_stream_only(tmp_path, rd) == ["rem-only-1"]
+
+    row = next(r for r in reminders.load_local(rd)[0] if r.id == "rem-only-1")
+    assert row.regex == "^shell: rm -rf" and row.description == "it removes a tree"
+    assert row.stats["fires"] == 0, "a tally was invented for a reminder that never fired"
+    # …and now both writers reach it
+    assert reminders.record(rd, row, "fires")["fires"] == 1
+    assert reminders.dispose(rd, "rem-only-1", "mute", "r:2") == "mute"
+    assert reminderread.materialize_stream_only(tmp_path, rd) == [], "it ran twice"
+
+
+def test_materializing_touches_neither_a_stored_row_nor_a_global_definition(
+        tmp_path, monkeypatch):
+    """It fills a GAP: a row already on disk keeps its tally and its own fields, and a global
+    definition is never copied into a routine's private file — that store is the library's, and
+    a copy there is where no curation reaches it.
+    """
+    rd = tmp_path / "r"
+    _store(rd, [_rec("rem-held", regex="^util:held",
+                     stats={"fires": 9, "could_not": 1, "would_have": 2, "did": 0, "didnt": 0})])
+    monkeypatch.setattr(reminderread, "stream_definitions", lambda home, routine: {
+        "rem-held": _rec("rem-held", regex="^util:held", scope="local"),
+        "rem-lib": _rec("rem-lib", regex="^shell: curl", scope="global", reach="universal"),
+    })
+
+    assert reminderread.materialize_stream_only(tmp_path, rd) == []
+
+    rows = reminders.load_local(rd)[0]
+    assert [r.id for r in rows] == ["rem-held"]
+    assert rows[0].stats["fires"] == 9 and rows[0].stats["would_have"] == 2
+
+
 def test_a_definition_comes_from_the_stream(tmp_path, monkeypatch):
     """The point of the cutover: what a run holds is derived, not read from the store."""
     rd = tmp_path / "r"
