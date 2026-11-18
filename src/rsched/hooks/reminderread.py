@@ -42,7 +42,51 @@ from .reminderproj import definitions as _definitions
 
 log = logging.getLogger(__name__)
 
-__all__ = ["materialize_stream_only", "read_local", "stream_definitions"]
+__all__ = ["active", "materialize_stream_only", "read_local", "stream_definitions"]
+
+
+def active(routine_dir: Path, reminders_home: Path, level: str,
+           listed: list[str] | tuple[str, ...] = (), run_id: str = "",
+           *, routines_home: Path | None = None) -> list[Reminder]:
+    """THE LIVE SET for one run, with its local definitions served from the hook stream.
+
+    The union `reminders.active` has always formed — this routine's own reminders plus every
+    curated one that reaches it (universal, or named in `listed`), local overriding global,
+    deduped by `(regex, kind)` — with one change: the LOCAL half comes through `read_local`, so
+    what HOLDS a run is derived from the one write path instead of read from a file any writer
+    could have touched. The global half still comes from the library store, where a curated
+    reminder lives, and the tallies still come from the routine's own store.
+
+    This is the cutover's load-bearing step, and it is the LAST one for a reason: the health
+    view (`readmodels/run_health`) is a page, while this decides whether an action is HELD. It
+    is safe to take now because the three hazards that blocked it are closed — the console's
+    delete reaches the stream, a holder's disposition no longer takes over foreign ownership,
+    and a stream-only definition gets a real row.
+
+    That last one is why `materialize_stream_only` runs HERE, before the read: the three raw
+    mutation paths (`record`'s tally, `dispose`'s keep/mute/remove, `set_for`'s cap and
+    duplicate checks) work off the store, so a definition the stream serves must exist there or
+    a run could hold a reminder it cannot count, silence or cap. Doing it at the one point where
+    the live set is formed means every fire point inherits it, and the mutators keep reading raw
+    — never their own projection.
+
+    `routines_home` defaults to `routine_dir.parent`, which is where a routine's home is; the
+    engine passes the configured one explicitly, because a conversation's parent directory is
+    not the server's hook home.
+    """
+    from .. import remind_dead, remind_mute
+    from ..reminders import LEVEL_RANK, load_global
+
+    if LEVEL_RANK.get(level, 0) < LEVEL_RANK["local"]:
+        return []        # the layer is off: read nothing, materialize nothing
+    home = routines_home if routines_home is not None else routine_dir.parent
+    materialize_stream_only(home, routine_dir)
+    stored, gstats = read_local(home, routine_dir)
+    local = remind_dead.live(routine_dir, remind_mute.live_local(stored, run_id))  # D231, F697
+    seen = {(r.regex, r.kind) for r in local}
+    return local + [g for g in load_global(reminders_home, gstats)
+                    if (g.regex, g.kind) not in seen
+                    and (g.reach == "universal" or g.id in listed)]
 
 
 def stream_definitions(routines_home: Path, routine: str) -> dict[str, dict]:

@@ -126,6 +126,54 @@ def test_the_consoles_delete_reaches_the_stream_too(api_client, make_routine):
             if h.source == "reminder" and h.id == kept.id] == ["keep"]
 
 
+def test_the_live_set_a_run_holds_is_served_from_the_stream(make_routine):
+    """D152/b4, the load-bearing cutover: what HOLDS a run comes from the hook stream.
+
+    The health view is a page; THIS is the set `engine/remind` matches every action against, so
+    a definition read from the file meant any writer outside the one write path could decide
+    whether an action is held. Both stores agree in every fixture written through that path, so
+    the test makes them DISAGREE on purpose and asserts the live set follows the STREAM while
+    the tally stays the store's.
+
+    It also pins the materialization the mutation paths depend on: a stream-only definition is
+    in the live set AND has gained a real row by the time `active` returns, so `record`,
+    `dispose` and `set_for` can reach it (hazard 3).
+    """
+    d = make_routine(slug="holds")
+    (d / "state").mkdir(exist_ok=True)
+    rid = "rem-20260101-010101-9"
+    stale = store.Reminder(id=rid, regex="^util:STALE", description="the stored wording",
+                           scope="local", kind="action", created_run="r:1",
+                           stats={"fires": 4, "could_not": 0, "would_have": 3, "did": 0,
+                                  "didnt": 0})
+    store.save_local(d, [stale], {})
+    hookstore.record_reminder(
+        d.parent, record={**stale.as_record(), "regex": "^shell: rm -rf",
+                          "description": "the stream's wording"},
+        routine="holds", run_id="holds:20260101-010101")
+    # …and one the stream knows about that the store has never seen
+    only = store.Reminder(id="rem-20260101-010101-10", regex="^util:fresh",
+                          description="stream only", scope="local", kind="action",
+                          created_run="r:2", stats=store.blank_stats())
+    hookstore.record_reminder(d.parent, record=only.as_record(), routine="holds",
+                              run_id="holds:20260101-010101")
+
+    # the POSITIONAL signature every existing caller uses, deliberately: this must fail on an
+    # uncut tree because of WHERE the definitions came from, not because a keyword is unknown
+    live = store.active(d, d.parent / "_library" / "reminders", "local", (), "holds:20260102")
+
+    held = {r.id: r for r in live}
+    assert held[rid].regex == "^shell: rm -rf", (
+        "the live set still reads its definitions from the store — a writer outside the hook "
+        "path could decide what holds a run")
+    assert held[rid].stats["fires"] == 4 and held[rid].stats["would_have"] == 3, (
+        "the stored tally was lost; the stream carries no counter to replace it")
+    assert only.id in held, "a stream-only definition is not in the live set"
+    # hazard 3: it has a real row now, so the raw tally/dispose/cap paths reach it
+    assert store.record(d, held[only.id], "fires")["fires"] == 1
+    assert store.dispose(d, only.id, "mute", "holds:20260102") == "mute"
+
+
 def test_the_health_view_serves_the_streams_definition_with_the_stored_tally(make_routine):
     """D152/b4: the health view is CUT OVER — local definitions come from the hook stream while
     the tally stays the store's.

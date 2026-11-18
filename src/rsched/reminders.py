@@ -500,25 +500,22 @@ def global_rel(rid: str) -> str:
 # --- the union the engine matches against -------------------------------------------------
 
 def active(routine_dir: Path, reminders_home: Path, level: str,
-           listed: list[str] | tuple[str, ...] = (), run_id: str = "") -> list[Reminder]:
+           listed: list[str] | tuple[str, ...] = (), run_id: str = "",
+           *, routines_home: Path | None = None) -> list[Reminder]:
     """The live set for one run: this routine's own reminders plus every curated one that
     reaches it (universal, or named in `listed`), with LOCAL OVERRIDING GLOBAL. Empty when the
     layer is off.
 
-    Dedupe is by (regex, KIND) — the "same consequence class" test available to a machine. The
-    kind belongs in the key because the same pattern on two different triggers is two different
-    consequences: `^util:fs-ops mv ` as an `action` is "you are about to move a file", as a
-    `result` it is "a move just reported something". Deduping those together would silence one
-    of them for no reason a holder could see.
+    Dedupe is by (regex, KIND): the same pattern on two triggers is two consequences.
+
+    D152: the union is formed in `hooks/reminderread.active`, whose docstring says why — the
+    LOCAL half is served from the hook stream while this module stays the RAW store's reader.
+    Delegated lazily: the reader imports from here, so a module-level import would be a cycle.
     """
-    if LEVEL_RANK.get(level, 0) < LEVEL_RANK["local"]:
-        return []
-    stored, gstats = load_local(routine_dir)
-    local = remind_dead.live(routine_dir, remind_mute.live_local(stored, run_id))  # D231, F697
-    seen = {(r.regex, r.kind) for r in local}
-    return local + [g for g in load_global(reminders_home, gstats)
-                    if (g.regex, g.kind) not in seen
-                    and (g.reach == "universal" or g.id in listed)]
+    from .hooks.reminderread import active as served
+
+    return served(routine_dir, reminders_home, level, listed, run_id,
+                  routines_home=routines_home)
 
 
 def matching(reminders: list[Reminder], target: str,

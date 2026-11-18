@@ -82,13 +82,15 @@ def load(loop) -> list[Reminder]:
     """The live set for this run, read ONCE at construction.
 
     Once, not per turn: the composed prompt is an append-only caching contract, and a store
-    that changes between runs never rewrites a within-run prefix. The in-memory list is kept in
-    step with every op this run applies, so it is never stale about its own writes.
+    that changes between runs never rewrites a within-run prefix. The in-memory list keeps step
+    with every op this run applies, so it is never stale about its own writes. D152: its local
+    half is served from the hook stream (`hooks/reminderread.active`).
     """
     ctx = loop.ctx
     try:
         return store.active(ctx.routine.dir, ctx.server.reminders_home, level_of(ctx.grants),
-                            list(getattr(ctx.routine, "shared_reminders", None) or []), ctx.run_id)
+                            list(getattr(ctx.routine, "shared_reminders", None) or []),
+                            ctx.run_id, routines_home=ctx.server.routines_home)
     except OSError:
         return []
 
@@ -97,17 +99,15 @@ def refresh(loop) -> None:
     """Re-read the set if the capability LEVEL has moved since it was read.
 
     The read-once rule above has one hole: at level `none` the store is not read at all, so a
-    `reminders:*` grant landing mid-run (an access request answered at a turn boundary) leaves
-    the in-memory set EMPTY while state/reminders.json is full — and that set is what a
-    definition write is rebuilt from, so the run's first `remind` op would rewrite the file
-    down to its own single row and drop everything earlier runs had accumulated.
+    `reminders:*` grant landing mid-run leaves the in-memory set EMPTY while the store is full
+    — and that set is what a definition write is rebuilt from, so the run's first `remind` op
+    would rewrite the file down to its own row, dropping what earlier runs accumulated.
 
     Comparing the LEVEL rather than the policy object is the point: this is the one thing the
     reload depends on, and `rebuild_policy` (the caller) is the writer of `loop.grants`, so
     reading its own output back as an input would be the wrong dependency.
 
-    A re-read can only ADD: everything this run has already applied is on disk by the time any
-    op returns.
+    A re-read can only ADD: what this run applied is on disk by the time any op returns.
     """
     level = level_of(loop.ctx.grants)
     if level != loop.reminders_level:

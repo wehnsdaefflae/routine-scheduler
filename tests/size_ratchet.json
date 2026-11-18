@@ -21,7 +21,7 @@
     "src/rsched/grantpolicy.py": 385,
     "src/rsched/grants.py": 376,
     "src/rsched/lanes.py": 388,
-    "src/rsched/reminders.py": 574,
+    "src/rsched/reminders.py": 571,
     "src/rsched/sandbox.py": 412,
     "src/rsched/utils_run.py": 520,
     "src/rsched/web/api_questions.py": 392,
