@@ -490,9 +490,12 @@ ACTION_SCHEMA: dict = {
                                   "shortfall (a skipped step, a red check, work left) is named "
                                   "in the summary; partial = only when something you cannot "
                                   "unblock yourself stopped work you could otherwise have done, "
-                                  "named as well; failed = the job could not be done"},
-        "summary": {
-            "type": "string",
+                                  "named as well — every condition of an ok finish is one your "
+                                  "OWN actions reach, asking for a permission or grant "
+                                  "included, so an outside act or answer you have already "
+                                  "asked for does not make a finish partial; failed = the job "
+                                  "could not be done"},
+        "summary": {"type": "string",
             "description": "job checkpoint: what this run did for the job and what the next "
                            "run should pick up — the job's whole memory of this run · "
                            "finish: a SHORT summary in TWO labelled parts — `**Process:**` 1-2 "
@@ -502,8 +505,7 @@ ACTION_SCHEMA: dict = {
                            "you decided and why, what is still open. No preamble (it becomes "
                            "result.md and the next run's context). A reply in a chat: no parts",
         },
-        "accounting": {
-            "type": "array", "items": {"type": "string"},
+        "accounting": {"type": "array", "items": {"type": "string"},
             "description": "job checkpoint: one entry per line of the open job's own "
                            "recipe `## Done when` (`d1 met: <evidence>`, `d2 not due: <how "
                            "established>` …) · finish: your verdict on each thing this run "
@@ -515,16 +517,14 @@ ACTION_SCHEMA: dict = {
                            "one the run proves) and per open GOAL (`b1 met: <evidence>`, `b2 "
                            "unmet: <what remains>`). Omit when your digest names none of them",
         },
-        "reply_to": {
-            "type": "string",
+        "reply_to": {"type": "string",
             "description": "finish (conversations only): OPTIONAL — an earlier message THIS "
                            "reply addresses. Quote it or name it (e.g. the message's opening "
                            "words); it renders as a '↩ …' reference chip above your reply in "
                            "the chat, the way the user replying to a message does. Ignored "
                            "outside a conversation.",
         },
-        "final": {
-            "type": "boolean",
+        "final": {"type": "boolean",
             "description": "finish (conversations only): is this reply FINAL? true = it "
                            "delivers what the person asked: every open goal is accounted met "
                            "in `accounting` (or was checked off) · false = you are handing back "

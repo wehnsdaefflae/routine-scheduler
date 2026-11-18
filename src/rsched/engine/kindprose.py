@@ -278,7 +278,14 @@ run with a shortfall of its own: do what you can, then name what remains), parti
 when something you cannot unblock yourself stopped work you could otherwise have done) or \
 failed (the job could not be done) — the only part of this \
 conversation that survives, \
-so the facts have to be in it; a long artefact is a file it names. Decisions are asks, \
+so the facts have to be in it; a long artefact is a file it names. \
+Every condition of an `ok` finish is one your own \
+actions reach, asking for a permission or a grant you lack among them, so an outside act, \
+another routine's move or an answer you have already asked for does not make a finish partial, \
+and neither does a budget you spent. A filed request \
+never excuses reachable work left undone, and it never makes unfinished work, a failed \
+verification or an unapplied change done: name those plainly and finish `ok` \
+anyway. Decisions are asks, \
 never summary prose: one you cannot work without when you meet it (`blocks_work`), the rest in \
 one batch before the finish."""),
 )
