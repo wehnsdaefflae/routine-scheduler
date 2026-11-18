@@ -149,7 +149,18 @@ def llm_env_for_routine(slug: str, models: dict[str, str],
         endpoints[name] = endpoint_public(cfg, key_set=bool(key), name=name)
         if key and name in keyed:
             keys[name] = key
-    meta = {"routine": slug, "default": "tool_call", "roles": roles, "endpoints": endpoints}
+    # The CATALOG by name, shaped exactly as the decision half carries it (D288, goal b6): the
+    # `llm` action's `model` field takes a catalog NAME, so a util told only about ROLES could
+    # not honour an override that 7 of the 18 live `llm` calls pass. An entry whose endpoint is
+    # not configured is left out rather than offered — a call formed against it would fail at
+    # the wire with nothing naming the cause, which is why `role_endpoints` drops such a role
+    # too. Keys are unchanged: ROLE endpoints only, so a name reaching the util never reaches
+    # around the operator's own `secret:<NAME>` decision.
+    catalog = {name: {"endpoint": mc.endpoint, "model": mc.model}
+               for name, mc in sorted((server.models or {}).items())
+               if mc.endpoint in (server.endpoints or {})}
+    meta = {"routine": slug, "default": "tool_call", "roles": roles, "endpoints": endpoints,
+            "models": catalog}
     return {LLM_VAR: json.dumps(meta, separators=(",", ":")),
             LLM_KEYS_VAR: json.dumps(keys, separators=(",", ":"))}
 
