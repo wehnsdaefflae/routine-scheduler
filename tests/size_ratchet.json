@@ -7,7 +7,7 @@
     "src/rsched/daemon/runner_reap.py": 366,
     "src/rsched/daemon/scheduler.py": 439,
     "src/rsched/engine/actions.py": 417,
-    "src/rsched/engine/actionschema.py": 628,
+    "src/rsched/engine/actionschema.py": 627,
     "src/rsched/engine/background.py": 474,
     "src/rsched/engine/compaction.py": 393,
     "src/rsched/engine/create_routine.py": 410,

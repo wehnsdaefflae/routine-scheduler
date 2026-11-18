@@ -490,10 +490,9 @@ ACTION_SCHEMA: dict = {
                                   "shortfall (a skipped step, a red check, work left) is named "
                                   "in the summary; partial = only when something you cannot "
                                   "unblock yourself stopped work you could otherwise have done, "
-                                  "named as well — every condition of an ok finish is one your "
-                                  "OWN actions reach, asking for a permission or grant "
-                                  "included, so an outside act or answer you have already "
-                                  "asked for does not make a finish partial; failed = the job "
+                                  "named as well — judge by what your OWN actions reach, "
+                                  "requests included, so an outside act or an answer you "
+                                  "already asked for is not one; failed = the job "
                                   "could not be done"},
         "summary": {"type": "string",
             "description": "job checkpoint: what this run did for the job and what the next "

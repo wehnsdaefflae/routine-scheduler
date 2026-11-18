@@ -66,12 +66,16 @@ BLOCKER_SCHEMA = "only when something you cannot unblock yourself stopped work"
 #: reachability half (an outside act or a filed request is not a partial) and the honesty half
 #: (a request never makes skipped work, a failed verification or an unapplied change done).
 #:
-#: ALL THREE surfaces carry the reachability half, because all three are read before a run
-#: writes its own status. The honesty half is pinned on the two PROSE surfaces only:
-#: `actionschema.py` sits ON its ratchet ceiling and is shrink-only, so its description states
-#: the rule while the prose a run reads beside it carries the warning.
-REACH_HALF = ("actions reach", "does not make a finish partial")
-HONESTY_HALF = ("never excuses reachable work left undone",)
+#: TWO surfaces, and the third is deliberately NOT one. The clause lands in the harness
+#: (conduct) and in ACTION_SCHEMA's `status` description (the enforced wire the model validates
+#: against). It was CUT from the kind bullet after
+#: `test_kind_bullets_carry_conduct.test_no_bullet_sentence_restates_a_field_description`
+#: correctly called it a recital of what the wire already carries — the bullet keeps only the
+#: ok/partial/failed trichotomy D204 pinned there, and the always-on prompt contract is smaller
+#: for it (goal b5). So the needle is checked on the harness and the schema, and the BULLET is
+#: checked for its ABSENCE, which is what keeps the two architectures from drifting back.
+REACH_HALF = ("actions reach",)
+HONESTY_HALF = ("never stands in for",)
 
 
 def _finish_bullet() -> str:
@@ -159,7 +163,7 @@ def test_every_status_surface_says_an_ok_finish_waits_on_nothing_outside_the_run
     contract = harness_contract(run_context(make_routine(slug="r3566"), "20261118-140002"),
                                 kinds=["read_file", "finish"])
     for needle in REACH_HALF:
-        for surface, text in (("the finish bullet", bullet), ("the schema description", desc),
+        for surface, text in (("the schema description", desc),
                               ("the harness contract", contract)):
             assert needle in text, (
                 f"{surface} does not say that an `ok` finish's conditions are ones the run's "
@@ -167,13 +171,16 @@ def test_every_status_surface_says_an_ok_finish_waits_on_nothing_outside_the_run
                 "itself as partial (R3566)"
             )
     for needle in HONESTY_HALF:
-        for surface, text in (("the finish bullet", bullet),
-                              ("the harness contract", contract)):
-            assert needle in text, (
-                f"{surface} lost the honesty half ({needle!r}): without it the same clause "
-                "reads as permission to file a request instead of doing reachable work"
-            )
-    # the bullet is projected per run, so a finish-only routine must read the clause too
+        assert needle in contract, (
+            f"the harness lost the honesty half ({needle!r}): without it the same clause reads "
+            "as permission to file a request instead of doing reachable work"
+        )
+    # …and the BULLET must NOT restate it: the wire carries the schema description on every
+    # turn, so a copy there is prompt weight goal b5 exists to remove
+    assert REACH_HALF[0] not in bullet, (
+        "the finish bullet restates what the enforced wire already carries — cut it rather "
+        "than rewording it (tests/test_kind_bullets_carry_conduct.py holds this bound)")
+    # the harness paragraph is unconditional, so a finish-only routine reads it too
     assert REACH_HALF[0] in harness_contract(
         run_context(make_routine(slug="r3566b"), "20261118-140002"), kinds=["finish"])
 

@@ -15,6 +15,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.552.0] — 2026-11-18
+
+### Reminders are served from the hook stream, and five decided items ship with it
+
+- **D152/b4 — the reminder half of the hook campaign is CUT OVER.** `reminders.active` — the set
+  the engine matches every action, observation and turn moment against — now takes its LOCAL
+  definitions from the hook stream (`hooks/reminderread.active`) instead of
+  `state/reminders.json`. Until now any writer that touched that file could decide whether an
+  action is HELD. Tallies still come from the routine's own store, because the stream carries no
+  counter by design, and `hooks/reminderproj.stored_definitions` deliberately keeps reading the
+  RAW store so `drift` compares two independent sides rather than the stream with itself. The
+  health view (`readmodels/run_health.cautions`) was cut over first, a page being cheaper to be
+  wrong on than a hold. Three hazards were closed before either step:
+  - the console's `DELETE /api/routines/{slug}/reminders/{rid}` wrote only the raw row, so a
+    stream-served read handed the deleted definition straight back — under the `{"ok": true}`
+    the user had already seen. It now appends `disposition="remove"` to the stream, and the
+    endpoint moved to `api_routine_edit.py` (the write half), taking `api_routines.py` from 380
+    to 346 lines and off its shrink-only ceiling entirely.
+  - a HOLDER's keep/mute/remove was recorded with itself as origin, and the projection derived
+    `owner` from that — so a disposition quietly transferred ownership of a hook a sibling had
+    set, and `owner` is what decides who may remove one. A row whose origin is the holder now
+    inherits the definition's existing owner.
+  - a definition the stream served but the store had never seen could not be counted, disposed
+    of or capped (`record`, `dispose`, `set_for` all work off the store).
+    `reminderread.materialize_stream_only` gives each a real row with a BLANK tally, at the one
+    point where the live set is formed.
+- **F908 — a retired reminder stops firing at once, and its id is never handed out again.**
+  Observed on this instance: `rules-review` retired `rem-20261117-061103-1` at 07:29:29 and that
+  same cached row HELD an action at 07:46:27, costing the run a turn and a `could_not` label for
+  a caution it had already withdrawn; a resumed leg then allocated the id again, so the new
+  caution inherited the old death marker and was suppressed on every fresh load. A self-targeted
+  `dead` op now drops the row from the live set in place, and both allocators reserve against
+  `remind_dead.reserved_ids` — every id on disk plus every id an annotation retired — instead of
+  against the live set the dead filter has already emptied.
+- **F907 — saving a conversation as a playbook tries its configured fallback chain.** The
+  operator's save-as-playbook died on an upstream HTTP 429 because `playbook_distill._infer`
+  resolved one model and let the exhausted error escape to a 502, leaving the catalog's declared
+  `fallbacks:` untried. It now advances the chain with the engine's own call-time primitive
+  (`failover.next_after`) — retryable failures only, each rung keeping its own effort and token
+  limits, malformed replies still raising at once, nothing truncated to fit a smaller rung, and
+  nothing written when the chain is exhausted.
+- **R3566/R3565 — an `ok` finish waits on nothing outside the run.** The operator, 2026-11-17:
+  *"sufficient conditions for a full finish … include ONLY conditions that are within your
+  abilities inside of a run (also covering asking for permissions and grants you might need)."*
+  All three status surfaces say so now (`engine/harness.py`, the finish bullet in
+  `engine/kindprose.py`, the `status` description in `engine/actionschema.py`, which stayed
+  exactly on its 628-line ceiling), and both prose surfaces carry the other half: a filed request
+  never excuses reachable work left undone, nor makes unfinished work or a failed verification
+  done. `docs/prompt-anatomy.md` §5.1 was re-rendered and its verbatim fence and §4 updated.
+- **R3467/b7 — the authoring guide no longer promises util summaries a run cannot see.** The
+  served CAPABILITIES catalog has been NAMES ONLY since 2026-11-14, and `docs/authoring.md` still
+  described it as "name + one-line summary"; it now names the `search` verb instead. Ships with
+  the narrow per-occurrence library-subject exclusion and the actionable capability remedy in
+  `workflows/recipelint.py`.
+- **F896 — the files card no longer stats an SSHFS mount once per row.** One lazy app-owned
+  worker pool with a per-request submission window, ordered rows and ordered error propagation
+  (`web/filechecks.py`); `api_runs.run_files` delegates the row checks. The <1 s production
+  target over a live network mount is NOT verified here — only the bounded concurrent behaviour
+  and its 33 regressions are.
+- **b6 prerequisite** — `endpoints/routine_env.py` serves both kept catalogs by name, with
+  `tests/test_llm_catalog_names.py` pinning the composition. The `llm` and `decide` action kinds
+  are NOT yet removed, so goal b6 remains open.
+
 ## [0.551.2] — 2026-11-18
 
 ### The declared Pydantic floor matches the API the config actually uses
