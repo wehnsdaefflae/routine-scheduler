@@ -324,9 +324,9 @@ def cautions(server: ServerConfig, routine_dir: Path) -> dict:
     """
     from .. import assist_stats, remind_dead
     from .. import reminders as reminders_mod
-
-    try:
-        local, gstats = reminders_mod.load_local(routine_dir)
+    from ..hooks import reminderread
+    try:        # D152: LOCAL definitions served from the hook stream, tallies from the store
+        local, gstats = reminderread.read_local(server.routines_home, routine_dir)
         shared = reminders_mod.load_global(server.reminders_home, gstats)
     except OSError:
         local, shared = [], []

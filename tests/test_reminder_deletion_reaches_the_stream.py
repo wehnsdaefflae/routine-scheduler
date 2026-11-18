@@ -126,6 +126,44 @@ def test_the_consoles_delete_reaches_the_stream_too(api_client, make_routine):
             if h.source == "reminder" and h.id == kept.id] == ["keep"]
 
 
+def test_the_health_view_serves_the_streams_definition_with_the_stored_tally(make_routine):
+    """D152/b4: the health view is CUT OVER — local definitions come from the hook stream while
+    the tally stays the store's.
+
+    A cutover that only keeps the old tests green proves nothing: both sides agree in every
+    fixture where the store was written through the write path. So this makes them DISAGREE on
+    purpose — the stream carries the current pattern, the store an older one with a real tally —
+    and asserts the payload serves the stream's regex and the store's count. Reading the
+    definition from the file was what let any writer outside the one path decide what holds a
+    run; the tally cannot come from the stream at all, because `record_reminder` deliberately
+    does not mirror a counter.
+    """
+    from rsched.config import ServerConfig
+    from rsched.readmodels import run_health
+
+    d = make_routine(slug="served")
+    (d / "state").mkdir(exist_ok=True)
+    rid = "rem-20260101-010101-5"
+    stale = store.Reminder(id=rid, regex="^util:OLD", description="the stored wording",
+                           scope="local", kind="action", created_run="r:1",
+                           stats={"fires": 7, "could_not": 1, "would_have": 2, "did": 0,
+                                  "didnt": 0})
+    store.save_local(d, [stale], {})
+    current = store.Reminder(**{**stale.as_record(), "regex": "^util:CURRENT",
+                                "description": "the stream's wording"})
+    hookstore.record_reminder(d.parent, record=current.as_record(), routine="served",
+                              run_id="served:20260101-010101")
+
+    payload = run_health.cautions(ServerConfig(routines_home=d.parent), d)
+
+    row = next(r for r in payload["reminders"] if r["id"] == rid)
+    assert row["regex"] == "^util:CURRENT", (
+        "the health view still reads the definition from the store, not from the stream")
+    assert row["description"] == "the stream's wording"
+    assert row["stats"]["fires"] == 7 and row["stats"]["would_have"] == 2, (
+        "the stored tally was lost — the stream carries no counter to replace it")
+
+
 def test_a_holders_disposition_does_not_take_over_a_foreign_hooks_ownership(make_routine):
     """D152/b4 cutover hazard 2: the HOLDER's say over a foreign hook must not make it the
     OWNER of that hook.
