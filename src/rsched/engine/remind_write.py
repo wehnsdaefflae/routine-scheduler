@@ -138,6 +138,18 @@ def curate(loop, op: dict, slug: str, rid: str, verb: str) -> str:
         return (f"{slug} does not hold a reminder {rid!r} — nothing was marked dead; the ids "
                 "are the rows of that routine's own store")
     hookmirror.reminder_curated(loop, marked, slug, "dead")
+    # F908: when the retired row is THIS run's own, drop it from the live set too. The
+    # annotation is applied to the STORE, and the dead filter runs where `reminders.active`
+    # forms the live set — i.e. at construction — so a `dead` op landing mid-run left
+    # `loop.reminders` holding the row it had just retired. Observed on the live instance:
+    # `rules-review:20261117-061103` retired `rem-20261117-061103-1` at 07:29:29 and that same
+    # cached row HELD an action at 07:46:27, 16m58s later, costing the run a turn and a
+    # `could_not` label for a caution it had already withdrawn. `refresh` cannot catch this —
+    # it re-reads only when the capability LEVEL moves, not when a marker changes — and nothing
+    # needs re-reading anyway: the operational set is reconciled in place, while the prompt
+    # prefix (an append-only caching contract) stays untouched.
+    if slug == ctx.routine.slug:
+        loop.reminders = [r for r in loop.reminders if r.id != rid]
     counts = " / ".join(f"{n} {f}" for f, n in (marked.get("stats") or {}).items() if n)
     return (f"{remind_dead.line(rid, marked[remind_dead.DEAD_KEY])} — it fires no more in "
             f"{slug}'s runs and its tally is kept ({counts or 'no fires recorded'})")

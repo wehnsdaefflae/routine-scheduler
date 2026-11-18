@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .. import remind_dead
 from .. import reminders as store
 from ..reminders import LABEL_HELP, Reminder
 from . import assist_label, hookmirror, remind_points, remind_write
@@ -499,19 +500,18 @@ def _add(loop, op: dict, scope: str, poll_s: float) -> str:
     # set alone could be that one's, which `write_global` then overwrote.
     joined = ([(rec["id"], rec["regex"]) for rec in store.records(ctx.server.reminders_home)]
               if scope == "global" else [(r.id, r.regex) for r in local])
-    # Scoped to the SAME store on purpose. A local reminder shadowing a global one with the
-    # same pattern is the union's designed precedence, and PROMOTION is exactly that overlap
-    # for one turn — `add` the global copy, then delete the local one. Checking across both
-    # stores made the engine's own promotion instructions impossible to follow.
+    # Scoped to the SAME store on purpose: a local reminder shadowing a global one is the
+    # union's designed precedence, and PROMOTION is that overlap for one turn — checking across
+    # both stores made the engine's own promotion instructions impossible to follow.
     kind = store.read_kind(op.get("kind"))
-    # the duplicate test is per (pattern, KIND): the same pattern on a different trigger is a
-    # different consequence class, exactly as the union's dedupe key says. The scan stays over
-    # the SAME store's live set (`joined` carries that store's ids for the collision check).
+    # the duplicate test is per (pattern, KIND) — the same pattern on a different trigger is a
+    # different consequence class — and stays over the SAME store's live set (`joined`).
     if any(r.regex == op.get("regex") and r.kind == kind and r.scope == scope
            for r in loop.reminders):
         return (f"a {scope} {kind} reminder with that exact pattern is already live — revise it "
                 "instead of adding a second one that would fire on the same moments")
-    rid = store.new_id(ctx.run_ts, {r.id for r in loop.reminders} | {i for i, _ in joined})
+    taken = {r.id for r in loop.reminders} | {i for i, _ in joined}
+    rid = store.new_id(ctx.run_ts, remind_dead.reserved_ids(ctx.routine.dir, taken))
     reminder = Reminder(id=rid, regex=str(op["regex"]), description=str(op["description"]),
                         scope=scope, created_run=ctx.run_id, stats=store.blank_stats(),
                         reach=str(op.get("reach") or "") if scope == "global" else "",

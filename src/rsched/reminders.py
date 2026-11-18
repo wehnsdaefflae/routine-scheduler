@@ -254,7 +254,9 @@ def read_disposition(raw: object) -> str:
 
 
 def new_id(run_ts: str, taken: set[str]) -> str:
-    """`rem-<run-ts>-<n>` — stable, sortable, and unique against ids already in the store."""
+    """`rem-<run-ts>-<n>`, unique against every id `taken` reserves: what the routine has ever
+    NAMED, not what is live (`remind_dead.reserved_ids`, F908).
+    """
     n = 1
     while f"rem-{run_ts}-{n}" in taken:
         n += 1
@@ -372,7 +374,7 @@ def set_for(target_dir: Path, *, regex: str, description: str, kind: str, owner:
         raise ReminderDuplicateError(
             f"{target_dir.name} already holds a {kind} reminder with that exact pattern — revise "
             "it instead of stacking a second one that fires on the same moments")
-    rid = new_id(run_ts, {r.id for r in live})
+    rid = new_id(run_ts, remind_dead.reserved_ids(target_dir, {r.id for r in live}))  # F908
     hook = Reminder(id=rid, regex=regex, description=description, scope="local",
                     created_run=run_ts, stats=blank_stats(), kind=kind, owner=owner)
     save_local(target_dir, [*live, hook], gstats, refused)
@@ -382,11 +384,10 @@ def set_for(target_dir: Path, *, regex: str, description: str, kind: str, owner:
 def dispose(routine_dir: Path, rid: str, disposition: str, run_id: str = "") -> str:
     """The TARGET's decision about a hook it holds — returns the disposition actually applied.
 
-    `keep` and `mute` are recorded on the record (a mute leaves it in the store for its owner
-    to see, STAMPED with `run_id` and live only while that run is — `remind_mute`, F697, and it
-    leaves the live set). `remove` deletes it AND remembers the
-    (owner, regex, kind) in the `refused` ledger, which is what makes the decision outlast the
-    run it was made in.
+    `keep` and `mute` are recorded on the record (a mute stays in the store for its owner to
+    see, STAMPED with `run_id` and live only while that run is — `remind_mute`, F697 — and it
+    leaves the live set). `remove` deletes it AND remembers the (owner, regex, kind) in the
+    `refused` ledger, which makes the decision outlast the run it was made in.
 
     Returns "" when the id names nothing this routine holds — a disposition is only ever an
     answer to a fire the run has seen, so there is nothing to report but that it did not apply.
@@ -508,9 +509,8 @@ def active(routine_dir: Path, reminders_home: Path, level: str,
 
     Dedupe is by (regex, KIND): the same pattern on two triggers is two consequences.
 
-    D152: the union is formed in `hooks/reminderread.active`, whose docstring says why — the
-    LOCAL half is served from the hook stream while this module stays the RAW store's reader.
-    Delegated lazily: the reader imports from here, so a module-level import would be a cycle.
+    D152: the union is formed in `hooks/reminderread.active`, whose docstring says why. Imported
+    lazily: the reader imports from here, so a module-level import would be a cycle.
     """
     from .hooks.reminderread import active as served
 
