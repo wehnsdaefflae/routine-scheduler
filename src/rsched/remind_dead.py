@@ -94,6 +94,41 @@ def read_dead(routine_dir: Path) -> dict[str, dict]:
     return out
 
 
+def reserved_ids(routine_dir: Path, live_ids: set[str] | None = None) -> set[str]:
+    """Every reminder id this routine has EVER used that must never be allocated again —
+    the live ones, every row on disk, and every id an annotation retired.
+
+    F908, observed on the live instance. `rules-review:20261117-061103` retired
+    `rem-20261117-061103-1` (the reducer caution) at 07:29:29 and a RESUMED leg allocated that
+    same id at 09:07:33 to an unrelated read-only-token caution. The allocator built its
+    `taken` set from the LIVE set, and the live set is exactly what the dead filter has already
+    removed — so a retired id reads as free. The consequence is not cosmetic: the new caution
+    inherited the old row's death annotation, so `live()` suppresses it on every fresh load (the
+    routine silently stopped being warned), and on a resumed leg it can inherit the old id's
+    once-per-run hold budget as well.
+
+    Three identities are conflated by using one set for all of them — what FIRES now, what the
+    store OWNS, and what has ever been NAMED — and only the third bounds allocation. So this
+    reads the ids on disk and the annotation keys directly, independently of any filtering, and
+    a caller passes its in-memory live ids on top (a definition added earlier in the same run is
+    on disk already, but passing them costs nothing and removes the ordering question).
+
+    Lenient like every reader of this file: an unreadable store reserves what it could read
+    rather than raising, because this is reached while a run is being constructed. Reserving too
+    much is harmless — the next id is simply a higher number — while reserving too little is the
+    defect above.
+    """
+    from .reminders import load_local
+
+    taken = set(live_ids or set())
+    taken |= set(read_dead(routine_dir))
+    try:
+        stored, _gstats = load_local(routine_dir)
+    except OSError:
+        return taken
+    return taken | {r.id for r in stored}
+
+
 def live(routine_dir: Path, stored: list) -> list:
     """The records that still FIRE — every one no annotation has retired.
 

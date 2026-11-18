@@ -61,6 +61,13 @@ REPEAT_COOLDOWN_HOURS: dict[str, float] = {
     # one thing this table may never do.
     "hook_stream_unreadable": 12,
     "hook_stream_diverged": 12,
+    # The two REMINDER-STORE conditions (D152 step 4), for the same reason and worse: the
+    # reminder read runs while EVERY run is being constructed (`engine/remind.load`) plus on
+    # every routine page that lists a reminder, so an instance whose stream is behind would file
+    # a row per RUN as well as per request. Neither is in `health_stream.BLOCKED_EVENTS` — a
+    # shortfall the read works around is not work that did not happen.
+    "reminder_stream_unreadable": 12,
+    "reminder_stream_diverged": 12,
 }
 
 

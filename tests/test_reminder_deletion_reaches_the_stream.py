@@ -81,6 +81,175 @@ def test_the_deletion_is_a_later_row_and_does_not_erase_the_write(make_routine, 
         "the write's own row no longer carries the pattern it defined")
 
 
+def test_the_consoles_delete_reaches_the_stream_too(api_client, make_routine):
+    """The CONSOLE's delete — the user's own lever — must reach the stream as well.
+
+    The run's `remind op=delete` was the half D152 step 3 fixed; `DELETE
+    /api/routines/{slug}/reminders/{rid}` wrote the raw store and nothing else. Now that the
+    reminder half SERVES definitions from the stream, that is not cosmetic drift: the next read
+    folds a definition the user deleted and the pattern keeps holding actions, under a
+    `{"ok": true}` the user already saw. A reminder decides whether an action is HELD, so a
+    deletion missing from the stream changes what binds a run.
+
+    The endpoint has no run `loop`, so it appends through `hooks.store.record_reminder`
+    directly, with the routine as origin and no run id — the honest record of "the console did
+    this". What this pins is the PROPERTY, not the mechanism: the comparator reads empty.
+    """
+    c, _tmp = api_client
+    d = make_routine(slug="consoledel")
+    (d / "state").mkdir(exist_ok=True)
+    kept = store.Reminder(id="rem-20260101-010101-2", regex="^util:b", description="stays",
+                          scope="local", created_run="r:1", stats=store.blank_stats())
+    doomed = store.Reminder(id="rem-20260101-010101-1", regex="^shell: rm -rf",
+                            description="it removes a tree nothing restores", scope="local",
+                            created_run="r:1", stats=store.blank_stats())
+    store.save_local(d, [doomed, kept], {})
+    # the write's own row, as the run that set it would have left on the stream
+    hookstore.record_reminder(d.parent, record=doomed.as_record(), routine="consoledel",
+                              run_id="consoledel:20260101-010101")
+    hookstore.record_reminder(d.parent, record=kept.as_record(), routine="consoledel",
+                              run_id="consoledel:20260101-010101")
+
+    assert c.delete(f"/api/routines/consoledel/reminders/{doomed.id}").json() == {
+        "ok": True, "remaining": 1}
+
+    assert [r.id for r in store.load_local(d)[0]] == [kept.id]
+    assert reminderproj.drift(d.parent, d) == {}, (
+        "the console's delete did not reach the hook stream — a stream-served read would "
+        "re-raise a reminder the user deleted")
+    rows = [h for h in hookstore.read_hooks(d.parent)
+            if h.source == "reminder" and h.id == doomed.id]
+    assert rows[-1].disposition == "remove", [(h.id, h.disposition) for h in rows]
+    assert rows[0].disposition != "remove", "the write's own row was rewritten, not added to"
+    # the reminder that stayed is untouched on both sides
+    assert [h.disposition for h in hookstore.read_hooks(d.parent)
+            if h.source == "reminder" and h.id == kept.id] == ["keep"]
+
+
+def test_the_live_set_a_run_holds_is_served_from_the_stream(make_routine):
+    """D152/b4, the load-bearing cutover: what HOLDS a run comes from the hook stream.
+
+    The health view is a page; THIS is the set `engine/remind` matches every action against, so
+    a definition read from the file meant any writer outside the one write path could decide
+    whether an action is held. Both stores agree in every fixture written through that path, so
+    the test makes them DISAGREE on purpose and asserts the live set follows the STREAM while
+    the tally stays the store's.
+
+    It also pins the materialization the mutation paths depend on: a stream-only definition is
+    in the live set AND has gained a real row by the time `active` returns, so `record`,
+    `dispose` and `set_for` can reach it (hazard 3).
+    """
+    d = make_routine(slug="holds")
+    (d / "state").mkdir(exist_ok=True)
+    rid = "rem-20260101-010101-9"
+    stale = store.Reminder(id=rid, regex="^util:STALE", description="the stored wording",
+                           scope="local", kind="action", created_run="r:1",
+                           stats={"fires": 4, "could_not": 0, "would_have": 3, "did": 0,
+                                  "didnt": 0})
+    store.save_local(d, [stale], {})
+    hookstore.record_reminder(
+        d.parent, record={**stale.as_record(), "regex": "^shell: rm -rf",
+                          "description": "the stream's wording"},
+        routine="holds", run_id="holds:20260101-010101")
+    # …and one the stream knows about that the store has never seen
+    only = store.Reminder(id="rem-20260101-010101-10", regex="^util:fresh",
+                          description="stream only", scope="local", kind="action",
+                          created_run="r:2", stats=store.blank_stats())
+    hookstore.record_reminder(d.parent, record=only.as_record(), routine="holds",
+                              run_id="holds:20260101-010101")
+
+    # the POSITIONAL signature every existing caller uses, deliberately: this must fail on an
+    # uncut tree because of WHERE the definitions came from, not because a keyword is unknown
+    live = store.active(d, d.parent / "_library" / "reminders", "local", (), "holds:20260102")
+
+    held = {r.id: r for r in live}
+    assert held[rid].regex == "^shell: rm -rf", (
+        "the live set still reads its definitions from the store — a writer outside the hook "
+        "path could decide what holds a run")
+    assert held[rid].stats["fires"] == 4 and held[rid].stats["would_have"] == 3, (
+        "the stored tally was lost; the stream carries no counter to replace it")
+    assert only.id in held, "a stream-only definition is not in the live set"
+    # hazard 3: it has a real row now, so the raw tally/dispose/cap paths reach it
+    assert store.record(d, held[only.id], "fires")["fires"] == 1
+    assert store.dispose(d, only.id, "mute", "holds:20260102") == "mute"
+
+
+def test_the_health_view_serves_the_streams_definition_with_the_stored_tally(make_routine):
+    """D152/b4: the health view is CUT OVER — local definitions come from the hook stream while
+    the tally stays the store's.
+
+    A cutover that only keeps the old tests green proves nothing: both sides agree in every
+    fixture where the store was written through the write path. So this makes them DISAGREE on
+    purpose — the stream carries the current pattern, the store an older one with a real tally —
+    and asserts the payload serves the stream's regex and the store's count. Reading the
+    definition from the file was what let any writer outside the one path decide what holds a
+    run; the tally cannot come from the stream at all, because `record_reminder` deliberately
+    does not mirror a counter.
+    """
+    from rsched.config import ServerConfig
+    from rsched.readmodels import run_health
+
+    d = make_routine(slug="served")
+    (d / "state").mkdir(exist_ok=True)
+    rid = "rem-20260101-010101-5"
+    stale = store.Reminder(id=rid, regex="^util:OLD", description="the stored wording",
+                           scope="local", kind="action", created_run="r:1",
+                           stats={"fires": 7, "could_not": 1, "would_have": 2, "did": 0,
+                                  "didnt": 0})
+    store.save_local(d, [stale], {})
+    current = store.Reminder(**{**stale.as_record(), "regex": "^util:CURRENT",
+                                "description": "the stream's wording"})
+    hookstore.record_reminder(d.parent, record=current.as_record(), routine="served",
+                              run_id="served:20260101-010101")
+
+    payload = run_health.cautions(ServerConfig(routines_home=d.parent), d)
+
+    row = next(r for r in payload["reminders"] if r["id"] == rid)
+    assert row["regex"] == "^util:CURRENT", (
+        "the health view still reads the definition from the store, not from the stream")
+    assert row["description"] == "the stream's wording"
+    assert row["stats"]["fires"] == 7 and row["stats"]["would_have"] == 2, (
+        "the stored tally was lost — the stream carries no counter to replace it")
+
+
+def test_a_holders_disposition_does_not_take_over_a_foreign_hooks_ownership(make_routine):
+    """D152/b4 cutover hazard 2: the HOLDER's say over a foreign hook must not make it the
+    OWNER of that hook.
+
+    `hookmirror.reminder_disposed` records the target's keep/mute/remove with `routine` AND
+    `target` both the holder — correctly, because the holder is who acted — while
+    `reminderproj.definitions` derives `owner` from the row's ORIGIN. So the later row read as
+    "the holder owns this", overwriting the sibling that set it. `owner` is what decides who
+    may REMOVE a hook, and the store still records the real setter, so the projection both
+    transferred ownership and made `drift` report a disagreement that was not one.
+
+    Driven at the stream writer rather than through a scripted cross-routine run: the holder's
+    feedback path is covered by `test_reminder_crossroutine*`, and what is pinned here is the
+    DERIVATION, which is the thing that was wrong.
+    """
+    d = make_routine(slug="holder")
+    foreign = store.Reminder(id="rem-20260101-010101-7", regex="^util:send",
+                             description="it speaks as him to a real person", scope="global",
+                             owner="sibling", kind="action", created_run="sibling:1",
+                             stats=store.blank_stats())
+    # the sibling SETS the hook on `holder` — addressed to the holder, origin the sibling
+    hookstore.record_reminder(d.parent, record=foreign.as_record(), routine="sibling",
+                              run_id="sibling:20260101-010101", target="holder")
+    first = reminderproj.definitions(d.parent, routine="holder")[foreign.id]
+    assert first["owner"] == "sibling", first
+
+    # the HOLDER then mutes it for the rest of its run — its own say, not a transfer of title
+    hookstore.record_reminder(d.parent, record=foreign.as_record(), routine="holder",
+                              run_id="holder:20260101-020202", target="holder",
+                              disposition="mute")
+
+    after = reminderproj.definitions(d.parent, routine="holder")[foreign.id]
+    assert after["disposition"] == "mute", after
+    assert after["owner"] == "sibling", (
+        "the holder's disposition took over the hook's ownership — `owner` decides who may "
+        "remove it, and the sibling that set it is still its owner")
+
+
 def test_only_a_local_deletion_is_mirrored_as_this_routines_own(make_routine):
     """A curated reminder lives in the library, which every routine reads, so its deletion is
     recorded where that store's history is — the library git commit `remind_write.commit`

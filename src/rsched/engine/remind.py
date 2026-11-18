@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .. import remind_dead
 from .. import reminders as store
 from ..reminders import LABEL_HELP, Reminder
 from . import assist_label, hookmirror, remind_points, remind_write
@@ -82,13 +83,15 @@ def load(loop) -> list[Reminder]:
     """The live set for this run, read ONCE at construction.
 
     Once, not per turn: the composed prompt is an append-only caching contract, and a store
-    that changes between runs never rewrites a within-run prefix. The in-memory list is kept in
-    step with every op this run applies, so it is never stale about its own writes.
+    that changes between runs never rewrites a within-run prefix. The in-memory list keeps step
+    with every op this run applies, so it is never stale about its own writes. D152: its local
+    half is served from the hook stream (`hooks/reminderread.active`).
     """
     ctx = loop.ctx
     try:
         return store.active(ctx.routine.dir, ctx.server.reminders_home, level_of(ctx.grants),
-                            list(getattr(ctx.routine, "shared_reminders", None) or []), ctx.run_id)
+                            list(getattr(ctx.routine, "shared_reminders", None) or []),
+                            ctx.run_id, routines_home=ctx.server.routines_home)
     except OSError:
         return []
 
@@ -97,17 +100,15 @@ def refresh(loop) -> None:
     """Re-read the set if the capability LEVEL has moved since it was read.
 
     The read-once rule above has one hole: at level `none` the store is not read at all, so a
-    `reminders:*` grant landing mid-run (an access request answered at a turn boundary) leaves
-    the in-memory set EMPTY while state/reminders.json is full — and that set is what a
-    definition write is rebuilt from, so the run's first `remind` op would rewrite the file
-    down to its own single row and drop everything earlier runs had accumulated.
+    `reminders:*` grant landing mid-run leaves the in-memory set EMPTY while the store is full
+    — and that set is what a definition write is rebuilt from, so the run's first `remind` op
+    would rewrite the file down to its own row, dropping what earlier runs accumulated.
 
     Comparing the LEVEL rather than the policy object is the point: this is the one thing the
     reload depends on, and `rebuild_policy` (the caller) is the writer of `loop.grants`, so
     reading its own output back as an input would be the wrong dependency.
 
-    A re-read can only ADD: everything this run has already applied is on disk by the time any
-    op returns.
+    A re-read can only ADD: what this run applied is on disk by the time any op returns.
     """
     level = level_of(loop.ctx.grants)
     if level != loop.reminders_level:
@@ -499,19 +500,18 @@ def _add(loop, op: dict, scope: str, poll_s: float) -> str:
     # set alone could be that one's, which `write_global` then overwrote.
     joined = ([(rec["id"], rec["regex"]) for rec in store.records(ctx.server.reminders_home)]
               if scope == "global" else [(r.id, r.regex) for r in local])
-    # Scoped to the SAME store on purpose. A local reminder shadowing a global one with the
-    # same pattern is the union's designed precedence, and PROMOTION is exactly that overlap
-    # for one turn — `add` the global copy, then delete the local one. Checking across both
-    # stores made the engine's own promotion instructions impossible to follow.
+    # Scoped to the SAME store on purpose: a local reminder shadowing a global one is the
+    # union's designed precedence, and PROMOTION is that overlap for one turn — checking across
+    # both stores made the engine's own promotion instructions impossible to follow.
     kind = store.read_kind(op.get("kind"))
-    # the duplicate test is per (pattern, KIND): the same pattern on a different trigger is a
-    # different consequence class, exactly as the union's dedupe key says. The scan stays over
-    # the SAME store's live set (`joined` carries that store's ids for the collision check).
+    # the duplicate test is per (pattern, KIND) — the same pattern on a different trigger is a
+    # different consequence class — and stays over the SAME store's live set (`joined`).
     if any(r.regex == op.get("regex") and r.kind == kind and r.scope == scope
            for r in loop.reminders):
         return (f"a {scope} {kind} reminder with that exact pattern is already live — revise it "
                 "instead of adding a second one that would fire on the same moments")
-    rid = store.new_id(ctx.run_ts, {r.id for r in loop.reminders} | {i for i, _ in joined})
+    taken = {r.id for r in loop.reminders} | {i for i, _ in joined}
+    rid = store.new_id(ctx.run_ts, remind_dead.reserved_ids(ctx.routine.dir, taken))
     reminder = Reminder(id=rid, regex=str(op["regex"]), description=str(op["description"]),
                         scope=scope, created_run=ctx.run_id, stats=store.blank_stats(),
                         reach=str(op.get("reach") or "") if scope == "global" else "",

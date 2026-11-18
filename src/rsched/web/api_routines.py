@@ -1,6 +1,5 @@
 """The routine READ surfaces: dashboard cards, the detail payload, the setup surface, the
-recommendations, recipe health and its revert, the phase graph, and a routine's own local
-reminders.
+recommendations, recipe health and its revert, and the phase graph.
 
 The write half is `api_routine_edit` (rules, permissions, run-now, archive) and
 `api_routine_patch` (the one validated config writer); a routine's artifacts and recipe FILES
@@ -29,7 +28,6 @@ from .routines_common import (
     _catalog,
     _info,
     _state,
-    guard_not_active,
     permission_layers_detail,
     queue_or_apply,
 )
@@ -346,35 +344,3 @@ def recipe(request: Request, slug: str) -> dict:
 
     info = _info(request, slug)
     return statemap.recipe_tree(info.cfg.dir)
-
-
-@router.delete("/routines/{slug}/reminders/{rid}")
-def delete_local_reminder(request: Request, slug: str, rid: str) -> dict:
-    """Drop one of this routine's OWN reminders, tally and all.
-
-    A local reminder is written by the run with no approval — that is the whole point of the
-    local rung — so the user's only lever over one is here. Without it a run that left itself
-    a bad pattern would keep paying a turn for it every time the pattern matched, and the only
-    remedy would be hand-editing `state/reminders.json` on the server.
-
-    Local only: a curated reminder is the library's copy, removed on the Library tab, and its
-    tally here is this routine's evidence about it rather than the reminder itself. Deleting a
-    local one takes its tally with it, because the tally is about a definition that is going.
-
-    Refused (409) while a run is active. A live run holds its reminders in memory and keeps
-    holding actions on them, and its next `remind` rewrites the file with the definitions it
-    holds (`engine/remind._save_local`) — so a delete landing mid-run reached nothing and was
-    then silently undone, under a 200.
-    """
-    from .. import reminders
-
-    info = _info(request, slug)
-    if not reminders.is_reminder_id(rid):
-        raise HTTPException(400, f"not a reminder id: {rid!r}")
-    guard_not_active(request, info)
-    local, gstats = reminders.load_local(info.cfg.dir)
-    kept = [r for r in local if r.id != rid]
-    if len(kept) == len(local):
-        raise HTTPException(404, f"{slug} has no local reminder {rid!r}")
-    reminders.save_local(info.cfg.dir, kept, gstats)
-    return {"ok": True, "remaining": len(kept)}
