@@ -235,10 +235,11 @@ bookkeeping — a false positive there is what would get the check switched off.
 A workflow pattern, a materialized recipe (`main.md` + `stages/`), a rule and a playbook all
 describe the WORK. None of them may name a util or show a util's flags. They name the CAPABILITY
 a step needs — "fetch the page", "run the repo's test suite", "publish the site" — and the run
-picks the tool: it is shown the whole util catalog in its CAPABILITIES prompt section (name +
-one-line summary, derived live from disk, so it can never be stale) and gets any single util's
-exact `usage:` block — every invocation form it lists, not only the first — for one cheap
-turn via the `util` action with name `list`. Which util worked,
+picks the tool: it is shown the whole util catalog in its CAPABILITIES prompt section (NAMES
+ONLY since 2026-11-14, grouped by category and derived live from disk, so it can never be
+stale), finds the one for a need with the `util` action's `search` verb, and gets any single
+util's one-line summary and exact `usage:` block — every invocation form it lists, not only the
+first — for one cheap turn via the `util` action with name `list`. Which util worked,
 and with which arguments, is then persisted in the ROUTINE'S OWN memory/notes — that, not the
 recipe, is where tool knowledge accumulates across runs. A tool named in a recipe goes stale the
 day it is renamed or removed, and it pre-empts the discovery that would have found a better one.
