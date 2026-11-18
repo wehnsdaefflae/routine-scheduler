@@ -244,27 +244,24 @@ recipe, is where tool knowledge accumulates across runs. A tool named in a recip
 day it is renamed or removed, and it pre-empts the discovery that would have found a better one.
 There is no exemption for meta or maintenance routines.
 
-The rule is enforced where the prose is WRITTEN, not by a check over the finished file.
-`workflows/pipeline_prompts.py` states it in the prompt that compiles a workflow + instruction
-into main.md and the stage modules, and `workflows/generate.py` states it in the prompt that drafts
-a new library pattern — so a recipe is born clean instead of being swept afterwards. Both
-prompts spell out the forbidden forms rather than describing them, because that is what an
-LLM can actually comply with.
+The generation prompts (`workflows/pipeline_prompts.py` and `workflows/generate.py`) state
+this order where prose is written. `workflows/recipelint.tool_names` also checks explicit call
+forms, not a dynamic catalog of tool words: implementation calls FAIL library lint, while live
+recipes receive a NOTE. Its remedy is to rewrite the step around the capability, retaining
+service/protocol names, and let the run discover the tool from its live catalog.
 
-A post-hoc linter was tried and removed: nearly every one of these documents is LLM-written,
-so a validator over the output leaves the generator producing the same defect forever while
-adding a false-positive surface — and, because the util catalog is dynamic (`global-utils-review`
-creates and removes utils with no human in the loop), any name-matching check turns unrelated
-files red the day a util is named after an ordinary word. Fix the generator; repair existing
-recipes once, by hand.
-
-Two things a recipe may legitimately name, whoever is writing it:
+Three things a recipe may legitimately name, whoever is writing it:
 
 - The SERVICE or PROTOCOL the work touches — "the newsletters in the Gmail inbox", "published
   over FTP", "post to the Discord channel". A util that shares that name is a coincidence; what
   is forbidden is an invocation (`gu <name>`, `util name=<name>`, "the `<name>` util", flags).
 - A PATH named after the tool that writes it (`<repo>/.codemap/`,
   `.control/health-events.jsonl`) — a task fact the recipe must state exactly.
+- A LIBRARY SUBJECT: the catalog entry being reviewed/retired/consolidated, a verdict naming
+  its subject, or an export/sync/inspect operation targeting the scheduler-library repository.
+  The call-form linter recognizes explicit subject forms from `global-utils-review` and
+  `library-sync`, not those routine names. Unrelated implementation calls in the same prose
+  remain findings; arbitrary tooling instructions gain no exemption.
 
 `state/` and `.memory/` are outside the rule entirely: naming the tool that worked is exactly
 what a routine's memory is for.

@@ -875,12 +875,11 @@ by a test, by the engine, or by a past incident.
 - **A recipe says WHAT, never which tool.** Workflow patterns, materialized recipes, general
   rules and playbooks may not name a util or show its flags — they name the capability, the run picks the
   tool from its live CAPABILITIES catalog, and what worked is persisted in the ROUTINE'S memory,
-  never the recipe. Enforced AT GENERATION — `workflows/pipeline_prompts.py` (materialization) and
-  `workflows/generate.py` (pattern drafting) spell out the forbidden forms in the prompt — not
-  by a linter over the finished file: these documents are LLM-written, so the generator is the
-  cause and a name-matching check over a DYNAMIC util catalog turns unrelated files red the day
-  a util is named after an ordinary word. See docs/authoring.md for the two things a recipe may
-  legitimately name (services/protocols; paths named after their tool).
+  never the recipe. The generation prompts (`workflows/pipeline_prompts.py` and
+  `workflows/generate.py`) state the order; `workflows/recipelint.tool_names` checks explicit
+  call forms, not a dynamic name catalog. Implementation calls fail library lint; live recipes
+  get an actionable NOTE. See docs/authoring.md for legitimate services/protocols, paths, and
+  explicit library-subject references — never a blanket exemption for maintenance routines.
 - **A contract names only the task** (P2, `workflows/taskcontract.py`, docs/authoring.md). The
   run's process record is the ENGINE's — LEDGER.md filed from the finish summary, the stage
   stamped when a run reads `stages/<name>.md`, notes from the `note` side field — so no pattern or

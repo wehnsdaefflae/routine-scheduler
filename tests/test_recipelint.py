@@ -142,3 +142,17 @@ def test_validate_reports_the_recipe_and_stays_green(cli_server, make_routine, t
     out = capsys.readouterr().out
     assert "testr: ok" in out
     assert "NOTE  recipe · main.md: routes to `stages/report.md`" in out
+
+
+def test_validate_tool_name_note_gives_an_actionable_remedy(
+        cli_server, make_routine, tmp_path, capsys):
+    d = make_routine(slug="testr")
+    (d / "main.md").write_text("# Mail\n\nRead Gmail over IMAP with `gu mail list`.\n")
+    declare_outcome(d)
+
+    assert cli.cmd_validate(SimpleNamespace(routine="testr")) == 0
+    out = capsys.readouterr().out
+    assert "NOTE  recipe · main.md: names the tool `mail`" in out
+    assert "Rewrite this step to name the capability instead" in out
+    assert "retain service/protocol names" in out
+    assert "discover the tool from the live catalog" in out

@@ -223,21 +223,57 @@ def _ungranted_kinds(files: dict[str, str], capabilities: dict | None) -> list[s
     return notes
 
 
-def tool_names(text: str, *, filename: str, subject: str) -> list[str]:
-    """Every TOOL this prose names, one finding per tool — the shared half of the order.
+_LIBRARY_REPO = (r"(?:~|/home/[^/\s`]+)/\.local/share/"
+                 r"routine-scheduler-libraries/?(?=\s|`|$)")
 
-    `subject` says whose prose it is ("library prose", "a recipe"), because the two halves
-    carry different weight: nothing the LIBRARY holds names a tool today (measured over every
-    pattern, workflow, rule, playbook and permission), so a breach there is new and FAILS the
-    lint, stopping the order being broken by what the library hands a routine at creation.
-    13 of 31 live recipes already name one, so there it is a note — failing `rsched validate`
-    for thirteen routines nobody asked to break would get the check switched off in a week.
+
+def _library_subject(text: str, call: re.Match[str]) -> bool:
+    """A library entry being judged, or this scheduler's library being published (R3467).
+
+    Judge each occurrence, never the routine's name or all of its tooling prose. These are
+    conservative, explicit subject forms from global-utils-review and library-sync; an
+    unrelated implementation call in the same paragraph/file must still be reported.
+    """
+    before = text[:call.start()].rsplit("\n\n", 1)[-1]
+    if (re.search(r"\b(?:review|audit|retire|rename|consolidate|fold|remove)\s+the\s+"
+                  r"(?:catalog|library)\s+(?:entry|util)\s+`$", before, re.IGNORECASE)
+            and re.match(r'"?\]?`', text[call.end():])):
+        return True
+    if (re.search(r"\b(?:right|correct)\s+verdict\s+(?:is|was)\s+`$", before, re.IGNORECASE)
+            and f"`{call[1]}`" in before
+            and re.search(r"\bowns\s+its\s+subject\b", before, re.IGNORECASE)):
+        return True
+    command = re.match(r"gu\s+(rsched\s+export|git\s+(?:sync|inspect))\b([^`\n]*)",
+                       text[call.start():])
+    if not command:
+        return False
+    args = command[2].strip()
+    if re.match(_LIBRARY_REPO, args):
+        return True
+    if command[1] == "rsched export":
+        return False
+    # Bare references to an operation already targeting the library: the bulk-prune check
+    # ("look with `gu git inspect`") and the push receipt ("requires `gu git sync`").
+    reference = (r"\bbulk\s+prune\b[^`]*\blook with\s+`$"
+                 if command[1] == "git inspect" else
+                 r"\blanded\s+push\b[^`]*\brequires\s+`$")
+    return (not args and re.search(reference, before, re.IGNORECASE) is not None
+            and re.search(rf"\bgu\s+{re.escape(command[1])}\s+{_LIBRARY_REPO}", text)
+            is not None)
+
+
+def tool_names(text: str, *, filename: str, subject: str) -> list[str]:
+    """Implementation calls, one finding per tool; library subjects are not implementations.
+
+    `subject` identifies the prose's owner: the library FAILS lint for a breach; existing
+    live recipes get a NOTE, so enforcing the order does not break their validation.
     """
     return [f"{filename}: names the tool `{tool}` — {subject} names the CAPABILITY it needs, "
-            f"never a tool or its flags (the operator's standing order, 2026-11-13): tools "
-            f"change under the document that names them"
-            for tool in sorted({m.group(1) for m in _TOOL_CALL.finditer(text)}
-                               - _CATALOG_VERBS)]
+            f"never a tool or its flags. Rewrite this step to name the capability instead; "
+            f"retain service/protocol names and discover the tool from the live catalog "
+            f"(the operator's standing order, 2026-11-13): tools change under the document"
+            for tool in sorted({m.group(1) for m in _TOOL_CALL.finditer(text)
+                                if m[1] not in _CATALOG_VERBS and not _library_subject(text, m)})]
 
 
 def _named_tools(files: dict[str, str]) -> list[str]:

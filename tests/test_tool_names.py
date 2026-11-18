@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from rsched.workflows import lint, recipelint
 
 RULE = """---
@@ -51,6 +53,9 @@ def test_a_recipe_naming_a_tool_is_a_note(tmp_path: Path) -> None:
     assert len(notes) == 1
     assert "`mail`" in notes[0]
     assert "names the CAPABILITY" in notes[0]
+    assert "Rewrite this step to name the capability instead" in notes[0]
+    assert "retain service/protocol names" in notes[0]
+    assert "discover the tool from the live catalog" in notes[0]
     # and it is a NOTE, never a contract error: `rsched validate` must not fail for it
     assert not recipelint.recipe_errors(tmp_path)
 
@@ -162,3 +167,74 @@ def test_a_workflow_pattern_is_held_to_it_because_it_becomes_a_recipe() -> None:
     breached = clean + "\n# Fetch the listing with `gu web-request` first.\n"
     found = lint.lint_workflow_py(breached, filename="general-task.py", rule_slugs=rules)
     assert [p for p in found if "names the tool `web-request`" in p], found
+
+
+# Subject excerpts from the actual recipes, not exemptions keyed by their routine names.
+REVIEW_SUBJECT = """The concrete miss: `yt-fetch` was deleted despite its reuse value.
+`video-extract` — which already extracts audio/frames/keyframes — owns its
+subject exactly. The right verdict was `gu video-extract fetch URL`, one entry either way.
+"""
+SYNC_SUBJECT = """Publish this instance's library repository.
+1. Export: `gu rsched export /home/mark/.local/share/routine-scheduler-libraries --json`.
+2. Sync: `gu git sync /home/mark/.local/share/routine-scheduler-libraries --json`.
+   Inspect: `gu git inspect /home/mark/.local/share/routine-scheduler-libraries --json`.
+
+A BULK prune — dozens of files, or a whole routine's directory — is a finding: look with
+  `gu git inspect` before syncing.
+A landed push requires `gu git sync` to report `pushed: true`.
+"""
+
+
+@pytest.mark.parametrize("body", [
+    REVIEW_SUBJECT, SYNC_SUBJECT,
+    "Review the catalog entry `gu mail` before deciding whether to retire it.",
+    'Audit the library util `util name=["translate"]` for overlap.',
+    "Sync `gu git sync ~/.local/share/routine-scheduler-libraries`.",
+])
+def test_library_subject_names_are_accepted_without_a_routine_allowlist(tmp_path, body):
+    # Also hold the shared library-lint half: the subject may be named in library prose.
+    assert not lint.lint_rule_text(RULE + "\n" + body, filename="a-rule.md")
+    (tmp_path / "main.md").write_text("# Renamed library worker\n\n" + body)
+    assert not [n for n in recipelint.recipe_notes(tmp_path) if "names the tool" in n]
+
+
+@pytest.mark.parametrize(("body", "tool"), [
+    ("Review the global utils catalog with `gu mail list`.", "mail"),
+    ("Audit the library with `util name=translate`.", "translate"),
+    ("Review the catalog entry `gu mail list` to read the inbox.", "mail"),
+    ('Audit the library util `util name=["translate"] args=["text"]`.', "translate"),
+    ("The correct verdict was `gu mail send`.", "mail"),
+    ("Run `gu git sync /home/mark/project --json`.", "git"),
+    ("Run `gu rsched export /home/mark/backup --json`.", "rsched"),
+    ("Run `gu git sync /home/mark/.local/share/routine-scheduler-libraries-copy`.", "git"),
+    ("Run `gu git sync /home/mark/.local/share/routine-scheduler-libraries/project`.", "git"),
+    ("The library needs `gu doc render` and `gu lint`.", "doc"),
+])
+def test_tooling_prose_is_not_a_blanket_exemption(body, tool):
+    # Neither a maintenance topic nor either accepted routine's filename grants immunity.
+    for filename in ("global-utils-review/main.md", "library-sync/main.md", "a-rule.md"):
+        found = recipelint.tool_names(body, filename=filename, subject="library prose")
+        assert any(f"names the tool `{tool}`" in p for p in found), found
+    found = lint.lint_rule_text(RULE + "\n" + body, filename="a-rule.md")
+    assert any(f"names the tool `{tool}`" in p for p in found), found
+
+
+@pytest.mark.parametrize(("subject", "implementation", "tool"), [
+    ("Review the catalog entry `gu mail`.", "Read the inbox with `gu mail list`.", "mail"),
+    (REVIEW_SUBJECT, "Fetch today's clip with `gu video-extract fetch URL`.", "video-extract"),
+    (SYNC_SUBJECT, "Run `gu git sync /home/mark/project`.", "git"),
+    (SYNC_SUBJECT, "Export the other project with `gu rsched export /tmp/backup`.", "rsched"),
+    (SYNC_SUBJECT, "Read the inbox with `gu mail list`.", "mail"),
+    (SYNC_SUBJECT, "For the other project, look with `gu git inspect`.", "git"),
+    (SYNC_SUBJECT, "The other project requires `gu git sync`.", "git"),
+    (SYNC_SUBJECT, "A landed push requires `gu rsched export`.", "rsched"),
+    (SYNC_SUBJECT, 'Export the backup with `util name=["rsched"]`.', "rsched"),
+    ("Review the catalog entry `util name=translate`.",
+     "Translate this message with `util name=translate`.", "translate"),
+])
+def test_a_subject_occurrence_does_not_hide_an_implementation_call(subject, implementation, tool):
+    body = subject + " " + implementation
+    found = recipelint.tool_names(body, filename="main.md", subject="a recipe")
+    assert len(found) == 1 and f"names the tool `{tool}`" in found[0], found
+    found = lint.lint_rule_text(RULE + "\n" + body, filename="a-rule.md")
+    assert any(f"names the tool `{tool}`" in p for p in found), found
