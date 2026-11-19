@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.556.1] — 2026-11-19
+
+### Changed
+- **The release gate BOUNDS what a test session holds instead of predicting it, and prices a
+  selection from its own measured history (D295, goal b8).** The admission guard charged one
+  class-wide constant per selection class — 2,816 MB for any serial selection, 3,584 MB for the
+  fast stage — against host `MemAvailable`, and refused with ZERO tests after waiting 20 minutes
+  when the host was below it. On this box that refused five gates in two days with
+  `real_failures: []` each time, while the whole non-browser suite measurably holds ~1.2 GB. The
+  operator's decision was *"b then a"*: bound the hold first, then price the estimate from
+  history.
+  - `tests/memwatch.py` — an RSS watchdog over the session. It samples the ENGINE CONTAINER's own
+    memory cgroup (anon + swap) every 0.25 s and ends the session over its cap, which is the
+    stronger guard: what the wait exists to prevent is the KERNEL choosing an OOM victim (on
+    2026-11-05 it killed a live routine run), and a watchdog stops the TESTS instead of hoping
+    about the host.
+  - `tests/memhistory.py` — the measured holds of a SELECTION, keyed on its paths, marks and
+    worker count, appended as the session ends. A selection that has run before is priced on what
+    it actually held rather than on its class's worst case.
+  - `tests/memgate.py` — at the wait's deadline the session now STARTS under a bound instead of
+    exiting 3 having run nothing. A verdict obtained under a bound is worth more than no verdict.
+  Two asymmetries are deliberate and pinned. History may lower what is ADMITTED but never the
+  BOUND, which always comes from the class's measured worst case: being wrong about "may this
+  start" costs a wait, being wrong about "must this be stopped" costs the gate
+  (`test_history_may_lower_admission_but_never_the_bound` encodes the specimen that taught it — a
+  0.3 s session's 68 MB priced a 1,024 MB cap against a real 1,056 MB stage). And the cap follows
+  the ADMISSION figure, never the memory that happens to be free: the host had 2,802 MB available
+  while the fast stage is measured holding 3.08-3.29 GB, so a headroom-derived cap would kill a
+  healthy gate (`test_the_cap_does_not_follow_the_memory_that_happens_to_be_free`).
+  The `browser` charge is untouched: it runs in the `uitest` container's own 4 GiB cgroup, so
+  nothing measured in this one bears on it. That figure is ~1.9x the stage's measured hold and is
+  reported separately (R3602).
+
 ## [0.556.0] — 2026-11-19
 
 ### Changed
