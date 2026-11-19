@@ -215,14 +215,13 @@ def test_ensure_library_clones_its_remote_into_an_empty_bind_mount(tmp_path):
     assert _git(lib, "log", "-1", "--format=%s").strip() == "a library with history"
 
 
-#: The `git_commit` pass-throughs C1.10 deliberately HOLDS BACK: its first increment converts
-#: the wrapper with the most call sites (`workflows/library.py`, 7) and leaves these two to be
-#: judged before the move is repeated. Shrink-only, like every ratchet here: a forwarder is
-#: named here or it does not exist, and one that is converted loses its entry for good.
-COMMIT_FORWARDERS_HELD_BACK = frozenset({
-    "library_docs.py:git_commit",
-    "utils_lib.py:git_commit",
-})
+#: EMPTY, and C1.10 is finished. The set held the pass-throughs the first increment left to be
+#: judged before the move was repeated — `library_docs.py:git_commit` (3 call sites) and
+#: `utils_lib.py:git_commit` (3). Both are converted and deleted, so from here the test below
+#: is a plain prohibition: no forwarder may stand in front of the primitive at all. The set
+#: stays here rather than being removed, because it is the shrink-only ratchet that refuses a
+#: re-introduction — an empty frozenset cannot grow without a deliberate edit a reviewer sees.
+COMMIT_FORWARDERS_HELD_BACK: frozenset[str] = frozenset()
 
 
 def _commit_forwarders() -> set[str]:

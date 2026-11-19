@@ -1089,10 +1089,11 @@ by a test, by the engine, or by a past incident.
   failure as `commit_failed`; its `routines_home` is REQUIRED so every call site decides
   where that lands. A WRITER calls it directly — never through a per-module `git_commit`
   pass-through, which hides which primitive was reached and is where a divergent default
-  (`routines_home=None`, an unscoped stage) would spread unseen. C1.10 converted
-  `workflows.library`'s wrapper and its 7 call sites;
-  `tests/test_libgit.py::test_no_pass_through_forwarder_stands_in_front_of_libgit_commit`
-  holds the line, with `library_docs`/`utils_lib` named as still-held-back and shrink-only.
+  (`routines_home=None`, an unscoped stage) would spread unseen. C1.10 is FINISHED: all three
+  wrappers are gone (`workflows.library`, then `library_docs` and `utils_lib` with their 6 call
+  sites), and `tests/test_libgit.py::test_no_pass_through_forwarder_stands_in_front_of_libgit_commit`
+  is now a plain prohibition — its held-back set is empty and shrink-only, so a re-introduced
+  forwarder reds the gate.
   A lock is removed only when `gitlock` proves it stale — never widen
   those four conditions to clear a lock faster. The library's `git` util cannot import
   `procgroup`, so it carries the same rule in its own runner: git leads its own group and a

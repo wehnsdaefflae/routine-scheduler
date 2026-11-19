@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from conftest import finish
-from rsched import bootstrap, utils_lib
+from rsched import bootstrap, libgit, utils_lib
 from rsched.endpoints.base import Completion
 from rsched.engine.authoring import recreate_denial
 from rsched.engine.runtime import run_routine
@@ -40,9 +40,9 @@ print("hi")
 def _seed_deleted_util(home, name="doomed"):
     utils_lib.ensure_library(home)
     utils_lib.write_util_file(home, name, UTIL_BODY)
-    utils_lib.git_commit(home, f"create {name}", routines_home=None)
+    libgit.commit(home, f"create {name}", routines_home=None)
     shutil.rmtree(utils_lib.util_dir(home, name))
-    utils_lib.git_commit(home, f"delete util {name} via web", routines_home=None)
+    libgit.commit(home, f"delete util {name} via web", routines_home=None)
 
 
 def _loop(home, *, depth=0, grants=None):
@@ -152,11 +152,11 @@ def test_seed_sync_never_resurrects_deleted(tmp_path, monkeypatch):
     monkeypatch.setattr(bootstrap, "repo_root", lambda: fake_repo)
     home = tmp_path / "library"
     utils_lib.ensure_library(home)
-    utils_lib.git_commit(home, "init", routines_home=None)
+    libgit.commit(home, "init", routines_home=None)
 
     assert bootstrap.sync_seed_utils(home, routines_home=tmp_path) == 1            # lands like any new seed
     shutil.rmtree(utils_lib.util_dir(home, "doomed"))
-    utils_lib.git_commit(home, "delete util doomed via web", routines_home=None)
+    libgit.commit(home, "delete util doomed via web", routines_home=None)
     assert bootstrap.sync_seed_utils(home, routines_home=tmp_path) == 0            # never resurrected
     assert not utils_lib.exists(home, "doomed")
 

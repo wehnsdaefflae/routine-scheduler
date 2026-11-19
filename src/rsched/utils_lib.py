@@ -18,7 +18,6 @@ import logging
 import os
 import re
 import shutil
-from collections.abc import Sequence
 from pathlib import Path
 
 from . import libgit
@@ -338,12 +337,3 @@ def was_deleted(home: Path, name: str) -> bool:
     """
     return libgit.path_was_deleted(home, f"utils/{name}/main.py")
 
-
-def git_commit(home: Path, message: str, *, routines_home: Path | None,
-               paths: Sequence[str] | None = None) -> libgit.Commit:
-    """Commit library changes under the shared repo lock (see libgit.commit). `paths` scopes
-    the stage to the util(s) this call touched so a concurrent writer's commit can't sweep
-    them — write_util / remove_util pass `utils/<name>`. A failure is filed in
-    `routines_home`'s health stream.
-    """
-    return libgit.commit(home, message, routines_home=routines_home, paths=paths)
