@@ -15,6 +15,20 @@ So each row is asked about NOW, by the one reader that already decides that cond
   read (`readmodels/answer_pickup`)?
 - `lane_chain_member_skipped` — does a lane still name that slug while no routine has it?
 
+And since 2026-11-19 every STANDING condition (`readmodels/blocked_kinds`), not only the
+operator's: the same week-long linger made the blocked-work list read like history — an
+overhead alarm for a recipe already revised, a due-soon marker already deleted, an obligation
+already met. Each is asked of the reader that decides it:
+
+- `obligation_overdue` — does that routine still hold an obligation past the overdue line
+  (`daemon/owed_watch.overdue`, its own writer's judgement)?
+- `process_overhead_high` — does that routine's reading under its CURRENT recipe still say
+  `over` (`readmodels/overhead_reading`)? A revised recipe with no runs yet reads `None` —
+  unknown, so the row keeps standing until the new recipe has been measured.
+- `migration_due_soon` / `migration_expired` — does the policed tree still declare a marker in
+  that state (`migration_markers`, the gate's own reader)? Its answer is kept for the day: it
+  reads every source file, and the tree does not change under a running process.
+
 `None` means it cannot be told (an `unknown` backup verdict, no scheduler, `oneshot_skipped`,
 which nothing records the re-arming of): the row then keeps counting. Only a KNOWN `False`
 retires a row from the badge, never a guess.
@@ -23,10 +37,20 @@ retires a row from the badge, never a guess.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, date, datetime
+from functools import cache
 
-from .. import lanes, registry
-from ..daemon import backup_watch, pause
-from ..readmodels import answer_pickup
+from .. import lanes, migration_markers, registry
+from ..daemon import backup_watch, owed_watch, pause
+from ..readmodels import answer_pickup, overhead_reading
+
+
+@cache
+def _markers(today: date) -> tuple[bool, bool]:
+    """(any declared marker due soon, any expired) for one day — the tree is fixed for the life
+    of the process, so one walk a day answers every request.
+    """
+    return bool(migration_markers.due_soon(today)), bool(migration_markers.expired(today))
 
 
 def checker(state) -> Callable[[str, str], bool | None]:
@@ -34,6 +58,7 @@ def checker(state) -> Callable[[str, str], bool | None]:
     server = state.server
     sched, runner = getattr(state, "scheduler", None), getattr(state, "runner", None)
     backup: list[bool | None] = []
+    owed: list[dict[str, list[dict]]] = []      # one obligations walk per call, like `backup`
 
     def backup_stale() -> bool | None:
         if not backup:
@@ -67,6 +92,21 @@ def checker(state) -> Callable[[str, str], bool | None]:
             return undelivered(subject)
         if event == "lane_chain_member_skipped":
             return missing_member(subject)
+        return standing(event, subject)
+
+    def standing(event: str, subject: str) -> bool | None:
+        today = datetime.now(UTC).date()
+        home = server.routines_home
+        if event == "obligation_overdue":
+            if not owed:
+                owed.append(owed_watch.overdue(home, today) if home.is_dir() else {})
+            return bool(owed[0].get(subject))
+        if event == "process_overhead_high":
+            reading = overhead_reading.reading(home, subject) if subject else None
+            return None if reading is None else bool(reading["over"])
+        if event in ("migration_due_soon", "migration_expired"):
+            soon, gone = _markers(today)
+            return soon if event == "migration_due_soon" else gone
         return None
 
     return holds

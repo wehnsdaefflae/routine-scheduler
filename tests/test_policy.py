@@ -86,6 +86,17 @@ def test_narration_about_a_marker_is_not_a_declaration():
         ('    """The three `trigger_*` appliers were deleted when their '
          "MIGRATION(expires=2026-10-15)\n    came due; the routes that queued them went too"),
         "# the deprecation whose MIGRATION(expires=2026-10-15) we honoured in 0.423.1",
+        # 2026-11-19: the WRAPPED sentence — `cli_daemon.py`'s two tombstones, as written. The
+        # marker opened its line, so the watch filed both as due-soon for a migration deleted
+        # weeks before.
+        ("    # (The `converse` pattern's goals revision was carried by a one-shot here until its\n"
+         "    # MIGRATION(expires=2026-11-30) was honoured: it ran on 2026-10-08"),
+    ]
+    # …while a declaration under a comment that ENDS a sentence, or under code, still declares.
+    declaring += [
+        ("    # (A fresh install gets the revision from the seed sync above.)\n"
+         "    # MIGRATION(expires=2026-12-31): the fourteen INSTALLED patterns gain"),
+        "    sync_seed_utils(server.libraries_home)\n    # MIGRATION(expires=2027-01-31): the gu",
     ]
     for text in declaring:
         hit = markers.MARKER.search(text)

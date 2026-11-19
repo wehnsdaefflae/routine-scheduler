@@ -22,6 +22,7 @@ from rsched.engine.runtime import run_routine
 from rsched.readmodels import memo
 from rsched.readmodels.health_reads import budget_endings
 from rsched.readmodels.health_stream import blocked_fleet
+from rsched.readmodels.wrong_turns import fold as wrong_turn_fold
 
 TS = "20260708-070000"
 
@@ -111,10 +112,11 @@ def test_an_ordinary_ok_run_files_no_correction(make_routine, scripted, tmp_path
 # --------------------------------------------------------------------------- the readers
 
 
-def test_the_blocked_surface_reads_the_correction(tmp_path):
-    """F703: the blocked-work surface reads the CORRECTION rather than the original. A turn
-    that exhausted its attempts ended the run — but the run was resumed and finished ok, so
-    the work it owed was not lost, and the fold must stop counting it."""
+def test_the_wrong_turn_fold_reads_the_correction(tmp_path):
+    """F703: the fold reads the CORRECTION rather than the original. A turn that exhausted its
+    attempts ended the run — but the run was resumed and finished ok, so the work it owed was
+    not lost, and the fold must stop counting it. (Wrong turns left the blocked-work fold on
+    2026-11-19 for `readmodels/wrong_turns`, which resolves corrections the same way.)"""
     server = tmp_server(tmp_path, create=False)
     _write(server, [
         {"event": "wrong_turn_detected", "routine": "alpha", "run_id": "alpha:r1",
@@ -125,12 +127,11 @@ def test_the_blocked_surface_reads_the_correction(tmp_path):
         {"event": "wrong_turn_detected", "routine": "beta", "run_id": "beta:r1",
          "ts": _ago(3), "reason": "attempts_exhausted", "turn": 2, "detail": "turn 2"},
     ])
-    out = blocked_fleet(server)
-    subjects = [(r["event"], r["subject"]) for r in out["rows"]]
-    assert ("wrong_turn_detected", "beta") in subjects
-    assert ("wrong_turn_detected", "alpha") not in subjects, \
-        "a corrected run still reads as blocked work"
-    assert out["incident_total"] == 1
+    out = wrong_turn_fold(server)
+    routines = {name for r in out["rows"] for name in r["routines"]}
+    assert "beta" in routines
+    assert "alpha" not in routines, "a corrected run still reads as a lost turn"
+    assert out["total"] == 1
 
 
 def test_a_turn_that_was_merely_rejected_is_not_folded_away(tmp_path):
@@ -145,8 +146,8 @@ def test_a_turn_that_was_merely_rejected_is_not_folded_away(tmp_path):
         {"event": "run_corrected", "routine": "alpha", "run_id": "alpha:r1", "ts": _ago(1),
          "superseded": ["run_failed"], "detail": "resumed to ok"},
     ])
-    out = blocked_fleet(server)
-    assert out["incident_total"] == 1 and out["rows"][0]["event"] == "wrong_turn_detected"
+    out = wrong_turn_fold(server)
+    assert out["total"] == 1 and out["rows"][0]["routines"] == {"alpha": 1}
 
 
 def test_an_unchecked_finish_is_not_corrected_by_a_later_one(tmp_path):
@@ -185,7 +186,7 @@ def test_budget_endings_reads_the_correction(tmp_path):
     assert out["corrected"] == 1
 
 
-def test_a_run_that_fails_again_after_a_correction_is_blocked_again(tmp_path):
+def test_a_run_that_fails_again_after_a_correction_is_counted_again(tmp_path):
     """The resolution compares STAMPS, never a flat "this run was corrected once" flag: a run
     resumed to ok and then resumed again into a failure is failing now, and a reader that
     folded it away on the strength of the earlier correction would be hiding a live problem."""
@@ -198,8 +199,8 @@ def test_a_run_that_fails_again_after_a_correction_is_blocked_again(tmp_path):
         {"event": "wrong_turn_detected", "routine": "alpha", "run_id": "alpha:r1",
          "ts": _ago(1), "reason": "attempts_exhausted", "turn": 9, "detail": "and again"},
     ])
-    out = blocked_fleet(server)
-    assert out["incident_total"] == 1, "a later failure was excused by an earlier correction"
+    out = wrong_turn_fold(server)
+    assert out["total"] == 1, "a later failure was excused by an earlier correction"
     assert out["rows"][0]["detail"] == "and again"
 
 

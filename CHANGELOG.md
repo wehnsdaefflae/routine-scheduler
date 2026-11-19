@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.555.0] — 2026-11-19
+
+### Blocked work says only what is blocked, and owed work reaches whoever owes it
+
+- **Wrong turns leave the blocked-work list for a panel of their own.** ~230 of the week's 285
+  blocked-work incidents were `wrong_turn_detected` — turns rejected and re-driven while their
+  runs went on — and they buried the one row only the operator could clear (a stale backup).
+  `readmodels/wrong_turns.py` + `GET /api/health/wrong-turns` + Stats' **Wrong turns** panel fold
+  the same events by CAUSE (turn numbers, numbers and quoted values masked), so one recurring
+  mistake across routines is one row, one fix.
+- **A standing condition that is over leaves the table.** Every standing row
+  (`obligation_overdue`, `process_overhead_high`, `migration_due_soon`/`_expired`) is now asked
+  whether it still holds, as the operator's rows already were (`web/operator_conditions`);
+  resolved rows leave `standing_rows` and the table and are named in one line. The five
+  overhead rows on 2026-11-19 were all of this kind: no routine was over the bar any more.
+- **An obligation says who its next move is on.** `b<n> waits on operator|external|<routine>:
+  <act>` (parses as `unmet`, `engine/accounting.py`). One waiting on the operator becomes ONE
+  `owed-obligation` Decisions card the next morning — it's done / drop it / still wanted
+  (`web/api_owed_obligation.py`, `components/owed-card.js`); settled rows are kept in
+  `state/obligations.json` so a run already carrying one cannot write it back, and the routine
+  is told in its inbox. One waiting on another routine that runs, or on the world (30 days), is
+  no longer the routine's overdue work. Before this, most `obligation_overdue` rows were items no
+  run of that routine could ever clear: an approval, a payment, a host change, a film not out.
+- **Overhead that persists across recipe changes is judged.** A recipe commit resets the
+  overhead window, so a routine revised more often than every third run was never judged
+  (freelance-hunter: nine recipe commits in eight days). Now the newest 3 runs of any recipe,
+  all over the bar with one under the current recipe, read `over` (`persistent`). The finish
+  block's overhead line names the causes measured this month — rules and stages read up front,
+  one file per turn, spilled output re-read, failing actions — instead of the bookkeeping the
+  11-06 sweep had already removed (six runs saw the old line; one cut came of it).
+- **A wrapped tombstone is not a migration marker.** `cli_daemon.py`'s two tombstones wrapped so
+  `MIGRATION(expires=2026-11-30)` opened a comment line mid-sentence, and the marker watch filed
+  them as due-soon for migrations deleted on 2026-10-08. `migration_markers.declares` now reads a
+  marker opening a `#` line under a comment line ending on a word as the same sentence — prose.
+
 ## [0.554.0] — 2026-11-19
 
 ### The index the digest points at is readable by the action it names

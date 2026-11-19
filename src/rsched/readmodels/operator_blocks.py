@@ -43,10 +43,10 @@ OUT, with the reason, because a badge that cries wolf is worse than no badge:
     converged migration code is deleted. But DELETING it is a builder's job, not his.
   - `item_dropped_live`, `obligation_overdue` — work owed by a routine; its own next run is
     what clears them.
-  - `finish_gate_failed`, `wrong_turn_detected`, `process_overhead_high` — measurements of
-    runs that happened, and the loudest events on the stream (202 `wrong_turn_detected` in
-    three weeks on this instance). A badge counting those would never be dark, which is the
-    same as not having one.
+  - `finish_gate_failed`, `process_overhead_high` — measurements of runs that happened. (So
+    was `wrong_turn_detected`, the loudest event on the stream — 202 in three weeks — which is
+    why it left this fold altogether on 2026-11-19, for `readmodels/wrong_turns`.) A badge
+    counting those would never be dark, which is the same as not having one.
 
 The count is DISTINCT ROWS, never occurrences: a row is one (event, subject) pair — one
 thing to go and fix — so a pause that ate eight fires of one routine reads as one block, and
@@ -91,6 +91,11 @@ RESOLVED: dict[str, str] = {
                         "(D237)",
     "lane_chain_member_skipped": "no lane names that slug any more, or it is a routine again",
     "answer_undelivered": "the answer has been read by a run, or settled",
+    "obligation_overdue": "the routine holds no obligation past the overdue line any more — "
+                          "met, dropped, or now waiting on someone named",
+    "process_overhead_high": "its runs under the current recipe read under the fleet bar",
+    "migration_due_soon": "no declared MIGRATION marker is inside the warning window any more",
+    "migration_expired": "no declared MIGRATION marker is past its expiry any more",
 }
 
 
@@ -113,7 +118,10 @@ def annotate(payload: dict,
         event = str(row.get("event") or "")
         marked = dict(row)
         marked["operator"] = is_operator_block(event)
-        if marked["operator"] and still_holds is not None \
+        # Asked of EVERY row since 2026-11-19, not only the operator's: a standing condition
+        # that is over (an overhead alarm on a revised recipe, a due-soon marker deleted) used
+        # to stand on the panel for the rest of its week.
+        if still_holds is not None \
                 and still_holds(event, str(row.get("subject") or "")) is False:
             marked["operator"] = False
             marked["resolved"] = True
@@ -124,6 +132,9 @@ def annotate(payload: dict,
     out = dict(payload)
     out["rows"] = rows
     out["operator_total"] = sum(1 for row in rows if row["operator"])
+    # A resolved standing condition is not standing: the count says what still holds.
+    out["standing_rows"] = sum(1 for row in rows
+                               if row.get("kind") == "standing" and not row.get("resolved"))
     out["operator_vocabulary"] = dict(OPERATOR_CLEARABLE)
     return out
 

@@ -21,6 +21,11 @@ sentence that happens to introduce a marker mid-prose still reads as a declarati
 gate — visible, and one edit away — while the opposite error is the silent permanence the policy
 exists to prevent.
 
+A sentence WRAPS across comment lines, and the rule follows it (2026-11-19): a marker opening a
+`#` line is narration when the comment line above ends on a word, because that line is the
+same sentence. Two tombstones in `cli_daemon.py` wrapped exactly there and were filed as
+due-soon for a migration deleted weeks before.
+
 It cannot excuse a real migration either, because the second half of the check mirrors the
 first: a file holding migration-shaped code with no DECLARED marker is flagged for missing one.
 A migration whose marker is written as narration is therefore still reported.
@@ -91,7 +96,18 @@ def declares(text: str, at: int) -> bool:
     errs toward reading an occurrence as a declaration.
     """
     line_start = text.rfind("\n", 0, at) + 1
-    return not _PROSE_LEAD.search(text[line_start:at])
+    lead = text[line_start:at]
+    if _PROSE_LEAD.search(lead):
+        return False
+    # A WRAPPED sentence (2026-11-19): `cli_daemon.py`'s two tombstones read "…until its\n#
+    # MIGRATION(expires=2026-11-30) was honoured", so the marker opened its LINE while sitting
+    # mid-sentence, and the watch filed both as due-soon. When the lead is a bare comment
+    # opener, the sentence it continues is the previous comment line's — prose when that line
+    # ends on a word, exactly as `_PROSE_LEAD` reads a lead on the marker's own line.
+    if lead.strip() != "#" or line_start == 0:
+        return True
+    prev = text[text.rfind("\n", 0, line_start - 1) + 1:line_start - 1]
+    return not (prev.lstrip().startswith("#") and _PROSE_LEAD.search(prev.rstrip()))
 
 
 def has_alias_table(text: str) -> bool:

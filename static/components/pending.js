@@ -1,6 +1,5 @@
-// The Decisions page's six PENDING bands — records a run or the daemon filed that nobody has
-// decided yet. Bands of their own rather than rows blended into the decision list, because none
-// is a question: no answer text, no options, two buttons each.
+// The Decisions page's PENDING bands — records a run or the daemon filed that nobody has decided
+// yet. Bands of their own rather than rows in the decision list: none is a question.
 //
 // 1. QUEUED CREATIONS (F328) — what a scheduled run proposed: a routine to create, or a change
 //    to a fire lane. Materializing goes through the web's one config-writing path.
@@ -22,12 +21,14 @@
 //    accept (components/swap-card.js, engine/candidate.py).
 // 5. UNOWNED WORK — a report nobody would act on for a week: give it to a routine or close it
 //    (components/unowned-card.js, daemon/owed_watch.py).
+// 6. OWED TO YOU — an obligation whose next move is the operator's (components/owed-card.js).
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { RECIPE, recipeRow } from "/static/components/recipe-card.js";
 import { SWAP, swapRow } from "/static/components/swap-card.js";
 import { UNOWNED, unownedRow } from "/static/components/unowned-card.js";
+import { OWED, owedRow } from "/static/components/owed-card.js";
 import { el, groupHead, toast, toastError, when } from "/static/util.js";
 
 const DRIFT = "library-drift";
@@ -165,8 +166,9 @@ export function pendingBand({ onChanged } = {}) {
     const goals = recs.filter((r) => r.kind === GOAL);
     const swaps = recs.filter((r) => r.kind === SWAP);
     const unowned = recs.filter((r) => r.kind === UNOWNED);
+    const owed = recs.filter((r) => r.kind === OWED);
     const recipes = recs.filter((r) => r.kind === RECIPE);
-    const creations = recs.filter((r) => ![DRIFT, GOAL, SWAP, UNOWNED, RECIPE].includes(r.kind));
+    const creations = recs.filter((r) => ![DRIFT, GOAL, SWAP, UNOWNED, OWED, RECIPE].includes(r.kind));
     host.replaceChildren();
     // Finished routines first: this is the only band whose subject has ALREADY changed state.
     if (goals.length) {
@@ -177,6 +179,10 @@ export function pendingBand({ onChanged } = {}) {
     if (swaps.length) {
       host.append(band("Replacements", "a rebuilt routine proved beside the one it replaces",
         swaps, (rec) => swapRow(rec, { reload: load, onChanged })));
+    }
+    if (owed.length) {
+      host.append(band("Owed to you", "a routine's obligation whose next move is yours",
+        owed, (rec) => owedRow(rec, { reload: load, onChanged })));
     }
     if (unowned.length) {
       host.append(band("Unowned work", "nobody would act on these — give each an owner or close it",

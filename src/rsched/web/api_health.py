@@ -18,6 +18,7 @@ from fastapi import APIRouter, Query, Request
 from ..readmodels.health_reads import DEFAULT_LIMIT, MAX_LIMIT, recent_events
 from ..readmodels.health_stream import DEFAULT_WINDOW_DAYS, MAX_WINDOW_DAYS, blocked_fleet
 from ..readmodels.operator_blocks import annotate
+from ..readmodels.wrong_turns import fold as fold_wrong_turns
 from .operator_conditions import checker
 
 router = APIRouter(tags=["health"])
@@ -77,3 +78,15 @@ def events(request: Request,
     visible, including the ones no fold keeps.
     """
     return recent_events(request.app.state.server, limit=limit, routine=routine, event=event)
+
+
+@router.get("/health/wrong-turns")
+def wrong_turns(request: Request,
+                days: Annotated[int, Query(ge=1, le=MAX_WINDOW_DAYS)] = DEFAULT_WINDOW_DAYS,
+                ) -> dict:
+    """The window's wrong turns folded by CAUSE (`readmodels/wrong_turns`): one row per masked
+    error detail with its count, routines and models, most frequent first. Not blocked work —
+    a wrong turn is re-driven and its run goes on — but the list of the mistakes that recur,
+    which is what an engine, schema or prompt fix is aimed at.
+    """
+    return fold_wrong_turns(request.app.state.server, days=days)

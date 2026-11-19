@@ -67,7 +67,8 @@ VIAS = frozenset({
     "branch",         # branches.hand_back — a forked conversation's result
     "trigger",        # daemon/triggers — a configured event's text
     "schedule_once",  # daemon/schedule_once — a one-shot fire's provenance
-    "pending",        # pending.notify_proposer — the outcome of a queued proposal
+    "pending",        # pending.notify_proposer — the outcome of a queued proposal; also
+                      # web/api_owed_obligation — the operator's decision on an obligation
     "oversight",      # engine/control — an escalation rung's directive, binding the run below
     "hook",           # engine/runtree — another run of this run TREE speaking (parent↔child)
 })

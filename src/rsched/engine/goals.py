@@ -170,6 +170,8 @@ def line(goal: dict) -> str:
         out += f" · asked {goal.get('since') or 'in an earlier run'}, still owed"
     if goal["status"] == "open" and goal.get("remains"):
         out += f" · last left unmet: {goal['remains']}"
+    if goal["status"] == "open" and goal.get("waits"):
+        out += f" · waits on {goal['waits']} since {goal.get('waits_since') or 'the last run'}"
     if goal["status"] == "dropped" and goal.get("dropped_by"):
         out += f" · dropped on their words “{goal['dropped_by']}”"
     return out
@@ -204,10 +206,12 @@ def digest_section(ledger: list[dict], *, conversation: bool) -> str:
 
 
 def stamp(ledger: list[dict], verdicts: dict[str, tuple[str, str]], *,
-          disputes: dict[str, str] | None = None) -> bool:
+          disputes: dict[str, str] | None = None, waits: dict[str, str] | None = None) -> bool:
     """Write a standing finish's verdicts onto the open goals; True when anything changed. A
     `met` closes the goal with its evidence (and the verifier's unresolved objection, if any);
-    an `unmet` leaves it open with what remains, for the next leg and the person to read.
+    an `unmet` leaves it open with what remains, for the next leg and the person to read — and
+    with WHO its next move is on (`waits`, from a `b<n> waits on <who>:` entry; a plain `unmet`
+    says it is this routine's own again, so the field is cleared).
     """
     changed = False
     for g in open_goals(ledger):
@@ -220,6 +224,7 @@ def stamp(ledger: list[dict], verdicts: dict[str, tuple[str, str]], *,
             changed = True
         elif verdict == "unmet":
             g["remains"] = note
+            g["waits"] = (waits or {}).get(g["id"], "")
             changed = True
     return changed
 

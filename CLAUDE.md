@@ -380,8 +380,9 @@ one you are about to touch, not all of them.
   (`wrong_turn_detected`, `engine/wrongturn.py`, R2652): every net in `engine/degrade.py` — the
   module headed "when a turn comes back WRONG" — fires on a turn that failed to ARRIVE, so a
   rejected, repeated or attempt-exhausted turn was visible only as a transcript `error` and two
-  per-run counters. It carries `reason`/`turn`/`model`/`effort`, is read on the blocked-work
-  surface, and is a MEASUREMENT: it changes no effort, no model and no retry — the effort ladder
+  per-run counters. It carries `reason`/`turn`/`model`/`effort`, is read BY CAUSE on Stats'
+  Wrong turns panel (`readmodels/wrong_turns`, 2026-11-19) — never on the blocked-work surface,
+  where ~230 a week buried the real blocks although the run goes on — and is a MEASUREMENT: it changes no effort, no model and no retry — the effort ladder
   behind it is a later increment that this rate has to justify, so do not wire one here.
   **A classifier that could not decide STRUCTURALLY is a health event on the same terms**
   (`error_class_undecided`, `engine/errorclass.py`, R3108): retry, failover and prompt-window
@@ -848,7 +849,9 @@ by a test, by the engine, or by a past incident.
   about one (`their MIGRATION(expires=…) came due`) is prose, because a tombstone comment that
   quoted its own marker once reddened `main` itself and blocked every release on the host. So
   write a completed migration's tombstone however you like — and never spell a live marker
-  mid-sentence, where it still counts. A **back-compat alias table** (a constant holding a
+  mid-sentence, where it still counts. A WRAPPED comment counts as one sentence: a marker that
+  opens a `#` line continuing a comment line ending on a word is narration (2026-11-19 — two
+  tombstones in `cli_daemon.py` wrapped that way and were filed as due-soon). A **back-compat alias table** (a constant holding a
   pre-rename spelling) must declare an expiry too: it is as temporary as a migration, and
   migration-shaped-code detection cannot see it.
   **The hard fail keeps its teeth and gets LEAD TIME** (F628): a second check in the same file
@@ -859,7 +862,9 @@ by a test, by the engine, or by a past incident.
   second hard deadline under another name, so it never can. And because a warning on a passing
   test reaches nobody, the daemon files the same window into the health stream —
   `migration_due_soon` / `migration_expired`, rendered on the blocked-work surface
-  (`daemon/marker_watch`, F702).
+  (`daemon/marker_watch`, F702). Every STANDING row there is asked whether it still holds
+  (`web/operator_conditions`), so one that ended leaves the table at once instead of standing
+  out its week.
 - **Documentation is swept, not patched.** On any change, revise ALL affected doc surfaces
   (CLAUDE.md, `docs/`, `static/views/help.js`, README, docstrings) — not the one you were
   asked about. A module DOCSTRING is a doc surface: pdoc renders it on the Help tab beside the
@@ -925,7 +930,9 @@ by a test, by the engine, or by a past incident.
   records `overhead` in status.json and `quality.overhead` in its usage row. The invariant is the
   MEDIAN `process_share` of a routine's last 5 measured runs UNDER ITS CURRENT RECIPE (rows whose
   `recipe_commit` is the newest recipe commit — a revision resets the window, or a repaired
-  routine is told to remove bookkeeping it no longer has) against `overhead.THRESHOLD` (0.27 —
+  routine is told to remove bookkeeping it no longer has — except that the newest 3 runs of ANY
+  recipe all over the bar, one of them under the current recipe, are over whatever the recipe
+  history: a routine revised more often than every third run was otherwise never judged) against `overhead.THRESHOLD` (0.27 —
   CALIBRATED against that hand count, table in the module docstring; never move it without
   re-running that calibration), read by ONE read model off the usage stream
   (`readmodels/overhead_reading.py`, no transcript fallback — `migrate_overhead.py` measured the
@@ -945,7 +952,12 @@ by a test, by the engine, or by a past incident.
   are OBLIGATIONS (`engine/obligations.py`, the engine-owned `state/obligations.json`): the next
   run's ledger starts with them (`source: carried`) and every finish answers for them until a run
   meets one or the person drops it in later words — an approval is a goal, and an answer given
-  between runs is recorded at boot as an `answer` event so a run can quote it. One open over
+  between runs is recorded at boot as an `answer` event so a run can quote it. An unmet one
+  may say WHO its next move is on — `b<n> waits on operator|external|<routine>: <act>` (it parses
+  as `unmet`): one waiting on the OPERATOR becomes his `owed-obligation` Decisions card (done /
+  drop / still wanted, `web/api_owed_obligation.py`, settled rows kept so an in-flight run cannot
+  resurrect them), one waiting on a routine that runs or on the world (30 days) is not this
+  routine's overdue work. One of the routine's OWN open over
   a week is `obligation_overdue` on the blocked-work surface, and a report nobody owns for a
   week becomes an `unowned-report` Decisions card (`daemon/owed_watch.py`). WHEN THE ROUTINE IS DONE
   FOR GOOD is the operator's FINISH LINE (`state/finish-line.json`, `engine/finishline.py`):

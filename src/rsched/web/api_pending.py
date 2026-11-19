@@ -32,8 +32,10 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import lanes, library_drift, pending, schedule
+from ..daemon import owed_watch
 from ..engine import finishline, reviseroutine
 from ..paths import read_yaml
+from .api_owed_obligation import decide as decide_obligation
 from .api_recipe_revision import materialize_revise, with_revise_state
 
 router = APIRouter(tags=["pending"])
@@ -44,12 +46,14 @@ class Discard(BaseModel):
 
 
 class Choice(BaseModel):
-    """What the operator decided for an `unowned-report` card: route it to a routine, or close
-    it. Other kinds carry no body.
+    """What the operator decided for an `unowned-report` card (route it to a routine, or close
+    it) or an `owed-obligation` card (met, drop, keep — with an optional note). Other kinds
+    carry no body.
     """
 
-    choice: Literal["route", "close"] = "route"
+    choice: Literal["route", "close", "met", "drop", "keep"] = "route"
     to: str = ""
+    note: str = ""
 
 
 def _decide_unowned(server, rec: dict, body: Choice | None) -> dict:
@@ -281,6 +285,8 @@ def materialize(request: Request, pid: str, body: Choice | None = None) -> dict:
             out = materialize_revise(server, rec)
         elif rec.get("kind") == "unowned-report":
             out = _decide_unowned(server, rec, body)
+        elif rec.get("kind") == owed_watch.OWED_KIND:      # web/api_owed_obligation.py
+            out = decide_obligation(server, rec, body)
         else:
             raise HTTPException(400, f"unknown proposal kind {rec.get('kind')!r}")
     except ValueError as exc:

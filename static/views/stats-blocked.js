@@ -77,11 +77,21 @@ export async function blockedSection() {
   } catch {
     return null;
   }
-  const rows = d.rows || [];
+  // RESOLVED rows leave the table (2026-11-19): a condition the server KNOWS is over — a backup
+  // that came back, an obligation met, an overhead alarm on a revised recipe — is history, and a
+  // table of history is how the one live row gets missed. They stay countable in one line.
+  const all = d.rows || [];
+  const rows = all.filter((r) => !r.resolved);
+  const over = all.filter((r) => r.resolved);
+  const resolvedLine = over.length ? el("div", { class: "faint small" },
+    `${fmtInt(over.length)} resolved since — `
+    + over.map((r) => `${r.event}${r.subject ? ` (${r.subject})` : ""}: ${r.resolved_note}`)
+      .join(" · ")) : null;
   const sub = [`what the fleet owed and did not do in the last ${d.window_days || WINDOW_DAYS} `
     + "days — refused fires, stopped lane chains, capped triggers, commits that did not land, "
     + "a stale backup. None of these produces a run, so no other surface on this page can "
     + "carry them.",
+    resolvedLine,
   ];
 
   if (!rows.length) {
@@ -89,7 +99,8 @@ export async function blockedSection() {
       el("h2", {}, "Blocked work"),
       el("div", { class: "sub" }, ...sub),
       emptyState("✓", "nothing blocked",
-        `no work was owed and skipped in the last ${d.window_days || WINDOW_DAYS} days`));
+        over.length ? "everything that was blocked this week has been resolved"
+          : `no work was owed and skipped in the last ${d.window_days || WINDOW_DAYS} days`));
   }
 
   const head = el("tr", {},
@@ -109,7 +120,6 @@ export async function blockedSection() {
       // them, and a reader who follows the badge here must find out what to do, not just that
       // something is wrong. The rest of the fold clears itself and says nothing extra.
       r.operator ? el("div", { class: "small" }, `waiting on you — ${r.waiting_on_you}`) : null,
-      r.resolved ? el("div", { class: "faint small" }, `resolved — ${r.resolved_note}`) : null,
       el("div", { class: "faint small" }, r.means || "")),
     subjectCell(r.subject),
     magnitudeCell(r),
@@ -119,7 +129,9 @@ export async function blockedSection() {
 
   // Two figures, never one: occurrences of things that happened, and conditions standing. One
   // number over both units is the defect R3418 removed — see `magnitudeCell`.
-  const counted = `${fmtInt(d.incident_total)} ${d.incident_total === 1 ? "time" : "times"} `
+  const incidents = rows.filter((r) => r.kind !== "standing")
+    .reduce((n, r) => n + (Number(r.count) || 0), 0);
+  const counted = `${fmtInt(incidents)} ${incidents === 1 ? "time" : "times"} `
     + "something due did not happen";
   const standing = d.standing_rows
     ? ` · ${fmtInt(d.standing_rows)} ${d.standing_rows === 1 ? "condition" : "conditions"} `

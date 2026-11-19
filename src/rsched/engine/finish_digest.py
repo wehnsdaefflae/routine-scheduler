@@ -74,7 +74,10 @@ def digest_section(routine_dir: Path, *, goals: list[dict] | None = None,
         what = []
         if open_goals:
             what.append("one per open goal — `b<n> met: <evidence>` or `b<n> unmet: <what "
-                        "remains>`")
+                        "remains>`, or, when its next move is not yours, `b<n> waits on <who>: "
+                        "<the act it waits on>` — `operator` (it becomes his Decisions card), "
+                        "`external` (a release, a reply, a date), or the slug of the routine "
+                        "that owes it (tell that routine with an addressed `report`)")
         if done:
             what.append("one entry per line of your recipe's `## Done when` — `d<n> met: "
                         "<evidence>`, `d<n> unmet: <what remains>`, `d<n> not due: <how that "
@@ -116,7 +119,12 @@ def _overhead_line(routine_dir: Path) -> str:
     r = overhead_reading.reading(routine_dir.parent, routine_dir.name, routine_dir)
     if r is None or not r["over"]:
         return ""
-    return (f"PROCESS OVERHEAD: for this routine, {overhead_reading.describe(r)} — reading its "
-            "recipe, keeping its ledger, notes, phase and state files — rather than its task. "
-            "Make your recipe revisions the ones that remove that bookkeeping: a stage, a "
-            "record or a Done-when line the task does not need.")
+    # The causes MEASURED on the five routines flagged in Nov 2026, not the 11-06 bookkeeping
+    # that sweep had already cut: naming only that, runs judged their recipe fine and answered
+    # "none" (one overhead cut from six runs that saw this line).
+    return (f"PROCESS OVERHEAD: for this routine, {overhead_reading.describe(r)} rather than its "
+            "task. The usual causes: reading every rule or stage up front instead of at its "
+            "moment, one file or memory note per turn where one batched read serves, re-reading "
+            "a spilled output a tighter command would not have spilled, records the task does "
+            "not need, and actions that fail or are refused. Make your recipe revisions the ones "
+            "that remove what THIS run spent that way, naming the turns.")

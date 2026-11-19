@@ -9,6 +9,7 @@ import { api } from "/static/api.js";
 import { GROUPS, METRICS, RANGES, chartNode, colorMap, hideTip } from "/static/components/charts.js";
 import { el, emptyState, fmtDur, fmtInt, fmtNum, fmtUsd, skeleton, storage } from "/static/util.js";
 import { blockedSection } from "/static/views/stats-blocked.js";
+import { wrongTurnsSection } from "/static/views/stats-wrongturns.js";
 import { cacheGapSection } from "/static/views/stats-cachegap.js";
 import { NBSP, compressionSection, foldRows, monthlySection, routineHref, statSection }
   from "/static/views/stats-parts.js";
@@ -331,6 +332,8 @@ export async function render(view) {
     // fetched here rather than folded into /api/stats; a failure returns null and the page
     // keeps every reading it does have.
     parts.push(await blockedSection());
+    // ---- turns that came back well-formed and wrong, by cause (not blocked work) --------
+    parts.push(await wrongTurnsSection());
 
     parts.push(el("div", { class: "stat-foot" },
       `generated ${agg.generated || ""} · source: each run's status.json (no cache)`));

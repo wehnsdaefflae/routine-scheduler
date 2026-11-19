@@ -42,8 +42,9 @@ from pathlib import Path
 
 from .. import lanes, proofcheck
 from ..config import ServerConfig, load_routine
-from ..engine import finishline, obligations
+from ..engine import accounting, finishline, obligations
 from ..health_events import log_health_event
+from ..paths import read_json
 from ..readmodels import answer_pickup
 
 log = logging.getLogger("rsched.daemon")
@@ -54,6 +55,11 @@ UNOWNED_DAYS = 7
 #: again on the blocked-work surface. A day, because the Decisions page says it at once; this
 #: is the reminder for an answer nobody went back to look at (two sat seven weeks, 2026-09-21).
 UNDELIVERED_DAYS = 1
+#: How long an obligation may wait on the WORLD (a release, a reply, a date) before it reads as
+#: overdue again: long enough for a real wait, short enough that "external" is no hiding place.
+EXTERNAL_DAYS = 30
+#: How long "still wanted" on an obligation's card holds the next card off.
+KEPT_DAYS = 7
 #: The routines a homeless report is usually someone's — offered after the routine that filed it.
 _LIKELY = ("scheduler-builder", "self-audit", "routine-improver")
 
@@ -76,15 +82,51 @@ def runs(home: Path, slug: str) -> bool:
     return bool(cfg is not None and cfg.enabled and not finishline.goal_reached(d))
 
 
+def _routine_dirs(home: Path) -> list[Path]:
+    return sorted(p for p in home.iterdir() if p.is_dir() and not p.name.startswith("."))
+
+
 def overdue(home: Path, today: date) -> dict[str, list[dict]]:
-    """`{routine: [obligation, …]}` — each open longer than OVERDUE_DAYS."""
+    """`{routine: [obligation, …]}` — each open longer than OVERDUE_DAYS whose next move is the
+    ROUTINE'S OWN (2026-11-19). One its last finish said `waits on` someone else is routed
+    instead (`waiting_on_operator`, `_parked`), so the blocked-work row names only what the
+    routine itself is failing to do.
+    """
     out: dict[str, list[dict]] = {}
-    for d in sorted(p for p in home.iterdir() if p.is_dir() and not p.name.startswith(".")):
+    for d in _routine_dirs(home):
         for ob in obligations.load(d):
             since = _day(ob.get("since"))
-            if since is not None and (today - since).days > obligations.OVERDUE_DAYS:
-                out.setdefault(d.name, []).append({**ob, "days": (today - since).days})
+            if since is None or (today - since).days <= obligations.OVERDUE_DAYS:
+                continue
+            if _parked(home, ob, today):
+                continue
+            out.setdefault(d.name, []).append({**ob, "days": (today - since).days})
     return out
+
+
+def _parked(home: Path, ob: dict, today: date) -> bool:
+    """Whether this obligation's next move is someone else's, so it is not the routine's
+    overdue work: the operator's (his Decisions card carries it), the world's for up to
+    `EXTERNAL_DAYS`, or another routine's that RUNS (it owes the move; one that starts no run
+    can never make it, so the obligation stays this routine's to re-route).
+    """
+    who = str(ob.get("waits") or "")
+    if not who:
+        return False
+    if who == accounting.OPERATOR:
+        return True
+    if who == accounting.EXTERNAL:
+        since = _day(ob.get("waits_since"))
+        return since is None or (today - since).days <= EXTERNAL_DAYS
+    return runs(home, who)
+
+
+def waiting_on_operator(home: Path) -> list[dict]:
+    """Every open obligation whose last finish said it waits on the operator — one Decisions
+    card each, from the first daily sweep that sees it (his act should not wait a week).
+    """
+    return [{**ob, "routine": d.name} for d in _routine_dirs(home)
+            for ob in obligations.load(d) if ob.get("waits") == accounting.OPERATOR]
 
 
 def unowned(home: Path, today: date) -> list[dict]:
@@ -137,6 +179,7 @@ class OwedWatch:
             log_health_event(home, "obligation_overdue", routine=slug, run_id="",
                              detail=detail, obligations=len(owed))
         self._file_unowned(home, today)
+        self._file_owed_to_operator(home, today)
         self._file_undelivered(home)
         # D220: and the proofs. An answered decision whose authorized work never landed is
         # owed work of exactly this kind — the operator's own framing ("accept / decline my
@@ -146,6 +189,30 @@ class OwedWatch:
         moved = proofcheck.sweep_home(home)
         if moved:
             log.info("owed-watch: %d decision proof(s) moved state", moved)
+
+    def _file_owed_to_operator(self, home: Path, today: date) -> None:
+        """ONE `owed-obligation` Decisions card per obligation that waits on the operator: he
+        says it is done, drops it, or keeps it (web/api_owed_obligation.py). A card whose
+        obligation no longer waits on him — met, dropped, re-addressed — is withdrawn.
+        """
+        from .. import pending
+
+        kept = read_json(home / KEPT_FILE)
+        owed = [ob for ob in waiting_on_operator(home)
+                if not _recently_kept(kept, card_key(ob), today)]
+        live = {card_key(ob) for ob in owed}
+        for rec in pending.load_all(home):
+            if rec.get("kind") == OWED_KIND and card_key(rec.get("fields") or {}) not in live:
+                pending.drop(home, rec["id"])
+        for ob in owed:
+            since = _day(ob.get("since"))
+            fields = {k: ob.get(k, "") for k in ("routine", "id", "from_run", "text", "quote",
+                                                 "remains", "since", "waits_since")}
+            fields["days"] = (today - since).days if since else 0
+            pending.queue(self.server, kind=OWED_KIND, routine=ob["routine"], run_id="",
+                          fields=fields,
+                          summary=f"{ob['routine']} waits on you for {ob['id']}: "
+                                  f"{ob.get('remains') or ob.get('text', '')}")
 
     def _file_undelivered(self, home: Path) -> None:
         """`answer_undelivered`, one row per routine or conversation holding an answer that NO
@@ -186,6 +253,24 @@ class OwedWatch:
                           fields=f,
                           summary=(f"{f['report']} has had no owner for {f['days']} days: "
                                    f"{f['title']}"))
+
+
+#: The Decisions-card kind for an obligation that waits on the operator.
+OWED_KIND = "owed-obligation"
+#: `{card key: date}` — when the operator last said "still wanted" (web/api_owed_obligation.py).
+KEPT_FILE = Path(".control") / "obligations-kept.json"
+
+
+def card_key(ob: dict) -> str:
+    """One obligation's identity across runs: routine, goal id, and the run that took it on —
+    goal ids are per-run counters, so the id alone can name two different asks.
+    """
+    return f"{ob.get('routine')}/{ob.get('id')}/{ob.get('from_run')}"
+
+
+def _recently_kept(kept: object, key: str, today: date) -> bool:
+    day = _day((kept or {}).get(key)) if isinstance(kept, dict) else None
+    return day is not None and (today - day).days < KEPT_DAYS
 
 
 def cutoff(today: date) -> date:

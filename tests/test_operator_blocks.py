@@ -112,16 +112,16 @@ def test_a_block_a_run_will_clear_is_marked_not_his(tmp_path):
     server = tmp_server(tmp_path, create=False)
     _write(server, [
         {"event": "backup_stale", "routine": "", "run_id": "", "ts": _ago(1), "detail": "x"},
-        {"event": "wrong_turn_detected", "routine": "freelance-hunter", "run_id": "r:1",
-         "ts": _ago(1), "detail": "a turn came back wrong"}])
+        {"event": "commit_failed", "routine": "freelance-hunter", "run_id": "r:1",
+         "ts": _ago(1), "detail": "a commit did not land"}])
 
     payload = annotate(blocked_fleet(server))
 
     marks = {row["event"]: row["operator"] for row in payload["rows"]}
-    assert marks == {"backup_stale": True, "wrong_turn_detected": False}
+    assert marks == {"backup_stale": True, "commit_failed": False}
     assert payload["operator_total"] == 1
     assert "waiting_on_you" not in next(r for r in payload["rows"]
-                                        if r["event"] == "wrong_turn_detected")
+                                        if r["event"] == "commit_failed")
 
 
 def test_zero_is_the_good_reading_and_is_served(tmp_path):

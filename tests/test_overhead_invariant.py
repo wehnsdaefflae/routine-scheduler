@@ -172,15 +172,40 @@ def test_a_recipe_change_resets_the_window_and_silences_alarm_and_digest(tmp_pat
     assert overhead_reading.reading(home, "r") is None             # no run of it yet
     assert "PROCESS OVERHEAD" not in finish_digest.digest_section(d)
     assert overhead_alarm.file_if_high(home, "r", "r:x", d) is False
+    # a first run under the new recipe UNDER the bar breaks the streak: still unjudged, quiet
+    rows.append(_row(9, 0.1, recipe=new))
+    write_usage_stream(home, rows)
+    assert overhead_reading.reading(home, "r")["over"] is False
     for n in range(overhead.MIN_RUNS):
         rows.append(_row(10 + n, 0.6, recipe=new))
         write_usage_stream(home, rows)
         r = overhead_reading.reading(home, "r")
-        assert [x["run_id"] for x in r["runs"]] == [x["run_id"] for x in rows[5:]]
-        judged = n + 1 >= overhead.MIN_RUNS
-        assert (r["judged"], r["over"]) == (judged, judged)
-        assert ("PROCESS OVERHEAD" in finish_digest.digest_section(d)) is judged
+        assert [x["run_id"] for x in r["runs"]] == [x["run_id"] for x in rows[5:]][-5:]
+        judged = n + 1 >= overhead.MIN_RUNS - 1     # the 0.1 run counts toward the window
+        assert (r["judged"], r["over"]) == (judged, judged and r["median"] >= 0.27)
+        assert ("PROCESS OVERHEAD" in finish_digest.digest_section(d)) is r["over"]
     assert overhead_alarm.file_if_high(home, "r", "r:y", d) is True
+
+
+def test_overhead_that_persists_across_recipe_changes_is_still_over(tmp_path):
+    """2026-11-19: freelance-hunter's recipe changed nine times in eight days, so its window
+    never reached MIN_RUNS and runs reading 0.36-0.42 were never judged. When the newest
+    MIN_RUNS runs of ANY recipe are all over the bar — one of them under the current recipe,
+    so the recipe has shown it is still over — the routine is over, and says why."""
+    home = tmp_path / "routines"
+    d = home / "r"
+    d.mkdir(parents=True)
+    rows = []
+    for i in range(overhead.MIN_RUNS):
+        commit = _commit_recipe(d, f"# revision {i}\n")
+        rows.append(_row(i + 1, 0.4, recipe=commit))
+    write_usage_stream(home, rows)
+    r = overhead_reading.reading(home, "r")
+    assert r["over"] and r["persistent"] and r["across_recipes"]
+    assert "across recipe changes" in overhead_reading.describe(r)
+    assert "across recipe changes" in finish_digest.digest_section(d)
+    _commit_recipe(d, "# a fresh revision, not yet run\n")
+    assert overhead_reading.reading(home, "r") is None, "judged on its predecessor's runs"
 
 
 def test_a_run_too_short_to_be_evidence_is_set_aside_not_judged(tmp_path):

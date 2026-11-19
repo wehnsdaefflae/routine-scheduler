@@ -93,9 +93,11 @@ def identity(kind: str, routine: str, fields: dict) -> tuple:
         # into the other's card would lose a reading nobody else made.
         return (kind, routine, str(fields.get("target") or ""),
                 "\n".join(str(x) for x in (fields.get("lines") or [])))
-    if kind == "unowned-report":      # one standing decision per report nobody owns
-        return (kind, str(fields.get("report") or ""))
-    return (kind, routine)
+    # One standing decision per report nobody owns, and per obligation waiting on the operator
+    # (its routine, goal id and the run that took it on — goal ids are per-run counters).
+    return {"unowned-report": (kind, str(fields.get("report") or "")),
+            "owed-obligation": (kind, routine, str(fields.get("id") or ""),
+                                str(fields.get("from_run") or ""))}.get(kind, (kind, routine))
 
 
 def find_equivalent(routines_home: Path, *, kind: str, routine: str,

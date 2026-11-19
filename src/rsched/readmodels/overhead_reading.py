@@ -16,7 +16,10 @@ bookkeeping that was already gone, which is new bookkeeping. So the window holds
 `recipe_commit` (stamped at run start, `recipes.current_recipe_commit`) is the routine's current
 recipe version — the newest commit touching main.md, stages/ or tuning.yaml, read without
 writing (`current_recipe`) — and a recipe change RESETS it: the judgement waits for
-`MIN_RUNS` runs under the new recipe. An unversioned dir compares as `None` to `None`.
+`MIN_RUNS` runs under the new recipe. An unversioned dir compares as `None` to `None`. The one
+exception is PERSISTENCE: when the newest `MIN_RUNS` measured runs of any recipe are ALL over the
+bar, the routine is over whatever its recipe history (`persistent`, 2026-11-19) — otherwise a
+routine revised more often than every third run is never judged.
 
 ONE SOURCE per value. The usage stream is the only thing read: a run whose row carries no
 `overhead` (its transcript was never measured — older than the record and gone before the
@@ -117,6 +120,22 @@ def reading(routines_home: Path, slug: str, routine_dir: Path | None = None) -> 
 
     too_short = sum(1 for r in of_recipe if short(r))
     runs = [r for r in of_recipe if not short(r)][-overhead.WINDOW:]
+    # PERSISTENT across recipe changes (2026-11-19): the newest MIN_RUNS measured runs of ANY
+    # recipe, every one over the bar. A recipe change resets the window, and a routine whose
+    # recipe changes more often than every third run — freelance-hunter, nine recipe commits in
+    # eight days — was never judged at all, whatever its runs read: a correctness revision
+    # silenced the invariant exactly as an overhead cut would. A real cut breaks the streak with
+    # its first run under the bar, so this never outlives the fix the reset exists to honour.
+    # It needs one run of the CURRENT recipe in that streak: a recipe nothing has run yet has
+    # not shown it is still over, and judging it on its predecessor's runs is the false alarm
+    # the reset exists to prevent (the 11-06 sweep's repaired routines).
+    latest = [r for r in measured.get(slug, []) if not short(r)][-overhead.MIN_RUNS:]
+    persistent = len(latest) >= overhead.MIN_RUNS and any(
+        r["recipe_commit"] == commit for r in latest) and all(
+        r["process_share"] >= overhead.THRESHOLD for r in latest)
+    across = persistent and len(runs) < overhead.MIN_RUNS
+    if across:
+        runs = latest
     if not runs:
         return None
     median = round(statistics.median(r["process_share"] for r in runs), 3)
@@ -125,11 +144,17 @@ def reading(routines_home: Path, slug: str, routine_dir: Path | None = None) -> 
             "runs": [{"run_id": r["run_id"], "process_share": r["process_share"]} for r in runs],
             "threshold": overhead.THRESHOLD, "judged": judged,
             "min_actions": overhead.MIN_ACTIONS, "too_short": too_short,
-            "over": judged and median >= overhead.THRESHOLD}
+            "persistent": persistent, "across_recipes": across,
+            "over": (judged and median >= overhead.THRESHOLD) or persistent}
 
 
 def describe(r: dict) -> str:
     """The reading in one clause — the words the surface row, the alarm and `validate` share."""
+    if r.get("across_recipes"):
+        return (f"each of its last {len(r['runs'])} runs spent at least "
+                f"{round(100 * r['threshold'])}% of its actions on its own process and harness "
+                f"friction (median {round(100 * r['median'])}%), across recipe changes that did "
+                "not bring it under the bar")
     return (f"the median of its last {len(r['runs'])} runs under its current recipe spent "
             f"{round(100 * r['median'])}% of their actions on its own process and harness "
             f"friction (the fleet bar is {round(100 * r['threshold'])}%)")

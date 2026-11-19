@@ -38,6 +38,8 @@ REFUSAL = ("state/obligations.json is the engine's record of what a person asked
            "drop it with `goal` verb=drop quoting the person's own later words")
 #: How long an obligation may stay open before the daemon names it as owed work.
 OVERDUE_DAYS = 7
+#: How many settled rows the file keeps — enough to cover any run in flight, not a history.
+SETTLED_KEEP = 50
 
 
 def load(routine_dir: Path) -> list[dict]:
@@ -55,7 +57,9 @@ def carried(routine_dir: Path) -> list[dict]:
     return [{**goals.blank(str(r["id"]), str(r.get("text") or ""), str(r.get("quote") or ""),
                            source="carried", heard=-1, turn=0),
              "since": str(r.get("since") or ""), "remains": str(r.get("remains") or ""),
-             "from_run": str(r.get("from_run") or "")}
+             "from_run": str(r.get("from_run") or ""), "waits": str(r.get("waits") or ""),
+             "waits_was": str(r.get("waits") or ""),
+             "waits_since": str(r.get("waits_since") or "")}
             for r in load(routine_dir)]
 
 
@@ -68,10 +72,49 @@ def save(ctx: RunContext) -> None:
     if ctx.depth > 0 or is_conversation(ctx):
         return
     today = now_iso()[:10]
-    rows = [{"id": g["id"], "text": g["text"], "quote": g["quote"],
-             "since": g.get("since") or today, "remains": g.get("remains") or "",
-             "from_run": g.get("from_run") or ctx.run_id}
-            for g in goals.open_goals(ctx.goals)]
     path = ctx.routine.dir / FILE
-    if rows or path.exists():
-        atomic_write_json(path, {"updated": now_iso(), "open": rows})
+    settled = _settled(path)
+    gone = {(r["id"], r.get("from_run")) for r in settled}
+    rows = []
+    for g in goals.open_goals(ctx.goals):
+        row = {"id": g["id"], "text": g["text"], "quote": g["quote"],
+               "since": g.get("since") or today, "remains": g.get("remains") or "",
+               "from_run": g.get("from_run") or ctx.run_id}
+        if (row["id"], row["from_run"]) in gone:
+            continue        # the operator settled it on the Decisions page while this ran
+        if who := g.get("waits"):
+            # the day it FIRST waited on this addressee, so a card is not re-dated each run
+            kept = g.get("waits_since") if who == g.get("waits_was") else ""
+            row.update(waits=who, waits_since=kept or today)
+        rows.append(row)
+    if rows or settled or path.exists():
+        atomic_write_json(path, {"updated": now_iso(), "open": rows, "settled": settled})
+
+
+def _settled(path: Path) -> list[dict]:
+    """What the operator settled on the Decisions page (`settle`), kept so a run that carried
+    the obligation before his click cannot write it back at its finish.
+    """
+    data = read_json(path)
+    rows = data.get("settled") if isinstance(data, dict) else None
+    return [r for r in rows if isinstance(r, dict) and r.get("id")] if isinstance(rows, list) \
+        else []
+
+
+def settle(routine_dir: Path, ob_id: str, from_run: str, *, how: str, note: str = "") -> bool:
+    """The operator's decision on an obligation that WAITED ON HIM (daemon/owed_watch.py):
+    `met` (he says it is done) or `dropped` (no longer wanted). The row leaves `open` and is
+    kept under `settled` — with what he decided and when — so a run already carrying it does
+    not resurrect it, and its next run's digest no longer owes it. False when no such row.
+    """
+    path = Path(routine_dir) / FILE
+    rows = load(routine_dir)
+    hit = next((r for r in rows if r["id"] == ob_id and r.get("from_run") == from_run), None)
+    if hit is None:
+        return False
+    settled = _settled(path)
+    settled.append({"id": ob_id, "from_run": from_run, "text": hit.get("text", ""),
+                    "how": how, "by": "operator", "at": now_iso(), "note": note})
+    atomic_write_json(path, {"updated": now_iso(), "open": [r for r in rows if r is not hit],
+                             "settled": settled[-SETTLED_KEEP:]})
+    return True

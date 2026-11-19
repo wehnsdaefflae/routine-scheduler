@@ -9,6 +9,7 @@ open outcome of the routine's finish line (`finishline.py`):
     d2 unmet: <what remains and what it waits on>
     d3 not due: <how that was established>
     b1 met: <evidence>                   (any open goal; `unmet` too, except on a FINAL reply)
+    b2 waits on operator: <his act>      (an unmet goal whose next move is someone else's)
     g1 distance: <what remains>          (any open outcome)
     g2 met: <evidence>                   (only an outcome the run proves)
 
@@ -46,15 +47,37 @@ PLACEHOLDER_WORDS = frozenset({
 _EDGE = ".,;:!?()[]{}<>\"'`*…-–—_|/\\"
 
 
+#: `b<n> waits on <who>: <the act it waits on>` — an UNMET goal whose next move is not this
+#: routine's (2026-11-19). `who` is `operator`, `external` (the world: a release, a reply, a
+#: date) or a routine slug. It parses as `unmet` everywhere a verdict is read, so no reader of
+#: verdicts changes; `waits` reads the addressee, which `obligations.save` keeps and
+#: `daemon/owed_watch` routes — an obligation waiting on the operator becomes his Decisions
+#: card, one waiting on another routine or the world stops reading as this routine's overdue
+#: work. Goals only: a Done-when line is the run's own, whoever it waits on.
+_WAITS_RE = re.compile(r"^\s*(b\d+)\s+waits\s+on\s+([a-z0-9][a-z0-9_.-]*)\s*:\s*(.*)$",
+                       re.IGNORECASE | re.DOTALL)
+OPERATOR, EXTERNAL = "operator", "external"
+
+
 def parse(entries: object) -> dict[str, tuple[str, str]]:
     """`{id: (verdict, note)}` from the finish field; an entry that does not parse is left out
-    (`problems` reports the id it should have covered).
+    (`problems` reports the id it should have covered). A `waits on` entry reads as `unmet`.
     """
     out: dict[str, tuple[str, str]] = {}
     for raw in entries if isinstance(entries, list) else []:
-        m = _ENTRY_RE.match(str(raw))
-        if m:
+        if w := _WAITS_RE.match(str(raw)):
+            out[w[1].lower()] = ("unmet", w[3].strip())
+        elif m := _ENTRY_RE.match(str(raw)):
             out[m[1].lower()] = (m[2].lower(), m[3].strip())
+    return out
+
+
+def waits(entries: object) -> dict[str, str]:
+    """`{goal id: who}` for every `b<n> waits on <who>:` entry — lowercased."""
+    out: dict[str, str] = {}
+    for raw in entries if isinstance(entries, list) else []:
+        if w := _WAITS_RE.match(str(raw)):
+            out[w[1].lower()] = w[2].lower()
     return out
 
 

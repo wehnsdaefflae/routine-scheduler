@@ -324,7 +324,8 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         # that snapshot is what a later leg replays the goals from (engine/goals.py)
         owed_ids = {x["id"] for x in owed[0]} if owed is not None else set()
         stamped = goals.stamp(ctx.goals, {i: v for i, v in verdicts.items() if i in owed_ids
-                                          and i.startswith("b")}, disputes=disputes)
+                                          and i.startswith("b")}, disputes=disputes,
+                             waits=accounting.waits(action.get("accounting")))
         ctx.transcript.event("stopping_update",
                              {"met": newly, "judged": {i: v for i, (v, _n) in verdicts.items()},
                               "run_id": ctx.run_id,

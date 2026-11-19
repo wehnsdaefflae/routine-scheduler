@@ -37,7 +37,7 @@ COUNTABLE_INCIDENTS = (
     "fire_refused", "lane_fire_refused", "fire_paused", "lane_fire_paused", "oneshot_skipped",
     "lane_chain_stopped", "lane_chain_member_skipped", "scheduler_tick_error",
     "finish_gate_failed", "trigger_capped", "commit_failed", "item_dropped_live",
-    "wrong_turn_detected", "model_chain_exhausted", "postdeploy_failed",
+    "model_chain_exhausted", "postdeploy_failed",
 )
 
 

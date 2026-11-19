@@ -60,12 +60,12 @@ def test_the_badge_says_what_only_he_can_do_about_it(ui_page, ui):
 
 
 def test_a_block_a_run_will_clear_leaves_the_badge_dark(ui, ui_page):
-    """`wrong_turn_detected` is the stream's loudest event and nothing about it waits for a
-    person — the engine re-drives the turn. A badge counting those would never be dark.
+    """A commit that did not land is taken by a later commit — nothing about it waits for a
+    person. A badge counting the blocks the system clears by itself would never be dark.
     """
-    _blocked(ui, [{"ts": _now_iso(ui_page), "event": "wrong_turn_detected",
+    _blocked(ui, [{"ts": _now_iso(ui_page), "event": "commit_failed",
                    "routine": "uir", "run_id": "uir:20260715-100000",
-                   "detail": "a turn came back well-formed and wrong"}])
+                   "detail": "a commit into a versioned repo did not land"}])
     ui_page.goto(f"{ui.url}/#/routines")
 
     badge = ui_page.locator("#blocked-badge")

@@ -876,7 +876,7 @@ health stream for that window held exactly one event, about an unrelated oversiz
 
 ## Blocked work (`/api/health/blocked`)
 
-Everything above measures runs that HAPPENED. 21 health events record the opposite —
+Everything above measures runs that HAPPENED. 20 health events record the opposite —
 `postdeploy_failed` (the daemon's own post-boot checklist found that what it serves, or what it
 can write or back up, is not what the deploy intended — most sharply a build that did not
 relaunch, which is a deploy that was due and did not land; `daemon/postdeploy_watch.py`),
@@ -884,16 +884,15 @@ relaunch, which is a deploy that was due and did not land; `daemon/postdeploy_wa
 `lane_chain_stopped`,
 `lane_chain_member_skipped`, `scheduler_tick_error`, `trigger_capped`, `commit_failed`,
 `backup_stale`, `migration_expired`, `migration_due_soon`, `obligation_overdue`,
-`finish_gate_failed`, `wrong_turn_detected`, `item_dropped_live`, `model_chain_exhausted` and
+`finish_gate_failed`, `item_dropped_live`, `model_chain_exhausted` and
 `process_overhead_high` (a routine's run time going to its own process rather than its task —
 "Process overhead" above), and `answer_undelivered` (an answer of yours that no run will
 ever read — `readmodels/answer_pickup`) — and no run page, Items row or Stats slice can carry any of them: the first six produce
 no run at all; a commit that did not land happens after a run's finish is written, or
 outside any run (a web edit, a boot seed sync, a migration); a finish gate that RAISED
 (F678) leaves a run that reads as finished on every surface, because it did finish — on its own
-authored status and summary, with the checks that should have judged that ending never run; a
-turn that came back WRONG (below) is a turn paid for at full prompt price whose work was
-re-driven, which a run finishing `ok` shows nowhere; and an EXHAUSTED CHAIN (F716) is a turn that
+authored status and summary, with the checks that should have judged that ending never run; and
+an EXHAUSTED CHAIN (F716) is a turn that
 could not be taken at all — every model in the role's chain failed hard or was cooling. That last
 one does leave a failed run page, which is why it was left off this fold for so long, but when
 the cause is the host's shared proxy the failure is never one routine's: on 2026-10-19 eight such
@@ -930,10 +929,19 @@ counting. `operator_total` counts those as DISTINCT
 ROWS — one per thing to go and fix, so a pause that ate eight of one routine's fires is one —
 and that count is the rail's blocked badge beside Stats, on every page. Everything else clears
 itself and is deliberately left off: the next fire, the next tick, a daily cap reset, a
-cooldown lapsing, a later commit, a routine's own next run — and `wrong_turn_detected`,
-`process_overhead_high` and `finish_gate_failed` are measurements of runs that DID happen (202
-`wrong_turn_detected` in three weeks on this instance), so a badge counting them would never be
-dark, which is the same as not having one. The judgement is SERVED, exactly like `vocabulary`:
+cooldown lapsing, a later commit, a routine's own next run — and `process_overhead_high` and
+`finish_gate_failed` are measurements of runs that DID happen, so a badge counting them would
+never be dark, which is the same as not having one.
+
+**Every STANDING row is asked whether it still holds, not only the operator's** (2026-11-19).
+A standing condition's watcher files one row a day while it holds, and the fold windows a week,
+so a condition that ENDED stood on the panel for the rest of its week: an overhead alarm on a
+recipe already revised, a due-soon marker already deleted, an obligation already met. The same
+checker now asks each of them of the reader that decides it — `owed_watch.overdue` for
+`obligation_overdue`, the overhead reading under the CURRENT recipe for `process_overhead_high`
+(no reading yet under a revised recipe is unknown, so the row stands), `migration_markers` for
+the two marker events — and a row known to be over is `resolved`: it leaves `standing_rows`
+and the panel's table, and the panel names it in one `N resolved since — …` line instead. The judgement is SERVED, exactly like `vocabulary`:
 one module decides it and the console renders what it was not compiled with, so adding an event
 to the set lights the badge with no console change.
 
@@ -944,9 +952,10 @@ because the work it owed was done after all. Two rows deliberately do NOT disapp
 `lane_chain_stopped` whose `stopped_by` member run was corrected KEEPS its row with
 `corrected: true` and a detail saying the not-ok verdict is superseded: the chain's remaining
 members still never ran, which is the whole claim of that event, and reopening a closed chain
-is a bigger change than correcting a record. And a `wrong_turn_detected` whose reason is
-`schema_rejected`, `repeat_invalid` or `action_repeat` stays exactly as written — that turn was
-paid for at full prompt price and a later resume does not give the spend back.
+is a bigger change than correcting a record. (The same resolution applies on the wrong-turns
+fold below: an `attempts_exhausted` turn of a run later corrected stops counting, while a
+`schema_rejected`, `repeat_invalid` or `action_repeat` turn stays — it was paid for at full
+prompt price and a later resume does not give the spend back.)
 
 **And the console reads it** (R2653, 0.433.0): the Stats page's **Blocked work** section
 (`static/views/stats-blocked.js`) fetches that endpoint on its own window and renders one row per
@@ -961,12 +970,32 @@ never to a route built from the opaque id; an empty subject reads as "the instan
 Owed WORK lands here too (`daemon/owed_watch.py`, daily): `obligation_overdue` names a routine
 whose `state/obligations.json` — what a person asked of it or approved, carried from run to run
 until one meets it (engine/obligations.py) — has held an item open longer than a week, with the
-item and what the last run left unmet. Its sibling never reaches this stream: a REPORT nobody
+item and what the last run left unmet. Since 2026-11-19 only an item whose next move is the
+ROUTINE'S OWN counts: a run that leaves a goal unmet may say who it waits on
+(`b<n> waits on operator|external|<routine>: <the act>`, engine/accounting.py). One waiting on
+the OPERATOR becomes his `owed-obligation` card on the Decisions page the next morning — it is
+done, drop it, or still wanted (`web/api_owed_obligation.py`; the first two settle it on his
+word, recorded under `settled` in the file so a run already carrying it cannot write it back,
+and the routine is told in its inbox) — one waiting on another routine that RUNS is that
+routine's move, and one waiting on the world is parked for `EXTERNAL_DAYS` (30). Before this,
+seven routines' rows on this fold were mostly items no run of theirs could ever clear: a video
+only the operator could approve, a payment only he could make, a film not yet released. Its
+sibling never reaches this stream: a REPORT nobody
 owns for a week (addressed to nobody, or to a routine that starts no run) becomes an
 `unowned-report` decision on the Decisions page instead — route it to a routine or close it —
 because a homeless report needs an owner chosen, not a count raised.
 
-A WRONG TURN lands here too (`engine/wrongturn.py`, R2652): `wrong_turn_detected` is a turn that
+A WRONG TURN does NOT land here (2026-11-19). `wrong_turn_detected` used to be folded on this
+surface, ~230 incidents a week against a handful of real blocks — a stale backup, the one row only
+the operator could clear, sat under them. A rejected turn is re-driven and its run goes on, so
+nothing DUE failed to happen, which is the one thing this fold says. Its reader is
+`readmodels/wrong_turns.py` behind `GET /api/health/wrong-turns?days=<n>` and the **Wrong turns**
+panel on Stats (`static/views/stats-wrongturns.js`): the same events folded by CAUSE — the detail
+with its turn number, numbers and quoted values masked — so `start_line: -40 is less than the
+minimum of 1` from one routine and `start_line: -5 …` from another are one row, one fix, with the
+routines and models beside it.
+
+The event itself (`engine/wrongturn.py`, R2652): `wrong_turn_detected` is a turn that
 came back WELL-FORMED AND WRONG, filed with `reason`, `turn`, `model` and `effort` as structured
 fields. The seam it closes is a documented one — `engine/degrade.py` is headed *"when a turn comes
 back WRONG"* and carries four ordered nets (two window shrinks, a media fallback, a chain advance),

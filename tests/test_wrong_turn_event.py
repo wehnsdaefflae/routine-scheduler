@@ -168,28 +168,31 @@ def test_the_event_is_in_the_documented_vocabulary():
         "the vocabulary carries no paragraph saying what it means")
 
 
-def test_the_event_reaches_the_blocked_work_surface():
-    """`GET /api/health/blocked` folds exactly `BLOCKED_EVENTS`, and that fold is the only
-    in-product reader of this stream. An unlisted event is written and read by nobody."""
+def test_the_event_is_read_by_cause_and_is_not_blocked_work():
+    """2026-11-19, the operator: a wrong turn is not blocked work — it is re-driven and its run
+    goes on, and ~230 a week buried the blocked-work rows that do mean something. Its reader is
+    the by-cause fold on Stats (`readmodels/wrong_turns`); an event read by nobody is the
+    failure this registration exists to prevent, so the reader is pinned too."""
+    from rsched.readmodels import wrong_turns
     from rsched.readmodels.health_stream import BLOCKED_EVENTS
 
-    assert wrongturn.EVENT in BLOCKED_EVENTS, "invisible to the console"
-    assert BLOCKED_EVENTS[wrongturn.EVENT].strip(), "a label a reader can act on"
+    assert wrongturn.EVENT not in BLOCKED_EVENTS
+    assert wrong_turns.EVENT == wrongturn.EVENT, "the fold reads a name nothing writes"
 
 
 def test_the_event_is_not_repeat_suppressed_by_the_cooldown_table():
-    """Nothing in `BLOCKED_EVENTS` may be named in `REPEAT_COOLDOWN_HOURS`: the blocked-fleet
-    fold COUNTS rows, so a suppressed one makes the fleet look less stuck than it is — and a
-    rate is the whole point of this event. The (reason, turn) latch is the bound instead."""
+    """`REPEAT_COOLDOWN_HOURS` may not name it: the by-cause fold COUNTS rows, and a rate
+    suppressed by the hour is not a rate. The (reason, turn) latch is the bound instead."""
     from rsched.health_cooldown import REPEAT_COOLDOWN_HOURS
 
     assert wrongturn.EVENT not in REPEAT_COOLDOWN_HOURS
 
 
-def test_a_real_runs_row_is_served_by_the_blocked_endpoint(make_routine, scripted, tmp_path):
+def test_a_real_runs_row_is_served_by_the_wrong_turns_endpoint(make_routine, scripted, tmp_path):
     """End to end, through the reader that exists: a run trips a trigger, and the row the
-    engine wrote is served by `GET /api/health/blocked` with its vocabulary label. Proving the
-    registration by inspection is what left six events unreadable for a year."""
+    engine wrote is served by `GET /api/health/wrong-turns` under its masked cause — and NOT by
+    the blocked-work fold. Proving the registration by inspection is what left six events
+    unreadable for a year."""
     home, _ep, status, _events = _run(make_routine, scripted, [
         "prose instead of an action",
         READ,
@@ -198,13 +201,13 @@ def test_a_real_runs_row_is_served_by_the_blocked_endpoint(make_routine, scripte
     assert status == "ok" and len(_rows(home)) == 1
 
     with authed_client(make_test_server(tmp_path)) as client:
-        payload = client.get("/api/health/blocked?days=7").json()
-    served = [r for r in payload["rows"] if r["event"] == wrongturn.EVENT]
-    assert len(served) == 1, payload
-    assert served[0]["subject"] == "wrongr"
-    assert served[0]["count"] == 1
-    assert served[0]["means"] == payload["vocabulary"][wrongturn.EVENT]
-    assert served[0]["means"].strip()
+        blocked = client.get("/api/health/blocked?days=7").json()
+        payload = client.get("/api/health/wrong-turns?days=7").json()
+    assert not [r for r in blocked["rows"] if r["event"] == wrongturn.EVENT], blocked
+    assert payload["total"] == 1 and len(payload["rows"]) == 1, payload
+    row = payload["rows"][0]
+    assert row["routines"] == {"wrongr": 1} and row["count"] == 1
+    assert not row["cause"].startswith("turn "), "the turn number must be masked out"
 
 
 # --- NO BEHAVIOUR CHANGE: this increment measures, and that is all ------------------------
