@@ -6,9 +6,12 @@ kernel's GLOBAL OOM killed a live routine run (grant-hunter:20261105-080003, rc=
 gate's own ssh sessions, and an xdist worker mid-test. A gate is the one heavy load on this host
 that can wait — nobody is watching it run, and a gate that starts ten minutes later costs ten
 minutes, while one that starts now can cost a live run. So the controller process blocks in
-`pytest_configure` until `MemAvailable` covers the selection, and gives up after
-`RSCHED_TEST_MEM_WAIT_S` (default 20 min) with a non-zero exit naming both numbers: a refused
-gate is retried, an OOM is not undone.
+`pytest_configure` until `MemAvailable` covers the selection.
+
+D295 changed two things, and `tests/memwatch.py` holds the measurements: running out of wait
+ADMITS the session under a bound that module enforces rather than refusing it, and the charge
+comes from the selection's own history (`tests/memhistory.py`), the table below being the
+fallback for a selection nobody has measured yet.
 
 `/proc/meminfo` is the HOST's inside a container (no lxcfs here), which is exactly the number
 that decides a global OOM — and the CONTAINER's own ceiling is a second, independent one: the
@@ -32,8 +35,7 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
-
+import memhistory
 import memwatch
 
 #: MB each selection needs free — of the host's MemAvailable AND of this cgroup's own headroom
@@ -279,27 +281,27 @@ def wait_for_config(config, markexpr: str) -> None:
     Charging the CEILING instead is what refused a gate that would have run perfectly well
     beside a live routine run, and refused it in a way that read as a flaky failure.
 
-    Since D295 the session is also BOUNDED once admitted: `memwatch` samples what it really
-    holds and ends it over its cap, so an overrun costs this gate instead of letting the kernel
-    choose an OOM victim — the thing the wait exists to prevent, by a stronger means than
-    predicting a figure that was measured wrong in both directions.
+    Since D295 the admitted session is also BOUNDED, by `memwatch`.
     """
     selection = selection_for(config, markexpr)
     workers = getattr(config.option, "numprocesses", 0) or 0
-    key = memwatch.selection_key(getattr(config.option, "file_or_dir", []), markexpr, workers)
-    wait_for_memory(selection, workers, key=key)
-    # The watchdog's cap is what this session was ADMITTED for, never what is free: the fast
-    # stage legitimately holds 3.08-3.29 GB on a box that often has 2.8 GB available, so a
-    # headroom-derived cap would kill a healthy release gate (see memwatch.cap_mb).
-    admitted = memwatch.priced_for(key, need_mb(selection, workers))[0]
-    memwatch.arm(cap=memwatch.cap_mb(admitted), selection=selection, key=key,
-                 evidence_dir=memwatch.EVIDENCE_DIR)
+    key = memhistory.selection_key(getattr(config.option, "file_or_dir", []), markexpr, workers)
+    # The wait returns what this session may hold — its own priced charge when the memory was
+    # there, or what was really free when the deadline ran out first. That figure, never the
+    # free headroom in general, is the watchdog's cap: the fast stage legitimately holds
+    # 3.08-3.29 GB on a box that often has 2.8 GB available, so capping at whatever happened to
+    # be free would kill a healthy release gate (see memwatch.cap_mb).
+    memwatch.arm(cap=memwatch.cap_mb(wait_for_memory(selection, workers, key=key),
+                                     class_mb=need_mb(selection, workers)),
+                 selection=selection, key=key, evidence_dir=memhistory.EVIDENCE_DIR)
 
 
 def wait_for_memory(selection: str, workers: int = 0, *, key: str = "", read=available_mb,
-                    read_cgroup=cgroup_headroom_mb, sleep=time.sleep,
-                    clock=time.monotonic) -> None:
-    """Block until the host can take `selection` ("fast" | "browser" | "serial"), or exit.
+                    read_cgroup=cgroup_headroom_mb, read_hold=None, sleep=time.sleep,
+                    clock=time.monotonic) -> int | None:
+    """Block until the host can take `selection` ("fast" | "browser" | "serial"), then say what
+    the session may hold: its charge, or — when the deadline ran out first — the MB that were
+    actually free, which the watchdog then bounds it at. None when the wait is switched off.
 
     `workers` is the count xdist ACTUALLY resolved, so the charge follows the selection that
     will run rather than the ceiling it might have run at (D291). Zero means "price it by the
@@ -311,8 +313,8 @@ def wait_for_memory(selection: str, workers: int = 0, *, key: str = "", read=ava
     including the tests that pin the old behaviour — is unaffected.
     """
     if os.environ.get("RSCHED_TEST_MEM_WAIT", "") == "0":
-        return
-    need, priced_from = (memwatch.priced_for(key, need_mb(selection, workers)) if key
+        return None
+    need, priced_from = (memhistory.priced_for(key, need_mb(selection, workers)) if key
                          else (need_mb(selection, workers), ""))
     what = prose_for(selection, workers) + (f" ({priced_from})" if priced_from else "")
     deadline = clock() + float(os.environ.get("RSCHED_TEST_MEM_WAIT_S") or 1200)
@@ -322,12 +324,24 @@ def wait_for_memory(selection: str, workers: int = 0, *, key: str = "", read=ava
                                                  ("this container's cgroup", read_cgroup()))
                  if have is not None and have < need]
         if not short:
-            return
+            return need
         name, have = min(short, key=lambda s: s[1])
         if clock() >= deadline:
-            pytest.exit(f"{name}: {have} MB available, {what} needs {need} MB "
-                        "— not started, so it cannot push it into an OOM that kills a live "
-                        "run (tests/memgate.py). Retry when it is quieter.", returncode=3)
+            # D295: ADMIT it, bounded by what is actually free, instead of refusing. Refusing
+            # guaranteed nothing ran; `memwatch`'s docstring holds the four measurements.
+            #
+            # The bound is converted into the unit the watchdog READS and the charges above are
+            # written in — the whole cgroup's hold — by adding what the cgroup already holds to
+            # what is still free. Returning the free MB raw would bound a session BELOW the
+            # daemon's own resident hold (measured 1,264 MB on 2026-11-19) and kill it at
+            # collection, which is the same unit error that cost this gate its fast stage once.
+            bound = int(have) + int((read_hold or memwatch.cgroup_hold_mb)())
+            sys.stderr.write(f"memgate: {name} still has only {have} MB and {what} wants "
+                             f"{need} MB — STARTING IT ANYWAY, bounded at {bound} MB of cgroup "
+                             "hold by the watchdog (tests/memwatch.py), because refusing "
+                             "guarantees no verdict while a bounded run can still produce "
+                             "one.\n")
+            return bound
         if not told:
             sys.stderr.write(f"memgate: {name} has {have} MB, {what} needs {need} "
                              "MB — waiting for it to free memory\n")

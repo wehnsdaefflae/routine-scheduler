@@ -20,8 +20,6 @@ from __future__ import annotations
 
 import types
 
-import pytest
-
 import browsersource
 import memgate
 
@@ -184,19 +182,26 @@ def test_the_memory_wait_is_charged_the_count_xdist_actually_resolved(monkeypatc
     assert charged == [("fast", 3)]
 
 
-def test_the_refusal_says_which_count_it_settled_on(monkeypatch):
-    """Point 6: the message names the selection, the count, the headroom it measured and which
-    of the two limits decided. "the fast suite at 4 xdist workers" is a lie once the count is
-    conditional, and a refusal nobody can read is what sent R3376's author hunting a leak."""
+def test_the_message_says_which_count_it_settled_on(monkeypatch, capsys):
+    """Point 6, unchanged in substance: the message names the selection, the count, the headroom
+    it measured and which of the two limits decided. "the fast suite at 4 xdist workers" is a lie
+    once the count is conditional, and a message nobody can read is what sent R3376's author
+    hunting a leak.
+
+    What moved is the DELIVERY. Since D295 a session past its wait is started under a bound
+    rather than refused, so the four facts ride that line instead of an `Exit` nobody could act
+    on: refusing produced no verdict at all, three times on 2026-11-18 and again on 2026-11-19.
+    """
     monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
     monkeypatch.setenv("RSCHED_TEST_MEM_WAIT_S", "0")
-    with pytest.raises(pytest.exit.Exception) as exc:
-        memgate.wait_for_memory("fast", 3, read=lambda: 9000, read_cgroup=lambda: 500,
-                                sleep=lambda _s: None, clock=lambda: 1)
-    message = str(exc.value)
+    bound = memgate.wait_for_memory("fast", 3, read=lambda: 9000, read_cgroup=lambda: 500,
+                                    sleep=lambda _s: None, clock=lambda: 1,
+                                    read_hold=lambda: 0)
+    assert bound == 500, "bounded at what the short side really had"
+    message = capsys.readouterr().err
     assert "at 3 xdist workers" in message, message
-    assert "this container's cgroup: 500 MB available" in message, message
-    assert "needs 2816 MB" in message, message
+    assert "this container's cgroup still has only 500 MB" in message, message
+    assert "wants 2816 MB" in message, message
     assert memgate.prose_for("fast", 4) == "the fast suite at 4 xdist workers"
 
 

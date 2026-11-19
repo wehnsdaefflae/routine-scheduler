@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import types
 
-import pytest
-
 import memgate
 
 
@@ -38,14 +36,36 @@ def test_it_waits_until_memory_frees(monkeypatch):
     assert clock() == 30, "two waits of 15 s, then it started"
 
 
-def test_it_refuses_to_start_past_the_deadline(monkeypatch):
+def test_past_the_deadline_it_starts_under_a_bound_instead_of_refusing(monkeypatch, capsys):
+    """D295 (the operator, 2026-11-19): refusing guaranteed no verdict — measured three times on
+    2026-11-18, each gate exiting 3 after 1,201.6 s with ZERO tests, and again on 2026-11-19
+    when the browser stage spent 1,202 s waiting for 3,584 MB on a box holding 3,008 MB. A
+    bounded run risks the same empty outcome and can also succeed, and what the wait protects is
+    unchanged: over its bound the watchdog ends the session, so the kernel never chooses a live
+    routine run instead.
+    """
     monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
     monkeypatch.setenv("RSCHED_TEST_MEM_WAIT_S", "30")
     read, sleep, clock = _fake([500] * 10)
-    with pytest.raises(pytest.exit.Exception) as exc:
-        memgate.wait_for_memory("fast", read=read, read_cgroup=lambda: None, sleep=sleep,
-                            clock=clock)
-    assert "500 MB available" in str(exc.value) and "3584 MB" in str(exc.value)
+    bound = memgate.wait_for_memory("fast", read=read, read_cgroup=lambda: None, sleep=sleep,
+                                    clock=clock, read_hold=lambda: 1264)
+    assert bound == 1764, (
+        "the bound is in the unit the watchdog READS — the whole cgroup's hold — so what is "
+        "still free is added to what the cgroup already holds. Bounding at the free 500 MB raw "
+        "would sit below the daemon's own 1,264 MB and kill the session at collection")
+    said = capsys.readouterr().err
+    assert "STARTING IT ANYWAY" in said and "3584 MB" in said
+
+
+def test_the_memory_that_was_there_is_what_the_session_may_hold(monkeypatch):
+    """The ordinary path returns the CHARGE, not the free headroom: a fast stage legitimately
+    holds 3.08-3.29 GB on a box that often has 2.8 GB available, so capping at what happened to
+    be free would kill a healthy release gate.
+    """
+    monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
+    read, sleep, clock = _fake([9000])
+    assert memgate.wait_for_memory("fast", read=read, read_cgroup=lambda: None, sleep=sleep,
+                                   clock=clock) == memgate.NEED_MB["fast"]
 
 
 def test_the_containers_own_ceiling_holds_the_gate_back_on_a_quiet_host(monkeypatch):
@@ -59,14 +79,17 @@ def test_the_containers_own_ceiling_holds_the_gate_back_on_a_quiet_host(monkeypa
     assert clock() == 15, "one wait on the cgroup, then it started"
 
 
-def test_the_refusal_names_the_resource_that_refused(monkeypatch):
+def test_the_bound_names_the_resource_that_was_short(monkeypatch, capsys):
+    """Whichever of the two numbers was short has to be NAMED: a message nobody can read is what
+    sent R3376's author hunting a memory leak in a candidate that had none.
+    """
     monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
     monkeypatch.setenv("RSCHED_TEST_MEM_WAIT_S", "30")
     _host, sleep, clock = _fake([])
-    with pytest.raises(pytest.exit.Exception) as exc:
-        memgate.wait_for_memory("fast", read=lambda: 9000, read_cgroup=lambda: 500,
-                                sleep=sleep, clock=clock)
-    assert "this container's cgroup: 500 MB available" in str(exc.value)
+    bound = memgate.wait_for_memory("fast", read=lambda: 9000, read_cgroup=lambda: 500,
+                                    sleep=sleep, clock=clock, read_hold=lambda: 0)
+    assert bound == 500
+    assert "this container's cgroup still has only 500 MB" in capsys.readouterr().err
 
 
 def test_cgroup_headroom_counts_what_is_held_never_the_cache(tmp_path):
@@ -132,18 +155,21 @@ def test_the_serial_budget_covers_what_a_serial_selection_was_measured_to_hold()
         f"measured holding {MEASURED_SERIAL_HOLD_MB} MB (held_peak_bytes) — raise it")
 
 
-def test_the_refusal_says_which_selection_it_priced(monkeypatch):
-    """R3376's second ask: "the fast suite needs 3584 MB" printed on a two-file `-n 0` call read
-    as a memory leak in the candidate and sent its author looking for one."""
+def test_the_message_says_which_selection_it_priced(monkeypatch, capsys):
+    """R3376's second ask, unchanged: "the fast suite needs 3584 MB" printed on a two-file `-n 0`
+    call read as a memory leak in the candidate and sent its author looking for one. Since D295
+    the line starts the session under a bound rather than refusing it, and still has to name
+    what it priced."""
     monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
     monkeypatch.setenv("RSCHED_TEST_MEM_WAIT_S", "0")
-    with pytest.raises(pytest.exit.Exception) as exc:
-        memgate.wait_for_memory("serial", read=lambda: 9000, read_cgroup=lambda: 500,
-                                sleep=lambda _s: None, clock=lambda: 1)
-    assert "no xdist workers" in str(exc.value), str(exc.value)
-    assert "2816 MB" in str(exc.value)
+    assert memgate.wait_for_memory("serial", read=lambda: 9000, read_cgroup=lambda: 500,
+                                   sleep=lambda _s: None, clock=lambda: 1,
+                                   read_hold=lambda: 0) == 500
+    said = capsys.readouterr().err
+    assert "no xdist workers" in said, said
+    assert "2816 MB" in said
     assert set(memgate.SELECTION_PROSE) == set(memgate.NEED_MB), (
-        "every priced selection needs prose for its refusal")
+        "every priced selection needs prose for its message")
 
 
 def test_the_fast_budget_still_covers_the_worker_count_it_claims_to():

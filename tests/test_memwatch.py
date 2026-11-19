@@ -12,6 +12,7 @@ import json
 import signal
 
 import memgate
+import memhistory
 import memwatch
 
 
@@ -56,9 +57,53 @@ def test_an_overrun_is_reported_once_however_long_it_lasts():
     assert len(killed) == 1 and dog.killed_at_mb == 1500
 
 
+def test_the_hold_is_read_in_the_same_unit_the_charges_were_measured_in(tmp_path):
+    """The unit that cost gate 1795100129134213629-release its fast stage.
+
+    A SUM of per-process RSS counts each process's shared file-backed pages — interpreter,
+    libraries — once per worker, so a controller plus four xdist workers reads far above what
+    the box actually holds. Measured 2026-11-19: the cgroup held 2,706 MB against a 3,328 MB
+    cap and the summed-RSS watchdog killed the stage anyway at 3,922 passed, zero failures.
+    `memgate.NEED_MB`'s figures are cgroup anon+swap, so the bound is too.
+    """
+    (tmp_path / "memory.stat").write_text("anon 2097152000\nfile 4000000000\n")
+    (tmp_path / "memory.swap.current").write_text("1048576000\n")
+    assert memwatch.cgroup_hold_mb(0, tmp_path) == 3000.0, (
+        "anon + swap, and NOT the page cache in `file` that the kernel drops at the limit")
+    assert memwatch.cgroup_hold_mb(0, tmp_path / "missing") == 0.0, "no cgroup, no bound"
+
+
+def test_a_reading_of_zero_can_never_end_a_session():
+    """Where there is no cgroup to read, the watchdog must be inert rather than trigger-happy:
+    `cgroup_hold_mb` answers 0.0, which is below every cap by construction.
+    """
+    dog, killed = _watchdog([0.0, 0.0], cap=1024)
+    dog.sample()
+    dog.sample()
+    assert not killed and dog.peak_mb == 0.0
+
+
 def test_the_cap_is_what_the_session_was_admitted_for_plus_slack():
     assert memwatch.cap_mb(2816, slack_mb=512, floor_mb=1024) == 3328
     assert memwatch.cap_mb(200, slack_mb=512, floor_mb=1024) == 1024, "never under the floor"
+
+
+def test_history_may_lower_admission_but_never_the_bound():
+    """The specimen that cost gate 1795100129134213629-release its fast stage, exactly.
+
+    A 0.3-second session had recorded 68 MB under the selection's key, so the next run of that
+    key was priced at 128 MB and capped at the 1,024 MB floor — and the real fast stage held
+    1,056 MB. Killed 32 MB over, at 3,922 passed and zero failures.
+
+    The two questions are asymmetric: "may this start?" is answered optimistically because being
+    wrong costs a wait, while "must this be stopped?" is answered from the CLASS's measured worst
+    case because being wrong costs the gate. So one unrepresentative sample can make the gate
+    quicker to start and can never make it quicker to die.
+    """
+    assert memwatch.cap_mb(128, class_mb=0) == 1024, "the defect: the floor was the whole bound"
+    bound = memwatch.cap_mb(128, class_mb=memgate.NEED_MB["fast"])
+    assert bound == memgate.NEED_MB["fast"] + memwatch.SLACK_MB
+    assert bound > 1056, "the 1,056 MB stage that was killed now survives"
 
 
 def test_the_cap_does_not_follow_the_memory_that_happens_to_be_free():
@@ -79,25 +124,25 @@ def test_no_admission_figure_at_all_gets_no_cap_and_no_watchdog():
     """
     assert memwatch.cap_mb(None) is None
     assert memwatch.arm(cap=None, selection="serial", key="k",
-                        evidence_dir=memwatch.EVIDENCE_DIR) is None
+                        evidence_dir=memhistory.EVIDENCE_DIR) is None
 
 
 def test_a_selection_is_identified_by_its_paths_marks_and_worker_count():
     """The key is what a hold belongs to, so everything that changes the hold is in it — and
     nothing that does not, including the order the paths were typed in.
     """
-    one = memwatch.selection_key(["tests/test_a.py", "tests/test_b.py"], "not ui", 0)
-    assert one == memwatch.selection_key(["tests/test_b.py", "tests/test_a.py"], "not ui", 0)
-    assert one != memwatch.selection_key(["tests/test_a.py"], "not ui", 0)
-    assert one != memwatch.selection_key(["tests/test_a.py", "tests/test_b.py"], "not ui", 4)
-    assert one != memwatch.selection_key(["tests/test_a.py", "tests/test_b.py"], "", 0)
+    one = memhistory.selection_key(["tests/test_a.py", "tests/test_b.py"], "not ui", 0)
+    assert one == memhistory.selection_key(["tests/test_b.py", "tests/test_a.py"], "not ui", 0)
+    assert one != memhistory.selection_key(["tests/test_a.py"], "not ui", 0)
+    assert one != memhistory.selection_key(["tests/test_a.py", "tests/test_b.py"], "not ui", 4)
+    assert one != memhistory.selection_key(["tests/test_a.py", "tests/test_b.py"], "", 0)
 
 
 def test_a_selection_with_no_history_is_charged_its_class_by_name():
     """The fallback has to SAY it is the fallback: a refusal nobody can read is what sent
     R3376's author hunting a memory leak in a candidate that had none.
     """
-    need, source = memwatch.priced_need_mb("unseen", history={}, fallback_mb=2816)
+    need, source = memhistory.priced_need_mb("unseen", history={}, fallback_mb=2816)
     assert need == 2816
     assert "class constant" in source and "not run before" in source
 
@@ -106,7 +151,7 @@ def test_a_selection_that_has_run_is_charged_its_own_worst_hold_plus_a_margin():
     """The defect D295 closes: a class-wide 2,816 MB charged a selection measured at 900 MB,
     which is how three gates were refused with zero tests while the suite ran green at 1.2 GB.
     """
-    need, source = memwatch.priced_need_mb("seen", history={"seen": 900}, fallback_mb=2816)
+    need, source = memhistory.priced_need_mb("seen", history={"seen": 900}, fallback_mb=2816)
     assert need == 1152, "900 MB + 25 %, rounded up to the next 64 MB"
     assert need < 2816 and "own worst hold (900 MB)" in source
 
@@ -115,39 +160,39 @@ def test_the_per_selection_price_never_exceeds_the_class_worst_case():
     """A selection whose own history is worse than its class's figure is charged the class
     figure: pricing above it would re-introduce the over-charge this replaces.
     """
-    need, _source = memwatch.priced_need_mb("heavy", history={"heavy": 4393}, fallback_mb=2816)
+    need, _source = memhistory.priced_need_mb("heavy", history={"heavy": 4393}, fallback_mb=2816)
     assert need == 2816
 
 
 def test_the_history_keeps_the_worst_hold_per_selection(tmp_path):
     for held in (400, 1200, 900):
-        memwatch.record_hold(tmp_path, key="k", held_mb=held, selection="serial", seconds=1.0)
-    memwatch.record_hold(tmp_path, key="other", held_mb=3000, selection="fast", seconds=2.0)
-    assert memwatch.holds_by_key(tmp_path) == {"k": 1200, "other": 3000}
+        memhistory.record_hold(tmp_path, key="k", held_mb=held, selection="serial", seconds=1.0)
+    memhistory.record_hold(tmp_path, key="other", held_mb=3000, selection="fast", seconds=2.0)
+    assert memhistory.holds_by_key(tmp_path) == {"k": 1200, "other": 3000}
 
 
 def test_a_half_written_history_line_is_skipped_not_raised_on(tmp_path):
     """This file is appended to by sessions that can be KILLED mid-write, so a truncated last
     line is the expected state, not a corruption to report.
     """
-    path = memwatch.history_path(tmp_path)
-    path.write_text(json.dumps({"key": "k", "held_mb": 700}) + "\n{\"key\": \"trunc\"",
+    path = memhistory.history_path(tmp_path)
+    path.write_text(json.dumps({"key": "k", "held_mb": 700}) + '\n{"key": "trunc"',
                     encoding="utf-8")
-    assert memwatch.holds_by_key(tmp_path) == {"k": 700}
+    assert memhistory.holds_by_key(tmp_path) == {"k": 700}
 
 
 def test_no_history_at_all_reads_as_no_history(tmp_path):
-    assert memwatch.holds_by_key(tmp_path / "nothing-here") == {}
+    assert memhistory.holds_by_key(tmp_path / "nothing-here") == {}
 
 
 def test_finishing_records_what_the_session_held(tmp_path):
     dog, _killed = _watchdog([250, 800], cap=1000)
     dog.selection, dog.key, dog.evidence_dir = "serial", "sk", tmp_path
-    memwatch._ARMED = dog
+    memwatch._ARMED[:] = [dog]
     dog.sample()
     dog.sample()
     assert memwatch.finish() == 800
-    assert memwatch.holds_by_key(tmp_path) == {"sk": 800}
+    assert memhistory.holds_by_key(tmp_path) == {"sk": 800}
     assert memwatch.finish() is None, "nothing is armed any more"
 
 
@@ -157,19 +202,19 @@ def test_an_overrun_is_recorded_too(tmp_path):
     """
     dog, _killed = _watchdog([2000], cap=1000)
     dog.selection, dog.key, dog.evidence_dir = "serial", "over", tmp_path
-    memwatch._ARMED = dog
+    memwatch._ARMED[:] = [dog]
     dog.sample()
     assert memwatch.finish() == 2000
-    assert memwatch.holds_by_key(tmp_path) == {"over": 2000}
+    assert memhistory.holds_by_key(tmp_path) == {"over": 2000}
 
 
 def test_the_gate_prices_a_known_selection_from_the_history_it_recorded(tmp_path):
     """The two halves together, through `memgate`'s own entry point: what the watchdog recorded
     is what the next session of that selection is charged.
     """
-    key = memwatch.selection_key(["tests/test_memwatch.py"], "not ui", 0)
-    memwatch.record_hold(tmp_path, key=key, held_mb=640, selection="serial", seconds=3.0)
-    need, source = memwatch.priced_for(key, memgate.need_mb("serial"), evidence_dir=tmp_path)
+    key = memhistory.selection_key(["tests/test_memwatch.py"], "not ui", 0)
+    memhistory.record_hold(tmp_path, key=key, held_mb=640, selection="serial", seconds=3.0)
+    need, source = memhistory.priced_for(key, memgate.need_mb("serial"), evidence_dir=tmp_path)
     assert need == 832 and need < memgate.NEED_MB["serial"]
     assert "own worst hold (640 MB)" in source
 

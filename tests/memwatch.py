@@ -19,10 +19,42 @@ means: it samples what the session actually holds and ENDS THE SESSION when the 
 cap, so an overrun costs the gate and never a live run. Nothing is predicted and no clock is
 spent waiting for a figure that was wrong in both directions.
 
-RSS is the unit, deliberately. Resident pages are what compete for host memory and what a global
-OOM is decided on. Bounding VIRTUAL address space instead is the trap this instance has already
-paid for: an `RLIMIT_AS` cap of 1,600 MB fabricated 164 identical "cannot start new thread"
-failures in a suite holding 450 MB (scheduler-builder, 2026-11-18).
+## The UNIT, which cost a release gate to get right
+
+The hold is read from THIS CGROUP's `anon` + swapped pages — the same figure every
+`memgate.NEED_MB` charge was measured in, and the figure a global OOM is decided on.
+
+Two wrong units have now each cost real work, and they are the same mistake twice:
+
+* **Virtual address space.** An `RLIMIT_AS` cap of 1,600 MB fabricated 164 identical "cannot
+  start new thread" failures in a suite holding 450 MB (scheduler-builder, 2026-11-18).
+* **A SUM of per-process RSS.** Each process's resident set includes the shared file-backed
+  pages it maps — the interpreter, the libraries — so summing a controller and four xdist
+  workers counts those five times over. Measured 2026-11-19 on gate
+  `1795100129134213629-release`: the cgroup held 2,706 MB against a 3,328 MB cap, and the
+  summed-RSS watchdog killed the stage anyway at **3,922 passed and zero failures**. A guard
+  that ends a healthy release gate is worse than the over-charge it replaces.
+
+The lesson both share: measure in the unit the budget was written in. The budgets here are
+cgroup holds, so the bound is a cgroup hold.
+
+One consequence to be explicit about: this cgroup holds the daemon and any live routine run too,
+so the reading is not the test session alone. That is deliberate and matches how the charges were
+derived — `memgate.NEED_MB` says in so many words that every figure there is "the whole CGROUP's
+hold while the selection ran, a live routine run included — deliberately conservative, since what
+must fit is everything at once". A bound in the same unit as the charge is the only one that can
+be compared with it.
+
+## What the wait does now that a bound exists
+
+`memgate`'s wait used to EXIT 3 without starting when it ran out, on the reasoning that a
+refused gate is retried while an OOM is not undone. The measured outcome of that was no verdict
+at all: three release gates on 2026-11-18 refused after 1,201.6 s with ZERO tests, and the
+browser stage on 2026-11-19 after 1,202 s waiting for 3,584 MB on a box holding 3,008 MB — while
+the whole non-browser suite was measured running green at 1.2 GB. So the deadline now ADMITS the
+session, bounded at what was really free, and this module ends it if the hold crosses that. The
+protection the wait exists for is intact (the kernel still never chooses a live routine run),
+and a tight box yields a verdict instead of nothing.
 
 ## What the cap is: what the session was ADMITTED for, never what is free
 
@@ -45,7 +77,7 @@ selection's own measured holds rather than its class's worst case. The gate's ow
 `memory-peaks.jsonl` cannot answer it — measured 2026-11-19, its 1,004 rows carry `stage` and
 no selection identity at all, which is precisely why the `tests` label pools 754 rows spanning
 500-4,393 MB. So the session records its OWN peak under a key naming what it ran
-(`selection_key`), and `priced_need_mb` reads that key's worst previous hold back. A selection
+(`memhistory.selection_key`), and `memhistory.priced_for` reads that key's worst hold back. One
 never seen before has no history and falls back to the class constant BY NAME, so a refusal can
 always say which figure refused it.
 
@@ -56,14 +88,14 @@ session hold" and "what has this selection held before", and stops a session tha
 from __future__ import annotations
 
 import atexit
-import json
 import os
 import signal
 import sys
 import threading
 import time
-from hashlib import sha1
 from pathlib import Path
+
+import memhistory
 
 #: MB a session may hold ABOVE what it was admitted for before the watchdog ends it. The cap is
 #: the admission figure plus this, so a selection that grew a little since its last run is not
@@ -78,171 +110,71 @@ SLACK_MB = 512
 #: `memgate`'s decision, not this module's.
 FLOOR_MB = 1024
 
+#: This cgroup's own directory — the session's hold is read from it, in the unit every
+#: `memgate.NEED_MB` figure was measured in. Same path `memgate.CGROUP` reads headroom from.
+CGROUP = Path("/sys/fs/cgroup")
+
 #: How often the hold is sampled. 0.25 s is what `scheduler-builder`'s own watchdog used over
 #: whole-suite runs: fast enough that a worker's allocation spike is seen, cheap enough that the
 #: sampler never shows up in the stage's own cost.
 INTERVAL_S = 0.25
 
-#: Where a selection's measured holds are kept — beside the gate's own evidence, since it is
-#: evidence of the same kind. One JSON line per finished session.
-HISTORY_FILE = "selection-holds.jsonl"
-
-#: The directory that evidence lives in, derived like `test_policy`'s warn-window file: this
-#: checkout's own `.audit-wt/.gate-evidence`, so a worktree records against the tree it tested.
-EVIDENCE_DIR = Path(__file__).resolve().parent.parent / ".audit-wt" / ".gate-evidence"
-
-
-def priced_for(key: str, fallback_mb: int, *, evidence_dir: Path | None = None,
-               ) -> tuple[int, str]:
-    """The charge for the selection `key` names, and WHICH figure it was — D295's part (a).
-
-    The history read and the pricing in one call, because the two are never wanted apart: a
-    caller that read the file and then priced from it would have to know this module's row
-    shape. `fallback_mb` is the CLASS charge its caller computed (`memgate.need_mb`), passed in
-    rather than imported — the class figures are the gate's subject and the history is this
-    module's, and a cycle between the two is the only way they could disagree.
-    """
-    return priced_need_mb(key, history=holds_by_key(evidence_dir or EVIDENCE_DIR),
-                          fallback_mb=fallback_mb)
-
-
-def selection_key(paths, markexpr: str, workers: int) -> str:
-    """A stable name for WHAT THIS SESSION RUNS — the thing a hold belongs to.
-
-    The selection, its marker expression and its worker count, because all three change the
-    hold: the same paths at 4 xdist workers hold about 2.4 GB more than at none. Sorted, so the
-    order the paths were typed in does not mint a second key for one selection, and digested
-    rather than spelled out because a key is compared, never read — a whole-suite call's paths
-    would otherwise be a 4,000-character field in every row.
-    """
-    body = "\0".join([*sorted(str(p) for p in (paths or [])), markexpr.strip(),
-                      f"w{max(0, int(workers))}"])
-    return sha1(body.encode("utf-8", "replace")).hexdigest()[:16]
-
-
-def history_path(evidence_dir: Path) -> Path:
-    """The history file's path under a gate-evidence directory."""
-    return Path(evidence_dir) / HISTORY_FILE
-
-
-def record_hold(evidence_dir: Path, *, key: str, held_mb: int, selection: str,
-                seconds: float) -> None:
-    """Append ONE session's measured peak hold. Best-effort: a guard that can fail the session
-    it is guarding is a defect dressed as evidence, so every write error is swallowed.
-
-    `selection` and `seconds` ride along for a human reading the file; only `key` and `held_mb`
-    are read back by `priced_need_mb`.
-    """
-    try:
-        path = history_path(evidence_dir)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "key": key,
-                                     "selection": selection, "held_mb": int(held_mb),
-                                     "seconds": round(float(seconds), 1)}) + "\n")
-    except (OSError, TypeError, ValueError):
-        return
-
-
-def holds_by_key(evidence_dir: Path) -> dict[str, int]:
-    """The WORST hold recorded per selection key. An unreadable or half-written line is
-    skipped rather than raised on: this file is appended to by sessions that can be killed.
-    """
-    worst: dict[str, int] = {}
-    try:
-        text = history_path(evidence_dir).read_text(encoding="utf-8")
-    except OSError:
-        return worst
-    for line in text.splitlines():
-        try:
-            row = json.loads(line)
-            key, held = str(row["key"]), int(row["held_mb"])
-        except (ValueError, TypeError, KeyError):
-            continue
-        if held > worst.get(key, 0):
-            worst[key] = held
-    return worst
-
-
-def priced_need_mb(key: str, *, history: dict[str, int], fallback_mb: int,
-                   margin: float = 1.25) -> tuple[int, str]:
-    """What to charge this selection, and WHICH figure that was — `(mb, source)`.
-
-    Its own worst measured hold plus a margin (25 %) when this exact selection has run before;
-    the class constant otherwise, named as the fallback so a refusal says which figure refused
-    it. The margin exists because a hold is not a constant either: the same selection grows with
-    the tree, and pricing it at exactly its last peak would refuse it the first time a new test
-    lands.
-
-    Never MORE than the class constant: that figure is the measured worst case of a whole class
-    and a per-selection price above it would re-introduce the over-charge this replaces.
-    """
-    seen = int(history.get(str(key), 0))
-    if seen <= 0:
-        return int(fallback_mb), "the class constant (this selection has not run before)"
-    priced = min(int(fallback_mb), -(-int(seen * float(margin)) // 64) * 64)
-    return priced, f"this selection's own worst hold ({seen} MB) plus a margin"
-
-
-def cap_mb(need_mb: int | None, *, slack_mb: int = SLACK_MB,
+def cap_mb(need_mb: int | None, *, class_mb: int = 0, slack_mb: int = SLACK_MB,
            floor_mb: int = FLOOR_MB) -> int | None:
-    """The MB this session may hold — WHAT IT WAS ADMITTED FOR, plus a slack, never under the
-    floor. None when there is no admission figure at all, which disables the watchdog.
+    """The MB this session may hold: the LARGER of its admission figure and its CLASS's worst
+    case, plus a slack, never under the floor. None without an admission figure, which disables
+    the watchdog.
 
-    The cap is the admission figure and NOT the free headroom, and getting that backwards was
-    caught here before it shipped: on this box at 15:34 on 2026-11-19 the host had 2,802 MB
-    available, so a headroom-derived cap would have been ~2.0 GB — and the fast stage is
-    MEASURED holding 3.08-3.29 GB. The watchdog would have killed a legitimate release gate
-    for running at its normal cost, which is a worse failure than the over-charge it replaces.
+    ## The asymmetry, and it cost a release gate to learn
 
-    Admission and bound are therefore two halves of ONE figure: the session is admitted only
-    when its priced need fits in the memory that exists, and it is then held to that need. A
-    selection holding far more than its own measured history has gone wrong — that is the case
-    worth killing, and it is the only one this cap kills.
+    History may lower what a session is ADMITTED on. It may never lower the BOUND. Measured on
+    gate `1795100129134213629-release` (2026-11-19), which this module killed at **3,922 passed
+    and zero failures**: a 0.3-second session had recorded 68 MB under the same selection key, so
+    the next run of that key was priced at 128 MB, capped at the 1,024 MB floor — and the real
+    fast stage held 1,056 MB. Killed 32 MB over, for running at its ordinary cost.
+
+    The two figures answer different questions and must be read differently. "May this start?"
+    is answered optimistically, because the cost of being wrong is a wait. "Must this be
+    stopped?" is answered conservatively, because the cost of being wrong is a lost gate — so
+    the bound comes from the class's measured worst case, and only a session exceeding THAT has
+    actually gone wrong. One unrepresentative sample can then make the gate quicker to start and
+    can never make it quicker to die.
+
+    The cap is also NOT the free headroom, which was the first wrong reading, caught before it
+    shipped: at 15:34 that day the host had 2,802 MB available while the fast stage is measured
+    holding 3.08-3.29 GB, so a headroom-derived cap would have killed a healthy gate too.
     """
     if need_mb is None:
         return None
-    return max(int(floor_mb), int(need_mb) + int(slack_mb))
+    return max(int(floor_mb), max(int(need_mb), int(class_mb)) + int(slack_mb))
 
 
-def tree_rss_mb(pid: int) -> float:
-    """The RESIDENT hold of this process and every descendant, in MB.
+def cgroup_hold_mb(_pid: int = 0, cgroup: Path = CGROUP) -> float:
+    """What THIS CGROUP holds right now, in MB: anon pages plus swapped ones.
 
-    Read from `/proc/<pid>/statm` (field 2 is resident pages) over the process's own children,
-    because an xdist session's cost is its WORKERS: the controller alone holds under a gigabyte
-    while four workers add about 600 MB each. A process that exits mid-walk is skipped — a dead
-    child holds nothing.
+    The whole session — controller and every xdist worker — lives in one cgroup, so this is the
+    session's hold with no summing and therefore no double-counting of the shared pages a sum
+    gets wrong (see the unit section above: a summed-RSS reading killed a green gate). It is
+    also exactly the figure `memgate.cgroup_headroom_mb` subtracts from `memory.max`, so the
+    bound and the admission charge are expressed in one unit and cannot disagree.
+
+    `_pid` is accepted and ignored: the `Watchdog` hands its reader a pid, and a future reader
+    that really is per-process should not have to change the call. 0.0 where there is no cgroup
+    to read, which switches the watchdog off exactly as a missing admission figure does.
     """
-    total = 0.0
-    for target in (pid, *_children(pid)):
-        try:
-            with open(f"/proc/{target}/statm", encoding="utf-8") as handle:
-                total += int(handle.read().split()[1]) * 4096 / 1048576.0
-        except (OSError, IndexError, ValueError):
-            continue
-    return total
-
-
-def _children(pid: int) -> list[int]:
-    """Every descendant pid, found through `/proc/<pid>/task/*/children`."""
-    found: list[int] = []
-    frontier = [int(pid)]
-    while frontier:
-        parent = frontier.pop()
-        try:
-            tasks = list((Path("/proc") / str(parent) / "task").iterdir())
-        except OSError:
-            continue
-        for task in tasks:
-            try:
-                kids = [int(p) for p in (task / "children").read_text().split()]
-            except (OSError, ValueError):
-                continue
-            for kid in kids:
-                if kid not in found:
-                    found.append(kid)
-                    frontier.append(kid)
-    return found
+    try:
+        stat = (cgroup / "memory.stat").read_text(encoding="ascii")
+    except OSError:
+        return 0.0
+    anon = next((int(line.split()[1]) for line in stat.splitlines()
+                 if line.startswith("anon ")), None)
+    if anon is None:
+        return 0.0
+    try:
+        swap = int((cgroup / "memory.swap.current").read_text(encoding="ascii"))
+    except (OSError, ValueError):
+        swap = 0
+    return (anon + swap) / 1048576.0
 
 
 class Watchdog:
@@ -256,7 +188,7 @@ class Watchdog:
 
     def __init__(self, *, cap: int, pid: int | None = None, interval_s: float = INTERVAL_S,
                  selection: str = "", key: str = "", evidence_dir: Path | None = None,
-                 read=tree_rss_mb, kill=os.kill, clock=time.monotonic,
+                 read=cgroup_hold_mb, kill=os.kill, clock=time.monotonic,
                  sleep=time.sleep, warn=None) -> None:
         self.cap = int(cap)
         self.pid = int(pid if pid is not None else os.getpid())
@@ -313,10 +245,11 @@ class Watchdog:
         return self._clock() - self.started_at
 
 
-#: The session's live watchdog, or None when nothing is being watched. Module state because a
-#: pytest session IS one process: the controller arms it in `pytest_configure` and the same
-#: process stops it in `pytest_unconfigure`, and there is exactly one of each per session.
-_ARMED: Watchdog | None = None
+#: The session's live watchdog — a ONE-SLOT list, because a pytest session IS one process: the
+#: controller arms it from `pytest_configure` and the same process records it at exit, and there
+#: is exactly one of each per session. A list rather than a rebound module name so neither
+#: function needs a `global` statement to reach it.
+_ARMED: list[Watchdog] = []
 
 
 def arm(*, cap: int | None, selection: str, key: str,
@@ -327,11 +260,10 @@ def arm(*, cap: int | None, selection: str, key: str,
     the box has no memory reader at all): there is no ceiling to enforce, so enforcing one
     would be inventing it.
     """
-    global _ARMED
     if cap is None:
         return None
-    _ARMED = Watchdog(cap=int(cap), pid=pid, selection=selection, key=key,
-                      evidence_dir=evidence_dir).start()
+    _ARMED[:] = [Watchdog(cap=int(cap), pid=pid, selection=selection, key=key,
+                          evidence_dir=evidence_dir).start()]
     # The hold is recorded at PROCESS EXIT rather than from a pytest hook, and that is the
     # second design the evidence corrected. A `pytest_unconfigure` would have to be registered
     # from somewhere: `conftest.py` is at its size ceiling and may only shrink, and registering
@@ -341,7 +273,7 @@ def arm(*, cap: int | None, selection: str, key: str,
     # controller that armed the watchdog, and still fires when the session is killed by the
     # SIGINT this watchdog sends.
     atexit.register(finish)
-    return _ARMED
+    return _ARMED[0]
 
 
 def finish() -> int | None:
@@ -352,12 +284,11 @@ def finish() -> int | None:
     exactly the one whose next admission must be priced from the attempt, and the peak is the
     best lower bound on its real cost that exists.
     """
-    global _ARMED
-    watchdog, _ARMED = _ARMED, None
-    if watchdog is None:
+    if not _ARMED:
         return None
+    watchdog = _ARMED.pop()
     held = int(watchdog.stop())
     if watchdog.evidence_dir is not None:
-        record_hold(watchdog.evidence_dir, key=watchdog.key, held_mb=held,
+        memhistory.record_hold(watchdog.evidence_dir, key=watchdog.key, held_mb=held,
                     selection=watchdog.selection, seconds=watchdog.seconds)
     return held
