@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 import httpx
-from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
+from tenacity import Retrying, retry_if_exception, wait_exponential
 
 from . import attempts, errorsignal
 
@@ -40,6 +40,8 @@ CONNECT_TIMEOUT = 10.0
 # F220: the longest a server-sent Retry-After hint is honored before with_retries falls back
 # to its own schedule — bounds how long a single rate-limited attempt can pause a run.
 RETRY_AFTER_CAP_S = 30.0
+#: A REFUSED connection is retried this long, at most STEP between tries (`retry_base_delay` units).
+UNREACHABLE_PATIENCE, UNREACHABLE_STEP = 120.0, 10.0
 
 class EndpointError(Exception):
     """A transport failure. `retryable` feeds the with_retries backoff, `auth` lets the UI say
@@ -48,10 +50,11 @@ class EndpointError(Exception):
     """
 
     def __init__(self, message: str, *, retryable: bool = False, auth: bool = False,
-                 retry_after: float | None = None,
+                 retry_after: float | None = None, unreachable: bool = False,
                  signal: errorsignal.ErrorSignal | None = None):
         super().__init__(message)
         self.retryable = retryable
+        self.unreachable = unreachable  # a REFUSED connection: retried for UNREACHABLE_PATIENCE
         self.auth = auth
         # F220: the Retry-After hint (seconds) a 429 sent. with_retries honors it (capped) over
         # its generic schedule, so a provider asking for longer is waited out, not failed over.
@@ -225,7 +228,8 @@ def post_json(url: str, body: dict, headers: dict | None, timeout: int,
         return httpx.post(url, json=body, headers=headers,
                           timeout=httpx.Timeout(timeout, connect=CONNECT_TIMEOUT))
     except httpx.HTTPError as exc:
-        raise EndpointError(f"{name}: {_transport_cause(exc, timeout)}", retryable=True) from exc
+        raise EndpointError(f"{name}: {_transport_cause(exc, timeout)}", retryable=True,
+                            unreachable=isinstance(exc, httpx.ConnectError)) from exc
 
 
 def _transport_cause(exc: httpx.HTTPError, timeout: float) -> str:
@@ -327,11 +331,19 @@ def with_retries(fn, *, tries: int = 3, base_delay: float | None = None):
         hint = getattr(exc, "retry_after", None)
         if hint and base_delay:
             return min(float(hint), RETRY_AFTER_CAP_S)
+        if getattr(exc, "unreachable", False):
+            return min(exp(state), UNREACHABLE_STEP * base_delay)
         return exp(state)
+
+    def stop(state) -> bool:
+        exc = state.outcome.exception() if state.outcome else None
+        patient = getattr(exc, "unreachable", False) and \
+            (state.seconds_since_start or 0.0) < UNREACHABLE_PATIENCE * base_delay
+        return not patient and state.attempt_number >= tries
 
     return Retrying(
         retry=retry_if_exception(lambda e: isinstance(e, EndpointError) and e.retryable),
-        stop=stop_after_attempt(tries),
+        stop=stop,
         wait=wait,
         before_sleep=before_sleep,
         reraise=True,

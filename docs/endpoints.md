@@ -292,7 +292,10 @@ reasoning model spends its whole output budget thinking instead of answering.
 ### Failover & cooldowns (`fallbacks`)
 
 A provider outage at cron-fire time used to kill the run after the transport's own retries
-(3 tries, exponential backoff). With `fallbacks: [other-model, …]` on a catalog model, the
+(3 tries, exponential backoff — or, when the host REFUSES the connection, up to two minutes of
+tries, `base.UNREACHABLE_PATIENCE`: every route leaves through one gateway, so failing over to a
+model behind the same refused port cannot help, and a 14 s gateway restart on 2026-11-19 ended a
+run in ~6 s across two rungs). With `fallbacks: [other-model, …]` on a catalog model, the
 engine instead **fails over**:
 
 - **Mid-turn**: when the serving model fails hard (retries exhausted, or a non-retryable

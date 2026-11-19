@@ -47,7 +47,10 @@ import re
 #: object in the finding. Case matters for `LEDGER`/`WORKLOG` (the file names) and nowhere else.
 PROCESS_OBJECTS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("a LEDGER entry", re.compile(r"\bLEDGER\b|(?i:\bledger[- ]entr(?:y|ies)\b)")),
-    ("a ledger rotation", re.compile(r"(?i)\brotat(?:e|ed|es|ing|ion)\b")),
+    # A ROTATION of the ledger, not any rotation: llmsectest-weekday's d3 "outranks the
+    # rotation" is its heavy phases' rotation, and the bare word read as the record (2026-11-19).
+    ("a ledger rotation", re.compile(r"(?i)\bledger\b(?:\.md)?\W+(?:\w+\W+){0,4}?rotat\w*"
+                                     r"|\brotat(?:e|ed|es|ing|ion)\b\W+(?:\w+\W+){0,4}?ledger\b")),
     ("a work-log entry", re.compile(r"\bWORKLOG\b|(?i:\bwork[- ]?log entr(?:y|ies)\b)")),
     ("a phase write", re.compile(r"(?i)\bphase\.json\b")),
     ("a memory or notes write", re.compile(
@@ -138,9 +141,13 @@ _WRITE = re.compile(
     r"|log(?:s|ged|ging)?|rotat\w*|archiv(?:e|es|ed|ing)|trim\w*|prun\w*|updat\w*)\b"
     r"|\b(?:one|exactly one|a single|this run's|the run's)\s+(?:\w+\s+)?"
     r"(?:ledger(?:\.md)?\s+)?entr(?:y|ies)\b")
-_NEGATED = re.compile(r"(?i)\b(?:never|not|no|do not|don't|must not)\b[^.]{0,60}?\bledger")
-#: A sentence saying the ENGINE writes the ledger describes the mechanism, it instructs no run.
-_ENGINE_AUTHOR = re.compile(r"(?i)\bengine-written\b|\bengine\b.{0,160}?\bledger")
+_NEGATED = re.compile(r"(?i)\b(?:never|not|no|do not|don't|must not)\b[^.]{0,60}?\bledger"
+                      r"|\bneither\b[^.]{0,60}?\bnor\b")
+#: A sentence saying the ENGINE writes the ledger describes the mechanism, it instructs no run —
+#: in either order: "`LEDGER.md` is the engine's: it writes one entry per finished run, so a run
+#: neither appends to it nor rotates it" names the ledger first (2026-11-19, a false FAIL).
+_ENGINE_AUTHOR = re.compile(r"(?i)\bengine-written\b|\bengine\b.{0,160}?\bledger"
+                            r"|\bledger(?:\.md)?\W{0,3}\s+is\s+the\s+engine'?s?\b")
 _SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z*`\"(])")
 _ITEM = re.compile(r"^(?:[-*+]|\d+[.)]|#+)\s")
 

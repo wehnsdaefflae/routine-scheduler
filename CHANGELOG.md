@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   block's overhead line names the causes measured this month — rules and stages read up front,
   one file per turn, spilled output re-read, failing actions — instead of the bookkeeping the
   11-06 sweep had already removed (six runs saw the old line; one cut came of it).
+- **A gateway that refuses the connection is waited out, not failed over.** Every model route
+  leaves through one gateway, so when Otari restarted for 14 s on 2026-11-19 three tries in ~3 s
+  failed BOTH rungs of Opus's chain and ended llmsectest-weekday's run. A refused connection
+  (nothing was received, so nothing is repeated) is now retried for up to two minutes
+  (`endpoints/base.UNREACHABLE_PATIENCE`); every other retryable error keeps its three tries.
+- **The recipe contract lint stops failing a recipe that says the opposite.** "`LEDGER.md` is the
+  engine's … a run neither appends to it nor rotates it" FAILED `rsched validate` for
+  llmsectest-weekday (the ledger named before the engine; "neither … nor" was not read as a
+  negation), and its d3 "outranks the rotation" — a rotation of heavy phases — was noted as a
+  ledger rotation. Both are read as what they say now (`workflows/taskcontract.py`).
+
 - **A wrapped tombstone is not a migration marker.** `cli_daemon.py`'s two tombstones wrapped so
   `MIGRATION(expires=2026-11-30)` opened a comment line mid-sentence, and the marker watch filed
   them as due-soon for migrations deleted on 2026-10-08. `migration_markers.declares` now reads a

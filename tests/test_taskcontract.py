@@ -125,12 +125,25 @@ READS = [
     "engine writes `LEDGER.md` from the finish summary; a run never writes it."),
     ("Was sie dokumentiert hat, steht in `index.md` und im LEDGER; `next_steps/` ist eine "
     "Arbeitsliste, kein Archiv."),
+    # llmsectest-weekday's main.md, verbatim — the ledger named BEFORE the engine, and the run
+    # told NEITHER to append NOR to rotate: `rsched validate` FAILed it (2026-11-19)
+    ("**`LEDGER.md` is the engine's: it\nwrites one entry per finished run from the finish "
+     "summary, so a run neither appends to it nor\nrotates it, and an attempt is refused.**"),
 ]
 
 
 @pytest.mark.parametrize("text", READS)
 def test_reading_the_ledger_or_a_product_ledger_is_no_instruction(text):
     assert taskcontract.ledger_instructions(text) == []
+
+
+def test_a_rotation_of_something_else_is_not_a_ledger_rotation():
+    """llmsectest-weekday's d3 rotates its HEAVY PHASES; the bare word read as the record."""
+    d3 = ("a heavy phase ran with its one decision executed — a correction of his redirects the "
+          "heavy phase and outranks the rotation")
+    assert taskcontract.names_a_record(d3) is None
+    assert taskcontract.names_a_record("the LEDGER.md was rotated into .ledger/") is not None
+    assert taskcontract.names_a_record("rotate the ledger past 32 KiB") == "a ledger rotation"
 
 
 def test_a_wrapped_sentence_is_read_whole_and_located():
