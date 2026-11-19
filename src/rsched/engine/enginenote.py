@@ -20,8 +20,14 @@ So: one function writes both halves from ONE string, and replay renders it back 
 from __future__ import annotations
 
 
-def append(loop, note: str, *, replay: bool = True, **marks) -> None:
+def append(loop, note: str, *, replay: bool = True, before: int | None = None,
+           **marks) -> None:
     """Append one ENGINE NOTE to the live prompt and record it verbatim in the transcript.
+
+    `before` inserts at that index instead of appending — for the one seam that must not become
+    the last message: a note posted inside the schema-retry loop, where the correction is what
+    the next reply answers (`engine/turndebris.head_index`). The transcript record is unchanged;
+    only the live prompt's order is.
 
     `replay=False` marks a note the resume path RE-AUTHORS for itself — the "this run was
     interrupted and is now resumed" and "the user continued the conversation" notes, which
@@ -33,7 +39,11 @@ def append(loop, note: str, *, replay: bool = True, **marks) -> None:
     """
     loop.ctx.transcript.event("user_injection", {
         "text": note, "source": "engine", **({} if replay else {"replay": False}), **marks})
-    loop.messages.append({"role": "user", "content": message(note)})
+    body = {"role": "user", "content": message(note)}
+    if before is None:
+        loop.messages.append(body)
+    else:
+        loop.messages.insert(before, body)
 
 
 def message(note: str) -> str:

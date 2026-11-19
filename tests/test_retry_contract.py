@@ -97,6 +97,34 @@ def test_recalled_error_gets_the_contract_on_the_second_attempt_and_only_once(ma
     assert len(contract_notes(loop.messages)) == 1
 
 
+def test_the_contract_note_never_displaces_the_correction_from_the_end(make_routine):
+    """The contract arrives BEFORE this turn's debris, so the correction stays last.
+
+    D287's repeat mechanism is legible only as the LAST user message of the retry's request
+    (`schemamemo`, pinned by test_schema_memo). Appending the contract note instead of
+    inserting it put the schema dump after the correction and silently turned that mechanism
+    off — the conflict self-audit decided in R3584, answered by position rather than by
+    narrowing the recovery to the first attempt.
+    """
+    endpoint = RecordingEndpoint([INVALID, VALID, INVALID, VALID, VALID])
+    loop = _loop(make_routine, _FakeRegistry(endpoint, main_name="contract-order"))
+    prepare(loop)
+    try:
+        for _ in range(3):
+            assert next_action(loop)[0] == VALID
+            loop.ctx.turn += 1
+    finally:
+        failover.reset()
+    carrying = [messages for messages, _ in endpoint.requests if contract_notes(messages)]
+    assert len(carrying) == 2, "only the requests from the contract onward carry it"
+    assert "was not a valid action" in carrying[0][-1]["content"], (
+        "the correction must remain the last message of the retry that carries the contract")
+    note_at = [i for i, m in enumerate(carrying[0]) if m["content"] in contract_notes(carrying[0])]
+    debris_at = [i for i, m in enumerate(carrying[0])
+                 if "was not a valid action" in str(m["content"])]
+    assert note_at[0] < debris_at[0], "the contract is posted before the turn's debris block"
+
+
 def test_mid_turn_failover_to_a_plain_endpoint_gets_the_contract(make_routine):
     head = RecordingEndpoint([EndpointError("head: HTTP 503 overloaded")])
     tail = RecordingEndpoint([VALID], mode="none")

@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.555.2] — 2026-11-19
+
+### Fixed
+- **A schema-free retry keeps the full action contract, and the correction keeps the last word
+  (F903).** `completion.next_action` handed `endpoint.complete` to the transport directly, so the
+  turn-head contract check (`turntakeover._contract_if_unenforced`) could not see a schema shed
+  or an endpoint switch made INSIDE the retry loop: an index-only run could make its retry with
+  no full field descriptions anywhere. The outbound request is now one boundary
+  (`engine/completionrequest.complete_attempt`), which consults the schema this attempt will
+  actually send and posts the existing once-per-run contract note when the wire no longer carries
+  it — covering last-attempt shedding, a recalled rejection, an empty-reply shed and a failover
+  to a non-schema endpoint.
+  The note is INSERTED BEFORE this turn's debris block rather than appended
+  (`engine/turndebris.head_index`, `enginenote.append(before=…)`): the correction has to remain
+  the last user message, because that is where D287's repeat sentence is read
+  (`engine/schemamemo`). Appending it instead turned that mechanism silently off.
+
 ## [0.555.1] — 2026-11-19
 
 ### Two blocked-work rows 0.555.0 should have cleared

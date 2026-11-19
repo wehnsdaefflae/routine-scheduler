@@ -29,6 +29,21 @@ def append(loop, *messages: dict) -> None:
     loop._turn_debris.extend(messages)
 
 
+def head_index(loop) -> int | None:
+    """Where THIS turn's debris begins in the live prompt, or None while there is none.
+
+    An engine note the retry loop must post has to land BEFORE the debris, not after it: the
+    correction is the message the next reply is answering, and `schemamemo`'s whole mechanism
+    reads it as the LAST user message. Found by identity, like `drop`, because compaction may
+    have moved the block.
+    """
+    debris = getattr(loop, "_turn_debris", None) or []
+    for position, message in enumerate(loop.messages):
+        if any(message is held for held in debris):
+            return position
+    return None
+
+
 def drop(loop) -> None:
     """Remove this turn's debris from the live prompt, wherever compaction has left it."""
     if loop._turn_debris:

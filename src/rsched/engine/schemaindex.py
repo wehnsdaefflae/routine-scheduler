@@ -162,15 +162,19 @@ def turn_needs_the_contract(loop, endpoint) -> bool:
                 or not carried_on_the_wire(endpoint))
 
 
-def send_the_contract(loop, projection: dict) -> None:
-    """Append the full projection as an ENGINE NOTE, once per run."""
+def send_the_contract(loop, projection: dict, *, before: int | None = None) -> None:
+    """Append the full projection as an ENGINE NOTE, once per run.
+
+    `before` is forwarded for the retry-loop caller, whose note must not displace the
+    correction from the end of the prompt (`request_contract`).
+    """
     from . import enginenote
     loop._schema_contract_sent = True
     enginenote.append(loop, (
         "this turn is served without the structured-output grammar, so the action contract "
         "is stated here in full instead of as the field index in your prompt. It is the same "
         "contract either way — the schema your reply must match:\n\n"
-        + json.dumps(projection, indent=1)))
+        + json.dumps(projection, indent=1)), before=before)
 
 
 def request_contract(loop, endpoint, schema: dict | None) -> None:
@@ -179,11 +183,18 @@ def request_contract(loop, endpoint, schema: dict | None) -> None:
     The turn-head check cannot see a schema shed inside the retry loop or a mid-turn
     endpoint switch. Consult the schema this attempt will send, retaining the existing
     once-per-run note and the cached prompt prefix.
+
+    Position matters as much as presence. Inside the retry loop the last user message is the
+    CORRECTION, and that is where `schemamemo`'s repeat mechanism has to be legible (D287:
+    `test_schema_memo` reads each call's last message). So the note goes in BEFORE this turn's
+    debris block when there is one, and is appended when there is not (the turn-head case).
     """
+    from . import turndebris
     if (getattr(loop, "_schema_is_index", False)
             and not getattr(loop, "_schema_contract_sent", False)
             and (schema is None or not carried_on_the_wire(endpoint))):
-        send_the_contract(loop, loop.action_schema)
+        send_the_contract(loop, loop.action_schema,
+                          before=turndebris.head_index(loop))
 
 
 def section(schema: dict, kinds: list[str], ctx) -> str:
