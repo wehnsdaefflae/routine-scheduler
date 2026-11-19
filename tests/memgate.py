@@ -34,6 +34,8 @@ from pathlib import Path
 
 import pytest
 
+import memwatch
+
 #: MB each selection needs free — of the host's MemAvailable AND of this cgroup's own headroom
 #: — before it may start.
 #:
@@ -127,12 +129,19 @@ def fast_need_mb(workers: int) -> int:
 
 
 def need_mb(selection: str, workers: int = 0) -> int:
-    """The charge for one selection — the fast one derived from its worker count, the others
-    their measured constants. One reading, so the wait and the refusal message cannot disagree.
+    """The CLASS charge for one selection — the fast one derived from its worker count, the
+    others their measured constants. One reading, so the wait and the refusal message cannot
+    disagree.
+
+    Since D295 this is the FALLBACK rather than the whole answer: `priced_need` below prefers
+    what THIS selection has actually held, and falls back here when it has no history. The
+    class figures stay because a selection nobody has measured must still be charged something,
+    and the worst case of its class is the only honest figure for it.
     """
     if selection == "fast" and workers:
         return fast_need_mb(workers)
     return NEED_MB[selection]
+
 
 #: What each label is called in the message a refusal prints. "the fast suite" was the only
 #: phrase before, and it was printed for a two-file `-n 0` call too — which read as a memory
@@ -269,12 +278,25 @@ def wait_for_config(config, markexpr: str) -> None:
     count the auto hook settled on against the cgroup headroom is what the wait is charged for.
     Charging the CEILING instead is what refused a gate that would have run perfectly well
     beside a live routine run, and refused it in a way that read as a flaky failure.
+
+    Since D295 the session is also BOUNDED once admitted: `memwatch` samples what it really
+    holds and ends it over its cap, so an overrun costs this gate instead of letting the kernel
+    choose an OOM victim — the thing the wait exists to prevent, by a stronger means than
+    predicting a figure that was measured wrong in both directions.
     """
-    wait_for_memory(selection_for(config, markexpr),
-                    getattr(config.option, "numprocesses", 0) or 0)
+    selection = selection_for(config, markexpr)
+    workers = getattr(config.option, "numprocesses", 0) or 0
+    key = memwatch.selection_key(getattr(config.option, "file_or_dir", []), markexpr, workers)
+    wait_for_memory(selection, workers, key=key)
+    # The watchdog's cap is what this session was ADMITTED for, never what is free: the fast
+    # stage legitimately holds 3.08-3.29 GB on a box that often has 2.8 GB available, so a
+    # headroom-derived cap would kill a healthy release gate (see memwatch.cap_mb).
+    admitted = memwatch.priced_for(key, need_mb(selection, workers))[0]
+    memwatch.arm(cap=memwatch.cap_mb(admitted), selection=selection, key=key,
+                 evidence_dir=memwatch.EVIDENCE_DIR)
 
 
-def wait_for_memory(selection: str, workers: int = 0, *, read=available_mb,
+def wait_for_memory(selection: str, workers: int = 0, *, key: str = "", read=available_mb,
                     read_cgroup=cgroup_headroom_mb, sleep=time.sleep,
                     clock=time.monotonic) -> None:
     """Block until the host can take `selection` ("fast" | "browser" | "serial"), or exit.
@@ -282,11 +304,17 @@ def wait_for_memory(selection: str, workers: int = 0, *, read=available_mb,
     `workers` is the count xdist ACTUALLY resolved, so the charge follows the selection that
     will run rather than the ceiling it might have run at (D291). Zero means "price it by the
     constant", which is what every non-fast selection does.
+
+    `key` names the selection for D295's per-selection pricing: given one, the charge is what
+    THIS selection has held before rather than its class's worst case, and the refusal says
+    which of the two figures it was. No key keeps the class charge, so every existing caller —
+    including the tests that pin the old behaviour — is unaffected.
     """
     if os.environ.get("RSCHED_TEST_MEM_WAIT", "") == "0":
         return
-    need = need_mb(selection, workers)
-    what = prose_for(selection, workers)
+    need, priced_from = (memwatch.priced_for(key, need_mb(selection, workers)) if key
+                         else (need_mb(selection, workers), ""))
+    what = prose_for(selection, workers) + (f" ({priced_from})" if priced_from else "")
     deadline = clock() + float(os.environ.get("RSCHED_TEST_MEM_WAIT_S") or 1200)
     told = False
     while True:
