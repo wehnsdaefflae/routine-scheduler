@@ -76,7 +76,9 @@ a conversation reply window, a subtask, and a subrun — `RunContext` holds the 
 the limits (single-writer status.json preserved).
 - **One action per turn** is enforced: the model returns a single JSON object matching `ACTION_SCHEMA`;
   `normalize_action` + `validate_action` (`engine/actions.py`) repair grammar debris from weak/constrained
-  models and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
+  models — and, through `engine/fieldshapes.py`, the lossless evidently-intended shapes (a numeric
+  string for an integer, one id for an id list, `X.md` for memory note `X`, one reminder label in a
+  list) — and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
   may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist AND
   the routine's **capabilities** (`grants.py`) are enforced there too: allowed kinds = workflow tools
   ∩ (base ∪ enabled capabilities), plus path gates (runs/ needs the previous-runs depth; a run NEVER

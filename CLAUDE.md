@@ -507,7 +507,9 @@ one you are about to touch, not all of them.
   `delete` and `move` hold the same gate for a path outside the own dir, act on a symlink
   itself rather than what it points to, and may never remove a directory that holds a sealed
   path (a finish line, a routine.yaml) — `delete .` once took a whole routine with it. **`read_file` never
-  materialises a file**: it streams the requested window line by line, a directory path returns its
+  materialises a file**: it streams the requested window line by line (`engine/readwindow.py`; a
+  NEGATIVE `start_line` is the file's tail, kept in a bounded deque, and a `max_lines` over 500 is
+  served at 500 with the observation saying so), a directory path returns its
   LISTING (one entry per line, paged like a file), and a binary file or one over
   `fileops.READ_MAX_BYTES` (8 MiB) is refused from a stat plus an 8 KiB NUL sniff BEFORE any
   decode — the refusal names the size. A DOCUMENT — a PDF or an OOXML docx/pptx/xlsx, known by
@@ -712,7 +714,8 @@ one you are about to touch, not all of them.
   jail via `ownseal` — so never re-add a rule assist, recipe stage or prose that asks a run to
   write or rotate it: what a run would record goes in its finish summary or a `note`.
   `memory_*` are the ONLY way into `.memory/` for a RUN (generic file actions are rejected
-  there); the engine owns `.memory/INDEX.md` (built from each write's `about`); a note's ~100-line
+  there; a note named `X.md`, as INDEX.md spells it, is note `X` — `engine/fieldshapes.py`, the
+  normalize seam's lossless repairs of evidently-intended shapes); the engine owns `.memory/INDEX.md` (built from each write's `about`); a note's ~100-line
   size is ADVICE — a longer write lands and its observation names the overrun, never a refusal
   to trim against (`engine/memops.py`). A note's FRESHNESS is data, not prose (D268,
   `engine/notemeta.py`): `stale_after` (a date) and `verified` (`{by: run|human:<who>, at}`)

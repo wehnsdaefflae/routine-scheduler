@@ -113,7 +113,7 @@ REMIND_FEEDBACK_FIELD = {
                                        "that pattern on you again). Your decision "
                                        "outranks the routine that set it"},
     },
-    "description": "OPTIONAL, on any action: label how a reminder's HOLD turned out. "
+    "description": "OPTIONAL, on any action: label how ONE reminder's HOLD turned out. "
                    "Costs no turn and is the only evidence that tunes the pattern — "
                    "carry it as soon as you know the outcome. For a hook another "
                    "routine set on you, `disposition` is where you keep, mute or "

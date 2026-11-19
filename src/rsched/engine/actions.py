@@ -12,7 +12,7 @@ prose-outside-JSON failures.
 from __future__ import annotations
 
 from ..ids import is_slug
-from . import notemeta, thenscript
+from . import fieldshapes, notemeta, thenscript
 from .actionschema import KINDS, PSEUDO_UTILS
 from .askfields import ASK_OPTIONS_MAX
 from .askfields import field_problems as ask_field_problems
@@ -195,7 +195,7 @@ def normalize_action(obj: dict) -> dict:
             if obj.get("background") is not None and kind not in BACKGROUNDABLE_KINDS:
                 allowed.add("background")
             out = {k: v for k, v in out.items() if k in allowed}
-    return out
+    return fieldshapes.canonical(out)   # an evidently-intended shape, made canonical
 
 
 # One flat per-kind checker on purpose: this function IS the action contract's single home;

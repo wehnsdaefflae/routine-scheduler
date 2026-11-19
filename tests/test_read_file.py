@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from rsched.engine import fileops
+from rsched.engine import fileops, readwindow
 from rsched.engine.history import seen_paths
 from rsched.engine.obs_files import format_files
 
@@ -60,9 +60,28 @@ def test_windowed_read_of_a_normal_file_is_unchanged(tmp_path):
     (tmp_path / "empty.txt").write_bytes(b"")
     empty = fileops._read_one("empty.txt", {}, ctx)
     assert empty["content"] == "" and empty["total_lines"] == 0 and empty["end_line"] == 0
-    # the schema's 500-line maximum still caps a larger ask
+    # a larger ask is served at the 500-line bar — and the observation SAYS so
     (tmp_path / "long.txt").write_text("x\n" * 700, encoding="utf-8")
-    assert fileops._read_one("long.txt", {"max_lines": 5000}, ctx)["end_line"] == 500
+    capped = fileops._read_one("long.txt", {"max_lines": 5000}, ctx)
+    assert capped["end_line"] == 500 and capped["max_lines_capped"] == 5000
+    assert "max_lines 5000 was served as 500" in format_files(
+        {"kind": "read_file", **capped}, "read_file")
+
+
+def test_a_negative_start_line_reads_the_tail(tmp_path):
+    """`start_line: -N` is the last N lines — refused by `minimum: 1` until 2026-11-19, though
+    runs kept asking for a case history's last block or a JSONL's newest rows that way."""
+    (tmp_path / "days.jsonl").write_text("".join(f"row {i}\n" for i in range(1, 51)),
+                                         encoding="utf-8")
+    ctx = _ctx(tmp_path)
+    tail = fileops._read_one("days.jsonl", {"start_line": -3}, ctx)
+    assert (tail["start_line"], tail["end_line"], tail["total_lines"]) == (48, 50, 50)
+    assert tail["content"] == "row 48\nrow 49\nrow 50"
+    assert "lines 48-50 of 50" in format_files({"kind": "read_file", **tail}, "read_file")
+    # a tail longer than the file is the whole file; max_lines still bounds the window
+    assert fileops._read_one("days.jsonl", {"start_line": -80}, ctx)["start_line"] == 1
+    head = fileops._read_one("days.jsonl", {"start_line": -40, "max_lines": 2}, ctx)
+    assert head["content"] == "row 11\nrow 12" and head["end_line"] == 12
 
 
 def test_a_missing_file_is_still_an_ordinary_error(tmp_path):
@@ -75,7 +94,7 @@ def test_a_missing_file_is_still_an_ordinary_error(tmp_path):
 
 def test_oversized_file_is_refused_from_its_stat(tmp_path, monkeypatch):
     monkeypatch.setattr(fileops, "READ_MAX_BYTES", 1_000)
-    monkeypatch.setattr(fileops, "_window", _never_read)
+    monkeypatch.setattr(readwindow, "window", _never_read)
     big = tmp_path / "big.log"
     big.write_text("x" * 2_500, encoding="utf-8")
     ctx = _ctx(tmp_path)
@@ -87,7 +106,7 @@ def test_oversized_file_is_refused_from_its_stat(tmp_path, monkeypatch):
     assert str(big) in ctx.seen_paths                 # a stat IS a look: the delete gate holds
     # a file exactly at the cap is read
     (tmp_path / "edge.log").write_text("y" * 1_000, encoding="utf-8")
-    monkeypatch.setattr(fileops, "_window", lambda lines, s, m: (list(lines)[:m], 1))
+    monkeypatch.setattr(readwindow, "window", lambda lines, s, m: (list(lines), 1, s))
     assert fileops._read_one("edge.log", {}, ctx)["total_lines"] == 1
 
 
@@ -97,7 +116,7 @@ def test_the_cap_stays_far_below_what_hurts_a_small_host():
 
 
 def test_binary_file_is_refused_before_any_decode(tmp_path, monkeypatch):
-    monkeypatch.setattr(fileops, "_window", _never_read)
+    monkeypatch.setattr(readwindow, "window", _never_read)
     blob = tmp_path / "clip.mkv"
     blob.write_bytes(b"\x1aE\xdf\xa3" + b"\x00" * 100 + bytes(range(256)) * 10)
     ctx = _ctx(tmp_path)
@@ -108,7 +127,7 @@ def test_binary_file_is_refused_before_any_decode(tmp_path, monkeypatch):
     # a NUL past the sniff window is not seen — the cap, not the sniff, bounds that case
     late = tmp_path / "late.bin"
     late.write_bytes(b"t" * (fileops.BINARY_SNIFF_BYTES + 10) + b"\x00")
-    monkeypatch.setattr(fileops, "_window", lambda lines, s, m: (list(lines)[:m], 1))
+    monkeypatch.setattr(readwindow, "window", lambda lines, s, m: (list(lines), 1, s))
     assert "content" in fileops._read_one("late.bin", {}, ctx)
     # utf-8 text with no NUL is text whatever its extension — and a batched read mixes both
     (tmp_path / "notes.bin").write_text("plain text\n", encoding="utf-8")

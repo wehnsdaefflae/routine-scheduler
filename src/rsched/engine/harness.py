@@ -145,10 +145,10 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
         reminder_line = (
             ' An action can have an effect you did not intend, and the turn you FIND that out '
             'is the only turn you reliably still know it: on that same turn, carry a "remind" '
-            "— the pattern matching the class of calls that can cause it, and the caution to "
-            "show then. It costs no turn, and from then on a matching action is HELD before it "
-            'runs so you decide again. Label every hold with "remind_feedback": that tally is '
-            "what tells you which patterns to tighten and which to delete.")
+            "— `regex` for the class of calls that can cause it, `description` the "
+            "caution to show then. It costs no turn, and from then on a matching action is "
+            'HELD before it runs so you decide again. Label every hold with "remind_feedback": '
+            "that tally is what tells you which patterns to tighten and which to delete.")
     # The one exception to "relative paths resolve in the working directory": an OPEN job
     # (engine/jobops.py) lends the run its workspace until the job is checkpointed.
     job_dir_line = (" — except while a JOB is open: then they resolve in that job's "
