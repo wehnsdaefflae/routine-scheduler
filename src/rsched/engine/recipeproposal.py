@@ -41,6 +41,7 @@ same change. That is the one branch here — the seam neither breaks nor duplica
 from __future__ import annotations
 
 import logging
+import re
 
 from .. import pending
 
@@ -78,17 +79,31 @@ _NULL = frozenset({
 #: whole-line match only ever caught the bare wording: four of the five cards filed on
 #: 2026-11-06/07 were null ones that got through. A real revision's opening clause names the
 #: FILE it would change, which is why reading only that clause cannot eat one.
-_CLAUSE_END = ("—", "–", ";", ":", ".", ",", " - ")
+#: A full stop ends the clause only where it ends a sentence — not inside a file name, whose
+#: `main.md` cut `none needed in main.md/stages/ — …` to "none needed in main" (2026-11-15).
+_CLAUSE_END = re.compile(r"—|–|;|:|,| - |\.(?!\w)")
+#: A null verdict may name WHERE nothing changes — `none needed in main.md/stages/`, `no change
+#: to the recipe` — and stays null, but only while that scope is nothing but files and recipe
+#: words: "nothing in stages/scan.md says which feed …" names a gap and is filed.
+_SCOPED = re.compile(r"\s+(?:in|to|for)\s+")
+_SCOPE_WORDS = frozenset({"the", "my", "its", "this", "any", "recipe", "main", "stages",
+                          "stage", "modules", "module", "file", "files", "and", "or"})
+_SCOPE_FILE = re.compile(r"[\w.-]+\.(?:md|ya?ml)")
 
 
 def _verdict(text: str) -> str:
     """A revision line's opening clause, normalised the way `_NULL` is written."""
-    cut = len(text)
-    for mark in _CLAUSE_END:
-        found = text.find(mark)
-        if found != -1:
-            cut = min(cut, found)
-    return text[:cut].strip(" \t.!*_`-—–").casefold()
+    found = _CLAUSE_END.search(text)
+    return text[:found.start() if found else len(text)].strip(" \t.!*_`-—–").casefold()
+
+
+def _is_null(verdict: str) -> bool:
+    """Does this opening clause say there is NO revision — bare, or scoped to the recipe?"""
+    return verdict in _NULL or any(
+        verdict[:at.start()] in _NULL and all(
+            word in _SCOPE_WORDS or _SCOPE_FILE.fullmatch(word)
+            for word in re.split(r"[\s/,&+`]+", verdict[at.end():]) if word)
+        for at in _SCOPED.finditer(verdict))
 
 
 def asks_for_revisions(ctx) -> bool:
@@ -158,7 +173,7 @@ def extract(summary: str) -> list[str]:
         if not sep or head.strip(" \t-*>#"):
             continue
         text = rest.strip()
-        if text and _verdict(text) not in _NULL:
+        if text and not _is_null(_verdict(text)):
             out.append(text)
     return out[:MAX_LINES]
 

@@ -2277,7 +2277,11 @@ install gets the revision from the seed sync itself.)
   scheduled run holds no `write_recipe` (the decision row's constraint: vodafone-outage-claims'
   own `main.md` d17 asked this of itself on 2026-10-20 and the engine refused the edit), the
   lines become ONE `recipe-revision` card on the `pending.py` bridge, deduped on the lines
-  themselves — the same gap noticed next run is one card, new reasoning is its own. Approving
+  themselves — the same gap noticed next run is one card, new reasoning is its own. A line that
+  says there is NO revision files nothing (`recipeproposal._is_null`): its opening clause — cut at
+  the first dash, semicolon, colon, comma or sentence-ending full stop, never at the dot inside
+  `main.md` — is a closed null wording, optionally scoped to nothing but files and recipe words
+  (`none needed in main.md/stages/`, `no change to the recipe`). Approving
   (`web/api_recipe_revision.py`) does not write the recipe from out here: the proposal is prose,
   the reasoning is in that run's transcript, so it ARMS the unlock that already exists
   (`engine/revise.py`) and resumes the proposing run with its recipe writable — the "grant the
