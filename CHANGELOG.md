@@ -15,7 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
-## [0.555.2] — 2026-11-19
+## [0.556.0] — 2026-11-19
+
+### Changed
+- **C1.10 is finished: no pass-through forwarder stands in front of `libgit.commit` any more
+  (D249).** The first increment converted `workflows.library`'s wrapper; the two it held back for
+  judgement — `library_docs.git_commit` and `utils_lib.git_commit`, each a one-line
+  `return libgit.commit(...)` — are converted and deleted, with their six call sites
+  (`engine/authoring` x2, `web/api_workflows` x2, `web/api_library_utils`, `utils_stage`) now
+  naming the primitive. What this buys is indirection removal, not coverage: a per-module wrapper
+  hides which primitive a writer reached and is where a divergent default (`routines_home=None`,
+  an unscoped stage) would spread unseen.
+  `tests/test_libgit.py`'s `COMMIT_FORWARDERS_HELD_BACK` is now EMPTY and still shrink-only, so
+  the test is a plain prohibition and a re-introduced forwarder reds the gate. Three imports the
+  wrappers were the only users of went with them, so all three host files shrank (`utils_lib`
+  349->339, `api_workflows` 331->329, `library_docs` 142->132).
+- **`docs/designs.md` loses two shipped entries.** C1.10's, shipped here; and *"The outcome label
+  for a rule assist's hold"* (decided 2026-09-22), whose four coupled parts all shipped on
+  2026-11-06 as D239 — `engine/assist_label.py`, `rsched/assist_stats.py` with its one-shot
+  migration, the health read model's four columns and the `assist_hold` observation's ask — and
+  which was narrated in `docs/rule-assists.md` while its order sat here looking unbuilt.
 
 ### Fixed
 - **A schema-free retry keeps the full action contract, and the correction keeps the last word
