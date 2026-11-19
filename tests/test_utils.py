@@ -10,7 +10,7 @@ import shutil
 
 import pytest
 
-from rsched import sandbox, utils_header, utils_lib, utils_run
+from rsched import libgit, sandbox, utils_header, utils_lib, utils_run
 
 pytestmark = pytest.mark.skipif(shutil.which("uv") is None, reason="uv required to run utils")
 
@@ -625,15 +625,15 @@ def test_was_deleted_reads_git_history(tmp_path):
     counts; a slug that never existed (or a fresh recreate) reads as expected."""
     utils_lib.ensure_library(tmp_path)
     _write_header_util(tmp_path, "doomed")
-    utils_lib.git_commit(tmp_path, "create doomed", routines_home=None)
+    libgit.commit(tmp_path, "create doomed", routines_home=None)
     assert utils_lib.was_deleted(tmp_path, "doomed") is False
     assert utils_lib.was_deleted(tmp_path, "never-existed") is False
     shutil.rmtree(utils_lib.util_dir(tmp_path, "doomed"))
-    utils_lib.git_commit(tmp_path, "delete util doomed via web", routines_home=None)
+    libgit.commit(tmp_path, "delete util doomed via web", routines_home=None)
     assert utils_lib.was_deleted(tmp_path, "doomed") is True
     # recreating does not erase the history — the guard still consults the user
     _write_header_util(tmp_path, "doomed")
-    utils_lib.git_commit(tmp_path, "recreate doomed", routines_home=None)
+    libgit.commit(tmp_path, "recreate doomed", routines_home=None)
     assert utils_lib.was_deleted(tmp_path, "doomed") is True
 
 

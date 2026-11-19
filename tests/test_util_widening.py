@@ -42,7 +42,7 @@ def _write(tmp_path, monkeypatch, confirm, content):
     # is tested under a throwaway slug and installed only on green.
     monkeypatch.setattr(authoring.utils_stage.utils_run, "selftest", lambda *a, **k: (True, "ok"))
     monkeypatch.setattr(authoring.sandbox, "base_policy", lambda _server: None)
-    monkeypatch.setattr(authoring.utils_lib, "git_commit", lambda *a, **k: True)
+    monkeypatch.setattr(authoring.libgit, "commit", lambda *a, **k: True)
     monkeypatch.setattr(authoring, "_impact_note", lambda *a: "")
     out = authoring.handle_write_util(_loop(tmp_path, confirm),
                                       {"kind": "write_util", "name": "probe",

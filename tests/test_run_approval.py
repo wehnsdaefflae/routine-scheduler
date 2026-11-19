@@ -30,7 +30,7 @@ def test_approval_scope_and_fresh_run(tmp_path, monkeypatch, answer, expected):
     monkeypatch.setattr(authoring.utils_lib, "ensure_library", lambda *a, **k: None)
     monkeypatch.setattr(authoring.utils_lib, "exists", lambda *a: False)
     monkeypatch.setattr(authoring.utils_lib, "write_util_file", lambda *a: None)
-    monkeypatch.setattr(authoring.utils_lib, "git_commit", lambda *a, **k: None)
+    monkeypatch.setattr(authoring.libgit, "commit", lambda *a, **k: None)
     monkeypatch.setattr(authoring, "_impact_note", lambda *a: "")
 
     def selftest(*args, **kwargs):

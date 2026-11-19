@@ -25,28 +25,6 @@ decided in conversation before any finding exists says so and carries none.
 
 ---
 
-## The outcome label for a rule assist's hold (decided 2026-09-22)
-
-**Decided in the review that shipped 0.365.0; no finding.** The last of the six seams that
-review named but did not finish; the other five — the `engine/inbox.py` split, the last
-hand-rolled `msg-*` writers and the single-writer scan, the fourth collected-children
-renderer, the two daemon-side inbox predicates, the shared-store notes drain inside the digest
-builder, and the badge and push counting no proposals — have shipped and are narrated in
-docs/messages.md, docs/triggers.md, docs/run-gates.md, docs/lanes-tags.md and
-docs/notifications.md.
-
-A pre-action rule assist HOLDS a run and cannot be labelled: the one `hold`-payload assist in
-the library stood at 72 turns across three routines with no way to tell a useful hold from a
-false positive, which is the one number that decides whether a trigger keeps a turn-costing
-rung. The four coupled parts — `remind_feedback` routed by id shape, `state/assists.json`
-growing the reminder's stat fields (with a one-shot migration), the health read model's four
-columns, and the `assist_hold` observation asking for the label — are specified in
-docs/rule-assists.md, "What is still deferred".
-
-**First increment.** All four together: until every one lands the label has nowhere to go.
-
----
-
 ## One name for a child run: "subrun" and "subtask" go (decided 2026-10-17, in conversation)
 
 **Decided by the operator in conversation 2026-10-17; no finding.** His words: *"sub-runs /
@@ -108,25 +86,6 @@ own notes, kept so the trail can be followed.
 
 ---
 
-## Every git write goes through libgit (C1.10)
-
-**Problem, CORRECTED while building the first increment.** All three wrappers were ALREADY
-one-line pass-throughs to `libgit.commit`, so nothing bypassed it: the lock, the SIGTERM-first
-timeout and the `commit_failed` filing were in force at every call site. What this entry buys is
-INDIRECTION REMOVAL — a per-module `git_commit` hides which primitive a writer reached and is
-where a divergent default (`routines_home=None`, an unscoped stage) would spread unseen — not
-coverage. The behavioural red-first the entry implied ("the lock is respected") is green before
-the change and proves nothing; the enforcing test is structural.
-
-**SHIPPED (0.448.1):** `workflows.library`'s wrapper is gone, its 7 call sites converted, subjects
-byte-identical, and `tests/test_libgit.py::test_no_pass_through_forwarder_stands_in_front_of_libgit_commit`
-holds the line.
-
-**What remains.** `library_docs` and `utils_lib`, which the enforcing test names as held back.
-`utils_lib` is the expensive one: 7 direct test calls plus 7 monkeypatch seams
-(`test_loop`, `test_util_widening`, `test_run_approval`) move with it, so it is its own increment.
-
----
 
 ## Files over the size bar (≤ 350 lines)
 

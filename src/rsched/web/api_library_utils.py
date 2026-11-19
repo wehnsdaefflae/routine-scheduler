@@ -22,14 +22,14 @@ def delete_util(request: Request, name: str) -> dict:
     """Delete a global util — its whole <name>/ dir, committed, so it is recoverable from
     git history. Routines discover utils live; the catalog shrinks at their next run.
     """
-    from .. import utils_lib
+    from .. import libgit, utils_lib
 
     server = request.app.state.server
     if not utils_lib.exists(server.libraries_home, name):
         raise HTTPException(404, f"no util {name!r}")
     utils_lib.remove_util_file(server.libraries_home, name)   # atomic rename-aside + delete
-    utils_lib.git_commit(server.libraries_home, f"delete util {name} via web",
-                         routines_home=server.routines_home, paths=[f"utils/{name}"])
+    libgit.commit(server.libraries_home, f"delete util {name} via web",
+                  routines_home=server.routines_home, paths=[f"utils/{name}"])
     return {"ok": True}
 
 

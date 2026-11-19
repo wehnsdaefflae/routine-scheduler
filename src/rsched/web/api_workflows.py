@@ -211,8 +211,8 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
         raise HTTPException(422, "; ".join(problems))
     _require_digest(request, kind, slug, content, body.impact_digest)
     library_docs.write_doc(home, slug, content.rstrip() + "\n")
-    library_docs.git_commit(home, f"edit {kind[:-1]} {slug} via web", paths=[f"{slug}.md"],
-                            routines_home=request.app.state.server.routines_home)
+    libgit.commit(home, f"edit {kind[:-1]} {slug} via web", paths=[f"{slug}.md"],
+                  routines_home=request.app.state.server.routines_home)
     return {"ok": True}
 
 
@@ -225,8 +225,6 @@ def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
     Permission docs are NOT deletable — they are the capability layer's conduct
     surface; edit them instead.
     """
-    from .. import library_docs
-
     if kind == "utils":
         return api_library_utils.delete_util(request, slug)
     if kind == "reminders":
@@ -239,8 +237,8 @@ def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
     if not path.is_file():
         raise HTTPException(404, f"no {kind[:-1]} {slug!r}")
     path.unlink()
-    library_docs.git_commit(home, f"delete {kind[:-1]} {slug} via web", paths=[f"{slug}.md"],
-                            routines_home=request.app.state.server.routines_home)
+    libgit.commit(home, f"delete {kind[:-1]} {slug} via web", paths=[f"{slug}.md"],
+                  routines_home=request.app.state.server.routines_home)
     return {"ok": True}
 
 

@@ -188,7 +188,7 @@ def _rule_loop(tmp_path, lib, monkeypatch, written: list):
 
     monkeypatch.setattr(library_docs, "write_doc",
                         lambda home, name, content: written.append((name, content)))
-    monkeypatch.setattr(library_docs, "git_commit", lambda *a, **k: True)
+    monkeypatch.setattr("rsched.libgit.commit", lambda *a, **k: True)
     ctx = SimpleNamespace(
         depth=0,
         server=SimpleNamespace(rules_home=lib, libraries_home=tmp_path / "library",

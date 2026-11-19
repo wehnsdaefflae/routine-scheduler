@@ -481,7 +481,7 @@ def test_write_util_gating_and_commit(make_routine, scripted, monkeypatch):
     monkeypatch.setattr(ul, "write_util_file",
                         lambda home, name, content: seen.update(name=name, content=content))
     monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (True, "selftest: ok"))
-    monkeypatch.setattr(ul, "git_commit",
+    monkeypatch.setattr("rsched.libgit.commit",
                         lambda home, msg, **kw: seen.update(commit=msg) or True)
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "No util fits — creating one.", "kind": "write_util", "name": "adder",
@@ -503,7 +503,7 @@ def test_write_util_selftest_failure_not_committed(make_routine, scripted, monke
     monkeypatch.setattr(ul, "exists", lambda home, name: False)
     monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
     monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (False, "AssertionError: boom"))
-    monkeypatch.setattr(ul, "git_commit", lambda home, msg, **kw: committed.append(msg) or True)
+    monkeypatch.setattr("rsched.libgit.commit", lambda home, m, **kw: committed.append(m) or True)
     _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "Create it.", "kind": "write_util", "name": "bad", "content": util_src("bad")},
         finish(status="partial", summary="util did not pass selftest"),
@@ -623,7 +623,7 @@ def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
     monkeypatch.setattr(ul, "read_util", lambda home, name: util_src("adder"))
     monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
     monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (True, "selftest: ok"))
-    monkeypatch.setattr(ul, "git_commit", lambda home, msg, **kw: True)
+    monkeypatch.setattr("rsched.libgit.commit", lambda home, msg, **kw: True)
     d = make_routine(slug="wuauto")
     scripted([
         {"say": "Fix it.", "kind": "write_util", "name": "adder", "content": util_src("adder")},
@@ -3176,7 +3176,7 @@ def test_write_util_edit_mode_patches_in_place(make_routine, scripted, monkeypat
     monkeypatch.setattr(ul, "write_util_file",
                         lambda home, name, content: seen.update(name=name, content=content))
     monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (True, "selftest: ok"))
-    monkeypatch.setattr(ul, "git_commit",
+    monkeypatch.setattr("rsched.libgit.commit",
                         lambda home, msg, **kw: seen.update(commit=msg) or True)
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "3-line fix, no re-emit.", "kind": "write_util", "name": "adder",
@@ -3252,7 +3252,7 @@ def test_write_util_edit_mode_needs_an_existing_util(make_routine, scripted, mon
     monkeypatch.setattr(ul, "write_util_file",
                         lambda home, name, content: seen.update(content=content))
     monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (True, "selftest: ok"))
-    monkeypatch.setattr(ul, "git_commit", lambda home, msg, **kw: True)
+    monkeypatch.setattr("rsched.libgit.commit", lambda home, msg, **kw: True)
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         {"say": "edit a ghost", "kind": "write_util", "name": "ghost",
          "anchor": "x = 1", "replacement": "x = 2"},

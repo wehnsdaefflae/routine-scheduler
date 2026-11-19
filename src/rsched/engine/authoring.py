@@ -15,7 +15,7 @@ nothing to catch it, so a run reports it and the user deletes it.
 
 from __future__ import annotations
 
-from .. import sandbox, utils_header, utils_lib, utils_stage
+from .. import libgit, sandbox, utils_header, utils_lib, utils_stage
 from ..ids import is_slug
 from ..paths import resolve_rel
 from .askback import still_pending
@@ -284,9 +284,9 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
             return {"kind": "write_rule", "name": name, "declined": True,
                     "answer": str(ask["answer"])[:200]}
     library_docs.write_doc(home, name, content)
-    library_docs.git_commit(ctx.server.libraries_home,
-                            f"{'author' if creating else 'revise'} rule {name}",
-                            routines_home=ctx.server.routines_home, paths=[f"rules/{name}.md"])
+    libgit.commit(ctx.server.libraries_home,
+                  f"{'author' if creating else 'revise'} rule {name}",
+                  routines_home=ctx.server.routines_home, paths=[f"rules/{name}.md"])
     return {"kind": "write_rule", "name": name, "created": creating, "written": True,
             "holders": holders}
 
@@ -342,6 +342,6 @@ def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
         if not is_approval(ask["answer"]):
             return {"kind": "remove_util", "name": name, "declined": True}
     utils_lib.remove_util_file(home, name)
-    utils_lib.git_commit(home, f"remove {name}", routines_home=ctx.server.routines_home,
-                         paths=[f"utils/{name}"])
+    libgit.commit(home, f"remove {name}", routines_home=ctx.server.routines_home,
+                  paths=[f"utils/{name}"])
     return {"kind": "remove_util", "name": name, "removed": True}

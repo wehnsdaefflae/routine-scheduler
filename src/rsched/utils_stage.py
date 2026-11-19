@@ -75,7 +75,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from . import sandbox, utils_lib, utils_run
+from . import libgit, sandbox, utils_lib, utils_run
 
 log = logging.getLogger("rsched.utils_stage")
 
@@ -145,5 +145,5 @@ def write_selftested(home: Path, name: str, content: str, *, policy: sandbox.San
     if not ok:
         return False, output
     utils_lib.write_util_file(home, name, content)
-    utils_lib.git_commit(home, message, routines_home=routines_home, paths=[f"utils/{name}"])
+    libgit.commit(home, message, routines_home=routines_home, paths=[f"utils/{name}"])
     return True, output
