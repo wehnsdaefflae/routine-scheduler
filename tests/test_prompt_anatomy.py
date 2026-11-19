@@ -230,7 +230,7 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "put it ON the change",
         "[then_script NOT run]",
         # a line longer than one observation continues by character, and the spill pointer
-        # names the read_file arguments that reach the rest (fileops._windowed, resume_at)
+        # names the read_file arguments that reach the rest (readwindow.windowed, resume_at)
         "the rest is in the spill file: read_file it with",
         "to continue in sequence",
         # a DOCUMENT read_file converts (engine/docread.py): the head says it is a conversion,

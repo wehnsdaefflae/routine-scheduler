@@ -158,15 +158,15 @@ ACTION_SCHEMA: dict = {
                            "it; skipped if the change fails. Use it whenever your next action "
                            "would be running that script (to test, render or check the file)",
         },
-        "start_line": {"type": "integer", "minimum": 1,
-                       "description": "read_file: first line (default 1)"},
+        "start_line": {"type": "integer",
+                       "description": "read_file: first line (default 1); -40 = the last 40"},
         "start_char": {"type": "integer", "minimum": 0,
                        "description": "read_file: begin this many characters into start_line "
                                       "(default 0) — continues a line longer than one "
                                       "observation, exactly where a truncation marker says"},
         "max_lines": {
-            "type": "integer", "minimum": 1, "maximum": 500,
-            "description": "read_file: line cap (default 200)",
+            "type": "integer", "minimum": 1,
+            "description": "read_file: line cap (default 200, at most 500)",
         },
         "anchor": {
             "type": "string",

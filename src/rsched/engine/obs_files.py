@@ -8,7 +8,7 @@ an edit, and — for `.memory/` and the rule library — that the engine owns th
 
 from __future__ import annotations
 
-from . import docread, notemeta, thenscript
+from . import docread, notemeta, readwindow, thenscript
 
 
 def _with_script(obs: dict) -> str:
@@ -25,15 +25,18 @@ def _with_script(obs: dict) -> str:
 
 
 def _span(f: dict) -> str:
-    """`lines 1-200 of 412` — or, for a directory read, `directory listing, entries 1-8 of 8`:
-    the model must know it got a LISTING (which grounds a delete of the tree), not a file. A
-    read that entered its first line part-way (`start_char`) says where. A CONVERTED document
+    """`lines 1-200 of 412` (a capped `max_lines` says so) — or, for a directory read,
+    `directory listing, entries 1-8 of 8`: the model must know it got a LISTING (which grounds
+    a delete of the tree), not a file. A read that entered its first line part-way
+    (`start_char`) says where. A CONVERTED document
     (docread.py) leads with that: the lines are the Markdown's, its layout is approximate, and
     the pages without a text layer were not transcribed — none of which the text shows.
     """
     unit = "directory listing, entries" if f.get("directory") else "lines"
     entered = f", line {f['start_line']} from char {f['start_char']}" if f.get("start_char") else ""
     span = f"{unit} {f['start_line']}-{f['end_line']} of {f['total_lines']}{entered}"
+    if asked := f.get("max_lines_capped"):
+        span += f"; max_lines {asked} was served as {readwindow.MAX_LINES}, a read's most"
     return f"{docread.clause(f['converted'])}; {span}" if f.get("converted") else span
 
 

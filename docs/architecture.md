@@ -76,7 +76,9 @@ a conversation reply window, a subtask, and a subrun — `RunContext` holds the 
 the limits (single-writer status.json preserved).
 - **One action per turn** is enforced: the model returns a single JSON object matching `ACTION_SCHEMA`;
   `normalize_action` + `validate_action` (`engine/actions.py`) repair grammar debris from weak/constrained
-  models and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
+  models — and, through `engine/fieldshapes.py`, the lossless evidently-intended shapes (a numeric
+  string for an integer, one id for an id list, `X.md` for memory note `X`, one reminder label in a
+  list) — and return precise per-kind errors. `actions.py` is the single source of truth for what a turn
   may do — adapters, UI, and the CLI event renderer all key off it. A workflow's `tools:` allowlist AND
   the routine's **capabilities** (`grants.py`) are enforced there too: allowed kinds = workflow tools
   ∩ (base ∪ enabled capabilities), plus path gates (runs/ needs the previous-runs depth; a run NEVER
@@ -2275,7 +2277,11 @@ install gets the revision from the seed sync itself.)
   scheduled run holds no `write_recipe` (the decision row's constraint: vodafone-outage-claims'
   own `main.md` d17 asked this of itself on 2026-10-20 and the engine refused the edit), the
   lines become ONE `recipe-revision` card on the `pending.py` bridge, deduped on the lines
-  themselves — the same gap noticed next run is one card, new reasoning is its own. Approving
+  themselves — the same gap noticed next run is one card, new reasoning is its own. A line that
+  says there is NO revision files nothing (`recipeproposal._is_null`): its opening clause — cut at
+  the first dash, semicolon, colon, comma or sentence-ending full stop, never at the dot inside
+  `main.md` — is a closed null wording, optionally scoped to nothing but files and recipe words
+  (`none needed in main.md/stages/`, `no change to the recipe`). Approving
   (`web/api_recipe_revision.py`) does not write the recipe from out here: the proposal is prose,
   the reasoning is in that run's transcript, so it ARMS the unlock that already exists
   (`engine/revise.py`) and resumes the proposing run with its recipe writable — the "grant the

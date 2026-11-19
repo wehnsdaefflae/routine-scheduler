@@ -349,6 +349,15 @@ and what stays unlabelled is visible in the tally.
 `engine/remindfields.py` holding the write gate's own checks, which need no run state. The two side fields
 are `remind` (`{op: add|revise|delete|dead, id?, regex?, description?, scope?, reach?, target?}`) and `remind_feedback`
 (`{id, label}`), both modelled on `note`: optional on ANY kind, no turn cost, filed by the engine.
+The normalize seam (`engine/fieldshapes.py`) puts the shapes runs evidently MEANT into those
+canonical ones before the validator sees them: a `remind` with neither `op` nor `id` is an add,
+and ONE label written as a one-element list, as `{<id>: <label>}`, or under `verdict` / `outcome` /
+`feedback` (or as a label value in `disposition`) is the `{id, label}` object — extra keys such as
+a `reason` are dropped once both are present. Several labels in ONE field stay refused: the field
+is one label, and each further one rides another action of the reply. These shapes, mostly from
+the GPT-6.1 routes, cost ~25 schema retries in the week before 2026-11-19; so did `{pattern,
+caution}` in place of `{regex, description}`, whose cause was the harness sentence naming them in
+those words — it now names the keys.
 
 One turn, in order:
 

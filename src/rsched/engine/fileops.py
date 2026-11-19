@@ -24,18 +24,15 @@ from .. import rundepth
 from ..grants import CONFIG_FILE
 from ..paths import atomic_write, read_json
 from ..readmodels.statemap import STAGES_DIR
-from . import docread, fileformat, grounding, storeseal
+from . import docread, fileformat, grounding, readwindow, storeseal
 from .finishline import FILE as FINISH_LINE
-from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
 from .reach import routine_dirs
 from .run_context import RunContext, resolve_action_path
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterator
 
-READ_DEFAULT_MAX_LINES = 200
-READ_WINDOW_MAX_LINES = 500          # the schema's `max_lines` maximum, mirrored
 # The largest file read_file will OPEN. The read used to materialise the whole file before
 # windowing it — `read_text(errors="replace")` on a 1.5 GB .mkv became a multi-GB str plus a
 # second copy from splitlines() — and on 2026-09-14 that swap-thrashed the 3.4 GB host for
@@ -60,20 +57,6 @@ def _within(resolved: Path, sealed: Path) -> bool:
     relative CLI dir path — nothing matched, which opened the seal instead of closing it.
     """
     return resolved.is_relative_to(sealed) or resolved.is_relative_to(sealed.resolve())
-
-
-def _window(lines: Iterable[str], start: int, max_lines: int) -> tuple[list[str], int]:
-    """The [start, start + max_lines) slice of a line STREAM plus the stream's length. The
-    stream is consumed to its end for the count but never held whole — one line in memory
-    at a time, and the file is already under READ_MAX_BYTES, so the count is cheap.
-    """
-    window: list[str] = []
-    stop = start + max_lines
-    total = 0
-    for total, line in enumerate(lines, 1):
-        if start <= total < stop:
-            window.append(line)
-    return window, total
 
 
 def _listing_lines(path: Path) -> Iterator[str]:
@@ -147,53 +130,9 @@ def _document_refusal(rel_path: str, size: int, kind: str, why: str) -> dict:
                      f"converts to Markdown, and that failed: {why}"}
 
 
-def _windowed(rel_path: str, window: list[str], total: int, start: int,
-              max_lines: int, start_char: int = 0) -> dict:
-    """The window as its observation: whole lines, END-truncated at the cap, with the exact
-    `start_line` (and, inside a line longer than the cap, `start_char`) that continues it.
-    `start_char` is where the window's first line was entered — `window[0]` already starts
-    there.
-    """
-    end_line = min(start - 1 + max_lines, total)
-    content = "\n".join(window)
-    truncated = False
-    if len(content) > OBS_CAP_CHARS:
-        # END-truncate a file read: keep whole lines from the HEAD, drop the tail, and report
-        # the exact next start_line — so a follow-up read continues IN SEQUENCE. (Opaque output
-        # rides truncate()'s head+tail elision, where the tail's tail — a traceback end — must
-        # survive; a file read is ordered, so dropping the tail and resuming is the right shape.
-        # Operator AUDIT note, F204.)
-        kept: list[str] = []
-        used = 0
-        for ln in window:
-            if kept and used + len(ln) + 1 > OBS_CAP_CHARS:
-                break
-            kept.append(ln)
-            used += len(ln) + 1
-        end_line = start + len(kept) - 1
-        core = "\n".join(kept)
-        resume = f"start_line={end_line + 1}"
-        if len(core) > OBS_CAP_CHARS:
-            # A single line longer than the cap: the rest of it is the next page. Resuming at
-            # the next LINE skipped it — a one-line minified JSON spill, or the 1 MB capture
-            # envelope, could not be read past its first 8,000 chars at all.
-            core = core[:OBS_CAP_CHARS]
-            resume = f"start_line={start} start_char={start_char + OBS_CAP_CHARS}"
-        content = (core + f"\n[... {len(kept)} of {len(window)} window lines shown (through line "
-                   f"{end_line} of {total}); truncated at {OBS_CAP_CHARS} chars — re-read "
-                   f"with {resume} to continue in sequence ...]")
-        truncated = True
-    return {"path": rel_path, "start_line": start,
-            **({"start_char": start_char} if start_char else {}),
-            "end_line": end_line, "total_lines": total,
-            "content": content, "truncated": truncated}
-
-
 def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
-    start = max(1, int(action.get("start_line") or 1))
+    start, asked = int(action.get("start_line") or 1), int(action.get("max_lines") or 0)
     start_char = max(0, int(action.get("start_char") or 0))
-    max_lines = min(int(action.get("max_lines") or READ_DEFAULT_MAX_LINES),
-                    READ_WINDOW_MAX_LINES)
     directory = False
     conversion: docread.Conversion | None = None
     try:
@@ -202,7 +141,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
             return {"path": rel_path, "error": err}
         if path.is_dir():
             directory = True
-            window, total = _window(_listing_lines(path), start, max_lines)
+            window, total, first = readwindow.window(_listing_lines(path), start, asked)
         else:
             size, head = _head(path)
             source = path
@@ -218,7 +157,8 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
                 return refusal
             # streamed, never materialised: only the window is ever held in memory
             with source.open(encoding="utf-8", errors="replace") as fh:
-                window, total = _window((line.rstrip("\n") for line in fh), start, max_lines)
+                lines = (line.rstrip("\n") for line in fh)
+                window, total, first = readwindow.window(lines, start, asked)
     except (OSError, PermissionError) as exc:
         return {"path": rel_path, "error": str(exc)}
     ctx.seen_paths.add(str(path))
@@ -236,7 +176,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     if start_char and window:
         # entering the first line part-way: the continuation of a line longer than the cap
         window = [window[0][start_char:], *window[1:]]
-    obs = _windowed(rel_path, window, total, start, max_lines, start_char)
+    obs = readwindow.windowed(rel_path, window, total, first, asked, start_char)
     if directory:
         obs["directory"] = True
     if conversion is not None:
