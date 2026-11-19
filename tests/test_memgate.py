@@ -20,10 +20,14 @@ def _fake(readings):
     return read, sleep, lambda: clock["t"]
 
 
+# These two hold the WAIT LOOP itself against the HOST reading, so they name a host-bound
+# selection. They used to say "browser", which stopped being one on 2026-11-19 (b9): the browser
+# stage runs in the uitest container and is read against that container's cgroup alone, so a host
+# figure can no longer refuse it and the loop would never be entered. The subject is unchanged.
 def test_it_starts_at_once_when_the_host_has_the_memory(monkeypatch):
     monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
     read, sleep, clock = _fake([9000])
-    memgate.wait_for_memory("browser", read=read, read_cgroup=lambda: None, sleep=sleep,
+    memgate.wait_for_memory("serial", read=read, read_cgroup=lambda: None, sleep=sleep,
                             clock=clock)
     assert clock() == 0
 
@@ -31,7 +35,7 @@ def test_it_starts_at_once_when_the_host_has_the_memory(monkeypatch):
 def test_it_waits_until_memory_frees(monkeypatch):
     monkeypatch.delenv("RSCHED_TEST_MEM_WAIT", raising=False)
     read, sleep, clock = _fake([1000, 1200, 4000])
-    memgate.wait_for_memory("browser", read=read, read_cgroup=lambda: None, sleep=sleep,
+    memgate.wait_for_memory("serial", read=read, read_cgroup=lambda: None, sleep=sleep,
                             clock=clock)
     assert clock() == 30, "two waits of 15 s, then it started"
 

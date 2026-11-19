@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.564.1] — 2026-11-20
+
+### Fixed
+- **The release gate's browser charge is the stage's MEASURED peak, read in the container that
+  runs it (goal b9).** `NEED_MB["browser"]` was 3584 MB — the `uitest` container's whole 4 GiB
+  CEILING standing in for a hold — and it was read against the ENGINE HOST's `MemAvailable`,
+  although the browser stage runs in that container's own cgroup, which the host's figure does
+  not bound. Either half alone refused the ui stage of THREE release gates on 2026-11-19, each
+  with quality and fast already green, each running ZERO browser tests.
+  `deploy/uitest/submit.py` has been printing the real peak on every job all along
+  (`uitest memory: {"peak_bytes": …}`): **1,876 / 1,831 / 1,840 / 1,811 / 1,797 MB** over the
+  five most recent stages that ran — a 4 % spread, as a fixed browser suite should be. The charge
+  is the worst of them rounded up to the next 256 MB: **2048**, by the same rule the fast and
+  serial figures use. And a browser session is now read against the uitest cgroup ALONE
+  (`memcharges.READERS_FOR`): measured inside that container, its cgroup had 4,040 MB of headroom
+  while the host read 2,413 MB available, and `mem_limit: 4g` + `memswap_limit: 5g` is what the
+  kernel actually enforces there. Decided by the operator, shown those measurements: *"Price
+  `browser` from submit.py's measured peak inside the uitest container, against that container's
+  own headroom"*.
+  A container that really IS short still waits — pinned, so the guard cannot become a rubber
+  stamp — and past the deadline it still starts under a bound (D295).
+
+### Changed
+- `tests/memcharges.py` is new: what a selection COSTS, the measurements behind each figure, and
+  which reading may refuse it are one responsibility, and holding them beside the waiting logic
+  put `tests/memgate.py` 53 lines over the house line bar. `memgate` re-exports every name its
+  callers already read, so the split reaches none of them.
+
 ## [0.564.0] — 2026-11-20
 
 ### Changed
