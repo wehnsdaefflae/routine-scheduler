@@ -45,6 +45,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   block's overhead line names the causes measured this month — rules and stages read up front,
   one file per turn, spilled output re-read, failing actions — instead of the bookkeeping the
   11-06 sweep had already removed (six runs saw the old line; one cut came of it).
+- **The overhead classifier stops counting product names and delegated work as bookkeeping.**
+  A record word now matches only as a whole word of a path component or program name
+  ("journalhub", a publisher, and `runledger.py` no longer read as a journal or a ledger), and a
+  run reading its OWN child runs' work (`runs/<this run>/sub/…`, `artifacts/from-*`) is task.
+  Recalibrated on the original run set: the bar still separates 11 of 12, THRESHOLD unchanged.
+  Counting spilled-output reads as task was MEASURED and held back — it collapses the gap
+  (tv-show-tracker 0.255 = funscript-trainer 0.255) and needs a fresh hand calibration.
+- **The fleet's recurring wrong turns are accepted in their intended shape** (`engine/fieldshapes.py`,
+  lossless repairs only): a memory note named `X.md` is note `X`, a numeric string where an
+  integer is due, one id where a list is due, a bare `verified` date, a `remind` without `op`, one
+  reminder label written as a list or a map; the reminder sentence names `regex`/`description`.
+  `read_file` reads a TAIL on a negative `start_line`, and `max_lines` over 500 is served at 500
+  with the header saying so instead of a refusal.
+- **"No revision needed" files no card**, even when it names the recipe files
+  ("none needed in main.md/stages/ — …" opened a Decisions card on 2026-11-15).
+
 - **A gateway that refuses the connection is waited out, not failed over.** Every model route
   leaves through one gateway, so when Otari restarted for 14 s on 2026-11-19 three tries in ~3 s
   failed BOTH rungs of Opus's chain and ended llmsectest-weekday's run. A refused connection
