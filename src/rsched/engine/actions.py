@@ -12,7 +12,7 @@ prose-outside-JSON failures.
 from __future__ import annotations
 
 from ..ids import is_slug
-from . import thenscript
+from . import notemeta, thenscript
 from .actionschema import KINDS, PSEUDO_UTILS
 from .askfields import ASK_OPTIONS_MAX
 from .askfields import field_problems as ask_field_problems
@@ -359,9 +359,9 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                         f'catalog lists it, or "list" for the catalog — got {name!r}')
     if kind in ("memory_read", "memory_write"):
         name = str(obj.get("name") or "")
-        if name and not is_slug(name):
+        if name and not is_slug(name) and not notemeta.index_read(kind, name):
             problems.append(f"kind={kind}: 'name' must be a kebab-case topic slug, got {name!r}")
-        if kind == "memory_write" and name.lower() == "index":
+        if kind == "memory_write" and notemeta.is_index_name(name):
             problems.append("memory_write: 'index' is reserved — the engine maintains "
                             ".memory/INDEX.md from each note's 'about' line")
         if kind == "memory_write" and not obj.get("delete"):

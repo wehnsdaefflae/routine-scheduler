@@ -65,8 +65,24 @@ def _memory_index_upsert(mem_dir, name: str, about: str | None,
     atomic_write(index, "\n".join(lines) + ("\n" if lines else ""))
 
 def do_memory_read(action: dict, ctx: RunContext) -> dict:
+    """One note, or the INDEX the digest points at.
+
+    F910: the digest clips its `.memory/` block with "read .memory/INDEX.md for the full N
+    lines", and that file was reachable by NOTHING — `read_file` refuses every `.memory/` path
+    and this action refused the name for not being a kebab-case slug. So the index is served
+    here, under the names the pointer actually prints (`notemeta.is_index_name`). Writing it
+    stays refused: the engine owns the file and builds it from each note's `about` line.
+    """
     name = action["name"]
     mem_dir = work_dir(ctx) / ".memory"
+    if notemeta.is_index_name(name):
+        index = mem_dir / "INDEX.md"
+        if not index.is_file():
+            return {"kind": "memory_read", "name": name, "missing": True,
+                    "topics": _memory_topics(mem_dir)}
+        content, truncated = truncate(index.read_text(encoding="utf-8", errors="replace"))
+        return {"kind": "memory_read", "name": name, "content": content,
+                "lines": len(content.splitlines()), "truncated": truncated, "index": True}
     path = mem_dir / f"{name}.md"
     if not path.is_file():
         return {"kind": "memory_read", "name": name, "missing": True,

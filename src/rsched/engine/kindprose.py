@@ -120,7 +120,8 @@ notes under .memory/ — for what was \
 EXPENSIVE to find out (environment quirks, working solutions, constraints nobody wrote \
 down), not what the instruction or a plain look at the data would tell anyone. \
 The state digest \
-shows .memory/INDEX.md at run start — consult it before re-discovering anything; revise notes \
+shows .memory/INDEX.md at run start, clipped — `memory_read name=index` returns it whole; \
+consult it before re-discovering anything; revise notes \
 that \
 turned out wrong instead of appending contradictions. read_file / write_file are rejected on \
 .memory/ paths."""),

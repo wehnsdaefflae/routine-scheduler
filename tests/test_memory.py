@@ -2,6 +2,7 @@
 
 from helpers import run_context, server_config
 from rsched.engine import executor
+from rsched.engine.actions import validate_action
 from rsched.engine.observations import format_observation
 
 
@@ -54,6 +55,42 @@ def test_a_multiline_about_stays_one_index_line(make_routine, tmp_path):
                        "about": "second"}, ctx)
     executor.dispatch({"kind": "memory_write", "name": "portal", "delete": True}, ctx)
     assert index.read_text() == "- other.md: second\n"
+
+
+def test_the_index_the_digest_points_at_is_readable_by_the_action_it_names(make_routine,
+                                                                          tmp_path):
+    """F910: the digest told every run to read a file no action could open.
+
+    `notemeta.digest_blocks` clips the `.memory/` block with "read .memory/INDEX.md for the
+    full N lines" (and `digesttail.clip` appends ".memory/INDEX.md holds it whole"), while
+    `read_file` refuses every `.memory/` path (`engine/fileops.MEMORY_REFUSAL`) and
+    `memory_read` refused the name for not being a kebab-case slug. Measured on 2026-11-18:
+    seven turns lost across five routines (config-optimizer, rules-review, llmsectest-weekday,
+    global-utils-review, routine-improver), one of them twice on CONSECUTIVE turns — the run
+    could not learn, because every door it was pointed at was locked.
+
+    `index` is therefore a READABLE topic, and stays reserved for WRITING: the engine owns the
+    file and builds it from each note's `about` line.
+    """
+    ctx = _ctx(make_routine, tmp_path)
+    _write(ctx, "portal-quirks", "# quirks", "scraping gotchas")
+    _write(ctx, "scoring", "# scoring", "what 8/10 means")
+
+    for name in ("index", "INDEX", "INDEX.md"):
+        obs = executor.dispatch({"kind": "memory_read", "name": name}, ctx)
+        assert not obs.get("rejected"), f"{name!r} was refused: {obs}"
+        assert "- portal-quirks.md: scraping gotchas" in obs["content"], obs
+        assert "- scoring.md: what 8/10 means" in obs["content"], obs
+
+    # The validator is the seam that decides the name: the read is accepted under every
+    # spelling the digest prints, and WRITING it stays reserved under each of them too —
+    # `INDEX.md` used to slip past a `name.lower() == "index"` check and be refused only by
+    # the slug rule, which is a different sentence about a different problem.
+    for name in ("index", "INDEX", "INDEX.md"):
+        assert validate_action({"say": "s", "kind": "memory_read", "name": name}) == []
+        problems = validate_action({"say": "s", "kind": "memory_write", "name": name,
+                                    "content": "x", "about": "y"})
+        assert any("reserved" in p for p in problems), (name, problems)
 
 
 def test_read_missing_lists_topics_and_delete_is_idempotent(make_routine, tmp_path):

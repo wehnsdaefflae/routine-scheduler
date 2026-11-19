@@ -190,6 +190,30 @@ def stale_digest(stale: list[str]) -> str:
 #: How many INDEX lines the digest shows before pointing at the file (composer's own cap).
 INDEX_SHOWN_MAX = 60
 
+#: The names a run reaches the INDEX by. The digest's own clip says "read .memory/INDEX.md for
+#: the full N lines" and `digesttail.clip` appends ".memory/INDEX.md holds it whole" — so those
+#: are the words a run has in front of it when it asks. Until F910 every door was locked:
+#: `read_file` refuses any `.memory/` path (engine/fileops.MEMORY_REFUSAL) and `memory_read`
+#: refused these names for not being kebab-case slugs. Measured 2026-11-18: seven turns lost
+#: across five routines in one day, one run spending it twice on CONSECUTIVE turns.
+#: Case-folded and `.md`-tolerant because the pointer is rendered as a FILENAME.
+INDEX_NAMES = frozenset({"index", "index.md"})
+
+
+def is_index_name(name: str) -> bool:
+    """Is this name asking for the INDEX the digest points at?"""
+    return str(name).strip().casefold() in INDEX_NAMES
+
+
+def index_read(kind: str, name: str) -> bool:
+    """A `memory_read` of the INDEX — the one name exempt from the kebab-case slug rule.
+
+    A predicate rather than the expression inline, because `engine/actions.py` sits AT its
+    size-ratchet ceiling (417 lines, `tests/size_ratchet.json`): a rule that costs its caller a
+    line is a rule that gets written somewhere worse.
+    """
+    return kind == "memory_read" and is_index_name(name)
+
 
 def digest_blocks(index_text: str) -> list[str]:
     """The digest's `.memory/` parts for an index: the notes to consult, then the stale ones.
@@ -201,14 +225,17 @@ def digest_blocks(index_text: str) -> list[str]:
     fresh, stale = partition_stale(index_text.strip().splitlines())
     blocks = []
     if fresh:
-        more = (f"\n[... read .memory/INDEX.md for the full {len(fresh)} lines]"
+        # Name the ACTION, not the path (F910): `read_file` refuses every `.memory/` path, so
+        # a pointer at the FILE sent five routines in one day into a call nothing could serve.
+        more = (f"\n[... `memory_read name=index` reads .memory/INDEX.md, "
+                f"the full {len(fresh)} lines]"
                 if len(fresh) > INDEX_SHOWN_MAX else "")
         # Bounded in CHARACTERS as well as in lines: an index line is a note's whole `about`
         # sentence, so a routine with a mature store reached 23,069 chars here — the single
         # largest block measured in any live digest (engine/digesttail.py). Line order is
         # kept (the index is a catalogue, not a history), so the clip takes the tail.
         shown = digesttail.clip("\n".join(fresh[:INDEX_SHOWN_MAX]),
-                                read_with=".memory/INDEX.md")
+                                read_with=".memory/INDEX.md (`memory_read name=index`)")
         blocks.append(".memory/ index (notes from earlier work — memory_read the relevant "
                       "topic before re-discovering anything):\n"
                       + shown + ("" if shown.endswith("]") else more))

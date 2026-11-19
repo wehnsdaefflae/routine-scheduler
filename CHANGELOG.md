@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.554.0] — 2026-11-19
+
+### The index the digest points at is readable by the action it names
+
+- **F910 — every run was told to read a file nothing could open.** `notemeta.digest_blocks`
+  clipped the `.memory/` block with *"read .memory/INDEX.md for the full N lines"*, and
+  `digesttail.clip` appended *".memory/INDEX.md holds it whole"* — while `read_file` refuses
+  every `.memory/` path (`engine/fileops.MEMORY_REFUSAL`) and `memory_read` refused the name
+  for not being a kebab-case slug. Three doors, all locked, with the engine's own prose
+  pointing at them. **Measured on 2026-11-18 alone: seven turns lost across five routines**
+  (config-optimizer, rules-review, llmsectest-weekday, global-utils-review, routine-improver)
+  — `config-optimizer:20261118-022505` spent it on turns 3 and 4, CONSECUTIVELY, because the
+  refusal taught it nothing it could act on.
+- **`memory_read name=index` now returns the whole index** (`index`, `INDEX`, `INDEX.md` — the
+  pointer is rendered as a filename, so the name it prints is the name that works). Writing it
+  stays reserved, and `INDEX.md` is now reserved too: `name.lower() == "index"` let that
+  spelling fall through to the slug rule, which answers a different question.
+- **Both pointers now name the ACTION rather than the path**, and the `memory_read` bullet in
+  every prompt says the digest's copy is clipped and which call returns it whole. A fix that
+  only accepted the call would have left every future run making the one that fails first.
+- `notemeta.index_read(kind, name)` carries the rule because `engine/actions.py` is AT its
+  size-ratchet ceiling (417): a rule that costs its caller a line gets written somewhere worse.
+
 ## [0.553.0] — 2026-11-19
 
 ### The Library tab stops telling you a change to an open util "reaches nobody"
