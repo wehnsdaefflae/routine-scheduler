@@ -139,6 +139,59 @@ def holders(server: Any, kind: str, name: str) -> list[str]:
     return out
 
 
+def _reserved_by(server: Any, name: str) -> tuple[list[str], list[str]]:
+    """Which library permission docs reserve this util — `(whole, verbs)`.
+
+    The same join `policyload.load_policy` builds its `gated_utils`/`gated_verbs` from, read
+    for ONE util: a BARE `name` in a doc's `requires.utils` reserves the whole util, while
+    `name:verb` reserves that one verb and leaves the rest open. A verb reservation is dropped
+    once some doc reserves the util whole, exactly as the policy drops it — otherwise two
+    readers of one library could disagree about what is gated.
+    """
+    from .grants import read_library_requires, split_util_verb
+
+    whole: set[str] = set()
+    verbs: set[str] = set()
+    for slug, req in read_library_requires(Path(server.permissions_home)).items():
+        for entry in req.get("utils") or []:
+            bare, verb = split_util_verb(entry)
+            if bare != name:
+                continue
+            if verb:
+                verbs.add(verb)
+            else:
+                whole.add(slug)
+    return sorted(whole), ([] if whole else sorted(verbs))
+
+
+def reach(server: Any, kind: str, name: str) -> dict | None:
+    """WHO MAY CALL this util, which is not who HOLDS it — `None` for a rule or a permission.
+
+    The operator, 2026-11-18, on `code-search`'s page: *"noone holds this util?! that's not
+    true"*. He was right, and the emptiness was real: `holders` answers "who holds a RESERVED
+    grant", and the library reserves a util only where some permission doc's `requires.utils`
+    names it. Seven of today's 56 utils are reserved; every other one — `code-search`, `rsched`,
+    `runs`, `json`, `git` — is callable by every routine, and the engine rewrites the
+    `code_search` and `websearch` ACTION KINDS (D290, `engine/kindaliases.py`) into a util call
+    before any gate sees them. So an empty holder list was being printed as "a change here
+    reaches nobody" for the utils the fleet depends on MOST, and the same computation gates
+    deletion.
+
+    This is deliberately a SECOND fact beside `holders` rather than a wider holder list. A
+    holder is a routine the break analysis can reason about: `readmodels/surface.py` joins util
+    headers through `_held_utils`, the RESERVED grants, so an open util's secrets and roots
+    enter no routine's surface and listing all of them would pair a 29-name list with "breaks
+    none of them" — a second falsehood, bought at ~1.6 s of surface computation per preview on
+    a UI the operator already calls slow (measured 2026-11-18: 29 surfaces in 1.60 s, and an
+    impact does them twice).
+    """
+    if kind != "util":
+        return None
+    whole, verbs = _reserved_by(server, name)
+    return {"open_to_all": not whole, "gated_by": whole, "gated_verbs": verbs,
+            "fleet": len(_routine_dirs(server))}
+
+
 def _calls_closure(lib: Path, name: str) -> set[str]:
     """Every util reachable from `name` over declared `calls:` lines — one jail, one env."""
     from .utils_header import parse_header
@@ -197,14 +250,27 @@ def impact(server: Any, kind: str, name: str, content: str | None) -> dict:
                     unaffected.append(slug)
     payload = f"{kind}:{name}:{sorted(who)}:{[(b['slug'], b['gains']) for b in breaks]}"
     return {"holders": who, "breaks": breaks, "unaffected": unaffected,
+            "reach": reach(server, kind, name),
             "digest": hashlib.sha256(payload.encode()).hexdigest()[:16]}
 
 
 def impact_lines(result: dict) -> list[str]:
     """The impact as flat text — what the approval question appends and the CLI prints."""
+    reached = result.get("reach") or {}
     if not result["holders"]:
+        if reached.get("open_to_all") and reached.get("fleet"):
+            # NEVER "binds no routine yet" for an open util: no routine holds a grant for it
+            # because none is needed, and every one of them may call it (the operator, 2026-11-18).
+            # An EMPTY fleet is the one case where the old wording stays true — nothing can call
+            # a util when no routine is installed, and claiming "every routine (0)" would be the
+            # same overclaim in the other direction.
+            every = f"every routine ({reached['fleet']}) may call it"
+            return [f"reserved by no permission doc — {every}"]
         return ["binds no routine yet"]
     out = [f"binds: {', '.join(result['holders'])}"]
+    if reached.get("open_to_all") and reached.get("gated_verbs"):
+        out.append(f"only {', '.join(reached['gated_verbs'])} is reserved — every routine "
+                   f"({reached['fleet']}) may call its other verbs")
     broke = False
     for b in result["breaks"]:
         for gained in b["gains"]:

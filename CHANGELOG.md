@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.553.0] — 2026-11-19
+
+### The Library tab stops telling you a change to an open util "reaches nobody"
+
+- **F909 — "noone holds this util?! that's not true" (the operator, 2026-11-18).** He was
+  looking at `code-search`'s editor, which said *"no routine holds this yet — a change here
+  reaches nobody."* Every routine on the instance can call that util, and the engine rewrites
+  the `code_search` and `websearch` ACTION KINDS (D290, `engine/kindaliases.py`) into exactly
+  that util call before any gate sees them. The emptiness was real but its reading was
+  inverted: `library_impact.holders` answers *who holds a RESERVED grant*, and a util has
+  holders only where some permission doc's `requires.utils` names it — 7 of today's 56 utils.
+  For the other 49 — `code-search`, `rsched`, `runs`, `json`, `git` — the panel printed the
+  most dangerous sentence available over the fleet's most-used tools, and the same computation
+  gates DELETION from that page.
+- **`library_impact.reach()` is the second fact, beside `holders` and not merged into it.** It
+  reads the same `requires.utils` join `policyload.load_policy` builds `gated_utils` /
+  `gated_verbs` from, for one util: `{open_to_all, gated_by, gated_verbs, fleet}`, and `None`
+  for a rule or a permission — those ARE held by name, so an empty list there really does mean
+  nobody, and that wording survives untouched. An open util now reads *"every routine (29) may
+  call this"*; a verb-reserved one like `mail` states both truths at once — 6 routines hold
+  `mail:send`, all 29 may call its other verbs.
+- **Why not simply widen the holder list.** A holder is a routine the break analysis can reason
+  about: `readmodels/surface.py` joins util headers through `_held_utils`, the reserved grants,
+  so an open util's secrets and roots enter no routine's surface. Listing all 29 would have
+  paired a full-fleet list with "breaks none of them" — a second falsehood — and cost ~3.2 s of
+  surface computation per preview (measured: 29 surfaces in 1.60 s, and an impact does them
+  twice) on a console whose slowness is a standing complaint. The panel says instead that the
+  holders shown are those with a reserved grant and that the break analysis reads no further.
+
 ## [0.552.0] — 2026-11-18
 
 ### Reminders are served from the hook stream, and five decided items ship with it

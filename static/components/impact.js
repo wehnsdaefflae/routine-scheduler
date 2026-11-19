@@ -43,10 +43,31 @@ export function impactPanel(kind, slug) {
   const fetchImpact = (content) =>
     api(`/api/library/${kind}/${slug}/impact`, { method: "POST", body: { content } });
 
+  // A util only HAS holders where a permission doc reserves it; every other util is callable
+  // by every routine, and the `code_search`/`websearch` action kinds are rewritten into util
+  // calls before any gate. So an empty holder list meant the opposite of what this panel said
+  // — "reaches nobody" was printed for the utils the fleet depends on most (the operator,
+  // 2026-11-18: "noone holds this util?! that's not true"). `reach` is the server's answer to
+  // the question the holder list cannot answer; it is null for a rule or a permission, which
+  // ARE held by name and where an empty list really does mean nobody.
+  function reachLine(reach) {
+    if (!reach?.open_to_all || !reach.fleet) return null;
+    const what = reach.gated_verbs?.length
+      ? `only ${reach.gated_verbs.join(", ")} ${reach.gated_verbs.length > 1 ? "are" : "is"} reserved`
+      : "reserved by no permission doc";
+    return el("div", { class: "small", "data-reach": "open" },
+      el("b", {}, `every routine (${reach.fleet}) may call this`),
+      el("div", { class: "faint small" },
+        `${what}, so a change here reaches the whole fleet at each routine's next run. `
+        + "Holders below are only those with a reserved grant — the break analysis can read "
+        + "no further than those."));
+  }
+
   function paint(result, { proposed }) {
     const holders = result.holders || [];
+    const reach = reachLine(result.reach);
     if (!holders.length) {
-      node.replaceChildren(el("span", { class: "faint small" },
+      node.replaceChildren(reach || el("span", { class: "faint small" },
         "no routine holds this yet — a change here reaches nobody."));
       return;
     }
@@ -56,6 +77,7 @@ export function impactPanel(kind, slug) {
       el("div", { class: "faint small" },
         "each picks the change up at its next run — there is one copy and no migration."));
     node.replaceChildren(head);
+    if (reach) node.append(reach);
     if (!proposed) return;      // the on-open read states WHO; only a proposal states WHAT
     if (result.breaks?.length) {
       node.append(el("div", { class: "impact-breaks mt" },
