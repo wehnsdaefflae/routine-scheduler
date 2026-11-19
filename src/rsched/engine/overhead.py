@@ -17,20 +17,25 @@ Every landed action is one of three:
 - PROCESS — the run working on itself: `memory_*`, `read_rule`, `goal`, `job`, the finish; a
   file action whose every target is a process artefact (its recipe — `main.md`, `stages/`, at
   any depth so a job's recipe counts — its notebook, inbox, past runs, `.util_outputs/`, the
-  engine's own `state/` files, and anything NAMED as a record: ledger, backlog, journal,
+  engine's own `state/` files, and anything NAMED as a record — a whole WORD of its name, so
+  `mail-log.jsonl` is one and a publisher called "journalhub" is not: ledger, backlog, journal,
   worklog, changelog, tracker, `log`); the outcome script; a script or util whose every named
   path is such an artefact, or whose PROGRAM is one (`bin/ledger.py add …`); and a `shell` —
   the one-off action — over nothing but such artefacts and the routine's own `state/`, which is
   the run hand-keeping its records field by field. Outside the own dir only a
   ledger/backlog/journal/worklog counts: a project's CHANGELOG there is its product.
-- TASK — everything else. Product data under `state/` is the task's when a file action or a
-  script writes it; `report` and `ask_user` are the task's too, because for some routines a
-  report or a question IS the product and nothing here can tell which.
+- TASK — everything else. The CURRENT run's children's work — `runs/<its ts>/sub/…`, and a
+  hand-back in `artifacts/from-sub-…` — is its task's delegated product, whatever it is named.
+  Product data under `state/` is the task's when a file action or a script writes it; `report`
+  and `ask_user` are the task's too, because for some routines a report or a question IS the
+  product and nothing here can tell which.
 
 `process_share` is (process + friction) / all — the share NOT spent on the task.
 
 **Calibration** (2026-11-06, against the hand classification of the same runs — the last ≤4
-runs since 2026-10-23 of each routine; median of the per-run shares, as the invariant reads it):
+runs since 2026-10-23 of each routine; median of the per-run shares, as the invariant reads it;
+re-measured 2026-11-19 over the same kept runs after word-matched record names and the run's
+children's work as task — two figures moved, by 0.002 and 0.003):
 
     judged bookkeeping-dominated (hand task %)   median   |  judged healthy (hand task %)  median
     library-sync (25)                             0.583   |  voice-model-trainer (66)       0.263
@@ -39,12 +44,12 @@ runs since 2026-10-23 of each routine; median of the per-run shares, as the inva
     moltbook-heartbeat (48)                       0.409   |  deficit-coach (77)             0.216
     vodafone-outage-claims (43)                   0.396   |  scheduler-improvement-res (61) 0.204
     predatory-publisher-tarpit (38)               0.380   |  scheduler-builder (68)         0.160
-    llmsectest-weekday (42)                       0.352   |  folder-reorg (80)              0.155
+    llmsectest-weekday (42)                       0.350   |  folder-reorg (80)              0.155
     config-optimizer (48)                         0.344   |  routine-improver (71)          0.136
     uncensored-model-radar (43)                   0.335   |
     fau (42)                                      0.308   |  borderline (not scored):
     tv-show-tracker-seedbox-manager (39)          0.277   |  doppelcheck 0.267, freelance 0.263,
-    self-audit (45)                               0.206   |  grant-hunter 0.247, website 0.223
+    self-audit (45)                               0.206   |  grant-hunter 0.244, website 0.223
 
 The `library-sync (25) 0.583` row of that table measured a DEFECT THAT NO LONGER EXISTS: an
 unsatisfiable Done-when line made every clean run finish twice, and `routine-improver` fixed it
@@ -68,7 +73,11 @@ its turns were spent on. Four rules were MEASURED and rejected: counting `report
 reports as its product), counting every read of `state/` (deficit-coach's product reads tie the
 lowest flagged routine), not counting the finish (3 healthy routines over at any bar that flags
 the 12), and `changelog` outside the own dir (scheduler-improvement-research reads the
-scheduler's CHANGELOG as its input). The two scales differ — the hand's bar is task < 50%, this
+scheduler's CHANGELOG as its input). A fifth is measured and HELD BACK (2026-11-19): reading
+the run's own spilled output (`.util_outputs/`) as the purpose of the call that produced it
+drops uncensored-model-radar to 0.268 and tv-show-tracker to 0.255, the highest healthy median
+— the flagged side of this table leans on those reads, so it waits for a fresh hand
+calibration rather than a moved bar. The two scales differ — the hand's bar is task < 50%, this
 one's is 27% — because the hand also judged ORIENT reads of product state and reports as
 bookkeeping, which a deterministic rule cannot.
 """
@@ -122,18 +131,24 @@ _RECIPE_FILES = frozenset({"main.md", "tuning.yaml", "routine.yaml"})
 #: Directories that hold nothing but process: a recipe's stages (the routine's or a job's) and
 #: its notebook, at any depth of the own dir.
 _PROCESS_ANYWHERE = frozenset({"stages", ".memory"})
-#: Directories directly under the routine's own dir that hold nothing but its process.
+#: Directories directly under the routine's own dir that hold nothing but its process — except
+#: the CURRENT run's children under `runs/<ts>/sub/` (`_bucket`).
 _PROCESS_DIRS = frozenset({"inbox", "questions", "runs", ".util_outputs"})
 #: Engine- and recipe-owned process files in a `state/` dir — everything else there is product.
 _PROCESS_STATE = frozenset({"phase.json", "plan.md", "notes.md", "obligations.json",
                             "finish-line.json", "jobs.json", "reminders.json"})
-#: A file or folder NAMED as a record of the process, wherever in the routine's own dir it sits
-#: (`LEDGER.md`, `state/backlog.md`, `journal/`, `mail-log.jsonl` — `log` only as a whole word).
-_PROCESS_NAME = re.compile(r"ledger|backlog|journal|worklog|changelog|tracker"
-                           r"|(^|[-_.])log([-_.]|$)", re.IGNORECASE)
+#: Words that NAME a record of the process — matched as whole WORDS of a path component or a
+#: program name (`LEDGER.md`, `state/backlog.md`, `journal/`, `mail-log.jsonl`, `reviewLedger`),
+#: never as a substring: a publisher called "journalhub" is a product's name. `log` has
+#: no plural, as before: a `logs/` folder is usually a product's.
+_RECORD_WORDS = frozenset({"ledger", "backlog", "journal", "worklog", "changelog", "tracker",
+                           "log"})
 #: Outside the own dir a CHANGELOG is a project's product and a "tracker" a product's name; a
 #: ledger, backlog, journal or worklog there is still the run's own record of its work.
-_OUTSIDE_NAME = re.compile(r"ledger|backlog|journal|worklog", re.IGNORECASE)
+_OUTSIDE_WORDS = frozenset({"ledger", "backlog", "journal", "worklog"})
+_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
+#: A child's delivered work, landed in the parent's `artifacts/` (engine/child.handback_dirname).
+_HANDBACK = re.compile(r"^from-(sub|bg|branch)-")
 #: A token that looks like a path: it has a slash or ends in a data/document/code file
 #: extension, and is not a flag or a URL. The extension list is closed on purpose — a shell
 #: heredoc's `json.load` or `d.get` is code, not a path.
@@ -155,13 +170,21 @@ def _relative(path: str, routine_dir: str) -> str | None:
     return str(PurePosixPath(p[len(root):])) if p.startswith(root) else None
 
 
+def is_record_name(name: str, words: frozenset[str] = _RECORD_WORDS) -> bool:
+    """Does a path component or program name carry a record WORD — `ledger`, `mail-log`,
+    `reviewLedger`, `WORKLOG.md` — whole, a plural `s` allowed except on `log`?
+    """
+    tokens = {w.lower() for w in _WORD.findall(name)}
+    return bool(words & (tokens | {t[:-1] for t in tokens if t.endswith("s") and t != "logs"}))
+
+
 def is_process_path(path: str, routine_dir: str) -> bool:
     """Is `path` one of the routine's own PROCESS artefacts (its recipe, notebook, phase, plan,
     notes, inbox, past runs, or a file named as a ledger/backlog/journal)?
     """
     rel = _relative(path, routine_dir)
     if rel is None:     # outside the own dir: only a file or folder NAMED as a run's record
-        return any(_OUTSIDE_NAME.search(part) for part in PurePosixPath(path).parts[-2:])
+        return any(is_record_name(part, _OUTSIDE_WORDS) for part in PurePosixPath(path).parts[-2:])
     if rel in (".", ""):
         return False
     parts = PurePosixPath(rel).parts
@@ -170,7 +193,20 @@ def is_process_path(path: str, routine_dir: str) -> bool:
         return True
     if parts[-2:-1] == ("state",) and parts[-1] in _PROCESS_STATE:
         return True
-    return any(_PROCESS_NAME.search(part) for part in parts)
+    return any(is_record_name(part) for part in parts)
+
+
+def _bucket(path: str, routine_dir: str, run_ts: str) -> str:
+    """PROCESS or TASK for one named path. A child's work is the task's delegated product,
+    whatever it is called: under this run's own `runs/<run_ts>/sub/`, or handed back into
+    `artifacts/from-…` (engine/child.handback_dirname).
+    """
+    rel = _relative(path, routine_dir)
+    parts = PurePosixPath(rel).parts if rel is not None else ()
+    if ((parts[:1] == ("artifacts",) and len(parts) > 1 and _HANDBACK.match(parts[1]))
+            or (run_ts and parts[:3] == ("runs", run_ts, "sub"))):
+        return TASK
+    return PROCESS if is_process_path(path, routine_dir) else TASK
 
 
 def _in_state(path: str, routine_dir: str) -> bool:
@@ -202,30 +238,32 @@ def _call_tokens(action: dict) -> list[str]:
     return [t for t in tokens if _PATHISH.match(t) and "://" not in t]
 
 
-def _call_is_process(action: dict, routine_dir: str) -> bool:
+def _call_is_process(action: dict, routine_dir: str, run_ts: str) -> bool:
     name = str(action.get("name") or "")
-    if (action.get("kind") == "script" and name == "outcome") or _PROCESS_NAME.search(name):
+    if (action.get("kind") == "script" and name == "outcome") or is_record_name(name):
         return True
     named = [t for t in _call_tokens(action) if _relative(t, routine_dir) not in (".", "")]
     if not named:
         return False
     # a script or util handed a record-keeping PROGRAM first (`bin/ledger.py add …`) is keeping
     # that record, whatever else it names; otherwise every path it names must be the process's
-    if action.get("kind") != "shell" and _PROCESS_NAME.search(PurePosixPath(named[0]).name):
+    if action.get("kind") != "shell" and is_record_name(PurePosixPath(named[0]).name):
         return True
     if action.get("kind") == "shell":
         # the ONE-OFF action over nothing but the routine's own state: the run hand-keeping its
         # records field by field, not doing its task (a script over the same files is tooling)
-        return all(is_process_path(t, routine_dir) or _in_state(t, routine_dir) for t in named)
-    return all(is_process_path(t, routine_dir) for t in named)
+        return all(_bucket(t, routine_dir, run_ts) == PROCESS or _in_state(t, routine_dir)
+                   for t in named)
+    return all(_bucket(t, routine_dir, run_ts) == PROCESS for t in named)
 
 
-def classify(action: dict, obs: dict | None, routine_dir: str) -> str:
+def classify(action: dict, obs: dict | None, routine_dir: str, run_ts: str = "") -> str:
     """One landed action, with the observation it came back with: TASK, PROCESS or FRICTION.
 
     FRICTION first — a held action, a deferred finish and a refused or failed action are turns
     the harness took, whatever they were aimed at. `report` and `ask_user` are the TASK's: for
     some routines a report or a question IS the product, and a classifier cannot tell which.
+    `run_ts` names the run whose children's work under `runs/<run_ts>/sub/` is its task's.
     """
     kind = str(action.get("kind") or "")
     if obs is not None and (hold.is_hold(obs) or obs.get("rejected") or obs.get("error")):
@@ -237,10 +275,10 @@ def classify(action: dict, obs: dict | None, routine_dir: str) -> str:
         return PROCESS
     if kind in FILE_KINDS:
         targets = _file_targets(action)
-        process = bool(targets) and all(is_process_path(t, routine_dir) for t in targets)
+        process = bool(targets) and all(_bucket(t, routine_dir, run_ts) == PROCESS for t in targets)
         return PROCESS if process else TASK
     if kind in CALL_KINDS:
-        return PROCESS if _call_is_process(action, routine_dir) else TASK
+        return PROCESS if _call_is_process(action, routine_dir, run_ts) else TASK
     return TASK
 
 
@@ -250,19 +288,22 @@ def from_events(events: Iterable[dict], routine_dir: str | Path) -> dict | None:
     """
     root = str(routine_dir)
     counts = {TASK: 0, PROCESS: 0, FRICTION: 0}
+    run_ts = ""
     pending: dict | None = None
     for ev in events:
+        if ev.get("type") == "header" and ev.get("run_id"):
+            run_ts = str(ev["run_id"]).rpartition(":")[2]
         payload = ev.get("payload")
         if not isinstance(payload, dict):
             continue
         kind = ev.get("type")
         if kind == "assistant_action":
             if pending is not None:
-                counts[classify(pending, None, root)] += 1
+                counts[classify(pending, None, root, run_ts)] += 1
             pending = payload
         elif kind == "observation":
             if pending is not None:
-                counts[classify(pending, payload, root)] += 1
+                counts[classify(pending, payload, root, run_ts)] += 1
                 pending = None
             # a chain element the engine never ran is a turn's worth of writing lost
             not_run = payload.get("not_executed")
@@ -270,7 +311,7 @@ def from_events(events: Iterable[dict], routine_dir: str | Path) -> dict | None:
         elif kind == "error" and payload.get("where") == "schema":
             counts[FRICTION] += 1
     if pending is not None:
-        counts[classify(pending, None, root)] += 1
+        counts[classify(pending, None, root, run_ts)] += 1
     total = sum(counts.values())
     if not total:
         return None

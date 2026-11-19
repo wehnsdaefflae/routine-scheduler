@@ -642,9 +642,12 @@ again go unnoticed, so it is measured on every run and held as a fleet invariant
 deterministically from the action and the observation the transcript records for it — memory,
 rules, goals, jobs and the finish are process; a file action is process when every target is a
 process artefact (the recipe at any depth, `.memory/`, `inbox/`, `runs/`, the engine's own
-`state/` files, anything named ledger/backlog/journal/worklog/changelog/tracker/log); a call is
+`state/` files, anything whose name carries ledger/backlog/journal/worklog/changelog/tracker/log
+as a whole WORD — `mail-log.jsonl` is a record, a publisher called "journalhub" is not); a call is
 process only when everything it names is (or its program is a ledger tool), and a `shell` over
-nothing but the routine's own `state/` is the run hand-keeping its records; a held action, a
+nothing but the routine's own `state/` is the run hand-keeping its records. The CURRENT run's
+children's work — `runs/<its ts>/sub/…` and a hand-back in `artifacts/from-sub-…` — is the
+task's delegated product, whatever it is named; a held action, a
 deferred finish, an engine refusal, a failed util/script, a schema-rejected reply and every
 NOT EXECUTED chain element are friction. Product data written to `state/` stays the task's, and
 so do `report` and `ask_user`, which ARE the product for some routines. The run records
@@ -663,7 +666,10 @@ told each repaired routine to propose revisions for bookkeeping already gone —
 themselves, the classifier's medians put 11 of the 12 bookkeeping-dominated routines at 0.277 or
 above and all 8 healthy ones at 0.263 or below, and 0.27 is the middle of that gap (the module
 docstring carries the table, the one miss — self-audit, whose item ledger is named as nothing —
-and four rules measured and rejected). That miss is a limit of the method: bookkeeping kept on a
+and four rules measured and rejected; re-measured 2026-11-19 over the same runs after the
+whole-word and child-work rules, two figures moving by ≤0.003). A fifth rule is held back: reading
+the run's own spilled `.util_outputs/` as the purpose of the call that produced it drops two
+flagged routines to the highest healthy median, so it waits for a fresh hand calibration. That miss is a limit of the method: bookkeeping kept on a
 DOMAIN ledger — named for what it tracks, worked through the routine's own scripts, or filed as
 reports — is invisible to a conservative classifier, and routine-improver's outcome review (a
 routine whose outcome series stays flat while its runs finish `ok`) is the complementary net. The usage stream is the ONE source: a run whose row

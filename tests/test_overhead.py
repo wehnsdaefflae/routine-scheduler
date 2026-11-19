@@ -41,6 +41,13 @@ def _act(kind: str, **fields) -> dict:
     # outside the own dir only a file NAMED as the run's record is process
     (_act("edit_file", path="/srv/project/journal/WORKLOG.md"), PROCESS),
     (_act("edit_file", path="/srv/project/CHANGELOG.md"), TASK),
+    # a record is NAMED by a whole word, never a substring: "journalhub" is a publisher
+    (_act("write_file", path="state/draft-5484-journalhub-s1.txt"), TASK),
+    (_act("script", name="outbox", args=["draft", "state/draft-journalhub-s1.txt"]), TASK),
+    (_act("edit_file", path="/srv/project/src/rsched/runledger.py"), TASK),
+    (_act("read_file", path="state/reviewLedger.json"), PROCESS),
+    (_act("read_file", path="state/ledgers/2026.md"), PROCESS),
+    (_act("read_file", path="state/run.log"), PROCESS),
     (_act("read_file", path="/srv/project/src/app.py"), TASK),
     # calls, conservatively
     (_act("script", name="outcome", args=["--json"]), PROCESS),
@@ -99,6 +106,25 @@ def _events() -> list[dict]:
 def test_a_run_counts_schema_rejections_and_unexecuted_chain_elements_as_friction():
     got = overhead.from_events(_events(), ROOT)
     assert got == {"task": 3, "process": 2, "friction": 2, "process_share": round(4 / 7, 3)}
+
+
+def test_the_current_runs_children_work_is_its_task():
+    """A child's work product is the task's delegated work, whatever it is called — under this
+    run's own `runs/<ts>/sub/` or handed back into `artifacts/from-sub-…`; a PAST run's tree is
+    still the routine's history."""
+    def read(path):
+        return [{"type": "assistant_action", "payload": _act("read_file", path=path)},
+                {"type": "observation", "payload": {"kind": "read_file"}}]
+
+    events = [{"type": "header", "run_id": "r:20261117-102422"},
+              *read("runs/20261117-102422/sub/6/artifacts/coverage-page-08.txt"),
+              *read(f"{ROOT}/runs/20261117-102422/sub/1/transcript.jsonl"),
+              *read("artifacts/from-sub-7/ledger-review.md"),
+              *read("runs/20261110-092748/result.md")]
+    assert overhead.from_events(events, ROOT) == {
+        "task": 3, "process": 1, "friction": 0, "process_share": 0.25}
+    assert classify(_act("read_file", path="runs/20261117-102422/sub/6/x.txt"), None, ROOT) \
+        == PROCESS                                          # no run named: its history
 
 
 def test_a_run_with_no_landed_action_is_unknown_not_zero(tmp_path):
