@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.555.1] — 2026-11-19
+
+### Two blocked-work rows 0.555.0 should have cleared
+
+- **The marker grammar's own comment declared a marker.** 0.555.0's explanation of the wrapped
+  tombstone quoted it — marker, date and a line break ending on `#` — so `migration_markers.py`
+  itself read as declaring an 11-30 expiry, and the `migration_due_soon` row it was written to
+  clear came back. The comment no longer spells the date; a test holds the module to declaring
+  nothing.
+- **An overhead row on a revised recipe with no measured run is over.** 0.555.0 kept it standing
+  as "unknown", but the alarm itself would not file in that state; three routines revised that
+  morning (uncensored-model-radar, rules-review, library-sync) still stood. predatory-publisher-
+  tarpit stays: its current recipe reads 0.343 over three runs.
+
 ## [0.555.0] — 2026-11-19
 
 ### Blocked work says only what is blocked, and owed work reaches whoever owes it

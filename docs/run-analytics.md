@@ -945,7 +945,7 @@ so a condition that ENDED stood on the panel for the rest of its week: an overhe
 recipe already revised, a due-soon marker already deleted, an obligation already met. The same
 checker now asks each of them of the reader that decides it — `owed_watch.overdue` for
 `obligation_overdue`, the overhead reading under the CURRENT recipe for `process_overhead_high`
-(no reading yet under a revised recipe is unknown, so the row stands), `migration_markers` for
+(a revised recipe with no measured run has no reading — the alarm would not file, so the row is over), `migration_markers` for
 the two marker events — and a row known to be over is `resolved`: it leaves `standing_rows`
 and the panel's table, and the panel names it in one `N resolved since — …` line instead. The judgement is SERVED, exactly like `vocabulary`:
 one module decides it and the console renders what it was not compiled with, so adding an event

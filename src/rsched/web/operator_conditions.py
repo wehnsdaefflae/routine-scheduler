@@ -23,8 +23,9 @@ already met. Each is asked of the reader that decides it:
 - `obligation_overdue` — does that routine still hold an obligation past the overdue line
   (`daemon/owed_watch.overdue`, its own writer's judgement)?
 - `process_overhead_high` — does that routine's reading under its CURRENT recipe still say
-  `over` (`readmodels/overhead_reading`)? A revised recipe with no runs yet reads `None` —
-  unknown, so the row keeps standing until the new recipe has been measured.
+  `over` (`readmodels/overhead_reading`)? A revised recipe with no measured run has no reading,
+  and the alarm would not file on it either, so the row is over: the recipe it judged is gone,
+  and the new one is judged afresh (or by `persistent`) as its runs land.
 - `migration_due_soon` / `migration_expired` — does the policed tree still declare a marker in
   that state (`migration_markers`, the gate's own reader)? Its answer is kept for the day: it
   reads every source file, and the tree does not change under a running process.
@@ -103,7 +104,7 @@ def checker(state) -> Callable[[str, str], bool | None]:
             return bool(owed[0].get(subject))
         if event == "process_overhead_high":
             reading = overhead_reading.reading(home, subject) if subject else None
-            return None if reading is None else bool(reading["over"])
+            return bool(reading and reading["over"])
         if event in ("migration_due_soon", "migration_expired"):
             soon, gone = _markers(today)
             return soon if event == "migration_due_soon" else gone

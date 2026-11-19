@@ -99,11 +99,12 @@ def declares(text: str, at: int) -> bool:
     lead = text[line_start:at]
     if _PROSE_LEAD.search(lead):
         return False
-    # A WRAPPED sentence (2026-11-19): `cli_daemon.py`'s two tombstones read "…until its\n#
-    # MIGRATION(expires=2026-11-30) was honoured", so the marker opened its LINE while sitting
-    # mid-sentence, and the watch filed both as due-soon. When the lead is a bare comment
-    # opener, the sentence it continues is the previous comment line's — prose when that line
-    # ends on a word, exactly as `_PROSE_LEAD` reads a lead on the marker's own line.
+    # A WRAPPED sentence (2026-11-19): `cli_daemon.py`'s two tombstones wrapped "…until its" onto a
+    # line opening with the marker, so it opened its LINE while sitting mid-sentence, and the watch
+    # filed both as due-soon. (This comment once spelled that marker out with a date and was itself
+    # read as a declaration — prose about a marker never writes the date.) When the lead is a bare
+    # comment opener, the sentence it continues is the previous comment line's — prose when that
+    # line ends on a word, exactly as `_PROSE_LEAD` reads a lead on the marker's own line.
     if lead.strip() != "#" or line_start == 0:
         return True
     prev = text[text.rfind("\n", 0, line_start - 1) + 1:line_start - 1]

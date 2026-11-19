@@ -61,11 +61,24 @@ def test_an_obligation_met_since_resolves_its_row(tmp_path):
     assert payload["standing_rows"] == 1
 
 
-def test_overhead_with_no_reading_under_the_new_recipe_keeps_standing(tmp_path):
-    """A revised recipe has no runs yet: unknown, never a guess that it is fixed."""
+def test_overhead_with_no_reading_under_the_new_recipe_is_over(tmp_path):
+    """A revised recipe with no measured run: the alarm would not file on it, so the row the old
+    recipe earned is over (2026-11-19: three routines revised that morning still stood)."""
     server = tmp_server(tmp_path, create=False)
     (server.routines_home / "busy").mkdir(parents=True)
     _write(server, [_row("process_overhead_high", "busy")])
     payload = annotate(blocked_fleet(server), still_holds=checker(SimpleNamespace(server=server)))
-    assert not payload["rows"][0].get("resolved")
-    assert payload["standing_rows"] == 1
+    assert payload["rows"][0]["resolved"] is True
+    assert payload["standing_rows"] == 0
+
+
+def test_the_marker_grammar_module_declares_no_marker_of_its_own():
+    """0.555.0 shipped a comment in migration_markers.py quoting a tombstone, marker and date
+    included, wrapped so the grammar read it as a LIVE declaration: the due-soon row it existed
+    to clear came back from the module that clears it."""
+    from pathlib import Path
+
+    from rsched import migration_markers
+
+    own = Path(migration_markers.__file__)
+    assert migration_markers.declarations([own]) == []
