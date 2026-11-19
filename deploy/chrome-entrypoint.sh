@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Bring up the virtual display, the hands-on VNC path, and Chrome — in that order, because each
-# needs the one before it. Chrome runs in the FOREGROUND as PID 1's child: when the browser dies
-# the container exits and compose's restart policy brings it back with the profile intact.
+# needs the one before it. All five run in the BACKGROUND and this script supervises them with
+# `wait -n`: the first one to exit ends the container, and compose's restart policy brings the
+# whole sidecar back with the profile intact. Supervising only Chrome (what `exec` did) left any
+# other process free to die into a container that is up and broken (SD2.5).
 #
 # Runs as root only long enough to make the bind-mounted profile writable (Docker creates a
 # missing bind root-owned), then drops to `mark` — the same dance the engine entrypoint does.
@@ -45,6 +47,7 @@ rm -f "$PROFILE"/Singleton* 2>/dev/null || true
 
 log "starting Xvfb on $DISPLAY_NUM ($GEOMETRY)"
 Xvfb "$DISPLAY_NUM" -screen 0 "$GEOMETRY" -nolisten tcp &
+XVFB_PID=$!
 for _ in $(seq 1 50); do
     xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1 && break
     sleep 0.2
@@ -55,9 +58,11 @@ done
 # never an open VNC port on the LAN.
 log "starting x11vnc (loopback :5900)"
 x11vnc -display "$DISPLAY_NUM" -rfbport 5900 -localhost -forever -shared -nopw -quiet &
+X11VNC_PID=$!
 
 log "starting noVNC on 127.0.0.1:$VNC_INTERNAL_PORT (fronted by the auth proxy)"
 websockify --web=/usr/share/novnc "127.0.0.1:$VNC_INTERNAL_PORT" 127.0.0.1:5900 &
+WEBSOCKIFY_PID=$!
 
 # Chrome refuses to bind DevTools anywhere but loopback, so this is how another container reaches
 # it — now through the auth proxy rather than a bare socat forward. The proxy keeps the property
@@ -68,6 +73,7 @@ log "fronting CDP :$CDP_PORT -> 127.0.0.1:$CDP_INTERNAL_PORT and noVNC :$VNC_POR
 python3 /usr/local/bin/browser-auth-proxy.py \
     --map "0.0.0.0:${CDP_PORT}=127.0.0.1:${CDP_INTERNAL_PORT}:cdp" \
     --map "0.0.0.0:${VNC_PORT}=127.0.0.1:${VNC_INTERNAL_PORT}:novnc" &
+PROXY_PID=$!
 
 # --password-store=basic: there is no keyring in a container. Left to guess, Chrome picks a
 # backend per desktop-environment heuristics and can wrap the cookie key in something that is
@@ -78,7 +84,7 @@ python3 /usr/local/bin/browser-auth-proxy.py \
 # dbus-launch gives Chrome the session bus it expects; without one every start buries the real
 # log lines under a screenful of "Failed to connect to the bus".
 log "starting Chrome (headful under Xvfb, DevTools on 127.0.0.1:$CDP_INTERNAL_PORT)"
-exec dbus-launch --exit-with-session google-chrome-stable \
+dbus-launch --exit-with-session google-chrome-stable \
     --user-data-dir="$PROFILE" \
     --remote-debugging-port="$CDP_INTERNAL_PORT" \
     --remote-allow-origins=* \
@@ -89,4 +95,30 @@ exec dbus-launch --exit-with-session google-chrome-stable \
     --disable-dev-shm-usage \
     --no-first-run \
     --no-default-browser-check \
-    "$@"
+    "$@" &
+CHROME_PID=$!
+
+# FIVE processes, one container, and the container must die whole or not at all. Chrome used to
+# run in the FOREGROUND under `exec`, so compose's `restart:` only ever saw the BROWSER die; any
+# of the others dying left a container that is up and broken — Xvfb gone means Chrome paints into
+# nothing, websockify gone means the noVNC page never connects, the auth proxy gone means every
+# CDP client is refused — and nothing exited, so nothing restarted. The symptom that reaches a
+# person is "the browser view is black" with a healthy-looking container behind it (SD2.5).
+#
+# So wait for the FIRST of them to exit, say which it was, and leave. This script is PID 1 (the
+# root->mark `exec gosu` above re-execs it), so exiting here stops the container and `restart:`
+# brings the whole sidecar back together, profile intact. `wait -n` returns the child's own
+# status, which `set -e` would otherwise make fatal before anything is logged.
+status=0
+died=""
+wait -n -p died || status=$?
+case "${died:-}" in
+    "$CHROME_PID")     what="Chrome" ;;
+    "$XVFB_PID")       what="Xvfb (the virtual display)" ;;
+    "$X11VNC_PID")     what="x11vnc" ;;
+    "$WEBSOCKIFY_PID") what="websockify (the noVNC bridge)" ;;
+    "$PROXY_PID")      what="the CDP/noVNC auth proxy" ;;
+    *)                 what="an unnamed child (pid ${died:-unknown})" ;;
+esac
+log "$what exited with status $status — ending the container so restart: brings the whole sidecar back"
+exit "$status"

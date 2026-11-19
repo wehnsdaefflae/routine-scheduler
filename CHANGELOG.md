@@ -15,6 +15,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.557.0] — 2026-11-19
+
+### Fixed
+- **The browser sidecar dies whole or not at all (D253, SD2.5).** `deploy/chrome-entrypoint.sh`
+  starts FIVE processes — Xvfb, x11vnc, websockify, the CDP/noVNC auth proxy and Chrome — and
+  supervised ONE: Chrome was `exec`'d as PID 1, so compose's `restart:` only ever saw the BROWSER
+  die. Any of the other four dying left a container that is up and broken — Xvfb gone means
+  Chrome paints into nothing, websockify gone means the noVNC page never connects, the proxy gone
+  means every CDP client is refused — and nothing exited, so nothing restarted. What reached a
+  person was "the browser view is black" with a healthy-looking container behind it. All five are
+  now backgrounded with their pids captured, and the script waits for the first to exit
+  (`wait -n -p`), logs WHICH one it was and exits with its status; `set -e` would otherwise make
+  that status fatal before anything is logged.
+- **A fresh install synced a venv the service never opens (D253, SD2.6).** The systemd unit keeps
+  the daemon's environment outside the checkout (`UV_PROJECT_ENVIRONMENT=%h/.local/share/rsched-venv`),
+  while `deploy/install.sh` ran a bare `uv sync` — populating `<repo>/.venv` and then printing
+  "venv synced". A first install reported success and left the service to build its own
+  environment on first start; a sync after a dependency change updated the wrong one. The
+  installer now derives that path FROM the unit (so the two cannot drift) and refuses outright if
+  the unit stops setting it.
+
+### Changed
+- **The claude CLI is pinned like every other dependency (D253).** `npm install -g
+  @anthropic-ai/claude-code` took whatever was published that day, so two rebuilds of one commit
+  could ship different CLIs with nothing in the repository to say why — and it is a native binary
+  placed by a postinstall, the part most likely to change under us. Pinned via
+  `ARG CLAUDE_CODE_VERSION`, at the version the running container reports (2.1.287), bumped
+  deliberately like the uv and image digests above it.
+- `docs/designs.md` loses the *"Deploy leftovers (SD2.5-6) and a pinned claude CLI"* entry: every
+  bullet is now in the tree. Two of them were already satisfied — `setup-remote-agent-user.sh`
+  has carried `usermod -aG video,render` for some time, and `backup.sh` identifies the share with
+  a STRONGER predicate than the `findmnt -T` the entry asked for (`stat -c %m` resolves the mount
+  a path actually lives on at any depth, plus a device comparison against `$HOME`, which the
+  script's own comment explains catches the unplugged-disk case a literal `mountpoint` misses).
+
+### Added
+- `tests/test_chrome_sidecar.py` — the sidecar's entrypoint RUN, not read, against stub binaries:
+  each of three processes dying ends the script within 20 s with that process's own status and
+  names it in the log, nothing dying leaves it up, and a missing `BROWSER_CDP_TOKEN` still
+  refuses to start (EX_CONFIG). A supervisor loop can satisfy every text assertion and still
+  abort on `set -u` or wait on the wrong thing, which is why control flow is executed here while
+  `tests/test_deploy_image.py` keeps holding the deploy files' pins by reading them.
+
 ## [0.556.1] — 2026-11-19
 
 ### Changed

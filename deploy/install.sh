@@ -29,8 +29,22 @@ if [ ! -x "${UV}" ]; then
   echo "  ln -s \"\$(command -v uv)\" ${UV}" >&2
   exit 1
 fi
-(cd "${REPO}" && "${UV}" sync --quiet)
-echo "venv synced"
+# The venv the SERVICE runs from, taken from the unit itself rather than written twice. The unit
+# sets `UV_PROJECT_ENVIRONMENT` to keep the daemon's environment OUTSIDE the checkout, so a bare
+# `uv sync` here populated `<repo>/.venv` — a venv the service never opens — and then printed
+# "venv synced". A first install therefore reported success and left the service to build its own
+# environment on first start, and a `uv sync` after a dependency change updated the wrong one
+# (SD2.6).
+UNIT_SRC="${REPO}/deploy/routine-scheduler.service"
+SERVICE_VENV="$(sed -n 's/^Environment=UV_PROJECT_ENVIRONMENT=//p' "${UNIT_SRC}" \
+                | tail -1 | sed "s|^%h|${HOME}|")"
+if [ -z "${SERVICE_VENV}" ]; then
+  echo "${UNIT_SRC} no longer sets UV_PROJECT_ENVIRONMENT: this script would sync a venv the" >&2
+  echo "service does not use. Set it there, or change this script deliberately." >&2
+  exit 1
+fi
+(cd "${REPO}" && UV_PROJECT_ENVIRONMENT="${SERVICE_VENV}" "${UV}" sync --quiet)
+echo "venv synced at ${SERVICE_VENV} (the one the service runs)"
 
 # The three data homes (server config: routines_home / conversations_home / background_home).
 # Conversations and background tasks create their own home lazily on first use, but an install

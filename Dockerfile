@@ -29,6 +29,11 @@ FROM ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1
 
 FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e
 
+# The claude CLI's version, pinned here beside the image pins and bumped the same deliberate way
+# (the RUN that installs it says why). The value is what the running container reports today, so
+# a rebuild reproduces what is deployed rather than whatever npm published since.
+ARG CLAUDE_CODE_VERSION=2.1.287
+
 # Every RUN below is bash with pipefail (hadolint DL4006). /bin/sh judges a pipeline by its LAST
 # command alone: the NodeSource `curl … | bash -` this build used to run exited 0 on a FAILED
 # download, because bash runs an empty script without complaint, and the failure surfaced one
@@ -115,7 +120,13 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     # The postinstall is ALLOWED by name: npm 11 (Node 24's) warns that install scripts are "not
     # yet covered by allowScripts", the announcement of a default that blocks them — and that
     # script is the only thing that turns the package into a working CLI.
-    && npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code \
+    # PINNED, for the same reason every FROM above is: a floating `npm install -g <pkg>` takes
+    # whatever was published that day, so two rebuilds of one commit can ship different CLIs with
+    # nothing in the repository to say why — and this one is a native binary placed by a
+    # postinstall, i.e. the part most likely to change under us. Bump it deliberately, like uv:
+    # read what the running container has (`claude --version`) before choosing the next value.
+    && npm install -g --allow-scripts=@anthropic-ai/claude-code \
+       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && npm cache clean --force \
     # The postinstall can fail with exit 0 and leave the package's stub in place (a platform
     # package that did not download, say). Running the CLI is what turns that into a failed

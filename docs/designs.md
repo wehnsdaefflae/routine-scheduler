@@ -126,20 +126,6 @@ the file may lag a finish by up to 60 s.
 
 ---
 
-## Deploy leftovers (SD2.5–6) and a pinned claude CLI
-
-- `deploy/` chrome entrypoint: supervise Xvfb and Chrome with `wait -n`, so one dying ends the
-  container (and `restart:` brings both back) instead of leaving half a sidecar.
-- `deploy/setup-remote-agent-user`: add the `render` group for GPU access.
-- `deploy/install.sh`: set `UV_PROJECT_ENVIRONMENT` explicitly (verify what the host install expects).
-- `deploy/backup.sh`: identify the share with `findmnt -T` beside the device check.
-- `Dockerfile`: pin the `@anthropic-ai/claude-code` version (hadolint DL3016), bumped deliberately
-  like uv — today it is whatever is newest at build time.
-
-**First increment.** The chrome entrypoint's supervision.
-
----
-
 ## After 0.372.2 reaches the instance (self-audit housekeeping)
 
 Self-audit's own items for the first run after the deploy that brings 0.372.2 — none needs the
