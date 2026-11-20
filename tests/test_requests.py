@@ -620,8 +620,8 @@ def test_run_context_effective_roots_carry_fs_grants(tmp_path):
                      run_ts=TS, run_dir=tmp_path / "r" / "runs" / TS,
                      transcript=Transcript(tmp_path / "t.jsonl"),
                      budgets=Budgets(max_turns=1, max_wall_clock_min=1,
-                                     max_total_tokens=1, max_subruns=1,
-                                     max_subrun_depth=1, ask_timeout_min=1))
+                                     max_total_tokens=1, max_child_runs=1,
+                                     max_child_depth=1, ask_timeout_min=1))
     ctx.granted_now.update({f"fs-read:{tmp_path / 'granted-read'}",
                             f"fs-write:{tmp_path / 'granted-write'}",
                             "util:discord"})

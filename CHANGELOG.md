@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.567.0] — 2026-11-20
+
+### Changed
+- **The child-run budget keys follow the kind: `max_subruns` / `max_subrun_depth` become
+  `max_child_runs` / `max_child_depth`** (D241 increment 2). Renamed, not aliased — an alias is
+  how two names for one thing survive indefinitely, which is the subject of the whole decision.
+  `DEFAULT_BUDGETS`, the `Budgets` dataclass, the harness contract's own budget sentence, the
+  ladder's depth check, the conversation config, the routine and conversation API surfaces, the
+  four console surfaces that render a budget field, and all 14 settings patterns move together.
+- `src/rsched/migrate_child_budgets.py` (MIGRATION, expires 2026-12-31) renames both keys in
+  every routine's, conversation's and background task's own `routine.yaml`. **Not optional, and
+  not tidiness:** `config/routine_scrub` DROPS a budget key it does not know, with a problem
+  line and no error — so a config left saying `max_subruns: 2` keeps validating while its run
+  silently takes the DEFAULT of 8. A ceiling the operator deliberately lowered would quadruple
+  with nothing but a loader warning to show for it, which is worse than a failure because
+  nothing surfaces it. The rewrite is TEXTUAL on a `key:` line, deliberately: a routine.yaml is
+  the operator's own document and a YAML load/dump round trip would discard every comment in it.
+  A mention of the old name inside a comment is therefore left readable, and the migration
+  record names every file it changed.
+  It does NOT touch a routine's `state/`, its ledger or any transcript — those are the RECORD,
+  and a run that really was capped at `max_subruns: 2` was.
+
 ## [0.566.0] — 2026-11-20
 
 ### Changed

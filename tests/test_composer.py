@@ -811,7 +811,7 @@ def test_harness_contract_renders_unlimited_token_budget(make_routine, tmp_path)
 
 
 def test_the_subrun_allowance_is_what_this_node_has_left(make_routine, tmp_path):
-    """D147-A: `max_subruns` is a CUMULATIVE LIFETIME total for the whole run TREE, so the
+    """D147-A: `max_child_runs` is a CUMULATIVE LIFETIME total for the whole run TREE, so the
     prompt must render what THIS node has left, not the tree total.
 
     `run_context.sub_counter` is one shared list across the tree, `childrun` increments it and
@@ -822,7 +822,7 @@ def test_the_subrun_allowance_is_what_this_node_has_left(make_routine, tmp_path)
     had been promised.
     """
     ctx = _ctx(make_routine, tmp_path, slug="allowance")
-    ctx.budgets.max_subruns = 8
+    ctx.budgets.max_child_runs = 8
 
     fresh = harness_contract(ctx)
     assert "at most 8 child runs" in fresh, (

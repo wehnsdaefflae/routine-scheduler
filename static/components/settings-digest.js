@@ -9,8 +9,8 @@ const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const BUDGET_WORDS = {
   max_turns: "turns", max_total_turns: "turns overall", max_wall_clock_min: "min",
-  max_total_tokens: "tokens", max_cost: "$", max_subruns: "children",
-  max_subrun_depth: "depth", ask_timeout_min: "min per ask",
+  max_total_tokens: "tokens", max_cost: "$", max_child_runs: "children",
+  max_child_depth: "depth", ask_timeout_min: "min per ask",
 };
 
 const JUDGE_WORDS = { run: "the run proves it", you: "you decide", date: "on its date" };

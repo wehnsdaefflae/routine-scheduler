@@ -86,7 +86,7 @@ def test_the_conversation_detail_serves_the_ladder_the_way_the_routine_page_does
     assert detail["ladder_turn_interval"] >= 1
     assert "oversight_turns" in detail           # null means DERIVED, not unset
     assert detail["oversight_turns_derived"] >= 1
-    assert "max_subrun_depth" in detail          # the ceiling the switch warns against
+    assert "max_child_depth" in detail          # the ceiling the switch warns against
 
 
 def test_the_ladder_is_patchable_and_lands_where_the_engine_reads_it(conv):

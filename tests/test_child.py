@@ -129,7 +129,7 @@ def test_one_finished_headline_for_every_mode():
 
 
 def test_the_cap_refusal_says_the_budget_is_shared_by_the_whole_tree(make_routine, tmp_path):
-    """D147-A: `max_subruns` is one cumulative total for the run TREE, and the refusal has to
+    """D147-A: `max_child_runs` is one cumulative total for the run TREE, and the refusal has to
     say so.
 
     A child that has started nothing, refused at its own first spawn, reads "child run budget
@@ -138,7 +138,7 @@ def test_the_cap_refusal_says_the_budget_is_shared_by_the_whole_tree(make_routin
     children numbered 5, 7 and 8, all refused at their first spawn, all finishing PARTIAL.
     """
     ctx = _ctx(make_routine, "cap-refusal")
-    ctx.budgets.max_subruns = 8
+    ctx.budgets.max_child_runs = 8
     ctx.sub_counter[0] = 8
 
     mgr = subruns.SubrunManager(SimpleNamespace(ctx=ctx))
@@ -190,12 +190,12 @@ def test_a_kill_that_has_not_landed_does_not_say_terminated():
 
 
 def test_two_siblings_cannot_both_take_the_last_child(make_routine, monkeypatch):
-    """`max_subruns` is ONE allowance for the whole tree, and parallel children spend it from
+    """`max_child_runs` is ONE allowance for the whole tree, and parallel children spend it from
     their own threads. It used to be read outside the lock that guards the shared counter, so
     two siblings that both read "one left" both took it. Forced here: both siblings are held
     together between judging their call and claiming a child."""
     ctx = _ctx(make_routine, "lastchild")
-    ctx.budgets.max_subruns = 2
+    ctx.budgets.max_child_runs = 2
     ctx.sub_counter[0] = 1                       # one child left in the tree's allowance
     together = threading.Barrier(2, timeout=5)
 

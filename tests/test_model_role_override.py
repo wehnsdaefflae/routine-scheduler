@@ -128,7 +128,7 @@ def test_llm_explicit_uncensored_is_not_re_referred():
 
 def _child_ctx(registry):
     return SimpleNamespace(sub_counter=[0], depth=0,
-                           budgets=SimpleNamespace(max_subruns=5, max_subrun_depth=2),
+                           budgets=SimpleNamespace(max_child_runs=5, max_child_depth=2),
                            registry=registry, routine=SimpleNamespace(models={}, efforts={}),
                            server=_server())
 

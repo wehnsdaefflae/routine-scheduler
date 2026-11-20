@@ -251,7 +251,7 @@ def routine_detail(request: Request, slug: str) -> dict:
         "oversight_turns": info.cfg.tuning.get("oversight_turns"),
         "oversight_turns_derived": oversight_turns_for(
             int(info.cfg.tuning.get("ladder_turn_interval") or DEFAULT_TURN_INTERVAL)),
-        "max_subrun_depth": info.cfg.budgets.get("max_subrun_depth"),
+        "max_child_depth": info.cfg.budgets.get("max_child_depth"),
         # The general rules binding this routine — routine.yaml's `rules:` IS the state
         # (see rules.py); the picker's options come from GET /api/library (`rules`).
         "rules": list(info.cfg.rules),

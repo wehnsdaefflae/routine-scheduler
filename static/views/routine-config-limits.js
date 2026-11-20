@@ -80,7 +80,7 @@ export function limitsGroup(ctx) {
   // Deliberation, the other tuning key.
   const ladder = fieldBlock(form, "ladder", (value, set) =>
     ladderSwitch(value || d.ladder, { onCommit: set,
-      depthCeiling: d.max_subrun_depth }).node);
+      depthCeiling: d.max_child_depth }).node);
 
   return settingsGroup({
     form, title: "Limits & reach", hint: "per-run ceilings · filesystem reach",

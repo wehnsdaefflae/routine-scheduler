@@ -139,7 +139,7 @@ def apply_ladder(raw: dict, updates: dict) -> list[str]:
     if isinstance(height, bool) or not isinstance(height, int) or height < 1:
         raise HTTPException(400, f"ladder.rung_height: expected a whole number of rungs of at "
                                  f"least 1 (got {height!r}) — it is also floored by "
-                                 "budgets.max_subrun_depth at run time")
+                                 "budgets.max_child_depth at run time")
     raw["ladder"] = merged
     return repaired
 

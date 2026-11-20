@@ -48,7 +48,7 @@ CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS]
 # to, and the 40-turn/60-minute one still cut long jobs off mid-step. What bounds a reply is
 # what the person asked for — the conversation's GOALS (engine/goals.py): a reply that
 # declares itself final must meet every open one, and one that is not final hands back with
-# them open. A person can still set any ceiling per conversation; max_subruns and the subrun
+# them open. A person can still set any ceiling per conversation; max_child_runs and the subrun
 # depth stay structural.
 def starting_capabilities(active: list[str], lib: dict[str, dict]) -> dict:
     """A NEW conversation's capabilities: the active docs' raise-then-floor, with the reminder

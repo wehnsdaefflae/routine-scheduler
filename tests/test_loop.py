@@ -1353,7 +1353,7 @@ def test_spawn_caps(make_routine, scripted):
         (PARENT, spawn("CHILD-2: second.")),
         ("CHILD-2: second.", finish(summary="child2 done")),
         (PARENT, wait_(all_=True)),
-        (PARENT, spawn("CHILD-3: third.")),   # total cap (max_subruns 2) → rejected
+        (PARENT, spawn("CHILD-3: third.")),   # total cap (max_child_runs 2) → rejected
         (PARENT, finish(summary="parent done")),
     ], slug="capped")
     assert status == "ok"
@@ -2228,7 +2228,7 @@ def test_unlimited_token_budget_never_trips():
     ctx = RunContext.__new__(RunContext)   # only budget fields matter here
     ctx._budget_warned = set()             # …including which warning lines were said
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=-1,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5)
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5)
     ctx.usage = {"in": 10_000_000, "out": 5_000_000}
     ctx.turn = 1
     ctx.budget_base_turn = 0
@@ -2241,7 +2241,7 @@ def test_unlimited_token_budget_never_trips():
     assert child.max_total_tokens == -1
     # a finite budget still behaves exactly as before
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=1000,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5)
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5)
     assert "token budget exhausted" in ctx.budget_spent()["message"]
     assert ctx.tokens_remaining() == 0
 
@@ -2258,7 +2258,7 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
     ctx = RunContext.__new__(RunContext)
     ctx._budget_warned = set()
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=-1, max_total_tokens=-1,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5, max_cost=-1)
     ctx.usage = {"in": 0, "out": 0, "cost": 999.0}
     ctx.turn = 1
     ctx.budget_base_turn = 0
@@ -2273,12 +2273,12 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
 
     # a finite wall-clock still trips once exceeded
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=60, max_total_tokens=-1,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5, max_cost=-1)
     assert "wall-clock budget exhausted" in ctx.budget_spent()["message"]
 
     # a finite cost cap still trips once dollars reach it (F758: `cost` is the fallback leg of
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=-1, max_total_tokens=-1,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=5)
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5, max_cost=5)
     ctx._started_mono = _t.monotonic()             # reset elapsed so only cost can trip
     assert "cost budget exhausted" in ctx.budget_spent()["message"]
     ctx.usage = {"in": 0, "out": 0, "cost": 4.5}   # endpoints/usage.dollars_spent; past 85%
@@ -2302,7 +2302,7 @@ def test_conversation_total_turn_budget_caps_the_whole_conversation():
 
     # -1 = unlimited: never trips however many total turns
     ctx.budgets = Budgets(max_turns=10, max_wall_clock_min=-1, max_total_tokens=-1,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5,
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5,
                           max_total_turns=-1)
     ctx.turn, ctx.budget_base_turn = 500, 498
     assert ctx.budget_spent() is None
@@ -2310,7 +2310,7 @@ def test_conversation_total_turn_budget_caps_the_whole_conversation():
     # finite cap: this reply's window is small (2 turns < max_turns=10) but the conversation
     # has reached its total → the CUMULATIVE cap trips, not the per-reply window one
     ctx.budgets = Budgets(max_turns=10, max_wall_clock_min=-1, max_total_tokens=-1,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5,
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5,
                           max_total_turns=40)
     ctx.turn, ctx.budget_base_turn = 40, 38
     v = ctx.budget_spent()
@@ -2338,7 +2338,7 @@ def test_unlimited_turn_budget_honors_minus_one():
     ctx = RunContext.__new__(RunContext)
     ctx._budget_warned = set()
     ctx.budgets = Budgets(max_turns=-1, max_wall_clock_min=-1, max_total_tokens=-1,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5, max_cost=-1)
     ctx.usage = {"in": 0, "out": 0, "cost": 0.0}
     ctx.turn = 10_000
     ctx.budget_base_turn = 0
@@ -2350,7 +2350,7 @@ def test_unlimited_turn_budget_honors_minus_one():
 
     # a finite turn budget still trips once reached
     ctx.budgets = Budgets(max_turns=10, max_wall_clock_min=-1, max_total_tokens=-1,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5, max_cost=-1)
     ctx.turn = 10
     assert "turn budget exhausted" in ctx.budget_spent()["message"]
 
@@ -2364,7 +2364,7 @@ def test_usage_accounting_cache_keys_and_resume_base():
     ctx = RunContext.__new__(RunContext)
     ctx._budget_warned = set()
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=1000,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5)
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5)
     ctx.usage = {"in": 0, "out": 0}
     ctx.usage_base = {}
     ctx.turn = 1
@@ -2778,7 +2778,7 @@ def test_parallel_cap_guard_counts_only_running_children():
 
     parent = SimpleNamespace(ctx=SimpleNamespace(
         sub_counter=[MAX_PARALLEL], depth=0,
-        budgets=SimpleNamespace(max_subruns=10, max_subrun_depth=2)))
+        budgets=SimpleNamespace(max_child_runs=10, max_child_depth=2)))
     mgr = SubrunManager(parent)
     mgr.subruns = {i: SimpleNamespace(status="running") for i in range(1, MAX_PARALLEL + 1)}
     reason = mgr._cap_reason(noun="child-task")
@@ -2818,7 +2818,7 @@ def test_fifth_concurrent_spawn_rejected_at_the_parallel_cap(make_routine, scrip
         (PARENT, finish(summary="cap respected")),
     ]
     _d, ep, status, _run_dir, events = _run(make_routine, scripted, replies, slug="parcap",
-                                          budgets={"max_subruns": 8, "max_turns": 20})
+                                          budgets={"max_child_runs": 8, "max_turns": 20})
     assert status == "ok"
     rejected = [e["payload"] for e in events if e["type"] == "observation"
                 and e["payload"].get("kind") == "child" and e["payload"].get("rejected")]

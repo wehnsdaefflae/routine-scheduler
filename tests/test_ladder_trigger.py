@@ -48,7 +48,7 @@ class _Routine:
 
 
 class _Budgets:
-    max_subrun_depth = 2
+    max_child_depth = 2
 
 
 class _Server:

@@ -8,7 +8,7 @@ turn boundary. Children never outlive the parent: its finish/abort kills them.
 Threading model: each child EngineLoop runs in its own thread and writes ONLY its own transcript
 under sub/<n>/; all parent-transcript events are emitted from the parent thread (single writer
 per file). Children carry a per-loop abort Event so one can be killed without touching siblings.
-The one state the whole tree shares — the `max_subruns` allowance and the child numbers — is
+The one state the whole tree shares — the `max_child_runs` allowance and the child numbers — is
 decided under the tree's one lock, in one step (`_admit`).
 """
 
@@ -66,19 +66,19 @@ class SubrunManager:
         (parallel and sequential children alike); the parallel cap bounds concurrency.
         """
         ctx = self.parent.ctx
-        if ctx.sub_counter[0] >= ctx.budgets.max_subruns:
+        if ctx.sub_counter[0] >= ctx.budgets.max_child_runs:
             # Say that the budget is SHARED (D147-A). It is one cumulative lifetime total for
             # the whole tree — `sub_counter` is shared and never decremented — so a child
             # refused at its own FIRST spawn reads a ceiling its siblings spent. Without this,
             # the refusal is indistinguishable from a fault in the child's own call: the
             # specimen (R1870/F549) is three children numbered 5, 7 and 8, every one refused
             # at its first attempt and every one finishing partial.
-            return (f"{noun} budget exhausted — all {ctx.budgets.max_subruns} are spent. That "
+            return (f"{noun} budget exhausted — all {ctx.budgets.max_child_runs} are spent. That "
                     f"budget is shared across this run tree (every node's children count "
                     f"against one total, and it never refills), so this is not a fault in your "
                     f"call: do the work here instead of decomposing it")
-        if ctx.depth + 1 > ctx.budgets.max_subrun_depth:
-            return f"max {noun} depth ({ctx.budgets.max_subrun_depth}) reached"
+        if ctx.depth + 1 > ctx.budgets.max_child_depth:
+            return f"max {noun} depth ({ctx.budgets.max_child_depth}) reached"
         if (running := self._running()) >= MAX_PARALLEL:
             return (f"{running} child-tasks already running (parallel cap {MAX_PARALLEL}) — "
                     "wait for or kill one first")

@@ -763,7 +763,7 @@ and the capabilities digest's catalog listing):
   `enabled` (default **false**, so no live routine is supervised until someone opts it in) and
   `rung_height` (default 3 — the ladder's HEIGHT IN RUNGS, i.e. the recursion limit; a SEMANTIC
   ceiling: by the third rung the distinct questions are exhausted, and it is additionally floored
-  by `budgets.max_subrun_depth`). It is config and not
+  by `budgets.max_child_depth`). It is config and not
   tuning because authority over being watched is the user's, not a meta-routine's; every
   unreadable value degrades toward OFF, since `true` is the field's only dangerous value.
   **Where a rung is VISIBLE**: four transcript event types (`oversight_dispatch`,
@@ -775,7 +775,7 @@ and the capabilities digest's catalog listing):
   a section added only for a run that HAS a rung.
   **Where a rung is SWITCHED ON**: the routine page, in the two groups its two authority classes
   belong to — `ladder` under **Limits & reach → Oversight** (config, so it saves through the
-  page's one accept bar, and the section names `budgets.max_subrun_depth` when that already caps
+  page's one accept bar, and the section names `budgets.max_child_depth` when that already caps
   the depth being chosen), and the interval knobs under **Models → Rung intervals** beside
   Deliberation, the other tuning key (`components/ladder-settings.js`). **A CONVERSATION switches
   it on from its capabilities panel** (D216 part d), through `ladderPanel` — the same two controls
@@ -1057,7 +1057,7 @@ and the capabilities digest's catalog listing):
   model): a resume marks any still-running child aborted and notes it (`history.orphaned_children`),
   and a subtask does NOT survive a conversation reply-finish — a job that must outlive a reply is
   the separate **`detach`** capability below, not a subtask.
-  Decomposition is recursive (a child hits its own decompose gate; depth ≤ `max_subrun_depth`) and
+  Decomposition is recursive (a child hits its own decompose gate; depth ≤ `max_child_depth`) and
   the `general-task` seed workflow carries its gate as `separable(work)` — true when the work
   splits into independent chunks whose own context would crowd out the rest of the run, which
   routes it to a `spawn` per chunk, and false keeps it inline (ordered steps that each depend on

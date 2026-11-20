@@ -49,7 +49,7 @@ class _Loop:
         self.ctx = SimpleNamespace(
             turn=turn, last_rung_turn=last_rung_turn, depth=depth,
             escalation_requested=requested, outcome_claimed_met=claimed,
-            budgets=SimpleNamespace(max_subrun_depth=2))
+            budgets=SimpleNamespace(max_child_depth=2))
 
 
 def _with_repeats(loop: _Loop, repeats: list) -> _Loop:

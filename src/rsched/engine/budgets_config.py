@@ -47,8 +47,8 @@ class Budgets:
     max_turns: int
     max_wall_clock_min: int   # -1 = unlimited: lifts the wall-clock ceiling (turns still bound)
     max_total_tokens: int     # -1 = unlimited (the default): turns + wall clock bound the run
-    max_subruns: int
-    max_subrun_depth: int
+    max_child_runs: int
+    max_child_depth: int
     ask_timeout_min: int
     max_cost: int = -1        # -1 = unlimited: whole-$ ceiling on NOTIONAL spend (F758) —
                               # endpoints/usage.dollars_spent, which is the billed figure
@@ -76,7 +76,7 @@ class Budgets:
         """This run's stop conditions as the unified primitive (engine/budget.py). The ONE
         place the run/window/subtask/subrun checks all share — turns, the conversation-life
         cap, wall clock, tokens, cost — in the order they are checked. The structural knobs
-        (max_subruns/max_subrun_depth/ask_timeout_min) are not stop-over-time budgets and stay
+        (max_child_runs/max_child_depth/ask_timeout_min) are not stop-over-time budgets and stay
         plain fields.
         """
         return BudgetLedger([

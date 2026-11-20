@@ -153,6 +153,12 @@ def cmd_daemon(_args) -> int:
     # the schema refuses. The engine's own text ships with the release; the instance's does not
     from .migrate_child_kind import run_migration as carry_child_kind
     carry_child_kind(server)
+    # MIGRATION(expires=2026-12-31): D241 increment 2 renames the child-run budget keys, and an
+    # unmigrated `max_subruns:` does not fail — `config/routine_scrub` DROPS an unknown budget
+    # key with a problem line, so a ceiling the operator lowered would silently return to the
+    # default of 8. Renamed in every routine's and conversation's own config, once
+    from .migrate_child_budgets import run_migration as carry_child_budgets
+    carry_child_budgets(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

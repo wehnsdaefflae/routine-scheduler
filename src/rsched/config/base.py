@@ -37,8 +37,8 @@ DEFAULT_BUDGETS = {
     # cap therefore bounds list-price dollars, not an invoice; -1 = no cap.
     "max_total_tokens": -1,
     "max_cost": -1,
-    "max_subruns": 8,
-    "max_subrun_depth": 2,
+    "max_child_runs": 8,
+    "max_child_depth": 2,
     # 480 (8h) deployment norm: a 5-minute default seeded a blocking-ask timeout trap into
     # every new routine (recurred on scheduler-improvement-research + global-utils-review,
     # each hand-fixed). Raised deployment-wide per config-optimizer q-20260717-191914-24.

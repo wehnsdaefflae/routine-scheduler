@@ -154,7 +154,7 @@ def _mk(tmp_path: Path, slug: str) -> None:
            "description": "t", "schedule": {"cron": "0 7 * * 1", "tz": "UTC"},
            "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
            "budgets": {"max_turns": 5, "max_wall_clock_min": 5, "max_total_tokens": 1000,
-                       "max_subruns": 1, "max_subrun_depth": 1, "ask_timeout_min": 1}}
+                       "max_child_runs": 1, "max_child_depth": 1, "ask_timeout_min": 1}}
     (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
     (d / "main.md").write_text("## Run flow\n1. do it\n", encoding="utf-8")
     (d / "LEDGER.md").write_text("# LEDGER\n", encoding="utf-8")

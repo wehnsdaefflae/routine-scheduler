@@ -818,7 +818,7 @@ doesn't teach the correct call wastes every future caller's turn. The engine run
 - list_models: the model catalog + this run's resolved role bindings (main / tool_call / uncensored / supervisor), read-only — consult it BEFORE a `model` override on llm/child so the name you pass is one the catalog actually carries.
 - subruns: a status table of your child runs, whatever mode each was started in (state, turns, elapsed).
 
-**The child-run allowance is per NODE, not per tree** (D147/F549). `max_subruns` is a cumulative
+**The child-run allowance is per NODE, not per tree** (D147/F549). `max_child_runs` is a cumulative
 lifetime total for the whole run tree — `run_context.sub_counter` is one shared list, `childrun`
 increments it and never decrements — so the budgets line renders what THIS node may still start,
 never the raw ceiling: `at most 8 child runs` with the whole budget in front of it, `3 more child

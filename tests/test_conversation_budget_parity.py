@@ -31,7 +31,7 @@ _NEW = Path(__file__).resolve().parents[1] / "static" / "views" / "conversations
 def test_the_composer_carries_every_budget_the_loader_keeps():
     """`_BUDGET_FIELDS` is what the composer may set, and the gap was that it listed four of the
     six names `DEFAULT_BUDGETS` carries for a run's ceilings. The two per-RUN structural ones
-    (`max_subruns`, `max_subrun_depth`) are deliberately not composer fields — they bound a run
+    (`max_child_runs`, `max_child_depth`) are deliberately not composer fields — they bound a run
     tree, not a reply — so this asserts the two that were MISSING are present rather than
     asserting equality with a dict that holds more.
     """

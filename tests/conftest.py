@@ -391,7 +391,7 @@ def make_routine(tmp_path):
             "schedule": {"cron": "0 7 * * 1", "tz": "Europe/Berlin"},
             "workflow": {"library_slug": "test-flow", "library_commit": "abc123"},
             "budgets": {"max_turns": 10, "max_wall_clock_min": 5, "max_total_tokens": 100_000,
-                        "max_subruns": 2, "max_subrun_depth": 1, "ask_timeout_min": 1,
+                        "max_child_runs": 2, "max_child_depth": 1, "ask_timeout_min": 1,
                         **(budgets or {})},
         }
         (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")

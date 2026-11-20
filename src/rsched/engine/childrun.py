@@ -6,7 +6,7 @@ only in how the parent schedules it and how its budget is sliced.
 Each child is a REAL routine on disk under `runs/<ts>/sub/<n>/` while it runs (its own main.md +
 stages/ + instruction), so its module reads resolve under its own dir and it can itself
 decompose (the tree is recursive). Two numbers describe a child and they are not the same one:
-`sub_counter` COUNTS the children admitted this leg against the tree-wide `max_subruns`
+`sub_counter` COUNTS the children admitted this leg against the tree-wide `max_child_runs`
 allowance, while `n` NAMES one — unique across every leg of the run, read off the child
 directories themselves (`claim_child`). Lifecycle (start/monitor/announce/kill) stays in
 `SubrunManager` (subruns.py), which owns the exit-event machinery; this module only builds a
@@ -116,7 +116,7 @@ def claim_child(parent_ctx: RunContext) -> int:
     The caller holds `parent_ctx.sub_lock` and has checked the allowance under it.
 
     The number is one past the highest any child of this RUN has ever used, not the
-    admission counter: that one counts THIS leg's children for the `max_subruns` cap and
+    admission counter: that one counts THIS leg's children for the `max_child_runs` cap and
     starts again at zero on every resumed leg — every conversation reply, every recovered
     routine run — while the earlier legs' child directories are still on disk. Numbering from
     the counter handed a second leg's first child `sub/1/` again: it ran inside the first

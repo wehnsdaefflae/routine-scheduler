@@ -159,7 +159,7 @@ def rung_is_due(loop, settings: dict) -> str | None:
     if not settings["enabled"]:
         return None
     ctx = loop.ctx
-    if ctx.depth + 1 > min(settings["rung_height"], ctx.budgets.max_subrun_depth):
+    if ctx.depth + 1 > min(settings["rung_height"], ctx.budgets.max_child_depth):
         return None            # at the ladder's ceiling: the top rung answers to a person
     since = ctx.turn - int(getattr(ctx, "last_rung_turn", 0))
     if (reason := pull_forward_reason(loop)) is not None:

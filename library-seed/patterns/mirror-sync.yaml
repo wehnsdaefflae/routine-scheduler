@@ -52,8 +52,8 @@ settings:
   budgets:
     ask_timeout_min: 480
     max_cost: -1
-    max_subrun_depth: 0
-    max_subruns: 0
+    max_child_depth: 0
+    max_child_runs: 0
     max_total_tokens: -1
     max_total_turns: 0
     max_turns: 30

@@ -122,7 +122,7 @@ def detail(request: Request, slug: str) -> dict:
         "oversight_turns": info.cfg.tuning.get("oversight_turns"),
         "oversight_turns_derived": oversight_turns_for(
             int(info.cfg.tuning.get("ladder_turn_interval") or DEFAULT_TURN_INTERVAL)),
-        "max_subrun_depth": info.cfg.budgets.get("max_subrun_depth"),
+        "max_child_depth": info.cfg.budgets.get("max_child_depth"),
         "runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state} for r in info.runs],
         "background": list_background_rows(request, slug),
         "problems": info.problems,

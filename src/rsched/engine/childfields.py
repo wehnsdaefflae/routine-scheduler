@@ -6,7 +6,7 @@ scheduling modes; the vocabulary around it never followed. The same thing was ca
 in the engine and the docs, a `subrun` in the budget keys and the console, a `subtask` when
 scheduled sequentially, and a `spawn` when scheduled in parallel — and `static/`'s tree used
 "subtasks" for sequential children and "subruns" for parallel ones, so one word meant both "any
-child" and "a parallel child". The operator, reading a routine's `max_subruns` beside a recipe's
+child" and "a parallel child". The operator, reading a routine's `max_child_runs` beside a recipe's
 `subtask`, reasonably read two mechanisms. There is one: a child run, scheduled parallel or
 sequential, and `mode` is where that choice lives.
 

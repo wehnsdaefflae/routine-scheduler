@@ -27,7 +27,7 @@ def _ctx(usage: dict, *, max_cost: int) -> RunContext:
     ctx = RunContext.__new__(RunContext)
     ctx._budget_warned = set()
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=-1, max_total_tokens=-1,
-                          max_subruns=4, max_subrun_depth=2, ask_timeout_min=5,
+                          max_child_runs=4, max_child_depth=2, ask_timeout_min=5,
                           max_cost=max_cost)
     ctx.usage = {"in": 0, "out": 0, **usage}
     ctx.turn = 1

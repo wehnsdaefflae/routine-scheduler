@@ -23,7 +23,8 @@ from .runkind import is_conversation
 def _subrun_allowance(ctx: RunContext) -> str:
     """What THIS node may still start — not the tree total (D147-A).
 
-    `max_subruns` is a cumulative LIFETIME total for the whole run tree: `run_context.sub_counter`
+    `max_child_runs` is a cumulative LIFETIME total for the whole run tree:
+    `run_context.sub_counter`
     is one shared list, `childrun` increments it and never decrements, and `subruns._cap_reason`
     gates on it. But this contract used to render the raw ceiling into EVERY node's prompt, so a
     child that had started nothing was told it had the full eight. The specimen (R1870/F549): a
@@ -34,7 +35,7 @@ def _subrun_allowance(ctx: RunContext) -> str:
     siblings have spent some of it reads what is LEFT plus what it is a remainder of — because a
     remaining count with no total is as unplannable as a total with no remainder.
     """
-    total = ctx.budgets.max_subruns
+    total = ctx.budgets.max_child_runs
     used = ctx.sub_counter[0]
     left = max(0, total - used)
     if not used:
@@ -233,7 +234,7 @@ Budgets for this run: {b.max_turns if b.max_turns >= 0 else "unlimited"} turns, 
 {b.max_wall_clock_min if b.max_wall_clock_min >= 0 else "unlimited"} minutes, \
 {b.max_total_tokens if b.max_total_tokens >= 0 else "unlimited"} total tokens, \
 {f"a ${b.max_cost} notional-cost cap, " if b.max_cost >= 0 else ""}{_subrun_allowance(ctx)} \
-(depth ≤ {b.max_subrun_depth}). These are a CEILING and a runaway \
+(depth ≤ {b.max_child_depth}). These are a CEILING and a runaway \
 BACKSTOP — never a pace, and never a ration. Two opposite failures live here and you must \
 avoid both: stopping SHORT because turns have been spent, and spreading a job THIN because \
 turns remain. Take the shortest sound route to this run's goal and `finish` the moment its \

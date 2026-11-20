@@ -62,10 +62,10 @@ these docs cannot drift apart again.
 
 The two in-engine modes are real routines on disk under `runs/<ts>/sub/<n>/` while they run, with
 their own context window, pattern and finish summary. Decomposition is **recursive**: a child can
-decompose again (bounded by `max_subrun_depth`).
+decompose again (bounded by `max_child_depth`).
 
 A child's number `n` NAMES that directory, so it is unique across every leg of the run — read
-off the child directories already there (`childrun.claim_child`) — while the `max_subruns`
+off the child directories already there (`childrun.claim_child`) — while the `max_child_runs`
 allowance COUNTS the children of the current leg and starts afresh with each one. The two were
 one counter until a conversation's second reply numbered its first child `#1` again: it ran
 inside the first reply's child directory, appended to its transcript, and handed that child's

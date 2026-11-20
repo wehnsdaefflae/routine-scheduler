@@ -499,8 +499,8 @@ class RunContext:
             max_turns=lim["turns"],
             max_wall_clock_min=lim["wall_clock"],
             max_total_tokens=lim["tokens"],
-            max_subruns=b.max_subruns,
-            max_subrun_depth=b.max_subrun_depth,
+            max_child_runs=b.max_child_runs,
+            max_child_depth=b.max_child_depth,
             ask_timeout_min=b.ask_timeout_min,
             max_cost=lim["cost"],
         )

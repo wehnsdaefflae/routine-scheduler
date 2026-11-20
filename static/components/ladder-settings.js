@@ -39,7 +39,7 @@ const SUBJECTS = {
 /**
  * `ladder.enabled` + `ladder.rung_height` (config) — the ladder's height in RUNGS, which is the
  * recursion limit. `value` is the stored block; `onCommit` receives the whole merged block,
- * since the endpoint validates it merged. `depthCeiling` is budgets.max_subrun_depth, which
+ * since the endpoint validates it merged. `depthCeiling` is budgets.max_child_depth, which
  * floors it at run time — named here so a setting that cannot take effect says so where it is
  * set. `subject` names what is being supervised in the three strings that say so — a key of
  * SUBJECTS, defaulting to `runs` so the routine page is unchanged.
@@ -67,7 +67,7 @@ export function ladderSwitch(value, { onCommit, depthCeiling, subject } = {}) {
     // where it is being chosen, rather than leaving it to be discovered in a transcript.
     const capped = Number.isInteger(depthCeiling) && depthCeiling < cur.rung_height;
     ceiling.textContent = capped
-      ? `⚠ budgets.max_subrun_depth is ${depthCeiling}, so the ladder stops at rung `
+      ? `⚠ budgets.max_child_depth is ${depthCeiling}, so the ladder stops at rung `
         + `${depthCeiling} whatever this says`
       : "";
   };
@@ -110,7 +110,7 @@ export function ladderPanel(detail, { onPatch } = {}) {
   // replies and no runs of a routine, so the default wording asserts the wrong thing about what
   // the switch turns on.
   const sw = ladderSwitch(detail.ladder, { onCommit: (ladder) => onPatch?.({ ladder }),
-                                           depthCeiling: detail.max_subrun_depth,
+                                           depthCeiling: detail.max_child_depth,
                                            subject: "replies" });
   const iv = ladderIntervals({ interval: detail.ladder_turn_interval,
                                turns: detail.oversight_turns },
