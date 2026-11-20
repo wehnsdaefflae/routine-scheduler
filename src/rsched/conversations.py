@@ -25,7 +25,7 @@ from .config import (
     ServerConfig,
     write_tuning,
 )
-from .ids import run_ts
+from .ids import run_ts, tag_list
 from .paths import atomic_write_yaml, read_yaml
 from .schedule import server_tz
 
@@ -328,9 +328,9 @@ def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
 
         data = comp.parsed if comp.parsed is not None else json.loads(comp.text)
         title = re.sub(r"\s+", " ", str(data.get("title") or "")).strip()[:80]
-        tags = [re.sub(r"[^a-z0-9-]+", "-", str(t).lower()).strip("-")
-                for t in (data.get("tags") or [])][:3]
-        tags = [t for t in tags if t]
+        # the shared tag rule — a model answering a STRING here would otherwise be read one
+        # character per tag (see `ids.tag_list`)
+        tags = tag_list(data.get("tags"), limit=3)
         if not title:
             return
         raw = read_yaml(conv_dir / "routine.yaml", {})

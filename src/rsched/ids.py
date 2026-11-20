@@ -26,6 +26,30 @@ def slugify(name: str, default: str = "routine") -> str:
     return s or default
 
 
+def tag_list(value: object, *, limit: int | None = None) -> list[str]:
+    """A tag value reduced to the tag alphabet — the ONE tag rule, beside `slugify`'s.
+
+    A model asked for an ARRAY of tags sometimes answers a STRING, and `for t in value` then
+    iterates its CHARACTERS: the playbook saved on 2026-11-19 was tagged `e v a l u a` because
+    the reply said `"tags": "evaluation…"`. So a string is SPLIT on commas and whitespace,
+    never iterated, and every consumer of a model-supplied tag list goes through here. `limit`
+    is the caller's own cap (a playbook keeps 6, a conversation 3); the result is a SET in
+    order of appearance, so a repeated tag lands once.
+    """
+    if isinstance(value, str):
+        raw: list[object] = [part for part in re.split(r"[,\s]+", value) if part]
+    elif isinstance(value, list | tuple):
+        raw = list(value)
+    else:
+        raw = []
+    out: list[str] = []
+    for item in raw:
+        tag = re.sub(r"[^a-z0-9-]+", "-", str(item).lower()).strip("-")
+        if tag and tag not in out:
+            out.append(tag)
+    return out[:limit] if limit else out
+
+
 def run_ts(now: datetime | None = None) -> str:
     """A run's timestamp id, ALWAYS in UTC. Run-ts is a bare `YYYYMMDD-HHMMSS` string with
     no offset, so generating AND reading it both in UTC is what keeps run-dir names, ordering

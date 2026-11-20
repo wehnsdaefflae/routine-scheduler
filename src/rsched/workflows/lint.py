@@ -233,6 +233,14 @@ def lint_playbook_text(raw: str, *, filename: str = "MAIN.md") -> list[str]:
     tags = meta.get("tags")
     if not isinstance(tags, list) or not [t for t in tags if str(t).strip()]:
         problems.append(f"{filename}: needs at least one tag")
+    elif len([t for t in tags if len(str(t).strip()) == 1]) > 1:
+        # The distiller used to ITERATE a model's `tags` string, so a one-word answer became
+        # one tag per character — the playbook saved on 2026-11-19 read `e v a l u a` and this
+        # lint passed it. Several single-character tags are that artefact, never a tag set
+        # someone meant; `ids.tag_list` is what stops it being written.
+        letters = ", ".join(repr(str(t).strip()) for t in tags if len(str(t).strip()) == 1)
+        problems.append(f"{filename}: tags {letters} are single characters — a tags STRING was "
+                        "read one character per tag; re-save or fix them by hand")
     if "## Instructions" not in body:
         problems.append(f"{filename}: body must have an '## Instructions' section")
     problems += recipelint.tool_names(body, filename=filename, subject="library prose")

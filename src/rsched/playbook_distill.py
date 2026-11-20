@@ -148,9 +148,10 @@ def _normalize(data: dict) -> dict:
     main_body = str(data.get("main") or "").strip()
     if not main_body:
         raise ValueError("the model returned an empty playbook body")
-    tags = [re.sub(r"[^a-z0-9-]+", "-", str(t).lower()).strip("-")
-            for t in (data.get("tags") or [])]
-    tags = [t for t in tags if t][:6] or ["general"]
+    # `ids.tag_list` owns the alphabet AND the string case: a model answering
+    # `"tags": "evaluation"` where the schema says array must not be iterated per character
+    # (the 2026-11-19 playbook was tagged `e v a l u a` that way).
+    tags = ids.tag_list(data.get("tags"), limit=6) or ["general"]
     details = {}
     for d in (data.get("details") or []):
         name, body = str(d.get("name") or "").strip(), str(d.get("body") or "").strip()

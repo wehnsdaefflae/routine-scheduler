@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.558.0] — 2026-11-19
+
+### Fixed
+- **A playbook saved with its tags spelled out one letter at a time (F922).** The operator saved
+  a playbook and the Library tab tagged it `e` `v` `a` `l` `u` `a`. `PLAYBOOK_SCHEMA` asks for an
+  ARRAY of tags, the system model answered the STRING `"evaluation…"`, and
+  `playbook_distill._normalize` did `for t in (data.get("tags") or [])` — which iterates a
+  string's CHARACTERS — then capped the result at six. `conversations.autolabel` had the same
+  line capped at three, so a conversation whose model answered a string would have been tagged
+  `a` `i` `x`. Both now go through `ids.tag_list`, the ONE tag rule beside `ids.slugify`'s: a
+  string is SPLIT on commas and whitespace, a list keeps working exactly as before, and the
+  result is a set in order of appearance so a repeated tag lands once.
+- **The playbook lint could not see it (F922).** It asked for "at least one tag" and six single
+  letters satisfied that, so `rsched lint --kind playbooks` reported `pass` on the broken row and
+  nothing but the operator's eye caught it. More than one single-character tag is now a lint
+  problem naming the letters, which is what the PUT repair route gates on.
+
 ## [0.557.0] — 2026-11-19
 
 ### Fixed
