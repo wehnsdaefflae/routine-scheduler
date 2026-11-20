@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.560.0] — 2026-11-20
+
+### Fixed
+- **A goal the person withdrew can be retired by the words that withdrew it, even when they
+  were spoken to an earlier run** (F911, reported by `folder-reorg` in R3513/R3569). The
+  grounding check for `goal verb=drop` and `verb=change` read `goals.person_texts` over THIS
+  run's transcript only. An operator answer is the person speaking — `_person_spoke` already
+  counts an `answer` event as such — but an answer given to an earlier run was consumed by
+  that run, so it lives in `questions/answered/` and in no transcript the current run can
+  read. A drop quoting a settled answer verbatim ("Yes, drop b19 — it is withdrawn") was
+  therefore refused as "not later user words", and every subsequent digest presented an
+  obsolete obligation while calling the settled approval pending.
+  `goalops.answered_texts(routine_dir, since=…)` reads that store, and `_heard_later` tries
+  it ONLY for a goal whose grounding lies in an earlier run (`heard == -1`, what
+  `obligations.carried` stamps), bounded by the obligation's own `since` date — the store's
+  version of `heard_at(after=…)`, so an answer predating the obligation cannot withdraw it.
+  A goal set from words in the current run keeps transcript ordering untouched. The refusal
+  now names both surfaces it searched, so an unread store cannot read as a missing quote.
+
 ## [0.559.0] — 2026-11-20
 
 ### Fixed

@@ -16,8 +16,9 @@ once-per-line budget as the finish's (`loop._challenged`), so a goal is never ar
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
-from . import goalpicks, goals, runkind, verifier
+from . import goalpicks, goals, inbox, runkind, verifier
 
 # `runkind` and `verifier` are imported at module scope deliberately (F658): `goal check` runs
 # the SAME claim verification a finish does, so a lazy import here has the same failure as the
@@ -74,6 +75,46 @@ def _person(loop) -> tuple[list[dict], list[str]]:
     return events, goals.person_texts(events, opening=opening, brief=ctx.brief)
 
 
+def answered_texts(routine_dir, *, since: str = "") -> list[str]:
+    """Every settled ANSWER this routine's runs received, oldest first — the person's words
+    that are not in any one run's transcript (F911).
+
+    An operator answer is the person speaking, and `goals._person_spoke` already counts an
+    `answer` event as such; but an answer given to an EARLIER run was consumed by that run, so
+    it is in `questions/answered/` and in no transcript this run can read. Without this, a goal
+    the operator withdrew could not be retired by the words that withdrew it — reported by
+    folder-reorg (R3513/R3569) with a settled "Yes, drop b19 — it is withdrawn" whose drop was
+    refused as "not later user words".
+
+    `since` (a YYYY-MM-DD date, what `obligations.save` stamps on a carried goal) bounds the
+    read the way `heard_at(after=…)` bounds the transcript: an answer the person gave BEFORE a
+    goal was taken on cannot be the reason it changed. Same-day counts — `since` is a date and
+    the answer carries a time, so a goal taken on and withdrawn the same day is withdrawn.
+    """
+    rows = inbox.answered_questions(Path(routine_dir))
+    out = []
+    for row in reversed(rows):                      # answered_questions is newest first
+        text = str(row.get("answer") or "").strip()
+        day = str(row.get("answered_ts") or "")[:10]
+        if text and (not since or not day or day >= since):
+            out.append(text)
+    return out
+
+
+def _heard_later(loop, goal: dict, quote: str) -> bool:
+    """Did the person write `quote` after the words this goal came from? The transcript first,
+    and for a CARRIED goal the answered-questions store as well — its grounding lies in an
+    earlier run (`heard == -1`, what `obligations.carried` stamps), and so may the words that
+    withdraw it.
+    """
+    if goals.heard_at(quote, _person(loop)[1], after=goal["heard"]) is not None:
+        return True
+    if goal.get("heard") != -1:
+        return False
+    texts = answered_texts(loop.ctx.routine.dir, since=str(goal.get("since") or ""))
+    return goals.heard_at(quote, texts) is not None
+
+
 def _obs(loop, verb: str, message: str, **extra) -> dict:
     ledger = [dict(g) for g in loop.ctx.goals]
     return {"kind": "goal", "verb": verb,
@@ -90,13 +131,18 @@ def _items(action: dict) -> list[tuple[str, str]]:
             for i in action.get("goals") or [] if isinstance(i, dict)]
 
 
-def _not_found(quote: str, *, later: bool) -> str:
+def _not_found(quote: str, *, later: bool, carried: bool = False) -> str:
     where = ("in anything the person wrote AFTER the words this goal came from — an earlier "
              "sentence cannot be the reason a later request changed" if later else
              "in anything the person wrote to this run")
-    return (f"the words {quote!r} are not {where}. Quote them verbatim (an excerpt is fine; "
-            "join two excerpts with …). A goal is theirs: when they asked for nothing like it, "
-            "it belongs in your plan, not here.")
+    # A carried goal's words may be in an answer an EARLIER run consumed, so that store was
+    # read too (F911): the refusal names every surface searched, or the next run cannot tell
+    # a missing quote from an unread store.
+    searched = (" Both this run's transcript and the answers this routine has already "
+                "received (questions/answered/) were searched." if carried else "")
+    return (f"the words {quote!r} are not {where}.{searched} Quote them verbatim (an excerpt "
+            "is fine; join two excerpts with …). A goal is theirs: when they asked for nothing "
+            "like it, it belongs in your plan, not here.")
 
 
 def _open(loop, verb: str, gid: str) -> dict:
@@ -152,9 +198,11 @@ def _change(loop, action: dict) -> dict:
     if goal.get("rejected"):
         return goal
     text, quote = _items(action)[0]
-    if (at := goals.heard_at(quote, _person(loop)[1], after=goal["heard"])) is None:
-        return _refuse("change", _not_found(quote, later=True))
-    goal.update(text=text[:goals.TEXT_MAX], quote=quote[:goals.QUOTE_MAX], heard=at,
+    at = goals.heard_at(quote, _person(loop)[1], after=goal["heard"])
+    if at is None and not _heard_later(loop, goal, quote):
+        return _refuse("change", _not_found(quote, later=True, carried=goal.get("heard") == -1))
+    goal.update(text=text[:goals.TEXT_MAX], quote=quote[:goals.QUOTE_MAX],
+                heard=at if at is not None else goal["heard"],
                 turn=loop.ctx.turn, remains="")
     loop.ctx.write_status()
     return _obs(loop, "change", f"{goal['id']} now reads as the person last put it.")
@@ -165,8 +213,8 @@ def _drop(loop, action: dict) -> dict:
     if goal.get("rejected"):
         return goal
     quote = str(action.get("quote") or "").strip()
-    if goals.heard_at(quote, _person(loop)[1], after=goal["heard"]) is None:
-        return _refuse("drop", _not_found(quote, later=True))
+    if not _heard_later(loop, goal, quote):
+        return _refuse("drop", _not_found(quote, later=True, carried=goal.get("heard") == -1))
     goal.update(status="dropped", dropped_by=quote[:goals.QUOTE_MAX], turn=loop.ctx.turn)
     loop.ctx.write_status()
     return _obs(loop, "drop", f"{goal['id']} dropped on the person's word.")
