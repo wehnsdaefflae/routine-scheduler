@@ -263,8 +263,14 @@ class SubrunManager:
                                compression=sub.ctx.compression_stats)
 
     def status_table(self) -> dict:
+        # Backgrounded calls belong here too (R3600): same mechanism to the reader — work
+        # started, not in hand, delivered at a later boundary — and `kill` already took both
+        # namespaces. A separate key, so `count` keeps meaning children.
+        from . import background_status
+
         rows = subsalvage.rows(self.subruns, self.parent.ctx.run_dir)
-        return {"kind": "subruns", "count": len(rows), "rows": rows}
+        return {"kind": "subruns", "count": len(rows), "rows": rows,
+                "background": background_status.status_rows(self.parent)}
 
     def kill(self, n: int) -> dict:
         sub = self.subruns.get(int(n))

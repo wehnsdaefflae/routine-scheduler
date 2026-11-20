@@ -8,7 +8,7 @@ run would otherwise assume it shares the parent's working directory.
 
 from __future__ import annotations
 
-from . import child
+from . import background_status, child
 from .subsalvage import STATE as ORPHANED
 
 
@@ -53,18 +53,24 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
                 "and can then relay its result. Do NOT wait: finish this reply now (tell the user "
                 "you started it and will report back).")
     if kind == "subruns":
+        bg_rows = background_status.lines(obs.get("background") or [])
         if not obs.get("rows"):
             # Never "none spawned" (F732): the registry is in-memory, so a RESUMED leg knows
             # only about this leg's children — and the sentence it used to print was a claim
-            # about the whole run that a fresh leg has no standing to make.
-            return ("OBSERVATION (subruns): no record of a child in THIS leg — and none on "
-                    "disk either, so none was started.")
+            # about the whole run that a fresh leg has no standing to make. It is also a claim
+            # about BACKGROUND work it has no standing to make (R3600): the operator met it
+            # with a `bg1` script in flight, so it only speaks when nothing is running either.
+            if not bg_rows:
+                return ("OBSERVATION (subruns): no record of a child in THIS leg — and none on "
+                        "disk either, so none was started.")
+            return ("OBSERVATION (subruns): no child run in THIS leg, and background work is "
+                    "in flight:\n" + "\n".join(bg_rows))
         lines = [f"- #{r['n']} {r['label']!r} [{r['workflow']}] {r['state']} · "
                  f"{r['turns']} turns · {r['elapsed_s']}s"
                  + (f" · {r['summary_head']}" if r["summary_head"] else "")
                  + _salvaged(r)
                  for r in obs["rows"]]
-        return "OBSERVATION (subruns):\n" + "\n".join(lines)
+        return "OBSERVATION (subruns):\n" + "\n".join(lines + bg_rows)
     if kind == "kill":
         if obs.get("error"):
             return f"OBSERVATION (kill FAILED): {obs['error']}"

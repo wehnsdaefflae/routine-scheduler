@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.559.0] — 2026-11-20
+
+### Fixed
+- **`subruns` denied that background work existed (F923, R3600).** The operator caught it mid-run
+  in `tv-show-tracker-seedbox-manager`: a `background: true` script was in flight as `bg1`, the
+  run asked `subruns` to see what it was waiting for, and the answer was *"no record of a child in
+  THIS leg — and none on disk either, so none was started"*. Work the run had started was
+  running, and the one action whose job is to say what is running denied it. `spawn`/`subtask` and
+  a backgrounded call are different mechanisms but the same thing to a run reading its own state:
+  work it started, not yet in hand, delivered at a later turn boundary under an identifier —
+  which is why `kill` already took both namespaces (`n` for a child, `handle` for a thread) and
+  why the status table was the last surface that knew one and not the other.
+  - New `engine/background_status.py` turns the live `Pending` list into rows
+    (`handle`, `kind`, `brief`, `started_turn`, `state`, `stoppable`). `state` separates `running`
+    from `landed` because `collect` drops a delivered Pending only at the next turn boundary, so a
+    call that finished mid-turn is still in the list — reporting it as running would replace one
+    false claim with another.
+  - They ride a separate `background` key, not more `rows`: `subruns`' `count` has always meant
+    children, and folding the two would make it mean two things and invite `kill n=1` at a `bg1`.
+  - The *"none was started"* sentence now speaks only when nothing is in flight either, and the
+    rows render under the children.
+  - Its own module because `engine/background.py` sits at 474 lines on the size ratchet's
+    grandfathered list, where one added line crosses the bar.
+  - `tests/test_subruns_background.py`, red-first: with both halves neutered 4 of 6 fail, and the
+    live-run test drives the real loop with a blocked util so a true in-flight call is observed.
+
 ## [0.558.0] — 2026-11-19
 
 ### Fixed
